@@ -1,0 +1,60 @@
+# ZAP Scanning Rules Configuration
+# Format: RULE_ID	THRESHOLD	[IGNORE/FAIL/WARN/INFO]
+
+# High severity rules - fail the build
+10023	HIGH	FAIL	# Application Error Disclosure
+10024	HIGH	FAIL	# Generic Padding Oracle
+10025	HIGH	FAIL	# HTTP Parameter Override
+10026	HIGH	FAIL	# HTTP Parameter Pollution
+10027	HIGH	FAIL	# Information Disclosure - Debug Error Messages
+10028	HIGH	FAIL	# Open Redirect
+10029	HIGH	FAIL	# Cookie Poisoning
+10030	HIGH	FAIL	# User Controllable Charset
+10031	HIGH	FAIL	# User Controllable HTML Element Attribute
+10032	HIGH	FAIL	# Viewstate Scanner
+10033	HIGH	FAIL	# Directory Browsing
+10034	HIGH	FAIL	# Heartbleed OpenSSL Vulnerability
+10035	HIGH	FAIL	# Strict-Transport-Security Header Not Set
+10036	HIGH	FAIL	# Server Leaks Version Information via "Server" HTTP Response Header Field
+10037	HIGH	FAIL	# Server Leaks Information via "X-Powered-By" HTTP Response Header Field
+10038	HIGH	FAIL	# Content Security Policy (CSP) Header Not Set
+10039	HIGH	FAIL	# X-Frame-Options Header Not Set
+10040	HIGH	FAIL	# X-Content-Type-Options Header Missing
+10041	HIGH	FAIL	# X-XSS-Protection Header Not Set
+10042	HIGH	FAIL	# Authentication Request Identified
+10043	HIGH	FAIL	# User Controllable JavaScript Event (XSS)
+10044	HIGH	FAIL	# Big Redirect Detected (Potential Sensitive Information Leak)
+10045	HIGH	FAIL	# Source Code Disclosure - /WEB-INF folder
+10046	HIGH	FAIL	# Source Code Disclosure - Git
+10047	HIGH	FAIL	# Remote Code Execution - Shell Shock
+10048	HIGH	FAIL	# SQL Injection
+10049	HIGH	FAIL	# Cross Site Scripting (Reflected)
+10050	HIGH	FAIL	# Cross Site Scripting (Stored)
+
+# Medium severity rules - warn but don't fail
+10051	MEDIUM	WARN	# Missing Anti-CSRF Tokens
+10052	MEDIUM	WARN	# Cookie Without Secure Flag
+10053	MEDIUM	WARN	# Cookie Without HttpOnly Flag
+10054	MEDIUM	WARN	# Cookie Without SameSite Attribute
+10055	MEDIUM	WARN	# Weak Authentication Method
+10056	MEDIUM	WARN	# Password Autocomplete in Browser
+10057	MEDIUM	WARN	# Username Hash Found
+10058	MEDIUM	WARN	# GET for POST
+10059	MEDIUM	WARN	# Multiple X-Frame-Options Header Entries
+10060	MEDIUM	WARN	# Loosely Scoped Cookie
+10061	MEDIUM	WARN	# Timestamp Disclosure
+10062	MEDIUM	WARN	# Information Disclosure - Suspicious Comments
+10063	MEDIUM	WARN	# Session ID in URL Rewrite
+10064	MEDIUM	WARN	# Cross-Domain JavaScript Source File Inclusion
+
+# Low severity rules - info only
+10065	LOW	INFO	# Private IP Disclosure
+10066	LOW	INFO	# Hash Disclosure
+10067	LOW	INFO	# Credit Card Number
+10068	LOW	INFO	# Information Disclosure - Sensitive Information in URL
+10069	LOW	INFO	# Information Disclosure - Sensitive Information in HTTP Referrer Header
+10070	LOW	INFO	# Information Disclosure - Database Error Messages
+10071	LOW	INFO	# Application Error Disclosure
+10072	LOW	INFO	# Web Browser XSS Protection Not Enabled
+10073	LOW	INFO	# X-Content-Type-Options Header Missing
+10074	LOW	INFO	# X-Frame-Options Header Not Set

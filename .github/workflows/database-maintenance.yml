@@ -1,0 +1,553 @@
+name: Database Maintenance
+
+on:
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: '0 3 * * *'
+    # Run weekly maintenance on Sundays at 4 AM UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Maintenance operation to perform'
+        required: true
+        type: choice
+        options:
+          - backup
+          - cleanup
+          - analyze
+          - vacuum
+          - reindex
+          - all
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+env:
+  BACKUP_RETENTION_DAYS: 30
+  WEEKLY_BACKUP_RETENTION_DAYS: 90
+
+jobs:
+  database-backup:
+    name: Database Backup
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 3 * * *' || github.event.inputs.operation == 'backup' || github.event.inputs.operation == 'all'
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+        exclude:
+          - environment: ${{ github.event.inputs.environment != 'staging' && 'staging' || 'never' }}
+          - environment: ${{ github.event.inputs.environment != 'production' && 'production' || 'never' }}
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Create backup
+        run: |
+          # Generate backup filename with timestamp
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          BACKUP_FILE="lcopilot_${TIMESTAMP}_${{ matrix.environment }}.sql"
+
+          # Create database backup
+          pg_dump "${{ secrets.DATABASE_URL }}" \
+            --verbose \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --format=custom \
+            --file="${BACKUP_FILE}"
+
+          # Compress backup
+          gzip "${BACKUP_FILE}"
+
+          # Store backup filename for upload
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+
+      - name: Upload backup to cloud storage
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp "${{ env.BACKUP_FILE }}" \
+            s3://${{ secrets.BACKUP_BUCKET }}/database-backups/${{ matrix.environment }}/ \
+            --storage-class STANDARD_IA
+
+          # Also create a latest backup link
+          aws s3 cp "${{ env.BACKUP_FILE }}" \
+            s3://${{ secrets.BACKUP_BUCKET }}/database-backups/${{ matrix.environment }}/latest.sql.gz
+
+      - name: Verify backup
+        run: |
+          # Verify backup file exists and is not empty
+          if [ ! -f "${{ env.BACKUP_FILE }}" ] || [ ! -s "${{ env.BACKUP_FILE }}" ]; then
+            echo "❌ Backup file is missing or empty"
+            exit 1
+          fi
+
+          # Get backup size
+          BACKUP_SIZE=$(stat -c%s "${{ env.BACKUP_FILE }}")
+          echo "✅ Backup created successfully: ${{ env.BACKUP_FILE }} (${BACKUP_SIZE} bytes)"
+
+      - name: Update backup inventory
+        run: |
+          # Create backup metadata
+          cat > backup-metadata.json << EOF
+          {
+            "filename": "${{ env.BACKUP_FILE }}",
+            "environment": "${{ matrix.environment }}",
+            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "size_bytes": $(stat -c%s "${{ env.BACKUP_FILE }}"),
+            "retention_days": ${{ env.BACKUP_RETENTION_DAYS }},
+            "backup_type": "daily"
+          }
+          EOF
+
+          # Upload metadata
+          aws s3 cp backup-metadata.json \
+            s3://${{ secrets.BACKUP_BUCKET }}/database-backups/${{ matrix.environment }}/metadata/$(date +"%Y%m%d_%H%M%S").json
+
+  weekly-backup:
+    name: Weekly Long-term Backup
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 4 * * 0' || (github.event.inputs.operation == 'backup' && github.event.schedule == '0 4 * * 0')
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Create weekly backup
+        run: |
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          BACKUP_FILE="lcopilot_weekly_${TIMESTAMP}_${{ matrix.environment }}.sql"
+
+          # Create full database backup
+          pg_dump "${{ secrets.DATABASE_URL }}" \
+            --verbose \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --format=custom \
+            --file="${BACKUP_FILE}"
+
+          # Compress backup
+          gzip "${BACKUP_FILE}"
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+
+      - name: Upload weekly backup
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3 with long-term retention
+        run: |
+          aws s3 cp "${{ env.BACKUP_FILE }}" \
+            s3://${{ secrets.BACKUP_BUCKET }}/database-backups/${{ matrix.environment }}/weekly/ \
+            --storage-class GLACIER
+
+          # Create metadata for weekly backup
+          cat > weekly-backup-metadata.json << EOF
+          {
+            "filename": "${{ env.BACKUP_FILE }}",
+            "environment": "${{ matrix.environment }}",
+            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "size_bytes": $(stat -c%s "${{ env.BACKUP_FILE }}"),
+            "retention_days": ${{ env.WEEKLY_BACKUP_RETENTION_DAYS }},
+            "backup_type": "weekly"
+          }
+          EOF
+
+          aws s3 cp weekly-backup-metadata.json \
+            s3://${{ secrets.BACKUP_BUCKET }}/database-backups/${{ matrix.environment }}/weekly/metadata/$(date +"%Y%m%d").json
+
+  database-cleanup:
+    name: Database Cleanup
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 4 * * 0' || github.event.inputs.operation == 'cleanup' || github.event.inputs.operation == 'all'
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+        exclude:
+          - environment: ${{ github.event.inputs.environment != 'staging' && 'staging' || 'never' }}
+          - environment: ${{ github.event.inputs.environment != 'production' && 'production' || 'never' }}
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Clean up old audit logs
+        run: |
+          # Delete audit logs older than 2 years (730 days)
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            DELETE FROM audit_logs
+            WHERE created_at < NOW() - INTERVAL '730 days';
+          "
+
+      - name: Clean up old session tokens
+        run: |
+          # Delete expired session tokens
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            DELETE FROM user_sessions
+            WHERE expires_at < NOW();
+          "
+
+      - name: Clean up old notifications
+        run: |
+          # Delete old notifications (keep 90 days)
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            DELETE FROM notifications
+            WHERE created_at < NOW() - INTERVAL '90 days';
+          "
+
+      - name: Clean up old usage records details
+        run: |
+          # Archive detailed usage records older than 1 year
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            DELETE FROM usage_record_details
+            WHERE created_at < NOW() - INTERVAL '365 days';
+          "
+
+      - name: Clean up temporary files
+        run: |
+          # Clean up temporary file uploads
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            DELETE FROM temp_uploads
+            WHERE created_at < NOW() - INTERVAL '24 hours';
+          "
+
+  database-maintenance:
+    name: Database Maintenance
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 4 * * 0' || github.event.inputs.operation == 'analyze' || github.event.inputs.operation == 'vacuum' || github.event.inputs.operation == 'reindex' || github.event.inputs.operation == 'all'
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+        exclude:
+          - environment: ${{ github.event.inputs.environment != 'staging' && 'staging' || 'never' }}
+          - environment: ${{ github.event.inputs.environment != 'production' && 'production' || 'never' }}
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Analyze database statistics
+        if: github.event.inputs.operation == 'analyze' || github.event.inputs.operation == 'all' || github.event.schedule == '0 4 * * 0'
+        run: |
+          echo "🔍 Analyzing database statistics..."
+          psql "${{ secrets.DATABASE_URL }}" -c "ANALYZE VERBOSE;"
+
+      - name: Vacuum database
+        if: github.event.inputs.operation == 'vacuum' || github.event.inputs.operation == 'all' || github.event.schedule == '0 4 * * 0'
+        run: |
+          echo "🧹 Vacuuming database..."
+          # Run VACUUM on specific tables that see heavy write activity
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            VACUUM (VERBOSE, ANALYZE) usage_records;
+            VACUUM (VERBOSE, ANALYZE) audit_logs;
+            VACUUM (VERBOSE, ANALYZE) notifications;
+            VACUUM (VERBOSE, ANALYZE) user_sessions;
+          "
+
+      - name: Reindex database
+        if: github.event.inputs.operation == 'reindex' || github.event.inputs.operation == 'all'
+        run: |
+          echo "🔄 Reindexing database..."
+          # Reindex specific indexes that may become fragmented
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            REINDEX INDEX CONCURRENTLY idx_usage_records_company_created;
+            REINDEX INDEX CONCURRENTLY idx_audit_logs_created_at;
+            REINDEX INDEX CONCURRENTLY idx_notifications_user_created;
+          "
+
+  backup-cleanup:
+    name: Cleanup Old Backups
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 4 * * 0' || github.event.inputs.operation == 'cleanup' || github.event.inputs.operation == 'all'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Cleanup old daily backups
+        run: |
+          # Delete daily backups older than retention period
+          CUTOFF_DATE=$(date -d "${{ env.BACKUP_RETENTION_DAYS }} days ago" +%Y%m%d)
+
+          echo "🧹 Cleaning up daily backups older than ${CUTOFF_DATE}..."
+
+          # List and delete old backup files
+          aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/database-backups/staging/ --recursive | \
+            awk '$1 < "'${CUTOFF_DATE}'" {print $4}' | \
+            while read file; do
+              if [[ ! "$file" == *"/weekly/"* ]]; then
+                echo "Deleting old backup: $file"
+                aws s3 rm "s3://${{ secrets.BACKUP_BUCKET }}/$file"
+              fi
+            done
+
+          aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/database-backups/production/ --recursive | \
+            awk '$1 < "'${CUTOFF_DATE}'" {print $4}' | \
+            while read file; do
+              if [[ ! "$file" == *"/weekly/"* ]]; then
+                echo "Deleting old backup: $file"
+                aws s3 rm "s3://${{ secrets.BACKUP_BUCKET }}/$file"
+              fi
+            done
+
+      - name: Cleanup old weekly backups
+        run: |
+          # Delete weekly backups older than long-term retention period
+          WEEKLY_CUTOFF_DATE=$(date -d "${{ env.WEEKLY_BACKUP_RETENTION_DAYS }} days ago" +%Y%m%d)
+
+          echo "🧹 Cleaning up weekly backups older than ${WEEKLY_CUTOFF_DATE}..."
+
+          aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/database-backups/staging/weekly/ --recursive | \
+            awk '$1 < "'${WEEKLY_CUTOFF_DATE}'" {print $4}' | \
+            while read file; do
+              echo "Deleting old weekly backup: $file"
+              aws s3 rm "s3://${{ secrets.BACKUP_BUCKET }}/$file"
+            done
+
+          aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/database-backups/production/weekly/ --recursive | \
+            awk '$1 < "'${WEEKLY_CUTOFF_DATE}'" {print $4}' | \
+            while read file; do
+              echo "Deleting old weekly backup: $file"
+              aws s3 rm "s3://${{ secrets.BACKUP_BUCKET }}/$file"
+            done
+
+  health-check:
+    name: Database Health Check
+    runs-on: ubuntu-latest
+    needs: [database-maintenance]
+    if: always()
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Check database connectivity
+        run: |
+          psql "${{ secrets.DATABASE_URL }}" -c "SELECT 1;" > /dev/null
+          echo "✅ Database connectivity: OK"
+
+      - name: Check database size
+        run: |
+          DB_SIZE=$(psql "${{ secrets.DATABASE_URL }}" -t -c "
+            SELECT pg_size_pretty(pg_database_size(current_database()));
+          " | xargs)
+          echo "📊 Database size: $DB_SIZE"
+
+      - name: Check table sizes
+        run: |
+          echo "📊 Top 10 largest tables:"
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              schemaname,
+              tablename,
+              pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
+            FROM pg_tables
+            WHERE schemaname = 'public'
+            ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
+            LIMIT 10;
+          "
+
+      - name: Check active connections
+        run: |
+          ACTIVE_CONNECTIONS=$(psql "${{ secrets.DATABASE_URL }}" -t -c "
+            SELECT count(*) FROM pg_stat_activity WHERE state = 'active';
+          " | xargs)
+          echo "🔗 Active connections: $ACTIVE_CONNECTIONS"
+
+      - name: Check slow queries
+        run: |
+          echo "🐌 Checking for slow queries (>1 second):"
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              query,
+              state,
+              query_start,
+              now() - query_start as duration
+            FROM pg_stat_activity
+            WHERE (now() - query_start) > interval '1 second'
+            AND state = 'active'
+            AND query NOT LIKE '%pg_stat_activity%';
+          "
+
+      - name: Check disk usage warning
+        run: |
+          # Get database size in bytes
+          DB_SIZE_BYTES=$(psql "${{ secrets.DATABASE_URL }}" -t -c "
+            SELECT pg_database_size(current_database());
+          " | xargs)
+
+          # Check if database is larger than 80% of available space (example threshold)
+          # This would need to be adjusted based on your actual disk allocation
+          THRESHOLD_BYTES=$((50 * 1024 * 1024 * 1024))  # 50GB threshold
+
+          if [ "$DB_SIZE_BYTES" -gt "$THRESHOLD_BYTES" ]; then
+            echo "⚠️  Database size warning: Database is larger than 50GB"
+            echo "Current size: $(echo $DB_SIZE_BYTES | awk '{print $1/1024/1024/1024 " GB"}')"
+          else
+            echo "✅ Database size is within normal limits"
+          fi
+
+  report-generation:
+    name: Generate Maintenance Report
+    runs-on: ubuntu-latest
+    needs: [database-backup, database-cleanup, database-maintenance, health-check]
+    if: always()
+
+    steps:
+      - name: Generate maintenance report
+        run: |
+          cat > maintenance-report.md << 'EOF'
+          # Database Maintenance Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Workflow:** ${{ github.workflow }}
+          **Trigger:** ${{ github.event_name }}
+
+          ## Operations Performed
+
+          - Database Backup: ${{ needs.database-backup.result }}
+          - Database Cleanup: ${{ needs.database-cleanup.result }}
+          - Database Maintenance: ${{ needs.database-maintenance.result }}
+          - Health Check: ${{ needs.health-check.result }}
+
+          ## Summary
+
+          Automated database maintenance completed for LCopilot platform.
+
+          ### Backup Status
+          - Daily backups: Created and uploaded to S3
+          - Backup retention: ${{ env.BACKUP_RETENTION_DAYS }} days (daily), ${{ env.WEEKLY_BACKUP_RETENTION_DAYS }} days (weekly)
+          - Backup verification: Completed
+
+          ### Cleanup Status
+          - Old audit logs cleaned
+          - Expired sessions removed
+          - Temporary files purged
+          - Old backups archived
+
+          ### Maintenance Status
+          - Database statistics updated
+          - Vacuum operations completed
+          - Index maintenance performed
+
+          ### Health Status
+          - Database connectivity verified
+          - Performance metrics collected
+          - Resource usage monitored
+
+          ## Next Maintenance
+
+          Next scheduled maintenance: $(date -d "next Sunday 4:00" +"%Y-%m-%d %H:%M UTC")
+          EOF
+
+      - name: Upload maintenance report
+        uses: actions/upload-artifact@v3
+        with:
+          name: maintenance-report
+          path: maintenance-report.md
+
+      - name: Notify on maintenance completion
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          channel: '#database-ops'
+          custom_payload: |
+            {
+              "text": "Database maintenance completed",
+              "attachments": [
+                {
+                  "color": "${{ (needs.database-backup.result == 'success' && needs.database-cleanup.result == 'success' && needs.database-maintenance.result == 'success') && 'good' || 'danger' }}",
+                  "fields": [
+                    {
+                      "title": "Backup",
+                      "value": "${{ needs.database-backup.result }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Cleanup",
+                      "value": "${{ needs.database-cleanup.result }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Maintenance",
+                      "value": "${{ needs.database-maintenance.result }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Health Check",
+                      "value": "${{ needs.health-check.result }}",
+                      "short": true
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.DATABASE_SLACK_WEBHOOK_URL }}

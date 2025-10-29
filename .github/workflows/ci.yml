@@ -1,0 +1,691 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Backend Tests and Quality Checks
+  backend-tests:
+    name: Backend Tests & Quality
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lcopilot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Set up environment variables
+        working-directory: ./apps/api
+        run: |
+          cat > .env.test << EOF
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/lcopilot_test
+          REDIS_URL=redis://localhost:6379
+          SECRET_KEY=test-secret-key-for-ci
+          ENVIRONMENT=test
+          LOG_LEVEL=WARNING
+          SSLCOMMERZ_STORE_ID=test
+          SSLCOMMERZ_STORE_PASSWORD=test
+          STRIPE_SECRET_KEY=sk_test_123
+          STRIPE_WEBHOOK_SECRET=whsec_test_123
+          SENDGRID_API_KEY=SG.test
+          TWILIO_ACCOUNT_SID=AC123
+          TWILIO_AUTH_TOKEN=test
+          JWT_SECRET=test-jwt-secret
+          EOF
+
+      - name: Run database migrations
+        working-directory: ./apps/api
+        run: |
+          alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_test
+
+      - name: Run linting
+        working-directory: ./apps/api
+        run: |
+          ruff check .
+          black --check .
+          isort --check-only .
+
+      - name: Run type checking
+        working-directory: ./apps/api
+        run: |
+          mypy src/
+
+      - name: Run unit tests
+        working-directory: ./apps/api
+        run: |
+          pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term-missing
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_test
+
+      - name: Run integration tests
+        working-directory: ./apps/api
+        run: |
+          pytest tests/integration/ -v
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_test
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./apps/api/coverage.xml
+          flags: backend
+          name: backend-coverage
+
+  # Frontend Tests and Quality Checks
+  frontend-tests:
+    name: Frontend Tests & Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: './apps/web/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./apps/web
+        run: npm ci
+
+      - name: Run linting
+        working-directory: ./apps/web
+        run: |
+          npm run lint
+          npm run lint:types
+
+      - name: Run unit tests
+        working-directory: ./apps/web
+        run: npm run test:unit -- --coverage --watchAll=false
+
+      - name: Run component tests
+        working-directory: ./apps/web
+        run: npm run test:components -- --coverage --watchAll=false
+
+      - name: Build application
+        working-directory: ./apps/web
+        run: npm run build
+
+      - name: Upload frontend coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./apps/web/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+
+  # End-to-End Tests
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lcopilot_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: './apps/web/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        working-directory: ./apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: ./apps/web
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ./apps/web
+        run: npx playwright install --with-deps
+
+      - name: Set up test environment
+        run: |
+          cat > ./apps/api/.env.e2e << EOF
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/lcopilot_e2e
+          REDIS_URL=redis://localhost:6379
+          SECRET_KEY=e2e-secret-key
+          ENVIRONMENT=test
+          LOG_LEVEL=ERROR
+          SSLCOMMERZ_STORE_ID=test
+          SSLCOMMERZ_STORE_PASSWORD=test
+          STRIPE_SECRET_KEY=sk_test_123
+          TEST_ADMIN_TOKEN=test-admin-token-123
+          API_URL=http://localhost:8000
+          EOF
+
+      - name: Start backend server
+        working-directory: ./apps/api
+        run: |
+          alembic upgrade head
+          uvicorn src.main:app --host 0.0.0.0 --port 8000 &
+          sleep 10
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_e2e
+
+      - name: Build and start frontend
+        working-directory: ./apps/web
+        run: |
+          npm run build
+          npm run preview -- --port 5173 --host 0.0.0.0 &
+          sleep 5
+        env:
+          VITE_API_URL: http://localhost:8000
+
+      - name: Wait for services to be ready
+        run: |
+          curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:8000/health
+          curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:5173
+
+      - name: Run E2E tests
+        working-directory: ./apps/web
+        run: npx playwright test
+        env:
+          BASE_URL: http://localhost:5173
+          API_URL: http://localhost:8000
+          TEST_ADMIN_TOKEN: test-admin-token-123
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: ./apps/web/playwright-report/
+          retention-days: 30
+
+      - name: Upload E2E test videos
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: playwright-videos
+          path: ./apps/web/test-results/
+          retention-days: 30
+
+  # Security and Vulnerability Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Semgrep security analysis
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/python
+            p/typescript
+
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+
+  # Build and Push Container Images
+  build-images:
+    name: Build Container Images
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for API image
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for Web image
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/web
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=/api
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, security-scan, build-images]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Deploy to staging
+        run: |
+          export KUBECONFIG=kubeconfig
+          helm upgrade --install lcopilot-staging ./deploy/helm \
+            --namespace lcopilot-staging \
+            --create-namespace \
+            --set image.api.tag=${{ github.sha }} \
+            --set image.web.tag=${{ github.sha }} \
+            --set environment=staging \
+            --set ingress.hosts[0].host=staging.lcopilot.com \
+            --set postgres.enabled=true \
+            --set redis.enabled=true \
+            --values ./deploy/helm/values-staging.yaml
+
+      - name: Wait for deployment
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl rollout status deployment/lcopilot-api -n lcopilot-staging --timeout=300s
+          kubectl rollout status deployment/lcopilot-web -n lcopilot-staging --timeout=300s
+
+      - name: Run smoke tests
+        run: |
+          curl --retry 10 --retry-delay 5 --fail https://staging.lcopilot.com/health
+          curl --retry 10 --retry-delay 5 --fail https://staging.lcopilot.com/api/health
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, security-scan, build-images]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Deploy to production (Blue-Green)
+        run: |
+          export KUBECONFIG=kubeconfig
+
+          # Deploy to green environment
+          helm upgrade --install lcopilot-green ./deploy/helm \
+            --namespace lcopilot-production \
+            --create-namespace \
+            --set image.api.tag=${{ github.sha }} \
+            --set image.web.tag=${{ github.sha }} \
+            --set environment=production \
+            --set deployment.suffix=green \
+            --set ingress.hosts[0].host=app.lcopilot.com \
+            --set postgres.enabled=false \
+            --set redis.enabled=false \
+            --values ./deploy/helm/values-production.yaml
+
+      - name: Wait for green deployment
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl rollout status deployment/lcopilot-api-green -n lcopilot-production --timeout=600s
+          kubectl rollout status deployment/lcopilot-web-green -n lcopilot-production --timeout=600s
+
+      - name: Run production smoke tests
+        run: |
+          # Test green environment before switching traffic
+          kubectl port-forward -n lcopilot-production service/lcopilot-api-green 8080:8000 &
+          sleep 5
+          curl --retry 5 --retry-delay 2 --fail http://localhost:8080/health
+          kill %1
+
+      - name: Switch traffic to green (Blue-Green deployment)
+        run: |
+          export KUBECONFIG=kubeconfig
+
+          # Update service selectors to point to green deployment
+          kubectl patch service lcopilot-api -n lcopilot-production \
+            -p '{"spec":{"selector":{"app.kubernetes.io/instance":"lcopilot-green"}}}'
+          kubectl patch service lcopilot-web -n lcopilot-production \
+            -p '{"spec":{"selector":{"app.kubernetes.io/instance":"lcopilot-green"}}}'
+
+      - name: Verify production deployment
+        run: |
+          curl --retry 10 --retry-delay 5 --fail https://app.lcopilot.com/health
+          curl --retry 10 --retry-delay 5 --fail https://app.lcopilot.com/api/health
+
+      - name: Clean up blue deployment
+        run: |
+          export KUBECONFIG=kubeconfig
+          helm uninstall lcopilot-blue -n lcopilot-production || true
+
+  # Performance Testing
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run load tests
+        run: |
+          k6 run --out json=load-test-results.json ./tests/performance/load-test.js
+        env:
+          BASE_URL: https://staging.lcopilot.com
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results
+          path: load-test-results.json
+
+      - name: Analyze performance results
+        run: |
+          node ./tests/performance/analyze-results.js load-test-results.json
+
+  # Database Migration Tests
+  migration-tests:
+    name: Database Migration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lcopilot_migration_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ./apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test database migrations
+        working-directory: ./apps/api
+        run: |
+          # Test forward migrations
+          alembic upgrade head
+
+          # Test backward migrations (last 5 revisions)
+          for i in {1..5}; do
+            alembic downgrade -1
+            alembic upgrade +1
+          done
+
+          # Final forward migration
+          alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_migration_test
+
+  # Documentation Generation
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        working-directory: ./apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install sphinx sphinx-rtd-theme
+
+      - name: Generate API documentation
+        working-directory: ./apps/api
+        run: |
+          sphinx-build -b html docs/ docs/_build/html/
+
+      - name: Install frontend dependencies
+        working-directory: ./apps/web
+        run: npm ci
+
+      - name: Generate frontend documentation
+        working-directory: ./apps/web
+        run: |
+          npm run docs:generate
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/generated
+          destination_dir: docs
+
+  # Notify on completion
+  notify:
+    name: Notify Team
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+
+    steps:
+      - name: Notify Slack on success
+        if: needs.deploy-production.result == 'success'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#deployments'
+          text: '🚀 LCopilot deployed successfully to production!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on failure
+        if: needs.deploy-production.result == 'failure'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#deployments'
+          text: '❌ LCopilot production deployment failed!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

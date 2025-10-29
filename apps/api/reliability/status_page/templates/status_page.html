@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if config.branding %}{{ config.branding.company_name }} Status{% else %}LCopilot Status{% endif %}</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f8fafc;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        .header {
+            background: {% if config.branding %}{{ config.branding.primary_color }}{% else %}#1e293b{% endif %};
+            color: white;
+            padding: 2rem 0;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        {% if config.branding %}
+        .logo {
+            max-height: 40px;
+            margin-right: 1rem;
+        }
+        {% endif %}
+
+        .tier-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            display: inline-block;
+            margin-left: 1rem;
+        }
+
+        /* Overall Status */
+        .status-overview {
+            background: white;
+            margin: 2rem 0;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .status-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+        }
+
+        .status-operational { color: #059669; }
+        .status-operational .status-icon { background: #059669; }
+
+        .status-degraded { color: #d97706; }
+        .status-degraded .status-icon { background: #d97706; }
+
+        .status-outage { color: #dc2626; }
+        .status-outage .status-icon { background: #dc2626; }
+
+        .uptime-summary {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+
+        .uptime-stat {
+            text-align: center;
+        }
+
+        .uptime-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #059669;
+        }
+
+        .uptime-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        /* Services */
+        .services-section {
+            margin: 2rem 0;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: #1f2937;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        .service-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .service-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .service-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .service-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #059669;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        /* Incidents */
+        .incidents-section {
+            margin: 2rem 0;
+        }
+
+        .incident-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+            border-left: 4px solid #e5e7eb;
+        }
+
+        .incident-card.resolved {
+            border-left-color: #059669;
+        }
+
+        .incident-card.investigating {
+            border-left-color: #d97706;
+        }
+
+        .incident-card.monitoring {
+            border-left-color: #3b82f6;
+        }
+
+        .incident-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.5rem;
+        }
+
+        .incident-title {
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .incident-impact {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+        }
+
+        .impact-minor {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .impact-major {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        .impact-critical {
+            background: #fee2e2;
+            color: #7f1d1d;
+        }
+
+        .incident-description {
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+        }
+
+        .incident-time {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+
+        .incident-affected {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .affected-service {
+            display: inline-block;
+            background: #f3f4f6;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            margin-right: 0.5rem;
+            margin-top: 0.25rem;
+        }
+
+        /* Pro/Enterprise Features */
+        .premium-feature {
+            {% if config.tier == 'free' %}
+            opacity: 0.5;
+            pointer-events: none;
+            {% endif %}
+        }
+
+        .login-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .btn {
+            background: {% if config.branding %}{{ config.branding.primary_color }}{% else %}#3b82f6{% endif %};
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Footer */
+        .footer {
+            background: #1f2937;
+            color: #9ca3af;
+            padding: 2rem 0;
+            text-align: center;
+            margin-top: 4rem;
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .footer-links a {
+            color: #9ca3af;
+            text-decoration: none;
+        }
+
+        .footer-links a:hover {
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.75rem;
+            }
+
+            .uptime-summary {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .service-metrics {
+                grid-template-columns: 1fr;
+            }
+
+            .incident-header {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+
+        /* Auto-refresh indicator */
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="container">
+            <div style="display: flex; align-items: center;">
+                {% if config.branding and config.branding.logo_url %}
+                <img src="{{ config.branding.logo_url }}" alt="Logo" class="logo">
+                {% endif %}
+                <div>
+                    <h1>{% if config.branding %}{{ config.branding.company_name }} Status{% else %}LCopilot Status{% endif %}</h1>
+                    <span class="tier-badge">{{ config.tier.title() }} Tier</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Overall Status -->
+        <div class="status-overview">
+            <div class="status-indicator status-{{ overall_status }}">
+                <span class="status-icon"></span>
+                {% if overall_status == 'operational' %}
+                    All Systems Operational
+                {% elif overall_status == 'degraded' %}
+                    Some Systems Experiencing Issues
+                {% else %}
+                    Service Disruption
+                {% endif %}
+            </div>
+
+            {% if 'uptime_metrics' in config.features %}
+            <div class="uptime-summary">
+                <div class="uptime-stat">
+                    <div class="uptime-value">{{ avg_uptime_30d }}%</div>
+                    <div class="uptime-label">30-day uptime</div>
+                </div>
+                {% if avg_response_time %}
+                <div class="uptime-stat">
+                    <div class="uptime-value">{{ avg_response_time }}ms</div>
+                    <div class="uptime-label">Avg response time</div>
+                </div>
+                {% endif %}
+                <div class="uptime-stat">
+                    <div class="uptime-value">{{ services|length }}</div>
+                    <div class="uptime-label">Services monitored</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Services -->
+        <div class="services-section">
+            <h2 class="section-title">Service Status</h2>
+            <div class="services-grid">
+                {% for service in services %}
+                <div class="service-card">
+                    <div class="service-header">
+                        <div class="service-name">{{ service.service_name }}</div>
+                        <div class="service-status status-{{ service.status }}">
+                            <span class="status-icon"></span>
+                            {{ service.status.title() }}
+                        </div>
+                    </div>
+
+                    {% if 'uptime_metrics' in config.features %}
+                    <div class="service-metrics">
+                        <div class="metric">
+                            <div class="metric-value">{{ service.uptime_24h }}%</div>
+                            <div class="metric-label">24h uptime</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{{ service.uptime_7d }}%</div>
+                            <div class="metric-label">7d uptime</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{{ service.uptime_30d }}%</div>
+                            <div class="metric-label">30d uptime</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Customer Login (Pro/Enterprise) -->
+        {% if 'customer_login' in config.features %}
+        <div class="login-section premium-feature">
+            <h3>Customer Portal</h3>
+            <p>Access detailed SLA reports, incident history, and compliance documents.</p>
+            <a href="/portal/login" class="btn">Sign In to Customer Portal</a>
+        </div>
+        {% endif %}
+
+        <!-- Incidents -->
+        {% if 'incident_history' in config.features %}
+        <div class="incidents-section">
+            <h2 class="section-title">
+                Recent Incidents
+                <span style="font-size: 1rem; font-weight: normal; color: #6b7280;">
+                    ({{ config.history_days }} day history)
+                </span>
+            </h2>
+
+            {% if incidents %}
+                {% for incident in incidents %}
+                <div class="incident-card {{ incident.status }}">
+                    <div class="incident-header">
+                        <div class="incident-title">{{ incident.title }}</div>
+                        <div class="incident-impact impact-{{ incident.impact }}">
+                            {{ incident.impact.title() }} Impact
+                        </div>
+                    </div>
+                    <div class="incident-description">{{ incident.description }}</div>
+                    <div class="incident-time">
+                        {% if incident.resolved_at %}
+                            Resolved {{ incident.resolved_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                            (Duration: {{ ((incident.resolved_at - incident.created_at).total_seconds() / 3600) | round(1) }} hours)
+                        {% else %}
+                            Started {{ incident.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                        {% endif %}
+                    </div>
+                    {% if incident.affected_services %}
+                    <div class="incident-affected">
+                        <strong>Affected services:</strong>
+                        {% for service in incident.affected_services %}
+                            <span class="affected-service">{{ service }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="incident-card resolved">
+                    <div class="incident-title">No recent incidents</div>
+                    <div class="incident-description">All systems have been operating normally.</div>
+                    <div class="incident-time">Last {{ config.history_days }} days</div>
+                </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- SLA Summaries (Pro/Enterprise) -->
+        {% if 'sla_summaries' in config.features %}
+        <div class="premium-feature">
+            <h2 class="section-title">Service Level Agreement</h2>
+            <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div class="metric">
+                        <div class="metric-value">99.9%</div>
+                        <div class="metric-label">Uptime SLA Target</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">{{ avg_uptime_30d }}%</div>
+                        <div class="metric-label">Current Month</div>
+                    </div>
+                    {% if config.tier == 'enterprise' %}
+                    <div class="metric">
+                        <div class="metric-value">✓</div>
+                        <div class="metric-label">SLA Compliance</div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if config.tier in ['pro', 'enterprise'] %}
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                    <a href="/reports/sla-latest.pdf" style="color: #3b82f6; text-decoration: none;">
+                        📄 Download Latest SLA Report
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div>
+                    <p>&copy; 2024 {% if config.branding %}{{ config.branding.company_name }}{% else %}LCopilot{% endif %}.
+                       {% if config.tier == 'enterprise' %}Enterprise{% elif config.tier == 'pro' %}Professional{% else %}Community{% endif %} Service.</p>
+                </div>
+                <div class="footer-links">
+                    {% if config.tier != 'free' %}
+                    <a href="/portal">Customer Portal</a>
+                    {% endif %}
+                    <a href="/api/health">API Health</a>
+                    <a href="/incidents">Incident History</a>
+                    {% if config.tier == 'enterprise' %}
+                    <a href="/compliance">Compliance</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refresh Indicator -->
+    <div class="refresh-indicator">
+        Last updated: {{ last_updated.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+    </div>
+
+    <!-- Auto-refresh for real-time updates -->
+    <script>
+        // Auto-refresh based on tier update frequency
+        const refreshInterval = {{ config.update_frequency_minutes or 5 }} * 60 * 1000;
+
+        setTimeout(() => {
+            window.location.reload();
+        }, refreshInterval);
+
+        // Show loading indicator on refresh
+        window.addEventListener('beforeunload', () => {
+            document.querySelector('.refresh-indicator').innerHTML = 'Updating...';
+        });
+    </script>
+</body>
+</html>

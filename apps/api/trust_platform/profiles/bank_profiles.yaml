@@ -1,0 +1,604 @@
+# Bangladesh Bank Enforcement Profiles
+# Comprehensive coverage of all major trade finance banks
+# Categories: state_owned, private, islamic, foreign
+# Enforcement levels: hyper_conservative, conservative, moderate, strict, very_strict
+
+metadata:
+  version: "1.0.0"
+  last_updated: "2024-01-15"
+  total_banks: 43
+  source: "Bangladesh Bank licensed bank registry 2024"
+
+enforcement_patterns:
+  # Pattern definitions for reusability
+  exact_beneficiary_address:
+    description: "Requires exact match of beneficiary address, no variations accepted"
+    rule_overrides:
+      beneficiary_address_validation: "fail_on_minor_differences"
+
+  strict_currency_consistency:
+    description: "Enforces exact currency consistency across all documents"
+    rule_overrides:
+      currency_consistency: "zero_tolerance"
+      amount_currency_match: "exact_match_required"
+
+  reject_minor_discrepancies:
+    description: "Fails validation on minor discrepancies that other banks might accept"
+    rule_overrides:
+      discrepancy_tolerance: "zero"
+      minor_typo_acceptance: "rejected"
+
+  hs_code_exact_match:
+    description: "Requires exact HS code match, no approximations"
+    rule_overrides:
+      hs_code_validation: "exact_match_only"
+
+  strict_date_presentation:
+    description: "Enforces strict date presentation requirements"
+    rule_overrides:
+      presentation_period: "strict_compliance"
+      date_sequence_validation: "zero_tolerance"
+
+  beneficiary_address_exact:
+    description: "Zero tolerance for beneficiary address variations"
+    rule_overrides:
+      beneficiary_validation: "exact_match_required"
+
+  insurance_coverage_110:
+    description: "Strictly enforces 110% insurance coverage minimum"
+    rule_overrides:
+      insurance_minimum: 110
+      insurance_tolerance: 0
+
+  balanced_rule_enforcement:
+    description: "Standard balanced approach to rule enforcement"
+    rule_overrides:
+      discrepancy_tolerance: "standard"
+      minor_variation_acceptance: "reasonable"
+
+  pragmatic_partial_shipments:
+    description: "Reasonable approach to partial shipment handling"
+    rule_overrides:
+      partial_shipment_tolerance: "pragmatic"
+
+  shariah_documents_required:
+    description: "Requires Shariah-compliant documentation"
+    rule_overrides:
+      shariah_compliance: "required"
+      conventional_insurance: "rejected"
+
+  full_ucp600:
+    description: "Comprehensive UCP600 rule enforcement"
+    rule_overrides:
+      ucp600_compliance: "comprehensive"
+      international_standards: "strict"
+
+  full_isbp:
+    description: "Complete ISBP guideline enforcement"
+    rule_overrides:
+      isbp_compliance: "comprehensive"
+      document_examination: "detailed"
+
+  advanced_local_requirements:
+    description: "Enhanced local regulatory requirement enforcement"
+    rule_overrides:
+      local_regulations: "enhanced"
+      bangladesh_bank_compliance: "comprehensive"
+
+banks:
+  # === STATE-OWNED COMMERCIAL BANKS ===
+  # Known for hyper-conservative approach due to government oversight
+
+  SONALI:
+    name: "Sonali Bank Limited"
+    swift_code: "SONBDDH1"
+    category: "state_owned"
+    enforcement_level: "hyper_conservative"
+    patterns:
+      - "exact_beneficiary_address"
+      - "strict_currency_consistency"
+      - "reject_minor_discrepancies"
+    market_share: "14.2%"
+    description: "Largest state bank with extremely conservative validation approach"
+
+  JANATA:
+    name: "Janata Bank Limited"
+    swift_code: "JANABBDD"
+    category: "state_owned"
+    enforcement_level: "hyper_conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "reject_minor_discrepancies"
+      - "hs_code_exact_match"
+    market_share: "8.1%"
+    description: "Second largest state bank, equally conservative"
+
+  AGRANI:
+    name: "Agrani Bank Limited"
+    swift_code: "AGBKBBDD"
+    category: "state_owned"
+    enforcement_level: "hyper_conservative"
+    patterns:
+      - "hs_code_exact_match"
+      - "strict_date_presentation"
+      - "beneficiary_address_exact"
+    market_share: "6.8%"
+    description: "Government bank with rigid documentation requirements"
+
+  RUPALI:
+    name: "Rupali Bank Limited"
+    swift_code: "RUBBDDH1"
+    category: "state_owned"
+    enforcement_level: "hyper_conservative"
+    patterns:
+      - "beneficiary_address_exact"
+      - "insurance_coverage_110"
+      - "strict_date_presentation"
+    market_share: "4.2%"
+    description: "State bank emphasizing exact documentation compliance"
+
+  # === PRIVATE COMMERCIAL BANKS ===
+  # Balanced approach, business-friendly while maintaining compliance
+
+  AB_BANK:
+    name: "AB Bank Limited"
+    swift_code: "ABBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.1%"
+    description: "Private bank with balanced validation approach"
+
+  BANK_ASIA:
+    name: "Bank Asia Limited"
+    swift_code: "BALBBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "pragmatic_partial_shipments"
+    market_share: "3.4%"
+    description: "Growing private bank with business-friendly policies"
+
+  BRAC_BANK:
+    name: "BRAC Bank Limited"
+    swift_code: "BRAKBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "pragmatic_partial_shipments"
+    market_share: "4.8%"
+    description: "Major private bank known for SME-friendly approach"
+
+  CITY_BANK:
+    name: "City Bank Limited"
+    swift_code: "CTBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "strict_currency_consistency"
+    market_share: "2.8%"
+    description: "Private bank with focus on currency compliance"
+
+  DHAKA_BANK:
+    name: "Dhaka Bank Limited"
+    swift_code: "DHBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.6%"
+    description: "Established private bank with standard practices"
+
+  DUTCH_BANGLA:
+    name: "Dutch-Bangla Bank Limited"
+    swift_code: "DBBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "pragmatic_partial_shipments"
+    market_share: "5.2%"
+    description: "Tech-forward private bank with efficient processing"
+
+  EASTERN_BANK:
+    name: "Eastern Bank Limited"
+    swift_code: "EBLBBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "3.1%"
+    description: "Leading private bank with standard validation"
+
+  IFIC_BANK:
+    name: "IFIC Bank Limited"
+    swift_code: "IFBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.4%"
+    description: "Private commercial bank with moderate approach"
+
+  JAMUNA_BANK:
+    name: "Jamuna Bank Limited"
+    swift_code: "JAMUBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "strict_currency_consistency"
+    market_share: "2.9%"
+    description: "Private bank emphasizing currency compliance"
+
+  MERCANTILE_BANK:
+    name: "Mercantile Bank Limited"
+    swift_code: "MBLBBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.3%"
+    description: "Commercial bank with standard trade finance practices"
+
+  MUTUAL_TRUST:
+    name: "Mutual Trust Bank Limited"
+    swift_code: "MTBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "1.8%"
+    description: "Private bank with moderate validation policies"
+
+  NATIONAL_BANK:
+    name: "National Bank Limited"
+    swift_code: "NBLBBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.5%"
+    description: "Established private commercial bank"
+
+  NCC_BANK:
+    name: "NCC Bank Limited"
+    swift_code: "NCCBBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "hs_code_exact_match"
+    market_share: "1.9%"
+    description: "Private bank with focus on HS code compliance"
+
+  ONE_BANK:
+    name: "One Bank Limited"
+    swift_code: "ONBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "1.6%"
+    description: "Newer private bank with standard practices"
+
+  PRIME_BANK:
+    name: "Prime Bank Limited"
+    swift_code: "PRBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "insurance_coverage_110"
+    market_share: "3.7%"
+    description: "Major private bank emphasizing insurance compliance"
+
+  PUBALI_BANK:
+    name: "Pubali Bank Limited"
+    swift_code: "PBALDD21"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.8%"
+    description: "Long-established private commercial bank"
+
+  SOUTHEAST_BANK:
+    name: "Southeast Bank Limited"
+    swift_code: "SEBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.2%"
+    description: "Private bank with standard validation approach"
+
+  STANDARD_BANK:
+    name: "Standard Bank Limited"
+    swift_code: "STBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "1.7%"
+    description: "Private commercial bank with moderate policies"
+
+  TRUST_BANK:
+    name: "Trust Bank Limited"
+    swift_code: "TBBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "1.4%"
+    description: "Private bank with balanced approach"
+
+  UCB:
+    name: "United Commercial Bank Limited"
+    swift_code: "UCBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+      - "pragmatic_partial_shipments"
+    market_share: "2.6%"
+    description: "Major private bank with pragmatic policies"
+
+  UTTARA_BANK:
+    name: "Uttara Bank Limited"
+    swift_code: "UTBLBDDH"
+    category: "private"
+    enforcement_level: "moderate"
+    patterns:
+      - "balanced_rule_enforcement"
+    market_share: "2.1%"
+    description: "Private commercial bank with standard practices"
+
+  # === ISLAMIC SHARIAH BANKS ===
+  # Conservative approach with additional Shariah compliance requirements
+
+  ISLAMI_BANK_BD:
+    name: "Islami Bank Bangladesh Limited"
+    swift_code: "IBBLBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "shariah_documents_required"
+      - "insurance_coverage_110"
+    market_share: "8.7%"
+    description: "Largest Islamic bank, strict Shariah compliance required"
+
+  SHAHJALAL_ISLAMI:
+    name: "Shahjalal Islami Bank Limited"
+    swift_code: "JIBLBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "shariah_documents_required"
+    market_share: "2.4%"
+    description: "Major Islamic bank with conservative validation"
+
+  SOCIAL_ISLAMI:
+    name: "Social Islami Bank Limited"
+    swift_code: "SIBLBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "insurance_coverage_110"
+      - "beneficiary_address_exact"
+      - "shariah_documents_required"
+    market_share: "1.8%"
+    description: "Islamic bank emphasizing exact documentation"
+
+  FSIBL:
+    name: "First Security Islami Bank Limited"
+    swift_code: "FSIBLDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_date_presentation"
+      - "shariah_documents_required"
+    market_share: "1.6%"
+    description: "Islamic bank with strict date compliance"
+
+  AL_ARAFH_ISLAMI:
+    name: "Al-Arafah Islami Bank Limited"
+    swift_code: "AIBLBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "insurance_coverage_110"
+      - "shariah_documents_required"
+    market_share: "1.9%"
+    description: "Islamic bank with strict currency and insurance rules"
+
+  UNION_BANK:
+    name: "Union Bank Limited"
+    swift_code: "UNBLBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "shariah_documents_required"
+    market_share: "1.3%"
+    description: "Islamic bank emphasizing currency compliance"
+
+  GLOBAL_ISLAMI:
+    name: "Global Islami Bank Limited"
+    swift_code: "GLOBBDDH"
+    category: "islamic"
+    enforcement_level: "conservative"
+    patterns:
+      - "strict_currency_consistency"
+      - "shariah_documents_required"
+    market_share: "1.1%"
+    description: "Islamic bank with conservative approach"
+
+  # === FOREIGN BANKS ===
+  # Very strict enforcement following international standards
+
+  STANDARD_CHARTERED:
+    name: "Standard Chartered Bank"
+    swift_code: "SCBLBDDX"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "full_isbp"
+      - "advanced_local_requirements"
+    market_share: "3.2%"
+    description: "UK multinational bank with comprehensive rule enforcement"
+
+  HSBC:
+    name: "HSBC Bangladesh"
+    swift_code: "HBBLBDDH"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "full_isbp"
+      - "advanced_local_requirements"
+    market_share: "2.8%"
+    description: "Global bank with international standard enforcement"
+
+  CITI:
+    name: "Citibank N.A."
+    swift_code: "CITIBDDX"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "full_isbp"
+      - "strict_date_presentation"
+    market_share: "1.4%"
+    description: "US multinational with strict date compliance"
+
+  COM_BANK_CEYLON:
+    name: "Commercial Bank of Ceylon"
+    swift_code: "CCEYBDDH"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "strict_currency_consistency"
+    market_share: "0.8%"
+    description: "Sri Lankan bank with strict currency enforcement"
+
+  BANK_ALFALAH:
+    name: "Bank Alfalah Limited"
+    swift_code: "ALFHBDDH"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "advanced_local_requirements"
+    market_share: "0.6%"
+    description: "Pakistani bank with enhanced local compliance"
+
+  HABIB_BANK:
+    name: "Habib Bank Limited"
+    swift_code: "HABBDDHA"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "strict_date_presentation"
+    market_share: "0.7%"
+    description: "Pakistani bank emphasizing date compliance"
+
+  NBP:
+    name: "National Bank of Pakistan"
+    swift_code: "NBPABBKA"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "insurance_coverage_110"
+    market_share: "0.5%"
+    description: "Pakistani state bank with strict insurance requirements"
+
+  SBI:
+    name: "State Bank of India"
+    swift_code: "SBINBBKA"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+    market_share: "0.9%"
+    description: "Indian state bank with comprehensive UCP600 enforcement"
+
+  WOORI:
+    name: "Woori Bank"
+    swift_code: "HVBKBDDH"
+    category: "foreign"
+    enforcement_level: "very_strict"
+    patterns:
+      - "full_ucp600"
+      - "full_isbp"
+    market_share: "0.3%"
+    description: "Korean bank with comprehensive international standards"
+
+# Enforcement level definitions
+enforcement_levels:
+  hyper_conservative:
+    description: "Government banks with zero tolerance for any discrepancies"
+    base_compliance_threshold: 0.95
+    discrepancy_multiplier: 2.0
+    rejection_rate_typical: "45-60%"
+
+  conservative:
+    description: "Islamic and traditional banks with strict interpretation"
+    base_compliance_threshold: 0.85
+    discrepancy_multiplier: 1.5
+    rejection_rate_typical: "30-45%"
+
+  moderate:
+    description: "Private banks balancing compliance with business pragmatism"
+    base_compliance_threshold: 0.75
+    discrepancy_multiplier: 1.0
+    rejection_rate_typical: "15-30%"
+
+  strict:
+    description: "Professional enforcement with international standards"
+    base_compliance_threshold: 0.80
+    discrepancy_multiplier: 1.3
+    rejection_rate_typical: "25-40%"
+
+  very_strict:
+    description: "Foreign banks with comprehensive international rule enforcement"
+    base_compliance_threshold: 0.90
+    discrepancy_multiplier: 1.8
+    rejection_rate_typical: "40-55%"
+
+# Category characteristics
+category_characteristics:
+  state_owned:
+    typical_processing_time: "7-14 days"
+    documentation_requirements: "Extensive"
+    flexibility_level: "Very Low"
+    government_oversight: "High"
+
+  private:
+    typical_processing_time: "3-7 days"
+    documentation_requirements: "Standard"
+    flexibility_level: "Moderate"
+    government_oversight: "Standard"
+
+  islamic:
+    typical_processing_time: "5-10 days"
+    documentation_requirements: "Standard + Shariah"
+    flexibility_level: "Low"
+    government_oversight: "Standard + Shariah Board"
+
+  foreign:
+    typical_processing_time: "2-5 days"
+    documentation_requirements: "International Standards"
+    flexibility_level: "Very Low"
+    government_oversight: "High (Multiple jurisdictions)"

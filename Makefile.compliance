@@ -1,0 +1,222 @@
+# LCopilot Compliance Hardening Makefile
+# Sprint 8.1 - Encryption, Residency, DR, and Observability
+
+.PHONY: help compliance_init infra_init k8s_obs_install db_migrate_compliance seed_compliance backups_full backups_incr dr_drill export_dashboards compliance_test compliance_clean
+
+# Default target
+help:
+	@echo "LCopilot Compliance Hardening Commands"
+	@echo "======================================="
+	@echo ""
+	@echo "Infrastructure:"
+	@echo "  compliance_init     - Initialize all compliance infrastructure"
+	@echo "  infra_init          - Initialize Terraform infrastructure (AWS/MinIO)"
+	@echo "  k8s_obs_install     - Install observability stack (Prometheus/Grafana/Loki)"
+	@echo ""
+	@echo "Database:"
+	@echo "  db_migrate_compliance - Run compliance-specific database migrations"
+	@echo "  seed_compliance     - Seed compliance demo data (policies, etc.)"
+	@echo ""
+	@echo "Backup & DR:"
+	@echo "  backups_full        - Run full backup (PostgreSQL + Object Storage)"
+	@echo "  backups_incr        - Run incremental backup"
+	@echo "  dr_drill            - Execute disaster recovery drill"
+	@echo ""
+	@echo "Observability:"
+	@echo "  export_dashboards   - Export Grafana dashboards to repository"
+	@echo "  update_alerts       - Update Prometheus alert rules"
+	@echo ""
+	@echo "Testing & Validation:"
+	@echo "  compliance_test     - Run all compliance tests"
+	@echo "  test_encryption     - Test encryption functionality"
+	@echo "  test_residency      - Test data residency controls"
+	@echo "  test_backups        - Validate backup integrity"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  compliance_clean    - Clean up compliance infrastructure"
+
+# Master initialization target
+compliance_init: infra_init k8s_obs_install db_migrate_compliance seed_compliance
+	@echo "✅ Compliance hardening initialization complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Run 'make backups_full' to create initial backup"
+	@echo "2. Run 'make dr_drill' to test disaster recovery"
+	@echo "3. Access Grafana at http://localhost:3000 (admin/admin)"
+	@echo "4. Check compliance status at /admin/compliance"
+
+# Infrastructure initialization
+infra_init:
+	@echo "🏗️  Initializing compliance infrastructure..."
+	@if [ "$(ENVIRONMENT)" = "aws" ]; then \
+		echo "Setting up AWS infrastructure..."; \
+		cd infra/terraform/aws/s3_kms && terraform init && terraform plan && terraform apply -auto-approve; \
+		cd ../iam_policies && terraform init && terraform plan && terraform apply -auto-approve; \
+	else \
+		echo "Setting up MinIO infrastructure..."; \
+		cd infra/minio && docker-compose up -d; \
+		sleep 30; \
+		echo "MinIO setup complete"; \
+	fi
+	@echo "✅ Infrastructure initialized"
+
+# Observability stack installation
+k8s_obs_install:
+	@echo "📊 Installing observability stack..."
+	@# Add Prometheus Helm repo
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo add grafana https://grafana.github.io/helm-charts
+	helm repo update
+
+	@# Install Prometheus
+	helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+		--namespace monitoring --create-namespace \
+		--values infra/helm/prometheus/values.yaml \
+		--wait
+
+	@# Install Loki
+	helm upgrade --install loki grafana/loki-stack \
+		--namespace monitoring \
+		--values infra/helm/loki/values.yaml \
+		--wait
+
+	@# Install Tempo (optional)
+	helm upgrade --install tempo grafana/tempo \
+		--namespace monitoring \
+		--values infra/helm/tempo/values.yaml \
+		--wait
+
+	@echo "✅ Observability stack installed"
+	@echo "Grafana: kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80"
+
+# Database migrations
+db_migrate_compliance:
+	@echo "🗄️  Running compliance database migrations..."
+	cd apps/api && alembic upgrade head
+	@echo "✅ Database migrations completed"
+
+# Seed compliance demo data
+seed_compliance:
+	@echo "🌱 Seeding compliance demo data..."
+	cd apps/api && python scripts/seed_compliance_data.py
+	@echo "✅ Compliance demo data seeded"
+
+# Backup operations
+backups_full:
+	@echo "💾 Starting full backup..."
+	@# PostgreSQL full backup
+	cd scripts/backup && ./pgbackrest_full.sh
+	@# Object storage backup verification
+	cd scripts/backup && python verify_object_integrity.py
+	@echo "✅ Full backup completed"
+
+backups_incr:
+	@echo "💾 Starting incremental backup..."
+	cd scripts/backup && ./pgbackrest_incr.sh
+	@echo "✅ Incremental backup completed"
+
+# Disaster recovery drill
+dr_drill:
+	@echo "🚨 Starting disaster recovery drill..."
+	cd scripts/dr && python run_failover_drill.py
+	cd scripts/dr && python generate_dr_report.py
+	@echo "✅ DR drill completed - check reports in artifacts/"
+
+# Export Grafana dashboards
+export_dashboards:
+	@echo "📊 Exporting Grafana dashboards..."
+	cd scripts/observability && ./export_grafana_dashboards.sh
+	@echo "✅ Dashboards exported to ops/grafana/dashboards/"
+
+# Update Prometheus alerts
+update_alerts:
+	@echo "🚨 Updating Prometheus alert rules..."
+	kubectl apply -f ops/prometheus/rules/ -n monitoring
+	@echo "✅ Alert rules updated"
+
+# Testing targets
+compliance_test: test_encryption test_residency test_backups test_observability
+	@echo "✅ All compliance tests completed"
+
+test_encryption:
+	@echo "🔐 Testing encryption functionality..."
+	cd apps/api && python -m pytest tests/compliance/test_encryption_events.py -v
+
+test_residency:
+	@echo "🌍 Testing residency enforcement..."
+	cd apps/api && python -m pytest tests/compliance/test_residency_enforcement.py -v
+
+test_backups:
+	@echo "💾 Testing backup integrity..."
+	cd apps/api && python -m pytest tests/compliance/test_backups_and_drills.py -v
+
+test_observability:
+	@echo "📊 Testing observability metrics..."
+	cd apps/api && python -m pytest tests/compliance/test_metrics_and_alerts.py -v
+
+# Validation targets
+validate_encryption:
+	@echo "🔐 Validating encryption setup..."
+	@cd apps/api && python scripts/validate_encryption.py
+
+validate_residency:
+	@echo "🌍 Validating residency policies..."
+	@cd apps/api && python scripts/validate_residency.py
+
+validate_slo:
+	@echo "📈 Validating SLO metrics..."
+	@cd scripts/observability && python validate_slo_metrics.py
+
+# Cleanup
+compliance_clean:
+	@echo "🧹 Cleaning up compliance infrastructure..."
+	@if [ "$(ENVIRONMENT)" = "aws" ]; then \
+		cd infra/terraform/aws/s3_kms && terraform destroy -auto-approve; \
+		cd ../iam_policies && terraform destroy -auto-approve; \
+	else \
+		cd infra/minio && docker-compose down -v; \
+	fi
+	helm uninstall prometheus -n monitoring || true
+	helm uninstall loki -n monitoring || true
+	helm uninstall tempo -n monitoring || true
+	kubectl delete namespace monitoring || true
+	@echo "✅ Cleanup completed"
+
+# Demo targets for quick testing
+demo_encryption:
+	@echo "🔐 Demo: Testing encryption flow..."
+	@cd apps/api && python scripts/demo_encryption.py
+
+demo_residency:
+	@echo "🌍 Demo: Testing residency enforcement..."
+	@cd apps/api && python scripts/demo_residency.py
+
+demo_dr:
+	@echo "🚨 Demo: Disaster recovery simulation..."
+	@cd scripts/dr && python demo_dr_scenario.py
+
+# Environment-specific targets
+setup_dev: compliance_init
+	@echo "🚀 Development environment setup complete"
+
+setup_staging: infra_init k8s_obs_install db_migrate_compliance
+	@echo "🚀 Staging environment setup complete"
+
+setup_prod: infra_init k8s_obs_install db_migrate_compliance backups_full
+	@echo "🚀 Production environment setup complete"
+
+# Health checks
+health_check:
+	@echo "🏥 Running compliance health checks..."
+	@cd apps/api && python scripts/compliance_health_check.py
+
+# Documentation generation
+generate_docs:
+	@echo "📚 Generating compliance documentation..."
+	@cd docs && python generate_compliance_docs.py
+
+# Compliance attestation
+generate_attestation:
+	@echo "📋 Generating compliance attestation..."
+	@cd docs && python generate_attestation.py > COMPLIANCE_ATTESTATION_$(shell date +%Y%m%d).md
+	@echo "✅ Attestation generated"

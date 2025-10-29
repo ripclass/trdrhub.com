@@ -1,0 +1,277 @@
+groups:
+  - name: lcpilot_workflow_alerts
+    interval: 30s
+    rules:
+      # P1 Alerts - Critical Issues
+      - alert: QueueLagCritical
+        expr: queue_lag_seconds > 300
+        for: 10m
+        labels:
+          severity: P1
+          component: queue
+          service: lcpilot
+        annotations:
+          summary: "Critical queue lag detected"
+          description: "Queue {{ $labels.queue }} for tenant {{ $labels.tenant }} has lag of {{ $value }}s for more than 10 minutes"
+          runbook_url: "https://docs.lcpilot.com/runbooks/queue-lag"
+
+      - alert: AllWorkersDown
+        expr: sum(queue_worker_active) by (tenant, queue) == 0
+        for: 5m
+        labels:
+          severity: P1
+          component: queue
+          service: lcpilot
+        annotations:
+          summary: "All queue workers are down"
+          description: "No active workers for queue {{ $labels.queue }} in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/workers-down"
+
+      - alert: NotificationDeliveryCompleteFailure
+        expr: |
+          (
+            rate(notify_delivery_attempts_total{status="failed"}[5m]) /
+            rate(notify_delivery_attempts_total[5m])
+          ) * 100 > 50
+        for: 15m
+        labels:
+          severity: P1
+          component: notifications
+          service: lcpilot
+        annotations:
+          summary: "Notification delivery completely failing"
+          description: "More than 50% of notifications failing for tenant {{ $labels.tenant }} via {{ $labels.provider }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/notification-failure"
+
+      # P2 Alerts - High Priority Issues
+      - alert: NotificationDeliveryHighFailureRate
+        expr: |
+          (
+            rate(notify_delivery_attempts_total{status="failed"}[5m]) /
+            rate(notify_delivery_attempts_total[5m])
+          ) * 100 > 5
+        for: 30m
+        labels:
+          severity: P2
+          component: notifications
+          service: lcpilot
+        annotations:
+          summary: "High notification delivery failure rate"
+          description: "{{ $value | humanize }}% of notifications failing for tenant {{ $labels.tenant }} via {{ $labels.provider }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/notification-failure"
+
+      - alert: ReportExportSlowness
+        expr: histogram_quantile(0.95, rate(report_export_duration_seconds_bucket[5m])) > 30
+        for: 20m
+        labels:
+          severity: P2
+          component: reports
+          service: lcpilot
+        annotations:
+          summary: "Report exports taking too long"
+          description: "P95 export duration is {{ $value | humanize }}s for {{ $labels.type }} reports in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/slow-reports"
+
+      - alert: QueueHighFailureRate
+        expr: |
+          (
+            rate(queue_failures_total[5m]) /
+            rate(queue_processed_total[5m])
+          ) * 100 > 10
+        for: 20m
+        labels:
+          severity: P2
+          component: queue
+          service: lcpilot
+        annotations:
+          summary: "High queue processing failure rate"
+          description: "{{ $value | humanize }}% failure rate for queue {{ $labels.queue }} in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/queue-failures"
+
+      - alert: BulkProcessingStalled
+        expr: bulk_throughput_items_per_second < 0.1
+        for: 30m
+        labels:
+          severity: P2
+          component: bulk
+          service: lcpilot
+        annotations:
+          summary: "Bulk processing throughput critically low"
+          description: "Bulk {{ $labels.job_type }} processing for tenant {{ $labels.tenant }} at {{ $value | humanize }} items/sec"
+          runbook_url: "https://docs.lcpilot.com/runbooks/bulk-stalled"
+
+      - alert: GovernanceApprovalBacklog
+        expr: governance_approvals_pending > 10
+        for: 1h
+        labels:
+          severity: P2
+          component: governance
+          service: lcpilot
+        annotations:
+          summary: "Large governance approval backlog"
+          description: "{{ $value }} pending {{ $labels.action_type }} approvals for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/approval-backlog"
+
+      # P3 Alerts - Medium Priority Issues
+      - alert: NotificationDigestDelayed
+        expr: |
+          time() - on() (
+            max(timestamp(notify_digest_duration_seconds)) by (tenant, period)
+          ) > 7200
+        for: 1h
+        labels:
+          severity: P3
+          component: notifications
+          service: lcpilot
+        annotations:
+          summary: "Notification digest generation delayed"
+          description: "{{ $labels.period }} digest for tenant {{ $labels.tenant }} is {{ $value | humanizeTimestamp }} behind schedule"
+          runbook_url: "https://docs.lcpilot.com/runbooks/digest-delay"
+
+      - alert: ReportExportErrorRate
+        expr: |
+          (
+            rate(report_export_errors_total[5m]) /
+            rate(report_export_requests_total[5m])
+          ) * 100 > 2
+        for: 45m
+        labels:
+          severity: P3
+          component: reports
+          service: lcpilot
+        annotations:
+          summary: "Elevated report export error rate"
+          description: "{{ $value | humanize }}% error rate for {{ $labels.type }} exports in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/report-errors"
+
+      - alert: CollaborationThreadsAccumulating
+        expr: sum(collab_threads_open{priority="high"}) by (tenant) > 20
+        for: 4h
+        labels:
+          severity: P3
+          component: collaboration
+          service: lcpilot
+        annotations:
+          summary: "Many high-priority collaboration threads open"
+          description: "{{ $value }} high-priority threads open for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/thread-backlog"
+
+      - alert: BulkProcessingHighMemoryUsage
+        expr: bulk_memory_usage_bytes > 2000000000  # 2GB
+        for: 30m
+        labels:
+          severity: P3
+          component: bulk
+          service: lcpilot
+        annotations:
+          summary: "High memory usage in bulk processing"
+          description: "Bulk {{ $labels.job_type }} using {{ $value | humanizeBytes }} for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/bulk-memory"
+
+      # SLO Alerts
+      - alert: NotificationSLOBreach
+        expr: |
+          (
+            (
+              rate(notify_delivery_attempts_total{status="delivered"}[1h]) /
+              rate(notify_delivery_attempts_total[1h])
+            ) * 100
+          ) < 95
+        for: 1h
+        labels:
+          severity: P2
+          component: notifications
+          service: lcpilot
+          slo: "notification_delivery"
+        annotations:
+          summary: "Notification delivery SLO breach"
+          description: "Notification delivery success rate {{ $value | humanize }}% below 95% SLO for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/slos/notification-delivery"
+
+      - alert: ReportGenerationSLOBreach
+        expr: |
+          histogram_quantile(0.90, rate(report_export_duration_seconds_bucket[1h])) > 60
+        for: 2h
+        labels:
+          severity: P2
+          component: reports
+          service: lcpilot
+          slo: "report_generation"
+        annotations:
+          summary: "Report generation SLO breach"
+          description: "P90 report generation time {{ $value | humanize }}s exceeds 60s SLO for {{ $labels.type }} in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/slos/report-generation"
+
+      - alert: QueueProcessingSLOBreach
+        expr: queue_lag_seconds > 120
+        for: 30m
+        labels:
+          severity: P2
+          component: queue
+          service: lcpilot
+          slo: "queue_processing"
+        annotations:
+          summary: "Queue processing SLO breach"
+          description: "Queue {{ $labels.queue }} lag {{ $value | humanize }}s exceeds 120s SLO for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/slos/queue-processing"
+
+      # Capacity Planning Alerts
+      - alert: NotificationVolumeSpike
+        expr: |
+          rate(notify_events_total[5m]) >
+          3 * rate(notify_events_total[1h] offset 1d)
+        for: 15m
+        labels:
+          severity: P3
+          component: notifications
+          service: lcpilot
+          type: capacity
+        annotations:
+          summary: "Notification volume spike detected"
+          description: "Notification volume {{ $value | humanize }}/s is 3x normal for {{ $labels.event_key }} in tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/volume-spike"
+
+      - alert: ReportExportVolumeSpike
+        expr: |
+          rate(report_export_requests_total[5m]) >
+          5 * rate(report_export_requests_total[1h] offset 1d)
+        for: 15m
+        labels:
+          severity: P3
+          component: reports
+          service: lcpilot
+          type: capacity
+        annotations:
+          summary: "Report export volume spike detected"
+          description: "Report export volume {{ $value | humanize }}/s is 5x normal for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/volume-spike"
+
+      # Predictive Alerts
+      - alert: QueueBacklogGrowing
+        expr: |
+          predict_linear(queue_lag_seconds[30m], 3600) > 600
+        for: 10m
+        labels:
+          severity: P3
+          component: queue
+          service: lcpilot
+          type: predictive
+        annotations:
+          summary: "Queue backlog predicted to grow"
+          description: "Queue {{ $labels.queue }} lag predicted to reach 10+ minutes within 1 hour for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/queue-prediction"
+
+      - alert: NotificationProviderDegrading
+        expr: |
+          histogram_quantile(0.95, rate(notify_delivery_duration_seconds_bucket[30m])) >
+          2 * histogram_quantile(0.95, rate(notify_delivery_duration_seconds_bucket[30m] offset 1d))
+        for: 20m
+        labels:
+          severity: P3
+          component: notifications
+          service: lcpilot
+          type: predictive
+        annotations:
+          summary: "Notification provider performance degrading"
+          description: "{{ $labels.provider }} P95 latency {{ $value | humanize }}s is 2x normal for tenant {{ $labels.tenant }}"
+          runbook_url: "https://docs.lcpilot.com/runbooks/provider-degradation"

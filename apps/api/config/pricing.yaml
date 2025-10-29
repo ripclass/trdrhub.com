@@ -1,0 +1,113 @@
+# LCopilot Pricing Configuration
+# Central source of truth for SME and Bank pricing
+
+sme_pricing:
+  tiers:
+    basic:
+      name: "Basic"
+      price_bdt: 1200
+      price_usd: 14
+      checks_included: 3
+      features:
+        - "Basic LC validation"
+        - "UCP600 compliance check"
+        - "Plain English summary"
+        - "Community support"
+      limitations:
+        - "3 checks per month"
+        - "Basic support only"
+        - "No audit trail"
+
+    professional:
+      name: "Professional"
+      price_bdt: 999
+      price_usd: 12
+      checks_included: 50
+      features:
+        - "Full LC validation suite"
+        - "UCP600 + ISBP compliance"
+        - "Bangladesh local rules"
+        - "Evidence packs"
+        - "Priority support"
+        - "SLA reports"
+      limitations:
+        - "50 checks per month"
+        - "Email support"
+
+    enterprise:
+      name: "Enterprise"
+      price_bdt: 699
+      price_usd: 8
+      checks_included: "unlimited"
+      features:
+        - "Complete validation platform"
+        - "All compliance standards"
+        - "Custom rule integration"
+        - "Audit-grade evidence"
+        - "Dedicated support"
+        - "API access"
+        - "Custom integrations"
+        - "White-label options"
+      limitations: []
+
+  promotional:
+    discount_percent: 30
+    valid_until: "2024-12-31"
+    message: "Limited time: 30% off first 3 months"
+
+bank_pricing:
+  pilot:
+    name: "Bank Pilot Program"
+    pricing_model: "negotiable"
+    options:
+      flat_license:
+        name: "Flat Annual License"
+        price_range: "$25,000 - $100,000"
+        description: "Full platform access for institution"
+        includes:
+          - "Unlimited validations"
+          - "Custom bank rule integration"
+          - "Dedicated support team"
+          - "Training and onboarding"
+          - "Quarterly business reviews"
+
+      per_check:
+        name: "Per-Check Licensing"
+        price_per_thousand: "$500 - $2,000"
+        description: "Pay per validation volume"
+        includes:
+          - "Flexible scaling"
+          - "Monthly billing"
+          - "Volume discounts available"
+          - "Standard support"
+
+    pilot_benefits:
+      - "50% discount for first year"
+      - "Free integration support"
+      - "Custom compliance rule development"
+      - "Priority feature requests"
+      - "Case study opportunities"
+
+  enterprise:
+    name: "Bank Enterprise"
+    contact_required: true
+    features:
+      - "Multi-branch deployment"
+      - "Central administration"
+      - "Advanced analytics"
+      - "Regulatory reporting"
+      - "24/7 support"
+
+currency:
+  primary: "BDT"
+  secondary: "USD"
+  exchange_rate: 85
+  last_updated: "2024-01-15"
+
+localization:
+  bengali:
+    enabled: true
+    currency_symbol: "৳"
+    per_check: "প্রতি চেক"
+    per_month: "প্রতি মাসে"
+    unlimited: "সীমাহীন"

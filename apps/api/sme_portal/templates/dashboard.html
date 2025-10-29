@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - LCopilot SME Portal{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <div>
+            <h1 style="margin: 0; color: #1e293b;">Welcome to LCopilot</h1>
+            <p style="color: #64748b; margin: 0.5rem 0;">Your LC compliance validation dashboard</p>
+        </div>
+        <div>
+            <span class="tier-badge tier-{{ customer_summary.tier.lower().replace(' ', '') }}">
+                {{ customer_summary.tier }} Plan
+            </span>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ customer_summary.usage.checks_today }}</div>
+            <div class="stat-label">Checks Today</div>
+            {% if customer_summary.limits.daily_limit != "Unlimited" %}
+                <div style="font-size: 0.875rem; color: #64748b;">
+                    {{ customer_summary.remaining.today }} remaining
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-number">{{ customer_summary.usage.checks_this_month }}</div>
+            <div class="stat-label">This Month</div>
+            {% if customer_summary.limits.monthly_limit != "Unlimited" %}
+                <div style="font-size: 0.875rem; color: #64748b;">
+                    {{ customer_summary.remaining.this_month }} remaining
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-number">{{ customer_summary.usage.total_lifetime }}</div>
+            <div class="stat-label">Total Validated</div>
+            <div style="font-size: 0.875rem; color: #64748b;">Lifetime</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-number">{{ customer_summary.usage.monthly_usage_percent }}%</div>
+            <div class="stat-label">Monthly Usage</div>
+            <div style="font-size: 0.875rem; color: #64748b;">
+                {{ customer_summary.remaining.days_until_monthly_reset }} days until reset
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom: 1.5rem; color: #1e293b;">Quick Actions</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+        <div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">🔍 Validate New LC</h3>
+            <p style="color: #64748b; margin-bottom: 1.5rem;">
+                Upload your LC document for instant compliance validation against UCP600, ISBP, and local regulations.
+            </p>
+            <a href="{{ url_for('validate_lc') }}" class="btn btn-primary">
+                Start Validation
+            </a>
+        </div>
+
+        {% if 'Evidence packs' in customer_summary.tier_features %}
+        <div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">📦 Create Evidence Pack</h3>
+            <p style="color: #64748b; margin-bottom: 1.5rem;">
+                Generate tamper-proof evidence packages for your validated LCs with digital signatures.
+            </p>
+            <a href="{{ url_for('create_evidence_pack') }}" class="btn btn-success">
+                Create Package
+            </a>
+        </div>
+        {% endif %}
+
+        <div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">💰 Upgrade Plan</h3>
+            <p style="color: #64748b; margin-bottom: 1.5rem;">
+                Get more validations, advanced features, and priority support with our Pro and Enterprise plans.
+            </p>
+            <a href="{{ url_for('pricing') }}" class="btn btn-warning">
+                View Pricing
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom: 1.5rem; color: #1e293b;">Your Current Plan</h2>
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem;">
+        <div>
+            <h3 style="color: #374151;">{{ customer_summary.tier }}</h3>
+            <div style="margin: 1rem 0;">
+                <div style="margin-bottom: 0.5rem;"><strong>Daily Limit:</strong> {{ customer_summary.limits.daily_limit }}</div>
+                <div style="margin-bottom: 0.5rem;"><strong>Monthly Limit:</strong> {{ customer_summary.limits.monthly_limit }}</div>
+                <div style="margin-bottom: 0.5rem;"><strong>Max File Size:</strong> {{ customer_summary.limits.max_file_size_mb }}MB</div>
+            </div>
+        </div>
+        <div>
+            <h4 style="color: #374151; margin-bottom: 1rem;">Features Available:</h4>
+            <ul style="list-style: none; padding: 0;">
+                {% for feature in customer_summary.tier_features %}
+                <li style="margin-bottom: 0.5rem;">
+                    <span style="color: #10b981;">✓</span> {{ feature }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+{% if customer_summary.last_check %}
+<div class="card">
+    <h2 style="margin-bottom: 1rem; color: #1e293b;">Recent Activity</h2>
+    <p style="color: #64748b;">
+        Last validation: {{ customer_summary.last_check | replace('T', ' ') | replace('Z', ' UTC') }}
+    </p>
+    <p style="color: #64748b;">
+        Member since: {{ customer_summary.member_since | replace('T', ' ') | replace('Z', ' UTC') }}
+    </p>
+</div>
+{% endif %}
+
+<script>
+// Auto-refresh usage stats every 30 seconds
+setInterval(function() {
+    fetch('/api/customer-summary?tier={{ tier }}')
+        .then(response => response.json())
+        .then(data => {
+            // Update usage numbers
+            const checksTodayEl = document.querySelector('.stat-card:nth-child(1) .stat-number');
+            const checksMonthEl = document.querySelector('.stat-card:nth-child(2) .stat-number');
+            const totalEl = document.querySelector('.stat-card:nth-child(3) .stat-number');
+
+            if (checksTodayEl) checksTodayEl.textContent = data.usage.checks_today;
+            if (checksMonthEl) checksMonthEl.textContent = data.usage.checks_this_month;
+            if (totalEl) totalEl.textContent = data.usage.total_lifetime;
+        })
+        .catch(error => console.log('Stats update failed:', error));
+}, 30000);
+</script>
+{% endblock %}

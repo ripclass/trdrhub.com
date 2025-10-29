@@ -1,0 +1,249 @@
+# Repository settings for LCopilot
+# This file is used with the probot/settings app to automatically configure repository settings
+
+repository:
+  name: trdrhub.com
+  description: "LCopilot - Enterprise-grade Letter of Credit validation and compliance platform"
+  homepage: https://lcopilot.com
+  topics:
+    - fintech
+    - letter-of-credit
+    - compliance
+    - trade-finance
+    - fastapi
+    - react
+    - typescript
+    - postgresql
+  private: true
+  has_issues: true
+  has_projects: true
+  has_wiki: false
+  has_downloads: true
+  default_branch: main
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: true
+  delete_branch_on_merge: true
+  enable_automated_security_fixes: true
+  enable_vulnerability_alerts: true
+
+# Collaborators
+# collaborators:
+#   - username: admin-user
+#     permission: admin
+#   - username: developer-user
+#     permission: push
+
+# Teams (if using GitHub Teams)
+# teams:
+#   - name: developers
+#     permission: push
+#   - name: admins
+#     permission: admin
+
+# Branch protection rules
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "Backend Tests & Quality"
+          - "Frontend Tests & Quality"
+          - "E2E Tests"
+          - "Security Scan"
+          - "Build Container Images"
+      enforce_admins: false
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        dismissal_restrictions:
+          users: []
+          teams: []
+      restrictions:
+        users: []
+        teams: []
+        apps: []
+      required_linear_history: false
+      allow_force_pushes: false
+      allow_deletions: false
+
+  - name: develop
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "Backend Tests & Quality"
+          - "Frontend Tests & Quality"
+          - "E2E Tests"
+      enforce_admins: false
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: false
+      restrictions: null
+      required_linear_history: false
+      allow_force_pushes: false
+      allow_deletions: false
+
+# Issue and PR labels
+labels:
+  # Type labels
+  - name: "type: bug"
+    color: d73a4a
+    description: Something isn't working
+
+  - name: "type: feature"
+    color: a2eeef
+    description: New feature or request
+
+  - name: "type: enhancement"
+    color: a2eeef
+    description: Enhancement to existing feature
+
+  - name: "type: documentation"
+    color: 0075ca
+    description: Improvements or additions to documentation
+
+  - name: "type: refactor"
+    color: fbca04
+    description: Code refactoring
+
+  - name: "type: test"
+    color: 90ee90
+    description: Testing improvements
+
+  - name: "type: chore"
+    color: fef2c0
+    description: Maintenance tasks
+
+  # Priority labels
+  - name: "priority: critical"
+    color: b60205
+    description: Critical priority
+
+  - name: "priority: high"
+    color: d93f0b
+    description: High priority
+
+  - name: "priority: medium"
+    color: fbca04
+    description: Medium priority
+
+  - name: "priority: low"
+    color: 0e8a16
+    description: Low priority
+
+  # Component labels
+  - name: "component: api"
+    color: 1d76db
+    description: Backend API related
+
+  - name: "component: frontend"
+    color: 1d76db
+    description: Frontend web application
+
+  - name: "component: database"
+    color: 1d76db
+    description: Database related
+
+  - name: "component: auth"
+    color: 1d76db
+    description: Authentication and authorization
+
+  - name: "component: billing"
+    color: 1d76db
+    description: Billing and payments
+
+  - name: "component: compliance"
+    color: 1d76db
+    description: Compliance and governance
+
+  - name: "component: monitoring"
+    color: 1d76db
+    description: Monitoring and observability
+
+  - name: "component: notifications"
+    color: 1d76db
+    description: Notifications system
+
+  - name: "component: infrastructure"
+    color: 1d76db
+    description: Infrastructure and deployment
+
+  # Status labels
+  - name: "status: blocked"
+    color: b60205
+    description: Blocked by external dependencies
+
+  - name: "status: in-progress"
+    color: fbca04
+    description: Currently being worked on
+
+  - name: "status: review-needed"
+    color: 0075ca
+    description: Needs code review
+
+  - name: "status: testing-needed"
+    color: 0075ca
+    description: Needs testing
+
+  - name: "status: ready-to-merge"
+    color: 0e8a16
+    description: Ready to be merged
+
+  # Special labels
+  - name: "security"
+    color: b60205
+    description: Security related issue
+
+  - name: "performance"
+    color: fbca04
+    description: Performance related
+
+  - name: "breaking-change"
+    color: d93f0b
+    description: Contains breaking changes
+
+  - name: "good-first-issue"
+    color: 7057ff
+    description: Good for newcomers
+
+  - name: "help-wanted"
+    color: 008672
+    description: Extra attention is needed
+
+  - name: "duplicate"
+    color: cfd3d7
+    description: This issue or pull request already exists
+
+  - name: "invalid"
+    color: e4e669
+    description: This doesn't seem right
+
+  - name: "question"
+    color: cc317c
+    description: Further information is requested
+
+  - name: "wontfix"
+    color: ffffff
+    description: This will not be worked on
+
+# Milestones
+milestones:
+  - title: "v1.0.0 - MVP Release"
+    description: "Minimum viable product with core Letter of Credit validation features"
+    state: open
+
+  - title: "v1.1.0 - Enterprise Features"
+    description: "Advanced billing, compliance, and governance features"
+    state: open
+
+  - title: "v1.2.0 - Multi-Region Support"
+    description: "Multi-region deployment and data residency compliance"
+    state: open
+
+  - title: "v2.0.0 - AI Integration"
+    description: "AI-powered document analysis and fraud detection"
+    state: open

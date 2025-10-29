@@ -1,0 +1,141 @@
+# Dutch-Bangla Bank Limited - Rule Pack Configuration
+# Modern, efficient processing with digital-first approach
+
+bank_info:
+  name: "Dutch-Bangla Bank Limited"
+  code: "DBBLBDDH"
+  type: "private_commercial"
+  country: "Bangladesh"
+  regulatory_style: "progressive"
+  processing_approach: "efficient"
+
+validation_profile:
+  strictness_level: "moderate"
+  documentation_requirements: "standard"
+  processing_time_expectation: "fast"
+  risk_tolerance: "moderate"
+  compliance_focus: "international_standards"
+
+specific_rules:
+  currency_validation:
+    preferred_currencies: ["USD", "EUR", "GBP", "JPY", "CNY", "SGD"]
+    auto_approval_limit: 500000     # USD equivalent - higher than conservative banks
+    requires_approval_above: 2000000
+    notes: "Higher delegation for faster processing, modern forex capabilities"
+
+  documentation_requirements:
+    mandatory_documents:
+      - "Commercial Invoice"
+      - "Bill of Lading"
+      - "Packing List"
+      - "Certificate of Origin"
+      - "Insurance Policy"
+    digital_acceptance: true
+    e_document_preference: true
+    swift_document_handling: true
+
+  date_validation:
+    minimum_presentation_period: 15  # days - shorter than government banks
+    maximum_validity_period: 180     # days - standard
+    shipment_date_buffer: 10         # days before expiry
+    processing_time_allowance: 3     # quick processing capability
+
+  amount_limits:
+    single_lc_limit: 25000000        # USD 25M - higher limits
+    annual_customer_limit: 100000000 # USD 100M
+    requires_board_approval: 10000000 # USD 10M
+
+  insurance_requirements:
+    minimum_coverage: 110            # Standard 110% of CIF value
+    accepts_digital_certificates: true
+    preferred_insurers:
+      - "Any A-rated international insurer"
+      - "Local insurers with good track record"
+
+  beneficiary_validation:
+    restricted_countries: ["Iran", "North Korea", "Syria", "Afghanistan"]
+    sanctions_screening: "automated"
+    enhanced_due_diligence_countries: ["Myanmar", "Belarus"]
+
+validation_messages:
+  style: "professional_modern"
+  language: "business_friendly"
+  templates:
+    fast_track_eligible:
+      "This LC qualifies for DBBL Fast Track processing. Expected completion within 2-3 business days."
+
+    documentation_suggestion:
+      "Consider using DBBL's digital document platform for faster processing and reduced errors."
+
+    currency_optimization:
+      "DBBL offers competitive exchange rates for this currency pair. Contact treasury for quotation."
+
+    efficiency_note:
+      "DBBL's automated screening shows no issues. Manual review bypassed for faster processing."
+
+processing_preferences:
+  automation_level: "high"
+  digital_first_approach: true
+  manual_review_threshold: 100000   # USD - higher threshold due to automation
+  compliance_officer_review: 500000 # USD
+  board_approval_required: 10000000 # USD
+
+  fast_track_criteria:
+    - "Known customer with good history"
+    - "Standard commodity trade"
+    - "Amount below USD 1M"
+    - "Complete digital documentation"
+
+  rejection_reasons:
+    common:
+      - "Sanctions screening failure"
+      - "Incomplete beneficiary information"
+      - "Currency restrictions apply"
+      - "Amount exceeds customer limit"
+
+    efficiency_focused:
+      - "Digital documents preferred for faster processing"
+      - "Consider DBBL trade finance portal for expedited service"
+      - "Additional verification required due to enhanced due diligence"
+
+risk_assessment:
+  factors:
+    - "Automated sanctions screening"
+    - "Customer relationship history"
+    - "Transaction pattern analysis"
+    - "Country risk rating"
+    - "Digital fraud indicators"
+
+  escalation_triggers:
+    - "Sanctions hit (any level)"
+    - "Unusual transaction pattern"
+    - "High-risk country involvement"
+    - "Large amount deviation from customer profile"
+
+report_format:
+  tone: "professional_efficient"
+  emphasis: "speed_and_accuracy"
+  includes_suggestions_for:
+    - "Process optimization opportunities"
+    - "Digital service upgrades"
+    - "Cost-effective alternatives"
+    - "Faster processing options"
+
+special_features:
+  digital_services:
+    - "Online LC application portal"
+    - "Real-time status tracking"
+    - "Digital document upload"
+    - "Automated compliance checking"
+
+  customer_benefits:
+    - "24/7 online access"
+    - "SMS/email notifications"
+    - "Competitive pricing"
+    - "Fast track processing"
+
+  innovation_focus:
+    - "API integration capabilities"
+    - "Mobile banking integration"
+    - "Blockchain document verification"
+    - "AI-powered risk assessment"

@@ -1,0 +1,91 @@
+# ISBP Compliance Rules
+# International Standard Banking Practice for the Examination of Documents under Documentary Credits
+# IP-Safe Implementation: Paraphrased descriptions, practice references only
+
+metadata:
+  standard: "ISBP"
+  version: "745"
+  revision: "2024.1"
+  description: "International Standard Banking Practice rules for document examination"
+  last_updated: "2024-12-20"
+
+rules:
+  - id: "ISBP-A6"
+    title: "Party names must be consistent across documents"
+    reference: "ISBP A6"
+    severity: "medium"
+    applies_to: ["credit", "invoice", "bl"]
+    dsl: "exists(beneficiary.name) && not_empty(beneficiary.name) && exists(applicant.name) && not_empty(applicant.name)"
+    examples:
+      pass: ["fixtures/isbp_a6_pass.json"]
+      fail: ["fixtures/isbp_a6_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-A11"
+    title: "Document dates must be logical and consistent"
+    reference: "ISBP A11"
+    severity: "medium"
+    applies_to: ["credit"]
+    preconditions:
+      - field_exists: issue_date
+      - field_exists: expiry_date
+    check_handler: "date_logic"
+    examples:
+      pass: ["fixtures/isbp_a11_pass.json"]
+      fail: ["fixtures/isbp_a11_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-B2"
+    title: "Invoice amount must not exceed credit amount"
+    reference: "ISBP B2"
+    severity: "high"
+    applies_to: ["invoice"]
+    dsl: "exists(amount.value) && numeric(amount.value)"
+    examples:
+      pass: ["fixtures/isbp_b2_pass.json"]
+      fail: ["fixtures/isbp_b2_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-D3"
+    title: "Transport documents must show appropriate dates"
+    reference: "ISBP D3"
+    severity: "medium"
+    applies_to: ["bl"]
+    dsl: "presentInDocs(\"bill of lading\") && ifThen(exists(shipment_date), dateFormat(shipment_date))"
+    examples:
+      pass: ["fixtures/isbp_d3_pass.json"]
+      fail: ["fixtures/isbp_d3_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-E1"
+    title: "Insurance documents must cover required risks"
+    reference: "ISBP E1"
+    severity: "medium"
+    applies_to: ["insurance"]
+    dsl: "ifThen(presentInDocs(\"insurance\"), containsText(required_documents, \"insurance\"))"
+    examples:
+      pass: ["fixtures/isbp_e1_pass.json"]
+      fail: ["fixtures/isbp_e1_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-CURRENCY"
+    title: "Currency must be clearly specified throughout"
+    reference: "ISBP General"
+    severity: "medium"
+    applies_to: ["credit", "invoice"]
+    dsl: "exists(amount.currency) && currency(amount.currency)"
+    examples:
+      pass: ["fixtures/isbp_currency_pass.json"]
+      fail: ["fixtures/isbp_currency_fail.json"]
+    version: "1.0.0"
+
+  - id: "ISBP-GOODS"
+    title: "Goods description must be consistent with credit"
+    reference: "ISBP General"
+    severity: "medium"
+    applies_to: ["invoice"]
+    dsl: "exists(goods_description) && not_empty(goods_description) && length(goods_description) > 10"
+    examples:
+      pass: ["fixtures/isbp_goods_pass.json"]
+      fail: ["fixtures/isbp_goods_fail.json"]
+    version: "1.0.0"

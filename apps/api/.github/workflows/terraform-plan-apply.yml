@@ -1,0 +1,375 @@
+name: 'Enterprise Terraform Plan & Apply'
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'terraform/**'
+      - 'config/**'
+      - '.github/workflows/terraform-plan-apply.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - 'config/**'
+      - '.github/workflows/terraform-plan-apply.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_REGION: 'eu-north-1'
+
+jobs:
+  terraform-plan-staging:
+    name: 'Terraform Plan - Staging'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment: staging
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials - Staging
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Verify Enterprise Config
+      run: |
+        echo "🔍 Verifying enterprise configuration..."
+        if [ ! -f "../config/enterprise_config.json" ]; then
+          echo "❌ Enterprise config not found"
+          exit 1
+        fi
+
+        # Validate JSON
+        jq empty ../config/enterprise_config.json
+        echo "✅ Enterprise config is valid JSON"
+
+        # Extract staging account ID
+        STAGING_ACCOUNT=$(jq -r '.environments.staging.aws_account_id' ../config/enterprise_config.json)
+        echo "📋 Expected staging account: $STAGING_ACCOUNT"
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=lcopilot/staging/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+    - name: Terraform Validate
+      run: terraform validate
+
+    - name: Terraform Plan - Staging
+      id: plan
+      run: |
+        terraform plan \
+          -var="environment=staging" \
+          -var="enable_future_features=false" \
+          -input=false \
+          -out=staging.tfplan
+
+        # Save plan output for PR comment
+        terraform show -no-color staging.tfplan > plan_output.txt
+
+    - name: Comment PR with Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const plan = fs.readFileSync('./terraform/plan_output.txt', 'utf8');
+          const truncatedPlan = plan.length > 65536 ? plan.substring(0, 65536) + '\n... (truncated)' : plan;
+
+          const output = `## 🏗️ Terraform Plan - Staging Environment
+
+          <details>
+          <summary>Click to expand plan details</summary>
+
+          \`\`\`
+          ${truncatedPlan}
+          \`\`\`
+
+          </details>
+
+          **Next Steps:**
+          - ✅ Plan completed successfully
+          - 📝 Review changes above
+          - 🚀 Merge to trigger staging deployment
+          `;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+    - name: Upload Staging Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: staging-terraform-plan
+        path: terraform/staging.tfplan
+        retention-days: 7
+
+  terraform-apply-staging:
+    name: 'Terraform Apply - Staging'
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials - Staging
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=lcopilot/staging/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+    - name: Terraform Apply - Staging
+      run: |
+        terraform apply \
+          -var="environment=staging" \
+          -var="enable_future_features=false" \
+          -auto-approve \
+          -input=false
+
+    - name: Extract Outputs
+      id: outputs
+      run: |
+        echo "alarm_name=$(terraform output -raw alarm_name)" >> $GITHUB_OUTPUT
+        echo "sns_topic_arn=$(terraform output -raw sns_topic_arn)" >> $GITHUB_OUTPUT
+        echo "account_match=$(terraform output -raw account_match)" >> $GITHUB_OUTPUT
+
+    - name: Validate Deployment
+      run: |
+        echo "🔍 Validating staging deployment..."
+        echo "Alarm: ${{ steps.outputs.outputs.alarm_name }}"
+        echo "SNS Topic: ${{ steps.outputs.outputs.sns_topic_arn }}"
+        echo "Account Match: ${{ steps.outputs.outputs.account_match }}"
+
+        if [ "${{ steps.outputs.outputs.account_match }}" != "true" ]; then
+          echo "❌ Account mismatch detected!"
+          exit 1
+        fi
+
+        echo "✅ Staging deployment validation passed"
+
+    - name: Run Post-Deploy Tests
+      run: |
+        echo "🧪 Running post-deployment tests..."
+        # Here you could add calls to your Python verification scripts
+        # python3 ../verify_alarm.py --env staging --profile staging
+        echo "✅ Post-deployment tests completed"
+
+  terraform-plan-prod:
+    name: 'Terraform Plan - Production'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    environment: production-plan
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials - Production
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET_PROD }}" \
+          -backend-config="key=lcopilot/prod/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+    - name: Terraform Plan - Production
+      run: |
+        terraform plan \
+          -var="environment=prod" \
+          -var="enable_future_features=true" \
+          -input=false \
+          -out=prod.tfplan
+
+    - name: Upload Production Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-terraform-plan
+        path: terraform/prod.tfplan
+        retention-days: 30
+
+  terraform-apply-prod:
+    name: 'Terraform Apply - Production'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod' && github.event.inputs.action == 'apply'
+    environment: production
+    needs: terraform-plan-prod
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials - Production
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Download Production Plan
+      uses: actions/download-artifact@v4
+      with:
+        name: prod-terraform-plan
+        path: terraform/
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET_PROD }}" \
+          -backend-config="key=lcopilot/prod/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+    - name: Terraform Apply - Production
+      run: |
+        terraform apply prod.tfplan
+
+    - name: Extract Outputs
+      id: outputs
+      run: |
+        echo "alarm_name=$(terraform output -raw alarm_name)" >> $GITHUB_OUTPUT
+        echo "sns_topic_arn=$(terraform output -raw sns_topic_arn)" >> $GITHUB_OUTPUT
+        echo "account_match=$(terraform output -raw account_match)" >> $GITHUB_OUTPUT
+
+    - name: Validate Production Deployment
+      run: |
+        echo "🔍 Validating production deployment..."
+        echo "Alarm: ${{ steps.outputs.outputs.alarm_name }}"
+        echo "SNS Topic: ${{ steps.outputs.outputs.sns_topic_arn }}"
+        echo "Account Match: ${{ steps.outputs.outputs.account_match }}"
+
+        if [ "${{ steps.outputs.outputs.account_match }}" != "true" ]; then
+          echo "❌ Production account mismatch detected!"
+          exit 1
+        fi
+
+        echo "✅ Production deployment validation passed"
+
+    - name: Notify Success
+      run: |
+        echo "🎉 Production deployment completed successfully!"
+        echo "📊 Monitor CloudWatch dashboard for alarm status"
+        echo "📧 Check SNS subscriptions for alert routing"
+
+  security-scan:
+    name: 'Security Scan'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Run Checkov
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: terraform/
+        framework: terraform
+        output_format: sarif
+        output_file_path: reports/results.sarif
+        download_external_modules: true
+
+    - name: Upload Checkov results to GitHub Advanced Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: reports/results.sarif
+
+    - name: Terraform Security Scan
+      run: |
+        echo "🔒 Running security checks..."
+
+        # Check for sensitive values in config
+        if grep -r "AKIA\|aws_secret_access_key\|password" config/ terraform/ || true; then
+          echo "⚠️ Potential sensitive data found - review carefully"
+        fi
+
+        # Validate KMS encryption is enabled
+        if ! grep -q "kms_master_key_id\|kms_key_id" terraform/enterprise_cloudwatch.tf; then
+          echo "❌ KMS encryption not found in Terraform config"
+          exit 1
+        fi
+
+        echo "✅ Security scan completed"

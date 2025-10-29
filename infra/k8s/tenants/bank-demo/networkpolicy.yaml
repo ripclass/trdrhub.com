@@ -1,0 +1,94 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-demo-isolation
+  namespace: bank-demo
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # Deny all by default
+  ingress: []
+  egress: []
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-demo-allow-internal
+  namespace: bank-demo
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # Allow internal namespace communication
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: bank-demo
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: trdrhub-system
+
+  # Allow egress for necessary services
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: bank-demo
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  # Database access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Redis access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 6379
+  # S3/MinIO access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 9000
+    - protocol: TCP
+      port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-demo-deny-cross-tenant
+  namespace: bank-demo
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # Deny access from other bank tenants
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchExpressions:
+        - key: trdrhub.com/tenant
+          operator: DoesNotExist
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          trdrhub.com/tenant: bank-demo

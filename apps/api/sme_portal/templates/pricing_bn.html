@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}মূল্য - LCopilot SME Portal{% endblock %}
+
+{% block content %}
+<style>
+    .promotional-banner {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+        text-align: center;
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .pricing-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 30px;
+        margin-bottom: 40px;
+    }
+
+    .pricing-card {
+        border: 2px solid #e3e3e3;
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        position: relative;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        background: white;
+    }
+
+    .pricing-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+    }
+
+    .pricing-card.featured {
+        border-color: #3498db;
+        background: linear-gradient(135deg, #f8f9ff 0%, #e8f4fd 100%);
+    }
+
+    .pricing-card.featured::before {
+        content: "সবচেয়ে জনপ্রিয়";
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #3498db;
+        color: white;
+        padding: 8px 24px;
+        border-radius: 25px;
+        font-size: 0.9em;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    .tier-name {
+        font-size: 1.8em;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #2c3e50;
+    }
+
+    .price {
+        font-size: 3em;
+        font-weight: bold;
+        margin: 20px 0 10px 0;
+        color: #3498db;
+    }
+
+    .price-detail {
+        font-size: 1em;
+        color: #7f8c8d;
+        margin-bottom: 25px;
+        font-weight: 500;
+    }
+
+    .bank-pricing {
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 40px;
+        margin-top: 40px;
+    }
+
+    .bank-card {
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        color: white;
+    }
+
+    .bank-card .tier-name {
+        color: white;
+    }
+
+    .language-toggle {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        z-index: 10;
+    }
+
+    .language-toggle a {
+        color: #3498db;
+        text-decoration: none;
+        padding: 8px 16px;
+        background: rgba(52, 152, 219, 0.1);
+        border-radius: 20px;
+        margin-left: 10px;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(52, 152, 219, 0.3);
+    }
+
+    .language-toggle a:hover {
+        background: rgba(52, 152, 219, 0.2);
+        transform: translateY(-2px);
+    }
+
+    .features-list {
+        text-align: left;
+        margin: 25px 0;
+        padding: 0;
+    }
+
+    .features-list li {
+        list-style: none;
+        margin: 12px 0;
+        padding-left: 25px;
+        position: relative;
+        color: #555;
+        font-weight: 500;
+    }
+
+    .features-list li::before {
+        content: "✓";
+        position: absolute;
+        left: 0;
+        color: #27ae60;
+        font-weight: bold;
+        font-size: 1.1em;
+    }
+
+    .limitations li::before {
+        content: "!";
+        color: #f39c12;
+    }
+
+    .cta-button {
+        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        color: white;
+        border: none;
+        padding: 15px 35px;
+        border-radius: 30px;
+        font-size: 1.1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+    }
+
+    .cta-button:hover {
+        background: linear-gradient(135deg, #2980b9 0%, #1f4e79 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+    }
+
+    .benefits-section {
+        background: #f8f9fa;
+        padding: 50px 0;
+        margin: 50px 0;
+        border-radius: 15px;
+    }
+</style>
+
+<div class="language-toggle">
+    <a href="/pricing">English</a>
+    <a href="/pricing_bn">বাংলা</a>
+</div>
+
+<div class="card" style="text-align: center;">
+    <h1 style="margin-bottom: 1rem; color: #1e293b; font-size: 2.5em;">LCopilot মূল্য তালিকা</h1>
+    <p style="color: #64748b; font-size: 1.2rem; margin-bottom: 3rem;">
+        ট্রেড ফাইন্যান্স কমপ্লায়েন্স ট্রাস্ট প্ল্যাটফর্ম - বাংলাদেশী এসএমইদের জন্য বিশেষভাবে তৈরি
+    </p>
+
+    <!-- Promotional Banner -->
+    <div class="promotional-banner">
+        🎉 <strong>সীমিত সময়:</strong> প্রথম ৩ মাসে ৩০% ছাড় - ৩১ ডিসেম্বর, ২০২৪ পর্যন্ত বৈধ
+    </div>
+
+    <!-- SME Pricing -->
+    <h2 style="color: #2c3e50; margin-bottom: 40px; font-size: 2.2em;">এসএমই প্ল্যান</h2>
+
+    <div class="pricing-grid">
+        <!-- Basic Tier -->
+        <div class="pricing-card">
+            <div class="tier-name">বেসিক</div>
+            <div class="price">৳১,২০০</div>
+            <div class="price-detail">$১৪ USD প্রতি মাসে • ৩টি চেক অন্তর্ভুক্ত</div>
+
+            <ul class="features-list">
+                <li>বেসিক এলসি বৈধতা যাচাই</li>
+                <li>UCP600 কমপ্লায়েন্স চেক</li>
+                <li>সহজ বাংলা সারসংক্ষেপ</li>
+                <li>কমিউনিটি সাপোর্ট</li>
+            </ul>
+
+            <div style="margin: 20px 0; padding: 15px; background: rgba(241, 196, 15, 0.1); border-radius: 8px;">
+                <strong style="color: #f39c12;">সীমাবদ্ধতা:</strong>
+                <ul class="features-list limitations" style="margin-top: 10px;">
+                    <li>মাসে মাত্র ৩টি চেক</li>
+                    <li>শুধুমাত্র বেসিক সাপোর্ট</li>
+                    <li>কোন অডিট ট্রেইল নেই</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="startTrial('বেসিক')">ফ্রি ট্রায়াল শুরু করুন</a>
+        </div>
+
+        <!-- Professional Tier -->
+        <div class="pricing-card featured">
+            <div class="tier-name">প্রফেশনাল</div>
+            <div class="price">৳৯৯৯</div>
+            <div class="price-detail">$১২ USD প্রতি মাসে • ৫০টি চেক অন্তর্ভুক্ত</div>
+
+            <ul class="features-list">
+                <li>সম্পূর্ণ এলসি বৈধতা স্যুট</li>
+                <li>UCP600 + ISBP কমপ্লায়েন্স</li>
+                <li>বাংলাদেশের স্থানীয় নিয়ম</li>
+                <li>এভিডেন্স প্যাক</li>
+                <li>অগ্রাধিকার সাপোর্ট</li>
+                <li>এসএলএ রিপোর্ট</li>
+            </ul>
+
+            <div style="margin: 20px 0; padding: 15px; background: rgba(241, 196, 15, 0.1); border-radius: 8px;">
+                <strong style="color: #f39c12;">সীমাবদ্ধতা:</strong>
+                <ul class="features-list limitations" style="margin-top: 10px;">
+                    <li>মাসে ৫০টি চেক</li>
+                    <li>শুধুমাত্র ইমেইল সাপোর্ট</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="startTrial('প্রফেশনাল')">ফ্রি ট্রায়াল শুরু করুন</a>
+        </div>
+
+        <!-- Enterprise Tier -->
+        <div class="pricing-card">
+            <div class="tier-name">এন্টারপ্রাইজ</div>
+            <div class="price">৳৬৯৯</div>
+            <div class="price-detail">$৮ USD প্রতি মাসে • সীমাহীন চেক</div>
+
+            <ul class="features-list">
+                <li>সম্পূর্ণ বৈধতা প্ল্যাটফর্ম</li>
+                <li>সমস্ত কমপ্লায়েন্স স্ট্যান্ডার্ড</li>
+                <li>কাস্টম রুল ইন্টিগ্রেশন</li>
+                <li>অডিট-গ্রেড এভিডেন্স</li>
+                <li>ডেডিকেটেড সাপোর্ট</li>
+                <li>API অ্যাক্সেস</li>
+                <li>কাস্টম ইন্টিগ্রেশন</li>
+                <li>হোয়াইট-লেবেল অপশন</li>
+            </ul>
+
+            <a href="#" class="cta-button" onclick="contactSales('এন্টারপ্রাইজ')">সেলস টিমের সাথে যোগাযোগ</a>
+        </div>
+    </div>
+</div>
+
+<!-- Bank Pricing Section -->
+<div class="bank-pricing">
+    <h2 style="color: white; text-align: center; margin-bottom: 40px; font-size: 2.2em;">ব্যাংক সমাধান</h2>
+
+    <div class="pricing-grid">
+        <!-- Bank Pilot Program -->
+        <div class="pricing-card bank-card">
+            <div class="tier-name">পাইলট প্রোগ্রাম</div>
+            <div class="price" style="color: #3498db;">৫০% ছাড়</div>
+            <div class="price-detail">প্রথম বছর • আলোচনাযোগ্য মূল্য নির্ধারণ</div>
+
+            <div style="text-align: left; margin: 25px 0;">
+                <h4 style="color: #ecf0f1; margin-bottom: 15px;">বার্ষিক ফ্ল্যাট লাইসেন্স:</h4>
+                <ul class="features-list">
+                    <li>$২৫,০০০ - $১,০০,০০০ রেঞ্জ</li>
+                    <li>সীমাহীন বৈধতা যাচাই</li>
+                    <li>কাস্টম ব্যাংক রুল ইন্টিগ্রেশন</li>
+                    <li>ডেডিকেটেড সাপোর্ট টিম</li>
+                    <li>ট্রেনিং এবং অনবোর্ডিং</li>
+                    <li>ত্রৈমাসিক ব্যবসায়িক পর্যালোচনা</li>
+                </ul>
+
+                <h4 style="color: #ecf0f1; margin: 20px 0 15px 0;">প্রতি-চেক লাইসেন্সিং:</h4>
+                <ul class="features-list">
+                    <li>প্রতি ১,০০০ চেকের জন্য $৫০০ - $২,০০০</li>
+                    <li>নমনীয় স্কেলিং</li>
+                    <li>মাসিক বিলিং</li>
+                    <li>ভলিউম ডিসকাউন্ট উপলব্ধ</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="scheduleDemo('ব্যাংক পাইলট')">ডেমো নির্ধারণ করুন</a>
+        </div>
+
+        <!-- Bank Enterprise -->
+        <div class="pricing-card bank-card">
+            <div class="tier-name">এন্টারপ্রাইজ ব্যাংকিং</div>
+            <div class="price" style="color: #3498db;">যোগাযোগ</div>
+            <div class="price-detail">কোটের জন্য • মাল্টি-ব্রাঞ্চ ডিপ্লয়মেন্ট</div>
+
+            <ul class="features-list">
+                <li>মাল্টি-ব্রাঞ্চ ডিপ্লয়মেন্ট</li>
+                <li>কেন্দ্রীয় প্রশাসন</li>
+                <li>উন্নত অ্যানালিটিক্স</li>
+                <li>নিয়ন্ত্রক রিপোর্টিং</li>
+                <li>২৪/৭ সাপোর্ট</li>
+                <li>কেস স্টাডি সুযোগ</li>
+                <li>অগ্রাধিকার ফিচার অনুরোধ</li>
+                <li>কাস্টম কমপ্লায়েন্স নিয়ম</li>
+            </ul>
+
+            <a href="#" class="cta-button" onclick="contactEnterprise('ব্যাংক এন্টারপ্রাইজ')">এন্টারপ্রাইজ সেলসের সাথে যোগাযোগ</a>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px; padding: 25px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
+        <h3 style="color: #ecf0f1; margin-bottom: 15px;">🏦 ব্যাংক পাইলট সুবিধা</h3>
+        <p style="font-size: 1.1em; color: #bdc3c7;">
+            <strong>প্রথম বছরে ৫০% ছাড়</strong> • ফ্রি ইন্টিগ্রেশন সাপোর্ট • কাস্টম কমপ্লায়েন্স নিয়ম • অগ্রাধিকার ফিচার • কেস স্টাডি সুযোগ
+        </p>
+    </div>
+</div>
+
+<!-- Benefits Section -->
+<div class="card benefits-section">
+    <h2 style="text-align: center; margin-bottom: 40px; color: #2c3e50; font-size: 2.2em;">কেন LCopilot বেছে নেবেন?</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px;">
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">🛡️</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">ব্যাংক-গ্রেড কমপ্লায়েন্স</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                UCP600, ISBP, এবং বাংলাদেশের স্থানীয় নিয়ম বৈধতা অডিট-গ্রেড এভিডেন্স প্যাক সহ।
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">⚡</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">তাৎক্ষণিক বৈধতা</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                দিনের পরিবর্তে সেকেন্ডে কমপ্লায়েন্স ফলাফল পান। প্রক্রিয়াকরণ সময় ৯০% কমান।
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">🎯</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">এসএমই-কেন্দ্রিক</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                স্থানীয় ব্যাংকিং প্রয়োজনীয়তা সহ বাংলাদেশের ট্রেড ফাইন্যান্সের জন্য বিশেষভাবে নির্মিত।
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">📊</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">স্বচ্ছতা</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                স্পষ্ট মূল্য, কোন লুকানো ফি নেই। সম্পূর্ণ খরচের দৃশ্যমানতা সহ আপনি যা ব্যবহার করেন তার জন্যই অর্থ প্রদান করুন।
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function startTrial(tier) {
+    alert(`LCopilot ${tier} এর জন্য ধন্যবাদ! আমরা কয়েক মিনিটের মধ্যে আপনার ইমেইলে সেটআপ নির্দেশাবলী পাঠাব। আপনার ফ্রি ট্রায়াল সমস্ত ফিচারের সাথে তাৎক্ষণিক শুরু হবে।`);
+}
+
+function contactSales(tier) {
+    alert(`LCopilot ${tier} এর প্রতি আপনার আগ্রহের জন্য ধন্যবাদ! আমাদের সেলস টিম ৪ ঘন্টার মধ্যে আপনার সাথে যোগাযোগ করবে আপনার নির্দিষ্ট প্রয়োজনীয়তা আলোচনা এবং একটি কাস্টম সমাধান তৈরি করতে।`);
+}
+
+function scheduleDemo(tier) {
+    alert(`${tier} এর প্রতি আপনার আগ্রহের জন্য ধন্যবাদ! আমরা ২৪ ঘন্টার মধ্যে একটি ব্যক্তিগতকৃত ডেমো নির্ধারণ করব। আমাদের টিম একটি সুবিধাজনক সময় ব্যবস্থা করতে আপনার সাথে যোগাযোগ করবে।`);
+}
+
+function contactEnterprise(tier) {
+    alert(`${tier} বিবেচনা করার জন্য ধন্যবাদ! আমাদের এন্টারপ্রাইজ টিম ২৪ ঘন্টার মধ্যে আপনার মাল্টি-ব্রাঞ্চ ডিপ্লয়মেন্ট প্রয়োজনীয়তা এবং কাস্টম মূল্য নির্ধারণ আলোচনা করতে যোগাযোগ করবে।`);
+}
+</script>
+{% endblock %}

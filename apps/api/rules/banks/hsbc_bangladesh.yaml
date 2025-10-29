@@ -1,0 +1,161 @@
+# HSBC Bangladesh - Rule Pack Configuration
+# International standards with premium service focus
+
+bank_info:
+  name: "HSBC Bangladesh"
+  code: "HBBLBDDH"
+  type: "international_commercial"
+  country: "Bangladesh"
+  regulatory_style: "international"
+  processing_approach: "premium"
+
+validation_profile:
+  strictness_level: "high"
+  documentation_requirements: "international_standard"
+  processing_time_expectation: "premium"
+  risk_tolerance: "conservative"
+  compliance_focus: "global_standards"
+
+specific_rules:
+  currency_validation:
+    preferred_currencies: ["USD", "EUR", "GBP", "JPY", "HKD", "SGD", "AUD", "CAD", "CHF"]
+    global_currency_support: true
+    auto_approval_limit: 1000000     # USD equivalent - high for international bank
+    requires_approval_above: 5000000
+    notes: "Full range of international currencies with competitive rates"
+
+  documentation_requirements:
+    mandatory_documents:
+      - "Commercial Invoice"
+      - "Full Set Bill of Lading"
+      - "Detailed Packing List"
+      - "Certificate of Origin"
+      - "Marine Insurance Policy"
+      - "Quality/Inspection Certificate"
+    international_standards: true
+    multiple_language_support: true
+    requires_authentication: true
+
+  date_validation:
+    minimum_presentation_period: 21  # days - international standard
+    maximum_validity_period: 180     # days
+    shipment_date_buffer: 15         # days before expiry
+    processing_time_allowance: 5     # premium service standard
+
+  amount_limits:
+    single_lc_limit: 50000000        # USD 50M - highest limits
+    annual_customer_limit: 200000000 # USD 200M
+    requires_board_approval: 20000000 # USD 20M
+
+  insurance_requirements:
+    minimum_coverage: 110            # 110% of CIF value
+    preferred_insurers:
+      - "Lloyd's of London syndicates"
+      - "Major international insurers (A+ rated)"
+      - "Local insurers with HSBC approval"
+    marine_cargo_clauses: "Institute Cargo Clauses (A) preferred"
+
+  beneficiary_validation:
+    restricted_countries: ["Iran", "North Korea", "Syria", "Russia", "Belarus"]
+    enhanced_screening: "comprehensive"
+    sanctions_compliance: "global_hsbc_standards"
+    kyc_requirements: "enhanced_international"
+
+validation_messages:
+  style: "premium_international"
+  language: "sophisticated_professional"
+  templates:
+    premium_service_note:
+      "This LC benefits from HSBC's global trade network with premium processing and worldwide correspondent banking relationships."
+
+    international_expertise:
+      "HSBC's international trade specialists are available for complex transaction guidance and structured trade finance solutions."
+
+    global_standards_compliance:
+      "This transaction meets HSBC's global compliance standards and international best practices."
+
+    correspondent_banking_advantage:
+      "HSBC's extensive correspondent banking network ensures smooth processing across all major financial centers."
+
+processing_preferences:
+  premium_service_level: true
+  relationship_manager_involvement: true
+  manual_review_threshold: 250000   # USD - premium review standards
+  compliance_officer_review: 1000000 # USD
+  board_approval_required: 20000000 # USD
+
+  premium_features:
+    - "Dedicated relationship management"
+    - "24/7 global support"
+    - "Multi-currency optimization"
+    - "Structured trade finance options"
+
+  rejection_reasons:
+    international_focus:
+      - "Global sanctions compliance failure"
+      - "Enhanced due diligence requirements not met"
+      - "International documentation standards not satisfied"
+      - "Correspondent bank requirements exceed limits"
+
+    premium_service_standards:
+      - "Additional verification required for premium service assurance"
+      - "Relationship manager review recommended for optimal structuring"
+      - "Consider HSBC trade acceleration solutions for efficiency"
+
+risk_assessment:
+  factors:
+    - "Global HSBC risk appetite"
+    - "International sanctions screening"
+    - "Country risk assessment (HSBC internal)"
+    - "Customer global relationship"
+    - "Correspondent bank requirements"
+    - "Regulatory compliance across jurisdictions"
+
+  escalation_triggers:
+    - "Any sanctions screening alert"
+    - "High-risk jurisdiction involvement"
+    - "Complex structured transaction"
+    - "Unusual payment routing requirements"
+    - "Enhanced due diligence triggers"
+
+report_format:
+  tone: "premium_international_professional"
+  emphasis: "global_expertise_and_compliance"
+  includes_value_adds:
+    - "International market insights"
+    - "Currency risk management suggestions"
+    - "Global trade finance optimization"
+    - "Premium service enhancement opportunities"
+
+special_services:
+  global_connectivity:
+    - "Worldwide correspondent banking"
+    - "Multi-jurisdictional expertise"
+    - "Cross-border payment optimization"
+    - "International regulatory guidance"
+
+  premium_offerings:
+    - "Trade acceleration programs"
+    - "Supply chain finance solutions"
+    - "Currency risk management"
+    - "Structured trade finance"
+
+  digital_capabilities:
+    - "HSBCnet online platform"
+    - "Global view of transactions"
+    - "Real-time tracking and reporting"
+    - "API integration for large corporates"
+
+regulatory_expertise:
+  jurisdictions:
+    - "UK/EU regulations"
+    - "US compliance requirements"
+    - "Asia-Pacific standards"
+    - "Bangladesh local requirements"
+    - "International sanctions regimes"
+
+  specialized_knowledge:
+    - "Cross-border regulatory requirements"
+    - "Multi-jurisdictional compliance"
+    - "International tax implications"
+    - "Foreign exchange regulations"

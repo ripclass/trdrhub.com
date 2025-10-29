@@ -1,0 +1,28 @@
+
+PDF Report Generation Instructions:
+
+To generate actual PDF reports from the JSON data:
+
+1. Install required packages:
+   pip install reportlab matplotlib
+
+2. Use the JSON data in sme_demo.json and bank_demo.json
+
+3. For SME reports:
+   - Use simple charts and plain language
+   - Focus on cost savings and time benefits
+   - Include visual progress bars for metrics
+   - Use friendly, approachable design
+
+4. For Bank reports:
+   - Use formal business template
+   - Include detailed tables and compliance matrices
+   - Add regulatory compliance scorecard
+   - Use professional, authoritative design
+   - Include executive summary page
+   - Add audit trail and security information
+
+5. Sample implementation available in:
+   tools/pdf_generator.py (to be created)
+
+For demo purposes, use the JSON files to show report content structure.

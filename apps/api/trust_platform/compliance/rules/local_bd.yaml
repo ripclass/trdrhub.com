@@ -1,0 +1,122 @@
+# Bangladesh Local Banking Rules
+# Common rejection scenarios from major Bangladeshi banks
+# Based on operational patterns from DBBL, Sonali, Islami Bank, etc.
+
+metadata:
+  standard: "BD_LOCAL"
+  version: "2024.1"
+  revision: "2024.1"
+  description: "Bangladesh-specific banking compliance rules"
+  last_updated: "2024-12-20"
+  banks_covered: ["DBBL", "Sonali Bank", "Islami Bank", "BRAC Bank", "Standard Chartered"]
+
+rules:
+  - id: "BD-001"
+    title: "Beneficiary address must match exactly"
+    reference: "BD Banking Practice"
+    severity: "high"
+    applies_to: ["credit", "invoice"]
+    dsl: "exists(beneficiary.address) && not_empty(beneficiary.address) && length(beneficiary.address) > 20"
+    examples:
+      pass: ["fixtures/bd_001_pass.json"]
+      fail: ["fixtures/bd_001_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-002"
+    title: "Currency must be consistent across all documents"
+    reference: "BD Banking Practice"
+    severity: "high"
+    applies_to: ["credit", "invoice"]
+    dsl: "exists(amount.currency) && in(amount.currency, [\"USD\", \"BDT\", \"EUR\", \"GBP\"])"
+    examples:
+      pass: ["fixtures/bd_002_pass.json"]
+      fail: ["fixtures/bd_002_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-003"
+    title: "HS Code must match exactly between LC and invoice"
+    reference: "NBR Requirements"
+    severity: "high"
+    applies_to: ["credit", "invoice"]
+    dsl: "ifThen(exists(hs_code), hsCode(hs_code))"
+    examples:
+      pass: ["fixtures/bd_003_pass.json"]
+      fail: ["fixtures/bd_003_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-004"
+    title: "Partial shipment terms must be explicit"
+    reference: "BD Banking Practice"
+    severity: "medium"
+    applies_to: ["credit"]
+    dsl: "ifThen(exists(partial_shipment), in(partial_shipment, [\"allowed\", \"prohibited\", \"not allowed\"]))"
+    examples:
+      pass: ["fixtures/bd_004_pass.json"]
+      fail: ["fixtures/bd_004_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-005"
+    title: "Insurance coverage must be 110% of CIF value"
+    reference: "BD Banking Practice"
+    severity: "medium"
+    applies_to: ["insurance"]
+    dsl: "ifThen(presentInDocs(\"insurance\"), containsText(required_documents, \"110%\"))"
+    examples:
+      pass: ["fixtures/bd_005_pass.json"]
+      fail: ["fixtures/bd_005_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-006"
+    title: "Export permit number must be consistent"
+    reference: "Export Promotion Board"
+    severity: "medium"
+    applies_to: ["credit"]
+    dsl: "ifThen(containsText(required_documents, \"export\"), containsText(required_documents, \"permit\"))"
+    examples:
+      pass: ["fixtures/bd_006_pass.json"]
+      fail: ["fixtures/bd_006_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-007"
+    title: "Loading port name must match exactly"
+    reference: "Chittagong Port Authority"
+    severity: "medium"
+    applies_to: ["bl"]
+    dsl: "ifThen(exists(loading_port), portName(loading_port))"
+    examples:
+      pass: ["fixtures/bd_007_pass.json"]
+      fail: ["fixtures/bd_007_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-008"
+    title: "Certificate of origin must be from recognized chamber"
+    reference: "DCCI/CCCI/BGMEA Requirements"
+    severity: "low"
+    applies_to: ["credit"]
+    check_handler: "origin_certificate"
+    examples:
+      pass: ["fixtures/bd_008_pass.json"]
+      fail: ["fixtures/bd_008_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-009"
+    title: "GSP Form A must show correct origin details"
+    reference: "EU GSP Requirements"
+    severity: "low"
+    applies_to: ["credit"]
+    dsl: "ifThen(containsText(required_documents, \"gsp\"), exists(beneficiary.country))"
+    examples:
+      pass: ["fixtures/bd_009_pass.json"]
+      fail: ["fixtures/bd_009_fail.json"]
+    version: "1.0.0"
+
+  - id: "BD-010"
+    title: "Inspection certificate must reference LC number"
+    reference: "Third Party Inspection"
+    severity: "low"
+    applies_to: ["credit"]
+    dsl: "ifThen(containsText(required_documents, \"inspection\"), exists(lc_number))"
+    examples:
+      pass: ["fixtures/bd_010_pass.json"]
+      fail: ["fixtures/bd_010_fail.json"]
+    version: "1.0.0"

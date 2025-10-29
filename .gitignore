@@ -1,0 +1,281 @@
+# =============================================================================
+# LCopilot Project .gitignore
+# =============================================================================
+
+# Environment Variables & Secrets
+# ---------------------------------
+.env
+.env.*
+!.env.example
+!.env.production.template
+
+# Credentials & Authentication
+# -----------------------------
+*.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!turbo.json
+*.pem
+*.key
+*.p12
+*.crt
+*.cer
+*credentials*
+*secrets*
+*keys*
+
+# Cloud Service Account Files
+# -----------------------------
+*service-account*.json
+*serviceaccount*.json
+*gcp-*.json
+*aws-*.json
+*azure-*.json
+
+# Database Files
+# ---------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# AWS & Cloud Config
+# -------------------
+.aws/
+.gcp/
+.azure/
+
+# Python
+# -------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.coverage
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Node.js & NPM
+# ---------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+.pnp
+.pnp.js
+
+# Build Artifacts
+# ----------------
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+
+# Logs
+# -----
+*.log
+logs/
+loglevel-*
+
+# Runtime Data
+# -------------
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage & Testing
+# -------------------
+coverage/
+.nyc_output/
+.coverage
+htmlcov/
+.pytest_cache/
+test-results/
+playwright-report/
+
+# IDEs & Editors
+# ---------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+*.code-workspace
+
+# OS Generated Files
+# -------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Temporary Files
+# ----------------
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# BMAD (existing)
+# ----------------
+.bmad-core/
+.bmad-*/
+
+# Security Tools
+# ---------------
+.snyk
+.bandit
+
+# Local Development
+# ------------------
+.local/
+.cache/
+tmp/
+temp/
+
+# Docker
+# -------
+.dockerignore
+
+# Misc
+# -----
+.sass-cache/
+connect.lock
+typings/
+
+# Jupyter Notebooks
+# -------------------
+.ipynb_checkpoints
+
+# pyenv
+# ------
+.python-version
+
+# pipenv
+# -------
+Pipfile.lock
+
+# PEP 582
+# --------
+__pypackages__/
+
+# Celery
+# -------
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+# ---------
+*.sage.py
+
+# Spyder
+# -------
+.spyderproject
+.spyproject
+
+# Rope
+# -----
+.ropeproject
+
+# mkdocs
+# -------
+/site
+
+# mypy
+# -----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+# -----
+.pyre/
+
+# pytype
+# -------
+.pytype/
+
+# Cython
+# -------
+cython_debug/
+
+# Upload directories (may contain sensitive docs)
+# -------------------------------------------------
+uploads/
+/tmp/
+**/uploads/
+**/tmp/
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+
+# Local test files
+# -----------------
+sample.*
+test_*.*
+demo_*.*
+mock_*.*
+
+# Production artifacts that shouldn't be committed
+# --------------------------------------------------
+ssl/
+certificates/
+deployment/secrets/node_modules/
+venv/

@@ -1,0 +1,674 @@
+name: Performance Monitoring
+
+on:
+  schedule:
+    # Run performance tests every 6 hours
+    - cron: '0 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: 'Test duration in minutes'
+        required: false
+        default: '5'
+        type: string
+      target_environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+env:
+  TEST_DURATION: ${{ github.event.inputs.test_duration || '5' }}
+  TARGET_ENV: ${{ github.event.inputs.target_environment || 'staging' }}
+
+jobs:
+  load-testing:
+    name: Load Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Create k6 test script
+        run: |
+          mkdir -p tests/performance
+          cat > tests/performance/load-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate, Trend } from 'k6/metrics';
+
+          // Custom metrics
+          export const errorRate = new Rate('errors');
+          export const responseTime = new Trend('response_time');
+
+          export const options = {
+            stages: [
+              { duration: '1m', target: 10 },   // Ramp up
+              { duration: '3m', target: 50 },   // Stay at 50 users
+              { duration: '1m', target: 0 },    // Ramp down
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<2000'], // 95% of requests under 2s
+              http_req_failed: ['rate<0.1'],     // Error rate under 10%
+              errors: ['rate<0.1'],
+              response_time: ['p(95)<2000'],
+            },
+          };
+
+          const BASE_URL = __ENV.BASE_URL || 'https://staging.lcopilot.com';
+          const API_BASE = `${BASE_URL}/api`;
+
+          export default function () {
+            const testScenarios = [
+              // Test authentication endpoint
+              () => {
+                const loginPayload = {
+                  email: 'test@example.com',
+                  password: 'testpassword123'
+                };
+                const res = http.post(`${API_BASE}/auth/login`, JSON.stringify(loginPayload), {
+                  headers: { 'Content-Type': 'application/json' },
+                });
+                check(res, {
+                  'login status is 200 or 401': (r) => [200, 401].includes(r.status),
+                });
+                errorRate.add(res.status >= 400);
+                responseTime.add(res.timings.duration);
+              },
+
+              // Test health endpoint
+              () => {
+                const res = http.get(`${API_BASE}/health`);
+                check(res, {
+                  'health status is 200': (r) => r.status === 200,
+                  'health response time < 500ms': (r) => r.timings.duration < 500,
+                });
+                errorRate.add(res.status >= 400);
+                responseTime.add(res.timings.duration);
+              },
+
+              // Test billing endpoints (if authenticated)
+              () => {
+                const res = http.get(`${API_BASE}/billing/usage`, {
+                  headers: { 'Authorization': 'Bearer dummy-token' },
+                });
+                check(res, {
+                  'billing status is 200 or 401': (r) => [200, 401].includes(r.status),
+                });
+                errorRate.add(res.status >= 400 && res.status !== 401);
+                responseTime.add(res.timings.duration);
+              },
+
+              // Test frontend static assets
+              () => {
+                const res = http.get(`${BASE_URL}/`);
+                check(res, {
+                  'frontend status is 200': (r) => r.status === 200,
+                  'frontend response time < 1s': (r) => r.timings.duration < 1000,
+                });
+                errorRate.add(res.status >= 400);
+                responseTime.add(res.timings.duration);
+              },
+            ];
+
+            // Run a random test scenario
+            const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)];
+            scenario();
+
+            sleep(1);
+          }
+
+          export function handleSummary(data) {
+            return {
+              'load-test-results.json': JSON.stringify(data, null, 2),
+            };
+          }
+          EOF
+
+      - name: Run load test
+        run: |
+          BASE_URL="https://${{ env.TARGET_ENV }}.lcopilot.com"
+          if [ "${{ env.TARGET_ENV }}" = "production" ]; then
+            BASE_URL="https://app.lcopilot.com"
+          fi
+
+          k6 run --duration=${{ env.TEST_DURATION }}m \
+            --env BASE_URL="$BASE_URL" \
+            --out json=load-test-results.json \
+            tests/performance/load-test.js
+
+      - name: Analyze results
+        run: |
+          node -e "
+          const fs = require('fs');
+          const results = JSON.parse(fs.readFileSync('load-test-results.json', 'utf8'));
+
+          const metrics = results.metrics;
+
+          console.log('=== Load Test Results ===');
+          console.log('Environment:', '${{ env.TARGET_ENV }}');
+          console.log('Duration:', '${{ env.TEST_DURATION }}m');
+          console.log('');
+
+          console.log('HTTP Requests:');
+          console.log('  Total:', metrics.http_reqs.count);
+          console.log('  Failed:', metrics.http_req_failed.count, '(' + (metrics.http_req_failed.rate * 100).toFixed(2) + '%)');
+          console.log('');
+
+          console.log('Response Times:');
+          console.log('  Average:', metrics.http_req_duration.avg.toFixed(2) + 'ms');
+          console.log('  95th percentile:', metrics.http_req_duration['p(95)'].toFixed(2) + 'ms');
+          console.log('  99th percentile:', metrics.http_req_duration['p(99)'].toFixed(2) + 'ms');
+          console.log('');
+
+          console.log('Virtual Users:');
+          console.log('  Max:', metrics.vus_max.max);
+          console.log('');
+
+          // Check if thresholds passed
+          const thresholds = results.thresholds;
+          console.log('Thresholds:');
+          Object.keys(thresholds).forEach(threshold => {
+            const status = thresholds[threshold].ok ? '✅' : '❌';
+            console.log('  ' + status + ' ' + threshold);
+          });
+
+          // Set GitHub output for further processing
+          const summary = {
+            total_requests: metrics.http_reqs.count,
+            failed_requests: metrics.http_req_failed.count,
+            error_rate: (metrics.http_req_failed.rate * 100).toFixed(2),
+            avg_response_time: metrics.http_req_duration.avg.toFixed(2),
+            p95_response_time: metrics.http_req_duration['p(95)'].toFixed(2),
+            p99_response_time: metrics.http_req_duration['p(99)'].toFixed(2),
+            max_vus: metrics.vus_max.max,
+            thresholds_passed: Object.values(thresholds).every(t => t.ok)
+          };
+
+          fs.writeFileSync('performance-summary.json', JSON.stringify(summary, null, 2));
+          "
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results-${{ env.TARGET_ENV }}
+          path: |
+            load-test-results.json
+            performance-summary.json
+
+      - name: Create performance report
+        run: |
+          SUMMARY=$(cat performance-summary.json)
+
+          cat > performance-report.md << EOF
+          # Performance Test Report
+
+          **Environment:** ${{ env.TARGET_ENV }}
+          **Duration:** ${{ env.TEST_DURATION }} minutes
+          **Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ## Summary
+
+          | Metric | Value |
+          |--------|-------|
+          | Total Requests | $(echo $SUMMARY | jq -r '.total_requests') |
+          | Failed Requests | $(echo $SUMMARY | jq -r '.failed_requests') |
+          | Error Rate | $(echo $SUMMARY | jq -r '.error_rate')% |
+          | Average Response Time | $(echo $SUMMARY | jq -r '.avg_response_time')ms |
+          | 95th Percentile | $(echo $SUMMARY | jq -r '.p95_response_time')ms |
+          | 99th Percentile | $(echo $SUMMARY | jq -r '.p99_response_time')ms |
+          | Max Virtual Users | $(echo $SUMMARY | jq -r '.max_vus') |
+          | Thresholds Passed | $(echo $SUMMARY | jq -r '.thresholds_passed') |
+
+          ## Recommendations
+
+          $(if [ "$(echo $SUMMARY | jq -r '.error_rate | tonumber')" -gt "5" ]; then
+            echo "⚠️ Error rate is above 5%. Investigate server errors and capacity."
+          else
+            echo "✅ Error rate is within acceptable limits."
+          fi)
+
+          $(if [ "$(echo $SUMMARY | jq -r '.p95_response_time | tonumber')" -gt "2000" ]; then
+            echo "⚠️ 95th percentile response time exceeds 2 seconds. Consider optimization."
+          else
+            echo "✅ Response times are within acceptable limits."
+          fi)
+          EOF
+
+      - name: Update GitHub Step Summary
+        run: |
+          cat performance-report.md >> $GITHUB_STEP_SUMMARY
+
+  stress-testing:
+    name: Stress Testing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Create stress test script
+        run: |
+          mkdir -p tests/performance
+          cat > tests/performance/stress-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate, Trend } from 'k6/metrics';
+
+          export const errorRate = new Rate('errors');
+          export const responseTime = new Trend('response_time');
+
+          export const options = {
+            stages: [
+              { duration: '2m', target: 50 },   // Ramp up to 50 users
+              { duration: '3m', target: 100 },  // Ramp up to 100 users
+              { duration: '2m', target: 200 },  // Ramp up to 200 users
+              { duration: '3m', target: 200 },  // Stay at 200 users
+              { duration: '2m', target: 100 },  // Ramp down to 100 users
+              { duration: '2m', target: 50 },   // Ramp down to 50 users
+              { duration: '2m', target: 0 },    // Ramp down to 0 users
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<5000'], // More lenient for stress test
+              http_req_failed: ['rate<0.2'],     // Allow higher error rate
+              errors: ['rate<0.2'],
+            },
+          };
+
+          const BASE_URL = __ENV.BASE_URL || 'https://staging.lcopilot.com';
+          const API_BASE = `${BASE_URL}/api`;
+
+          export default function () {
+            // Focus on core endpoints under stress
+            const res1 = http.get(`${API_BASE}/health`);
+            check(res1, { 'health check ok': (r) => r.status === 200 });
+            errorRate.add(res1.status >= 400);
+            responseTime.add(res1.timings.duration);
+
+            sleep(1);
+
+            const res2 = http.get(`${BASE_URL}/`);
+            check(res2, { 'frontend ok': (r) => r.status === 200 });
+            errorRate.add(res2.status >= 400);
+            responseTime.add(res2.timings.duration);
+
+            sleep(2);
+          }
+
+          export function handleSummary(data) {
+            return {
+              'stress-test-results.json': JSON.stringify(data, null, 2),
+            };
+          }
+          EOF
+
+      - name: Run stress test
+        run: |
+          BASE_URL="https://${{ env.TARGET_ENV }}.lcopilot.com"
+          if [ "${{ env.TARGET_ENV }}" = "production" ]; then
+            BASE_URL="https://app.lcopilot.com"
+          fi
+
+          k6 run --env BASE_URL="$BASE_URL" \
+            --out json=stress-test-results.json \
+            tests/performance/stress-test.js
+
+      - name: Upload stress test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: stress-test-results-${{ env.TARGET_ENV }}
+          path: stress-test-results.json
+
+  lighthouse-audit:
+    name: Lighthouse Performance Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.12.x
+
+      - name: Create Lighthouse config
+        run: |
+          cat > lighthouserc.js << 'EOF'
+          module.exports = {
+            ci: {
+              collect: {
+                url: [
+                  process.env.BASE_URL + '/',
+                  process.env.BASE_URL + '/login',
+                  process.env.BASE_URL + '/dashboard',
+                ],
+                settings: {
+                  chromeFlags: ['--no-sandbox', '--headless'],
+                },
+                numberOfRuns: 3,
+              },
+              assert: {
+                assertions: {
+                  'categories:performance': ['warn', { minScore: 0.8 }],
+                  'categories:accessibility': ['error', { minScore: 0.9 }],
+                  'categories:best-practices': ['warn', { minScore: 0.8 }],
+                  'categories:seo': ['warn', { minScore: 0.8 }],
+                  'categories:pwa': ['warn', { minScore: 0.6 }],
+                },
+              },
+              upload: {
+                target: 'temporary-public-storage',
+              },
+            },
+          };
+          EOF
+
+      - name: Run Lighthouse CI
+        run: |
+          BASE_URL="https://${{ env.TARGET_ENV }}.lcopilot.com"
+          if [ "${{ env.TARGET_ENV }}" = "production" ]; then
+            BASE_URL="https://app.lcopilot.com"
+          fi
+
+          BASE_URL="$BASE_URL" lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v3
+        with:
+          name: lighthouse-results-${{ env.TARGET_ENV }}
+          path: .lighthouseci/
+
+  database-performance:
+    name: Database Performance Check
+    runs-on: ubuntu-latest
+
+    environment: ${{ env.TARGET_ENV }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Check database performance
+        run: |
+          # Check slow queries
+          echo "=== Slow Queries (>1 second) ==="
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              query,
+              calls,
+              total_time,
+              mean_time,
+              rows
+            FROM pg_stat_statements
+            WHERE mean_time > 1000
+            ORDER BY mean_time DESC
+            LIMIT 10;
+          " || echo "pg_stat_statements not available"
+
+          # Check database size growth
+          echo "=== Database Size ==="
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              pg_size_pretty(pg_database_size(current_database())) as total_size,
+              pg_size_pretty(pg_total_relation_size('usage_records')) as usage_records_size,
+              pg_size_pretty(pg_total_relation_size('audit_logs')) as audit_logs_size;
+          "
+
+          # Check index usage
+          echo "=== Index Usage ==="
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              schemaname,
+              tablename,
+              indexname,
+              idx_tup_read,
+              idx_tup_fetch,
+              idx_scan
+            FROM pg_stat_user_indexes
+            WHERE idx_scan < 100
+            ORDER BY idx_scan ASC
+            LIMIT 10;
+          "
+
+          # Check connection pool
+          echo "=== Connection Statistics ==="
+          psql "${{ secrets.DATABASE_URL }}" -c "
+            SELECT
+              count(*) as total_connections,
+              count(*) FILTER (WHERE state = 'active') as active_connections,
+              count(*) FILTER (WHERE state = 'idle') as idle_connections,
+              count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction
+            FROM pg_stat_activity;
+          "
+
+  api-benchmarks:
+    name: API Endpoint Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Apache Bench
+        run: sudo apt-get update && sudo apt-get install -y apache2-utils
+
+      - name: Benchmark critical endpoints
+        run: |
+          BASE_URL="https://${{ env.TARGET_ENV }}.lcopilot.com"
+          if [ "${{ env.TARGET_ENV }}" = "production" ]; then
+            BASE_URL="https://app.lcopilot.com"
+          fi
+
+          echo "=== API Endpoint Benchmarks ==="
+          echo "Environment: ${{ env.TARGET_ENV }}"
+          echo "Base URL: $BASE_URL"
+          echo ""
+
+          # Health endpoint
+          echo "--- Health Endpoint ---"
+          ab -n 1000 -c 10 -s 30 "${BASE_URL}/api/health" > health-benchmark.txt 2>&1
+          cat health-benchmark.txt | grep -E "(Requests per second|Time per request|Transfer rate)"
+          echo ""
+
+          # Public API endpoints (no auth required)
+          echo "--- Public Endpoints ---"
+          ab -n 500 -c 5 -s 30 "${BASE_URL}/api/plans" > plans-benchmark.txt 2>&1 || true
+          if [ -f plans-benchmark.txt ]; then
+            cat plans-benchmark.txt | grep -E "(Requests per second|Time per request|Transfer rate)"
+          fi
+          echo ""
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: api-benchmarks-${{ env.TARGET_ENV }}
+          path: "*-benchmark.txt"
+
+  performance-regression-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    needs: [load-testing]
+
+    steps:
+      - name: Download current results
+        uses: actions/download-artifact@v3
+        with:
+          name: performance-results-${{ env.TARGET_ENV }}
+          path: ./current-results/
+
+      - name: Download previous results
+        uses: dawidd6/action-download-artifact@v2
+        continue-on-error: true
+        with:
+          workflow: performance-monitoring.yml
+          name: performance-results-${{ env.TARGET_ENV }}
+          path: ./previous-results/
+          if_no_artifact_found: warn
+
+      - name: Compare performance
+        run: |
+          if [ ! -f "./previous-results/performance-summary.json" ]; then
+            echo "No previous results found. Skipping regression check."
+            exit 0
+          fi
+
+          CURRENT=$(cat ./current-results/performance-summary.json)
+          PREVIOUS=$(cat ./previous-results/performance-summary.json)
+
+          CURRENT_P95=$(echo $CURRENT | jq -r '.p95_response_time | tonumber')
+          PREVIOUS_P95=$(echo $PREVIOUS | jq -r '.p95_response_time | tonumber')
+
+          CURRENT_ERROR_RATE=$(echo $CURRENT | jq -r '.error_rate | tonumber')
+          PREVIOUS_ERROR_RATE=$(echo $PREVIOUS | jq -r '.error_rate | tonumber')
+
+          echo "=== Performance Regression Check ==="
+          echo "Current P95: ${CURRENT_P95}ms"
+          echo "Previous P95: ${PREVIOUS_P95}ms"
+          echo "Current Error Rate: ${CURRENT_ERROR_RATE}%"
+          echo "Previous Error Rate: ${PREVIOUS_ERROR_RATE}%"
+
+          # Check for regressions (>20% increase in response time or error rate)
+          P95_INCREASE=$(echo "scale=2; ($CURRENT_P95 - $PREVIOUS_P95) / $PREVIOUS_P95 * 100" | bc)
+          ERROR_INCREASE=$(echo "scale=2; ($CURRENT_ERROR_RATE - $PREVIOUS_ERROR_RATE)" | bc)
+
+          echo "P95 Response Time Change: ${P95_INCREASE}%"
+          echo "Error Rate Change: ${ERROR_INCREASE}%"
+
+          REGRESSION_DETECTED=false
+
+          if (( $(echo "$P95_INCREASE > 20" | bc -l) )); then
+            echo "⚠️ Performance regression detected: P95 response time increased by ${P95_INCREASE}%"
+            REGRESSION_DETECTED=true
+          fi
+
+          if (( $(echo "$ERROR_INCREASE > 2" | bc -l) )); then
+            echo "⚠️ Performance regression detected: Error rate increased by ${ERROR_INCREASE}%"
+            REGRESSION_DETECTED=true
+          fi
+
+          if [ "$REGRESSION_DETECTED" = true ]; then
+            echo "REGRESSION_DETECTED=true" >> $GITHUB_ENV
+          else
+            echo "✅ No significant performance regression detected"
+            echo "REGRESSION_DETECTED=false" >> $GITHUB_ENV
+          fi
+
+  notify-results:
+    name: Notify Performance Results
+    runs-on: ubuntu-latest
+    needs: [load-testing, lighthouse-audit, performance-regression-check]
+    if: always()
+
+    steps:
+      - name: Download performance results
+        uses: actions/download-artifact@v3
+        with:
+          name: performance-results-${{ env.TARGET_ENV }}
+
+      - name: Create notification
+        run: |
+          SUMMARY=$(cat performance-summary.json)
+
+          ERROR_RATE=$(echo $SUMMARY | jq -r '.error_rate | tonumber')
+          P95_TIME=$(echo $SUMMARY | jq -r '.p95_response_time | tonumber')
+          THRESHOLDS_PASSED=$(echo $SUMMARY | jq -r '.thresholds_passed')
+
+          # Determine status color
+          if [ "$THRESHOLDS_PASSED" = "true" ] && (( $(echo "$ERROR_RATE < 5" | bc -l) )) && (( $(echo "$P95_TIME < 2000" | bc -l) )); then
+            STATUS_COLOR="good"
+            STATUS_EMOJI="✅"
+          elif [ "$THRESHOLDS_PASSED" = "false" ] || (( $(echo "$ERROR_RATE > 10" | bc -l) )) || (( $(echo "$P95_TIME > 3000" | bc -l) )); then
+            STATUS_COLOR="danger"
+            STATUS_EMOJI="❌"
+          else
+            STATUS_COLOR="warning"
+            STATUS_EMOJI="⚠️"
+          fi
+
+          echo "STATUS_COLOR=$STATUS_COLOR" >> $GITHUB_ENV
+          echo "STATUS_EMOJI=$STATUS_EMOJI" >> $GITHUB_ENV
+
+      - name: Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          channel: '#performance'
+          custom_payload: |
+            {
+              "text": "${{ env.STATUS_EMOJI }} Performance monitoring results for ${{ env.TARGET_ENV }}",
+              "attachments": [
+                {
+                  "color": "${{ env.STATUS_COLOR }}",
+                  "fields": [
+                    {
+                      "title": "Environment",
+                      "value": "${{ env.TARGET_ENV }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Error Rate",
+                      "value": "$(cat performance-summary.json | jq -r '.error_rate')%",
+                      "short": true
+                    },
+                    {
+                      "title": "P95 Response Time",
+                      "value": "$(cat performance-summary.json | jq -r '.p95_response_time')ms",
+                      "short": true
+                    },
+                    {
+                      "title": "Thresholds",
+                      "value": "$(cat performance-summary.json | jq -r '.thresholds_passed')",
+                      "short": true
+                    },
+                    {
+                      "title": "Regression",
+                      "value": "${{ env.REGRESSION_DETECTED || 'false' }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Workflow",
+                      "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Results>",
+                      "short": true
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.PERFORMANCE_SLACK_WEBHOOK_URL }}

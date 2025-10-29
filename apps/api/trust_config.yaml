@@ -1,0 +1,243 @@
+# LCopilot Trust Platform Configuration
+# Phase 4: Resilience, Async Scaling, and Polish
+
+# Core Platform Configuration
+platform:
+  name: "LCopilot Trust Platform"
+  version: "2.4.0"
+  environment: "production"  # production, staging, development, sandbox
+  debug_mode: false
+
+# OCR & Document Processing
+ocr:
+  # Primary OCR engine configuration
+  primary_engine: "pypdf"  # pypdf, pdfplumber, camelot
+
+  # AWS Textract Fallback Configuration
+  textract_fallback:
+    enabled: true
+    aws_region: "us-east-1"
+    max_pages_per_day: 1000  # Cost guardrail
+    max_pages_per_document: 50
+    timeout_seconds: 30
+    retry_attempts: 3
+
+    # Textract feature configuration
+    features:
+      - "TABLES"
+      - "FORMS"
+      - "LAYOUT"
+
+    # Cost monitoring
+    cost_alerts:
+      daily_spend_threshold: 100.00  # USD
+      monthly_spend_threshold: 2500.00  # USD
+
+    # When to trigger fallback
+    trigger_conditions:
+      - "primary_ocr_failure"
+      - "low_confidence_extraction"
+      - "document_format_unsupported"
+
+# Async Processing Pipeline
+async_processing:
+  enabled: true
+
+  # SQS Configuration
+  sqs:
+    queue_name: "lcopilot-processing-queue"
+    dead_letter_queue: "lcopilot-dlq"
+    visibility_timeout: 300  # 5 minutes
+    message_retention: 1209600  # 14 days
+    max_receives: 3
+
+  # Lambda Configuration
+  lambda:
+    function_name: "lcopilot-document-processor"
+    timeout: 300  # 5 minutes
+    memory: 1024  # MB
+    runtime: "python3.9"
+
+  # Rate Limiting by Tier
+  rate_limits:
+    free:
+      jobs_per_hour: 10
+      jobs_per_day: 50
+      concurrent_jobs: 2
+    pro:
+      jobs_per_hour: 100
+      jobs_per_day: 500
+      concurrent_jobs: 5
+    enterprise:
+      jobs_per_hour: 1000
+      jobs_per_day: 10000
+      concurrent_jobs: 20
+
+  # Job Status Configuration
+  job_status:
+    default_ttl: 604800  # 7 days
+    polling_interval: 2000  # 2 seconds (frontend)
+    max_poll_duration: 300000  # 5 minutes
+
+# Frontend Configuration
+frontend:
+  # SME Portal Settings
+  sme_portal:
+    # Branding & White-labeling
+    branding:
+      # Default LCopilot branding
+      default:
+        logo_url: "/static/images/lcopilot-logo.png"
+        primary_color: "#3b82f6"
+        secondary_color: "#1e293b"
+        company_name: "LCopilot"
+        tagline: "Trust Platform for Trade Finance"
+
+      # Enterprise white-label override
+      enterprise_override:
+        enabled: false
+        logo_url: ""
+        primary_color: ""
+        secondary_color: ""
+        company_name: ""
+        tagline: ""
+        custom_css_url: ""
+
+    # UI Enhancement Settings
+    ui:
+      show_progress_indicators: true
+      enable_upload_spinner: true
+      show_processing_status: true
+      enable_real_time_updates: true
+      max_file_size_mb: 10
+      supported_formats: ["pdf", "jpg", "jpeg", "png"]
+
+    # Error Handling
+    error_handling:
+      show_detailed_errors: false  # Set to true in development
+      enable_error_reporting: true
+      fallback_messages:
+        upload_failed: "Upload failed. Please try again or contact support."
+        processing_timeout: "Processing is taking longer than expected. Your job will continue in the background."
+        ocr_fallback: "Using enhanced OCR processing for better accuracy."
+
+# Monitoring & Alerts
+monitoring:
+  # CloudWatch Configuration
+  cloudwatch:
+    enabled: true
+    log_group: "/lcopilot/trust-platform"
+    log_retention_days: 30
+
+    # Metrics
+    custom_metrics:
+      - "textract_fallback_rate"
+      - "async_job_duration"
+      - "sme_portal_errors"
+      - "compliance_validation_time"
+
+    # Alarms
+    alarms:
+      textract_fallback_rate:
+        threshold: 10.0  # percentage
+        evaluation_periods: 2
+        period: 3600  # 1 hour
+        comparison: "GreaterThanThreshold"
+
+      lambda_job_failures:
+        threshold: 5.0  # count
+        evaluation_periods: 1
+        period: 300  # 5 minutes
+        comparison: "GreaterThanThreshold"
+
+      async_queue_depth:
+        threshold: 100  # messages
+        evaluation_periods: 2
+        period: 600  # 10 minutes
+        comparison: "GreaterThanThreshold"
+
+# Security & Compliance
+security:
+  # API Security
+  api:
+    enable_rate_limiting: true
+    enable_cors: true
+    allowed_origins: ["https://lcopilot.com", "https://*.lcopilot.com"]
+
+  # Data Protection
+  data:
+    encryption_at_rest: true
+    encryption_in_transit: true
+    data_retention_days: 90
+    pii_scrubbing: true
+
+  # Audit Logging
+  audit:
+    enabled: true
+    include_request_bodies: false
+    include_response_bodies: false
+    retention_days: 365
+
+# Development & Testing
+development:
+  # Sandbox Mode
+  sandbox:
+    enabled: false  # Set to true for local development
+    mock_aws_services: true
+    fake_ocr_responses: true
+    simulate_processing_delays: false
+
+  # Testing Configuration
+  testing:
+    test_data_path: "tests/fixtures"
+    mock_api_responses: true
+    enable_test_endpoints: false  # Only in development
+
+# Redis Configuration
+redis:
+  host: "localhost"  # Override with REDIS_HOST env var
+  port: 6379
+  db: 0
+  ssl: true  # Enable TLS for production
+  # Note: Password MUST be set via REDIS_PASSWORD environment variable
+
+# Storage Configuration
+storage:
+  s3_bucket: "lcopilot-documents"  # Override with S3_BUCKET env var
+  # Note: KMS_KEY_ID MUST be set via environment variable for encryption
+
+# Cost Management
+cost_management:
+  # Spending Limits
+  daily_limits:
+    textract_pages: 1000
+    lambda_invocations: 10000
+    sqs_messages: 50000
+
+  monthly_limits:
+    textract_spend: 2500.00  # USD
+    lambda_spend: 500.00     # USD
+    sqs_spend: 100.00        # USD
+
+  # Notifications
+  cost_alerts:
+    email_recipients: ["ops@lcopilot.com"]
+    slack_webhook: ""  # Set via SLACK_WEBHOOK env var if needed
+    alert_thresholds: [50, 80, 95, 100]  # percentage of budget
+
+# Feature Flags
+feature_flags:
+  # Phase 4 Features
+  enable_textract_fallback: true
+  enable_async_processing: true
+  enable_white_labeling: true
+  enable_cost_guardrails: true
+
+  # Advanced Features
+  enable_ml_confidence_scoring: false
+  enable_batch_processing: false
+  enable_api_versioning: true
+
+  # Experimental Features
+  enable_real_time_collaboration: false
+  enable_automated_corrections: false

@@ -1,0 +1,146 @@
+# Coverage configuration for LCopilot Trust Platform regression tests
+
+[run]
+# Source code to measure
+source = .
+
+# Include patterns
+include =
+    */sme_portal/*
+    app.py
+    resilient_app.py
+    bank_simulator.py
+    demo_bank_profiles.py
+
+# Exclude patterns
+omit =
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    .venv/*
+    setup.py
+    */site-packages/*
+    */migrations/*
+    */static/*
+    */templates/*
+    */node_modules/*
+    */build/*
+    */dist/*
+    */.git/*
+    */.pytest_cache/*
+    */htmlcov/*
+
+# Branch coverage
+branch = true
+
+# Data file location
+data_file = .coverage
+
+# Concurrency support
+concurrency =
+    thread
+    multiprocessing
+
+# Context
+dynamic_contexts = test_function
+
+[report]
+# Reporting precision
+precision = 2
+
+# Minimum coverage percentage required
+fail_under = 85
+
+# Show missing line numbers
+show_missing = true
+
+# Skip files with no code
+skip_empty = true
+
+# Skip covered files
+skip_covered = false
+
+# Sort results
+sort = Cover
+
+# Exclude lines from coverage
+exclude_lines =
+    # Have to re-enable the standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug-only code:
+    def __repr__
+    if self\.debug
+
+    # Don't complain if tests don't hit defensive assertion code:
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run:
+    if 0:
+    if False:
+    if __name__ == .__main__.:
+
+    # Don't complain about abstract methods
+    @(abc\.)?abstractmethod
+
+    # Don't complain about platform specific code
+    if platform\.system
+
+    # Don't complain about type checking code
+    if TYPE_CHECKING:
+
+    # Don't complain about testing utilities
+    def pytest_configure
+    def pytest_collection_modifyitems
+
+[html]
+# HTML report directory
+directory = test-results/html/coverage
+
+# HTML report title
+title = LCopilot Trust Platform - Coverage Report
+
+# Show contexts in HTML report
+show_contexts = true
+
+# Skip files with no statements
+skip_empty = true
+
+# Skip covered files in HTML report
+skip_covered = false
+
+# Extra CSS for HTML report
+extra_css =
+
+[xml]
+# XML report file
+output = test-results/regression-coverage.xml
+
+[json]
+# JSON report file
+output = test-results/coverage.json
+pretty_print = true
+show_contexts = true
+
+[paths]
+# Path mapping for different environments
+source =
+    ./
+    */sme_portal/
+    /app/
+    /code/
+
+# Report sections
+[report:include]
+# Files to include in reports
+include =
+    */sme_portal/*
+
+[report:exclude]
+# Files to exclude from reports
+exclude =
+    */tests/*
+    */migrations/*

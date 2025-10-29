@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "enterprise-gateway.fullname" . }}-nginx-config
+  namespace: {{ .Release.Namespace }}
+data:
+  nginx.conf: |
+    upstream backend {
+        server trdrhub-api:8000;
+    }
+
+    map $ssl_client_s_dn $client_dn {
+        ~CN=(?<cn>[^,]+) $cn;
+        default "unknown";
+    }
+
+    map $ssl_client_verify $auth_status {
+        SUCCESS "authenticated";
+        default "unauthenticated";
+    }
+
+    # IP Whitelist mapping
+    geo $allowed_ip {
+        default 0;
+        {{- range .Values.bankPilot.tenants }}
+        {{- range .ipWhitelist }}
+        {{ . }} 1;
+        {{- end }}
+        {{- end }}
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name {{ .Values.global.domain }};
+
+        # SSL Configuration
+        ssl_certificate /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_client_certificate /etc/nginx/certs/ca.crt;
+        ssl_verify_client {{ if .Values.bankPilot.mtls.enabled }}on{{ else }}optional{{ end }};
+        ssl_verify_depth 2;
+
+        # Security Headers
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+        # Bank Pilot IP Whitelist
+        {{- if .Values.bankPilot.ipWhitelist.enabled }}
+        if ($allowed_ip = 0) {
+            return 403 "Access denied - IP not whitelisted";
+        }
+        {{- end }}
+
+        # mTLS Validation for Bank Pilot
+        {{- if .Values.bankPilot.mtls.enabled }}
+        if ($ssl_client_verify != "SUCCESS") {
+            return 403 "Client certificate required";
+        }
+        {{- end }}
+
+        location / {
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Bank Pilot Headers
+            proxy_set_header X-Client-DN $client_dn;
+            proxy_set_header X-Client-Verify $ssl_client_verify;
+            proxy_set_header X-Auth-Status $auth_status;
+            proxy_set_header X-Tenant-Mode "bank-pilot";
+        }
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }

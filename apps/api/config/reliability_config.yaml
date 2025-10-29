@@ -1,0 +1,418 @@
+# LCopilot Reliability-as-a-Service Configuration
+# Commercial feature tiering with Free, Pro, and Enterprise tiers
+
+# Pricing Model (Reference)
+pricing:
+  free:
+    price_usd: 0
+    description: "Basic reliability monitoring"
+  pro:
+    price_usd: 499
+    description: "Advanced SLA reporting and analytics"
+  enterprise:
+    price_usd: 1999
+    description: "Full reliability suite with predictive monitoring"
+
+# Feature Matrix by Tier
+feature_matrix:
+  free:
+    status_page: true
+    history_days: 90
+    shared_dashboards: true
+    sla_reports: false
+    customer_portal: false
+    webhooks: false
+    analytics: false
+    predictive: false
+    integration_apis: false
+    white_label: false
+    dedicated_dashboards: false
+    compliance_exports: false
+
+  pro:
+    status_page: true
+    history_days: 365
+    shared_dashboards: true
+    sla_reports: true
+    customer_portal: true
+    webhooks: true
+    analytics: "basic"  # basic error trends, top codes
+    predictive: false
+    integration_apis: false
+    white_label: false
+    dedicated_dashboards: false
+    compliance_exports: false
+
+  enterprise:
+    status_page: true
+    history_days: 1095  # 3 years
+    shared_dashboards: true
+    sla_reports: true
+    customer_portal: true
+    webhooks: true
+    analytics: "advanced"  # full analytics suite
+    predictive: true
+    integration_apis: true
+    white_label: true
+    dedicated_dashboards: true
+    compliance_exports: true
+
+# Customer Tier Mapping
+# Maps customer account IDs to their subscription tier
+customers:
+  # Free tier customers (default)
+  default_tier: "free"
+
+  # Example customer mappings
+  tier_mappings:
+    # Enterprise customers
+    "enterprise-customer-001":
+      tier: "enterprise"
+      account_id: "999888777666"
+      features:
+        white_label:
+          domain: "status.customer001.com"
+          branding:
+            logo_url: "https://customer001.com/logo.png"
+            primary_color: "#1E40AF"
+            company_name: "Customer Corp"
+        dedicated_dashboard: true
+        predictive_alerts: true
+
+    "enterprise-customer-002":
+      tier: "enterprise"
+      account_id: "888777666555"
+      features:
+        white_label:
+          domain: "reliability.customer002.io"
+          branding:
+            logo_url: "https://customer002.io/brand/logo.svg"
+            primary_color: "#059669"
+            company_name: "Customer Industries"
+
+    # Pro tier customers
+    "pro-customer-001":
+      tier: "pro"
+      account_id: "777666555444"
+      features:
+        portal_access: true
+        webhook_endpoints:
+          - "https://hooks.slack.com/customer001/webhook"
+          - "alerts@customer001.com"
+
+    "pro-customer-002":
+      tier: "pro"
+      account_id: "666555444333"
+      features:
+        portal_access: true
+
+# Status Page Configuration
+status_page:
+  free:
+    domain: "status.lcopilot.com"
+    features:
+      - uptime_metrics
+      - incident_history
+      - current_health
+    history_retention_days: 90
+    update_frequency_minutes: 5
+
+  pro:
+    domain: "status.lcopilot.com"
+    features:
+      - uptime_metrics
+      - incident_history
+      - current_health
+      - sla_summaries
+      - customer_login
+    history_retention_days: 365
+    update_frequency_minutes: 1
+
+  enterprise:
+    # Can have custom domains
+    features:
+      - uptime_metrics
+      - incident_history
+      - current_health
+      - sla_summaries
+      - customer_login
+      - white_label_branding
+      - dedicated_views
+    history_retention_days: 1095
+    update_frequency_minutes: 1
+
+# SLA Dashboard & Reporting
+sla_reporting:
+  free:
+    enabled: false
+
+  pro:
+    enabled: true
+    report_frequency: "monthly"
+    formats: ["pdf", "html"]
+    sections:
+      - executive_summary
+      - uptime_metrics
+      - incident_summary
+    delivery:
+      - s3_storage
+      - email_notification
+    retention_months: 12
+
+  enterprise:
+    enabled: true
+    report_frequency: "monthly"
+    formats: ["pdf", "html", "json", "csv"]
+    sections:
+      - executive_summary
+      - uptime_metrics
+      - incident_summary
+      - performance_analysis
+      - compliance_metrics
+      - predictive_insights
+    delivery:
+      - s3_storage
+      - email_notification
+      - api_access
+      - portal_download
+    retention_months: 36
+    dedicated_dashboards: true
+
+# Customer Trust Portal
+trust_portal:
+  free:
+    enabled: false
+
+  pro:
+    enabled: true
+    domain: "portal.lcopilot.com"
+    features:
+      - authentication  # Cognito/Auth0
+      - sla_dashboard_view
+      - incident_rca_access
+      - report_downloads
+    branding: "lcopilot"  # shared branding
+
+  enterprise:
+    enabled: true
+    features:
+      - authentication
+      - sla_dashboard_view
+      - incident_rca_access
+      - report_downloads
+      - dedicated_dashboards
+      - compliance_documents
+      - white_label_branding
+      - custom_domain_support
+
+# Integration APIs
+integration_apis:
+  free:
+    enabled: false
+
+  pro:
+    enabled: false  # Basic webhooks only
+
+  enterprise:
+    enabled: true
+    base_url: "https://api.lcopilot.com/reliability"
+    endpoints:
+      health:
+        path: "/health/{customer_id}"
+        methods: ["GET"]
+        auth: "api_key"
+        rate_limit: "1000/hour"
+
+      incidents:
+        path: "/incidents"
+        methods: ["GET", "POST"]
+        auth: "api_key"
+        rate_limit: "500/hour"
+
+      reports:
+        path: "/reports/{customer_id}"
+        methods: ["GET"]
+        auth: "api_key"
+        rate_limit: "100/hour"
+
+      compliance:
+        path: "/compliance/{customer_id}/export"
+        methods: ["GET", "POST"]
+        auth: "api_key"
+        rate_limit: "10/hour"
+
+    authentication:
+      method: "api_key"
+      header: "X-LCopilot-API-Key"
+
+# Webhooks Configuration
+webhooks:
+  free:
+    enabled: false
+
+  pro:
+    enabled: true
+    max_endpoints_per_customer: 5
+    supported_events:
+      - incident_created
+      - incident_resolved
+      - sla_breach
+      - uptime_degraded
+    delivery_attempts: 3
+    timeout_seconds: 10
+
+  enterprise:
+    enabled: true
+    max_endpoints_per_customer: 50
+    supported_events:
+      - incident_created
+      - incident_resolved
+      - incident_updated
+      - sla_breach
+      - uptime_degraded
+      - predictive_alert
+      - maintenance_scheduled
+      - compliance_report_ready
+    delivery_attempts: 5
+    timeout_seconds: 30
+    custom_headers: true
+    retry_backoff: "exponential"
+
+# Analytics Configuration
+analytics:
+  free:
+    enabled: false
+
+  pro:
+    enabled: true
+    type: "basic"
+    features:
+      - error_trend_reports
+      - top_error_codes
+      - monthly_summaries
+    retention_months: 12
+    export_formats: ["json"]
+
+  enterprise:
+    enabled: true
+    type: "advanced"
+    features:
+      - error_trend_reports
+      - top_error_codes
+      - monthly_summaries
+      - time_to_validation_trends
+      - per_customer_reliability_scores
+      - performance_analytics
+      - custom_queries
+    retention_months: 36
+    export_formats: ["json", "csv", "parquet"]
+    bi_integration: true  # Grafana, Tableau, etc.
+
+# Predictive Reliability (Enterprise Only)
+predictive:
+  free:
+    enabled: false
+
+  pro:
+    enabled: false
+
+  enterprise:
+    enabled: true
+    features:
+      - ml_anomaly_detection
+      - error_surge_forecasting
+      - capacity_planning
+      - reliability_scoring
+
+    forecasting:
+      horizon_hours: 24
+      confidence_interval: 0.95
+      algorithms:
+        - "time_series_arima"
+        - "ml_ensemble"
+
+    alerting:
+      proactive_alerts: true
+      surge_threshold_multiplier: 2.0  # Alert if predicted surge > 2x normal
+      delivery_channels:
+        - sns
+        - webhook
+        - dashboard_widget
+
+    ml_models:
+      anomaly_detection:
+        algorithm: "isolation_forest"
+        training_window_days: 30
+        retrain_frequency_hours: 24
+
+      surge_forecasting:
+        algorithm: "lstm_ensemble"
+        training_window_days: 90
+        retrain_frequency_hours: 6
+
+# Infrastructure Configuration
+infrastructure:
+  status_page:
+    hosting: "cloudfront_s3"  # CloudFront + S3 for static content
+    dynamic_api: "apigateway_lambda"  # API Gateway + Lambda for dynamic data
+
+  trust_portal:
+    hosting: "cloudfront_s3"
+    authentication: "cognito"  # AWS Cognito User Pools
+    api_backend: "apigateway_lambda"
+
+  apis:
+    hosting: "apigateway_lambda"
+    rate_limiting: "apigateway_throttling"
+
+  analytics:
+    storage: "athena"  # Amazon Athena for analytics queries
+    visualization: "cloudwatch_grafana"
+
+  predictive:
+    compute: "sagemaker"  # Amazon SageMaker for ML models
+    storage: "s3_timestream"  # S3 + TimeStream for time series data
+
+# Global Settings
+global:
+  environments:
+    staging:
+      aws_region: "eu-north-1"
+      domain_suffix: "-staging.lcopilot.com"
+
+    prod:
+      aws_region: "eu-north-1"
+      domain_suffix: ".lcopilot.com"
+
+  security:
+    enable_waf: true
+    enable_ddos_protection: true
+    ssl_certificate: "acm_managed"
+
+  compliance:
+    gdpr_compliant: true
+    soc2_compliant: true
+    retention_policy_days: 2555  # 7 years for enterprise compliance
+
+  cost_controls:
+    enable_s3_lifecycle: true
+    enable_log_archival: true
+    predictive_ml_budget_limit_usd: 500  # Monthly ML compute budget
+
+# CI/CD Configuration
+ci_cd:
+  status_page_deploy:
+    trigger: "on_config_change"
+    environments: ["staging", "prod"]
+
+  sla_report_generation:
+    schedule: "0 2 1 * *"  # 2 AM on 1st of each month
+    environments: ["prod"]
+
+  api_integration_tests:
+    schedule: "0 */6 * * *"  # Every 6 hours
+    environments: ["staging", "prod"]
+
+  verification_checks:
+    schedule: "0 4 * * *"  # Daily at 4 AM
+    scope: "tier_compliance"

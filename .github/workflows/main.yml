@@ -1,0 +1,248 @@
+name: Main CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  POSTGRES_PASSWORD: test_password
+  REDIS_URL: redis://localhost:6379
+  TEST_DATABASE_URL: postgresql://postgres:test_password@localhost:5432/test_db
+
+jobs:
+  # Run quick checks first
+  quick-checks:
+    name: Quick Checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+        pip install -r requirements.txt
+
+    - name: Run quick linting
+      run: |
+        black app/ tests/ --check
+        flake8 app/ tests/ --count --statistics
+
+  # Comprehensive testing
+  test-all:
+    name: Comprehensive Test Suite
+    runs-on: ubuntu-latest
+    needs: quick-checks
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Install Node.js dependencies
+      run: npm ci
+
+    - name: Run database migrations
+      run: |
+        alembic upgrade head
+
+    - name: Run all tests
+      run: |
+        make ci_test
+
+    - name: Run code quality checks
+      run: |
+        make ci_lint
+
+    - name: Run security checks
+      run: |
+        make ci_security
+
+    - name: Generate coverage report
+      run: |
+        coverage xml
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # Build and package
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: test-all
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: frontend-build
+        path: dist/
+
+    - name: Build Docker image
+      run: |
+        docker build -t trdrhub-api:${{ github.sha }} .
+        docker save trdrhub-api:${{ github.sha }} | gzip > trdrhub-api.tar.gz
+
+    - name: Upload Docker image
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-image
+        path: trdrhub-api.tar.gz
+
+  # Deploy to staging (develop branch only)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test-all, build]
+    if: github.ref == 'refs/heads/develop'
+
+    environment:
+      name: staging
+      url: https://staging.trdrhub.com
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-image
+
+    - name: Load Docker image
+      run: |
+        gunzip -c trdrhub-api.tar.gz | docker load
+
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment"
+        # Add actual deployment commands here
+        make ci_deploy
+
+  # Deploy to production (main branch only, manual approval)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test-all, build]
+    if: github.ref == 'refs/heads/main'
+
+    environment:
+      name: production
+      url: https://trdrhub.com
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-image
+
+    - name: Load Docker image
+      run: |
+        gunzip -c trdrhub-api.tar.gz | docker load
+
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment"
+        # Add production deployment commands here
+        # This would typically involve:
+        # - Pushing to production registry
+        # - Updating Kubernetes manifests
+        # - Rolling deployment
+        # - Health checks
+        # - Monitoring setup
+
+    - name: Setup monitoring
+      run: |
+        make setup_monitoring
+
+    - name: Run post-deployment tests
+      run: |
+        # Run smoke tests against production
+        pytest tests/smoke/ --base-url=https://trdrhub.com
+
+  # Notify team about deployment status
+  notify:
+    name: Notify Team
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+    - name: Notify success
+      if: needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success'
+      run: |
+        echo "Deployment successful! 🚀"
+        # Add notification logic (Slack, email, etc.)
+
+    - name: Notify failure
+      if: needs.deploy-staging.result == 'failure' || needs.deploy-production.result == 'failure'
+      run: |
+        echo "Deployment failed! ❌"
+        # Add notification logic (Slack, email, etc.)

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing - LCopilot SME Portal{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align: center;">
+    <h1 style="margin-bottom: 1rem; color: #1e293b;">Choose Your Plan</h1>
+    <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 3rem;">
+        Get the LC compliance validation features you need at a price that works for your business
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem;">
+        {% for tier_key, tier_info in pricing.tiers.items() %}
+        <div class="card {% if tier_key == 'pro' %}tier-recommended{% endif %}" style="position: relative; border: {% if tier_key == 'pro' %}2px solid #3b82f6{% else %}1px solid #e5e7eb{% endif %};">
+            {% if tier_key == 'pro' %}
+            <div style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.875rem; font-weight: 500;">
+                MOST POPULAR
+            </div>
+            {% endif %}
+
+            <div style="text-align: center;">
+                <h2 style="color: #1e293b; margin-bottom: 0.5rem;">{{ tier_info.name }}</h2>
+                <div style="font-size: 2.5rem; font-weight: bold; color: #1e293b; margin-bottom: 0.5rem;">
+                    {% if tier_key == 'free' %}
+                        Free
+                    {% elif tier_key == 'pro' %}
+                        $99
+                    {% else %}
+                        Custom
+                    {% endif %}
+                </div>
+                {% if tier_key != 'free' and tier_key != 'enterprise' %}
+                <div style="color: #64748b; margin-bottom: 1rem;">per month</div>
+                {% else %}
+                <div style="color: #64748b; margin-bottom: 1rem;">{{ tier_info.price.replace(tier_info.price.split('/')[0], '') if '/' in tier_info.price else '' }}</div>
+                {% endif %}
+
+                <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                    <div style="font-weight: 500; color: #374151;">{{ tier_info.limits }}</div>
+                </div>
+
+                <ul style="list-style: none; padding: 0; text-align: left; margin-bottom: 2rem;">
+                    {% for feature in tier_info.features %}
+                    <li style="margin-bottom: 0.75rem; display: flex; align-items: flex-start;">
+                        <span style="color: #10b981; margin-right: 0.5rem; margin-top: 0.1rem;">✓</span>
+                        <span style="color: #374151;">{{ feature }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+
+                {% if tier_key == 'free' %}
+                <a href="{{ url_for('validate_lc') }}" class="btn" style="width: 100%; background: #6b7280; color: white;">
+                    Get Started Free
+                </a>
+                {% elif 'upgrade_url' in tier_info %}
+                <a href="{{ tier_info.upgrade_url }}" class="btn btn-primary" style="width: 100%;">
+                    Upgrade to Pro
+                </a>
+                {% elif 'contact_url' in tier_info %}
+                <a href="{{ tier_info.contact_url }}" class="btn btn-warning" style="width: 100%;">
+                    Contact Sales
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="text-align: center; margin-bottom: 2rem; color: #1e293b;">Why Choose LCopilot?</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+        <div style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">⚡</div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">Instant Validation</h3>
+            <p style="color: #64748b;">
+                Get comprehensive LC compliance results in seconds, not days. Our advanced rule engine validates against UCP600, ISBP, and local regulations simultaneously.
+            </p>
+        </div>
+
+        <div style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🎯</div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">SME Focused</h3>
+            <p style="color: #64748b;">
+                Built specifically for small and medium enterprises. Simple interface, clear explanations, and affordable pricing that scales with your business.
+            </p>
+        </div>
+
+        <div style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">Bank-Grade Security</h3>
+            <p style="color: #64748b;">
+                Enterprise-level security with tamper-proof evidence packages and digital signatures. Your LC data is protected with industry-leading encryption.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="text-align: center; margin-bottom: 2rem; color: #1e293b;">Frequently Asked Questions</h2>
+
+    <div style="display: grid; gap: 1.5rem;">
+        <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 1.5rem;">
+            <h3 style="color: #374151; margin-bottom: 0.5rem;">What types of LCs can I validate?</h3>
+            <p style="color: #64748b;">
+                Our system validates all standard documentary credits including sight LCs, usance LCs, transferable LCs, and standby letters of credit. We support validation against UCP600, ISBP745, and major local regulations.
+            </p>
+        </div>
+
+        <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 1.5rem;">
+            <h3 style="color: #374151; margin-bottom: 0.5rem;">How accurate are the validation results?</h3>
+            <p style="color: #64748b;">
+                Our rule engine is developed by trade finance experts and continuously updated with the latest ICC guidelines and local regulations. We achieve 95%+ accuracy in identifying compliance issues.
+            </p>
+        </div>
+
+        <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 1.5rem;">
+            <h3 style="color: #374151; margin-bottom: 0.5rem;">Can I integrate LCopilot with my existing systems?</h3>
+            <p style="color: #64748b;">
+                Yes! Professional and Enterprise plans include full API access. We provide REST APIs, webhooks, and can develop custom integrations for Enterprise customers.
+            </p>
+        </div>
+
+        <div>
+            <h3 style="color: #374151; margin-bottom: 0.5rem;">What support do you provide?</h3>
+            <p style="color: #64748b;">
+                Free users get community support. Pro users get priority email support with 24-hour response times. Enterprise customers get dedicated support managers and phone support.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="text-align: center; background: linear-gradient(135deg, #1e293b 0%, #475569 100%); color: white;">
+    <h2 style="color: white; margin-bottom: 1rem;">Ready to Get Started?</h2>
+    <p style="color: #cbd5e1; margin-bottom: 2rem;">
+        Join thousands of SMEs already using LCopilot to streamline their LC compliance process.
+    </p>
+    <div style="display: flex; gap: 1rem; justify-content: center;">
+        <a href="{{ url_for('validate_lc') }}" class="btn btn-primary">
+            Start Free Trial
+        </a>
+        <a href="{{ pricing.tiers.pro.upgrade_url }}" class="btn btn-success">
+            Upgrade to Pro
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,317 @@
+# LCopilot Comprehensive Compliance Rules
+# ICC UCP600, ISBP, and Local Banking Rules for Bangladesh
+
+metadata:
+  version: "2.1.0"
+  last_updated: "2024-12-20"
+  coverage: "UCP600 + ISBP + Bangladesh Local Rules"
+  description: "Comprehensive LC compliance validation including locally relevant rejection scenarios"
+
+# ICC UCP600 Rules (Uniform Customs and Practice for Documentary Credits)
+ucp600:
+  - id: UCP600-6
+    description: "LC must specify expiry date and place for presentation"
+    severity: "critical"
+    check: "validate_expiry_date_and_place"
+    rejection_risk: "high"
+    frequency: "28%"
+
+  - id: UCP600-14
+    description: "Documents must be presented within 21 days after shipment date"
+    severity: "critical"
+    check: "validate_presentation_period"
+    rejection_risk: "high"
+    frequency: "15%"
+
+  - id: UCP600-18
+    description: "Partial drawings/shipments allowed unless prohibited"
+    severity: "medium"
+    check: "validate_partial_shipment_terms"
+    rejection_risk: "medium"
+    frequency: "8%"
+
+  - id: UCP600-20
+    description: "Commercial invoice description must match LC requirements"
+    severity: "critical"
+    check: "validate_invoice_description_match"
+    rejection_risk: "high"
+    frequency: "22%"
+
+  - id: UCP600-21
+    description: "Invoice amount must not exceed LC amount"
+    severity: "critical"
+    check: "validate_invoice_amount_limit"
+    rejection_risk: "critical"
+    frequency: "18%"
+
+  - id: UCP600-31
+    description: "Transport document dates must be consistent and logical"
+    severity: "major"
+    check: "validate_transport_document_dates"
+    rejection_risk: "high"
+    frequency: "15%"
+
+  - id: UCP600-36
+    description: "Bill of Lading must indicate port of loading and discharge"
+    severity: "critical"
+    check: "validate_bill_of_lading_ports"
+    rejection_risk: "high"
+    frequency: "12%"
+
+  - id: UCP600-28
+    description: "Insurance documents must comply with LC terms"
+    severity: "major"
+    check: "validate_insurance_compliance"
+    rejection_risk: "medium"
+    frequency: "6%"
+
+# ISBP Rules (International Standard Banking Practice)
+isbp:
+  - id: ISBP-42
+    description: "Applicant and Beneficiary names must be consistent across documents"
+    severity: "critical"
+    check: "validate_party_name_consistency"
+    rejection_risk: "high"
+    frequency: "20%"
+
+  - id: ISBP-55
+    description: "Commercial invoice must describe goods consistently with LC"
+    severity: "major"
+    check: "validate_invoice_description_consistency"
+    rejection_risk: "high"
+    frequency: "14%"
+
+  - id: ISBP-89
+    description: "Transport documents must indicate clear shipment routing"
+    severity: "medium"
+    check: "validate_transport_routing"
+    rejection_risk: "medium"
+    frequency: "10%"
+
+  - id: ISBP-124
+    description: "Certificate of Origin must match invoice details"
+    severity: "medium"
+    check: "validate_certificate_of_origin"
+    rejection_risk: "medium"
+    frequency: "8%"
+
+  - id: ISBP-156
+    description: "Packing list must be consistent with invoice quantities"
+    severity: "medium"
+    check: "validate_packing_list_consistency"
+    rejection_risk: "medium"
+    frequency: "7%"
+
+  - id: ISBP-D3
+    description: "Transport document dates must meet presentation requirements"
+    severity: "major"
+    check: "validate_transport_date_requirements"
+    rejection_risk: "high"
+    frequency: "12%"
+
+  - id: ISBP-B2
+    description: "Invoice calculation must be mathematically correct"
+    severity: "critical"
+    check: "validate_invoice_calculations"
+    rejection_risk: "critical"
+    frequency: "18%"
+
+# Local Banking Rules for Bangladesh
+# Based on common rejection scenarios from DBBL, Sonali Bank, Islami Bank, etc.
+local_rules:
+  - id: BD-001
+    description: "Beneficiary address must match exactly between LC and invoice"
+    severity: "critical"
+    check: "validate_beneficiary_address_exact_match"
+    rejection_risk: "high"
+    frequency: "25%"
+    banks_enforcing: ["DBBL", "Sonali Bank", "AB Bank", "City Bank"]
+    local_context: "Bangladeshi banks strictly enforce exact address matching"
+
+  - id: BD-002
+    description: "Currency in all documents must match LC currency (USD/BDT/EUR)"
+    severity: "critical"
+    check: "validate_currency_consistency"
+    rejection_risk: "critical"
+    frequency: "22%"
+    banks_enforcing: ["Islami Bank", "Mercantile Bank", "Premier Bank"]
+    local_context: "Mixed currency documents frequently rejected"
+
+  - id: BD-003
+    description: "HS Code on invoice must exactly match HS Code specified in LC"
+    severity: "critical"
+    check: "validate_hs_code_exact_match"
+    rejection_risk: "high"
+    frequency: "18%"
+    banks_enforcing: ["Standard Chartered", "HSBC", "Citibank"]
+    local_context: "NBR customs requirements enforced by banks"
+
+  - id: BD-004
+    description: "Partial shipment terms must be explicitly honored"
+    severity: "major"
+    check: "validate_partial_shipment_compliance"
+    rejection_risk: "high"
+    frequency: "15%"
+    banks_enforcing: ["BRAC Bank", "Eastern Bank", "Southeast Bank"]
+    local_context: "Partial shipments often misunderstood by exporters"
+
+  - id: BD-005
+    description: "Insurance coverage (110% CIF value) must match LC insurance clause"
+    severity: "major"
+    check: "validate_insurance_coverage_percentage"
+    rejection_risk: "high"
+    frequency: "12%"
+    banks_enforcing: ["DBBL", "Prime Bank", "NCC Bank"]
+    local_context: "Standard 110% CIF coverage requirement"
+
+  - id: BD-006
+    description: "Export permit/license number must match across trade documents"
+    severity: "major"
+    check: "validate_export_permit_consistency"
+    rejection_risk: "high"
+    frequency: "11%"
+    banks_enforcing: ["Janata Bank", "Agrani Bank", "Rupali Bank"]
+    local_context: "Export permit validation by Bangladesh Export Promotion Board"
+
+  - id: BD-007
+    description: "Inspection certificate (if required) must reference correct LC number"
+    severity: "medium"
+    check: "validate_inspection_certificate_lc_reference"
+    rejection_risk: "medium"
+    frequency: "8%"
+    banks_enforcing: ["UCB", "One Bank", "Midland Bank"]
+    local_context: "Third-party inspection agencies often miss LC references"
+
+  - id: BD-008
+    description: "Certificate of Origin must be issued by recognized chamber"
+    severity: "medium"
+    check: "validate_origin_certificate_issuer"
+    rejection_risk: "medium"
+    frequency: "7%"
+    banks_enforcing: ["MTB", "Trust Bank", "Bank Asia"]
+    local_context: "DCCI, CCCI, BGMEA certificates accepted"
+
+  - id: BD-009
+    description: "Shipment port must match LC specified loading port exactly"
+    severity: "major"
+    check: "validate_loading_port_exact_match"
+    rejection_risk: "high"
+    frequency: "10%"
+    banks_enforcing: ["Al-Arafah Bank", "Social Islami Bank", "Exim Bank"]
+    local_context: "Chittagong Port variations cause frequent rejections"
+
+  - id: BD-010
+    description: "GSP Form A (if applicable) must show correct origin and consignee"
+    severity: "medium"
+    check: "validate_gsp_form_details"
+    rejection_risk: "medium"
+    frequency: "6%"
+    banks_enforcing: ["Pubali Bank", "Uttara Bank", "National Bank"]
+    local_context: "EU GSP benefits require accurate Form A completion"
+
+# Validation Rule Implementations
+validation_functions:
+  validate_expiry_date_and_place:
+    description: "Check LC has clear expiry date and presentation place"
+    parameters: ["expiry_date", "expiry_place"]
+
+  validate_presentation_period:
+    description: "Ensure documents presented within 21 days of shipment"
+    parameters: ["shipment_date", "presentation_date"]
+
+  validate_beneficiary_address_exact_match:
+    description: "Verify beneficiary address matches exactly between LC and documents"
+    parameters: ["lc_beneficiary_address", "document_beneficiary_address"]
+    strict_matching: true
+
+  validate_currency_consistency:
+    description: "Check all monetary amounts use same currency as LC"
+    parameters: ["lc_currency", "document_currencies"]
+
+  validate_hs_code_exact_match:
+    description: "Verify HS codes match exactly between LC and commercial documents"
+    parameters: ["lc_hs_codes", "invoice_hs_codes"]
+    strict_matching: true
+
+  validate_insurance_coverage_percentage:
+    description: "Ensure insurance covers 110% of CIF value as per Bangladesh standards"
+    parameters: ["cif_value", "insurance_amount"]
+    minimum_coverage: 1.10
+
+  validate_export_permit_consistency:
+    description: "Check export permit numbers match across all trade documents"
+    parameters: ["permit_numbers"]
+
+  validate_loading_port_exact_match:
+    description: "Verify loading port matches exactly with LC specification"
+    parameters: ["lc_loading_port", "bl_loading_port"]
+    port_variations:
+      - "Chittagong Port" = "Port of Chittagong" = "Chittagong"
+      - "Dhaka Airport" = "Hazrat Shahjalal International Airport"
+    strict_matching: true
+
+# Risk Assessment Matrix
+risk_categories:
+  critical:
+    description: "Immediate rejection likely - LC unusable"
+    score_impact: -50
+    examples: ["Currency mismatch", "Exceeded LC amount", "Missing expiry"]
+
+  high:
+    description: "High probability of rejection - requires immediate attention"
+    score_impact: -25
+    examples: ["Address mismatch", "HS code error", "Date inconsistencies"]
+
+  major:
+    description: "Significant discrepancy - may cause delays or rejection"
+    score_impact: -15
+    examples: ["Insurance coverage issues", "Description variations"]
+
+  medium:
+    description: "Minor discrepancy - likely to be questioned"
+    score_impact: -8
+    examples: ["Certificate issuer questions", "Port name variations"]
+
+  low:
+    description: "Technical discrepancy - may be waived"
+    score_impact: -3
+    examples: ["Minor formatting issues", "Spelling variations"]
+
+# Bank-specific enforcement patterns
+bank_profiles:
+  traditional_banks:
+    names: ["Sonali Bank", "Janata Bank", "Agrani Bank", "Rupali Bank"]
+    enforcement_style: "strict"
+    common_rejections: ["BD-001", "BD-003", "BD-006", "UCP600-20"]
+
+  private_commercial_banks:
+    names: ["DBBL", "BRAC Bank", "Eastern Bank", "City Bank"]
+    enforcement_style: "moderate"
+    common_rejections: ["BD-002", "BD-005", "UCP600-21", "ISBP-42"]
+
+  islamic_banks:
+    names: ["Islami Bank", "Al-Arafah Bank", "Social Islami Bank", "Exim Bank"]
+    enforcement_style: "conservative"
+    common_rejections: ["BD-001", "BD-004", "BD-009", "UCP600-6"]
+
+  foreign_banks:
+    names: ["Standard Chartered", "HSBC", "Citibank"]
+    enforcement_style: "very_strict"
+    common_rejections: ["BD-003", "UCP600-31", "ISBP-D3", "ISBP-B2"]
+
+# Scoring weights by market segment
+scoring_weights:
+  sme_exporters:
+    ucp600_weight: 0.4
+    isbp_weight: 0.3
+    local_rules_weight: 0.3
+
+  established_traders:
+    ucp600_weight: 0.45
+    isbp_weight: 0.35
+    local_rules_weight: 0.2
+
+  banks:
+    ucp600_weight: 0.5
+    isbp_weight: 0.3
+    local_rules_weight: 0.2

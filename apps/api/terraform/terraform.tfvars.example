@@ -1,0 +1,23 @@
+# Terraform Variables Example for LCopilot CloudWatch Monitoring
+# Copy to terraform.tfvars and customize for your environment
+
+# Environment Configuration
+environment = "prod"  # or "staging"
+aws_region  = "eu-north-1"
+
+# Alarm Configuration
+alarm_threshold         = 5     # Number of errors to trigger alarm
+alarm_period           = 60    # Period in seconds (1 minute)
+alarm_evaluation_periods = 1    # Number of periods for evaluation
+
+# Example configurations for different environments:
+
+# Production Environment
+# environment = "prod"
+# alarm_threshold = 5
+# alarm_period = 60
+
+# Staging Environment
+# environment = "staging"
+# alarm_threshold = 3  # Lower threshold for staging
+# alarm_period = 60

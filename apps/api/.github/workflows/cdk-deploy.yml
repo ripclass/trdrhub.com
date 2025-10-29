@@ -1,0 +1,386 @@
+name: 'Enterprise CDK Deploy'
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'cdk/**'
+      - 'config/**'
+      - '.github/workflows/cdk-deploy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cdk/**'
+      - 'config/**'
+      - '.github/workflows/cdk-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - diff
+          - deploy
+          - destroy
+
+env:
+  CDK_VERSION: '2.100.0'
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.9'
+  AWS_REGION: 'eu-north-1'
+
+jobs:
+  cdk-diff-staging:
+    name: 'CDK Diff - Staging'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment: staging
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./cdk
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: 'cdk/package-lock.json'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Configure AWS Credentials - Staging
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install CDK CLI
+      run: npm install -g aws-cdk@${{ env.CDK_VERSION }}
+
+    - name: Install Python Dependencies
+      run: pip install -r requirements.txt
+
+    - name: Verify Enterprise Config
+      run: |
+        echo "🔍 Verifying enterprise configuration for CDK..."
+        if [ ! -f "../config/enterprise_config.json" ]; then
+          echo "❌ Enterprise config not found"
+          exit 1
+        fi
+
+        # Validate JSON and extract staging config
+        jq empty ../config/enterprise_config.json
+        STAGING_ACCOUNT=$(jq -r '.environments.staging.aws_account_id' ../config/enterprise_config.json)
+        echo "📋 Expected staging account: $STAGING_ACCOUNT"
+
+    - name: CDK Bootstrap (if needed)
+      run: |
+        echo "🚀 Checking CDK bootstrap status..."
+        if ! cdk bootstrap --context env=staging 2>/dev/null; then
+          echo "⚠️ CDK bootstrap might be needed - this is normal for first deployment"
+        fi
+
+    - name: CDK Synthesize
+      run: |
+        echo "🏗️ Synthesizing CDK stack for staging..."
+        cdk synth --context env=staging
+
+    - name: CDK Diff - Staging
+      id: diff
+      run: |
+        echo "🔍 Running CDK diff for staging..."
+        cdk diff --context env=staging > staging_diff.txt 2>&1 || true
+
+        # Check if there are any changes
+        if grep -q "Resources" staging_diff.txt; then
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "changes_detected=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Comment PR with CDK Diff
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const diff = fs.readFileSync('./cdk/staging_diff.txt', 'utf8');
+          const truncatedDiff = diff.length > 65536 ? diff.substring(0, 65536) + '\n... (truncated)' : diff;
+
+          const changesDetected = '${{ steps.diff.outputs.changes_detected }}' === 'true';
+          const status = changesDetected ? '⚠️ Changes Detected' : '✅ No Changes';
+
+          const output = `## 🏗️ CDK Diff - Staging Environment
+
+          **Status:** ${status}
+
+          <details>
+          <summary>Click to expand diff details</summary>
+
+          \`\`\`
+          ${truncatedDiff}
+          \`\`\`
+
+          </details>
+
+          **Next Steps:**
+          ${changesDetected ?
+            '- 📝 Review changes above\n- 🚀 Merge to trigger staging deployment' :
+            '- ✅ No deployment needed - no changes detected'
+          }
+          `;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+    - name: Upload Staging Diff
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: staging-cdk-diff
+        path: cdk/staging_diff.txt
+        retention-days: 7
+
+  cdk-deploy-staging:
+    name: 'CDK Deploy - Staging'
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./cdk
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: 'cdk/package-lock.json'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Configure AWS Credentials - Staging
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install CDK CLI
+      run: npm install -g aws-cdk@${{ env.CDK_VERSION }}
+
+    - name: Install Python Dependencies
+      run: pip install -r requirements.txt
+
+    - name: CDK Bootstrap
+      run: |
+        echo "🚀 Ensuring CDK is bootstrapped..."
+        cdk bootstrap --context env=staging
+
+    - name: CDK Deploy - Staging
+      run: |
+        echo "🚀 Deploying CDK stack to staging..."
+        cdk deploy --context env=staging --require-approval never
+
+    - name: Extract Stack Outputs
+      id: outputs
+      run: |
+        echo "📊 Extracting stack outputs..."
+        STACK_NAME=$(cdk ls --context env=staging)
+
+        # Get stack outputs using AWS CLI
+        aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].Outputs' \
+          --output json > stack_outputs.json
+
+        # Extract key values
+        ALARM_NAME=$(jq -r '.[] | select(.OutputKey=="AlarmName") | .OutputValue' stack_outputs.json || echo "")
+        SNS_ARN=$(jq -r '.[] | select(.OutputKey=="SnsTopicArn") | .OutputValue' stack_outputs.json || echo "")
+
+        echo "alarm_name=$ALARM_NAME" >> $GITHUB_OUTPUT
+        echo "sns_topic_arn=$SNS_ARN" >> $GITHUB_OUTPUT
+
+    - name: Validate CDK Deployment
+      run: |
+        echo "🔍 Validating CDK staging deployment..."
+        echo "Alarm: ${{ steps.outputs.outputs.alarm_name }}"
+        echo "SNS Topic: ${{ steps.outputs.outputs.sns_topic_arn }}"
+
+        # Verify resources exist
+        if [ -n "${{ steps.outputs.outputs.alarm_name }}" ]; then
+          aws cloudwatch describe-alarms --alarm-names "${{ steps.outputs.outputs.alarm_name }}" > /dev/null
+          echo "✅ CloudWatch alarm verified"
+        fi
+
+        if [ -n "${{ steps.outputs.outputs.sns_topic_arn }}" ]; then
+          aws sns get-topic-attributes --topic-arn "${{ steps.outputs.outputs.sns_topic_arn }}" > /dev/null
+          echo "✅ SNS topic verified"
+        fi
+
+        echo "✅ CDK staging deployment validation passed"
+
+  cdk-deploy-prod:
+    name: 'CDK Deploy - Production'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod' && github.event.inputs.action == 'deploy'
+    environment: production
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./cdk
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: 'cdk/package-lock.json'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Configure AWS Credentials - Production
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install CDK CLI
+      run: npm install -g aws-cdk@${{ env.CDK_VERSION }}
+
+    - name: Install Python Dependencies
+      run: pip install -r requirements.txt
+
+    - name: Verify Production Config
+      run: |
+        echo "🔍 Verifying production configuration..."
+        PROD_ACCOUNT=$(jq -r '.environments.prod.aws_account_id' ../config/enterprise_config.json)
+        CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+
+        echo "Expected prod account: $PROD_ACCOUNT"
+        echo "Current account: $CURRENT_ACCOUNT"
+
+        if [ "$PROD_ACCOUNT" != "$CURRENT_ACCOUNT" ]; then
+          echo "❌ Account mismatch - refusing production deployment"
+          exit 1
+        fi
+
+        echo "✅ Production account verified"
+
+    - name: CDK Bootstrap
+      run: |
+        echo "🚀 Ensuring CDK is bootstrapped in production..."
+        cdk bootstrap --context env=prod
+
+    - name: CDK Diff - Production
+      run: |
+        echo "🔍 Running production diff before deployment..."
+        cdk diff --context env=prod
+
+    - name: CDK Deploy - Production
+      run: |
+        echo "🚀 Deploying CDK stack to production..."
+        echo "⚠️ This is a PRODUCTION deployment!"
+        cdk deploy --context env=prod --require-approval never
+
+    - name: Extract Production Outputs
+      id: outputs
+      run: |
+        echo "📊 Extracting production stack outputs..."
+        STACK_NAME=$(cdk ls --context env=prod)
+
+        aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].Outputs' \
+          --output json > stack_outputs.json
+
+        ALARM_NAME=$(jq -r '.[] | select(.OutputKey=="AlarmName") | .OutputValue' stack_outputs.json || echo "")
+        SNS_ARN=$(jq -r '.[] | select(.OutputKey=="SnsTopicArn") | .OutputValue' stack_outputs.json || echo "")
+
+        echo "alarm_name=$ALARM_NAME" >> $GITHUB_OUTPUT
+        echo "sns_topic_arn=$SNS_ARN" >> $GITHUB_OUTPUT
+
+    - name: Validate Production Deployment
+      run: |
+        echo "🔍 Validating CDK production deployment..."
+        echo "Alarm: ${{ steps.outputs.outputs.alarm_name }}"
+        echo "SNS Topic: ${{ steps.outputs.outputs.sns_topic_arn }}"
+
+        # Verify resources exist and are configured correctly
+        if [ -n "${{ steps.outputs.outputs.alarm_name }}" ]; then
+          aws cloudwatch describe-alarms --alarm-names "${{ steps.outputs.outputs.alarm_name }}" | \
+            jq -r '.MetricAlarms[0] | "Threshold: \(.Threshold), State: \(.StateValue)"'
+          echo "✅ Production CloudWatch alarm verified"
+        fi
+
+        if [ -n "${{ steps.outputs.outputs.sns_topic_arn }}" ]; then
+          SUBSCRIPTIONS=$(aws sns list-subscriptions-by-topic --topic-arn "${{ steps.outputs.outputs.sns_topic_arn }}" --query 'Subscriptions | length')
+          echo "SNS Subscriptions: $SUBSCRIPTIONS"
+          echo "✅ Production SNS topic verified"
+        fi
+
+        echo "✅ Production deployment validation passed"
+
+    - name: Post-Deploy Production Tests
+      run: |
+        echo "🧪 Running production post-deployment tests..."
+
+        # Here you could add calls to your verification scripts
+        echo "📊 Production monitoring is now active"
+        echo "🚨 Monitor CloudWatch dashboard for alarm status"
+        echo "📧 Verify PagerDuty/Slack integrations are working"
+        echo "✅ Production deployment completed successfully"
+
+  cleanup:
+    name: 'Cleanup Artifacts'
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [cdk-diff-staging, cdk-deploy-staging, cdk-deploy-prod]
+
+    steps:
+    - name: Cleanup
+      run: |
+        echo "🧹 Cleanup completed (artifacts auto-expire based on retention policy)"

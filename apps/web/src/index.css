@@ -1,0 +1,308 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 13% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 18%;
+
+    --primary: 158 64% 25%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 13% 18%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 8.9% 46.1%;
+
+    --accent: 158 64% 25%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 158 64% 25%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 13% 18%;
+
+    --info: 221 83% 53%;
+    --info-foreground: 0 0% 98%;
+
+    /* Exporter theme (Blue) */
+    --exporter-primary: 210 100% 50%;
+    --exporter-primary-foreground: 0 0% 100%;
+    --exporter-secondary: 210 40% 96%;
+    --exporter-secondary-foreground: 210 100% 20%;
+    --exporter-accent: 210 60% 90%;
+    --exporter-accent-foreground: 210 100% 30%;
+
+    /* Importer theme (Green) */
+    --importer-primary: 142 71% 45%;
+    --importer-primary-foreground: 355 100% 97%;
+    --importer-secondary: 142 30% 91%;
+    --importer-secondary-foreground: 142 71% 15%;
+    --importer-accent: 142 40% 90%;
+    --importer-accent-foreground: 142 71% 25%;
+
+    /* Professional gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(158 64% 25%), hsl(158 54% 35%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 14% 96%), hsl(220 13% 91%));
+    --gradient-hero: linear-gradient(135deg, hsl(158 64% 25%) 0%, hsl(221 83% 53%) 100%);
+    --gradient-exporter: linear-gradient(135deg, hsl(var(--exporter-primary)) 0%, hsl(210 80% 60%) 100%);
+    --gradient-importer: linear-gradient(135deg, hsl(var(--importer-primary)) 0%, hsl(142 60% 55%) 100%);
+
+    /* Professional shadows */
+    --shadow-soft: 0 2px 8px -2px hsl(158 64% 25% / 0.1);
+    --shadow-medium: 0 8px 25px -5px hsl(158 64% 25% / 0.15);
+    --shadow-strong: 0 25px 50px -12px hsl(158 64% 25% / 0.25);
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 220 13% 9%;
+    --foreground: 0 0% 95%;
+
+    --card: 220 13% 9%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 220 13% 9%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 158 64% 35%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 220 13% 15%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 220 13% 15%;
+    --muted-foreground: 220 9% 65%;
+
+    --accent: 158 64% 35%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 13% 20%;
+    --input: 220 13% 20%;
+    --ring: 158 64% 35%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 13% 9%;
+
+    --info: 221 83% 53%;
+    --info-foreground: 0 0% 98%;
+
+    /* Dark mode gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(158 64% 35%), hsl(158 54% 45%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 13% 15%), hsl(220 13% 20%));
+    --gradient-hero: linear-gradient(135deg, hsl(158 64% 35%) 0%, hsl(221 83% 53%) 100%);
+
+    /* Dark mode shadows */
+    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.3);
+    --shadow-medium: 0 8px 25px -5px hsl(0 0% 0% / 0.4);
+    --shadow-strong: 0 25px 50px -12px hsl(0 0% 0% / 0.5);
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Legacy styles for existing LCopilot pages */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease-in-out;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #2563eb;
+}
+
+.btn-secondary {
+  background-color: #6b7280;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #4b5563;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-area {
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 3rem;
+  text-align: center;
+  transition: border-color 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.upload-area:hover {
+  border-color: #3b82f6;
+}
+
+.upload-area.dragover {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: #3b82f6;
+  transition: width 0.3s ease-in-out;
+}
+
+.discrepancy-item {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.discrepancy-item.critical {
+  background: #fecaca;
+  border-color: #ef4444;
+}
+
+.nav-steps {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+  gap: 1rem;
+}
+
+.nav-step {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.nav-step.active {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.nav-step.completed {
+  background-color: #10b981;
+  color: white;
+}
+
+.nav-step.inactive {
+  background-color: #e5e7eb;
+  color: #6b7280;
+}
+
+/* Beautiful glassmorphism button styling with green hover */
+.bg-gradient-exporter, .bg-gradient-importer {
+  background: rgba(30, 41, 59, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: white !important;
+  transition: all 0.3s ease;
+}
+
+.bg-gradient-exporter:hover, .bg-gradient-importer:hover {
+  background: hsl(158 64% 30%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid hsl(158 64% 30%) !important;
+  color: white !important;
+}

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Validation Result - {{ lc_number }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <div>
+            <h1 style="margin: 0; color: #1e293b;">
+                {% if result.get('bank_profile') %}
+                    🏦 {{ result.bank_profile.bank_name }} Validation Results
+                {% elif result.get('bank_simulation') %}
+                    🏦 {{ result.bank_simulation.bank_info.name }} Validation Results
+                {% else %}
+                    Validation Results
+                {% endif %}
+            </h1>
+            <p style="color: #64748b; margin: 0.5rem 0;">LC Number: {{ lc_number }}</p>
+            {% if result.get('bank_profile') %}
+                <p style="color: #6366f1; margin: 0.5rem 0; font-weight: 500;">
+                    Enforcement Level: {{ result.bank_profile.enforcement_level.replace('_', ' ').title() }} •
+                    Category: {{ result.bank_profile.category.replace('_', ' ').title() }} •
+                    Market Share: {{ result.bank_profile.market_share }}
+                </p>
+                <p style="color: #6b7280; margin: 0.5rem 0; font-size: 0.875rem;">
+                    {{ result.bank_profile.description }}
+                </p>
+            {% elif result.get('bank_simulation') %}
+                <p style="color: #6366f1; margin: 0.5rem 0; font-weight: 500;">
+                    Processing Style: {{ result.bank_simulation.bank_info.processing_style | title }} •
+                    Bank Type: {{ result.bank_simulation.bank_info.code }}
+                </p>
+            {% endif %}
+        </div>
+        <div style="text-align: right;">
+            {% if result.compliance_score >= 0.8 %}
+                <div class="btn btn-success" style="pointer-events: none;">
+                    ✅ {{ (result.compliance_score * 100) | round(1) }}% Compliant
+                </div>
+            {% elif result.compliance_score >= 0.6 %}
+                <div class="btn btn-warning" style="pointer-events: none;">
+                    ⚠️ {{ (result.compliance_score * 100) | round(1) }}% Compliant
+                </div>
+            {% else %}
+                <div class="btn btn-danger" style="pointer-events: none;">
+                    ❌ {{ (result.compliance_score * 100) | round(1) }}% Compliant
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Plain English Summary -->
+    <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 1.5rem; margin-bottom: 2rem; border-radius: 0 8px 8px 0;">
+        <h2 style="color: #1e293b; margin-top: 0;">📋 Summary</h2>
+        <div style="white-space: pre-line; color: #374151; line-height: 1.6;">{{ plain_english }}</div>
+    </div>
+
+    <!-- Bank-Specific Recommendations -->
+    {% if result.get('bank_recommendations') and result.bank_recommendations|length > 0 %}
+    <div style="background: #fefbf3; border-left: 4px solid #f59e0b; padding: 1.5rem; margin-bottom: 2rem; border-radius: 0 8px 8px 0;">
+        <h2 style="color: #92400e; margin-top: 0;">
+            🏦 {% if result.get('bank_profile') %}{{ result.bank_profile.bank_name }}{% else %}Bank{% endif %} Recommendations
+        </h2>
+        <ul style="color: #78350f; line-height: 1.6; margin: 0; padding-left: 1.5rem;">
+            {% for recommendation in result.bank_recommendations %}
+            <li style="margin-bottom: 0.5rem;">{{ recommendation }}</li>
+            {% endfor %}
+        </ul>
+
+        {% if result.get('processing_expectations') %}
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #fde68a;">
+            <p style="color: #78350f; margin: 0; font-size: 0.875rem;">
+                <strong>Processing Expectations:</strong> {{ result.processing_expectations.typical_processing_time }},
+                {{ result.processing_expectations.documentation_requirements }} documentation,
+                {{ result.processing_expectations.flexibility_level }} flexibility
+            </p>
+        </div>
+        {% endif %}
+
+        {% if result.get('bank_profile') and result.bank_profile.get('enforcement_config') %}
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #fde68a;">
+            <p style="color: #78350f; margin: 0; font-size: 0.875rem;">
+                <strong>Enforcement Profile:</strong> {{ result.bank_profile.enforcement_config.description }}
+                <br><strong>Typical Rejection Rate:</strong> {{ result.bank_profile.enforcement_config.rejection_rate_typical }}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+    {% elif result.get('bank_simulation') and result.bank_simulation.get('bank_recommendations') %}
+    <div style="background: #fefbf3; border-left: 4px solid #f59e0b; padding: 1.5rem; margin-bottom: 2rem; border-radius: 0 8px 8px 0;">
+        <h2 style="color: #92400e; margin-top: 0;">🏦 {{ result.bank_simulation.bank_info.name }} Recommendations</h2>
+        <ul style="color: #78350f; line-height: 1.6; margin: 0; padding-left: 1.5rem;">
+            {% for recommendation in result.bank_simulation.bank_recommendations %}
+            <li style="margin-bottom: 0.5rem;">{{ recommendation }}</li>
+            {% endfor %}
+        </ul>
+        {% if result.bank_simulation.get('processing_expectations') %}
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #fde68a;">
+            <p style="color: #78350f; margin: 0; font-size: 0.875rem;">
+                <strong>Expected Processing:</strong> {{ result.bank_simulation.processing_expectations.processing_time | title }} timing,
+                {{ result.bank_simulation.processing_expectations.review_strictness | title }} review level
+            </p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+        {% if tier == 'pro' or tier == 'enterprise' %}
+        <a href="{{ url_for('create_evidence_pack') }}?tier={{ tier }}" class="btn btn-success">
+            📦 Create Evidence Pack
+        </a>
+        {% endif %}
+        <a href="{{ url_for('validate_lc') }}" class="btn btn-primary">
+            🔍 Validate Another LC
+        </a>
+        <button onclick="window.print()" class="btn" style="background: #6b7280; color: white;">
+            🖨️ Print Report
+        </button>
+    </div>
+</div>
+
+<!-- Detailed Results -->
+<div class="card">
+    <h2 style="margin-bottom: 1.5rem; color: #1e293b;">Detailed Validation Results</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #10b981;">{{ result.validated_rules | selectattr('status', 'equalto', 'pass') | list | length }}</div>
+            <div class="stat-label">Passed Rules</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="color: #ef4444;">{{ result.validated_rules | selectattr('status', 'equalto', 'fail') | list | length }}</div>
+            <div class="stat-label">Failed Rules</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="color: #f59e0b;">{{ result.validated_rules | selectattr('status', 'equalto', 'warning') | list | length }}</div>
+            <div class="stat-label">Warnings</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ result.execution_time_ms }}ms</div>
+            <div class="stat-label">Processing Time</div>
+        </div>
+    </div>
+
+    <!-- Rule Results -->
+    {% for rule in result.validated_rules %}
+    <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+            <div>
+                <h3 style="margin: 0; color: #374151;">{{ rule.id }}: {{ rule.description }}</h3>
+                {% if rule.field_location %}
+                    <p style="color: #64748b; margin: 0.25rem 0; font-size: 0.875rem;">
+                        Field: {{ rule.field_location }}
+                    </p>
+                {% endif %}
+            </div>
+            <div>
+                {% if rule.status == 'pass' %}
+                    <span style="background: #d1fae5; color: #065f46; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.875rem; font-weight: 500;">
+                        ✅ PASS
+                    </span>
+                {% elif rule.status == 'fail' %}
+                    <span style="background: #fee2e2; color: #991b1b; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.875rem; font-weight: 500;">
+                        ❌ FAIL
+                    </span>
+                {% elif rule.status == 'warning' %}
+                    <span style="background: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.875rem; font-weight: 500;">
+                        ⚠️ WARNING
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if rule.details %}
+        <p style="color: #374151; margin-bottom: 1rem;">{{ rule.details }}</p>
+        {% endif %}
+
+        {% if rule.suggested_fix %}
+        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 1rem;">
+            <strong style="color: #0369a1;">💡 Recommended Fix:</strong>
+            <p style="color: #0c4a6e; margin: 0.5rem 0 0 0;">{{ rule.suggested_fix }}</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Upsell Message -->
+{% if result.get('upsell_triggered') %}
+<div class="card" style="border-left: 4px solid #f59e0b; background: #fefbf3;">
+    <h2 style="color: #92400e; margin-bottom: 1rem;">💡 Upgrade Your Plan</h2>
+    <p style="color: #78350f; margin-bottom: 1.5rem;">{{ result.upsell_message }}</p>
+    <a href="{{ url_for('pricing') }}" class="btn btn-warning">View Upgrade Options</a>
+</div>
+{% endif %}
+
+<!-- Technical Details (Collapsible) -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem; color: #1e293b;">
+        <button onclick="toggleTechnicalDetails()" style="background: none; border: none; color: inherit; cursor: pointer; font-size: inherit; display: flex; align-items: center; gap: 0.5rem;">
+            <span id="tech-toggle">▶</span> Technical Details
+        </button>
+    </h2>
+    <div id="technical-details" style="display: none;">
+        <pre style="background: #f8fafc; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.875rem;">{{ result | tojson(indent=2) }}</pre>
+    </div>
+</div>
+
+<script>
+function toggleTechnicalDetails() {
+    const details = document.getElementById('technical-details');
+    const toggle = document.getElementById('tech-toggle');
+
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        toggle.textContent = '▼';
+    } else {
+        details.style.display = 'none';
+        toggle.textContent = '▶';
+    }
+}
+
+// Print styles
+const printStyles = `
+    @media print {
+        .btn, .nav, .footer { display: none !important; }
+        .card { border: 1px solid #e5e7eb !important; page-break-inside: avoid; }
+        body { background: white !important; }
+    }
+`;
+const styleSheet = document.createElement('style');
+styleSheet.textContent = printStyles;
+document.head.appendChild(styleSheet);
+</script>
+{% endblock %}

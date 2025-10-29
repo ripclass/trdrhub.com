@@ -1,0 +1,138 @@
+# Code owners for LCopilot
+# This file defines who should review changes to specific parts of the codebase
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owners - these people are responsible for everything unless overridden
+* @admin-team
+
+# Backend API and core services
+/apps/api/ @backend-team @security-team
+/apps/api/src/auth/ @backend-team @security-team
+/apps/api/src/billing/ @backend-team @billing-team
+/apps/api/src/compliance/ @backend-team @compliance-team
+/apps/api/src/governance/ @backend-team @security-team @compliance-team
+
+# Frontend application
+/apps/web/ @frontend-team
+/apps/web/src/components/billing/ @frontend-team @billing-team
+/apps/web/src/components/compliance/ @frontend-team @compliance-team
+/apps/web/src/components/governance/ @frontend-team @security-team
+
+# Infrastructure and deployment
+/deploy/ @devops-team @infrastructure-team
+/.github/workflows/ @devops-team
+/docker/ @devops-team
+/k8s/ @devops-team
+/terraform/ @devops-team @infrastructure-team
+
+# Security-critical files
+/apps/api/src/auth/ @security-team
+/apps/api/src/middleware/security.py @security-team
+/apps/web/src/lib/auth.ts @security-team
+/.github/workflows/security-scan.yml @security-team
+
+# Database and migrations
+/apps/api/alembic/ @backend-team @database-team
+/apps/api/src/models/ @backend-team @database-team
+/.github/workflows/database-maintenance.yml @database-team @devops-team
+
+# Testing
+/apps/api/tests/ @backend-team @qa-team
+/apps/web/tests/ @frontend-team @qa-team
+/tests/e2e/ @qa-team
+/tests/performance/ @qa-team @devops-team
+
+# Documentation
+/docs/ @documentation-team
+/README.md @documentation-team
+/CHANGELOG.md @admin-team
+*.md @documentation-team
+
+# Configuration files
+/apps/api/requirements*.txt @backend-team @security-team
+/apps/web/package*.json @frontend-team @security-team
+/apps/api/pyproject.toml @backend-team
+/apps/web/tsconfig.json @frontend-team
+/apps/web/vite.config.ts @frontend-team
+/apps/api/alembic.ini @backend-team @database-team
+
+# Environment and secrets
+/.env* @devops-team @security-team
+/config/ @devops-team @security-team
+
+# Billing and financial code (requires extra scrutiny)
+/apps/api/src/billing/ @backend-team @billing-team @financial-team
+/apps/api/src/payments/ @backend-team @billing-team @financial-team @security-team
+/apps/web/src/components/billing/ @frontend-team @billing-team @financial-team
+
+# Compliance and governance (requires compliance team approval)
+/apps/api/src/compliance/ @backend-team @compliance-team @legal-team
+/apps/api/src/governance/ @backend-team @compliance-team @legal-team @security-team
+/apps/web/src/components/compliance/ @frontend-team @compliance-team @legal-team
+/apps/web/src/components/governance/ @frontend-team @compliance-team @legal-team
+
+# Monitoring and observability
+/apps/api/src/monitoring/ @backend-team @devops-team
+/apps/web/src/components/monitoring/ @frontend-team @devops-team
+/observability/ @devops-team
+/.github/workflows/performance-monitoring.yml @devops-team @qa-team
+
+# API endpoints that handle sensitive operations
+/apps/api/src/routes/admin.py @backend-team @security-team @admin-team
+/apps/api/src/routes/billing.py @backend-team @billing-team @financial-team
+/apps/api/src/routes/compliance.py @backend-team @compliance-team @legal-team
+/apps/api/src/routes/governance.py @backend-team @compliance-team @legal-team @security-team
+
+# Critical configuration files
+/apps/api/src/config/ @backend-team @devops-team @security-team
+/apps/web/src/config/ @frontend-team @devops-team @security-team
+
+# External integrations
+/apps/api/src/integrations/ @backend-team @integration-team
+/apps/api/src/integrations/payments/ @backend-team @integration-team @billing-team @financial-team
+/apps/api/src/integrations/notifications/ @backend-team @integration-team
+
+# Performance critical code
+/apps/api/src/middleware/rate_limiting.py @backend-team @performance-team
+/apps/api/src/core/cache.py @backend-team @performance-team
+/apps/web/src/lib/performance/ @frontend-team @performance-team
+
+# Multi-region and internationalization
+/apps/api/src/localization/ @backend-team @localization-team
+/apps/web/src/locales/ @frontend-team @localization-team
+/apps/api/src/regions/ @backend-team @devops-team @compliance-team
+
+# Backup and disaster recovery
+/.github/workflows/database-maintenance.yml @database-team @devops-team @admin-team
+/scripts/backup/ @database-team @devops-team
+/scripts/restore/ @database-team @devops-team @admin-team
+
+# Release and versioning
+/.github/workflows/release.yml @devops-team @admin-team
+/CHANGELOG.md @admin-team @documentation-team
+/VERSION @admin-team
+
+# License and legal
+/LICENSE @legal-team @admin-team
+/NOTICE @legal-team @admin-team
+/TERMS.md @legal-team @admin-team
+/PRIVACY.md @legal-team @admin-team
+
+# Branch-specific requirements
+# These patterns require additional approvals for specific branches
+
+# Production releases require executive approval
+/production-release.yml @admin-team @executive-team
+
+# Database schema changes require DBA approval
+/apps/api/alembic/versions/ @backend-team @database-team @dba-team
+
+# Payment processing changes require financial controls approval
+/apps/api/src/payments/ @backend-team @billing-team @financial-team @financial-controls-team
+
+# Security policy changes require CISO approval
+/SECURITY.md @security-team @ciso-team
+/.github/workflows/security-scan.yml @security-team @ciso-team
+
+# Compliance policy changes require Chief Compliance Officer approval
+/COMPLIANCE.md @compliance-team @legal-team @cco-team

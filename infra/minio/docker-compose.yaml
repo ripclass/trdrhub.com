@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_DOMAIN: minio.local
+      MINIO_SERVER_URL: http://minio:9000
+      # Enable server-side encryption
+      MINIO_KMS_AUTO_ENCRYPTION: "on"
+    volumes:
+      - minio_data:/data
+      - ./config:/root/.minio
+    networks:
+      - lcopilot
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO KES (Key Encryption Service) for proper KMS
+  minio-kes:
+    image: minio/kes:2024-09-11T14-35-58Z
+    command: server --config=/etc/kes/config.yaml
+    ports:
+      - "7373:7373"
+    environment:
+      KES_SERVER: "https://0.0.0.0:7373"
+      KES_CLIENT_CERT: "/etc/kes/certs/client.cert"
+      KES_CLIENT_KEY: "/etc/kes/certs/client.key"
+    volumes:
+      - ./kes-config.yaml:/etc/kes/config.yaml:ro
+      - ./certs:/etc/kes/certs:ro
+      - kes_data:/var/lib/kes
+    networks:
+      - lcopilot
+    depends_on:
+      - vault
+    restart: unless-stopped
+
+  # Vault for KMS backend
+  vault:
+    image: vault:1.15.2
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_ROOT_TOKEN:-dev-root-token}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://vault:8200
+    ports:
+      - "8200:8200"
+    volumes:
+      - vault_data:/vault/data
+      - ./vault-config.hcl:/vault/config/vault-config.hcl:ro
+    networks:
+      - lcopilot
+    command: vault server -dev -dev-root-token-id=${VAULT_ROOT_TOKEN:-dev-root-token}
+    restart: unless-stopped
+
+  # MinIO client for bucket setup
+  mc:
+    image: minio/mc:RELEASE.2024-09-13T18-46-25Z
+    depends_on:
+      - minio
+    networks:
+      - lcopilot
+    volumes:
+      - ./buckets_init.sh:/usr/local/bin/buckets_init.sh:ro
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    entrypoint: ["/bin/sh"]
+    command: ["/usr/local/bin/buckets_init.sh"]
+
+volumes:
+  minio_data:
+    driver: local
+  kes_data:
+    driver: local
+  vault_data:
+    driver: local
+
+networks:
+  lcopilot:
+    driver: bridge
+    external: false

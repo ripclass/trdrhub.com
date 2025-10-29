@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    {% if config.white_label_config %}
+    <title>{{ config.white_label_config.company_name }} - LC Platform Status</title>
+    <link rel="icon" type="image/x-icon" href="{{ config.white_label_config.favicon_url or '/assets/favicon.ico' }}">
+    {% else %}
+    <title>{{ config.company_name }} - LC Platform Status | LCopilot</title>
+    <link rel="icon" type="image/x-icon" href="/assets/lcopilot-favicon.ico">
+    {% endif %}
+
+    <!-- Bootstrap CSS for responsive design -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    {% if config.white_label_config and config.white_label_config.custom_css %}
+    <link rel="stylesheet" href="{{ config.white_label_config.custom_css }}">
+    {% endif %}
+
+    <style>
+        :root {
+            {% if config.white_label_config %}
+            --primary-color: {{ config.white_label_config.primary_color or '#007bff' }};
+            --secondary-color: {{ config.white_label_config.secondary_color or '#6c757d' }};
+            {% else %}
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            {% endif %}
+
+            --status-operational: {{ status_colors.operational }};
+            --status-degraded: {{ status_colors.degraded_performance }};
+            --status-partial: {{ status_colors.partial_outage }};
+            --status-major: {{ status_colors.major_outage }};
+            --status-maintenance: {{ status_colors.under_maintenance }};
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        .header-section {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 2rem 0;
+        }
+
+        .company-logo {
+            max-height: 50px;
+            margin-right: 1rem;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            margin: 1rem 0;
+            font-size: 1.1rem;
+        }
+
+        .status-operational {
+            background-color: var(--status-operational);
+            color: white;
+        }
+
+        .status-degraded {
+            background-color: var(--status-degraded);
+            color: #212529;
+        }
+
+        .status-partial {
+            background-color: var(--status-partial);
+            color: white;
+        }
+
+        .status-major {
+            background-color: var(--status-major);
+            color: white;
+        }
+
+        .status-maintenance {
+            background-color: var(--status-maintenance);
+            color: white;
+        }
+
+        .component-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+            padding: 1.5rem;
+            transition: transform 0.2s;
+        }
+
+        .component-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .component-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+
+        .component-status.operational {
+            background-color: var(--status-operational);
+        }
+
+        .component-status.degraded {
+            background-color: var(--status-degraded);
+        }
+
+        .component-status.outage {
+            background-color: var(--status-major);
+        }
+
+        .metric-badge {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            margin: 0.25rem;
+        }
+
+        .metric-badge.good {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .metric-badge.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .metric-badge.critical {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .incident-card {
+            border-left: 4px solid #6c757d;
+            background: white;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 1rem;
+            padding: 1rem;
+        }
+
+        .incident-card.critical {
+            border-left-color: var(--status-major);
+        }
+
+        .incident-card.major {
+            border-left-color: var(--status-partial);
+        }
+
+        .incident-card.minor {
+            border-left-color: var(--status-degraded);
+        }
+
+        .incident-card.resolved {
+            border-left-color: var(--status-operational);
+            opacity: 0.8;
+        }
+
+        .business-context {
+            background: #e7f3ff;
+            border: 1px solid #b6d7ff;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .update-time {
+            color: #6c757d;
+            font-size: 0.875rem;
+        }
+
+        .trade-impact {
+            background: #fff8e1;
+            border-left: 3px solid #ff8f00;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .bank-impact {
+            background: #f3e5f5;
+            border-left: 3px solid #7b1fa2;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .footer {
+            background-color: #343a40;
+            color: #adb5bd;
+            padding: 2rem 0;
+            margin-top: 3rem;
+        }
+
+        .auto-refresh {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            z-index: 1000;
+        }
+
+        @media (max-width: 768px) {
+            .component-card {
+                padding: 1rem;
+            }
+
+            .metric-badge {
+                display: block;
+                margin: 0.25rem 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Auto-refresh indicator -->
+    <div class="auto-refresh">
+        <i class="fas fa-sync-alt"></i>
+        Auto-refresh: 5 min
+    </div>
+
+    <!-- Header Section -->
+    <div class="header-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div class="d-flex align-items-center">
+                        {% if config.white_label_config and config.white_label_config.logo_url %}
+                        <img src="{{ config.white_label_config.logo_url }}" alt="{{ config.company_name }}" class="company-logo">
+                        {% else %}
+                        <i class="fas fa-shield-alt fa-2x me-3"></i>
+                        {% endif %}
+
+                        <div>
+                            <h1 class="mb-0">
+                                {% if config.white_label_config %}
+                                {{ config.white_label_config.company_name }}
+                                {% else %}
+                                {{ config.company_name }} - LC Platform Status
+                                {% endif %}
+                            </h1>
+                            <p class="mb-0 opacity-75">Letter of Credit Validation & Trade Finance Platform</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <div class="status-indicator status-{{ overall_status.replace('_', '-') }}">
+                        {% set status_icons = {
+                            'operational': 'check-circle',
+                            'degraded_performance': 'exclamation-triangle',
+                            'partial_outage': 'exclamation-circle',
+                            'major_outage': 'times-circle',
+                            'under_maintenance': 'wrench'
+                        } %}
+
+                        <i class="fas fa-{{ status_icons[overall_status] }} me-2"></i>
+                        {{ overall_status.replace('_', ' ').title() }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mt-4">
+
+        <!-- Business Context Section -->
+        {% if business_context %}
+        <div class="business-context">
+            <h5><i class="fas fa-info-circle me-2"></i>Platform Overview for {{ config.business_type.title() }}s</h5>
+            <p class="mb-2"><strong>Key Focus:</strong> {{ business_context.primary_concern }}</p>
+            <p class="mb-0"><strong>Critical Metric:</strong> {{ business_context.key_metric }}</p>
+            {% if business_context.impact_description %}
+            <small class="text-muted">{{ business_context.impact_description }}</small>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Current Status Overview -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-heartbeat me-2"></i>LC Validation Services Status</h2>
+                <p class="text-muted">Real-time status of letter of credit validation and compliance checking services</p>
+            </div>
+        </div>
+
+        <!-- LC Validation Health Components -->
+        <div class="row">
+            {% for health_check in health_checks %}
+            <div class="col-md-6 col-lg-4 mb-3">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status {{ health_check.status }}"></span>
+                        <h5 class="mb-0">{{ health_check.endpoint_name }}</h5>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="metric-badge {% if health_check.response_time_ms < 1000 %}good{% elif health_check.response_time_ms < 2000 %}warning{% else %}critical{% endif %}">
+                                <i class="fas fa-clock me-1"></i>
+                                {{ "%.0f"|format(health_check.response_time_ms) }}ms
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="metric-badge {% if health_check.accuracy_percentage >= 99 %}good{% elif health_check.accuracy_percentage >= 95 %}warning{% else %}critical{% endif %}">
+                                <i class="fas fa-bullseye me-1"></i>
+                                {{ "%.1f"|format(health_check.accuracy_percentage) }}%
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if tier_features.show_processing_metrics %}
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <div class="metric-badge">
+                                <i class="fas fa-chart-line me-1"></i>
+                                {{ health_check.processing_volume_24h }} LCs
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="metric-badge {% if health_check.uptime_percentage_24h >= 99.9 %}good{% elif health_check.uptime_percentage_24h >= 99 %}warning{% else %}critical{% endif %}">
+                                <i class="fas fa-server me-1"></i>
+                                {{ "%.2f"|format(health_check.uptime_percentage_24h) }}%
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="update-time mt-2">
+                        <i class="fas fa-clock me-1"></i>
+                        Last checked: {{ health_check.last_check.strftime('%H:%M UTC') }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- UCP600/ISBP Compliance Section -->
+        {% if compliance_metrics %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-certificate me-2"></i>UCP600 & ISBP Compliance</h3>
+                <p class="text-muted">International banking standards compliance for letter of credit validation</p>
+            </div>
+
+            {% if config.tier == 'free' %}
+            <div class="col-12">
+                <div class="component-card text-center bg-light">
+                    <div class="mb-3">
+                        <i class="fas fa-gift fa-3x text-primary"></i>
+                    </div>
+                    <h5 class="text-primary">{{ compliance_metrics.upgrade_message }}</h5>
+                    <p class="text-muted">Experience how banks will evaluate your LC compliance</p>
+                    <div class="mt-3">
+                        <span class="badge bg-primary me-2">UCP600 Rules</span>
+                        <span class="badge bg-primary me-2">ISBP Standards</span>
+                        <span class="badge bg-primary">Compliance Scoring</span>
+                    </div>
+                    <div class="mt-3">
+                        <a href="/upgrade" class="btn btn-primary">Upgrade for Unlimited Compliance Checks</a>
+                    </div>
+                </div>
+            </div>
+            {% elif config.tier == 'pro' %}
+            <div class="col-md-6">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">UCP600 Validation</h5>
+                    </div>
+                    <p class="text-muted mb-2">{{ compliance_metrics.description }}</p>
+                    <div class="metric-badge good">
+                        <i class="fas fa-check-circle me-1"></i>
+                        Full Coverage
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-infinity me-1"></i>
+                        Unlimited Checks
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">ISBP Standards</h5>
+                    </div>
+                    <p class="text-muted mb-2">International Standard Banking Practice compliance</p>
+                    <div class="metric-badge good">
+                        <i class="fas fa-shield-alt me-1"></i>
+                        Audit Trail
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-clock me-1"></i>
+                        1 Year Retention
+                    </div>
+                </div>
+            </div>
+            {% elif config.tier == 'enterprise' %}
+            <div class="col-md-4">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">UCP600 Validation</h5>
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-check-circle me-1"></i>
+                        Bank-Grade
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-infinity me-1"></i>
+                        Unlimited
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">ISBP Standards</h5>
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-signature me-1"></i>
+                        Digital Signatures
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-lock me-1"></i>
+                        Immutable Logs
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">Audit Compliance</h5>
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-archive me-1"></i>
+                        7-Year Retention
+                    </div>
+                    <div class="metric-badge good">
+                        <i class="fas fa-university me-1"></i>
+                        Bank Reports
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Common Compliance Violations (Enterprise only) -->
+        {% if config.tier == 'enterprise' and common_violations %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4><i class="fas fa-exclamation-triangle me-2"></i>Common Compliance Issues</h4>
+                <p class="text-muted">Most frequent UCP600/ISBP violations detected across the platform</p>
+            </div>
+            {% for violation in common_violations %}
+            <div class="col-md-6 mb-3">
+                <div class="component-card border-warning">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="mb-0 text-warning">{{ violation.rule }}</h6>
+                        <span class="badge bg-warning">{{ violation.frequency }}</span>
+                    </div>
+                    <p class="mb-2"><strong>{{ violation.description }}</strong></p>
+                    <div class="metric-badge {% if violation.impact.startswith('Critical') %}critical{% else %}warning{% endif %}">
+                        <i class="fas fa-impact me-1"></i>
+                        {{ violation.impact }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Additional Services (for Pro/Enterprise) -->
+        {% if tier_features.show_api_status or tier_features.show_webhook_status %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-cogs me-2"></i>Integration Services</h3>
+            </div>
+
+            {% if tier_features.show_api_status %}
+            <div class="col-md-6">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">Integration APIs</h5>
+                    </div>
+                    <p class="text-muted mb-2">RESTful APIs for LC validation integration</p>
+                    <div class="metric-badge good">
+                        <i class="fas fa-plug me-1"></i>
+                        Operational
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if tier_features.show_webhook_status %}
+            <div class="col-md-6">
+                <div class="component-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="component-status operational"></span>
+                        <h5 class="mb-0">Webhook Delivery</h5>
+                    </div>
+                    <p class="text-muted mb-2">Real-time event notifications</p>
+                    <div class="metric-badge good">
+                        <i class="fas fa-paper-plane me-1"></i>
+                        Operational
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Incidents Section -->
+        {% if tier_features.show_incident_history and incidents %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-exclamation-triangle me-2"></i>Recent Incidents</h3>
+                <p class="text-muted">Transparency report of recent issues affecting LC validation services</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                {% for incident in incidents %}
+                <div class="incident-card {{ incident.severity }} {{ 'resolved' if incident.status == 'resolved' else '' }}">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0">{{ incident.title }}</h5>
+                        <span class="badge bg-secondary">{{ incident.status.replace('_', ' ').title() }}</span>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="trade-impact">
+                                <strong><i class="fas fa-shipping-fast me-1"></i>Trade Impact:</strong><br>
+                                {{ incident.trade_impact }}
+                            </div>
+                        </div>
+
+                        {% if config.show_bank_compliance and incident.bank_impact %}
+                        <div class="col-md-6">
+                            <div class="bank-impact">
+                                <strong><i class="fas fa-university me-1"></i>Banking Impact:</strong><br>
+                                {{ incident.bank_impact }}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>
+                                Started: {{ incident.started_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                            </small>
+                        </div>
+                        {% if incident.resolved_at %}
+                        <div class="col-md-6">
+                            <small class="text-muted">
+                                <i class="fas fa-check me-1"></i>
+                                Resolved: {{ incident.resolved_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                            </small>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if incident.root_cause_summary and incident.status == 'resolved' %}
+                    <div class="mt-2 p-2 bg-light rounded">
+                        <strong>Root Cause:</strong> {{ incident.root_cause_summary }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- SLA Information (for Pro/Enterprise) -->
+        {% if config.tier in ['pro', 'enterprise'] %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-file-contract me-2"></i>Service Level Agreement</h3>
+            </div>
+            <div class="col-md-4">
+                <div class="component-card text-center">
+                    <h4 class="text-success">
+                        {% if config.tier == 'enterprise' %}99.9%{% else %}99.5%{% endif %}
+                    </h4>
+                    <p class="mb-0">Uptime Commitment</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="component-card text-center">
+                    <h4 class="text-success">
+                        {% if config.tier == 'enterprise' %}&lt; 30s{% else %}&lt; 45s{% endif %}
+                    </h4>
+                    <p class="mb-0">LC Processing Time (95th percentile)</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="component-card text-center">
+                    <h4 class="text-success">
+                        {% if config.tier == 'enterprise' %}99.8%{% else %}99.2%{% endif %}
+                    </h4>
+                    <p class="mb-0">Validation Accuracy</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Support Information -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="component-card">
+                    <h5><i class="fas fa-question-circle me-2"></i>Need Help?</h5>
+                    <p>Questions about LC validation or platform status?</p>
+                    {% if config.tier == 'enterprise' %}
+                    <p><strong>Priority Support:</strong> Available 24/7</p>
+                    <p><i class="fas fa-envelope me-2"></i>support@lcopilot.com</p>
+                    <p><i class="fas fa-phone me-2"></i>1-800-LC-PILOT</p>
+                    {% elif config.tier == 'pro' %}
+                    <p><strong>Business Hours Support:</strong> Response within 24h</p>
+                    <p><i class="fas fa-envelope me-2"></i>support@lcopilot.com</p>
+                    {% else %}
+                    <p><strong>Community Support:</strong> Response within 72h</p>
+                    <p><i class="fas fa-envelope me-2"></i>community@lcopilot.com</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="component-card">
+                    <h5><i class="fas fa-external-link-alt me-2"></i>Resources</h5>
+                    <ul class="list-unstyled">
+                        <li><a href="https://docs.lcopilot.com/status" target="_blank"><i class="fas fa-book me-2"></i>Status Page Guide</a></li>
+                        {% if config.tier != 'free' %}
+                        <li><a href="/portal/{{ config.customer_id }}" target="_blank"><i class="fas fa-tachometer-alt me-2"></i>Customer Portal</a></li>
+                        {% endif %}
+                        {% if tier_features.show_api_status %}
+                        <li><a href="https://docs.lcopilot.com/api" target="_blank"><i class="fas fa-code me-2"></i>API Documentation</a></li>
+                        {% endif %}
+                        <li><a href="https://lcopilot.com/sla" target="_blank"><i class="fas fa-file-contract me-2"></i>Service Level Agreement</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <p>&copy; 2024 LCopilot. Powering global trade with reliable LC validation.</p>
+                    {% if not config.white_label_config %}
+                    <p><small>Tier: {{ config.tier.title() }} | Customer: {{ config.customer_id }}</small></p>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p><small>Last Updated: {{ generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small></p>
+                    <p><small><i class="fas fa-rss me-2"></i><a href="status.json" class="text-light">JSON Feed</a></small></p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Auto-refresh script -->
+    <script>
+        // Auto-refresh the page every 5 minutes
+        setTimeout(function() {
+            location.reload();
+        }, 300000); // 5 minutes
+
+        // Update relative timestamps every minute
+        function updateTimestamps() {
+            const now = new Date();
+            document.querySelectorAll('[data-timestamp]').forEach(element => {
+                const timestamp = new Date(element.dataset.timestamp);
+                const diff = Math.floor((now - timestamp) / 1000);
+
+                if (diff < 60) {
+                    element.textContent = `${diff}s ago`;
+                } else if (diff < 3600) {
+                    element.textContent = `${Math.floor(diff / 60)}m ago`;
+                } else if (diff < 86400) {
+                    element.textContent = `${Math.floor(diff / 3600)}h ago`;
+                } else {
+                    element.textContent = `${Math.floor(diff / 86400)}d ago`;
+                }
+            });
+        }
+
+        // Update timestamps immediately and then every minute
+        updateTimestamps();
+        setInterval(updateTimestamps, 60000);
+    </script>
+</body>
+</html>

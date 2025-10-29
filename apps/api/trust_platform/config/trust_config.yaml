@@ -1,0 +1,459 @@
+# LCopilot Trust Platform Configuration
+# Comprehensive configuration for importers, exporters, and banks
+
+# Commercial Tier Definitions for Trade Partners
+tier_offerings:
+  free:
+    name: "SME Starter"
+    price: 0
+    target_audience: "SMEs just starting with trade"
+    description: "Basic reliability visibility for small importers/exporters"
+    features:
+      status_page: true
+      uptime_history_days: 90
+      lc_validation_health: true
+      shared_sla_dashboard: true
+      incident_history: true
+      monthly_sla_reports: 1
+      compliance_exports: false
+      customer_portal: false
+      webhooks: false
+      api_access: false
+      white_label: false
+      dedicated_dashboards: false
+      predictive_analytics: false
+      human_escalation: false
+      priority_support: false
+    quotas:
+      sla_reports_per_year: 12
+      api_calls_per_month: 0
+      webhook_events_per_month: 0
+      compliance_exports_per_month: 0
+      support_response_hours: 72
+
+  pro:
+    name: "Active Trader"
+    price: 499
+    target_audience: "Active importers/exporters with regular LC flow"
+    description: "Enhanced reliability with trade partner confidence tools"
+    features:
+      status_page: true
+      uptime_history_days: 365
+      lc_validation_health: true
+      shared_sla_dashboard: false
+      dedicated_sla_dashboard: true
+      incident_history: true
+      incident_webhooks: true
+      monthly_sla_reports: 12
+      compliance_exports: true
+      customer_portal: true
+      portal_branding: true
+      error_analytics: true
+      lc_mismatch_analysis: true
+      webhooks: true
+      api_access: false
+      white_label: false
+      dedicated_dashboards: false
+      predictive_analytics: false
+      human_escalation: false
+      priority_support: true
+    quotas:
+      sla_reports_per_year: -1  # unlimited
+      api_calls_per_month: 1000
+      webhook_events_per_month: 5000
+      compliance_exports_per_month: 12
+      support_response_hours: 24
+
+  enterprise:
+    name: "Bank & Corporate"
+    price: 1999
+    target_audience: "Banks and large corporates requiring audit-grade reliability"
+    description: "Full-featured trust platform with regulatory compliance"
+    features:
+      status_page: true
+      uptime_history_days: 1095  # 3 years
+      lc_validation_health: true
+      shared_sla_dashboard: false
+      dedicated_sla_dashboard: true
+      incident_history: true
+      incident_webhooks: true
+      monthly_sla_reports: -1  # unlimited
+      compliance_exports: true
+      bank_auditable_logs: true
+      customer_portal: true
+      portal_branding: true
+      white_label: true
+      custom_domains: true
+      error_analytics: true
+      lc_mismatch_analysis: true
+      predictive_reliability: true
+      webhooks: true
+      api_access: true
+      integration_apis: true
+      dedicated_dashboards: true
+      predictive_analytics: true
+      human_escalation: true
+      pagerduty_integration: true
+      emergency_contacts: true
+      priority_support: true
+      dedicated_support: true
+    quotas:
+      sla_reports_per_year: -1  # unlimited
+      api_calls_per_month: 100000
+      webhook_events_per_month: 50000
+      compliance_exports_per_month: -1  # unlimited
+      support_response_hours: 4
+
+# Customer Database with Trade Context
+customers:
+  # Free Tier SMEs
+  sme-importer-001:
+    tier: "free"
+    company_name: "Global Imports LLC"
+    business_type: "importer"
+    primary_trade_lanes: ["US-China", "US-Vietnam"]
+    monthly_lc_volume: 25
+    account_id: "123456789001"
+    contact_email: "ops@globalimports.com"
+    onboarded_date: "2024-01-15"
+
+  sme-exporter-001:
+    tier: "free"
+    company_name: "American Textiles Export"
+    business_type: "exporter"
+    primary_trade_lanes: ["US-EU", "US-Mexico"]
+    monthly_lc_volume: 15
+    account_id: "123456789002"
+    contact_email: "finance@amtextiles.com"
+    onboarded_date: "2024-02-03"
+
+  # Pro Tier Active Traders
+  pro-trader-001:
+    tier: "pro"
+    company_name: "Pacific Trade Solutions"
+    business_type: "trading_company"
+    primary_trade_lanes: ["US-Asia", "Asia-EU", "US-LATAM"]
+    monthly_lc_volume: 150
+    account_id: "123456789003"
+    contact_email: "operations@pacifictrade.com"
+    portal_branding:
+      company_logo: "https://cdn.pacifictrade.com/logo.png"
+      primary_color: "#1f4e79"
+      secondary_color: "#87ceeb"
+    onboarded_date: "2024-01-08"
+
+  pro-importer-001:
+    tier: "pro"
+    company_name: "Euro-Asia Imports"
+    business_type: "importer"
+    primary_trade_lanes: ["EU-China", "EU-India", "EU-Vietnam"]
+    monthly_lc_volume: 200
+    account_id: "123456789004"
+    contact_email: "compliance@euroasiaimports.eu"
+    portal_branding:
+      company_logo: "https://assets.euroasiaimports.eu/brand/logo.svg"
+      primary_color: "#2c5aa0"
+      secondary_color: "#f8f9fa"
+    onboarded_date: "2023-11-22"
+
+  # Enterprise Tier Banks & Large Corporates
+  enterprise-bank-001:
+    tier: "enterprise"
+    company_name: "First International Bank"
+    business_type: "bank"
+    primary_trade_lanes: ["global"]
+    monthly_lc_volume: 5000
+    account_id: "123456789005"
+    contact_email: "tradefinance@firstintl.bank"
+    white_label:
+      domain: "lc-status.firstintl.bank"
+      company_name: "First International Bank LC Platform"
+      logo_url: "https://brand.firstintl.bank/lc-platform-logo.png"
+      favicon_url: "https://brand.firstintl.bank/favicon.ico"
+    portal_branding:
+      primary_color: "#003d7a"
+      secondary_color: "#e6f3ff"
+      custom_css: "https://brand.firstintl.bank/lc-portal.css"
+    human_escalation:
+      primary_contact: "LC Operations Center"
+      phone: "+1-555-BANK-LC"
+      email: "lc-ops-urgent@firstintl.bank"
+      pagerduty_service: "PXYZ789"
+      escalation_policy: "P1-LC-CRITICAL"
+    compliance_requirements:
+      audit_trail: true
+      data_residency: "US"
+      retention_years: 7
+      immutable_logs: true
+    onboarded_date: "2023-08-15"
+
+  enterprise-corp-001:
+    tier: "enterprise"
+    company_name: "Global Manufacturing Corp"
+    business_type: "manufacturer"
+    primary_trade_lanes: ["US-Global", "EU-Global", "Asia-Global"]
+    monthly_lc_volume: 800
+    account_id: "123456789006"
+    contact_email: "trade.ops@globalmfg.com"
+    white_label:
+      domain: "lc-trust.globalmfg.com"
+      company_name: "GMC Trade Finance Trust Portal"
+      logo_url: "https://assets.globalmfg.com/trust-portal/logo.png"
+    portal_branding:
+      primary_color: "#2e8b57"
+      secondary_color: "#f0fff0"
+    human_escalation:
+      primary_contact: "Trade Finance Operations"
+      phone: "+1-555-GMC-TRADE"
+      email: "trade-finance-critical@globalmfg.com"
+      slack_webhook: "https://hooks.slack.com/services/T123/B456/xyz789"
+    onboarded_date: "2023-09-30"
+
+# SLA Targets by Tier for Trade Context
+sla_targets:
+  free:
+    lc_validation_availability: 99.0    # 99% uptime
+    lc_processing_time_p95_seconds: 60  # 95% of LCs processed under 60s
+    validation_accuracy: 98.5           # 98.5% accuracy on LC validation
+    monthly_downtime_minutes: 432       # ~7.2 hours allowed downtime per month
+    incident_response_hours: 48         # 48 hour response to incidents
+
+  pro:
+    lc_validation_availability: 99.5    # 99.5% uptime
+    lc_processing_time_p95_seconds: 45  # 95% of LCs processed under 45s
+    validation_accuracy: 99.2           # 99.2% accuracy on LC validation
+    monthly_downtime_minutes: 216       # ~3.6 hours allowed downtime per month
+    incident_response_hours: 12         # 12 hour response to incidents
+
+  enterprise:
+    lc_validation_availability: 99.9    # 99.9% uptime
+    lc_processing_time_p95_seconds: 30  # 95% of LCs processed under 30s
+    validation_accuracy: 99.8           # 99.8% accuracy on LC validation
+    monthly_downtime_minutes: 43        # ~43 minutes allowed downtime per month
+    incident_response_hours: 2          # 2 hour response to incidents
+    compliance_data_retention_years: 7  # 7 year retention for bank audits
+
+# LC Validation Health Metrics
+lc_health_metrics:
+  validation_endpoints:
+    - name: "UCP600 Compliance Check"
+      endpoint: "https://api.lcopilot.com/validate/ucp600"
+      health_check_interval: 60
+      timeout_seconds: 30
+
+    - name: "ISBP Review Engine"
+      endpoint: "https://api.lcopilot.com/validate/isbp"
+      health_check_interval: 60
+      timeout_seconds: 45
+
+    - name: "Document Cross-Reference"
+      endpoint: "https://api.lcopilot.com/validate/documents"
+      health_check_interval: 120
+      timeout_seconds: 60
+
+    - name: "Bank Code Verification"
+      endpoint: "https://api.lcopilot.com/validate/banks"
+      health_check_interval: 300
+      timeout_seconds: 15
+
+  validation_accuracy_thresholds:
+    critical: 95.0    # Below 95% accuracy triggers critical alert
+    warning: 98.0     # Below 98% accuracy triggers warning
+    target: 99.5      # Target accuracy for optimal performance
+
+# Incident Categories for Trade Context
+incident_categories:
+  lc_validation_failure:
+    severity: "high"
+    description: "LC validation engine unable to process documents"
+    trade_impact: "Importers/exporters cannot validate LC compliance"
+    bank_impact: "Cannot confirm LC meets UCP600 requirements"
+    escalation_minutes: 30
+
+  processing_delays:
+    severity: "medium"
+    description: "LC processing taking longer than SLA targets"
+    trade_impact: "Delayed trade document review affecting shipment schedules"
+    bank_impact: "Extended review times may impact credit facilities"
+    escalation_minutes: 120
+
+  accuracy_degradation:
+    severity: "medium"
+    description: "LC validation accuracy below acceptable thresholds"
+    trade_impact: "Risk of false positives/negatives in LC compliance"
+    bank_impact: "Potential regulatory compliance issues"
+    escalation_minutes: 60
+
+  api_unavailable:
+    severity: "critical"
+    description: "Integration APIs not responding"
+    trade_impact: "Trading platforms cannot access LC validation services"
+    bank_impact: "Core banking systems cannot verify LC status"
+    escalation_minutes: 15
+
+# Compliance Export Configurations
+compliance_configs:
+  bank_audit_format:
+    required_fields:
+      - timestamp
+      - customer_id
+      - lc_reference_number
+      - validation_result
+      - processing_time_ms
+      - accuracy_score
+      - ucp600_compliance
+      - isbp_compliance
+      - discrepancy_flags
+      - reviewer_id
+      - system_version
+    retention_days:
+      free: 90
+      pro: 365
+      enterprise: 2555  # 7 years
+    export_formats: ["json", "csv", "pdf"]
+    encryption_required: true
+    audit_trail: true
+    immutable_storage: true
+
+# Portal UI Configuration
+portal_config:
+  features_by_tier:
+    free:
+      dashboard_widgets: ["uptime_summary", "recent_incidents"]
+      reports_access: ["monthly_summary"]
+      navigation: ["status", "incidents"]
+
+    pro:
+      dashboard_widgets: ["uptime_summary", "lc_processing_metrics", "recent_incidents", "accuracy_trends"]
+      reports_access: ["monthly_summary", "sla_reports", "error_analytics"]
+      navigation: ["status", "incidents", "reports", "analytics"]
+
+    enterprise:
+      dashboard_widgets: ["uptime_summary", "lc_processing_metrics", "recent_incidents", "accuracy_trends", "compliance_status", "predictive_alerts"]
+      reports_access: ["monthly_summary", "sla_reports", "error_analytics", "compliance_exports", "audit_logs"]
+      navigation: ["status", "incidents", "reports", "analytics", "compliance", "api_access"]
+
+# Infrastructure Naming Patterns for Trade Platform
+resource_naming:
+  pattern: "lcopilot-trust-{tier}-{environment}"
+  enterprise_pattern: "lcopilot-trust-enterprise-{customer_name}-{environment}"
+
+  examples:
+    free: "lcopilot-trust-free-production"
+    pro: "lcopilot-trust-pro-production"
+    enterprise_bank: "lcopilot-trust-enterprise-firstintl-production"
+    enterprise_corp: "lcopilot-trust-enterprise-globalmfg-production"
+
+# Cost Guardrails and Quotas
+cost_guardrails:
+  free_tier_limits:
+    monthly_api_calls: 0
+    monthly_webhook_events: 0
+    storage_gb: 1
+    monthly_cost_limit_usd: 10
+
+  pro_tier_limits:
+    monthly_api_calls: 1000
+    monthly_webhook_events: 5000
+    storage_gb: 10
+    monthly_cost_limit_usd: 100
+
+  enterprise_tier_limits:
+    monthly_api_calls: 100000
+    monthly_webhook_events: 50000
+    storage_gb: 100
+    monthly_cost_limit_usd: 1000
+
+# UCP600/ISBP Compliance Configuration
+compliance:
+  ucp600: true
+  isbp: true
+  tiers:
+    free:
+      enabled: true
+      checks_included: 3
+      description: "Trial - 3 compliance checks included"
+      features:
+        - "UCP600 rule validation"
+        - "ISBP standard checking"
+        - "Basic compliance scoring"
+      limitations:
+        - "Limited to 3 checks total"
+        - "No audit trail"
+        - "No compliance exports"
+
+    pro:
+      enabled: true
+      checks_included: unlimited
+      description: "Full UCP600/ISBP coverage"
+      features:
+        - "Unlimited UCP600/ISBP validation"
+        - "Compliance audit trail"
+        - "SLA compliance reporting"
+        - "Priority compliance support"
+      limitations:
+        - "No digital signatures"
+        - "Standard retention (1 year)"
+
+    enterprise:
+      enabled: true
+      checks_included: unlimited
+      audit_logging: true
+      retention_years: 7
+      digital_signatures: true
+      description: "Bank-grade compliance (UCP600/ISBP + signed logs)"
+      features:
+        - "Unlimited compliance validation"
+        - "Digital signature verification"
+        - "Immutable audit trails"
+        - "7-year compliance retention"
+        - "Bank regulatory reporting"
+        - "Dedicated compliance support"
+      limitations: []
+
+# Most Common UCP600/ISBP Violations (for dashboard reporting)
+common_violations:
+  - rule: "UCP600-6"
+    description: "Missing or unclear expiry date/place"
+    frequency: "28%"
+    impact: "Critical - prevents LC usage"
+
+  - rule: "UCP600-20"
+    description: "Commercial invoice discrepancies"
+    frequency: "22%"
+    impact: "Major - delays payment"
+
+  - rule: "ISBP-B2"
+    description: "Invoice amount exceeds LC amount"
+    frequency: "18%"
+    impact: "Critical - automatic dishonor"
+
+  - rule: "UCP600-31"
+    description: "Inconsistent or illogical dates"
+    frequency: "15%"
+    impact: "Major - document conflicts"
+
+  - rule: "ISBP-D3"
+    description: "Transport document date issues"
+    frequency: "12%"
+    impact: "Major - affects goods release"
+
+# Rate Limiting Configuration
+rate_limits:
+  free:
+    status_page_requests_per_minute: 10
+    portal_requests_per_minute: 0  # No portal access
+    compliance_checks_per_day: 3
+
+  pro:
+    status_page_requests_per_minute: 100
+    portal_requests_per_minute: 60
+    webhook_events_per_minute: 10
+    compliance_checks_per_day: unlimited
+
+  enterprise:
+    status_page_requests_per_minute: 1000
+    portal_requests_per_minute: 600
+    webhook_events_per_minute: 100
+    api_requests_per_minute: 500
+    compliance_checks_per_day: unlimited

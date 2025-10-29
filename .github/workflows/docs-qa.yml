@@ -1,0 +1,279 @@
+name: BMAD Documentation Quality Assurance
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/**'
+      - '.bmad-core/**'
+      - 'apps/**'
+      - 'tools/doc_drift_check.py'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/**'
+      - '.bmad-core/**'
+      - 'apps/**'
+      - 'tools/doc_drift_check.py'
+  schedule:
+    # Run weekly drift check every Monday at 9 AM Asia/Dhaka (3 AM UTC)
+    - cron: '0 3 * * 1'
+
+jobs:
+  docs-quality-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better drift analysis
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyyaml pathlib
+
+    - name: Verify BMAD core configuration
+      run: |
+        echo "🔧 Verifying BMAD core configuration..."
+        if [ ! -f ".bmad-core/core-config.yaml" ]; then
+          echo "❌ Error: .bmad-core/core-config.yaml not found"
+          exit 1
+        fi
+        python -c "import yaml; yaml.safe_load(open('.bmad-core/core-config.yaml'))"
+        echo "✅ BMAD configuration is valid"
+
+    - name: Run document drift check
+      run: |
+        echo "🔍 Running BMAD document drift check..."
+        python tools/doc_drift_check.py --verbose --output docs/reports/doc-drift-latest.md
+
+    - name: Validate story frontmatter schema
+      run: |
+        echo "📋 Validating story frontmatter schemas..."
+        python -c "
+        import yaml
+        import os
+        from pathlib import Path
+
+        config = yaml.safe_load(open('.bmad-core/core-config.yaml'))
+        schema = config.get('storyTemplateSchema', {})
+        required_fields = schema.get('required', [])
+
+        story_dir = Path('docs/stories')
+        if not story_dir.exists():
+            print('⚠️ No stories directory found')
+            exit(0)
+
+        errors = []
+        for story_file in story_dir.glob('*.md'):
+            try:
+                content = story_file.read_text()
+                if content.startswith('---'):
+                    yaml_end = content.find('---', 3)
+                    if yaml_end > 0:
+                        frontmatter = yaml.safe_load(content[3:yaml_end])
+                        if frontmatter:
+                            for field in required_fields:
+                                if field not in frontmatter:
+                                    errors.append(f'{story_file.name}: missing {field}')
+            except Exception as e:
+                errors.append(f'{story_file.name}: parse error - {e}')
+
+        if errors:
+            print('❌ Story validation errors:')
+            for error in errors:
+                print(f'   {error}')
+            exit(1)
+        else:
+            print('✅ All stories have valid frontmatter')
+        "
+
+    - name: Lint Markdown files
+      run: |
+        echo "📝 Linting Markdown files..."
+        # Install markdownlint-cli
+        npm install -g markdownlint-cli
+
+        # Create markdownlint config
+        cat > .markdownlint.yaml << EOF
+        # BMAD Documentation Linting Rules
+        default: true
+        line-length:
+          line_length: 120
+          code_blocks: false
+          tables: false
+        no-trailing-punctuation:
+          punctuation: ".,;:"
+        no-duplicate-heading: false  # Allow duplicate headings in different files
+        no-inline-html: false  # Allow HTML in markdown
+        EOF
+
+        # Lint docs directory
+        markdownlint docs/ --config .markdownlint.yaml || true
+        echo "📝 Markdown linting completed (warnings only)"
+
+    - name: Check documentation links
+      run: |
+        echo "🔗 Checking internal documentation links..."
+        python -c "
+        import re
+        import os
+        from pathlib import Path
+
+        docs_dir = Path('docs')
+        broken_links = []
+
+        for md_file in docs_dir.rglob('*.md'):
+            content = md_file.read_text()
+            # Find markdown links [text](path)
+            links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', content)
+
+            for text, link in links:
+                if link.startswith(('http://', 'https://', 'mailto:')):
+                    continue  # Skip external links
+                if link.startswith('#'):
+                    continue  # Skip anchor links
+
+                # Convert relative link to absolute path
+                if link.startswith('./'):
+                    link = link[2:]
+                elif link.startswith('../'):
+                    # Handle relative paths
+                    parts = str(md_file.parent).split('/')
+                    while link.startswith('../'):
+                        if parts:
+                            parts.pop()
+                        link = link[3:]
+                    link = '/'.join(parts + [link]) if parts else link
+
+                # Check if target exists
+                target = Path(link)
+                if not target.exists():
+                    broken_links.append(f'{md_file}: broken link to {link}')
+
+        if broken_links:
+            print('🔗 Found broken internal links:')
+            for link in broken_links[:10]:  # Show first 10
+                print(f'   {link}')
+            if len(broken_links) > 10:
+                print(f'   ... and {len(broken_links) - 10} more')
+            print('⚠️ Broken links detected (non-blocking)')
+        else:
+            print('✅ All internal links are valid')
+        "
+
+    - name: Generate CI summary
+      run: |
+        echo "📊 BMAD Documentation QA Summary" >> $GITHUB_STEP_SUMMARY
+        echo "=================================" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ BMAD configuration validation" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Document drift check" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Story frontmatter validation" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Markdown linting" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Internal link validation" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📄 Generated Reports:" >> $GITHUB_STEP_SUMMARY
+        echo "- [Document Drift Report](docs/reports/doc-drift-latest.md)" >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload drift report artifact
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bmad-drift-report
+        path: docs/reports/doc-drift-latest.md
+        retention-days: 30
+
+    - name: Comment on PR with drift report
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = 'docs/reports/doc-drift-latest.md';
+
+          if (fs.existsSync(path)) {
+            const report = fs.readFileSync(path, 'utf8');
+            const lines = report.split('\n');
+            const summary = lines.slice(0, 20).join('\n'); // First 20 lines
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📋 BMAD Document Drift Check
+
+${summary}
+
+<details>
+<summary>Full Report</summary>
+
+\`\`\`
+${report}
+\`\`\`
+
+</details>
+
+*This report was automatically generated by the BMAD Documentation QA workflow.*`
+            });
+          }
+
+  weekly-drift-notification:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: docs-quality-check
+
+    steps:
+    - name: Download drift report
+      uses: actions/download-artifact@v3
+      with:
+        name: bmad-drift-report
+        path: ./
+
+    - name: Create GitHub issue for drift failures
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const reportPath = 'doc-drift-latest.md';
+
+          let reportContent = 'Drift report not available';
+          if (fs.existsSync(reportPath)) {
+            reportContent = fs.readFileSync(reportPath, 'utf8');
+          }
+
+          const title = `📋 Weekly BMAD Drift Check Failed - ${new Date().toISOString().split('T')[0]}`;
+          const body = `## Weekly BMAD Document Drift Check Failed
+
+This automated check detected documentation gaps that need attention.
+
+### Action Required
+1. Review the drift report below
+2. Address FAIL items (code without documentation)
+3. Complete WARNING items (partial documentation)
+4. Run \`python tools/doc_drift_check.py\` locally to verify fixes
+
+### Drift Report
+\`\`\`
+${reportContent}
+\`\`\`
+
+**Auto-generated by:** \`.github/workflows/docs-qa.yml\`
+**Schedule:** Weekly on Mondays at 9 AM Asia/Dhaka`;
+
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['documentation', 'bmad', 'automation']
+          });

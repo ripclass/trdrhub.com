@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ labels.report_title }} - LCopilot</title>
+    <link rel="stylesheet" href="{{ css_path }}">
+    <style>
+        /* Font embedding for Bangla support */
+        @font-face {
+            font-family: 'Noto Sans Bengali';
+            src: url('{{ fonts_path }}/NotoSansBengali-Regular.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Noto Sans Bengali';
+            src: url('{{ fonts_path }}/NotoSansBengali-Bold.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+    </style>
+</head>
+<body class="{% if language == 'bn' %}bangla{% endif %}">
+    <!-- Header Section -->
+    <header class="report-header">
+        <div class="header-content">
+            <div class="logo-section">
+                <img src="{{ logo_path }}" alt="LCopilot Logo" class="company-logo">
+                <div class="company-info">
+                    <h1 class="company-name">LCopilot</h1>
+                    <p class="company-tagline">{{ labels.ai_powered }}</p>
+                </div>
+            </div>
+            <div class="report-meta">
+                <h2 class="report-title">{{ labels.report_title }}</h2>
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">{{ labels.session_id }}:</span>
+                        <span class="meta-value">{{ summary.session_id }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ labels.generated_on }}:</span>
+                        <span class="meta-value">{{ generated_at }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ labels.processed_by }}:</span>
+                        <span class="meta-value">{{ session_details.user_name }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ labels.processing_time }}:</span>
+                        <span class="meta-value">{{ summary.processing_time_ms }}ms</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Executive Summary Section -->
+    <section class="executive-summary">
+        <h2 class="section-title">
+            <span class="section-icon">📊</span>
+            {{ labels.validation_summary }}
+        </h2>
+
+        <div class="summary-cards">
+            <div class="summary-card card-success">
+                <div class="card-icon">✓</div>
+                <div class="card-content">
+                    <div class="card-number">{{ summary.passed_rules }}</div>
+                    <div class="card-label">{{ labels.passed_rules }}</div>
+                    <div class="card-sublabel">{{ labels.rules_passed_desc }}</div>
+                </div>
+            </div>
+
+            <div class="summary-card card-danger">
+                <div class="card-icon">✗</div>
+                <div class="card-content">
+                    <div class="card-number">{{ summary.failed_rules }}</div>
+                    <div class="card-label">{{ labels.failed_rules }}</div>
+                    <div class="card-sublabel">{{ labels.rules_failed_desc }}</div>
+                </div>
+            </div>
+
+            <div class="summary-card card-warning">
+                <div class="card-icon">⚠</div>
+                <div class="card-content">
+                    <div class="card-number">{{ summary.warnings }}</div>
+                    <div class="card-label">{{ labels.warnings }}</div>
+                    <div class="card-sublabel">{{ labels.warnings_desc }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Severity Breakdown -->
+        <div class="severity-breakdown">
+            <h3 class="subsection-title">{{ labels.severity_breakdown }}</h3>
+            <div class="severity-grid">
+                <div class="severity-item severity-critical">
+                    <div class="severity-icon">🔴</div>
+                    <div class="severity-content">
+                        <div class="severity-count">{{ summary.critical_issues }}</div>
+                        <div class="severity-label">{{ labels.critical_issues }}</div>
+                    </div>
+                </div>
+                <div class="severity-item severity-major">
+                    <div class="severity-icon">🟡</div>
+                    <div class="severity-content">
+                        <div class="severity-count">{{ summary.major_issues }}</div>
+                        <div class="severity-label">{{ labels.major_issues }}</div>
+                    </div>
+                </div>
+                <div class="severity-item severity-minor">
+                    <div class="severity-icon">🔵</div>
+                    <div class="severity-content">
+                        <div class="severity-count">{{ summary.minor_issues }}</div>
+                        <div class="severity-label">{{ labels.minor_issues }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% if failed_results %}
+    <!-- Discrepancies Section -->
+    <section class="discrepancies-section">
+        <h2 class="section-title">
+            <span class="section-icon">🚨</span>
+            {{ labels.discrepancies_found }}
+        </h2>
+
+        <div class="discrepancies-list">
+            {% for result in failed_results %}
+            <div class="discrepancy-card discrepancy-{{ result.rule.severity.value }}">
+                <div class="discrepancy-header">
+                    <div class="discrepancy-title-section">
+                        <h3 class="discrepancy-title">{{ result.rule.rule_name }}</h3>
+                        <div class="document-badges">
+                            {% for doc_type in result.affected_documents %}
+                            <span class="document-badge badge-{{ doc_type.value.lower().replace('_', '-') }}">
+                                {{ labels['doc_' + doc_type.value.lower()] }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="severity-badge-container">
+                        <span class="severity-badge severity-{{ result.rule.severity.value }}">
+                            {{ labels[result.rule.severity.value] }}
+                        </span>
+                        <div class="confidence-score">
+                            <span class="confidence-label">{{ labels.confidence }}:</span>
+                            <span class="confidence-value">{{ (result.confidence * 100)|round }}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="discrepancy-description">
+                    <p>{{ result.message }}</p>
+                    {% if result.rule.description %}
+                    <p class="rule-description">{{ result.rule.description }}</p>
+                    {% endif %}
+                </div>
+
+                {% if result.expected_value and result.actual_value %}
+                <div class="value-comparison">
+                    <div class="comparison-grid">
+                        <div class="comparison-item expected">
+                            <div class="comparison-label">{{ labels.expected_value }}</div>
+                            <div class="comparison-value">{{ result.expected_value }}</div>
+                        </div>
+                        <div class="comparison-arrow">→</div>
+                        <div class="comparison-item actual">
+                            <div class="comparison-label">{{ labels.actual_value }}</div>
+                            <div class="comparison-value">{{ result.actual_value }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% else %}
+    <!-- No Discrepancies Section -->
+    <section class="no-discrepancies-section">
+        <div class="success-message">
+            <div class="success-icon">🎉</div>
+            <h2>{{ labels.no_discrepancies_title }}</h2>
+            <p>{{ labels.no_discrepancies_message }}</p>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if summary.field_comparisons %}
+    <!-- Cross-Check Matrix Section -->
+    <section class="cross-check-section">
+        <h2 class="section-title">
+            <span class="section-icon">🔄</span>
+            {{ labels.cross_check_matrix }}
+        </h2>
+
+        <div class="matrix-description">
+            <p>{{ labels.matrix_description }}</p>
+        </div>
+
+        <div class="cross-check-table-container">
+            <table class="cross-check-table">
+                <thead>
+                    <tr>
+                        <th class="field-column">{{ labels.field_name }}</th>
+                        <th class="document-column">
+                            <div class="doc-header">
+                                <span class="doc-icon">📄</span>
+                                {{ labels.letter_of_credit }}
+                            </div>
+                        </th>
+                        <th class="document-column">
+                            <div class="doc-header">
+                                <span class="doc-icon">🧾</span>
+                                {{ labels.commercial_invoice }}
+                            </div>
+                        </th>
+                        <th class="document-column">
+                            <div class="doc-header">
+                                <span class="doc-icon">🚢</span>
+                                {{ labels.bill_of_lading }}
+                            </div>
+                        </th>
+                        <th class="status-column">{{ labels.consistency_status }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for comparison in summary.field_comparisons %}
+                    <tr class="comparison-row {% if not comparison.is_consistent %}inconsistent{% endif %}">
+                        <td class="field-name">
+                            <div class="field-info">
+                                <span class="field-label">{{ comparison.field_name }}</span>
+                                <span class="field-type">{{ comparison.field_type.value }}</span>
+                            </div>
+                        </td>
+                        <td class="document-value">
+                            {% if comparison.lc_field %}
+                            <div class="value-with-confidence">
+                                <span class="field-value">{{ comparison.lc_field.value }}</span>
+                                <span class="confidence-indicator">{{ (comparison.lc_field.confidence * 100)|round }}%</span>
+                            </div>
+                            {% else %}
+                            <span class="no-value">{{ labels.not_available }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="document-value">
+                            {% if comparison.invoice_field %}
+                            <div class="value-with-confidence">
+                                <span class="field-value">{{ comparison.invoice_field.value }}</span>
+                                <span class="confidence-indicator">{{ (comparison.invoice_field.confidence * 100)|round }}%</span>
+                            </div>
+                            {% else %}
+                            <span class="no-value">{{ labels.not_available }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="document-value">
+                            {% if comparison.bl_field %}
+                            <div class="value-with-confidence">
+                                <span class="field-value">{{ comparison.bl_field.value }}</span>
+                                <span class="confidence-indicator">{{ (comparison.bl_field.confidence * 100)|round }}%</span>
+                            </div>
+                            {% else %}
+                            <span class="no-value">{{ labels.not_available }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="status-cell">
+                            <div class="status-indicator">
+                                <span class="status-icon {% if comparison.is_consistent %}consistent{% else %}inconsistent{% endif %}">
+                                    {% if comparison.is_consistent %}✓{% else %}✗{% endif %}
+                                </span>
+                                <span class="status-text">
+                                    {% if comparison.is_consistent %}{{ labels.consistent }}{% else %}{{ labels.inconsistent }}{% endif %}
+                                </span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Footer Section -->
+    <footer class="report-footer">
+        <div class="footer-content">
+            <div class="footer-branding">
+                <p><strong>{{ labels.generated_by }} LCopilot</strong> - {{ labels.ai_powered }}</p>
+                <p class="disclaimer">{{ labels.disclaimer }}</p>
+            </div>
+            <div class="footer-meta">
+                <p>{{ labels.report_generated_at }}: {{ generated_timestamp }}</p>
+                <p>{{ labels.report_version }}: 2.0</p>
+            </div>
+        </div>
+
+        <!-- Professional signature block -->
+        <div class="signature-block">
+            <div class="signature-line">
+                <p>{{ labels.verified_by }}:</p>
+                <div class="signature-space"></div>
+                <p class="signature-date">{{ labels.date }}: _______________</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

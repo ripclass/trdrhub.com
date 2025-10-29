@@ -1,0 +1,116 @@
+# Sonali Bank Limited - Rule Pack Configuration
+# Conservative, process-focused validation with government compliance emphasis
+
+bank_info:
+  name: "Sonali Bank Limited"
+  code: "SONALIBD"
+  type: "state_owned"
+  country: "Bangladesh"
+  regulatory_style: "conservative"
+  processing_approach: "thorough"
+
+validation_profile:
+  strictness_level: "high"
+  documentation_requirements: "comprehensive"
+  processing_time_expectation: "standard"
+  risk_tolerance: "low"
+  compliance_focus: "government_regulations"
+
+specific_rules:
+  currency_validation:
+    preferred_currencies: ["USD", "EUR", "GBP", "JPY"]
+    requires_approval_above: 100000  # USD equivalent
+    government_approval_threshold: 250000
+    notes: "Large amounts require government approval due to state bank status"
+
+  documentation_requirements:
+    mandatory_documents:
+      - "Commercial Invoice"
+      - "Bill of Lading"
+      - "Packing List"
+      - "Certificate of Origin"
+      - "Insurance Policy"
+      - "Import Registration Certificate"
+    additional_for_government_import:
+      - "NOC from relevant ministry"
+      - "Environment clearance (if applicable)"
+
+  date_validation:
+    minimum_presentation_period: 21  # days
+    maximum_validity_period: 365     # days
+    shipment_date_buffer: 15         # days before expiry
+    processing_time_allowance: 7     # additional days for government procedures
+
+  amount_limits:
+    single_lc_limit: 10000000        # USD 10M
+    annual_customer_limit: 50000000  # USD 50M
+    requires_board_approval: 5000000 # USD 5M
+
+  insurance_requirements:
+    minimum_coverage: 110            # 110% of CIF value
+    preferred_insurers:
+      - "Sadharan Bima Corporation"
+      - "Central Insurance Company Ltd"
+      - "Well-known international insurers"
+
+  beneficiary_validation:
+    restricted_countries: ["Iran", "North Korea", "Syria"]
+    requires_kyc_documentation: true
+    sanctions_screening: "mandatory"
+
+validation_messages:
+  style: "formal"
+  language: "government_compliant"
+  templates:
+    currency_approval_required:
+      "This LC amount exceeds the threshold requiring Bangladesh Bank approval. Please submit Form IMP with required documentation."
+
+    documentation_incomplete:
+      "Additional documentation required as per government regulations. Please ensure all certificates are properly authenticated."
+
+    date_validation_failed:
+      "Date sequence does not allow sufficient time for government processing procedures. Minimum 21-day presentation period recommended."
+
+    insurance_insufficient:
+      "Insurance coverage must be minimum 110% of CIF value as per Bangladesh Bank guidelines."
+
+processing_preferences:
+  detailed_scrutiny: true
+  manual_review_threshold: 50000    # USD - amounts above require manual review
+  compliance_officer_review: 100000  # USD
+  board_approval_required: 5000000   # USD
+
+  rejection_reasons:
+    common:
+      - "Insufficient documentation as per government requirements"
+      - "Amount exceeds delegated authority limits"
+      - "Presentation period inadequate for processing"
+      - "Insurance coverage below regulatory minimum"
+
+    government_specific:
+      - "Import registration certificate missing or expired"
+      - "Environmental clearance required but not provided"
+      - "Ministry NOC required for this commodity category"
+
+risk_assessment:
+  factors:
+    - "Government regulation compliance"
+    - "Import policy adherence"
+    - "Customer credit rating with state bank"
+    - "Political risk considerations"
+    - "Foreign exchange regulation compliance"
+
+  escalation_triggers:
+    - "Sanctioned country involvement"
+    - "Unusual payment terms"
+    - "Restricted commodity import"
+    - "Customer previous compliance issues"
+
+report_format:
+  tone: "formal_government"
+  emphasis: "regulatory_compliance"
+  includes_warnings_for:
+    - "Government approval requirements"
+    - "Extended processing times"
+    - "Additional documentation needs"
+    - "Compliance officer review triggers"

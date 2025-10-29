@@ -1,0 +1,3 @@
+# Executive Summary
+
+LCopilot is an AI-powered assistant that helps Small and Medium-sized Enterprise (SME) exporters and importers in Bangladesh validate Letters of Credit (LCs) with speed and confidence. Today, SMEs lose money and time due to LC errors that cause bank rejections, shipment delays, and demurrage fees. LCopilot eliminates this risk by combining OCR, rules-based checks, and AI analysis to instantly flag discrepancies against UCP 600 standards. The result is a clear, bank-ready discrepancy report that transforms the SME's experience from uncertainty and fear to clarity, control, and faster payments.

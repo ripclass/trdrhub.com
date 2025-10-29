@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bank-demo
+  labels:
+    app.kubernetes.io/name: bank-demo
+    app.kubernetes.io/instance: bank-demo
+    trdrhub.com/tenant: bank-demo
+    trdrhub.com/sla-tier: demo
+    trdrhub.com/pilot: "true"
+    trdrhub.com/environment: sandbox
+  annotations:
+    trdrhub.com/created-by: "bank-pilot-automation"
+    trdrhub.com/tenant-alias: "demo"
+    trdrhub.com/billing-enabled: "false"

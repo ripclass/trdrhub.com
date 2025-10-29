@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Usage Limit Reached - LCopilot{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align: center; border-left: 4px solid #ef4444;">
+    <div style="font-size: 4rem; margin-bottom: 1rem;">🚫</div>
+    <h1 style="color: #dc2626; margin-bottom: 1rem;">Usage Limit Reached</h1>
+    <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 2rem;">
+        Your {{ tier.title() }} plan has reached its usage limit.
+    </p>
+
+    <div style="background: #fee2e2; border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+        <p style="color: #991b1b; font-weight: 500;">{{ result.upsell_message }}</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        {% if result.tier_limits.daily != -1 %}
+        <div class="stat-card">
+            <div class="stat-number">{{ result.tier_limits.daily }}</div>
+            <div class="stat-label">Daily Limit</div>
+        </div>
+        {% endif %}
+
+        {% if result.tier_limits.monthly != -1 %}
+        <div class="stat-card">
+            <div class="stat-number">{{ result.tier_limits.monthly }}</div>
+            <div class="stat-label">Monthly Limit</div>
+        </div>
+        {% endif %}
+
+        <div class="stat-card">
+            <div class="stat-number">{{ result.tier_limits.max_file_size_mb }}MB</div>
+            <div class="stat-label">Max File Size</div>
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+        <a href="{{ url_for('pricing') }}" class="btn btn-primary">
+            💰 Upgrade Now
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn" style="background: #6b7280; color: white;">
+            📊 Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom: 1.5rem; color: #1e293b; text-align: center;">Why Upgrade?</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 1rem;">🚀</div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">Professional Plan</h3>
+            <ul style="list-style: none; padding: 0; color: #64748b;">
+                <li style="margin-bottom: 0.5rem;">✓ 500 checks per month</li>
+                <li style="margin-bottom: 0.5rem;">✓ 50 checks per day</li>
+                <li style="margin-bottom: 0.5rem;">✓ Evidence packs</li>
+                <li style="margin-bottom: 0.5rem;">✓ API access</li>
+                <li style="margin-bottom: 0.5rem;">✓ Priority support</li>
+            </ul>
+            <div style="margin-top: 1.5rem;">
+                <strong style="color: #1e293b; font-size: 1.25rem;">$99/month</strong>
+            </div>
+        </div>
+
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 1rem;">⭐</div>
+            <h3 style="color: #374151; margin-bottom: 1rem;">Enterprise Plan</h3>
+            <ul style="list-style: none; padding: 0; color: #64748b;">
+                <li style="margin-bottom: 0.5rem;">✓ Unlimited checks</li>
+                <li style="margin-bottom: 0.5rem;">✓ Digital signatures</li>
+                <li style="margin-bottom: 0.5rem;">✓ Custom rules</li>
+                <li style="margin-bottom: 0.5rem;">✓ SSO integration</li>
+                <li style="margin-bottom: 0.5rem;">✓ Dedicated support</li>
+            </ul>
+            <div style="margin-top: 1.5rem;">
+                <strong style="color: #1e293b; font-size: 1.25rem;">Contact Sales</strong>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

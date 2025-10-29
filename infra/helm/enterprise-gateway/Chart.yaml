@@ -1,0 +1,10 @@
+apiVersion: v2
+name: enterprise-gateway
+description: Enterprise Security Gateway for Bank Pilot with mTLS and IP Whitelisting
+type: application
+version: 0.1.0
+appVersion: "1.0"
+dependencies:
+  - name: nginx-ingress
+    version: "4.7.1"
+    repository: "https://kubernetes.github.io/ingress-nginx"

@@ -1,0 +1,293 @@
+# Enterprise LCopilot Observability Configuration
+# Single source of truth for all monitoring, observability, and chaos engineering
+
+environments:
+  staging:
+    aws_account_id: "111111111111"
+    aws_profile: "lcopilot-staging"
+    aws_region: "eu-north-1"
+    alarm_threshold: 3
+    log_retention_days: 7
+    archive_after_days: 7
+
+    escalation:
+      channels: ["slack", "email"]
+      slack_webhook: "https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK_URL"
+      email_addresses: ["dev-team@company.com"]
+      pagerduty_integration_key: null
+
+    cost_controls:
+      enable_log_filtering: true
+      filter_debug_logs: true
+      s3_archive_enabled: true
+      s3_bucket: "lcopilot-logs-archive-staging"
+
+  prod:
+    aws_account_id: "222222222222"
+    aws_profile: "lcopilot-production"
+    aws_region: "eu-north-1"
+    alarm_threshold: 5
+    log_retention_days: 30
+    archive_after_days: 30
+
+    escalation:
+      channels: ["pagerduty", "slack", "email"]
+      slack_webhook: "https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK_URL"
+      email_addresses: ["ops-team@company.com", "oncall@company.com"]
+      pagerduty_integration_key: "R017XXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+    cost_controls:
+      enable_log_filtering: true
+      filter_debug_logs: true
+      s3_archive_enabled: true
+      s3_bucket: "lcopilot-logs-archive-prod"
+
+global_settings:
+  metric_namespace: "LCopilot"
+  alarm_period_seconds: 60
+  evaluation_periods: 1
+  treat_missing_data: "notBreaching"
+  enable_anomaly_detection: false
+  enable_advanced_log_insights: true
+  enable_compliance_checks: true
+
+# === NEW OBSERVABILITY FEATURES ===
+
+observability:
+  enable_dashboards: true
+
+  dashboards:
+    cloudwatch_enabled: true
+    grafana_enabled: false  # Optional Grafana integration
+    refresh_interval: 300   # 5 minutes
+    widgets:
+      - error_rate_1min
+      - error_rate_5min
+      - alarm_status_table
+      - latency_percentiles
+      - canary_success_rate
+      - top_error_types
+      - security_events
+
+  canary:
+    enabled: true
+    implementation: "lambda"  # "lambda" or "synthetics"
+    schedule_minutes:
+      staging: 5
+      prod: 10
+    timeout_seconds: 60
+    api_endpoints:
+      staging: "https://api-staging.company.com"
+      prod: "https://api.company.com"
+    test_scenarios:
+      - name: "upload_validate_report"
+        description: "Full golden path test"
+        timeout: 45
+      - name: "auth_check"
+        description: "Authentication validation"
+        timeout: 15
+
+    # Metrics produced
+    metrics:
+      success_rate: "CanarySuccessRate-{env}"
+      latency_ms: "CanaryLatencyMs-{env}"
+      scenario_duration: "CanaryScenarioDuration-{env}"
+
+chaos:
+  allowed_in_prod: false  # Safety: requires explicit --force flag
+  allowed_in_staging: true
+
+  fault_types:
+    error_spike:
+      enabled: true
+      duration_seconds: 120
+      error_rate_multiplier: 10
+    latency_injection:
+      enabled: true
+      duration_seconds: 300
+      latency_ms_range: [500, 2000]
+    log_pipeline_drop:
+      enabled: false  # Dangerous - simulated only
+      duration_seconds: 60
+
+  feature_flags:
+    storage: "dynamodb"  # "dynamodb" or "ssm"
+    table_name: "lcopilot-chaos-flags-{env}"
+    flags:
+      - "CHAOS_LATENCY_MS"
+      - "CHAOS_ERROR_RATE"
+      - "CHAOS_DROP_LOGS"
+
+  safety:
+    require_change_ticket_prod: true
+    max_duration_seconds: 600
+    auto_rollback: true
+
+slo:
+  targets:
+    staging:
+      error_rate_per_minute: 3     # ≤3 errors/min
+      canary_success_rate: 95      # ≥95% success
+      p95_latency_seconds: 30      # ≤30s P95 response time
+      availability_percent: 99.0   # ≥99% uptime
+
+    prod:
+      error_rate_per_minute: 5     # ≤5 errors/min
+      canary_success_rate: 99      # ≥99% success
+      p95_latency_seconds: 15      # ≤15s P95 response time
+      availability_percent: 99.9   # ≥99.9% uptime
+
+  reporting:
+    enabled: true
+    schedule: "0 2 1 * *"  # 2 AM on 1st of each month
+    output_bucket: "lcopilot-sla-reports-{env}"
+    include_planned_maintenance: false
+    maintenance_windows: []  # Format: [{"start": "2024-01-15T02:00:00Z", "end": "2024-01-15T04:00:00Z"}]
+
+    sections:
+      - executive_summary
+      - slo_compliance
+      - incident_timeline
+      - top_errors_analysis
+      - performance_trends
+      - recommendations
+
+security:
+  enable_auth_alarms: true
+  enable_waf_metrics: false  # Requires ALB/API Gateway setup
+
+  auth_monitoring:
+    failure_threshold:
+      staging: 20   # ≥20 failures in 5 minutes
+      prod: 50      # ≥50 failures in 5 minutes
+
+    metrics:
+      auth_failure_count: "AuthFailureCount-{env}"
+      suspicious_ip_count: "SuspiciousIPCount-{env}"
+
+    log_patterns:
+      auth_failed: '{ $.event = "auth_failed" }'
+      brute_force: '{ $.event = "auth_failed" && $.attempts > 5 }'
+      suspicious_countries: '{ $.country_code = "CN" || $.country_code = "RU" || $.country_code = "KP" }'
+
+  waf_monitoring:  # Optional - requires WAF setup
+    enabled: false
+    rate_limit_threshold: 2000  # requests per 5 minutes per IP
+    blocked_request_alarm: true
+    country_blocking: ["CN", "RU", "KP"]
+
+future_features:
+  anomaly_detection:
+    enabled: false
+    detector_name: "lcopilot-error-anomaly-{env}"
+    namespace: "LCopilot"
+    metric_name: "LCopilotErrorCount-{env}"
+    dimensions: []
+    stat: "Average"
+
+  log_insights:
+    enabled: true
+    queries:
+      - name: "TopErrorTypes"
+        query: |
+          fields @timestamp, level, message
+          | filter level = "ERROR"
+          | stats count() by message
+          | sort count desc
+          | limit 20
+        cost_optimized: true
+
+      - name: "ErrorFrequencyByHour"
+        query: |
+          fields @timestamp, level
+          | filter level = "ERROR"
+          | stats count() by bin(5m)
+          | sort @timestamp desc
+        cost_optimized: true
+
+      - name: "ServiceErrorBreakdown"
+        query: |
+          fields @timestamp, level, service, message
+          | filter level = "ERROR"
+          | stats count() by service
+          | sort count desc
+        cost_optimized: true
+
+      - name: "SecurityEvents"
+        query: |
+          fields @timestamp, event, ip_address, user_agent, country_code
+          | filter event like /auth_failed|suspicious|blocked/
+          | stats count() by event, country_code
+          | sort count desc
+        cost_optimized: true
+
+      - name: "PerformanceMetrics"
+        query: |
+          fields @timestamp, response_time, endpoint, status_code
+          | filter ispresent(response_time)
+          | stats avg(response_time) as avg_ms, max(response_time) as max_ms, count() as requests by endpoint
+          | sort avg_ms desc
+        cost_optimized: true
+
+  compliance:
+    enabled: true
+    required_alarms: ["error-spike", "auth-failures", "canary-failures"]
+    retention_policy_check: true
+    encryption_check: true
+    cross_account_isolation: true
+
+ci_cd:
+  github_actions:
+    terraform_plan_on_pr: true
+    cdk_diff_on_pr: true
+    auto_deploy_staging: true
+    auto_deploy_prod: false
+    require_approval_prod: true
+
+    observability_tests:
+      verify_dashboards: true
+      run_canary_once: true
+      chaos_dry_run: true
+      slo_compute_sample: true
+
+    monthly_sla_reports: true  # Generate monthly SLA PDFs
+
+  deployment_targets:
+    staging:
+      branch: "main"
+      auto_deploy: true
+      chaos_enabled: true
+    prod:
+      branch: "main"
+      auto_deploy: false
+      require_approval: true
+      approval_team: ["ops-team", "security-team"]
+      chaos_enabled: false  # Requires manual override
+
+# Cost Management
+cost_estimation:
+  monthly_usd:
+    staging:
+      dashboards: 3      # CloudWatch dashboards
+      canaries: 15       # Lambda + CloudWatch Synthetics
+      chaos_testing: 2   # DynamoDB + Lambda
+      slo_reporting: 5   # Athena queries + S3 storage
+      security_alarms: 2 # Additional CloudWatch alarms
+      total: 27
+
+    prod:
+      dashboards: 3
+      canaries: 30       # More frequent canaries
+      chaos_testing: 1   # Minimal (disabled by default)
+      slo_reporting: 15  # More data, longer retention
+      security_alarms: 5 # More sophisticated monitoring
+      total: 54
+
+# Default Feature Flags (safe defaults)
+defaults:
+  enable_dashboards: true
+  enable_canaries: false      # Requires setup
+  enable_chaos: false         # Requires explicit enablement
+  enable_slo_reporting: true
+  enable_security_monitoring: true
+  enable_future_features: false

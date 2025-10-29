@@ -1,0 +1,518 @@
+{% extends "base.html" %}
+
+{% block title %}Review {{ document.filename }} - Rule Review Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-search me-2"></i>Review: {{ document.filename }}
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{{ url_for('list_documents') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back to Documents
+            </a>
+            <a href="{{ url_for('export_rules', doc_id=document.id) }}" class="btn btn-sm btn-success">
+                <i class="fas fa-download me-1"></i>Export Approved
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Document Info -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    <i class="fas fa-info-circle me-2"></i>Document Information
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong>Type:</strong>
+                        <span class="badge bg-primary ms-2">{{ document.document_type.upper() }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Version:</strong>
+                        {{ document.document_version or 'Unknown' }}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Articles:</strong>
+                        {{ document.total_articles }} found
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Uploaded:</strong>
+                        {{ document.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Review Progress -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    <i class="fas fa-tasks me-2"></i>Review Progress
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h4 class="text-success">{{ suggestions|selectattr('review_status', 'equalto', 'approved')|list|length }}</h4>
+                        <p class="mb-0"><i class="fas fa-check text-success me-1"></i>Approved</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-info">{{ suggestions|selectattr('review_status', 'equalto', 'modified')|list|length }}</h4>
+                        <p class="mb-0"><i class="fas fa-edit text-info me-1"></i>Modified</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-danger">{{ suggestions|selectattr('review_status', 'equalto', 'rejected')|list|length }}</h4>
+                        <p class="mb-0"><i class="fas fa-times text-danger me-1"></i>Rejected</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-warning">{{ suggestions|selectattr('review_status', 'equalto', 'pending')|list|length }}</h4>
+                        <p class="mb-0"><i class="fas fa-clock text-warning me-1"></i>Pending</p>
+                    </div>
+                </div>
+
+                {% set total_suggestions = suggestions|length %}
+                {% set reviewed_suggestions = suggestions|selectattr('review_status', 'ne', 'pending')|list|length %}
+                {% set progress_percent = (reviewed_suggestions / total_suggestions * 100) if total_suggestions > 0 else 0 %}
+
+                <div class="progress mt-3">
+                    <div class="progress-bar bg-success" role="progressbar"
+                         style="width: {{ progress_percent }}%"
+                         aria-valuenow="{{ progress_percent }}"
+                         aria-valuemin="0" aria-valuemax="100">
+                        {{ "%.1f"|format(progress_percent) }}% Complete
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Tabs -->
+<ul class="nav nav-tabs mb-3" id="confidenceTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="all-tab" data-bs-toggle="tab" data-bs-target="#all-suggestions"
+                type="button" role="tab">
+            All Suggestions ({{ suggestions|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="high-tab" data-bs-toggle="tab" data-bs-target="#high-confidence"
+                type="button" role="tab">
+            High Confidence ({{ suggestions_by_confidence.high|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="medium-tab" data-bs-toggle="tab" data-bs-target="#medium-confidence"
+                type="button" role="tab">
+            Medium Confidence ({{ suggestions_by_confidence.medium|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="low-tab" data-bs-toggle="tab" data-bs-target="#low-confidence"
+                type="button" role="tab">
+            Low Confidence ({{ suggestions_by_confidence.low|length }})
+        </button>
+    </li>
+    {% if suggestions_by_confidence.uncertain|length > 0 %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="uncertain-tab" data-bs-toggle="tab" data-bs-target="#uncertain-confidence"
+                type="button" role="tab">
+            Uncertain ({{ suggestions_by_confidence.uncertain|length }})
+        </button>
+    </li>
+    {% endif %}
+</ul>
+
+<!-- Tab Content -->
+<div class="tab-content" id="confidenceTabContent">
+    <!-- All Suggestions -->
+    <div class="tab-pane fade show active" id="all-suggestions" role="tabpanel">
+        {% for suggestion in suggestions %}
+            {{ render_suggestion_card(suggestion) }}
+        {% endfor %}
+    </div>
+
+    <!-- High Confidence -->
+    <div class="tab-pane fade" id="high-confidence" role="tabpanel">
+        {% for suggestion in suggestions_by_confidence.high %}
+            {{ render_suggestion_card(suggestion) }}
+        {% endfor %}
+        {% if suggestions_by_confidence.high|length == 0 %}
+            <div class="text-center py-4">
+                <i class="fas fa-info-circle fa-2x text-muted mb-3"></i>
+                <p class="text-muted">No high confidence suggestions found</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Medium Confidence -->
+    <div class="tab-pane fade" id="medium-confidence" role="tabpanel">
+        {% for suggestion in suggestions_by_confidence.medium %}
+            {{ render_suggestion_card(suggestion) }}
+        {% endfor %}
+    </div>
+
+    <!-- Low Confidence -->
+    <div class="tab-pane fade" id="low-confidence" role="tabpanel">
+        {% for suggestion in suggestions_by_confidence.low %}
+            {{ render_suggestion_card(suggestion) }}
+        {% endfor %}
+    </div>
+
+    <!-- Uncertain -->
+    {% if suggestions_by_confidence.uncertain|length > 0 %}
+    <div class="tab-pane fade" id="uncertain-confidence" role="tabpanel">
+        {% for suggestion in suggestions_by_confidence.uncertain %}
+            {{ render_suggestion_card(suggestion) }}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Bulk Actions -->
+<div class="fixed-bottom p-3 bg-light border-top" style="right: 20px; left: auto; width: auto; border-radius: 10px 10px 0 0;">
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-success" onclick="bulkApprove()">
+            <i class="fas fa-check-double me-1"></i>Approve All High
+        </button>
+        <button type="button" class="btn btn-warning" onclick="exportProgress()">
+            <i class="fas fa-download me-1"></i>Export Progress
+        </button>
+    </div>
+</div>
+
+{% macro render_suggestion_card(suggestion) %}
+<div class="card rule-card confidence-{{ suggestion.confidence }} mb-3" id="suggestion-{{ suggestion.id }}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0">
+                <span class="badge bg-dark me-2">{{ suggestion.rule_id }}</span>
+                {{ suggestion.title }}
+            </h6>
+            <small class="text-muted">{{ suggestion.reference }}</small>
+        </div>
+        <div>
+            <span class="badge bg-{{ 'success' if suggestion.confidence == 'high' else 'warning' if suggestion.confidence == 'medium' else 'danger' if suggestion.confidence == 'low' else 'secondary' }}">
+                {{ suggestion.confidence.upper() }} CONFIDENCE
+            </span>
+            <span class="badge bg-{% if suggestion.review_status == 'approved' %}success{% elif suggestion.review_status == 'rejected' %}danger{% elif suggestion.review_status == 'modified' %}info{% else %}secondary{% endif %} ms-1">
+                {{ suggestion.review_status.upper() }}
+            </span>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8">
+                <h6>Description</h6>
+                <p>{{ suggestion.description or 'No description provided' }}</p>
+
+                {% if suggestion.dsl_expression %}
+                <h6>DSL Expression</h6>
+                <pre class="code-editor p-2"><code class="language-javascript">{{ suggestion.dsl_expression }}</code></pre>
+                {% endif %}
+
+                {% if suggestion.handler_name %}
+                <h6>Handler Required</h6>
+                <p><code>{{ suggestion.handler_name }}</code></p>
+                {% endif %}
+
+                {% if suggestion.reasoning %}
+                <h6>AI Reasoning</h6>
+                <p class="small text-muted">{{ suggestion.reasoning }}</p>
+                {% endif %}
+            </div>
+            <div class="col-md-4">
+                <h6>Rule Details</h6>
+                <ul class="list-unstyled small">
+                    <li><strong>Severity:</strong>
+                        <span class="badge bg-{% if suggestion.severity == 'high' %}danger{% elif suggestion.severity == 'medium' %}warning{% else %}info{% endif %}">
+                            {{ suggestion.severity.upper() }}
+                        </span>
+                    </li>
+                    <li><strong>Created:</strong> {{ suggestion.created_at.strftime('%Y-%m-%d %H:%M') }}</li>
+                    {% if suggestion.reviewed_at %}
+                    <li><strong>Reviewed:</strong> {{ suggestion.reviewed_at.strftime('%Y-%m-%d %H:%M') }}</li>
+                    {% endif %}
+                </ul>
+
+                {% if suggestion.reviewer_notes %}
+                <h6>Review Notes</h6>
+                <p class="small">{{ suggestion.reviewer_notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="card-footer">
+        <div class="btn-group me-2" role="group">
+            {% if suggestion.review_status == 'pending' %}
+            <button type="button" class="btn btn-success btn-sm" onclick="reviewSuggestion({{ suggestion.id }}, 'approve')">
+                <i class="fas fa-check me-1"></i>Approve
+            </button>
+            <button type="button" class="btn btn-warning btn-sm" onclick="showEditModal({{ suggestion.id }})">
+                <i class="fas fa-edit me-1"></i>Modify
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="reviewSuggestion({{ suggestion.id }}, 'reject')">
+                <i class="fas fa-times me-1"></i>Reject
+            </button>
+            {% else %}
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="reviewSuggestion({{ suggestion.id }}, 'pending')">
+                <i class="fas fa-undo me-1"></i>Reset to Pending
+            </button>
+            {% endif %}
+        </div>
+        <button type="button" class="btn btn-outline-info btn-sm" onclick="lintRule({{ suggestion.id }})">
+            <i class="fas fa-spell-check me-1"></i>Lint Check
+        </button>
+    </div>
+</div>
+{% endmacro %}
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Rule Suggestion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" id="editSuggestionId">
+                    <div class="mb-3">
+                        <label for="editTitle" class="form-label">Title</label>
+                        <input type="text" class="form-control" id="editTitle" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="editSeverity" class="form-label">Severity</label>
+                            <select class="form-select" id="editSeverity">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editHandlerName" class="form-label">Handler Name</label>
+                            <input type="text" class="form-control" id="editHandlerName" placeholder="Optional">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDslExpression" class="form-label">DSL Expression</label>
+                        <textarea class="form-control code-editor" id="editDslExpression" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editDescription" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reviewNotes" class="form-label">Review Notes</label>
+                        <textarea class="form-control" id="reviewNotes" rows="2" placeholder="Add notes about your changes..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let editModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    editModal = new bootstrap.Modal(document.getElementById('editModal'));
+});
+
+function reviewSuggestion(suggestionId, action) {
+    const data = { action: action };
+
+    if (action === 'reject') {
+        const notes = prompt('Please provide a reason for rejection:');
+        if (notes === null) return; // User cancelled
+        data.notes = notes;
+    }
+
+    fetch(`/api/suggestion/${suggestionId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Update the suggestion card
+            location.reload(); // Simple reload for now
+        } else {
+            alert('Error updating suggestion: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating suggestion');
+    });
+}
+
+function showEditModal(suggestionId) {
+    fetch(`/api/suggestion/${suggestionId}`)
+    .then(response => response.json())
+    .then(data => {
+        // Populate modal form
+        document.getElementById('editSuggestionId').value = suggestionId;
+        document.getElementById('editTitle').value = data.title;
+        document.getElementById('editSeverity').value = data.severity;
+        document.getElementById('editHandlerName').value = data.handler_name || '';
+        document.getElementById('editDslExpression').value = data.dsl_expression || '';
+        document.getElementById('editDescription').value = data.description || '';
+        document.getElementById('reviewNotes').value = data.reviewer_notes || '';
+
+        editModal.show();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error loading suggestion details');
+    });
+}
+
+function saveEdit() {
+    const suggestionId = document.getElementById('editSuggestionId').value;
+    const data = {
+        action: 'modify',
+        title: document.getElementById('editTitle').value,
+        severity: document.getElementById('editSeverity').value,
+        handler_name: document.getElementById('editHandlerName').value || null,
+        dsl_expression: document.getElementById('editDslExpression').value || null,
+        description: document.getElementById('editDescription').value || null,
+        notes: document.getElementById('reviewNotes').value
+    };
+
+    fetch(`/api/suggestion/${suggestionId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            editModal.hide();
+            location.reload();
+        } else {
+            alert('Error saving changes: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error saving changes');
+    });
+}
+
+function lintRule(suggestionId) {
+    // Get the rule text from the suggestion card
+    const card = document.getElementById(`suggestion-${suggestionId}`);
+    const dslElement = card.querySelector('code.language-javascript');
+
+    if (!dslElement) {
+        alert('No DSL expression found to lint');
+        return;
+    }
+
+    const ruleText = dslElement.textContent;
+
+    fetch('/lint-check', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ rule_text: ruleText })
+    })
+    .then(response => response.json())
+    .then(data => {
+        let message = 'Lint Results:\n\n';
+
+        if (data.valid) {
+            message += '✅ No errors found';
+        } else {
+            message += '❌ Errors found:\n';
+            data.errors.forEach(error => {
+                message += `  • ${error}\n`;
+            });
+        }
+
+        if (data.warnings && data.warnings.length > 0) {
+            message += '\n⚠️ Warnings:\n';
+            data.warnings.forEach(warning => {
+                message += `  • ${warning}\n`;
+            });
+        }
+
+        alert(message);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error running lint check');
+    });
+}
+
+function bulkApprove() {
+    if (confirm('Approve all high confidence suggestions?')) {
+        // Implementation for bulk approval
+        const highConfidenceCards = document.querySelectorAll('.confidence-high .card-footer button[onclick*="approve"]');
+
+        Array.from(highConfidenceCards).forEach((button, index) => {
+            setTimeout(() => {
+                button.click();
+            }, index * 500); // Stagger requests
+        });
+    }
+}
+
+function exportProgress() {
+    // Generate a summary report
+    const totalSuggestions = {{ suggestions|length }};
+    const approved = {{ suggestions|selectattr('review_status', 'equalto', 'approved')|list|length }};
+    const modified = {{ suggestions|selectattr('review_status', 'equalto', 'modified')|list|length }};
+    const rejected = {{ suggestions|selectattr('review_status', 'equalto', 'rejected')|list|length }};
+    const pending = {{ suggestions|selectattr('review_status', 'equalto', 'pending')|list|length }};
+
+    const summary = `Review Progress Report
+Document: {{ document.filename }}
+Generated: ${new Date().toISOString()}
+
+Total Suggestions: ${totalSuggestions}
+Approved: ${approved}
+Modified: ${modified}
+Rejected: ${rejected}
+Pending: ${pending}
+
+Completion Rate: ${((approved + modified + rejected) / totalSuggestions * 100).toFixed(1)}%`;
+
+    const blob = new Blob([summary], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'review_progress.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

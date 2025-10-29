@@ -1,0 +1,19 @@
+
+# CloudWatch Verification Usage Example
+
+# Step 1: Trigger some errors
+curl 'http://localhost:8000/debug/spam-errors?count=6'
+
+# Step 2: Run verification script  
+python3 verify_cloudwatch_full.py
+
+# Expected output when working:
+# ✅ Found X log events
+# ✅ LCopilotErrorCount incremented by Y at timestamp
+# 🎉 CloudWatch pipeline fully verified!
+
+# Current output (since CloudWatch not fully connected):
+# ❌ No logs found in last 5 min
+# ❌ No datapoints for LCopilotErrorCount
+# ⚠️ Partial verification failed — check setup.
+

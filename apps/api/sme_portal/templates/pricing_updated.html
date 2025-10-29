@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing - LCopilot SME Portal{% endblock %}
+
+{% block content %}
+<style>
+    .promotional-banner {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+        text-align: center;
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    .pricing-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 30px;
+        margin-bottom: 40px;
+    }
+
+    .pricing-card {
+        border: 2px solid #e3e3e3;
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        position: relative;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        background: white;
+    }
+
+    .pricing-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+    }
+
+    .pricing-card.featured {
+        border-color: #3498db;
+        background: linear-gradient(135deg, #f8f9ff 0%, #e8f4fd 100%);
+    }
+
+    .pricing-card.featured::before {
+        content: "Most Popular";
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #3498db;
+        color: white;
+        padding: 8px 24px;
+        border-radius: 25px;
+        font-size: 0.9em;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    .tier-name {
+        font-size: 1.8em;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #2c3e50;
+    }
+
+    .price {
+        font-size: 3em;
+        font-weight: bold;
+        margin: 20px 0 10px 0;
+        color: #3498db;
+    }
+
+    .price-detail {
+        font-size: 1em;
+        color: #7f8c8d;
+        margin-bottom: 25px;
+        font-weight: 500;
+    }
+
+    .bank-pricing {
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 40px;
+        margin-top: 40px;
+    }
+
+    .bank-card {
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        color: white;
+    }
+
+    .bank-card .tier-name {
+        color: white;
+    }
+
+    .language-toggle {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        z-index: 10;
+    }
+
+    .language-toggle a {
+        color: #3498db;
+        text-decoration: none;
+        padding: 8px 16px;
+        background: rgba(52, 152, 219, 0.1);
+        border-radius: 20px;
+        margin-left: 10px;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(52, 152, 219, 0.3);
+    }
+
+    .language-toggle a:hover {
+        background: rgba(52, 152, 219, 0.2);
+        transform: translateY(-2px);
+    }
+
+    .features-list {
+        text-align: left;
+        margin: 25px 0;
+        padding: 0;
+    }
+
+    .features-list li {
+        list-style: none;
+        margin: 12px 0;
+        padding-left: 25px;
+        position: relative;
+        color: #555;
+        font-weight: 500;
+    }
+
+    .features-list li::before {
+        content: "✓";
+        position: absolute;
+        left: 0;
+        color: #27ae60;
+        font-weight: bold;
+        font-size: 1.1em;
+    }
+
+    .limitations li::before {
+        content: "!";
+        color: #f39c12;
+    }
+
+    .cta-button {
+        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        color: white;
+        border: none;
+        padding: 15px 35px;
+        border-radius: 30px;
+        font-size: 1.1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+    }
+
+    .cta-button:hover {
+        background: linear-gradient(135deg, #2980b9 0%, #1f4e79 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+    }
+
+    .benefits-section {
+        background: #f8f9fa;
+        padding: 50px 0;
+        margin: 50px 0;
+        border-radius: 15px;
+    }
+</style>
+
+<div class="language-toggle">
+    <a href="/pricing">English</a>
+    <a href="/pricing_bn">বাংলা</a>
+</div>
+
+<div class="card" style="text-align: center;">
+    <h1 style="margin-bottom: 1rem; color: #1e293b; font-size: 2.5em;">LCopilot Pricing</h1>
+    <p style="color: #64748b; font-size: 1.2rem; margin-bottom: 3rem;">
+        Trust Platform for Trade Finance Compliance - Built for Bangladesh SMEs
+    </p>
+
+    <!-- Promotional Banner -->
+    <div class="promotional-banner">
+        🎉 <strong>Limited Time:</strong> 30% off first 3 months - Valid until December 31, 2024
+    </div>
+
+    <!-- SME Pricing -->
+    <h2 style="color: #2c3e50; margin-bottom: 40px; font-size: 2.2em;">SME Plans</h2>
+
+    <div class="pricing-grid">
+        <!-- Basic Tier -->
+        <div class="pricing-card">
+            <div class="tier-name">Basic</div>
+            <div class="price">৳1,200</div>
+            <div class="price-detail">$14 USD per month • 3 checks included</div>
+
+            <ul class="features-list">
+                <li>Basic LC validation</li>
+                <li>UCP600 compliance check</li>
+                <li>Plain English summary</li>
+                <li>Community support</li>
+            </ul>
+
+            <div style="margin: 20px 0; padding: 15px; background: rgba(241, 196, 15, 0.1); border-radius: 8px;">
+                <strong style="color: #f39c12;">Limitations:</strong>
+                <ul class="features-list limitations" style="margin-top: 10px;">
+                    <li>3 checks per month</li>
+                    <li>Basic support only</li>
+                    <li>No audit trail</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="startTrial('Basic')">Start Free Trial</a>
+        </div>
+
+        <!-- Professional Tier -->
+        <div class="pricing-card featured">
+            <div class="tier-name">Professional</div>
+            <div class="price">৳999</div>
+            <div class="price-detail">$12 USD per month • 50 checks included</div>
+
+            <ul class="features-list">
+                <li>Full LC validation suite</li>
+                <li>UCP600 + ISBP compliance</li>
+                <li>Bangladesh local rules</li>
+                <li>Evidence packs</li>
+                <li>Priority support</li>
+                <li>SLA reports</li>
+            </ul>
+
+            <div style="margin: 20px 0; padding: 15px; background: rgba(241, 196, 15, 0.1); border-radius: 8px;">
+                <strong style="color: #f39c12;">Limitations:</strong>
+                <ul class="features-list limitations" style="margin-top: 10px;">
+                    <li>50 checks per month</li>
+                    <li>Email support only</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="startTrial('Professional')">Start Free Trial</a>
+        </div>
+
+        <!-- Enterprise Tier -->
+        <div class="pricing-card">
+            <div class="tier-name">Enterprise</div>
+            <div class="price">৳699</div>
+            <div class="price-detail">$8 USD per month • Unlimited checks</div>
+
+            <ul class="features-list">
+                <li>Complete validation platform</li>
+                <li>All compliance standards</li>
+                <li>Custom rule integration</li>
+                <li>Audit-grade evidence</li>
+                <li>Dedicated support</li>
+                <li>API access</li>
+                <li>Custom integrations</li>
+                <li>White-label options</li>
+            </ul>
+
+            <a href="#" class="cta-button" onclick="contactSales('Enterprise')">Contact Sales</a>
+        </div>
+    </div>
+</div>
+
+<!-- Bank Pricing Section -->
+<div class="bank-pricing">
+    <h2 style="color: white; text-align: center; margin-bottom: 40px; font-size: 2.2em;">Bank Solutions</h2>
+
+    <div class="pricing-grid">
+        <!-- Bank Pilot Program -->
+        <div class="pricing-card bank-card">
+            <div class="tier-name">Pilot Program</div>
+            <div class="price" style="color: #3498db;">50% Off</div>
+            <div class="price-detail">First Year • Negotiable pricing model</div>
+
+            <div style="text-align: left; margin: 25px 0;">
+                <h4 style="color: #ecf0f1; margin-bottom: 15px;">Flat Annual License:</h4>
+                <ul class="features-list">
+                    <li>$25,000 - $100,000 range</li>
+                    <li>Unlimited validations</li>
+                    <li>Custom bank rule integration</li>
+                    <li>Dedicated support team</li>
+                    <li>Training and onboarding</li>
+                    <li>Quarterly business reviews</li>
+                </ul>
+
+                <h4 style="color: #ecf0f1; margin: 20px 0 15px 0;">Per-Check Licensing:</h4>
+                <ul class="features-list">
+                    <li>$500 - $2,000 per 1,000 checks</li>
+                    <li>Flexible scaling</li>
+                    <li>Monthly billing</li>
+                    <li>Volume discounts available</li>
+                </ul>
+            </div>
+
+            <a href="#" class="cta-button" onclick="scheduleDemo('Bank Pilot')">Schedule Demo</a>
+        </div>
+
+        <!-- Bank Enterprise -->
+        <div class="pricing-card bank-card">
+            <div class="tier-name">Enterprise Banking</div>
+            <div class="price" style="color: #3498db;">Contact</div>
+            <div class="price-detail">for Quote • Multi-branch deployment</div>
+
+            <ul class="features-list">
+                <li>Multi-branch deployment</li>
+                <li>Central administration</li>
+                <li>Advanced analytics</li>
+                <li>Regulatory reporting</li>
+                <li>24/7 support</li>
+                <li>Case study opportunities</li>
+                <li>Priority feature requests</li>
+                <li>Custom compliance rules</li>
+            </ul>
+
+            <a href="#" class="cta-button" onclick="contactEnterprise('Bank Enterprise')">Contact Enterprise Sales</a>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px; padding: 25px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
+        <h3 style="color: #ecf0f1; margin-bottom: 15px;">🏦 Bank Pilot Benefits</h3>
+        <p style="font-size: 1.1em; color: #bdc3c7;">
+            <strong>50% first-year discount</strong> • Free integration support • Custom compliance rules • Priority features • Case study opportunities
+        </p>
+    </div>
+</div>
+
+<!-- Benefits Section -->
+<div class="card benefits-section">
+    <h2 style="text-align: center; margin-bottom: 40px; color: #2c3e50; font-size: 2.2em;">Why Choose LCopilot?</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px;">
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">🛡️</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">Bank-Grade Compliance</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                UCP600, ISBP, and local Bangladesh rules validation with audit-grade evidence packs.
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">⚡</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">Instant Validation</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                Get compliance results in seconds, not days. Reduce processing time by 90%.
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">🎯</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">SME-Focused</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                Built specifically for Bangladesh trade finance with local banking requirements.
+            </p>
+        </div>
+
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 20px;">📊</div>
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">Transparency</h3>
+            <p style="color: #7f8c8d; font-size: 1.1em; line-height: 1.6;">
+                Clear pricing, no hidden fees. Pay only for what you use with full cost visibility.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function startTrial(tier) {
+    alert(`Thank you for choosing LCopilot ${tier}! We'll send setup instructions to your email within minutes. Your free trial starts immediately with full access to all features.`);
+}
+
+function contactSales(tier) {
+    alert(`Thank you for your interest in LCopilot ${tier}! Our sales team will contact you within 4 hours to discuss your specific requirements and create a custom solution.`);
+}
+
+function scheduleDemo(tier) {
+    alert(`Thank you for your interest in ${tier}! We'll schedule a personalized demo within 24 hours. Our team will contact you to arrange a convenient time.`);
+}
+
+function contactEnterprise(tier) {
+    alert(`Thank you for considering ${tier}! Our enterprise team will reach out within 24 hours to discuss your multi-branch deployment requirements and custom pricing.`);
+}
+</script>
+{% endblock %}

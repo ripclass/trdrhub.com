@@ -1,0 +1,106 @@
+# UCP600 Compliance Rules
+# Uniform Customs and Practice for Documentary Credits (2007 Revision)
+# IP-Safe Implementation: Paraphrased descriptions, article references only
+
+metadata:
+  standard: "UCP600"
+  version: "2007"
+  revision: "2024.1"
+  description: "Core UCP600 rules for documentary credit compliance"
+  last_updated: "2024-12-20"
+
+rules:
+  - id: "UCP600-6"
+    title: "Expiry must state place of presentation"
+    reference: "UCP600 Art. 6"
+    severity: "high"
+    applies_to: ["credit"]
+    preconditions:
+      - field_exists: expiry_date
+    dsl: "exists(expiry_place) && not_empty(expiry_place)"
+    examples:
+      pass: ["fixtures/ucp600_6_pass.json"]
+      fail: ["fixtures/ucp600_6_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-14"
+    title: "Documents must be presented within 21 days of shipment"
+    reference: "UCP600 Art. 14(c)"
+    severity: "high"
+    applies_to: ["credit"]
+    preconditions:
+      - field_exists: latest_shipment_date
+    check_handler: "presentation_period"
+    examples:
+      pass: ["fixtures/ucp600_14_pass.json"]
+      fail: ["fixtures/ucp600_14_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-18"
+    title: "Documents must not conflict with each other"
+    reference: "UCP600 Art. 18"
+    severity: "medium"
+    applies_to: ["credit", "invoice", "bl"]
+    dsl: "allPresent([\"beneficiary.name\", \"applicant.name\"]) && not equalsIgnoreCase(beneficiary.name, applicant.name)"
+    examples:
+      pass: ["fixtures/ucp600_18_pass.json"]
+      fail: ["fixtures/ucp600_18_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-20"
+    title: "Invoice must be issued by beneficiary"
+    reference: "UCP600 Art. 20"
+    severity: "high"
+    applies_to: ["invoice"]
+    dsl: "presentInDocs(\"invoice\") && exists(beneficiary.name) && not_empty(beneficiary.name)"
+    examples:
+      pass: ["fixtures/ucp600_20_pass.json"]
+      fail: ["fixtures/ucp600_20_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-23"
+    title: "Bill of Lading must show port of loading and discharge"
+    reference: "UCP600 Art. 23"
+    severity: "high"
+    applies_to: ["bl"]
+    dsl: "presentInDocs(\"bill of lading\") && exists(loading_port) && not_empty(loading_port) && exists(discharge_port) && not_empty(discharge_port)"
+    examples:
+      pass: ["fixtures/ucp600_23_pass.json"]
+      fail: ["fixtures/ucp600_23_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-31"
+    title: "Latest shipment date must precede expiry date"
+    reference: "UCP600 Art. 31"
+    severity: "high"
+    applies_to: ["credit"]
+    preconditions:
+      - field_exists: latest_shipment_date
+      - field_exists: expiry_date
+    check_handler: "date_logic"
+    examples:
+      pass: ["fixtures/ucp600_31_pass.json"]
+      fail: ["fixtures/ucp600_31_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-2"
+    title: "Credit must be irrevocable"
+    reference: "UCP600 Art. 2"
+    severity: "high"
+    applies_to: ["credit"]
+    dsl: "containsText(lc_type, \"irrevocable\") || containsText(terms_and_conditions, \"irrevocable\")"
+    examples:
+      pass: ["fixtures/ucp600_2_pass.json"]
+      fail: ["fixtures/ucp600_2_fail.json"]
+    version: "1.0.0"
+
+  - id: "UCP600-AMOUNT"
+    title: "Credit amount must be specified and positive"
+    reference: "UCP600 General"
+    severity: "high"
+    applies_to: ["credit"]
+    dsl: "exists(amount.value) && numeric(amount.value) && amount.value > 0"
+    examples:
+      pass: ["fixtures/ucp600_amount_pass.json"]
+      fail: ["fixtures/ucp600_amount_fail.json"]
+    version: "1.0.0"

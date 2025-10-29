@@ -1,0 +1,57 @@
+# LCopilot Audit Trail Monitoring Cron Jobs
+#
+# Install with: crontab audit_monitoring.crontab
+# View with: crontab -l
+# Remove with: crontab -r
+
+# Set environment variables
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+PYTHONPATH=/Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api
+
+# Run audit monitoring checks every 15 minutes
+*/15 * * * * cd /Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api && source venv/bin/activate && python app/tasks/audit_monitoring_task.py >> logs/audit_monitoring.log 2>&1
+
+# Run comprehensive compliance check daily at 2 AM
+0 2 * * * cd /Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api && source venv/bin/activate && python app/tasks/audit_monitoring_task.py --comprehensive >> logs/audit_monitoring_daily.log 2>&1
+
+# Clean up old monitoring logs weekly (keep last 30 days)
+0 3 * * 0 find /Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api/logs -name "audit_monitoring*.log" -mtime +30 -delete
+
+# Generate weekly compliance report every Monday at 9 AM
+0 9 * * 1 cd /Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api && source venv/bin/activate && python -c "
+from app.database import SessionLocal
+from app.services.audit_monitoring import AuditMonitoringService
+from datetime import datetime, timedelta
+import json
+
+db = SessionLocal()
+monitoring_service = AuditMonitoringService(db)
+report = monitoring_service.run_all_checks()
+
+# Save weekly report
+with open(f'reports/audit_weekly_{datetime.now().strftime(\"%Y%m%d\")}.json', 'w') as f:
+    json.dump(report, f, indent=2, default=str)
+
+db.close()
+print('Weekly audit report generated')
+" >> logs/weekly_reports.log 2>&1
+
+# Health check every 5 minutes during business hours (9 AM - 6 PM weekdays)
+*/5 9-17 * * 1-5 cd /Users/user/Desktop/Enso\ Intelligence/trdrhub.com/apps/api && source venv/bin/activate && python -c "
+from app.database import SessionLocal
+from app.services.audit_monitoring import AuditMonitoringService
+
+db = SessionLocal()
+monitoring_service = AuditMonitoringService(db)
+
+# Quick health check
+failure_alert = monitoring_service.check_failure_rate(hours=1, threshold=0.15)
+if failure_alert:
+    print(f'ALERT: {failure_alert.message}')
+    exit(1)
+else:
+    print('Health check: OK')
+
+db.close()
+" >> logs/health_checks.log 2>&1

@@ -1,0 +1,89 @@
+# Bank Demo Tenant Configuration Override
+tenant:
+  alias: "demo"
+  name: "Bank Demo Tenant"
+  domain: "demo.enterprise.trdrhub.com"
+  slaProvider: "demo"
+
+# SLA Configuration
+sla:
+  tier: "demo"
+  uptime: "99.0%"
+  responseTime: "500ms"
+  throughput: "100 req/min"
+  support: "business-hours"
+
+# Security Configuration
+security:
+  mtls:
+    enabled: false  # Disabled for demo
+    required: false
+  ipWhitelist:
+    enabled: false  # Open for demo
+    cidrs: []
+  mfa:
+    enabled: true
+    providers: ["totp"]
+    sessionTtl: "8h"
+
+# Resource Limits (Demo tier)
+resources:
+  api:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  database:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Data Residency
+dataResidency:
+  region: "us-east-1"
+  zones: ["us-east-1a", "us-east-1b"]
+  encryptionAtRest: true
+  backupRetention: "30d"
+
+# Billing Configuration
+billing:
+  enabled: false  # Demo mode - no billing
+  model: "demo"
+  rateLimit:
+    requests: 1000
+    period: "1h"
+
+# Observability
+observability:
+  metrics:
+    enabled: true
+    namespace: "bank-demo"
+    labels:
+      tenant: "demo"
+      sla: "demo"
+      environment: "sandbox"
+  logging:
+    level: "INFO"
+    retention: "7d"
+  tracing:
+    enabled: true
+    sampleRate: 0.1
+
+# Feature Flags
+features:
+  lcValidation: true
+  documentProcessing: true
+  riskAnalysis: true
+  complianceReporting: true
+  auditTrail: true
+
+# Environment Specific
+environment:
+  name: "sandbox"
+  stage: "demo"
+  autoPromotion: false
