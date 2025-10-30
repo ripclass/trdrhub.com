@@ -1,15 +1,24 @@
-# Models package
+"""
+Lightweight models package initializer.
 
-# Import models from individual files
-from .admin import *
-from .audit import *
-from .audit_log import *
-from .bulk_jobs import *
-from .collaboration import *
-from .company import *
-from .integrations import *
-from .invoice import *
-from .lc_versions import *
-from .notifications import *
-from .usage_record import *
-from .workflows import *
+Avoid importing every submodule here to prevent circular imports during
+application startup. Only expose the core ORM classes needed by modules that
+do `from app.models import User`, etc.
+"""
+
+# Re-export core ORM classes defined in app/models.py
+from ..models import (  # noqa: F401
+    User,
+    ValidationSession,
+    Document,
+    Discrepancy,
+    Report,
+)
+
+__all__ = [
+    "User",
+    "ValidationSession",
+    "Document",
+    "Discrepancy",
+    "Report",
+]
