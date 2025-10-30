@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from app.orm import User
+from ..models import User
 from ..schemas import UserRegistration, UserLogin, Token, UserProfile
 from ..schemas.user import UserCreate
 from ..core.security import (
