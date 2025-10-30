@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { getStoredToken, getValidToken, clearToken } from './auth';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL_VALUE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register'];
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_URL_VALUE,
   timeout: 30000,
 });
 
@@ -26,8 +26,9 @@ api.interceptors.request.use(
     }
 
     if (token) {
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${token}`;
+      const headers = (config.headers ?? {}) as Record<string, string>;
+      headers.Authorization = `Bearer ${token}`;
+      config.headers = headers as any;
     }
 
     return config;
@@ -49,4 +50,4 @@ api.interceptors.response.use(
 );
 
 export { api };
-export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL;
+export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE;

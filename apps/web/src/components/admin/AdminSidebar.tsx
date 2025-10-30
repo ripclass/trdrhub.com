@@ -1,6 +1,5 @@
 import React from 'react';
-import { usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -116,7 +115,7 @@ const navigation: SidebarSection[] = [
 ];
 
 export function AdminSidebar() {
-  const pathname = usePathname();
+  const { pathname } = useLocation();
   const { permissions } = useAdminAuth();
 
   const hasPermission = (requiredPermissions?: string[]) => {
@@ -150,7 +149,7 @@ export function AdminSidebar() {
                   return (
                     <li key={item.name}>
                       <Link
-                        href={item.href}
+                        to={item.href}
                         className={cn(
                           'group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors',
                           isActive
