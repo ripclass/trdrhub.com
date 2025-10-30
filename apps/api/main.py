@@ -50,7 +50,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, validate
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -197,6 +197,7 @@ app.include_router(health_router)       # Use the new comprehensive health endpo
 app.include_router(debug_router)        # Debug routes for monitoring testing
 app.include_router(fake_s3.router)
 app.include_router(documents.router)
+app.include_router(validate.router)
 
 # Note: Startup logging is now handled in the lifespan function
 
