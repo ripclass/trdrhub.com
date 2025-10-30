@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from app.orm import User, ValidationSession, Document, DocumentType, SessionStatus
+from app.models import User, ValidationSession, Document, DocumentType, SessionStatus
 from ..schemas import DocumentProcessingResponse, ProcessedDocumentInfo
 from ..core.security import get_current_user
 from ..core.rbac import RBACPolicyEngine, Permission
@@ -34,11 +34,11 @@ router = APIRouter(prefix="/documents", tags=["document-processing"])
 
 @router.post("/process-document", response_model=DocumentProcessingResponse, status_code=status.HTTP_200_OK)
 async def process_document(
+    request: Request,
     files: List[UploadFile] = File(..., description="1-3 PDF files (LC, Invoice, BL)"),
     session_id: Optional[str] = Form(None, description="Optional existing session ID"),
-    request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Process document uploads end-to-end:

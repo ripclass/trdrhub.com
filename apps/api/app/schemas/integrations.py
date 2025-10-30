@@ -20,9 +20,9 @@ class IntegrationBase(BaseModel):
     type: IntegrationType
     description: Optional[str] = None
     logo_url: Optional[str] = None
-    base_url: str = Field(..., regex=r'^https?://')
-    sandbox_url: Optional[str] = Field(None, regex=r'^https?://')
-    documentation_url: Optional[str] = Field(None, regex=r'^https?://')
+    base_url: str = Field(..., pattern=r'^https?://')
+    sandbox_url: Optional[str] = Field(None, pattern=r'^https?://')
+    documentation_url: Optional[str] = Field(None, pattern=r'^https?://')
     supported_countries: Optional[List[str]] = None
     supported_currencies: Optional[List[str]] = None
     api_version: str = Field(default='v1', max_length=50)
@@ -43,7 +43,7 @@ class IntegrationBase(BaseModel):
 
 class IntegrationCreate(IntegrationBase):
     config_schema: Optional[Dict[str, Any]] = None
-    webhook_url: Optional[str] = Field(None, regex=r'^https?://')
+    webhook_url: Optional[str] = Field(None, pattern=r'^https?://')
     webhook_secret: Optional[str] = None
 
 
@@ -52,7 +52,7 @@ class IntegrationUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[IntegrationStatus] = None
     logo_url: Optional[str] = None
-    documentation_url: Optional[str] = Field(None, regex=r'^https?://')
+    documentation_url: Optional[str] = Field(None, pattern=r'^https?://')
     rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=1000)
     timeout_seconds: Optional[int] = Field(None, ge=5, le=300)
     retry_attempts: Optional[int] = Field(None, ge=0, le=10)
@@ -122,25 +122,25 @@ class SubmissionBase(BaseModel):
 class BankSubmissionRequest(SubmissionBase):
     """Bank-specific submission for LC validation/recheck."""
     lc_number: str = Field(..., min_length=1, max_length=100)
-    swift_format: str = Field(default='MT700', regex=r'^MT(700|707|720|750)$')
-    priority: str = Field(default='normal', regex=r'^(low|normal|high|urgent)$')
-    callback_url: Optional[str] = Field(None, regex=r'^https?://')
+    swift_format: str = Field(default='MT700', pattern=r'^MT(700|707|720|750)$')
+    priority: str = Field(default='normal', pattern=r'^(low|normal|high|urgent)$')
+    callback_url: Optional[str] = Field(None, pattern=r'^https?://')
 
 
 class CustomsSubmissionRequest(SubmissionBase):
     """Customs-specific submission for trade document validation."""
-    country_code: str = Field(..., regex=r'^[A-Z]{2}$')
+    country_code: str = Field(..., pattern=r'^[A-Z]{2}$')
     customs_office: Optional[str] = None
-    declaration_type: str = Field(..., regex=r'^(import|export|transit)$')
+    declaration_type: str = Field(..., pattern=r'^(import|export|transit)$')
     commodity_codes: List[str] = Field(..., min_items=1)
 
 
 class LogisticsSubmissionRequest(SubmissionBase):
     """Logistics-specific submission for shipping/tracking."""
-    service_type: str = Field(..., regex=r'^(tracking|pickup|delivery|quote)$')
+    service_type: str = Field(..., pattern=r'^(tracking|pickup|delivery|quote)$')
     tracking_number: Optional[str] = None
-    origin_country: str = Field(..., regex=r'^[A-Z]{2}$')
-    destination_country: str = Field(..., regex=r'^[A-Z]{2}$')
+    origin_country: str = Field(..., pattern=r'^[A-Z]{2}$')
+    destination_country: str = Field(..., pattern=r'^[A-Z]{2}$')
     shipment_value: Optional[Decimal] = Field(None, ge=0)
 
 
@@ -203,7 +203,7 @@ class OAuth2Auth(BaseModel):
     client_id: str = Field(..., min_length=1)
     client_secret: str = Field(..., min_length=1)
     scope: Optional[str] = None
-    token_url: str = Field(..., regex=r'^https?://')
+    token_url: str = Field(..., pattern=r'^https?://')
 
 
 class MTLSAuth(BaseModel):
@@ -215,15 +215,15 @@ class MTLSAuth(BaseModel):
 # ISO20022/SWIFT Message DTOs
 class SwiftMT700(BaseModel):
     """SWIFT MT700 Letter of Credit message format."""
-    sender_bic: str = Field(..., regex=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
-    receiver_bic: str = Field(..., regex=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
+    sender_bic: str = Field(..., pattern=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
+    receiver_bic: str = Field(..., pattern=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
     lc_number: str = Field(..., max_length=16)
     issue_date: datetime
     expiry_date: datetime
     applicant: Dict[str, str]  # name, address, country
     beneficiary: Dict[str, str]  # name, address, country
     amount: Decimal = Field(..., gt=0)
-    currency: str = Field(..., regex=r'^[A-Z]{3}$')
+    currency: str = Field(..., pattern=r'^[A-Z]{3}$')
     description_of_goods: str = Field(..., max_length=65000)
     documents_required: List[str]
     latest_shipment_date: Optional[datetime] = None
@@ -233,8 +233,8 @@ class SwiftMT700(BaseModel):
 
 class SwiftMT707(BaseModel):
     """SWIFT MT707 Amendment to Documentary Credit."""
-    sender_bic: str = Field(..., regex=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
-    receiver_bic: str = Field(..., regex=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
+    sender_bic: str = Field(..., pattern=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
+    receiver_bic: str = Field(..., pattern=r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')
     lc_number: str = Field(..., max_length=16)
     amendment_number: str = Field(..., max_length=3)
     amendment_date: datetime

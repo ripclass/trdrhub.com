@@ -101,7 +101,7 @@ class UserListQuery(BaseModel):
     page: int = Field(1, ge=1, description="Page number")
     per_page: int = Field(50, ge=1, le=1000, description="Items per page")
     sort_by: str = Field("created_at", description="Sort field")
-    sort_order: str = Field("desc", regex="^(asc|desc)$", description="Sort order")
+    sort_order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
 
 
 class UserListResponse(BaseModel):

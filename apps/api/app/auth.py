@@ -112,3 +112,36 @@ def get_current_user(
         raise credentials_exception
         
     return user
+
+
+async def get_current_user_from_token(token: str, db: Optional[Session] = None) -> Optional[User]:
+    """
+    Resolve a ``User`` from a raw bearer token without raising on failure.
+
+    Middleware and background tasks use this helper where dependency injection
+    is not available. Returns ``None`` when the token is invalid or the user
+    cannot be found.
+    """
+    close_session = False
+    if db is None:
+        db = next(get_db())
+        close_session = True
+
+    try:
+        payload = verify_token(token)
+        if not payload:
+            return None
+
+        user_email = payload.get("sub")
+        if not user_email:
+            return None
+
+        user = db.query(User).filter(
+            User.email == user_email,
+            User.is_active == True,
+            User.deleted_at.is_(None)
+        ).first()
+        return user
+    finally:
+        if close_session and db is not None:
+            db.close()

@@ -11,7 +11,7 @@ from enum import Enum
 import logging
 
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, relationship
 from sqlalchemy import Column, String, DateTime, Integer, Text, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 

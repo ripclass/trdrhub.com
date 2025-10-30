@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from app.orm import User, UserRole
+from app.models import User, UserRole
 from ..core.security import get_current_user, require_admin, require_bank_or_admin
 from ..core.rbac import RBACPolicyEngine, Permission
 from ..services.analytics_service import AnalyticsService
@@ -23,7 +23,7 @@ from ..schemas.analytics import (
 )
 from ..services.audit_service import AuditService
 from ..models.audit_log import AuditAction, AuditResult
-from app.orm import ValidationSession
+from app.models import ValidationSession
 
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])

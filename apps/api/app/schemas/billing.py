@@ -9,11 +9,13 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, condecimal
 
 from app.models.invoice import InvoiceStatus
 from app.models.company import PlanType
 from app.core.pricing import PricingConstants
+
+Money = condecimal(max_digits=18, decimal_places=2)
 
 
 # Base schemas
@@ -52,7 +54,7 @@ class UsageStats(BaseModel):
     current_week: int = 0
     today: int = 0
     total_usage: int = 0
-    total_cost: Decimal = Field(decimal_places=2)
+    total_cost: Money = Field(default=Decimal("0"))
     quota_limit: Optional[int] = None
     quota_used: int = 0
     quota_remaining: Optional[int] = None
@@ -62,7 +64,7 @@ class UsageStats(BaseModel):
 class UsageRecordBase(BaseModel):
     """Base usage record schema."""
     action: str
-    cost: Decimal = Field(decimal_places=2)
+    cost: Money
     session_id: Optional[UUID] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -96,8 +98,8 @@ class InvoiceLineItemBase(BaseModel):
     """Base invoice line item schema."""
     description: str
     quantity: int = 1
-    unit_price: Decimal = Field(decimal_places=2)
-    amount: Decimal = Field(decimal_places=2)
+    unit_price: Money
+    amount: Money
 
 
 class InvoiceLineItem(InvoiceLineItemBase):
@@ -110,7 +112,7 @@ class InvoiceLineItem(InvoiceLineItemBase):
 
 class InvoiceBase(BaseModel):
     """Base invoice schema."""
-    amount: Decimal = Field(decimal_places=2)
+    amount: Money
     currency: str = "BDT"
     due_date: date
     description: Optional[str] = None
@@ -163,7 +165,7 @@ class InvoiceUpdate(BaseModel):
 class PaymentIntentCreate(BaseModel):
     """Create payment intent request."""
     invoice_id: Optional[UUID] = None
-    amount: Optional[Decimal] = Field(None, decimal_places=2)
+    amount: Optional[Money] = None
     currency: str = "BDT"
     payment_method_types: Optional[List[str]] = None
     return_url: Optional[str] = None
@@ -180,7 +182,7 @@ class PaymentIntentCreate(BaseModel):
 class PaymentIntent(BaseModel):
     """Payment intent response."""
     id: str
-    amount: Decimal = Field(decimal_places=2)
+    amount: Money
     currency: str
     status: str
     client_secret: Optional[str] = None
@@ -196,7 +198,7 @@ class PaymentResult(BaseModel):
     payment_id: str
     transaction_id: Optional[str] = None
     status: str
-    amount: Decimal = Field(decimal_places=2)
+    amount: Money
     currency: str
     payment_method: Optional[str] = None
     error_message: Optional[str] = None
@@ -204,7 +206,7 @@ class PaymentResult(BaseModel):
 
 class RefundCreate(BaseModel):
     """Create refund request."""
-    amount: Optional[Decimal] = Field(None, decimal_places=2)
+    amount: Optional[Money] = None
     reason: Optional[str] = None
 
 
@@ -213,7 +215,7 @@ class RefundResult(BaseModel):
     success: bool
     refund_id: str
     original_payment_id: str
-    amount: Decimal = Field(decimal_places=2)
+    amount: Money
     status: str
     error_message: Optional[str] = None
 
@@ -226,7 +228,7 @@ class WebhookEvent(BaseModel):
     payment_id: Optional[str] = None
     transaction_id: Optional[str] = None
     status: Optional[str] = None
-    amount: Optional[Decimal] = Field(None, decimal_places=2)
+    amount: Optional[Money] = None
     currency: Optional[str] = None
     timestamp: datetime
     is_verified: bool = False
@@ -265,7 +267,7 @@ class AdminCompanyStats(BaseModel):
     company_name: str
     plan: PlanType
     total_usage: int
-    total_cost: Decimal = Field(decimal_places=2)
+    total_cost: Money
     quota_limit: Optional[int] = None
     quota_used: int = 0
     last_activity: Optional[datetime] = None
@@ -278,7 +280,7 @@ class AdminUsageReport(BaseModel):
     period_end: date
     total_companies: int
     total_usage: int
-    total_revenue: Decimal = Field(decimal_places=2)
+    total_revenue: Money
     companies: List[AdminCompanyStats]
 
 

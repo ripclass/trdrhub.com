@@ -119,7 +119,7 @@ class AuditLogQuery(BaseModel):
     page: int = Field(1, ge=1, description="Page number")
     per_page: int = Field(50, ge=1, le=1000, description="Items per page")
     sort_by: str = Field("timestamp", description="Sort field")
-    sort_order: str = Field("desc", regex="^(asc|desc)$", description="Sort order")
+    sort_order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
 
     @validator('end_date')
     def end_date_after_start_date(cls, v, values):
@@ -216,7 +216,7 @@ class AuditSearchResult(BaseModel):
 class AuditExportRequest(BaseModel):
     """Request for exporting audit logs."""
     query: AuditLogQuery = Field(..., description="Query parameters")
-    format: str = Field("json", regex="^(json|csv|xlsx)$", description="Export format")
+    format: str = Field("json", pattern="^(json|csv|xlsx)$", description="Export format")
     include_sensitive: bool = Field(False, description="Include sensitive data")
 
 

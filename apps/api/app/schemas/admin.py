@@ -101,7 +101,7 @@ class AuditEvent(BaseSchema):
 
 class AuditExportRequest(BaseModel):
     filters: AuditEventFilter
-    format: str = Field("csv", regex="^(csv|json|pdf)$")
+    format: str = Field("csv", pattern="^(csv|json|pdf)$")
     include_pii: bool = False
     legal_hold_id: Optional[str] = None
 
@@ -113,11 +113,11 @@ class ApprovalRequest(BaseModel):
     resource_id: str = Field(..., min_length=1, max_length=255)
     requested_changes: Dict[str, Any]
     justification: str = Field(..., min_length=1)
-    urgency: str = Field("normal", regex="^(low|normal|high|urgent)$")
+    urgency: str = Field("normal", pattern="^(low|normal|high|urgent)$")
 
 
 class ApprovalDecision(BaseModel):
-    decision: str = Field(..., regex="^(approve|reject)$")
+    decision: str = Field(..., pattern="^(approve|reject)$")
     reason: str = Field(..., min_length=1)
     conditions: Optional[Dict[str, Any]] = None
 
@@ -198,7 +198,7 @@ class JobQueue(BaseSchema, TimestampMixin):
 
 class BulkJobAction(BaseModel):
     job_ids: List[uuid.UUID] = Field(..., min_items=1, max_items=100)
-    action: str = Field(..., regex="^(retry|cancel|requeue)$")
+    action: str = Field(..., pattern="^(retry|cancel|requeue)$")
     reason: str = Field(..., min_length=1)
 
 
@@ -210,7 +210,7 @@ class DLQReplayRequest(BaseModel):
 
 class BulkDLQReplay(BaseModel):
     dlq_ids: List[uuid.UUID] = Field(..., min_items=1, max_items=100)
-    strategy: str = Field(..., regex="^(immediate|scheduled|throttled)$")
+    strategy: str = Field(..., pattern="^(immediate|scheduled|throttled)$")
     throttle_rate: Optional[int] = Field(None, ge=1, le=1000)
 
 
@@ -245,13 +245,13 @@ class KPIResponse(BaseModel):
 
 class MetricsQuery(BaseModel):
     metric_names: List[str] = Field(..., min_items=1)
-    time_range: str = Field("24h", regex="^(1h|6h|24h|7d|30d)$")
-    granularity: str = Field("1h", regex="^(1m|5m|1h|1d)$")
+    time_range: str = Field("24h", pattern="^(1h|6h|24h|7d|30d)$")
+    granularity: str = Field("1h", pattern="^(1m|5m|1h|1d)$")
     filters: Dict[str, Any] = Field(default_factory=dict)
 
 
 class LogQuery(BaseModel):
-    level: Optional[str] = Field(None, regex="^(debug|info|warning|error|critical)$")
+    level: Optional[str] = Field(None, pattern="^(debug|info|warning|error|critical)$")
     service: Optional[str] = None
     time_start: Optional[datetime] = None
     time_end: Optional[datetime] = None
@@ -261,7 +261,7 @@ class LogQuery(BaseModel):
 
 class LogExportRequest(BaseModel):
     query: LogQuery
-    format: str = Field("json", regex="^(json|csv|syslog)$")
+    format: str = Field("json", pattern="^(json|csv|syslog)$")
     redact_pii: bool = True
 
 
@@ -270,14 +270,14 @@ class AlertRule(BaseModel):
     description: str = Field(..., min_length=1)
     metric: str = Field(..., min_length=1)
     threshold: float
-    operator: str = Field(..., regex="^(gt|lt|eq|gte|lte)$")
-    duration: str = Field("5m", regex="^\\d+[smhd]$")
-    severity: str = Field(..., regex="^(critical|warning|info)$")
+    operator: str = Field(..., pattern="^(gt|lt|eq|gte|lte)$")
+    duration: str = Field("5m", pattern="^\\d+[smhd]$")
+    severity: str = Field(..., pattern="^(critical|warning|info)$")
     channels: List[str] = Field(..., min_items=1)
 
 
 class SilenceRequest(BaseModel):
-    duration: str = Field(..., regex="^\\d+[smhd]$")
+    duration: str = Field(..., pattern="^\\d+[smhd]$")
     reason: str = Field(..., min_length=1)
 
 
@@ -286,7 +286,7 @@ class BillingPlan(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str
     price_usd: float = Field(..., ge=0)
-    billing_period: str = Field(..., regex="^(monthly|annual)$")
+    billing_period: str = Field(..., pattern="^(monthly|annual)$")
     features: Dict[str, Any]
     quotas: Dict[str, int]
     is_active: bool = True
@@ -295,12 +295,12 @@ class BillingPlan(BaseModel):
 class PlanChangeRequest(BaseModel):
     new_plan_id: uuid.UUID
     effective_date: datetime
-    proration_method: str = Field("immediate", regex="^(immediate|next_cycle|custom)$")
+    proration_method: str = Field("immediate", pattern="^(immediate|next_cycle|custom)$")
     reason: str = Field(..., min_length=1)
 
 
 class CreditCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=50, regex="^[A-Z0-9_]+$")
+    code: str = Field(..., min_length=1, max_length=50, pattern="^[A-Z0-9_]+$")
     type: CreditType
     value_usd: Optional[float] = Field(None, ge=0)
     percentage: Optional[int] = Field(None, ge=1, le=100)
@@ -343,12 +343,12 @@ class BillingAdjustment(BaseSchema, TimestampMixin):
 
 class DisputeAssignment(BaseModel):
     assigned_to: uuid.UUID
-    priority: str = Field("normal", regex="^(low|normal|high|urgent)$")
+    priority: str = Field("normal", pattern="^(low|normal|high|urgent)$")
     notes: str = Field(..., min_length=1)
 
 
 class DisputeResolution(BaseModel):
-    resolution: str = Field(..., regex="^(resolved|escalated|invalid)$")
+    resolution: str = Field(..., pattern="^(resolved|escalated|invalid)$")
     amount_refunded: Optional[float] = Field(None, ge=0)
     notes: str = Field(..., min_length=1)
     evidence_url: Optional[str] = None
@@ -377,7 +377,7 @@ class PartnerCreate(BaseModel):
     api_endpoint: str = Field(..., min_length=1)
     auth_config: Dict[str, Any]
     rate_limits: Dict[str, int] = Field(default_factory=dict)
-    contact_email: str = Field(..., regex="^[^@]+@[^@]+\\.[^@]+$")
+    contact_email: str = Field(..., pattern="^[^@]+@[^@]+\\.[^@]+$")
     contact_phone: Optional[str] = None
     technical_contact: Optional[Dict[str, Any]] = None
     business_contact: Optional[Dict[str, Any]] = None
@@ -389,7 +389,7 @@ class PartnerUpdate(BaseModel):
     api_endpoint: Optional[str] = None
     auth_config: Optional[Dict[str, Any]] = None
     rate_limits: Optional[Dict[str, int]] = None
-    contact_email: Optional[str] = Field(None, regex="^[^@]+@[^@]+\\.[^@]+$")
+    contact_email: Optional[str] = Field(None, pattern="^[^@]+@[^@]+\\.[^@]+$")
     contact_phone: Optional[str] = None
 
 
@@ -519,7 +519,7 @@ class UserSession(BaseSchema):
 
 # Feature Flag Schemas
 class FeatureFlagCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200, regex="^[a-zA-Z0-9_-]+$")
+    name: str = Field(..., min_length=1, max_length=200, pattern="^[a-zA-Z0-9_-]+$")
     description: str = Field(..., min_length=1)
     type: FlagType = FlagType.BOOLEAN
     default_value: Union[bool, str, int, Dict[str, Any]] = False
@@ -621,7 +621,7 @@ class LLMBudget(BaseSchema):
 
 # Release Management Schemas
 class ReleaseNoteCreate(BaseModel):
-    version: str = Field(..., min_length=1, max_length=50, regex="^\\d+\\.\\d+\\.\\d+")
+    version: str = Field(..., min_length=1, max_length=50, pattern="^\\d+\\.\\d+\\.\\d+")
     title: str = Field(..., min_length=1, max_length=500)
     description: Optional[str] = None
     release_type: ReleaseType = ReleaseType.MINOR

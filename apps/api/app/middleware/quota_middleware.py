@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import get_db
 from app.services.billing_service import BillingService, QuotaExceededException, BillingServiceError
 from app.core.pricing import BillingAction
-from app.models.user import User
+from app.models import User
 
 
 class QuotaEnforcementMiddleware(BaseHTTPMiddleware):
@@ -32,10 +32,10 @@ class QuotaEnforcementMiddleware(BaseHTTPMiddleware):
 
     # Endpoints that require quota checking
     QUOTA_ENDPOINTS = {
-        "/sessions/*/process": BillingAction.PER_CHECK.value,
-        "/sessions/*/import-draft": BillingAction.IMPORT_DRAFT.value,
+        "/sessions/*/process": BillingAction.VALIDATE.value,
+        "/sessions/*/import-draft": BillingAction.DRAFT_IMPORT.value,
         "/sessions/*/import-bundle": BillingAction.IMPORT_BUNDLE.value,
-        "/documents/*/validate": BillingAction.PER_CHECK.value,
+        "/documents/*/validate": BillingAction.VALIDATE.value,
     }
 
     def __init__(self, app):

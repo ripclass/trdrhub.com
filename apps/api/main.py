@@ -49,6 +49,7 @@ except ImportError:
 
 # Import application modules
 from app.database import Base, engine
+from sqlalchemy.exc import UnsupportedCompilationError, CompileError
 from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
@@ -171,7 +172,10 @@ async def lifespan(app: FastAPI):
 
 # Create database tables in development/stub environments only
 if settings.is_development() or settings.USE_STUBS:
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except (UnsupportedCompilationError, CompileError) as exc:
+        print(f"Skipping automatic schema creation due to unsupported dialect features: {exc}")
 
 # Create FastAPI app with lifespan events
 app = FastAPI(
