@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from ..database import get_db
-from app.models import User, UserRole
+from app.orm import User, UserRole
 from ..core.security import get_current_user, require_admin
 from ..core.rbac import RBACPolicyEngine, Permission, get_role_capabilities
 from ..schemas.user import (

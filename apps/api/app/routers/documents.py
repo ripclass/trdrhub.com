@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from app.models import User, ValidationSession, Document, DocumentType, SessionStatus
+from app.orm import User, ValidationSession, Document, DocumentType, SessionStatus
 from ..schemas import DocumentProcessingResponse, ProcessedDocumentInfo
 from ..core.security import get_current_user
 from ..core.rbac import RBACPolicyEngine, Permission
