@@ -279,5 +279,5 @@ ssl/
 certificates/
 deployment/secrets/node_modules/
 venv/
-
+    
 .vercel
