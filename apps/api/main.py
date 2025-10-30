@@ -13,7 +13,11 @@ from typing import Dict, Any
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from mangum import Mangum
+try:
+    from mangum import Mangum  # AWS Lambda adapter (optional)
+    MANGUM_AVAILABLE = True
+except ImportError:
+    MANGUM_AVAILABLE = False
 
 # Import logging and monitoring
 from app.utils.logger import configure_logging, get_logger, log_exception
@@ -322,15 +326,14 @@ async def get_performance_metrics(request: Request):
         raise HTTPException(status_code=500, detail="Failed to get metrics")
 
 
-# Lambda handler using Mangum
-handler = Mangum(app, lifespan="off")
+# Lambda handler using Mangum (only when available/environment requires it)
+if MANGUM_AVAILABLE:
+    handler = Mangum(app, lifespan="off")
 
-
-# Wrap the handler with performance monitoring
-@monitor_performance
-def lambda_handler(event: Dict[str, Any], context: Any) -> Any:
-    """Lambda handler with performance monitoring."""
-    return handler(event, context)
+    @monitor_performance
+    def lambda_handler(event: Dict[str, Any], context: Any) -> Any:
+        """Lambda handler with performance monitoring."""
+        return handler(event, context)
 
 
 if __name__ == "__main__":
