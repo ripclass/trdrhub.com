@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { Brain, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+
+import { api } from '@/api/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Brain, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 
 interface AISummaryPanelProps {
   lcId: string;
@@ -13,22 +15,36 @@ interface AISummaryPanelProps {
   className?: string;
 }
 
-interface AIResponse {
+interface NormalizedSummary {
   content: string;
-  confidence_score: number;
-  model_used: string;
-  fallback_used: boolean;
-  language: string;
-  audit_event_id: string;
+  confidenceScore: number;
+  modelUsed?: string;
+  fallbackUsed: boolean;
+  language?: string;
+  auditEventId?: string;
 }
+
+const confidenceToScore = (confidence?: string): number => {
+  if (!confidence) return 0.5;
+  switch (confidence.toLowerCase()) {
+    case 'high':
+      return 0.9;
+    case 'medium':
+      return 0.7;
+    case 'low':
+      return 0.4;
+    default:
+      return 0.5;
+  }
+};
 
 export default function AISummaryPanel({
   lcId,
   discrepancies,
   onRefresh,
-  className = ""
+  className = '',
 }: AISummaryPanelProps) {
-  const [summary, setSummary] = useState<AIResponse | null>(null);
+  const [summary, setSummary] = useState<NormalizedSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,33 +53,33 @@ export default function AISummaryPanel({
     setError(null);
 
     try {
-      const response = await fetch('/api/ai/discrepancies', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          lc_id: lcId,
-          discrepancies: discrepancies.map(d => ({
-            discrepancy_id: d.id,
-            field_name: d.field_name,
-            expected_value: d.expected_value,
-            actual_value: d.actual_value,
-            severity: d.severity
-          })),
-          language: 'en',
-          include_recommendations: true,
-          analysis_depth: 'detailed'
-        })
+      const { data } = await api.post('/api/ai/discrepancies', {
+        session_id: lcId,
+        discrepancies: discrepancies.map((item) => ({
+          discrepancy_id: item.id,
+          field_name: item.field_name,
+          expected_value: item.expected_value,
+          actual_value: item.actual_value,
+          severity: item.severity,
+        })),
+        language: 'en',
+        include_explanations: true,
+        include_fix_suggestions: true,
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to generate summary: ${response.statusText}`);
-      }
+      const confidenceScore =
+        typeof data.confidence_score === 'number'
+          ? data.confidence_score
+          : confidenceToScore(data.confidence);
 
-      const data = await response.json();
-      setSummary(data);
+      setSummary({
+        content: data.content || data.output || 'Summary unavailable.',
+        confidenceScore,
+        modelUsed: data.model_used || data.model_version,
+        fallbackUsed: Boolean(data.fallback_used),
+        language: data.language,
+        auditEventId: data.audit_event_id || data.event_id,
+      });
       onRefresh?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate summary');
@@ -85,19 +101,14 @@ export default function AISummaryPanel({
   };
 
   return (
-    <Card className={`${className}`}>
+    <Card className={className}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Brain className="w-5 h-5 text-blue-600" />
             <CardTitle className="text-lg">AI Discrepancy Summary</CardTitle>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={generateSummary}
-            disabled={loading}
-          >
+          <Button variant="outline" size="sm" onClick={generateSummary} disabled={loading}>
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
@@ -106,9 +117,7 @@ export default function AISummaryPanel({
             {loading ? 'Analyzing...' : 'Generate'}
           </Button>
         </div>
-        <CardDescription>
-          AI-powered analysis of {discrepancies.length} discrepancies
-        </CardDescription>
+        <CardDescription>AI-powered analysis of {discrepancies.length} discrepancies</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -127,37 +136,35 @@ export default function AISummaryPanel({
           </div>
         )}
 
-        {summary && (
+        {summary && !loading && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-3">
-              <Badge className={getConfidenceColor(summary.confidence_score)}>
-                {getConfidenceIcon(summary.confidence_score)}
-                {Math.round(summary.confidence_score * 100)}% confidence
+              <Badge className={getConfidenceColor(summary.confidenceScore)}>
+                {getConfidenceIcon(summary.confidenceScore)}
+                {Math.round(summary.confidenceScore * 100)}% confidence
               </Badge>
 
-              {summary.fallback_used && (
+              {summary.fallbackUsed && (
                 <Badge variant="outline" className="text-orange-600">
                   Rule-based fallback
                 </Badge>
               )}
 
-              <Badge variant="secondary">
-                {summary.model_used}
-              </Badge>
+              <Badge variant="secondary">{summary.modelUsed || 'LLM'}</Badge>
             </div>
 
             <div className="prose prose-sm max-w-none">
               <div
                 className="text-sm leading-relaxed"
                 dangerouslySetInnerHTML={{
-                  __html: summary.content.replace(/\n/g, '<br />')
+                  __html: summary.content.replace(/\n/g, '<br />'),
                 }}
               />
             </div>
 
             <div className="border-t pt-3">
               <p className="text-xs text-muted-foreground">
-                Analysis ID: {summary.audit_event_id} • Generated at {new Date().toLocaleString()}
+                Analysis ID: {summary.auditEventId ?? 'N/A'} - Generated at {new Date().toLocaleString()}
               </p>
             </div>
           </div>
@@ -166,10 +173,8 @@ export default function AISummaryPanel({
         {!summary && !loading && !error && (
           <div className="text-center py-8 text-muted-foreground">
             <Brain className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">Click "Generate" to get AI-powered insights</p>
-            <p className="text-xs mt-1">
-              Analyze discrepancies with confidence scoring and recommendations
-            </p>
+            <p className="text-sm">Click &quot;Generate&quot; to get AI-powered insights</p>
+            <p className="text-xs mt-1">Analyze discrepancies with confidence scoring and recommendations</p>
           </div>
         )}
       </CardContent>

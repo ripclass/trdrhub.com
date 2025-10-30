@@ -165,8 +165,9 @@ async def lifespan(app: FastAPI):
     logger.info("LCopilot API shutting down")
 
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables in development/stub environments only
+if settings.is_development() or settings.USE_STUBS:
+    Base.metadata.create_all(bind=engine)
 
 # Create FastAPI app with lifespan events
 app = FastAPI(

@@ -16,19 +16,18 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.core.auth import get_current_user, require_roles, RoleType
-from app.models.user import User
-from app.models.company import Company
-from app.models.invoice import Invoice as InvoiceModel, InvoiceLineItem
-from app.models.usage_record import UsageRecord as UsageRecordModel
-from app.services.billing_service import BillingService
-from app.providers.payments.base import PaymentProviderFactory, PaymentProviderError
-from app.core.config import get_settings
-from app.schemas import billing as schemas
+from ..database import get_db
+from ..core.security import get_current_user, require_roles
+from ..models import User, UserRole
+from ..models.invoice import Invoice as InvoiceModel
+from ..services.billing_service import BillingService
+from ..providers.payments.base import PaymentProviderFactory, PaymentProviderError
+from ..config import settings
+from ..schemas import billing as schemas
 
 router = APIRouter(prefix="/billing", tags=["billing"])
-settings = get_settings()
+
+COMPANY_ADMIN_ROLE = "company_admin"
 
 
 def get_billing_service(db: Session = Depends(get_db)) -> BillingService:
@@ -83,7 +82,7 @@ async def get_company_billing_info(
 @router.put("/company", response_model=schemas.CompanyBillingInfo)
 async def update_company_billing(
     update_data: schemas.CompanyBillingUpdate,
-    current_user: User = Depends(require_roles([RoleType.ADMIN, RoleType.COMPANY_ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.ADMIN.value, COMPANY_ADMIN_ROLE])),
     billing_service: BillingService = Depends(get_billing_service)
 ):
     """Update company billing settings."""
@@ -190,7 +189,7 @@ async def get_invoice(
 async def generate_invoice(
     period_start: date = Query(..., description="Invoice period start date"),
     period_end: date = Query(..., description="Invoice period end date"),
-    current_user: User = Depends(require_roles([RoleType.ADMIN, RoleType.COMPANY_ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.ADMIN.value, COMPANY_ADMIN_ROLE])),
     billing_service: BillingService = Depends(get_billing_service)
 ):
     """Generate invoice for specified period."""
@@ -356,7 +355,7 @@ async def refund_payment(
     payment_id: str,
     refund_data: schemas.RefundCreate,
     provider: str = Query("sslcommerz", description="Payment provider"),
-    current_user: User = Depends(require_roles([RoleType.ADMIN, RoleType.COMPANY_ADMIN]))
+    current_user: User = Depends(require_roles([UserRole.ADMIN.value, COMPANY_ADMIN_ROLE]))
 ):
     """Refund a payment."""
     try:
@@ -525,7 +524,7 @@ async def sslcommerz_webhook(
 async def get_admin_company_stats(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(require_roles([RoleType.ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.ADMIN.value])),
     billing_service: BillingService = Depends(get_billing_service)
 ):
     """Get company statistics for admin users."""
@@ -542,7 +541,7 @@ async def get_admin_company_stats(
 async def get_admin_usage_report(
     start_date: date = Query(..., description="Report start date"),
     end_date: date = Query(..., description="Report end date"),
-    current_user: User = Depends(require_roles([RoleType.ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.ADMIN.value])),
     billing_service: BillingService = Depends(get_billing_service)
 ):
     """Get usage report for admin users."""

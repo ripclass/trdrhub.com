@@ -13,17 +13,18 @@ import {
   AlertTriangle,
   Minimize2,
   Maximize2,
-  X
+  X,
 } from 'lucide-react';
+import { api } from '@/api/client';
 
 interface ChatMessage {
   id: string;
   content: string;
   sender: 'user' | 'ai';
   timestamp: Date;
-  confidence_score?: number;
-  model_used?: string;
-  fallback_used?: boolean;
+  confidenceScore?: number;
+  modelUsed?: string;
+  fallbackUsed?: boolean;
 }
 
 interface AIChatWidgetProps {
@@ -47,8 +48,8 @@ export default function AIChatWidget({
       content: 'Hello! I\'m your AI assistant for trade finance. I can help you understand discrepancies, draft amendments, and answer questions about LC compliance. How can I assist you today?',
       sender: 'ai',
       timestamp: new Date(),
-      confidence_score: 1.0,
-      model_used: 'gpt-4'
+      confidenceScore: 1.0,
+      modelUsed: 'gpt-4'
     }
   ]);
   const [input, setInput] = useState('');
@@ -61,6 +62,20 @@ export default function AIChatWidget({
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const confidenceToScore = (confidence?: string): number => {
+    if (!confidence) return 0.5;
+    switch (confidence.toLowerCase()) {
+      case 'high':
+        return 0.9;
+      case 'medium':
+        return 0.7;
+      case 'low':
+        return 0.4;
+      default:
+        return 0.5;
+    }
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -77,52 +92,37 @@ export default function AIChatWidget({
     setLoading(true);
 
     try {
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          message: userMessage.content,
-          session_id: sessionId,
-          lc_id: lcId,
-          language: 'en',
-          context: {
-            conversation_history: messages.slice(-5).map(m => ({
-              sender: m.sender,
-              content: m.content
-            }))
-          }
-        })
+      const { data } = await api.post('/api/ai/chat', {
+        session_id: sessionId,
+        question: userMessage.content,
+        language: 'en',
+        context_documents: [],
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to send message: ${response.statusText}`);
-      }
-
-      const data = await response.json();
 
       const aiMessage: ChatMessage = {
         id: `msg_${Date.now()}_ai`,
-        content: data.content,
+        content: data.output || data.content || 'I have shared the requested information.',
         sender: 'ai',
         timestamp: new Date(),
-        confidence_score: data.confidence_score,
-        model_used: data.model_used,
-        fallback_used: data.fallback_used
+        confidenceScore:
+          typeof data.confidence_score === 'number'
+            ? data.confidence_score
+            : confidenceToScore(data.confidence),
+        modelUsed: data.model_used || data.model_version,
+        fallbackUsed: Boolean(data.fallback_used),
       };
 
-      setMessages(prev => [...prev, aiMessage]);
+      setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
       const errorMessage: ChatMessage = {
         id: `msg_${Date.now()}_error`,
-        content: 'I apologize, but I encountered an error. Please try again or contact support if the issue persists.',
+        content:
+          'I encountered an error while responding. Please try again or contact support if the issue persists.',
         sender: 'ai',
         timestamp: new Date(),
-        confidence_score: 0
+        confidenceScore: 0,
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -237,14 +237,14 @@ export default function AIChatWidget({
                     {message.content}
                   </div>
 
-                  {message.sender === 'ai' && message.confidence_score !== undefined && (
+                  {message.sender === 'ai' && message.confidenceScore !== undefined && (
                     <div className="flex items-center gap-1 mt-2">
                       <Badge
-                        className={`text-xs ${getConfidenceColor(message.confidence_score)}`}
+                        className={`text-xs ${getConfidenceColor(message.confidenceScore)}`}
                       >
-                        {Math.round(message.confidence_score * 100)}%
+                        {Math.round(message.confidenceScore * 100)}%
                       </Badge>
-                      {message.fallback_used && (
+                      {message.fallbackUsed && (
                         <Badge variant="outline" className="text-xs text-orange-600">
                           Fallback
                         </Badge>
@@ -311,7 +311,7 @@ export default function AIChatWidget({
         </div>
 
         <div className="text-xs text-muted-foreground mt-2 text-center">
-          Trade finance AI assistant • Powered by LCopilot
+          Trade finance AI assistant - Powered by LCopilot
         </div>
       </CardContent>
     </Card>

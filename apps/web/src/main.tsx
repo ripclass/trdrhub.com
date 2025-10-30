@@ -6,6 +6,8 @@ import { AuthProvider } from './hooks/use-auth'
 import { AdminAuthProvider } from './lib/admin/auth'
 import App from './App.tsx'
 import './index.css'
+import { Toaster } from './components/ui/toaster'
+import ErrorBoundary from './components/app/ErrorBoundary'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +27,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AdminAuthProvider>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+            <Toaster />
           </AdminAuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

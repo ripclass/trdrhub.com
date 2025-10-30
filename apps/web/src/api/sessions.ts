@@ -1,24 +1,5 @@
 import axios from 'axios'
-import { getValidToken } from './auth'
-
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-})
-
-// Add request interceptor to automatically include auth token
-api.interceptors.request.use(async (config) => {
-  try {
-    const token = await getValidToken()
-    config.headers.Authorization = `Bearer ${token}`
-  } catch (error) {
-    console.error('Failed to get auth token:', error)
-    // Continue with request without auth - let the server handle it
-  }
-  return config
-})
+import { api } from './client'
 
 export interface DocumentUploadUrl {
   document_type: 'letter_of_credit' | 'commercial_invoice' | 'bill_of_lading'

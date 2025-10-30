@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const TOKEN_STORAGE_KEY = import.meta.env.VITE_TOKEN_STORAGE_KEY || 'lcopilot_token'
 
 const authApi = axios.create({
   baseURL: API_BASE_URL,
@@ -75,15 +76,15 @@ export const getDevToken = async (): Promise<string> => {
 
 // Token storage utilities
 export const getStoredToken = (): string | null => {
-  return localStorage.getItem('lcopilot_token')
+  return localStorage.getItem(TOKEN_STORAGE_KEY)
 }
 
 export const storeToken = (token: string): void => {
-  localStorage.setItem('lcopilot_token', token)
+  localStorage.setItem(TOKEN_STORAGE_KEY, token)
 }
 
 export const clearToken = (): void => {
-  localStorage.removeItem('lcopilot_token')
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
 export const getValidToken = async (): Promise<string> => {

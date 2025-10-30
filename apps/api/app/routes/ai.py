@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer
-from typing import Optional
 import logging
 
-from app.services.llm_assist import (
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from ..services.llm_assist import (
     LLMAssistService,
     DiscrepancySummaryRequest,
     BankDraftRequest,
@@ -11,13 +11,11 @@ from app.services.llm_assist import (
     ChatRequest,
     AIResponse
 )
-from app.models.user import User
-from app.core.auth import get_current_user
-from app.core.database import get_db
-from sqlalchemy.orm import Session
+from ..models import User
+from ..core.security import get_current_user, require_bank_or_admin
+from ..database import get_db
 
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
-security = HTTPBearer()
 logger = logging.getLogger(__name__)
 
 @router.post("/discrepancies", response_model=AIResponse)
@@ -46,7 +44,7 @@ async def generate_discrepancy_summary(
 
         logger.info(
             f"Discrepancy summary generated for user {current_user.id}, "
-            f"LC {request.lc_id}, confidence: {result.confidence_score}"
+            f"session {request.session_id}, confidence: {getattr(result.confidence, 'value', result.confidence)}"
         )
 
         return result
@@ -62,7 +60,7 @@ async def generate_discrepancy_summary(
 async def generate_bank_draft(
     request: BankDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_bank_or_admin)
 ):
     """
     Generate bank-style formal discrepancy notifications.
@@ -79,19 +77,12 @@ async def generate_bank_draft(
     - Regulatory users: Read-only access for compliance
     """
     try:
-        # Access control check
-        if current_user.user_type not in ["bank", "regulator"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Bank draft generation requires bank or regulator access"
-            )
-
         llm_service = LLMAssistService(db)
         result = await llm_service.generate_bank_draft(request, current_user)
 
         logger.info(
             f"Bank draft generated for user {current_user.id}, "
-            f"LC {request.lc_id}, confidence: {result.confidence_score}"
+            f"session {request.session_id}, confidence: {getattr(result.confidence, 'value', result.confidence)}"
         )
 
         return result
@@ -131,7 +122,7 @@ async def generate_amendment_draft(
 
         logger.info(
             f"Amendment draft generated for user {current_user.id}, "
-            f"LC {request.lc_id}, confidence: {result.confidence_score}"
+            f"session {request.session_id}, confidence: {getattr(result.confidence, 'value', result.confidence)}"
         )
 
         return result
@@ -169,7 +160,7 @@ async def ai_chat(
 
         logger.info(
             f"AI chat response generated for user {current_user.id}, "
-            f"session {request.session_id}, confidence: {result.confidence_score}"
+            f"session {request.session_id}, confidence: {getattr(result.confidence, 'value', result.confidence)}"
         )
 
         return result
