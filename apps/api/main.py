@@ -205,8 +205,13 @@ app.include_router(analytics.router)    # Analytics dashboard endpoints
 app.include_router(billing.router)      # Billing and payment management endpoints
 app.include_router(bank.router)  # Bank portfolio endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
-app.include_router(debug_router)        # Debug routes for monitoring testing
-app.include_router(fake_s3.router)
+
+# Development-only routes
+if settings.is_development() or settings.USE_STUBS:
+    app.include_router(debug_router)        # Debug routes for monitoring testing
+    app.include_router(fake_s3.router)      # Fake S3 routes for stub mode
+
+# Production routes
 app.include_router(documents.router)
 app.include_router(validate.router)
 app.include_router(rules_admin.router)
@@ -228,9 +233,25 @@ app.add_middleware(QuotaEnforcementMiddleware)
 # )
 
 # Add CORS middleware
+# In production, restrict to specific domains for security
+# Set CORS_ALLOW_ORIGINS env var as comma-separated list: "https://trdrhub.com,https://www.trdrhub.com"
+# Defaults to ["*"] for development
+cors_origins = settings.CORS_ALLOW_ORIGINS
+if settings.is_production() and cors_origins == ["*"]:
+    # Fallback for production if not configured - use common production domains
+    cors_origins = [
+        "https://trdrhub.com",
+        "https://www.trdrhub.com",
+        "https://trdrhub.vercel.app",  # Vercel preview URLs
+    ]
+    print(
+        "WARNING: CORS_ALLOW_ORIGINS not configured for production, using defaults. "
+        "Set CORS_ALLOW_ORIGINS env var for security."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

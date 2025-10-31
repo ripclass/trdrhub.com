@@ -3,7 +3,7 @@ Configuration settings for LCopilot application.
 """
 
 import os
-from typing import Optional
+from typing import Optional, List
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     RULHUB_API_URL: str = ""
     RULHUB_API_KEY: str = ""
     
+    # CORS Configuration
+    CORS_ALLOW_ORIGINS: List[str] = ["*"]  # Default to all, override in production
+    
     def is_production(self) -> bool:
         """Check if running in production environment."""
         return self.ENVIRONMENT.lower() == "production"
@@ -74,6 +77,18 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes', 'on')
         return bool(v)
+    
+    @field_validator('CORS_ALLOW_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS origins from string (comma-separated) or list."""
+        if isinstance(v, str):
+            if v == "*":
+                return ["*"]
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return v
+        return ["*"]
 
 
 # Global settings instance
