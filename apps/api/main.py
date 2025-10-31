@@ -22,6 +22,7 @@ except ImportError:
 # Import logging and monitoring
 from app.utils.logger import configure_logging, get_logger, log_exception
 from app.middleware.logging import RequestIDMiddleware, RequestContextMiddleware
+from app.middleware.tenant_resolver import TenantResolverMiddleware
 # from app.middleware.audit_middleware import AuditMiddleware
 
 # Import performance monitoring (optional for basic operation)
@@ -50,7 +51,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, validate
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, validate, rules_admin
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -160,6 +161,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("All startup validations passed")
     
+    # Start weekly RulHub sync when enabled
+    try:
+        if settings.USE_RULHUB_API:
+            from app.jobs.rulhub_sync_job import start_sync_job
+            start_sync_job()
+            logger.info("RulHub weekly sync job started")
+    except Exception as e:
+        logger.error("Failed to start RulHub sync job", error=str(e))
+
     # Initialize performance optimizations for Lambda
     if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') and HAS_MONITORING:
         optimize_lambda_init()
@@ -193,17 +203,20 @@ app.include_router(audit.router)        # Audit trail and compliance endpoints
 app.include_router(admin.router)        # Admin endpoints for user and role management
 app.include_router(analytics.router)    # Analytics dashboard endpoints
 app.include_router(billing.router)      # Billing and payment management endpoints
+app.include_router(bank.router)  # Bank portfolio endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
 app.include_router(debug_router)        # Debug routes for monitoring testing
 app.include_router(fake_s3.router)
 app.include_router(documents.router)
 app.include_router(validate.router)
+app.include_router(rules_admin.router)
 
 # Note: Startup logging is now handled in the lifespan function
 
 # Add logging middleware (order matters - add first)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(TenantResolverMiddleware)
 
 # Add quota enforcement middleware (before audit middleware)
 app.add_middleware(QuotaEnforcementMiddleware)
@@ -344,3 +357,4 @@ if MANGUM_AVAILABLE:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

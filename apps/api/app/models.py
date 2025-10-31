@@ -5,7 +5,7 @@ SQLAlchemy models for LCopilot database schema.
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, ForeignKey, Text, JSON, Float, CheckConstraint
+from sqlalchemy import Column, String, Integer, DateTime, Date, Boolean, ForeignKey, Text, JSON, Float, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,10 +26,17 @@ from .models.usage_record import UsageRecord, UsageAction
 
 class UserRole(str, Enum):
     """User role types for access control."""
+
     EXPORTER = "exporter"
     IMPORTER = "importer"
-    BANK = "bank"
-    ADMIN = "admin"
+    TENANT_ADMIN = "tenant_admin"
+    BANK_OFFICER = "bank_officer"
+    BANK_ADMIN = "bank_admin"
+    SYSTEM_ADMIN = "system_admin"
+
+    # Backwards compatibility aliases
+    BANK = "bank_officer"
+    ADMIN = "system_admin"
 
 
 class SessionStatus(str, Enum):
@@ -84,28 +91,103 @@ class User(Base):
 
     # Table constraints
     __table_args__ = (
-        CheckConstraint("role IN ('exporter','importer','bank','admin')", name="ck_users_role"),
+        CheckConstraint(
+            "role IN ('exporter','importer','tenant_admin','bank_officer','bank_admin','system_admin','bank','admin')",
+            name="ck_users_role",
+        ),
     )
 
     # Relationships
     validation_sessions = relationship("ValidationSession", back_populates="user")
     company = relationship("Company", back_populates="users")
 
-    def is_admin(self) -> bool:
-        """Check if user has admin role."""
-        return self.role == UserRole.ADMIN
+    def is_system_admin(self) -> bool:
+        """Check if the user is a system administrator."""
+        return self.role in {UserRole.SYSTEM_ADMIN, UserRole.ADMIN}
 
-    def is_bank(self) -> bool:
-        """Check if user has bank role."""
-        return self.role == UserRole.BANK
+    def is_bank_officer(self) -> bool:
+        """Check if the user is a bank officer-level user."""
+        return self.role in {UserRole.BANK_OFFICER, UserRole.BANK}
+
+    def is_bank_admin(self) -> bool:
+        """Check if the user is a bank administrator."""
+        return self.role == UserRole.BANK_ADMIN
+
+    def is_tenant_admin(self) -> bool:
+        """Check if the user is a tenant administrator."""
+        return self.role == UserRole.TENANT_ADMIN
 
     def can_access_all_resources(self) -> bool:
         """Check if user can access all system resources."""
-        return self.role in [UserRole.ADMIN, UserRole.BANK]
+        return self.is_system_admin() or self.is_bank_admin()
 
     def can_manage_roles(self) -> bool:
         """Check if user can manage other users' roles."""
-        return self.role == UserRole.ADMIN
+        return self.is_system_admin()
+
+    # Relationships
+    roles = relationship("UserRoleAssignment", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserRoleAssignment(Base):
+    """Optional mapping table for multi-role assignments."""
+
+    __tablename__ = "user_roles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="roles")
+
+
+class BankTenant(Base):
+    """Mapping between a bank (company) and its managed SME tenants."""
+
+    __tablename__ = "bank_tenants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bank_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    bank = relationship("Company", foreign_keys=[bank_id])
+    tenant = relationship("Company", foreign_keys=[tenant_id])
+
+
+class BankReport(Base):
+    """Aggregated bank portfolio metrics by reporting period."""
+
+    __tablename__ = "bank_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bank_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    period = Column(Date, nullable=False)
+    metrics = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    bank = relationship("Company", foreign_keys=[bank_id])
+
+
+class BankAuditLog(Base):
+    """Bank-scoped audit events with tenant scoping."""
+
+    __tablename__ = "bank_audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bank_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)
+    lc_id = Column(UUID(as_uuid=True), ForeignKey("validation_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    event = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    bank = relationship("Company", foreign_keys=[bank_id])
+    tenant = relationship("Company", foreign_keys=[tenant_id])
+    validation_session = relationship("ValidationSession", foreign_keys=[lc_id])
 
 
 class ValidationSession(Base):

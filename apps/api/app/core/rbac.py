@@ -66,8 +66,18 @@ ROLE_PERMISSIONS: Dict[UserRole, Set[Permission]] = {
         Permission.VIEW_OWN_AUDIT_LOGS,
     },
 
-    UserRole.BANK: {
-        # Banks have read access to system-wide data for compliance
+    UserRole.TENANT_ADMIN: {
+        Permission.UPLOAD_OWN_DOCS,
+        Permission.VALIDATE_OWN_DOCS,
+        Permission.DOWNLOAD_OWN_EVIDENCE,
+        Permission.VIEW_OWN_JOBS,
+        Permission.CREATE_JOBS,
+        Permission.DELETE_OWN_JOBS,
+        Permission.VIEW_OWN_AUDIT_LOGS,
+        Permission.VIEW_USERS,
+    },
+
+    UserRole.BANK_OFFICER: {
         Permission.VIEW_ALL_JOBS,
         Permission.VIEW_ALL_AUDIT_LOGS,
         Permission.EXPORT_AUDIT_LOGS,
@@ -75,12 +85,22 @@ ROLE_PERMISSIONS: Dict[UserRole, Set[Permission]] = {
         Permission.VIEW_SYSTEM_METRICS,
         Permission.SYSTEM_MONITORING,
         Permission.VIEW_USERS,
-        # Banks can also download evidence packs by policy
         Permission.DOWNLOAD_OWN_EVIDENCE,
     },
 
-    UserRole.ADMIN: {
-        # Admins have all permissions
+    UserRole.BANK_ADMIN: {
+        Permission.VIEW_ALL_JOBS,
+        Permission.VIEW_ALL_AUDIT_LOGS,
+        Permission.EXPORT_AUDIT_LOGS,
+        Permission.GENERATE_COMPLIANCE_REPORTS,
+        Permission.VIEW_SYSTEM_METRICS,
+        Permission.SYSTEM_MONITORING,
+        Permission.VIEW_USERS,
+        Permission.MANAGE_ROLES,
+        Permission.DOWNLOAD_OWN_EVIDENCE,
+    },
+
+    UserRole.SYSTEM_ADMIN: {
         Permission.UPLOAD_OWN_DOCS,
         Permission.VALIDATE_OWN_DOCS,
         Permission.DOWNLOAD_OWN_EVIDENCE,
@@ -101,6 +121,10 @@ ROLE_PERMISSIONS: Dict[UserRole, Set[Permission]] = {
         Permission.MANAGE_SYSTEM_CONFIG,
     }
 }
+
+# Backwards compatibility aliases
+ROLE_PERMISSIONS[UserRole.BANK] = ROLE_PERMISSIONS[UserRole.BANK_OFFICER]
+ROLE_PERMISSIONS[UserRole.ADMIN] = ROLE_PERMISSIONS[UserRole.SYSTEM_ADMIN]
 
 
 class RBACPolicyEngine:
@@ -170,7 +194,7 @@ class RBACPolicyEngine:
             Permission.DELETE_OWN_JOBS
         ]:
             # Privileged roles (bank, admin) can access all resources
-            if user_role in [UserRole.BANK, UserRole.ADMIN]:
+            if user_role in [UserRole.BANK_OFFICER, UserRole.BANK_ADMIN, UserRole.SYSTEM_ADMIN, UserRole.BANK, UserRole.ADMIN]:
                 return True
 
             # Others can only access their own resources
@@ -194,7 +218,7 @@ class RBACPolicyEngine:
             Filtered list of resources
         """
         # Privileged roles see all resources
-        if user_role in [UserRole.BANK, UserRole.ADMIN]:
+        if user_role in [UserRole.BANK_OFFICER, UserRole.BANK_ADMIN, UserRole.SYSTEM_ADMIN, UserRole.BANK, UserRole.ADMIN]:
             return resources
 
         # Others see only their own resources

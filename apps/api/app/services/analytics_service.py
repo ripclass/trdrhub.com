@@ -13,14 +13,28 @@ from sqlalchemy import func, desc, asc, and_, or_, extract, case
 from sqlalchemy.sql import text
 
 from ..models import (
-    ValidationSession, Document, Discrepancy, User, UserRole
+    ValidationSession,
+    Document,
+    Discrepancy,
+    DiscrepancySeverity,
+    SessionStatus,
+    User,
+    UserRole,
 )
 from ..models.audit_log import AuditLog, AuditAction, AuditResult
 from ..schemas.analytics import (
-    SummaryStats, DiscrepancyStats, TrendStats, TrendPoint,
-    UserStats, SystemMetrics, ProcessingTimeBreakdown,
-    DiscrepancyDetail, ComplianceReport, DateRange,
-    AnomalyAlert, TimeRange
+    SummaryStats,
+    DiscrepancyStats,
+    TrendStats,
+    TrendPoint,
+    UserStats,
+    SystemMetrics,
+    ProcessingTimeBreakdown,
+    DiscrepancyDetail,
+    ComplianceReport,
+    DateRange,
+    AnomalyAlert,
+    TimeRange,
 )
 
 
@@ -29,6 +43,23 @@ class AnalyticsService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _normalize_uuid_list(raw_ids: Optional[Union[List[Union[str, UUID]], set]]) -> List[UUID]:
+        if not raw_ids:
+            return []
+        normalized = []
+        for value in raw_ids:
+            if value is None:
+                continue
+            if isinstance(value, UUID):
+                normalized.append(value)
+            else:
+                try:
+                    normalized.append(UUID(str(value)))
+                except (ValueError, TypeError):
+                    continue
+        return normalized
 
     def _parse_time_range(self, time_range: TimeRange, start_date: Optional[datetime] = None,
                          end_date: Optional[datetime] = None) -> Tuple[datetime, datetime]:
@@ -51,6 +82,21 @@ class AnalyticsService:
         days = days_mapping.get(time_range, 30)
         start = now - timedelta(days=days)
         return start, now
+
+    @staticmethod
+    def _parse_month_period(period: Optional[str]) -> Tuple[datetime, datetime]:
+        """Parse ``YYYY-MM`` period strings into datetime boundaries."""
+        if not period:
+            now = datetime.utcnow()
+            start = datetime(now.year, now.month, 1)
+        else:
+            start = datetime.strptime(period, "%Y-%m")
+        # Compute first day of next month then subtract second.
+        if start.month == 12:
+            end = datetime(start.year + 1, 1, 1)
+        else:
+            end = datetime(start.year, start.month + 1, 1)
+        return start, end
 
     def get_summary_stats(self, user: User, time_range: TimeRange = "30d",
                          start_date: Optional[datetime] = None,
@@ -355,7 +401,7 @@ class AnalyticsService:
         """Get statistics for a specific user."""
 
         # Verify requesting user has permission to view target user's stats
-        if requesting_user.role not in [UserRole.ADMIN, UserRole.BANK]:
+        if not (requesting_user.is_system_admin() or requesting_user.is_bank_admin() or requesting_user.is_bank_officer()):
             if requesting_user.id != target_user.id:
                 raise PermissionError("Cannot view other user's statistics")
 
@@ -477,7 +523,7 @@ class AnalyticsService:
                           end_date: Optional[datetime] = None) -> SystemMetrics:
         """Get system-wide metrics (Bank/Admin only)."""
 
-        if user.role not in [UserRole.BANK, UserRole.ADMIN]:
+        if not (user.is_bank_officer() or user.is_bank_admin() or user.is_system_admin()):
             raise PermissionError("System metrics require bank or admin role")
 
         start, end = self._parse_time_range(time_range, start_date, end_date)
@@ -701,10 +747,162 @@ class AnalyticsService:
             by_document_type=by_document_type
         )
 
+    def get_bank_portfolio_summary(
+        self,
+        bank_id: Union[str, UUID],
+        tenant_ids: Optional[Union[List[Union[str, UUID]], set]] = None,
+        lookback_days: int = 30,
+    ) -> Dict[str, Any]:
+        """Aggregate KPI metrics for a bank portfolio."""
+        scoped_tenants = self._normalize_uuid_list(tenant_ids)
+        lookback_start = datetime.utcnow() - timedelta(days=lookback_days)
+
+        session_query = self.db.query(ValidationSession).filter(ValidationSession.created_at >= lookback_start)
+        if scoped_tenants:
+            session_query = session_query.filter(ValidationSession.company_id.in_(scoped_tenants))
+
+        total_jobs = session_query.count()
+        completed = session_query.filter(ValidationSession.status == SessionStatus.COMPLETED.value).count()
+        failed = session_query.filter(ValidationSession.status == SessionStatus.FAILED.value).count()
+
+        total_tenants = (
+            self.db.query(func.count(func.distinct(ValidationSession.company_id)))
+            .filter(ValidationSession.created_at >= lookback_start)
+        )
+        if scoped_tenants:
+            total_tenants = total_tenants.filter(ValidationSession.company_id.in_(scoped_tenants))
+        total_tenants_value = total_tenants.scalar() or 0
+
+        # Trend data (daily counts)
+        trend_rows = (
+            self.db.query(
+                func.date_trunc("day", ValidationSession.created_at).label("day"),
+                func.count(ValidationSession.id).label("jobs"),
+            )
+            .filter(ValidationSession.created_at >= lookback_start)
+        )
+        if scoped_tenants:
+            trend_rows = trend_rows.filter(ValidationSession.company_id.in_(scoped_tenants))
+
+        trend_rows = trend_rows.group_by("day").order_by("day").all()
+        trend = [{"date": row.day.date().isoformat(), "jobs": row.jobs} for row in trend_rows]
+
+        pass_rate = (completed / total_jobs * 100) if total_jobs else 0
+
+        return {
+            "bank_id": str(bank_id),
+            "lookback_days": lookback_days,
+            "total_tenants": total_tenants_value,
+            "total_sessions": total_jobs,
+            "completed_sessions": completed,
+            "failed_sessions": failed,
+            "pass_rate": round(pass_rate, 2),
+            "trend": trend,
+        }
+
+    def get_bank_compliance_heatmap(
+        self,
+        bank_id: Union[str, UUID],
+        tenant_ids: Optional[Union[List[Union[str, UUID]], set]],
+        period: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return rule-by-tenant discrepancy counts for a reporting period."""
+        scoped_tenants = self._normalize_uuid_list(tenant_ids)
+        period_start, period_end = self._parse_month_period(period)
+
+        base_query = (
+            self.db.query(
+                ValidationSession.company_id.label("tenant_id"),
+                Discrepancy.rule_name,
+                func.count(Discrepancy.id).label("total"),
+                func.sum(
+                    case((Discrepancy.severity == DiscrepancySeverity.CRITICAL.value, 1), else_=0)
+                ).label("critical"),
+                func.sum(
+                    case((Discrepancy.severity == DiscrepancySeverity.MAJOR.value, 1), else_=0)
+                ).label("major"),
+                func.sum(
+                    case((Discrepancy.severity == DiscrepancySeverity.MINOR.value, 1), else_=0)
+                ).label("minor"),
+            )
+            .join(ValidationSession, Discrepancy.validation_session)
+            .filter(ValidationSession.created_at >= period_start)
+            .filter(ValidationSession.created_at < period_end)
+        )
+
+        if scoped_tenants:
+            base_query = base_query.filter(ValidationSession.company_id.in_(scoped_tenants))
+
+        heatmap_rows = (
+            base_query.group_by(ValidationSession.company_id, Discrepancy.rule_name)
+            .order_by(ValidationSession.company_id, Discrepancy.rule_name)
+            .all()
+        )
+
+        heatmap = [
+            {
+                "tenant_id": str(row.tenant_id),
+                "rule_name": row.rule_name,
+                "total": row.total,
+                "critical": row.critical or 0,
+                "major": row.major or 0,
+                "minor": row.minor or 0,
+            }
+            for row in heatmap_rows
+        ]
+
+        return {
+            "bank_id": str(bank_id),
+            "period_start": period_start.date().isoformat(),
+            "period_end": (period_end - timedelta(seconds=1)).date().isoformat(),
+            "heatmap": heatmap,
+        }
+
+    def get_bank_exception_feed(
+        self,
+        bank_id: Union[str, UUID],
+        tenant_ids: Optional[Union[List[Union[str, UUID]], set]],
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return the latest discrepancy events for a bank portfolio."""
+        scoped_tenants = self._normalize_uuid_list(tenant_ids)
+
+        query = (
+            self.db.query(
+                Discrepancy.id,
+                Discrepancy.created_at,
+                Discrepancy.discrepancy_type,
+                Discrepancy.rule_name,
+                Discrepancy.severity,
+                ValidationSession.id.label("session_id"),
+                ValidationSession.company_id.label("tenant_id"),
+            )
+            .join(ValidationSession, Discrepancy.validation_session)
+            .order_by(Discrepancy.created_at.desc())
+            .limit(limit)
+        )
+
+        if scoped_tenants:
+            query = query.filter(ValidationSession.company_id.in_(scoped_tenants))
+
+        rows = query.all()
+        return [
+            {
+                "id": str(row.id),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "rule_name": row.rule_name,
+                "discrepancy_type": row.discrepancy_type,
+                "severity": row.severity,
+                "session_id": str(row.session_id),
+                "tenant_id": str(row.tenant_id),
+            }
+            for row in rows
+        ]
+
     def detect_anomalies(self, user: User, time_range: TimeRange = "7d") -> List[AnomalyAlert]:
         """Detect anomalies in user or system metrics."""
 
-        if user.role not in [UserRole.BANK, UserRole.ADMIN]:
+        if not (user.is_bank_officer() or user.is_bank_admin() or user.is_system_admin()):
             return []  # Only bank/admin get anomaly alerts
 
         alerts = []

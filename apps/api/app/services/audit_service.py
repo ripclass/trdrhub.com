@@ -6,13 +6,13 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from uuid import UUID
 
 from fastapi import Request, Response
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, AuditAction, AuditResult
+from app.models import AuditLog, AuditAction, AuditResult, BankAuditLog
 from .. import models
 
 
@@ -21,6 +21,28 @@ class AuditService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _coerce_uuid(value: Optional[Union[str, UUID]]) -> Optional[UUID]:
+        if value is None:
+            return None
+        if isinstance(value, UUID):
+            return value
+        try:
+            return UUID(str(value))
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _coerce_datetime(value: Optional[Union[str, datetime]]) -> datetime:
+        if value is None:
+            return datetime.utcnow()
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return datetime.utcnow()
 
     @staticmethod
     def generate_correlation_id() -> str:
@@ -488,3 +510,129 @@ class AuditService:
             AuditLog.action == action,
             AuditLog.timestamp >= since
         ).order_by(AuditLog.timestamp.desc()).all()
+
+    @staticmethod
+    async def append_entry(
+        db: Session,
+        event: Optional[Dict[str, Any]] = None,
+        bank_id: Optional[Union[str, UUID]] = None,
+        tenant_id: Optional[Union[str, UUID]] = None,
+        lc_id: Optional[Union[str, UUID]] = None,
+        **legacy_fields: Any,
+    ):
+        """
+        Persist an audit event either to the bank-specific ledger or the
+        general audit log when ``bank_id`` is absent.
+        """
+        normalized_event = event.copy() if isinstance(event, dict) else {}
+        normalized_event.update(legacy_fields)
+        timestamp = AuditService._coerce_datetime(normalized_event.get("timestamp"))
+
+        if bank_id:
+            record = BankAuditLog(
+                bank_id=AuditService._coerce_uuid(bank_id),
+                tenant_id=AuditService._coerce_uuid(tenant_id),
+                lc_id=AuditService._coerce_uuid(lc_id),
+                event=normalized_event,
+                created_at=timestamp,
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return record
+
+        log_entry = AuditLog(
+            correlation_id=normalized_event.get("correlation_id", str(uuid.uuid4())),
+            session_id=normalized_event.get("session_id"),
+            user_id=AuditService._coerce_uuid(normalized_event.get("user_id")),
+            user_email=normalized_event.get("user_email"),
+            user_role=normalized_event.get("user_role"),
+            action=normalized_event.get("action", AuditAction.ANALYTICS_VIEW.value),
+            resource_type=normalized_event.get("resource_type"),
+            resource_id=normalized_event.get("resource_id"),
+            lc_number=normalized_event.get("lc_number"),
+            lc_version=normalized_event.get("lc_version"),
+            timestamp=timestamp,
+            duration_ms=normalized_event.get("duration_ms"),
+            ip_address=normalized_event.get("ip_address"),
+            user_agent=normalized_event.get("user_agent"),
+            endpoint=normalized_event.get("endpoint"),
+            http_method=normalized_event.get("http_method"),
+            result=normalized_event.get("result", AuditResult.SUCCESS.value),
+            status_code=normalized_event.get("status_code"),
+            error_message=normalized_event.get("error_message"),
+            file_hash=normalized_event.get("file_hash"),
+            file_size=normalized_event.get("file_size"),
+            file_count=normalized_event.get("file_count"),
+            request_data=normalized_event.get("request_data"),
+            response_data=normalized_event.get("response_data"),
+            audit_metadata=normalized_event,
+        )
+        db.add(log_entry)
+        db.commit()
+        db.refresh(log_entry)
+        return log_entry
+
+    @staticmethod
+    async def search_entries(
+        db: Session,
+        tenant_id: Optional[Union[str, UUID]] = None,
+        actor_id: Optional[Union[str, UUID]] = None,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        action: Optional[str] = None,
+        severity: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 100,
+        offset: int = 0,
+        bank_id: Optional[Union[str, UUID]] = None,
+    ) -> Tuple[List[Any], int]:
+        """
+        Search audit entries for admin/bank dashboards.
+        """
+        start = start_date or datetime.utcnow() - timedelta(days=30)
+        end = end_date or datetime.utcnow()
+
+        if bank_id:
+            query = db.query(BankAuditLog).filter(BankAuditLog.bank_id == AuditService._coerce_uuid(bank_id))
+            if tenant_id:
+                query = query.filter(BankAuditLog.tenant_id == AuditService._coerce_uuid(tenant_id))
+            if resource_id:
+                query = query.filter(BankAuditLog.lc_id == AuditService._coerce_uuid(resource_id))
+            query = query.filter(BankAuditLog.created_at.between(start, end))
+
+            total = query.count()
+            items = (
+                query.order_by(BankAuditLog.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            return items, total
+
+        query = db.query(models.AuditLogEntry).filter(
+            models.AuditLogEntry.created_at.between(start, end)
+        )
+
+        if tenant_id:
+            query = query.filter(models.AuditLogEntry.tenant_id == str(tenant_id))
+        if actor_id:
+            query = query.filter(models.AuditLogEntry.actor_id == AuditService._coerce_uuid(actor_id))
+        if resource_type:
+            query = query.filter(models.AuditLogEntry.resource_type == resource_type)
+        if resource_id:
+            query = query.filter(models.AuditLogEntry.resource_id == resource_id)
+        if action:
+            query = query.filter(models.AuditLogEntry.action == action)
+        if severity:
+            query = query.filter(models.AuditLogEntry.severity == severity)
+
+        total = query.count()
+        entries = (
+            query.order_by(models.AuditLogEntry.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return entries, total

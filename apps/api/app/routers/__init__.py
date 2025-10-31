@@ -42,6 +42,7 @@ audit = _load_router_module("audit")
 admin = _load_router_module("admin")
 analytics = _load_router_module("analytics")
 billing = _load_router_module("billing")
+bank = _load_router_module("bank")
 
 __all__ = [
     "auth",
@@ -53,4 +54,5 @@ __all__ = [
     "admin",
     "analytics",
     "billing",
+    "bank",
 ]

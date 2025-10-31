@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Application Environment
     ENVIRONMENT: str = "development"  # development, staging, production
     DEBUG: bool = False
+
+    # RulHub Integration
+    USE_RULHUB_API: bool = False
+    RULHUB_API_URL: str = ""
+    RULHUB_API_KEY: str = ""
     
     def is_production(self) -> bool:
         """Check if running in production environment."""

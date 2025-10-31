@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..core.security import get_current_user, require_roles
+from ..core.security import get_current_user, require_roles, require_bank_or_admin
 from ..models import User, UserRole
 from ..models.invoice import Invoice as InvoiceModel
 from ..services.billing_service import BillingService
@@ -33,6 +33,33 @@ COMPANY_ADMIN_ROLE = "company_admin"
 def get_billing_service(db: Session = Depends(get_db)) -> BillingService:
     """Get billing service instance."""
     return BillingService(db)
+
+
+def _resolve_bank_tenants(request: Request) -> List[uuid.UUID]:
+    tenant_scope = getattr(request.state, "tenant_ids", None)
+    if tenant_scope is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bank context unavailable for this request",
+        )
+    resolved: List[uuid.UUID] = []
+    for tenant_id in tenant_scope:
+        try:
+            resolved.append(uuid.UUID(str(tenant_id)))
+        except (ValueError, TypeError):
+            continue
+    return resolved
+
+
+def _serialize_usage_record(stats: Dict[str, Any]) -> Dict[str, Any]:
+    serialised = stats.copy()
+    total_cost = serialised.get("total_cost")
+    if isinstance(total_cost, Decimal):
+        serialised["total_cost"] = float(total_cost)
+    quota_remaining = serialised.get("quota_remaining")
+    if isinstance(quota_remaining, Decimal):
+        serialised["quota_remaining"] = float(quota_remaining)
+    return serialised
 
 
 def get_payment_provider(provider_name: str = "sslcommerz"):
@@ -560,3 +587,67 @@ async def get_admin_usage_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get usage report: {str(e)}"
         )
+
+
+@router.get("/bank/summary")
+def get_bank_billing_summary(
+    request: Request,
+    current_user: User = Depends(require_bank_or_admin),
+    billing_service: BillingService = Depends(get_billing_service),
+):
+    """Aggregate billing metrics across all tenants managed by a bank."""
+    tenant_ids = _resolve_bank_tenants(request)
+    if not tenant_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tenant mappings found for this bank",
+        )
+
+    per_tenant: List[Dict[str, Any]] = []
+    total_usage = 0
+    total_cost = Decimal("0")
+
+    for tenant_uuid in tenant_ids:
+        try:
+            stats = billing_service.get_usage_stats(tenant_uuid)
+        except Exception:
+            continue
+        per_tenant.append(_serialize_usage_record(stats))
+        total_usage += stats.get("total_usage", 0) or 0
+        tenant_cost = stats.get("total_cost", Decimal("0")) or Decimal("0")
+        if not isinstance(tenant_cost, Decimal):
+            tenant_cost = Decimal(str(tenant_cost))
+        total_cost += tenant_cost
+
+    return {
+        "bank_id": getattr(request.state, "bank_id", None),
+        "tenant_count": len(per_tenant),
+        "total_usage": total_usage,
+        "total_cost": float(total_cost),
+        "tenants": per_tenant,
+    }
+
+
+@router.get("/bank/tenants")
+def list_bank_tenants_billing(
+    request: Request,
+    current_user: User = Depends(require_bank_or_admin),
+    billing_service: BillingService = Depends(get_billing_service),
+):
+    """Return per-tenant billing usage for the current bank."""
+    tenant_ids = _resolve_bank_tenants(request)
+    tenants: List[Dict[str, Any]] = []
+
+    for tenant_uuid in tenant_ids:
+        try:
+            stats = billing_service.get_usage_stats(tenant_uuid)
+        except Exception:
+            continue
+        tenants.append(_serialize_usage_record(stats))
+
+    return {
+        "bank_id": getattr(request.state, "bank_id", None),
+        "results": tenants,
+        "count": len(tenants),
+    }
+

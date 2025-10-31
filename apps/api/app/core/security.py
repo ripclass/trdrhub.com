@@ -213,23 +213,50 @@ def require_roles(required_roles: List[str]):
     return role_dependency
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+def require_sysadmin(user: User = Depends(get_current_user)) -> User:
     """
-    Dependency to require admin role.
+    Dependency to require system administrator role.
 
     Args:
         user: Current authenticated user
 
     Returns:
-        User if admin role
+        User if system admin role
 
     Raises:
         HTTPException: 403 if not admin
     """
-    if user.role != UserRole.ADMIN:
+    if not user.is_system_admin():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            detail="System administrator access required",
+        )
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """
+    Backwards-compatible dependency alias for system admin access.
+    """
+    return require_sysadmin(user)  # type: ignore[arg-type]
+
+
+def require_bank(user: User = Depends(get_current_user)) -> User:
+    """Dependency to require a bank officer/administrator."""
+    if not (user.is_bank_officer() or user.is_bank_admin()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bank role required",
+        )
+    return user
+
+
+def require_tenant_admin(user: User = Depends(get_current_user)) -> User:
+    """Dependency to require tenant administrator or system admin."""
+    if not (user.is_tenant_admin() or user.is_system_admin()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant administrator access required",
         )
     return user
 
@@ -247,7 +274,7 @@ def require_bank_or_admin(user: User = Depends(get_current_user)) -> User:
     Raises:
         HTTPException: 403 if not bank or admin
     """
-    if user.role not in [UserRole.BANK, UserRole.ADMIN]:
+    if not (user.is_bank_officer() or user.is_bank_admin() or user.is_system_admin()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bank or admin access required"
@@ -277,7 +304,7 @@ def ensure_owner_or_privileged(user: User, owner_id: Union[str, UUID]) -> bool:
         owner_id = str(owner_id)
 
     # Admin and bank roles can access all resources
-    if user.role in [UserRole.ADMIN, UserRole.BANK]:
+    if user.is_system_admin() or user.is_bank_admin() or user.is_bank_officer():
         return True
 
     # Owner can access their own resources
@@ -310,32 +337,69 @@ def check_permission(user: User, permission: str, resource_owner_id: Optional[Un
     # Permission matrix implementation
     permissions = {
         # Upload/validate own docs
-        "upload_docs": [UserRole.EXPORTER, UserRole.IMPORTER, UserRole.ADMIN],
-        "validate_docs": [UserRole.EXPORTER, UserRole.IMPORTER, UserRole.ADMIN],
+        "upload_docs": [
+            UserRole.EXPORTER,
+            UserRole.IMPORTER,
+            UserRole.TENANT_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
+        "validate_docs": [
+            UserRole.EXPORTER,
+            UserRole.IMPORTER,
+            UserRole.TENANT_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # View own jobs/results
-        "view_own_jobs": [UserRole.EXPORTER, UserRole.IMPORTER, UserRole.ADMIN],
+        "view_own_jobs": [
+            UserRole.EXPORTER,
+            UserRole.IMPORTER,
+            UserRole.TENANT_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # View all jobs/results (system-wide)
-        "view_all_jobs": [UserRole.BANK, UserRole.ADMIN],
+        "view_all_jobs": [
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # Query audit logs (system-wide)
-        "query_audit_logs": [UserRole.BANK, UserRole.ADMIN],
+        "query_audit_logs": [
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # Download evidence packs
-        "download_evidence": [UserRole.EXPORTER, UserRole.IMPORTER, UserRole.BANK, UserRole.ADMIN],
+        "download_evidence": [
+            UserRole.EXPORTER,
+            UserRole.IMPORTER,
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # Compliance reports (system-wide)
-        "compliance_reports": [UserRole.BANK, UserRole.ADMIN],
+        "compliance_reports": [
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
 
         # Assign/modify user roles
-        "manage_roles": [UserRole.ADMIN],
+        "manage_roles": [UserRole.SYSTEM_ADMIN],
 
         # Admin functions
-        "admin_access": [UserRole.ADMIN],
+        "admin_access": [UserRole.SYSTEM_ADMIN],
 
         # System monitoring
-        "system_monitoring": [UserRole.BANK, UserRole.ADMIN],
+        "system_monitoring": [
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ],
     }
 
     # Check if role has permission
@@ -347,7 +411,11 @@ def check_permission(user: User, permission: str, resource_owner_id: Optional[Un
     # For owner-based permissions, check ownership
     if permission in ["view_own_jobs", "download_evidence"] and resource_owner_id:
         # Privileged roles can access all resources
-        if role in [UserRole.BANK, UserRole.ADMIN]:
+        if role in [
+            UserRole.BANK_OFFICER,
+            UserRole.BANK_ADMIN,
+            UserRole.SYSTEM_ADMIN,
+        ]:
             return True
         # Others can only access their own resources
         return str(user.id) == str(resource_owner_id)

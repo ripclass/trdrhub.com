@@ -9,7 +9,37 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, validator
 
 # Role type definition
-Role = Literal["exporter", "importer", "bank", "admin"]
+Role = Literal[
+    "exporter",
+    "importer",
+    "tenant_admin",
+    "bank_officer",
+    "bank_admin",
+    "system_admin",
+]
+
+LEGACY_ROLE_MAP = {
+    "bank": "bank_officer",
+    "admin": "system_admin",
+}
+
+
+def _normalize_role(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return value
+    value_lower = value.lower()
+    return LEGACY_ROLE_MAP.get(value_lower, value_lower)
+
+
+def _validate_role(value: Optional[str]) -> Optional[str]:
+    normalized = _normalize_role(value)
+    if normalized is None:
+        return None
+    if normalized not in Role.__args__:  # type: ignore[attr-defined]
+        raise ValueError(
+            "Role must be one of: exporter, importer, tenant_admin, bank_officer, bank_admin, system_admin"
+        )
+    return normalized
 
 
 class UserBase(BaseModel):
@@ -23,18 +53,15 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=128)
     role: Optional[Role] = "exporter"  # Default role, can only be overridden by admin
 
-    @validator('role')
-    def validate_role(cls, v):
-        """Validate role is in allowed values."""
-        if v not in ["exporter", "importer", "bank", "admin"]:
-            raise ValueError('Role must be one of: exporter, importer, bank, admin')
-        return v
+    _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
 
 
 class UserCreateAdmin(UserBase):
     """Schema for admin user creation (allows setting any role)."""
     password: str = Field(..., min_length=8, max_length=128)
     role: Role = "exporter"  # Admin can set any role
+
+    _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
 
 
 class UserRead(UserBase):
@@ -47,6 +74,8 @@ class UserRead(UserBase):
 
     class Config:
         from_attributes = True
+
+    _role_validator = validator("role", pre=True, allow_reuse=True)(_validate_role)
 
 
 class UserProfile(UserRead):
@@ -74,12 +103,15 @@ class RoleUpdateRequest(BaseModel):
     role: Role
     reason: Optional[str] = Field(None, max_length=500, description="Reason for role change")
 
-    @validator('role')
+    @validator("role", pre=True, always=True)
     def validate_role(cls, v):
         """Validate role is in allowed values."""
-        if v not in ["exporter", "importer", "bank", "admin"]:
-            raise ValueError('Role must be one of: exporter, importer, bank, admin')
-        return v
+        normalized = _normalize_role(v)
+        if normalized not in Role.__args__:  # type: ignore[attr-defined]
+            raise ValueError(
+                "Role must be one of: exporter, importer, tenant_admin, bank_officer, bank_admin, system_admin"
+            )
+        return normalized
 
 
 class RoleUpdateResponse(BaseModel):
@@ -92,6 +124,9 @@ class RoleUpdateResponse(BaseModel):
     updated_by: UUID
     updated_at: datetime
 
+    _normalize_old_role = validator("old_role", allow_reuse=True, pre=True)(_validate_role)  # type: ignore[arg-type]
+    _normalize_new_role = validator("new_role", allow_reuse=True, pre=True)(_validate_role)  # type: ignore[arg-type]
+
 
 class UserListQuery(BaseModel):
     """Query parameters for user listing."""
@@ -102,6 +137,10 @@ class UserListQuery(BaseModel):
     per_page: int = Field(50, ge=1, le=1000, description="Items per page")
     sort_by: str = Field("created_at", description="Sort field")
     sort_order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
+
+    @validator("role", pre=True, always=True)
+    def normalize_role(cls, v):
+        return _validate_role(v)
 
 
 class UserListResponse(BaseModel):
