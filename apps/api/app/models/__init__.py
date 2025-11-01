@@ -49,6 +49,7 @@ Invoice = _legacy.Invoice  # type: ignore[attr-defined]
 InvoiceStatus = _legacy.InvoiceStatus  # type: ignore[attr-defined]
 Currency = _legacy.Currency  # type: ignore[attr-defined]
 UsageRecord = _legacy.UsageRecord  # type: ignore[attr-defined]
+BankTenant = _legacy.BankTenant  # type: ignore[attr-defined]
 
 __all__ = [
     "User",
@@ -71,4 +72,5 @@ __all__ = [
     "InvoiceStatus",
     "Currency",
     "UsageRecord",
+    "BankTenant",
 ]
