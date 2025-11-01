@@ -19,9 +19,21 @@ class Settings(BaseSettings):
     @field_validator('DATABASE_URL', mode='before')
     @classmethod
     def normalize_database_url(cls, v: Any) -> str:
-        """Normalize postgres:// to postgresql:// for SQLAlchemy compatibility."""
-        if isinstance(v, str) and v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql://", 1)
+        """Normalize postgres:// to postgresql:// and remove pgbouncer=true parameter."""
+        if isinstance(v, str):
+            # Normalize postgres:// to postgresql://
+            if v.startswith("postgres://"):
+                v = v.replace("postgres://", "postgresql://", 1)
+            # Remove pgbouncer=true parameter - psycopg2 doesn't recognize it
+            if "pgbouncer=true" in v:
+                from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+                parsed = urlparse(v)
+                query_params = parse_qs(parsed.query)
+                if "pgbouncer" in query_params:
+                    del query_params["pgbouncer"]
+                new_query = urlencode(query_params, doseq=True)
+                new_parsed = parsed._replace(query=new_query)
+                v = urlunparse(new_parsed)
         return v
     
     # AWS Services

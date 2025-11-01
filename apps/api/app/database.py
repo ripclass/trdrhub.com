@@ -20,6 +20,20 @@ if DATABASE_URL.startswith("postgres://"):
     import warnings
     warnings.warn(f"Normalized postgres:// to postgresql:// in DATABASE_URL. Original should have been normalized by validator.")
 
+# Remove pgbouncer=true parameter if present - psycopg2 doesn't recognize it
+# Supabase pooled connections just use port 6543, no special parameter needed
+if "pgbouncer=true" in DATABASE_URL:
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    parsed = urlparse(DATABASE_URL)
+    query_params = parse_qs(parsed.query)
+    # Remove pgbouncer parameter
+    if "pgbouncer" in query_params:
+        del query_params["pgbouncer"]
+    # Rebuild query string without pgbouncer
+    new_query = urlencode(query_params, doseq=True)
+    new_parsed = parsed._replace(query=new_query)
+    DATABASE_URL = urlunparse(new_parsed)
+
 # Create engine - connection validation happens on first use, not at import time
 # This allows the app to start even if database is temporarily unavailable
 engine = create_engine(
