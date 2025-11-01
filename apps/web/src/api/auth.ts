@@ -59,8 +59,16 @@ export const getCurrentUser = async (): Promise<UserResponse> => {
   return response.data
 }
 
-// Development helper functions
+// Development helper functions (guarded; never runs in production)
+const enableDevBootstrap = (
+  import.meta.env.MODE !== 'production' &&
+  import.meta.env.VITE_ENABLE_DEV_BOOTSTRAP === 'true'
+)
+
 export const getDevToken = async (): Promise<string> => {
+  if (!enableDevBootstrap) {
+    throw new Error('Dev bootstrap disabled')
+  }
   try {
     // Try to login with development user
     const response = await login({
@@ -75,7 +83,7 @@ export const getDevToken = async (): Promise<string> => {
         email: 'dev@lcopilot.com',
         password: 'devpassword',
         full_name: 'Development User',
-        organization: 'LCopilot Dev'
+        // role defaults to exporter
       })
       // Login with new user
       const response = await login({
@@ -109,8 +117,13 @@ export const getValidToken = async (): Promise<string> => {
     // TODO: Add token validation/expiry check
     return stored
   }
-  
-  // Get new development token
+
+  // In production (or when dev bootstrap disabled), do not auto-create/login
+  if (!enableDevBootstrap) {
+    throw new Error('No token available')
+  }
+
+  // Get new development token (dev only)
   const token = await getDevToken()
   storeToken(token)
   return token
