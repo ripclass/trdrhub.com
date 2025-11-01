@@ -23,7 +23,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Override the sqlalchemy.url with our database URL
-config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
+# For Supabase: Use DIRECT_DATABASE_URL (port 5432) for migrations, DATABASE_URL (port 6543) for app
+# Migrations need direct connection (no pgbouncer)
+database_url = os.getenv("DIRECT_DATABASE_URL") or settings.DATABASE_URL
+config.set_main_option('sqlalchemy.url', database_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/lcopilot"
+    DIRECT_DATABASE_URL: Optional[str] = None  # For migrations - direct connection (Supabase port 5432)
     
     # AWS Services
     AWS_REGION: str = "us-east-1"
