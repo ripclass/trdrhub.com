@@ -309,9 +309,14 @@ async def global_exception_handler(request: Request, exc: Exception):
                 "Access-Control-Allow-Headers": "*",
             }
 
+    # Serialize error response to JSON string first, then parse back to dict
+    # This ensures datetime objects are properly serialized to ISO strings
+    import json
+    error_dict = json.loads(error_response.model_dump_json())
+    
     return JSONResponse(
         status_code=500,
-        content=error_response.model_dump(),
+        content=error_dict,
         headers={
             "X-Request-ID": getattr(request.state, "request_id", "unknown"),
             **cors_headers

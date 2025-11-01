@@ -61,7 +61,7 @@ async def register_user(
             detail="Registration failed"
         )
     
-    return UserProfile.from_orm(db_user)
+    return UserProfile.model_validate(db_user)
 
 
 @router.post("/login", response_model=Token)
@@ -95,4 +95,4 @@ async def get_user_profile(
     current_user: User = Depends(get_current_user)
 ):
     """Get current user profile."""
-    return UserProfile.from_orm(current_user)
+    return UserProfile.model_validate(current_user)
