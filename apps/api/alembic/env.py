@@ -32,6 +32,10 @@ target_metadata = Base.metadata
 # Migrations need direct connection (no pgbouncer)
 database_url = os.getenv("DIRECT_DATABASE_URL") or os.getenv("DATABASE_URL")
 if database_url:
+    # Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
+    # SQLAlchemy expects postgresql:// protocol, but Supabase uses postgres://
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     config.set_main_option("sqlalchemy.url", database_url)
 
 
