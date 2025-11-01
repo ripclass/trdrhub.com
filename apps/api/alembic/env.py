@@ -28,7 +28,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Override database URL from environment if available
-database_url = os.getenv("DATABASE_URL")
+# For Supabase: Use DIRECT_DATABASE_URL (port 5432) for migrations, DATABASE_URL (port 6543) for app
+# Migrations need direct connection (no pgbouncer)
+database_url = os.getenv("DIRECT_DATABASE_URL") or os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
