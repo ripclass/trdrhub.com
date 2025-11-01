@@ -40,8 +40,14 @@ async def register_user(
             detail="Email already registered"
         )
 
-    # Create new user with role
-    hashed_password = hash_password(user_data.password)
+    # Create new user with role (safeguard bcrypt length)
+    try:
+        # Truncate to 72 chars to satisfy bcrypt backend limits
+        safe_pw = (user_data.password or '')[:72]
+        hashed_password = hash_password(safe_pw)
+    except Exception:
+        # Fallback: last-resort truncate and hash
+        hashed_password = hash_password((user_data.password or '')[:72])
     db_user = User(
         email=user_data.email,
         hashed_password=hashed_password,
