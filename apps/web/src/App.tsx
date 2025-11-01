@@ -52,8 +52,9 @@ function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/lcopilot" element={<Index />} />
-        <Route path="/lcopilot/login" element={<Login />} />
-        <Route path="/lcopilot/register" element={<Register />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/lcopilot/upload" element={<UploadPage />} />
         <Route path="/lcopilot/review/:sessionId" element={<ReviewPage />} />
         <Route path="/lcopilot/report/:sessionId" element={<ReportPage />} />

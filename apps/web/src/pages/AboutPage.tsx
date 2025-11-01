@@ -98,7 +98,7 @@ const AboutPage = () => {
                 <p className="text-lg text-muted-foreground mb-8">
                   Join hundreds of businesses already using TRDR Hub to streamline their trade operations.
                 </p>
-                <Link to="/lcopilot/register">
+                <Link to="/register">
                   <Button className="bg-gradient-primary hover:opacity-90 text-lg px-8 py-3">
                     Start Free Trial
                     <ArrowRight className="w-5 h-5 ml-2" />

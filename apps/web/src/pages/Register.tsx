@@ -94,13 +94,13 @@ export default function Register() {
       if (role === 'system_admin' || role === 'admin') {
         navigate('/admin');
       } else if (role === 'bank_officer' || role === 'bank_admin') {
-        navigate('/lcopilot/exporter-dashboard');
+        navigate('/lcopilot/analytics/bank');
       } else if (role === 'exporter') {
         navigate('/lcopilot/exporter-dashboard');
       } else if (role === 'importer') {
         navigate('/lcopilot/importer-dashboard');
       } else {
-        navigate('/lcopilot/dashboard');
+        navigate('/dashboard');
       }
     } catch (error: any) {
       const errorMessage = error?.response?.data?.detail || error?.message || "Something went wrong. Please try again.";

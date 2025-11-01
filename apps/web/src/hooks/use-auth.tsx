@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearToken();
     setUser(null);
     if (typeof window !== 'undefined') {
-      window.location.href = '/lcopilot/login';
+      window.location.href = '/login';
     }
   };
 

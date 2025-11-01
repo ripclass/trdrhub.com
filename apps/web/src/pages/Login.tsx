@@ -44,7 +44,7 @@ export default function Login() {
       } else if (role === 'importer') {
         navigate('/lcopilot/importer-dashboard');
       } else {
-        navigate('/lcopilot/dashboard');
+        navigate('/dashboard');
       }
     } catch (error: any) {
       const errorMessage = error?.response?.data?.detail || error?.message || "Please check your credentials and try again.";

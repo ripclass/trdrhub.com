@@ -36,13 +36,13 @@ export function TRDRHeader() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Link to="/lcopilot/login">
+            <Link to="/login">
               <Button variant="outline" size="sm" className="hidden sm:inline-flex">
                 <User className="w-4 h-4 mr-2" />
                 Login
               </Button>
             </Link>
-            <Link to="/lcopilot/register">
+            <Link to="/register">
               <Button size="sm" className="bg-gradient-primary hover:opacity-90">
                 Register
               </Button>

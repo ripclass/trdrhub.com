@@ -120,7 +120,7 @@ export function TRDRPricingSection() {
                   }`}
                   asChild
                 >
-                  <a href="/lcopilot/register" className="flex items-center justify-center">
+                  <a href="/register" className="flex items-center justify-center">
                     {plan.buttonText}
                     <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                   </a>
