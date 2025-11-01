@@ -33,7 +33,10 @@ security = HTTPBearer(auto_error=True)
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+    # bcrypt accepts up to 72 bytes; truncate to avoid backend errors
+    # NOTE: Passlib recommends callers ensure length bounds before hashing
+    safe_password = password[:72]
+    return pwd_context.hash(safe_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
