@@ -8,13 +8,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from .config import settings
 
+# Get DATABASE_URL from settings (should already be normalized by Pydantic validator)
 DATABASE_URL = settings.DATABASE_URL
 
 # Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
 # SQLAlchemy expects postgresql:// protocol, but Supabase uses postgres://
-# Python strings are immutable, so we need to reassign the variable
+# This is a safety check in case the validator didn't run
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    # Log normalization for debugging
+    import warnings
+    warnings.warn(f"Normalized postgres:// to postgresql:// in DATABASE_URL. Original should have been normalized by validator.")
 
 # Create engine - connection validation happens on first use, not at import time
 # This allows the app to start even if database is temporarily unavailable

@@ -3,8 +3,8 @@ Configuration settings for LCopilot application.
 """
 
 import os
-from typing import Optional, List
-from pydantic import field_validator
+from typing import Optional, List, Any, Dict
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     
     @field_validator('DATABASE_URL', mode='before')
     @classmethod
-    def normalize_database_url(cls, v):
+    def normalize_database_url(cls, v: Any) -> str:
         """Normalize postgres:// to postgresql:// for SQLAlchemy compatibility."""
         if isinstance(v, str) and v.startswith("postgres://"):
             return v.replace("postgres://", "postgresql://", 1)
