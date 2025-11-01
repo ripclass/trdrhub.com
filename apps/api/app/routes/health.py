@@ -167,7 +167,20 @@ class HealthChecker:
         start_time = time.time()
 
         try:
-            from google.cloud import documentai
+            # Check if Google Cloud library is installed
+            try:
+                from google.cloud import documentai
+            except ImportError:
+                # If module not installed and Document AI not configured, it's optional
+                project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+                if not project_id:
+                    return {
+                        "status": "ok",
+                        "response_time_ms": 0,
+                        "message": "Document AI not configured (module not installed, GOOGLE_CLOUD_PROJECT not set)"
+                    }
+                # If configured but module missing, it's an error
+                raise Exception("Google Cloud Document AI library not installed. Install with: pip install google-cloud-documentai")
 
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
             location = os.getenv("GOOGLE_DOCUMENTAI_LOCATION", "us")
@@ -304,13 +317,24 @@ async def readiness_check(request: Request, db: Session = Depends(get_db)):
         # S3 check (required for file operations)
         checks["s3"] = await health_checker.check_s3(logger)
 
-        # Document AI check (required for OCR, unless using stubs)
+        # Document AI check (optional for OCR - only fails if configured but unavailable)
         checks["document_ai"] = await health_checker.check_document_ai(logger)
 
         # Determine overall health
+        # Critical services: database, s3 (required)
+        # Optional services: document_ai (only required if OCR is needed)
+        critical_checks = {k: v for k, v in checks.items() if k != "document_ai"}
         overall_healthy = all(
-            check.get("status") == "ok" for check in checks.values()
+            check.get("status") == "ok" for check in critical_checks.values()
         )
+        
+        # Document AI failure is a warning, not a blocker
+        if checks.get("document_ai", {}).get("status") != "ok":
+            logger.warning(
+                "Document AI unavailable - OCR features will not work",
+                document_ai_status=checks["document_ai"].get("status"),
+                document_ai_message=checks["document_ai"].get("message")
+            )
 
         overall_duration_ms = (time.time() - overall_start_time) * 1000
 
