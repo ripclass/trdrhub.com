@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
+import { useOnboarding } from "@/hooks/use-onboarding";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import {
   Upload,
   FileText,
@@ -76,9 +78,11 @@ export default function ExporterDashboard() {
   const [amendedLCs, setAmendedLCs] = useState<Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>>([]);
   const [isLoadingAmendments, setIsLoadingAmendments] = useState(false);
   const [activeTab, setActiveTab] = useState("drafts");
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const { toast } = useToast();
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
+  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
 
   // Load exporter drafts from localStorage
   useEffect(() => {
@@ -96,6 +100,13 @@ export default function ExporterDashboard() {
 
     loadDrafts();
   }, [getAllDrafts]);
+
+  // Check onboarding status on mount
+  useEffect(() => {
+    if (!isLoadingOnboarding && needsOnboarding) {
+      setShowOnboarding(true);
+    }
+  }, [needsOnboarding, isLoadingOnboarding]);
 
   // Load amended LCs
   useEffect(() => {
@@ -539,6 +550,20 @@ export default function ExporterDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Onboarding Wizard */}
+      <OnboardingWizard
+        open={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onComplete={async () => {
+          await markComplete(true);
+          setShowOnboarding(false);
+          toast({
+            title: "Onboarding Complete",
+            description: "Welcome to LCopilot! You're all set to start validating documents.",
+          });
+        }}
+      />
     </div>
   );
 }

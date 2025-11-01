@@ -8,6 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type Draft } from "@/hooks/use-drafts";
+import { useOnboarding } from "@/hooks/use-onboarding";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { 
   Upload, 
   FileText, 
@@ -76,6 +78,15 @@ export default function ImporterDashboard() {
   const { listDrafts, deleteDraft } = useDrafts();
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
+
+  // Check onboarding status on mount
+  useEffect(() => {
+    if (!isLoadingOnboarding && needsOnboarding) {
+      setShowOnboarding(true);
+    }
+  }, [needsOnboarding, isLoadingOnboarding]);
 
   useEffect(() => {
     loadDrafts();
@@ -547,6 +558,20 @@ export default function ImporterDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Onboarding Wizard */}
+      <OnboardingWizard
+        open={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onComplete={async () => {
+          await markComplete(true);
+          setShowOnboarding(false);
+          toast({
+            title: "Onboarding Complete",
+            description: "Welcome to LCopilot! You're all set to start reviewing supplier documents.",
+          });
+        }}
+      />
     </div>
   );
 }

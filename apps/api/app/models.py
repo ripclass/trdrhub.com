@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from sqlalchemy import Column, String, Integer, DateTime, Date, Boolean, ForeignKey, Text, JSON, Float, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -88,6 +88,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Onboarding fields
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
+    onboarding_data = Column(JSONB, nullable=True, default=dict)
 
     # Table constraints
     __table_args__ = (

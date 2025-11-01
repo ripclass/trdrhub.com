@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ import {
   LogOut
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
+import { useOnboarding } from '@/hooks/use-onboarding';
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 
 // Simple KPI Card component
 const SimpleKPICard = ({ title, value, icon, status }: {
@@ -49,12 +51,21 @@ const SimpleKPICard = ({ title, value, icon, status }: {
 export default function AdminDashboard() {
   const { user, isAuthenticated, logout } = useAdminAuth();
   const navigate = useNavigate();
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
 
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/admin/login');
     }
   }, [isAuthenticated, navigate]);
+
+  // Check onboarding status on mount
+  useEffect(() => {
+    if (isAuthenticated && !isLoadingOnboarding && needsOnboarding) {
+      setShowOnboarding(true);
+    }
+  }, [isAuthenticated, needsOnboarding, isLoadingOnboarding]);
 
   if (!isAuthenticated) {
     return <div>Loading...</div>;
@@ -295,6 +306,16 @@ export default function AdminDashboard() {
           </Card>
         </div>
       </main>
+
+      {/* Onboarding Wizard */}
+      <OnboardingWizard
+        open={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onComplete={async () => {
+          await markComplete(true);
+          setShowOnboarding(false);
+        }}
+      />
     </div>
   );
 }
