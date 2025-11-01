@@ -12,13 +12,14 @@ DATABASE_URL = settings.DATABASE_URL
 
 # Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
 # SQLAlchemy expects postgresql:// protocol, but Supabase uses postgres://
+# Python strings are immutable, so we need to reassign the variable
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Create engine - connection validation happens on first use, not at import time
 # This allows the app to start even if database is temporarily unavailable
 engine = create_engine(
-    DATABASE_URL,
+    DATABASE_URL,  # Use the normalized URL
     poolclass=QueuePool,
     pool_size=5,
     max_overflow=10,

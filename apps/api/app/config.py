@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/lcopilot"
     DIRECT_DATABASE_URL: Optional[str] = None  # For migrations - direct connection (Supabase port 5432)
     
+    @field_validator('DATABASE_URL', mode='before')
+    @classmethod
+    def normalize_database_url(cls, v):
+        """Normalize postgres:// to postgresql:// for SQLAlchemy compatibility."""
+        if isinstance(v, str) and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql://", 1)
+        return v
+    
     # AWS Services
     AWS_REGION: str = "us-east-1"
     AWS_ACCESS_KEY_ID: Optional[str] = None
