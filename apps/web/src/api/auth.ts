@@ -17,18 +17,21 @@ export interface RegisterRequest {
   email: string
   password: string
   full_name: string
-  organization: string
+  role?: 'exporter' | 'importer' | 'bank_officer' | 'bank_admin' | 'system_admin' // Optional, defaults to 'exporter'
 }
 
 export interface AuthResponse {
   access_token: string
   token_type: string
+  expires_in: number
+  role: string
 }
 
 export interface UserResponse {
   id: string
   email: string
   full_name: string
+  role: string
   is_active: boolean
   created_at: string
 }
@@ -40,6 +43,19 @@ export const login = async (credentials: LoginRequest): Promise<AuthResponse> =>
 
 export const register = async (userInfo: RegisterRequest): Promise<UserResponse> => {
   const response = await authApi.post('/auth/register', userInfo)
+  return response.data
+}
+
+export const getCurrentUser = async (): Promise<UserResponse> => {
+  const token = getStoredToken()
+  if (!token) {
+    throw new Error('No token found')
+  }
+  const response = await authApi.get('/auth/me', {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
   return response.data
 }
 

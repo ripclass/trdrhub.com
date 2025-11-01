@@ -288,10 +288,34 @@ async def global_exception_handler(request: Request, exc: Exception):
         error_type=type(exc).__name__
     )
 
+    # Get CORS headers from request origin
+    origin = request.headers.get("origin")
+    cors_headers = {}
+    if origin:
+        # Check if origin is in allowed list
+        allowed_origins = settings.CORS_ALLOW_ORIGINS
+        if settings.is_production() and allowed_origins == ["*"]:
+            # Use default production origins
+            allowed_origins = [
+                "https://trdrhub.com",
+                "https://www.trdrhub.com",
+                "https://trdrhub.vercel.app",
+            ]
+        if "*" in allowed_origins or origin in allowed_origins:
+            cors_headers = {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Headers": "*",
+            }
+
     return JSONResponse(
         status_code=500,
         content=error_response.model_dump(),
-        headers={"X-Request-ID": getattr(request.state, "request_id", "unknown")}
+        headers={
+            "X-Request-ID": getattr(request.state, "request_id", "unknown"),
+            **cors_headers
+        }
     )
 
 

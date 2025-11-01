@@ -10,7 +10,7 @@ import sys
 # Add the app directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps', 'api'))
 
-from app.core.config import settings
+from app.config import settings
 from app.models.base import Base
 
 # this is the Alembic Config object, which provides
@@ -23,7 +23,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Override the sqlalchemy.url with our database URL
-config.set_main_option('sqlalchemy.url', settings.database_url)
+config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

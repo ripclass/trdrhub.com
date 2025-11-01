@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { login, storeToken } from "@/api/auth";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,27 +15,42 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Mock authentication - replace with real API call
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call real API
+      const response = await login({ email, password });
+      
+      // Store token
+      storeToken(response.access_token);
       
       toast({
         title: "Login Successful",
         description: "Welcome back to LCopilot!",
       });
       
-      // Redirect to dashboard
-      window.location.href = "/dashboard";
-    } catch (error) {
+      // Redirect based on role or to dashboard
+      const role = response.role;
+      if (role === 'system_admin' || role === 'admin') {
+        navigate('/admin');
+      } else if (role === 'bank_officer' || role === 'bank_admin') {
+        navigate('/lcopilot/analytics/bank'); // Bank dashboard
+      } else if (role === 'exporter') {
+        navigate('/lcopilot/exporter-dashboard');
+      } else if (role === 'importer') {
+        navigate('/lcopilot/importer-dashboard');
+      } else {
+        navigate('/lcopilot/dashboard');
+      }
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || "Please check your credentials and try again.";
       toast({
         title: "Login Failed",
-        description: "Please check your credentials and try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

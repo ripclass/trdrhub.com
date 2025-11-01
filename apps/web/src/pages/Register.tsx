@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Eye, EyeOff, Mail, Lock, User, Building } from "lucide-react";
+import { register, login, storeToken } from "@/api/auth";
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -24,6 +25,7 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -55,20 +57,56 @@ export default function Register() {
     }
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Map companyType to backend role
+      const roleMap: Record<string, string> = {
+        'exporter': 'exporter',
+        'importer': 'importer',
+        'both': 'exporter', // Default to exporter if both
+        'bank': 'bank_officer',
+        'consultant': 'exporter' // Default to exporter for consultants
+      };
+      
+      const backendRole = roleMap[formData.companyType] || 'exporter';
+      
+      // Register user with API
+      await register({
+        email: formData.email,
+        password: formData.password,
+        full_name: formData.contactPerson,
+        role: backendRole as any
+      });
+      
+      // Auto-login after registration
+      const loginResponse = await login({
+        email: formData.email,
+        password: formData.password
+      });
+      
+      storeToken(loginResponse.access_token);
       
       toast({
         title: "Registration Successful",
-        description: "Welcome to LCopilot! Please check your email for verification.",
+        description: "Welcome to LCopilot! Redirecting to your dashboard...",
       });
       
-      // Redirect to login
-      window.location.href = "/login";
-    } catch (error) {
+      // Redirect based on role
+      const role = loginResponse.role;
+      if (role === 'system_admin' || role === 'admin') {
+        navigate('/admin');
+      } else if (role === 'bank_officer' || role === 'bank_admin') {
+        navigate('/lcopilot/exporter-dashboard');
+      } else if (role === 'exporter') {
+        navigate('/lcopilot/exporter-dashboard');
+      } else if (role === 'importer') {
+        navigate('/lcopilot/importer-dashboard');
+      } else {
+        navigate('/lcopilot/dashboard');
+      }
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || "Something went wrong. Please try again.";
       toast({
         title: "Registration Failed",
-        description: "Something went wrong. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
