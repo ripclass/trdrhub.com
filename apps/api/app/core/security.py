@@ -24,8 +24,8 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-producti
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing (supports >72B passwords via pre-hash)
+pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 # JWT Bearer token scheme
 security = HTTPBearer(auto_error=True)
@@ -33,15 +33,14 @@ security = HTTPBearer(auto_error=True)
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    # bcrypt accepts up to 72 bytes; truncate to avoid backend errors
-    # NOTE: Passlib recommends callers ensure length bounds before hashing
-    safe_password = password[:72]
+    # bcrypt_sha256 pre-hashes, so no 72-byte limit; keep light truncation as guard
+    safe_password = (password or "")[:512]
     return pwd_context.hash(safe_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return pwd_context.verify((plain_password or "")[:512], hashed_password)
 
 
 def create_access_token(user: User) -> dict:

@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing (use bcrypt_sha256 to avoid 72-byte limit)
+pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 # JWT configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
@@ -34,7 +34,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
-    return pwd_context.hash(password)
+    return pwd_context.hash((password or "")[:512])
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
