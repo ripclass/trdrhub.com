@@ -91,12 +91,29 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, v):
         """Parse CORS origins from string (comma-separated) or list."""
+        # Handle None or empty values
+        if v is None or v == "":
+            return ["*"]
+        # Handle string input
         if isinstance(v, str):
-            if v == "*":
+            # Try to parse as JSON first (in case it's a JSON string like '["url1","url2"]')
+            if v.strip().startswith("["):
+                try:
+                    import json
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return parsed
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            # Otherwise treat as comma-separated string
+            if v == "*" or v.strip() == "*":
                 return ["*"]
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            return origins if origins else ["*"]
+        # Handle list input
         if isinstance(v, list):
-            return v
+            return v if v else ["*"]
+        # Fallback
         return ["*"]
 
 
