@@ -50,6 +50,9 @@ InvoiceStatus = _legacy.InvoiceStatus  # type: ignore[attr-defined]
 Currency = _legacy.Currency  # type: ignore[attr-defined]
 UsageRecord = _legacy.UsageRecord  # type: ignore[attr-defined]
 BankTenant = _legacy.BankTenant  # type: ignore[attr-defined]
+BankReport = _legacy.BankReport  # type: ignore[attr-defined]
+BankAuditLog = _legacy.BankAuditLog  # type: ignore[attr-defined]
+UserRoleAssignment = _legacy.UserRoleAssignment  # type: ignore[attr-defined]
 
 __all__ = [
     "User",
@@ -73,4 +76,7 @@ __all__ = [
     "Currency",
     "UsageRecord",
     "BankTenant",
+    "BankReport",
+    "BankAuditLog",
+    "UserRoleAssignment",
 ]
