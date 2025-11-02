@@ -27,7 +27,8 @@ class ProviderConfig:
         self.issuer = issuer.rstrip("/")
         self.jwks_url = jwks_url
         self.audience = audience
-        self.algorithms = algorithms or ["RS256"]
+        # Support both RSA and EC JWTs (Supabase may issue ES256)
+        self.algorithms = algorithms or ["RS256", "ES256"]
 
 
 async def _get_jwks(jwks_url: str) -> Dict[str, Any]:
