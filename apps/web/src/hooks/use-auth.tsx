@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = React.useCallback(async () => {
     try {
-      const { data: userData } = await withTimeout(api.get('/profile'), 'Loading profile')
+      const { data: userData } = await withTimeout(api.get('/auth/me'), 'Loading profile')
       const mapped: User = {
         id: userData.id,
         email: userData.email,
