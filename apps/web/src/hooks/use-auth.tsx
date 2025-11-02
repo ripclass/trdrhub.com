@@ -1,12 +1,7 @@
 import * as React from 'react'
 import type { Role } from '@/types/analytics'
-import {
-  getCurrentUser,
-  signInWithEmail,
-  signInWithGoogle,
-  signOut as supabaseSignOut,
-} from '@/api/auth'
 import { supabase } from '@/lib/supabase'
+import { api } from '@/api/client'
 
 export interface User {
   id: string
@@ -49,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = React.useCallback(async () => {
     try {
-      const userData = await getCurrentUser()
+      const { data: userData } = await api.get('/profile')
       const mapped: User = {
         id: userData.id,
         email: userData.email,
@@ -111,7 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      await signInWithEmail(email, password)
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
       const profile = await fetchUserProfile()
       return profile
     } finally {
@@ -120,7 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const loginWithGoogle = async () => {
-    await signInWithGoogle()
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+      },
+    })
   }
 
   const registerWithEmail = async (
@@ -159,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    await supabaseSignOut()
+    await supabase.auth.signOut()
     setUser(null)
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
