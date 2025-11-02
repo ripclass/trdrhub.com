@@ -181,6 +181,17 @@ export default function Login() {
                 Sign in with Google
               </Button>
 
+              <Separator className="my-4" />
+              <div className="text-center text-sm text-muted-foreground">
+                Don't have an account?{" "}
+                <Link
+                  to="/register"
+                  className="text-primary hover:underline font-medium"
+                >
+                  Create account
+                </Link>
+              </div>
+            </div>
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/5 flex items-center justify-center p-4">
@@ -278,18 +289,6 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-6">
-              <Separator className="my-4" />
-              <div className="text-center text-sm text-muted-foreground">
-                Don't have an account?{" "}
-                <Link
-                  to="/register"
-                  className="text-primary hover:underline font-medium"
-                >
-                  Create account
-                </Link>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
