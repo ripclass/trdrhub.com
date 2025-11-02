@@ -9,7 +9,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Eye, EyeOff, Mail, Lock, User, Building } from "lucide-react";
-import { signUpWithEmail } from "@/api/auth";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import type { Role } from "@/types/analytics";
@@ -29,7 +28,7 @@ export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { loginWithEmail } = useAuth();
+  const { registerWithEmail } = useAuth();
   const { updateProgress } = useOnboarding();
 
   const routeForRole = (role: Role): string => {
@@ -88,9 +87,12 @@ export default function Register() {
       
       const backendRole = roleMap[formData.companyType] || 'exporter';
       
-      await signUpWithEmail(formData.email, formData.password, formData.contactPerson);
-
-      const profile = await loginWithEmail(formData.email, formData.password);
+      const profile = await registerWithEmail(
+        formData.email,
+        formData.password,
+        formData.contactPerson,
+        backendRole
+      );
 
       try {
         await updateProgress({ role: backendRole });
