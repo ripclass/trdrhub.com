@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
-import { getValidToken } from '../api/auth';
+import { supabase } from '@/lib/supabase';
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
 
@@ -12,11 +12,16 @@ const api = axios.create({
 // Add request interceptor to automatically include auth token
 api.interceptors.request.use(async (config) => {
   try {
-    const token = await getValidToken();
-    config.headers.Authorization = `Bearer ${token}`;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers = config.headers ?? {};
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
   } catch (error) {
     console.error('Failed to get auth token:', error);
-    // Continue with request without auth - let the server handle it
+    // Continue without auth header; backend will handle unauthorized access
   }
   return config;
 });
