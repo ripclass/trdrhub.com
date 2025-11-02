@@ -134,6 +134,37 @@ async def _authenticate_external_token(token: str, db: Session) -> Optional[User
     if not providers:
         return None
 
+    # Fast-path: Supabase projects often issue HS256 tokens (no JWKS). Try HS256 if issuer matches.
+    try:
+        unverified = jwt.decode(token, options={"verify_signature": False})
+        iss = (unverified or {}).get("iss", "").rstrip("/")
+    except Exception:  # pragma: no cover
+        iss = ""
+
+    supabase_issuer = (settings.SUPABASE_ISSUER or "").rstrip("/")
+    if iss and supabase_issuer and iss == supabase_issuer:
+        hs_secret = (
+            os.getenv("SUPABASE_JWT_SECRET")
+            or getattr(settings, "SUPABASE_JWT_SECRET", None)
+            or getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
+        )
+        if hs_secret:
+            try:
+                claims = jwt.decode(
+                    token,
+                    hs_secret,
+                    algorithms=["HS256"],
+                    audience=getattr(settings, "SUPABASE_AUDIENCE", None),
+                    options={"verify_aud": bool(getattr(settings, "SUPABASE_AUDIENCE", None))},
+                )
+                user = _upsert_external_user(db, claims)
+                db.commit()
+                db.refresh(user)
+                return user
+            except (InvalidTokenError, ExpiredSignatureError):
+                # Fall through to JWKS providers below
+                pass
+
     for provider in providers:
         try:
             result = await verify_jwt(token, [provider])
