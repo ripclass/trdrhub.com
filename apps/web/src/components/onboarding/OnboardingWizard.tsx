@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useOnboarding } from '@/hooks/use-onboarding'
-import { getOnboardingContent, type OnboardingContent, type OnboardingStep } from '@/api/onboarding'
-import { WelcomeStep } from './steps/WelcomeStep'
-import { RoleIntroductionStep } from './steps/RoleIntroductionStep'
-import { PlatformOverviewStep } from './steps/PlatformOverviewStep'
-import { ExporterOnboardingSteps } from './steps/role-specific/ExporterOnboardingSteps'
-import { ImporterOnboardingSteps } from './steps/role-specific/ImporterOnboardingSteps'
-import { BankOnboardingSteps } from './steps/role-specific/BankOnboardingSteps'
-import { AdminOnboardingSteps } from './steps/role-specific/AdminOnboardingSteps'
-import { ArrowLeft, ArrowRight, X } from 'lucide-react'
+import type { CompanyPayload } from '@/api/onboarding'
 
 interface OnboardingWizardProps {
   open: boolean
@@ -19,235 +16,315 @@ interface OnboardingWizardProps {
   onComplete: () => void
 }
 
+const businessTypeOptions = [
+  'Commodities',
+  'Manufacturing',
+  'Retail',
+  'Services',
+  'Logistics',
+]
+
+const roleOptions = [
+  { value: 'exporter', label: 'Exporter' },
+  { value: 'importer', label: 'Importer' },
+  { value: 'bank_officer', label: 'Bank Officer' },
+  { value: 'bank_admin', label: 'Bank Admin' },
+]
+
+const isBankRole = (role?: string | null) =>
+  role === 'bank_officer' || role === 'bank_admin'
+
+type WizardStep = 'role' | 'company' | 'business' | 'review' | 'complete'
+
 export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizardProps) {
-  const { status, updateProgress, markComplete } = useOnboarding()
-  const [content, setContent] = useState<OnboardingContent | null>(null)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
+  const { status, updateProgress, isLoading } = useOnboarding()
+  const [step, setStep] = useState<WizardStep>('role')
+  const [selectedRole, setSelectedRole] = useState<string>('exporter')
+  const [companyForm, setCompanyForm] = useState<CompanyPayload>({ name: '', type: '' })
+  const [businessTypes, setBusinessTypes] = useState<string[]>([])
+  const waitingForApproval = status?.status === 'under_review'
+
+  const determineInitialStep = (): WizardStep => {
+    if (!status || !status.role) return 'role'
+    if (!status.company_id) return 'company'
+    if (isBankRole(status.role)) {
+      return status.completed ? 'complete' : waitingForApproval ? 'review' : 'company'
+    }
+    return status.completed ? 'complete' : 'business'
+  }
 
   useEffect(() => {
-    const loadContent = async () => {
-      if (!status?.role) return
-
-      try {
-        setIsLoading(true)
-        const onboardingContent = await getOnboardingContent(status.role)
-        setContent(onboardingContent)
-        
-        // Set current step from progress if available
-        if (status.current_progress?.current_step) {
-          const stepIndex = onboardingContent.steps.findIndex(
-            (s) => s.step_id === status.current_progress?.current_step
-          )
-          if (stepIndex >= 0) {
-            setCurrentStepIndex(stepIndex)
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load onboarding content:', error)
-      } finally {
-        setIsLoading(false)
-      }
+    if (!open) return
+    const initialStep = determineInitialStep()
+    setStep(initialStep)
+    if (status?.role) {
+      setSelectedRole(status.role)
     }
-
-    if (open && status) {
-      loadContent()
+    if (status?.details) {
+      const details = status.details as Record<string, any>
+      if (Array.isArray(details.business_types)) {
+        setBusinessTypes(details.business_types as string[])
+      }
+      if (details.company) {
+        setCompanyForm({
+          name: details.company.name ?? '',
+          type: details.company.type ?? '',
+          legal_name: details.company.legal_name ?? '',
+          registration_number: details.company.registration_number ?? '',
+          regulator_id: details.company.regulator_id ?? '',
+          country: details.company.country ?? '',
+        })
+      }
     }
   }, [open, status])
 
-  const currentStep = content?.steps[currentStepIndex]
-  const totalSteps = content?.steps.length || 0
-  const progress = totalSteps > 0 ? ((currentStepIndex + 1) / totalSteps) * 100 : 0
-
-  const handleNext = async () => {
-    if (!currentStep || !content) return
-
-    // Mark current step as completed
-    await updateProgress({
-      current_step: currentStep.step_id,
-      completed_steps: [currentStep.step_id],
-    })
-
-    if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(currentStepIndex + 1)
-      // Update progress with new current step
-      const nextStep = content.steps[currentStepIndex + 1]
-      await updateProgress({
-        current_step: nextStep.step_id,
-      })
-    } else {
-      // Completed all steps
-      await markComplete(true)
+  useEffect(() => {
+    if (status?.completed) {
       onComplete()
+      onClose()
     }
+  }, [status?.completed, onClose, onComplete])
+
+  const handleRoleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    await updateProgress({ role: selectedRole, onboarding_step: 'role' })
+    setStep('company')
   }
 
-  const handlePrevious = () => {
-    if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1)
+  const handleCompanySubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!companyForm.name) return
+    const payload: CompanyPayload = {
+      name: companyForm.name,
+      type: companyForm.type,
+      legal_name: companyForm.legal_name,
+      registration_number: companyForm.registration_number,
+      regulator_id: companyForm.regulator_id,
+      country: companyForm.country,
     }
-  }
-
-  const handleSkip = async () => {
-    if (!currentStep) return
-
-    // Mark current step as skipped
+    const isBank = isBankRole(selectedRole)
     await updateProgress({
-      skipped_steps: [currentStep.step_id],
+      onboarding_step: isBank ? 'kyc' : 'company',
+      company: payload,
+      submit_for_review: isBank,
     })
-
-    if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(currentStepIndex + 1)
-      const nextStep = content?.steps[currentStepIndex + 1]
-      if (nextStep) {
-        await updateProgress({
-          current_step: nextStep.step_id,
-        })
-      }
-    } else {
-      await markComplete(true)
-      onComplete()
-    }
+    setStep(isBank ? 'review' : 'business')
   }
 
-  const handleSkipAll = async () => {
-    if (!content) return
-
-    // Mark all remaining steps as skipped
-    const remainingSteps = content.steps.slice(currentStepIndex).map((s) => s.step_id)
+  const handleBusinessSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     await updateProgress({
-      skipped_steps: remainingSteps,
+      onboarding_step: 'business',
+      business_types: businessTypes,
+      complete: true,
     })
-    await markComplete(true)
     onComplete()
+    onClose()
   }
 
-  const renderStep = () => {
-    if (!currentStep || !content) return null
+  const toggleBusinessType = (value: string) => {
+    setBusinessTypes((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    )
+  }
 
-    const stepId = currentStep.step_id
-
-    // Base steps
-    if (stepId === 'welcome') {
-      return <WelcomeStep welcomeMessage={content.welcome_message} />
-    }
-
-    if (stepId === 'role-introduction') {
+  const renderContent = () => {
+    if (isLoading) {
       return (
-        <RoleIntroductionStep
-          role={content.role}
-          introduction={content.introduction}
-          keyFeatures={content.key_features}
-        />
+        <div className="py-16 text-center text-muted-foreground">
+          Loading onboarding...
+        </div>
       )
     }
 
-    if (stepId === 'platform-overview') {
-      return <PlatformOverviewStep role={content.role} />
+    if (!status && !open) {
+      return null
     }
 
-    // Role-specific steps
-    const role = content.role
-    if (role === 'exporter') {
-      return <ExporterOnboardingSteps stepId={stepId} onNext={handleNext} />
-    }
-    if (role === 'importer') {
-      return <ImporterOnboardingSteps stepId={stepId} onNext={handleNext} />
-    }
-    if (role === 'bank_officer' || role === 'bank_admin') {
-      return <BankOnboardingSteps stepId={stepId} onNext={handleNext} />
-    }
-    if (role === 'system_admin') {
-      return <AdminOnboardingSteps stepId={stepId} onNext={handleNext} />
-    }
-
-    // Generic fallback
-    return (
-      <div className="space-y-6">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold text-foreground mb-4">{currentStep.title}</h2>
-          {currentStep.description && (
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              {currentStep.description}
+    if (step === 'role') {
+      return (
+        <form onSubmit={handleRoleSubmit} className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">Select your role</h2>
+            <p className="text-sm text-muted-foreground">
+              We will tailor the experience based on your responsibilities.
             </p>
-          )}
+          </div>
+          <RadioGroup value={selectedRole} onValueChange={setSelectedRole} className="space-y-3">
+            {roleOptions.map((option) => (
+              <div key={option.value} className="flex items-center space-x-3 rounded-md border p-3">
+                <RadioGroupItem value={option.value} id={`role-${option.value}`} />
+                <Label htmlFor={`role-${option.value}`} className="cursor-pointer">
+                  {option.label}
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <div className="flex justify-end">
+            <Button type="submit">Continue</Button>
+          </div>
+        </form>
+      )
+    }
+
+    if (step === 'company') {
+      const bank = isBankRole(selectedRole)
+      return (
+        <form onSubmit={handleCompanySubmit} className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">Company details</h2>
+            <p className="text-sm text-muted-foreground">
+              Tell us about your organisation. This helps us configure the right experience.
+            </p>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="company-name">Company name</Label>
+              <Input
+                id="company-name"
+                value={companyForm.name}
+                onChange={(e) => setCompanyForm((prev) => ({ ...prev, name: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="company-type">Business type</Label>
+              <Select
+                value={companyForm.type ?? ''}
+                onValueChange={(value) => setCompanyForm((prev) => ({ ...prev, type: value }))}
+              >
+                <SelectTrigger id="company-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessTypeOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {bank && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="legal-name">Legal entity name</Label>
+                  <Input
+                    id="legal-name"
+                    value={companyForm.legal_name ?? ''}
+                    onChange={(e) => setCompanyForm((prev) => ({ ...prev, legal_name: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="registration-number">Registration number</Label>
+                  <Input
+                    id="registration-number"
+                    value={companyForm.registration_number ?? ''}
+                    onChange={(e) =>
+                      setCompanyForm((prev) => ({ ...prev, registration_number: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="regulator">Regulator</Label>
+                  <Input
+                    id="regulator"
+                    value={companyForm.regulator_id ?? ''}
+                    onChange={(e) => setCompanyForm((prev) => ({ ...prev, regulator_id: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="country">Country</Label>
+                  <Input
+                    id="country"
+                    value={companyForm.country ?? ''}
+                    onChange={(e) => setCompanyForm((prev) => ({ ...prev, country: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">Continue</Button>
+          </div>
+        </form>
+      )
+    }
+
+    if (step === 'business') {
+      return (
+        <form onSubmit={handleBusinessSubmit} className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">What best describes your business?</h2>
+            <p className="text-sm text-muted-foreground">
+              Select all that apply. We use this to tailor dashboards and guidance.
+            </p>
+          </div>
+          <div className="grid gap-3">
+            {businessTypeOptions.map((option) => (
+              <label key={option} className="flex items-center space-x-3 rounded-md border p-3">
+                <Checkbox
+                  checked={businessTypes.includes(option)}
+                  onCheckedChange={() => toggleBusinessType(option)}
+                />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">Finish onboarding</Button>
+          </div>
+        </form>
+      )
+    }
+
+    if (step === 'review') {
+      return (
+        <div className="space-y-6">
+          <Alert>
+            <AlertTitle>Submitted for review</AlertTitle>
+            <AlertDescription>
+              Your bank onboarding details have been submitted. Our team will verify the information
+              and notify you once approval is complete. You can close this window for now.
+            </AlertDescription>
+          </Alert>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>Close</Button>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">Onboarding complete</h2>
+        <p className="text-muted-foreground">
+          You can now explore the full platform. If you ever want to revisit onboarding guidance,
+          you can access it from the settings menu.
+        </p>
+        <div className="flex justify-end">
+          <Button onClick={onClose}>Close</Button>
         </div>
       </div>
     )
   }
 
-  if (isLoading) {
-    return (
-      <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mr-3"></div>
-            <span className="text-muted-foreground">Loading onboarding...</span>
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-
-  if (!content || !currentStep) {
-    return null
-  }
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
-          <div className="flex items-center justify-between mb-4">
-            <DialogTitle className="text-2xl">Get Started</DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="h-8 w-8 p-0"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-          <DialogDescription>
-            Step {currentStepIndex + 1} of {totalSteps}
-          </DialogDescription>
+          <DialogTitle>Welcome to trdrhub</DialogTitle>
         </DialogHeader>
-
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <Progress value={progress} className="h-2" />
-        </div>
-
-        {/* Step Content */}
-        <div className="min-h-[400px] py-6">
-          {renderStep()}
-        </div>
-
-        {/* Navigation */}
-        <div className="flex items-center justify-between pt-6 border-t">
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStepIndex === 0}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Previous
-            </Button>
-            <Button variant="ghost" onClick={handleSkipAll}>
-              Skip All
-            </Button>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleSkip}>
-              Skip
-            </Button>
-            <Button onClick={handleNext} className="bg-gradient-primary hover:opacity-90">
-              {currentStepIndex === totalSteps - 1 ? 'Complete' : 'Next'}
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </div>
-        </div>
+        {renderContent()}
       </DialogContent>
     </Dialog>
   )

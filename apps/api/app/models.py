@@ -92,6 +92,12 @@ class User(Base):
     # Onboarding fields
     onboarding_completed = Column(Boolean, default=False, nullable=False)
     onboarding_data = Column(JSONB, nullable=True, default=dict)
+    onboarding_step = Column(String(128), nullable=True)
+    status = Column(String(32), nullable=False, default="active")
+    kyc_required = Column(Boolean, nullable=False, default=False)
+    kyc_status = Column(String(32), nullable=True)
+    approver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Table constraints
     __table_args__ = (
@@ -131,6 +137,8 @@ class User(Base):
 
     # Relationships
     roles = relationship("UserRoleAssignment", back_populates="user", cascade="all, delete-orphan")
+    approver = relationship("User", remote_side=[id], uselist=False)
+    kyc_documents = relationship("KYCDocument", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserRoleAssignment(Base):
@@ -315,3 +323,19 @@ class Report(Base):
 
     # Relationships
     validation_session = relationship("ValidationSession", back_populates="reports")
+
+
+class KYCDocument(Base):
+    """Stores references to KYC document uploads for users/companies."""
+
+    __tablename__ = "kyc_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind = Column(String(128), nullable=False)
+    object_key = Column(String(512), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="kyc_documents")
+    company = relationship("Company", back_populates="kyc_documents")

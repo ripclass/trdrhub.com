@@ -52,7 +52,7 @@ export default function AdminDashboard() {
   const { user, isAuthenticated, logout } = useAdminAuth();
   const navigate = useNavigate();
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
+  const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -312,7 +312,6 @@ export default function AdminDashboard() {
         open={showOnboarding}
         onClose={() => setShowOnboarding(false)}
         onComplete={async () => {
-          await markComplete(true);
           setShowOnboarding(false);
         }}
       />

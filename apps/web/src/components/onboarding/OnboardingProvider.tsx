@@ -3,20 +3,15 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   getOnboardingStatus,
   updateOnboardingProgress,
-  completeOnboarding,
-  resetOnboarding,
   type OnboardingStatus,
-  type OnboardingProgress,
-  type OnboardingProgressUpdate,
+  type OnboardingProgressPayload,
 } from '@/api/onboarding'
 
 interface OnboardingContextType {
   status: OnboardingStatus | null
   isLoading: boolean
   needsOnboarding: boolean
-  updateProgress: (progress: OnboardingProgressUpdate) => Promise<void>
-  markComplete: (completed?: boolean) => Promise<void>
-  reset: () => Promise<void>
+  updateProgress: (payload: OnboardingProgressPayload) => Promise<void>
   refreshStatus: () => Promise<void>
 }
 
@@ -41,6 +36,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   const loadStatus = async () => {
     if (!user) {
+      setStatus(null)
       setIsLoading(false)
       return
     }
@@ -51,13 +47,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       setStatus(onboardingStatus)
     } catch (error) {
       console.error('Failed to load onboarding status:', error)
-      // Default to needing onboarding if we can't load status
-      setStatus({
-        needs_onboarding: true,
-        onboarding_completed: false,
-        current_progress: null,
-        role: user.role || 'exporter',
-      })
+      setStatus(null)
     } finally {
       setIsLoading(false)
     }
@@ -67,37 +57,12 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     loadStatus()
   }, [user])
 
-  const updateProgress = async (progress: OnboardingProgressUpdate) => {
+  const updateProgress = async (payload: OnboardingProgressPayload) => {
     try {
-      const updatedProgress = await updateOnboardingProgress(progress)
-      if (status) {
-        setStatus({
-          ...status,
-          current_progress: updatedProgress,
-        })
-      }
-    } catch (error) {
-      console.error('Failed to update onboarding progress:', error)
-      throw error
-    }
-  }
-
-  const markComplete = async (completed: boolean = true) => {
-    try {
-      const updatedStatus = await completeOnboarding(completed)
+      const updatedStatus = await updateOnboardingProgress(payload)
       setStatus(updatedStatus)
     } catch (error) {
-      console.error('Failed to complete onboarding:', error)
-      throw error
-    }
-  }
-
-  const reset = async () => {
-    try {
-      await resetOnboarding()
-      await loadStatus()
-    } catch (error) {
-      console.error('Failed to reset onboarding:', error)
+      console.error('Failed to update onboarding progress:', error)
       throw error
     }
   }
@@ -106,15 +71,16 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     await loadStatus()
   }
 
-  const needsOnboarding = status?.needs_onboarding ?? false
+  const needsOnboarding = React.useMemo(() => {
+    if (!status) return false
+    return !status.completed
+  }, [status])
 
   const value: OnboardingContextType = {
     status,
     isLoading,
     needsOnboarding,
     updateProgress,
-    markComplete,
-    reset,
     refreshStatus,
   }
 

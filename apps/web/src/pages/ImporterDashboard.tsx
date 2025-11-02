@@ -79,7 +79,7 @@ export default function ImporterDashboard() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
+  const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
 
   // Check onboarding status on mount
   useEffect(() => {
@@ -564,7 +564,6 @@ export default function ImporterDashboard() {
         open={showOnboarding}
         onClose={() => setShowOnboarding(false)}
         onComplete={async () => {
-          await markComplete(true);
           setShowOnboarding(false);
           toast({
             title: "Onboarding Complete",

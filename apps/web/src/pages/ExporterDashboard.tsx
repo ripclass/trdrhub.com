@@ -82,7 +82,7 @@ export default function ExporterDashboard() {
   const { toast } = useToast();
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
-  const { needsOnboarding, isLoading: isLoadingOnboarding, markComplete } = useOnboarding();
+  const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
 
   // Load exporter drafts from localStorage
   useEffect(() => {
@@ -556,7 +556,6 @@ export default function ExporterDashboard() {
         open={showOnboarding}
         onClose={() => setShowOnboarding(false)}
         onComplete={async () => {
-          await markComplete(true);
           setShowOnboarding(false);
           toast({
             title: "Onboarding Complete",

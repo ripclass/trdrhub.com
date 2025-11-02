@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SUPABASE_ISSUER: Optional[str] = None
+    SUPABASE_AUDIENCE: Optional[str] = None
+    SUPABASE_JWKS_URL: Optional[str] = None
+    AUTH0_ISSUER: Optional[str] = None
+    AUTH0_AUDIENCE: Optional[str] = None
+    AUTH0_JWKS_URL: Optional[str] = None
     
     # Stub Mode Configuration
     USE_STUBS: bool = False
@@ -101,6 +107,14 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Check if running in development environment."""
         return self.ENVIRONMENT.lower() == "development"
+
+    def supabase_configured(self) -> bool:
+        """Check if Supabase auth provider is configured."""
+        return bool(self.SUPABASE_ISSUER and self.SUPABASE_JWKS_URL)
+
+    def auth0_configured(self) -> bool:
+        """Check if Auth0 provider is configured."""
+        return bool(self.AUTH0_ISSUER and self.AUTH0_JWKS_URL)
     
     @field_validator('USE_STUBS', mode='before')
     @classmethod

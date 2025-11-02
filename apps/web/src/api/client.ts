@@ -1,53 +1,48 @@
-import axios from 'axios';
-import { getStoredToken, getValidToken, clearToken } from './auth';
+import axios from 'axios'
+import { supabase } from '@/lib/supabase'
+import { clearSupabaseSession } from './auth'
 
-const API_BASE_URL_VALUE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const AUTH_FREE_PATHS = ['/auth/login', '/auth/register'];
+const API_BASE_URL_VALUE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
 const api = axios.create({
   baseURL: API_BASE_URL_VALUE,
   timeout: 30000,
-});
+})
 
 api.interceptors.request.use(
   async (config) => {
-    const urlPath = (config.url || '').toLowerCase();
+    const urlPath = (config.url || '').toLowerCase()
     if (AUTH_FREE_PATHS.some((path) => urlPath.startsWith(path))) {
-      return config;
+      return config
     }
 
-    let token = getStoredToken();
-    if (!token) {
-      try {
-        token = await getValidToken();
-      } catch (error) {
-        token = null;
-      }
-    }
+    const session = await supabase.auth.getSession()
+    const token = session.data.session?.access_token
 
     if (token) {
-      const headers = (config.headers ?? {}) as Record<string, string>;
-      headers.Authorization = `Bearer ${token}`;
-      config.headers = headers as any;
+      const headers = (config.headers ?? {}) as Record<string, string>
+      headers.Authorization = `Bearer ${token}`
+      config.headers = headers as any
     }
 
-    return config;
+    return config
   },
   (error) => Promise.reject(error)
-);
+)
 
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      clearToken();
+      clearSupabaseSession()
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
+        window.location.href = '/login'
       }
     }
-    return Promise.reject(error);
+    return Promise.reject(error)
   }
-);
+)
 
-export { api };
-export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE;
+export { api }
+export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE

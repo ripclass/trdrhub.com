@@ -45,6 +45,10 @@ class Company(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False, index=True)
     contact_email = Column(String(255), nullable=False)
+    legal_name = Column(String(255), nullable=True)
+    registration_number = Column(String(128), nullable=True)
+    regulator_id = Column(String(128), nullable=True)
+    country = Column(String(128), nullable=True)
 
     # Billing configuration
     plan = Column(Enum(PlanType), nullable=False, default=PlanType.FREE)
@@ -72,6 +76,7 @@ class Company(Base):
     validation_sessions = relationship("ValidationSession", back_populates="company")
     invoices = relationship("Invoice", back_populates="company")
     usage_records = relationship("UsageRecord", back_populates="company")
+    kyc_documents = relationship("KYCDocument", back_populates="company")
 
     def __repr__(self):
         return f"<Company(id={self.id}, name='{self.name}', plan={self.plan})>"

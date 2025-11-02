@@ -9,7 +9,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Eye, EyeOff, Mail, Lock, User, Building } from "lucide-react";
-import { register, login, storeToken } from "@/api/auth";
+import { signUpWithEmail } from "@/api/auth";
+import { useAuth } from "@/hooks/use-auth";
+import { useOnboarding } from "@/hooks/use-onboarding";
+import type { Role } from "@/types/analytics";
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -26,6 +29,23 @@ export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { loginWithEmail } = useAuth();
+  const { updateProgress } = useOnboarding();
+
+  const routeForRole = (role: Role): string => {
+    switch (role) {
+      case "admin":
+        return "/admin";
+      case "bank":
+        return "/dashboard";
+      case "exporter":
+        return "/dashboard";
+      case "importer":
+        return "/dashboard";
+      default:
+        return "/dashboard";
+    }
+  };
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -68,40 +88,21 @@ export default function Register() {
       
       const backendRole = roleMap[formData.companyType] || 'exporter';
       
-      // Register user with API
-      await register({
-        email: formData.email,
-        password: formData.password,
-        full_name: formData.contactPerson,
-        role: backendRole as any
-      });
-      
-      // Auto-login after registration
-      const loginResponse = await login({
-        email: formData.email,
-        password: formData.password
-      });
-      
-      storeToken(loginResponse.access_token);
-      
+      await signUpWithEmail(formData.email, formData.password, formData.contactPerson);
+
+      const profile = await loginWithEmail(formData.email, formData.password);
+
+      try {
+        await updateProgress({ role: backendRole });
+      } catch (error) {
+        console.warn('Failed to sync onboarding role', error);
+      }
+
       toast({
         title: "Registration Successful",
         description: "Welcome to LCopilot! Redirecting to your dashboard...",
       });
-      
-      // Redirect based on role
-      const role = loginResponse.role;
-      if (role === 'system_admin' || role === 'admin') {
-        navigate('/admin');
-      } else if (role === 'bank_officer' || role === 'bank_admin') {
-        navigate('/lcopilot/analytics/bank');
-      } else if (role === 'exporter') {
-        navigate('/lcopilot/exporter-dashboard');
-      } else if (role === 'importer') {
-        navigate('/lcopilot/importer-dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate(routeForRole(profile.role));
     } catch (error: any) {
       const errorMessage = error?.response?.data?.detail || error?.message || "Something went wrong. Please try again.";
       toast({

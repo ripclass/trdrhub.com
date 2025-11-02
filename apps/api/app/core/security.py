@@ -4,19 +4,21 @@ JWT authentication and role-based access control (RBAC) security layer.
 
 import os
 from datetime import datetime, timedelta
-from typing import List, Optional, Union
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID, uuid5, NAMESPACE_URL
 
 import jwt
-from fastapi import HTTPException, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models import User, UserRole
 from ..services.audit_service import AuditService
 from ..models.audit_log import AuditAction, AuditResult
+from .jwt_verifier import ProviderConfig, verify_jwt
 
 
 # Security configuration
@@ -29,6 +31,122 @@ pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 # JWT Bearer token scheme
 security = HTTPBearer(auto_error=True)
+
+
+_PROVIDER_CACHE: Optional[List[ProviderConfig]] = None
+
+
+def _build_provider_configs() -> List[ProviderConfig]:
+    global _PROVIDER_CACHE  # pylint: disable=global-statement
+    if _PROVIDER_CACHE is not None:
+        return _PROVIDER_CACHE
+
+    providers: List[ProviderConfig] = []
+    if settings.supabase_configured():
+        providers.append(
+            ProviderConfig(
+                name="supabase",
+                issuer=settings.SUPABASE_ISSUER or "",
+                jwks_url=settings.SUPABASE_JWKS_URL or "",
+                audience=settings.SUPABASE_AUDIENCE,
+            )
+        )
+    if settings.auth0_configured():
+        providers.append(
+            ProviderConfig(
+                name="auth0",
+                issuer=settings.AUTH0_ISSUER or "",
+                jwks_url=settings.AUTH0_JWKS_URL or "",
+                audience=settings.AUTH0_AUDIENCE,
+            )
+        )
+
+    _PROVIDER_CACHE = providers
+    return providers
+
+
+def _resolve_external_user_id(subject: str) -> UUID:
+    """Convert external subject claim into UUID for local user table."""
+
+    try:
+        return UUID(subject)
+    except (ValueError, TypeError):
+        # Derive deterministic UUID5 so repeated logins map to same user
+        return uuid5(NAMESPACE_URL, subject or "external-user")
+
+
+def _normalise_role_claim(claims: Dict[str, Any]) -> str:
+    role = (
+        claims.get("role")
+        or (claims.get("app_metadata") or {}).get("role")
+        or (claims.get("user_metadata") or {}).get("role")
+    )
+    if role and str(role).lower() in {
+        "exporter",
+        "importer",
+        "tenant_admin",
+        "bank_officer",
+        "bank_admin",
+        "system_admin",
+    }:
+        return str(role).lower()
+    return UserRole.EXPORTER.value
+
+
+def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
+    user_id = _resolve_external_user_id(str(claims.get("sub")))
+    email = claims.get("email") or claims.get("preferred_username") or f"user-{user_id}@external"
+    metadata = claims.get("user_metadata") or {}
+    full_name = (
+        metadata.get("full_name")
+        or metadata.get("name")
+        or claims.get("name")
+        or email
+    )
+    role_value = _normalise_role_claim(claims)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        user = User(
+            id=user_id,
+            email=email,
+            full_name=full_name,
+            role=role_value,
+            hashed_password=hash_password("external-auth"),
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+    else:
+        user.email = email
+        if full_name:
+            user.full_name = full_name
+        if role_value:
+            user.role = role_value
+        user.is_active = True
+
+    return user
+
+
+async def _authenticate_external_token(token: str, db: Session) -> Optional[User]:
+    providers = _build_provider_configs()
+    if not providers:
+        return None
+
+    for provider in providers:
+        try:
+            result = await verify_jwt(token, [provider])
+        except Exception:  # pragma: no cover - rely on other providers
+            continue
+        claims = result.get("claims", {})
+        if not claims.get("sub"):
+            continue
+        user = _upsert_external_user(db, claims)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    return None
 
 
 def hash_password(password: str) -> str:
@@ -104,7 +222,7 @@ def decode_access_token(token: str) -> dict:
         )
 
 
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
@@ -128,65 +246,80 @@ def get_current_user(
         HTTPException: 401 if authentication fails
     """
     # Decode JWT token
-    payload = decode_access_token(credentials.credentials)
-
-    # Extract user info from token
-    user_id = payload.get("sub")
-    token_role = payload.get("role")
-
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload"
-        )
-
-    # Get user from database
+    token = credentials.credentials
+    payload = None
     try:
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user ID format"
-        )
+        payload = decode_access_token(token)
+    except HTTPException:
+        payload = None
 
-    user = db.query(User).filter(User.id == user_uuid).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
+    if payload:
+        user_id = payload.get("sub")
+        token_role = payload.get("role")
 
-    # Validate user is active
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is deactivated"
-        )
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
 
-    # SECURITY: Validate role matches between JWT and database
-    # This prevents role escalation attacks via token tampering
-    if user.role != token_role:
-        # Log potential security breach
-        audit_service = AuditService(db)
-        audit_service.log_action(
-            action=AuditAction.ACCESS_DENIED,
-            user_id=user.id,
-            user_email=user.email,
-            result=AuditResult.FAILURE,
-            error_message=f"JWT role mismatch: token={token_role}, db={user.role}",
-            audit_metadata={
-                "security_event": "jwt_role_mismatch",
-                "token_role": token_role,
-                "database_role": user.role
-            }
-        )
+        try:
+            user_uuid = UUID(str(user_id))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user ID format"
+            )
 
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token validation failed"
-        )
+        user = db.query(User).filter(User.id == user_uuid).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
 
-    return user
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is deactivated"
+            )
+
+        if user.role != token_role:
+            audit_service = AuditService(db)
+            audit_service.log_action(
+                action=AuditAction.ACCESS_DENIED,
+                user_id=user.id,
+                user_email=user.email,
+                result=AuditResult.FAILURE,
+                error_message=f"JWT role mismatch: token={token_role}, db={user.role}",
+                audit_metadata={
+                    "security_event": "jwt_role_mismatch",
+                    "token_role": token_role,
+                    "database_role": user.role
+                }
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token validation failed"
+            )
+
+        return user
+
+    # External providers (Supabase/Auth0...)
+    external_user = await _authenticate_external_token(token, db)
+    if external_user:
+        if not external_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is deactivated"
+            )
+        return external_user
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication failed"
+    )
 
 
 def require_roles(required_roles: List[str]):
