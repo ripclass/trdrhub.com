@@ -44,7 +44,7 @@ export default function Login() {
         title: "Login Successful",
         description: "Welcome back to LCopilot!",
       });
-
+      
       navigate(routeForRole(profile.role));
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
@@ -180,27 +180,7 @@ export default function Login() {
                 <Chrome className="w-4 h-4 mr-2" />
                 Sign in with Google
               </Button>
-        navigate('/admin');
-      } else if (role === 'bank_officer' || role === 'bank_admin') {
-        navigate('/lcopilot/analytics/bank'); // Bank dashboard
-      } else if (role === 'exporter') {
-        navigate('/lcopilot/exporter-dashboard');
-      } else if (role === 'importer') {
-        navigate('/lcopilot/importer-dashboard');
-      } else {
-        navigate('/dashboard');
-      }
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.detail || error?.message || "Please check your credentials and try again.";
-      toast({
-        title: "Login Failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/5 flex items-center justify-center p-4">
