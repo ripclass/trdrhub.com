@@ -22,6 +22,7 @@ interface AuthContextType {
   isLoading: boolean
   loginWithEmail: (email: string, password: string) => Promise<User>
   loginWithGoogle: () => Promise<void>
+  registerWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<User>
   logout: () => Promise<void>
   hasRole: (role: Role | Role[]) => boolean
   refreshUser: () => Promise<void>
@@ -122,6 +123,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithGoogle()
   }
 
+  const registerWithEmail = async (
+    email: string,
+    password: string,
+    fullName: string,
+    role: string
+  ): Promise<User> => {
+    setIsLoading(true)
+    try {
+      // Create user in Supabase with metadata
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName, role },
+        },
+      })
+      if (error) throw error
+
+      // Ensure we have a session (if confirm email is off this should exist; else sign in)
+      let session = (await supabase.auth.getSession()).data.session
+      if (!session) {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+        if (signInErr) throw signInErr
+        session = (await supabase.auth.getSession()).data.session
+      }
+
+      if (!session) throw new Error('Authentication session not established after sign up')
+
+      const profile = await fetchUserProfile()
+      return profile
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const logout = async () => {
     await supabaseSignOut()
     setUser(null)
@@ -147,7 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === role
   }
 
-  const value = { user, isLoading, loginWithEmail, loginWithGoogle, logout, hasRole, refreshUser }
+  const value = { user, isLoading, loginWithEmail, loginWithGoogle, registerWithEmail, logout, hasRole, refreshUser }
 
   return (
     <AuthContext.Provider value={value}>

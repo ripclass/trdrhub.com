@@ -98,9 +98,24 @@ export default function Register() {
       );
 
       try {
-        await updateProgress({ role: backendRole });
+        const businessTypes =
+          formData.companyType === 'both'
+            ? ['exporter', 'importer']
+            : formData.companyType
+            ? [formData.companyType]
+            : []
+
+        const isBank = backendRole === 'bank_officer'
+
+        await updateProgress({
+          role: backendRole,
+          company: { name: formData.companyName, type: formData.companyType },
+          business_types: businessTypes,
+          complete: !isBank,
+          onboarding_step: isBank ? 'kyc' : null,
+        })
       } catch (error) {
-        console.warn("Failed to sync onboarding role", error);
+        console.warn("Failed to sync onboarding role/company", error);
       }
 
       toast({
