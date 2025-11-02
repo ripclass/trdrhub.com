@@ -42,9 +42,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
 
+  const AUTH_TIMEOUT_MS = 10000
+
+  const withTimeout = async <T,>(promise: Promise<T>, label: string, ms = AUTH_TIMEOUT_MS): Promise<T> => {
+    let timer: any
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out. Please try again.`)), ms)
+    })
+    try {
+      const result = await Promise.race([promise, timeout])
+      return result as T
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   const fetchUserProfile = React.useCallback(async () => {
     try {
-      const { data: userData } = await api.get('/profile')
+      const { data: userData } = await withTimeout(api.get('/profile'), 'Loading profile')
       const mapped: User = {
         id: userData.id,
         email: userData.email,
@@ -106,7 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        'Signing in'
+      )
       if (error) throw error
       const profile = await fetchUserProfile()
       return profile
@@ -133,19 +151,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       // Create user in Supabase with metadata
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await withTimeout(
+        supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName, role },
         },
-      })
+        }),
+        'Sign up'
+      )
       if (error) throw error
 
       // Ensure we have a session (if confirm email is off this should exist; else sign in)
       let session = (await supabase.auth.getSession()).data.session
       if (!session) {
-        const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+        const { error: signInErr } = await withTimeout(
+          supabase.auth.signInWithPassword({ email, password }),
+          'Signing in'
+        )
         if (signInErr) throw signInErr
         session = (await supabase.auth.getSession()).data.session
       }
