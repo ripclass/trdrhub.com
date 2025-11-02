@@ -8,10 +8,18 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, Eye, EyeOff, Mail, Lock, User, Building } from "lucide-react";
+import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import type { Role } from "@/types/analytics";
+
+const COMPANY_TYPES = [
+  { value: "exporter", label: "Exporter" },
+  { value: "importer", label: "Importer" },
+  { value: "both", label: "Both Exporter & Importer" },
+  { value: "bank", label: "Bank / FI" },
+  { value: "consultant", label: "Trade Consultant" },
+];
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -36,9 +44,7 @@ export default function Register() {
       case "admin":
         return "/admin";
       case "bank":
-        return "/dashboard";
       case "exporter":
-        return "/dashboard";
       case "importer":
         return "/dashboard";
       default:
@@ -54,11 +60,10 @@ export default function Register() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Basic validation
     if (formData.password !== formData.confirmPassword) {
       toast({
-        title: "Password Mismatch",
-        description: "Passwords do not match. Please try again.",
+        title: "Password mismatch",
+        description: "Passwords do not match. Please double-check.",
         variant: "destructive",
       });
       setIsLoading(false);
@@ -67,8 +72,8 @@ export default function Register() {
 
     if (!formData.agreedToTerms) {
       toast({
-        title: "Terms Required",
-        description: "Please agree to the terms and conditions.",
+        title: "Almost there!",
+        description: "Please agree to the terms before creating an account.",
         variant: "destructive",
       });
       setIsLoading(false);
@@ -76,17 +81,15 @@ export default function Register() {
     }
 
     try {
-      // Map companyType to backend role
       const roleMap: Record<string, string> = {
-        'exporter': 'exporter',
-        'importer': 'importer',
-        'both': 'exporter', // Default to exporter if both
-        'bank': 'bank_officer',
-        'consultant': 'exporter' // Default to exporter for consultants
+        exporter: "exporter",
+        importer: "importer",
+        both: "exporter",
+        bank: "bank_officer",
+        consultant: "exporter",
       };
-      
-      const backendRole = roleMap[formData.companyType] || 'exporter';
-      
+      const backendRole = roleMap[formData.companyType] || "exporter";
+
       const profile = await registerWithEmail(
         formData.email,
         formData.password,
@@ -97,19 +100,22 @@ export default function Register() {
       try {
         await updateProgress({ role: backendRole });
       } catch (error) {
-        console.warn('Failed to sync onboarding role', error);
+        console.warn("Failed to sync onboarding role", error);
       }
 
       toast({
-        title: "Registration Successful",
-        description: "Welcome to LCopilot! Redirecting to your dashboard...",
+        title: "Welcome to LCopilot",
+        description: "Your account is ready. We’re tailoring the workspace for you…",
       });
       navigate(routeForRole(profile.role));
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.detail || error?.message || "Something went wrong. Please try again.";
+      const message =
+        error?.response?.data?.detail ||
+        error?.message ||
+        "We couldn’t complete your registration. Please try again.";
       toast({
-        title: "Registration Failed",
-        description: errorMessage,
+        title: "Registration failed",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -118,228 +124,251 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo Header */}
-        <div className="text-center">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="bg-gradient-primary p-3 rounded-xl shadow-medium">
-              <FileText className="w-8 h-8 text-primary-foreground" />
+    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-primary/5">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-12 lg:px-8">
+        <header className="mb-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-primary px-3 py-2 shadow-md">
+              <FileText className="h-7 w-7 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">LCopilot</h1>
-              <p className="text-sm text-muted-foreground">Document Validator</p>
+              <p className="text-xs uppercase tracking-wide text-primary">LC Document Copilot</p>
+              <h1 className="text-xl font-semibold text-foreground">Create your LCopilot workspace</h1>
             </div>
           </div>
-          <p className="text-muted-foreground">
-            Create your account to start validating LC documents
-          </p>
-        </div>
+          <div className="hidden text-sm text-muted-foreground md:block">
+            Already onboard? {""}
+            <Link to="/login" className="font-medium text-primary hover:underline">
+              Sign in
+            </Link>
+          </div>
+        </header>
 
-        {/* Registration Form */}
-        <Card className="shadow-strong border-0">
-          <CardHeader className="space-y-2 text-center">
-            <CardTitle className="text-xl">Create Account</CardTitle>
-            <CardDescription>
-              Join 500+ exporters using LCopilot
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="companyName" className="text-sm font-medium">
-                    Company Name *
-                  </Label>
-                  <div className="relative">
-                    <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="companyName"
-                      type="text"
-                      placeholder="Your Export Company Ltd."
-                      value={formData.companyName}
-                      onChange={(e) => handleInputChange("companyName", e.target.value)}
-                      className="pl-10"
-                      required
-                    />
+        <div className="grid flex-1 gap-10 lg:grid-cols-12">
+          <div className="flex flex-col justify-between rounded-3xl bg-card/60 p-8 shadow-strong backdrop-blur lg:col-span-5">
+            <div className="space-y-6">
+              <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/70 p-6 text-primary-foreground shadow-lg">
+                <p className="text-sm uppercase tracking-wide opacity-80">Onboarding in minutes</p>
+                <h2 className="mt-2 text-2xl font-semibold">Designed for trade and treasury teams</h2>
+                <p className="mt-3 text-sm opacity-80">
+                  LCopilot connects Supabase authentication with our progressive onboarding flow so you can invite
+                  teams, capture KYC details, and start validating documents without custom integrations.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
+                  <ShieldCheck className="mt-1 h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Enterprise-grade security</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Supabase Auth manages credentials, while our backend enforces role-based onboarding and KYC checkpoints.
+                    </p>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="contactPerson" className="text-sm font-medium">
-                    Contact Person *
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="contactPerson"
-                      type="text"
-                      placeholder="Your Full Name"
-                      value={formData.contactPerson}
-                      onChange={(e) => handleInputChange("contactPerson", e.target.value)}
-                      className="pl-10"
-                      required
-                    />
+                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
+                  <Timer className="mt-1 h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Go live in two minutes</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Guided onboarding walks each role through the essentials—exporters, importers, and banks get tailored experiences.
+                    </p>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium">
-                    Business Email *
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="contact@yourcompany.com"
-                      value={formData.email}
-                      onChange={(e) => handleInputChange("email", e.target.value)}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="companyType" className="text-sm font-medium">
-                    Company Type *
-                  </Label>
-                  <Select onValueChange={(value) => handleInputChange("companyType", value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select your business type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="exporter">Exporter</SelectItem>
-                      <SelectItem value="importer">Importer</SelectItem>
-                      <SelectItem value="both">Exporter & Importer</SelectItem>
-                      <SelectItem value="bank">Bank</SelectItem>
-                      <SelectItem value="consultant">Trade Consultant</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Password *
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Create a strong password"
-                      value={formData.password}
-                      onChange={(e) => handleInputChange("password", e.target.value)}
-                      className="pl-10 pr-10"
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword" className="text-sm font-medium">
-                    Confirm Password *
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      placeholder="Confirm your password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                      className="pl-10 pr-10"
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </Button>
+                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
+                  <Sparkles className="mt-1 h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Automations built-in</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Your workspace instantly links to verification services, document AI, and compliance reporting.
+                    </p>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="terms"
-                  checked={formData.agreedToTerms}
-                  onCheckedChange={(checked) => handleInputChange("agreedToTerms", checked as boolean)}
-                />
-                <Label htmlFor="terms" className="text-sm leading-relaxed">
-                  I agree to the{" "}
-                  <Link to="/terms" className="text-primary hover:underline">
-                    Terms of Service
-                  </Link>{" "}
-                  and{" "}
-                  <Link to="/privacy" className="text-primary hover:underline">
-                    Privacy Policy
+            <div className="mt-8 space-y-2 text-xs text-muted-foreground">
+              <p>Trusted by export houses across APAC</p>
+              <Separator className="opacity-30" />
+              <div className="flex flex-wrap gap-4">
+                <span>✔ Free trial</span>
+                <span>✔ No credit card</span>
+                <span>✔ SOC2-aligned controls</span>
+              </div>
+            </div>
+          </div>
+
+          <Card className="relative border-0 shadow-strong lg:col-span-7">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-xl">Create your account</CardTitle>
+              <CardDescription>
+                Tell us a little about your company so we can personalise onboarding and document validation flows.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleRegister} className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companyName">Company name</Label>
+                    <div className="relative">
+                      <Building className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="companyName"
+                        placeholder="Your Export Company Ltd."
+                        value={formData.companyName}
+                        onChange={(e) => handleInputChange("companyName", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="contactPerson">Contact person</Label>
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="contactPerson"
+                        placeholder="Your full name"
+                        value={formData.contactPerson}
+                        onChange={(e) => handleInputChange("contactPerson", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Business email</Label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="contact@yourcompany.com"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange("email", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companyType">Company type</Label>
+                    <Select
+                      value={formData.companyType}
+                      onValueChange={(value) => handleInputChange("companyType", value)}
+                      required
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Select your business type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMPANY_TYPES.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Create a strong password"
+                        value={formData.password}
+                        onChange={(e) => handleInputChange("password", e.target.value)}
+                        className="pl-10 pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Use 12+ characters with a mix of letters, numbers, and symbols.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirm password</Label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirm your password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                        className="pl-10 pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-muted/50 p-4 text-sm">
+                  <h4 className="font-medium text-foreground">What happens next?</h4>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    <li>• We’ll send a verification email through Supabase Auth.</li>
+                    <li>• Complete your role-specific onboarding checklist.</li>
+                    <li>• Invite teammates and connect to Document AI / analytics modules.</li>
+                  </ul>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="terms"
+                    checked={formData.agreedToTerms}
+                    onCheckedChange={(checked) => handleInputChange("agreedToTerms", Boolean(checked))}
+                  />
+                  <Label htmlFor="terms" className="text-sm text-muted-foreground">
+                    I agree to the {""}
+                    <a href="/legal/terms" target="_blank" rel="noopener" className="text-primary underline">
+                      Terms of Service
+                    </a>{" "}and {""}
+                    <a href="/legal/privacy" target="_blank" rel="noopener" className="text-primary underline">
+                      Privacy Policy
+                    </a>
+                  </Label>
+                </div>
+
+                <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90" disabled={isLoading}>
+                  {isLoading ? "Creating workspace..." : "Create your workspace"}
+                </Button>
+
+                <p className="text-center text-sm text-muted-foreground lg:hidden">
+                  Already have an account? {""}
+                  <Link to="/login" className="font-medium text-primary hover:underline">
+                    Sign in
                   </Link>
-                </Label>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-gradient-primary hover:opacity-90"
-                disabled={isLoading}
-              >
-                {isLoading ? "Creating Account..." : "Create Account"}
-              </Button>
-            </form>
-
-            <div className="mt-6">
-              <Separator className="my-4" />
-              <div className="text-center text-sm text-muted-foreground">
-                Already have an account?{" "}
-                <Link
-                  to="/login"
-                  className="text-primary hover:underline font-medium"
-                >
-                  Sign in
-                </Link>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Trust Indicators */}
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <div className="w-2 h-2 bg-success rounded-full"></div>
-              Free Trial
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-2 h-2 bg-success rounded-full"></div>
-              No Credit Card
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-2 h-2 bg-success rounded-full"></div>
-              Start in 2 Minutes
-            </div>
-          </div>
+                </p>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
