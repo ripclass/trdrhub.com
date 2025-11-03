@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { getStubStatus } from "@/api/sessions";
 import { BulkLCUpload } from "@/components/bank/BulkLCUpload";
 import { ProcessingQueue } from "@/components/bank/ProcessingQueue";
 import { ResultsTable } from "@/components/bank/ResultsTable";
@@ -22,9 +24,19 @@ export default function BankDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("upload");
 
+  // Check if stub mode is enabled
+  const { data: stubStatus } = useQuery({
+    queryKey: ['stub-status'],
+    queryFn: getStubStatus,
+    retry: false,
+  });
+
+  const isStubMode = stubStatus?.stub_mode_enabled || false;
+
   // Check if user is a bank user
   // Frontend maps bank_officer and bank_admin to "bank" role
-  const isBankUser = user && user.role === "bank";
+  // In stub mode, allow access regardless of role
+  const isBankUser = isStubMode || (user && user.role === "bank");
 
   if (!isBankUser) {
     return (
@@ -37,6 +49,11 @@ export default function BankDashboard() {
               {user && (
                 <span className="block mt-2 text-xs">
                   Your role: {user.role}
+                </span>
+              )}
+              {!isStubMode && (
+                <span className="block mt-2 text-xs text-muted-foreground">
+                  Stub mode is disabled. Enable stub mode to bypass authentication.
                 </span>
               )}
             </CardDescription>
