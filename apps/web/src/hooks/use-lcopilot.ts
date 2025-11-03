@@ -31,8 +31,9 @@ export interface ValidationRequest {
   lcNumber?: string;
   notes?: string;
   documentTags?: Record<string, string>; // Map of filename to document type
-  userType?: string; // 'exporter' or 'importer'
+  userType?: string; // 'exporter' or 'importer' or 'bank'
   workflowType?: string; // Specific workflow type
+  metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
 }
 
 export interface ValidationResponse {
@@ -112,6 +113,11 @@ export const useValidate = () => {
       // Add user and workflow type for enhanced validation
       formData.append('user_type', request.userType || 'exporter');
       formData.append('workflow_type', request.workflowType || 'export-lc-upload');
+
+      // Add metadata if provided
+      if (request.metadata) {
+        formData.append('metadata', JSON.stringify(request.metadata));
+      }
 
       const response = await api.post('/api/validate', formData, {
         headers: {
