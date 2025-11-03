@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import LandingPage from './pages/landing/LandingPage'
 import Index from './pages/Index'
+import LcopilotLanding from './pages/LcopilotLanding'
 import TRDRHub from './pages/TRDRHub'
 import UploadPage from './pages/UploadPage'
 import ReviewPage from './pages/ReviewPage'
@@ -51,7 +52,7 @@ function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
-        <Route path="/lcopilot" element={<Index />} />
+        <Route path="/lcopilot" element={<LcopilotLanding />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<Dashboard />} />
