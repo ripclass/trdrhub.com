@@ -183,9 +183,13 @@ async def _authenticate_external_token(token: str, db: Session) -> Optional[User
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    # bcrypt_sha256 pre-hashes, so no 72-byte limit; keep light truncation as guard
+    # Guard and tolerate legacy backends which may enforce 72-byte limits
     safe_password = (password or "")[:512]
-    return pwd_context.hash(safe_password)
+    try:
+        return pwd_context.hash(safe_password)
+    except ValueError:
+        # Final fallback for environments still bound by 72B restriction
+        return pwd_context.hash(safe_password[:72])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
