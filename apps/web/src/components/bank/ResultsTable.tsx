@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,86 +24,68 @@ import {
   Download,
   FileText,
   Eye,
-  Filter,
   Download as DownloadIcon,
 } from "lucide-react";
 import { format } from "date-fns";
-
-interface ValidationResult {
-  id: string;
-  jobId: string;
-  clientName: string;
-  lcNumber?: string;
-  submittedAt: Date;
-  completedAt: Date;
-  status: "compliant" | "discrepancies" | "failed";
-  complianceScore: number;
-  discrepancyCount: number;
-  documentCount: number;
-}
+import { bankApi, BankResult } from "@/api/bank";
+import { sanitizeText } from "@/lib/sanitize";
+import { generateCSV } from "@/lib/csv";
 
 interface ResultsTableProps {}
 
 export function ResultsTable({}: ResultsTableProps) {
-  const [results, setResults] = useState<ValidationResult[]>([]);
-  const [filteredResults, setFilteredResults] = useState<ValidationResult[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState("");
   const [dateRange, setDateRange] = useState("90"); // days
 
-  // Load results from localStorage (temporary until backend is ready)
-  useEffect(() => {
-    const loadResults = () => {
-      const stored = localStorage.getItem("bank_validation_results");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          const loaded = parsed.map((r: any) => ({
-            ...r,
-            submittedAt: new Date(r.submittedAt),
-            completedAt: new Date(r.completedAt),
-          }));
-
-          // Filter by date range (default: last 90 days)
-          const cutoffDate = new Date();
-          cutoffDate.setDate(cutoffDate.getDate() - parseInt(dateRange));
-          const filtered = loaded.filter(
-            (r: ValidationResult) => r.completedAt >= cutoffDate
-          );
-
-          setResults(filtered);
-        } catch (e) {
-          console.error("Failed to load results:", e);
-        }
-      }
+  // Calculate date range for API
+  const getDateRange = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(dateRange));
+    return {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
     };
+  };
 
-    loadResults();
-  }, [dateRange]);
+  // Fetch results from API
+  const { data: resultsData, isLoading } = useQuery({
+    queryKey: ['bank-results', dateRange],
+    queryFn: () => bankApi.getResults({
+      ...getDateRange(),
+      limit: 500,
+      offset: 0,
+    }),
+    refetchInterval: 10000, // Refresh every 10 seconds
+  });
+
+  const allResults: BankResult[] = resultsData?.results || [];
 
   // Apply filters
-  useEffect(() => {
-    let filtered = [...results];
-
+  const filteredResults = allResults.filter((result) => {
     // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((r) => r.status === statusFilter);
+    if (statusFilter !== "all" && result.status !== statusFilter) {
+      return false;
     }
 
     // Client name filter
     if (clientFilter.trim()) {
-      filtered = filtered.filter((r) =>
-        r.clientName.toLowerCase().includes(clientFilter.toLowerCase())
-      );
+      const clientName = result.client_name || "";
+      if (!clientName.toLowerCase().includes(clientFilter.toLowerCase())) {
+        return false;
+      }
     }
 
+    return true;
+  }).sort((a, b) => {
     // Sort by completed date (newest first)
-    filtered.sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime());
+    const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+    const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+    return dateB - dateA;
+  });
 
-    setFilteredResults(filtered);
-  }, [results, statusFilter, clientFilter]);
-
-  const getStatusBadge = (status: ValidationResult["status"]) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "compliant":
         return <Badge variant="default" className="bg-green-500">Compliant</Badge>;
@@ -110,24 +93,29 @@ export function ResultsTable({}: ResultsTableProps) {
         return <Badge variant="default" className="bg-yellow-500">Discrepancies</Badge>;
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
   const handleExportCSV = () => {
-    const csvContent = [
-      ["LC Number", "Client Name", "Date", "Status", "Score", "Discrepancies", "Documents"].join(","),
-      ...filteredResults.map((r) =>
-        [
-          r.lcNumber || "N/A",
-          r.clientName,
-          format(r.completedAt, "yyyy-MM-dd HH:mm:ss"),
+    const csvRows = [
+      ["LC Number", "Client Name", "Date", "Status", "Score", "Discrepancies", "Documents"],
+      ...filteredResults.map((r) => {
+        const completedAt = r.completed_at ? new Date(r.completed_at) : new Date();
+        return [
+          r.lc_number || "N/A",
+          r.client_name || "",
+          format(completedAt, "yyyy-MM-dd HH:mm:ss"),
           r.status,
-          r.complianceScore,
-          r.discrepancyCount,
-          r.documentCount,
-        ].join(",")
-      ),
-    ].join("\n");
+          r.compliance_score.toString(),
+          r.discrepancy_count.toString(),
+          r.document_count.toString(),
+        ];
+      }),
+    ];
+
+    const csvContent = generateCSV(csvRows);
 
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -143,8 +131,7 @@ export function ResultsTable({}: ResultsTableProps) {
     alert("PDF export coming soon!");
   };
 
-  const handleViewDetails = (result: ValidationResult) => {
-    // TODO: Navigate to detail view or open modal
+  const handleViewDetails = (result: BankResult) => {
     window.location.href = `/lcopilot/results/${result.jobId}`;
   };
 
@@ -155,15 +142,15 @@ export function ResultsTable({}: ResultsTableProps) {
           <div>
             <CardTitle>Validation Results</CardTitle>
             <CardDescription>
-              {filteredResults.length} result(s) from last {dateRange} days
+              {isLoading ? "Loading..." : `${filteredResults.length} result(s) from last ${dateRange} days`}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
+            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredResults.length === 0}>
               <DownloadIcon className="w-4 h-4 mr-2" />
               Export CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExportPDF}>
+            <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredResults.length === 0}>
               <FileText className="w-4 h-4 mr-2" />
               Export PDF
             </Button>
@@ -215,7 +202,12 @@ export function ResultsTable({}: ResultsTableProps) {
         </div>
 
         {/* Results Table */}
-        {filteredResults.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4 animate-pulse" />
+            <p className="text-muted-foreground">Loading results...</p>
+          </div>
+        ) : filteredResults.length === 0 ? (
           <div className="text-center py-12">
             <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No results found</p>
@@ -239,41 +231,47 @@ export function ResultsTable({}: ResultsTableProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredResults.map((result) => (
-                  <TableRow key={result.id}>
-                    <TableCell className="font-medium">
-                      {result.lcNumber || "N/A"}
-                    </TableCell>
-                    <TableCell>{result.clientName}</TableCell>
-                    <TableCell>
-                      {format(result.completedAt, "MMM dd, yyyy HH:mm")}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(result.status)}</TableCell>
-                    <TableCell className="text-right">
-                      {result.complianceScore}%
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {result.discrepancyCount}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {result.documentCount}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewDetails(result)}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredResults.map((result) => {
+                  const completedAt = result.completed_at ? new Date(result.completed_at) : new Date();
+                  const clientName = result.client_name ? sanitizeText(result.client_name) : "Unknown";
+                  const lcNumber = result.lc_number ? sanitizeText(result.lc_number) : "N/A";
+
+                  return (
+                    <TableRow key={result.id}>
+                      <TableCell className="font-medium">
+                        {lcNumber}
+                      </TableCell>
+                      <TableCell>{clientName}</TableCell>
+                      <TableCell>
+                        {format(completedAt, "MMM dd, yyyy HH:mm")}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(result.status)}</TableCell>
+                      <TableCell className="text-right">
+                        {result.compliance_score}%
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {result.discrepancy_count}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {result.document_count}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewDetails(result)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

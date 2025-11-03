@@ -9,11 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate } from "@/hooks/use-lcopilot";
+import { sanitizeText, sanitizeFileName } from "@/lib/sanitize";
+import { MAX_FILE_SIZE, MAX_TOTAL_SIZE } from "@/lib/constants";
 import {
   Upload,
   FileText,
   X,
   AlertCircle,
+  Clock,
 } from "lucide-react";
 
 interface UploadedFile {
@@ -51,15 +54,37 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const { validate, isLoading: isValidating } = useValidate();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    // Validate file sizes
+    const oversizedFiles = acceptedFiles.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversizedFiles.length > 0) {
+      toast({
+        title: "File Too Large",
+        description: `${oversizedFiles[0].name} exceeds 10MB limit`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check total size
+    const totalSize = [...uploadedFiles, ...acceptedFiles].reduce((sum, f) => sum + f.size, 0);
+    if (totalSize > MAX_TOTAL_SIZE) {
+      toast({
+        title: "Total Size Exceeded",
+        description: `Total file size cannot exceed 50MB`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const newFiles: UploadedFile[] = acceptedFiles.map((file) => ({
       id: `${Date.now()}-${Math.random()}`,
       file,
-      name: file.name,
+      name: sanitizeFileName(file.name), // Sanitize file name
       size: file.size,
       type: file.type,
     }));
     setUploadedFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  }, [uploadedFiles, toast]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -84,7 +109,8 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
 
   const handleSubmit = async () => {
     // Validate required fields
-    if (!clientName.trim()) {
+    const sanitizedClientName = sanitizeText(clientName.trim());
+    if (!sanitizedClientName) {
       setClientNameError("Client name is required");
       toast({
         title: "Validation Error",
@@ -103,6 +129,17 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       return;
     }
 
+    // Validate file sizes before submission
+    const oversizedFiles = uploadedFiles.filter(f => f.file.size > MAX_FILE_SIZE);
+    if (oversizedFiles.length > 0) {
+      toast({
+        title: "File Too Large",
+        description: "Please remove files larger than 10MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Check if all files have document types
     const filesWithoutTypes = uploadedFiles.filter((f) => !f.documentType);
     if (filesWithoutTypes.length > 0) {
@@ -115,7 +152,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
     }
 
     try {
-      // Create document tags mapping
+      // Create document tags mapping (sanitize file names)
       const documentTags: Record<string, string> = {};
       uploadedFiles.forEach((file) => {
         if (file.documentType) {
@@ -123,41 +160,31 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
         }
       });
 
+      // Sanitize inputs before sending
+      const sanitizedLcNumber = lcNumber ? sanitizeText(lcNumber.trim()) : undefined;
+      const sanitizedNotes = notes ? sanitizeText(notes.trim()) : undefined;
+
       // Prepare validation request
       const response = await validate({
         files: uploadedFiles.map((f) => f.file),
-        lcNumber: lcNumber || undefined,
-        notes: notes || undefined,
+        lcNumber: sanitizedLcNumber,
+        notes: sanitizedNotes,
         documentTags,
         userType: "bank",
         workflowType: "bank-bulk-validation",
         metadata: {
-          clientName: clientName.trim(),
+          clientName: sanitizedClientName,
           dateReceived: dateReceived || undefined,
         },
       });
 
-      // Store job in localStorage for queue tracking
-      const jobId = response.jobId || response.job_id || `job_${Date.now()}`;
-      const newJob = {
-        id: `bank_job_${Date.now()}`,
-        jobId,
-        clientName: clientName.trim(),
-        lcNumber: lcNumber || undefined,
-        status: "pending" as const,
-        progress: 0,
-        submittedAt: new Date().toISOString(),
-      };
-
-      // Add to jobs list
-      const existingJobs = localStorage.getItem("bank_validation_jobs");
-      const jobs = existingJobs ? JSON.parse(existingJobs) : [];
-      jobs.unshift(newJob);
-      localStorage.setItem("bank_validation_jobs", JSON.stringify(jobs));
+      // Job is now stored in backend via ValidationSession
+      // No need to store in localStorage
+      const jobId = response.jobId || response.job_id;
 
       toast({
         title: "Validation Started",
-        description: `LC validation for ${clientName} has been queued for processing.`,
+        description: `LC validation for ${sanitizedClientName} has been queued for processing.`,
       });
 
       // Reset form
@@ -267,7 +294,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
                   >
                     <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{file.name}</p>
+                      <p className="text-sm font-medium truncate">{sanitizeText(file.name)}</p>
                       <p className="text-xs text-muted-foreground">
                         {(file.size / 1024 / 1024).toFixed(2)} MB
                       </p>

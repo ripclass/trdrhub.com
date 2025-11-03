@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText, CheckCircle, AlertTriangle, TrendingUp } from "lucide-react";
+import { bankApi } from "@/api/bank";
 
 interface QuickStats {
   todayCount: number;
@@ -17,57 +19,48 @@ export function BankQuickStats() {
     processingTime: "0m",
   });
 
+  // Fetch today's results
+  const { data: resultsData } = useQuery({
+    queryKey: ['bank-stats'],
+    queryFn: () => {
+      const today = new Date();
+      const startOfDay = new Date(today);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      return bankApi.getResults({
+        start_date: startOfDay.toISOString(),
+        end_date: today.toISOString(),
+        limit: 1000,
+      });
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
   useEffect(() => {
-    // Load stats from localStorage (temporary until backend is ready)
-    const loadStats = () => {
-      const stored = localStorage.getItem("bank_validation_results");
-      if (stored) {
-        try {
-          const results = JSON.parse(stored);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+    if (resultsData?.results) {
+      const todayResults = resultsData.results;
+      
+      const avgScore =
+        todayResults.length > 0
+          ? Math.round(
+              todayResults.reduce((sum, r) => sum + r.compliance_score, 0) /
+                todayResults.length
+            )
+          : 0;
 
-          const todayResults = results.filter((r: any) => {
-            const completedAt = new Date(r.completedAt);
-            return completedAt >= today;
-          });
+      const totalDiscrepancies = todayResults.reduce(
+        (sum, r) => sum + r.discrepancy_count,
+        0
+      );
 
-          const allResults = results.map((r: any) => ({
-            complianceScore: r.complianceScore || 0,
-            discrepancyCount: r.discrepancyCount || 0,
-          }));
-
-          const avgScore =
-            allResults.length > 0
-              ? Math.round(
-                  allResults.reduce((sum: number, r: any) => sum + r.complianceScore, 0) /
-                    allResults.length
-                )
-              : 0;
-
-          const totalDiscrepancies = allResults.reduce(
-            (sum: number, r: any) => sum + r.discrepancyCount,
-            0
-          );
-
-          setStats({
-            todayCount: todayResults.length,
-            avgScore,
-            totalDiscrepancies,
-            processingTime: "2.3m", // TODO: Calculate from actual processing times
-          });
-        } catch (e) {
-          console.error("Failed to load stats:", e);
-        }
-      }
-    };
-
-    loadStats();
-
-    // Refresh stats every 30 seconds
-    const interval = setInterval(loadStats, 30000);
-    return () => clearInterval(interval);
-  }, []);
+      setStats({
+        todayCount: todayResults.length,
+        avgScore,
+        totalDiscrepancies,
+        processingTime: "2.3m", // TODO: Calculate from actual processing times
+      });
+    }
+  }, [resultsData]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

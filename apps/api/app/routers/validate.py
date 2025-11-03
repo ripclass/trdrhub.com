@@ -1,14 +1,17 @@
 from decimal import Decimal
 from uuid import uuid4
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import UsageAction, User
+from app.models import UsageAction, User, ValidationSession, SessionStatus
 from app.services.entitlements import EntitlementError, EntitlementService
 from app.services.validator import validate_document
+from app.services import ValidationSessionService
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -61,17 +64,70 @@ async def validate_doc(
             },
         ) from exc
 
+    # Check if this is a bank bulk validation request
+    user_type = payload.get("userType") or payload.get("user_type")
+    metadata = payload.get("metadata")
+    
+    # Create ValidationSession for bank operations or if metadata is provided
+    validation_session = None
+    if user_type == "bank" or metadata:
+        session_service = ValidationSessionService(db)
+        validation_session = session_service.create_session(current_user)
+        
+        # Set company_id if available
+        if current_user.company_id:
+            validation_session.company_id = current_user.company_id
+        
+        # Store bank metadata in extracted_data
+        if metadata:
+            try:
+                # Parse metadata if it's a string
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                
+                # Store bank metadata
+                extracted_data = {
+                    "bank_metadata": {
+                        "client_name": metadata.get("clientName"),
+                        "lc_number": metadata.get("lcNumber"),
+                        "date_received": metadata.get("dateReceived"),
+                    }
+                }
+                validation_session.extracted_data = extracted_data
+            except (json.JSONDecodeError, TypeError):
+                # If metadata parsing fails, continue without it
+                pass
+        
+        # Update session status to processing
+        validation_session.status = SessionStatus.PROCESSING.value
+        validation_session.processing_started_at = func.now()
+        db.commit()
+        
+        job_id = str(validation_session.id)
+    else:
+        job_id = payload.get("job_id") or f"job_{uuid4()}"
+
     results = validate_document(payload, doc_type)
 
+    # Record usage - link to session if created
     quota = entitlements.record_usage(
         current_user.company,
         UsageAction.VALIDATE,
         user_id=current_user.id,
         cost=Decimal("0.00"),
         description=f"Validation request for document type {doc_type}",
+        session_id=validation_session.id if validation_session else None,
     )
 
-    job_id = payload.get("job_id") or f"job_{uuid4()}"
+    # Update session status if created
+    if validation_session:
+        validation_session.validation_results = {
+            "discrepancies": [r for r in results if not r.get("passed", False)],
+            "results": results,
+        }
+        validation_session.status = SessionStatus.COMPLETED.value
+        validation_session.processing_completed_at = func.now()
+        db.commit()
 
     return {
         "status": "ok",
