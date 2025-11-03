@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useValidate } from "@/hooks/use-lcopilot";
+import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
 import { useDrafts, type DraftFile } from "@/hooks/use-drafts";
 import { 
   FileText, 
@@ -27,6 +27,7 @@ import {
   Shield,
   ClipboardCheck
 } from "lucide-react";
+import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
 
 interface UploadedFile {
   id: string;
@@ -69,9 +70,11 @@ export default function ImportLCUpload() {
 
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  const { validate, isLoading: isValidating, error: validateError } = useValidate();
+  const { validate, isLoading: isValidating } = useValidate();
   const { createDraft, getDraft, updateDraft, markDraftSubmitted, isLoading: isDraftLoading } = useDrafts();
   const navigate = useNavigate();
+  const [quotaError, setQuotaError] = useState<ValidationError | null>(null);
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
 
   // Load draft if draft_id and type are provided in URL params
   useEffect(() => {
@@ -396,6 +399,12 @@ export default function ImportLCUpload() {
       console.log("Error code:", error.code);
       console.log("Error name:", error.name);
       console.log("Error details:", error);
+
+      if (error.type === 'quota') {
+        setQuotaError(error);
+        setShowQuotaModal(true);
+        return;
+      }
 
       // Check for network errors (either our ValidationError type or raw Axios errors)
       const isNetworkError =
@@ -849,6 +858,14 @@ export default function ImportLCUpload() {
         </Card>
         </div>
       )}
+
+      <QuotaLimitModal
+        open={showQuotaModal}
+        onClose={() => setShowQuotaModal(false)}
+        message={quotaError?.message ?? 'Your validation quota has been reached.'}
+        quota={quotaError?.quota}
+        nextActionUrl={quotaError?.nextActionUrl}
+      />
     </div>
   );
 }

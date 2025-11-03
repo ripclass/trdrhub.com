@@ -402,6 +402,14 @@ export default function ExportLCUpload() {
 
     } catch (error: any) {
       console.error('❌ Validation error:', error);
+      if (error.type === 'quota') {
+        toast({
+          title: 'Upgrade Required',
+          description: error.message || 'Your validation quota has been reached. Please upgrade to continue.',
+          variant: 'destructive',
+        });
+        return;
+      }
       if (error.type === 'rate_limit') {
         setShowRateLimit(true);
       } else {

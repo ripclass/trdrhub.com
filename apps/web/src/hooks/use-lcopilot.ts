@@ -69,8 +69,14 @@ export interface PackageResponse {
 
 export interface ValidationError {
   message: string;
-  type: 'rate_limit' | 'validation' | 'network' | 'server' | 'unknown';
+  type: 'rate_limit' | 'validation' | 'network' | 'server' | 'unknown' | 'quota';
   statusCode?: number;
+  quota?: {
+    used: number;
+    limit: number | null;
+    remaining: number | null;
+  };
+  nextActionUrl?: string | null;
 }
 
 // Hook for validating documents
@@ -119,23 +125,39 @@ export const useValidate = () => {
 
       if (err.response) {
         const { status, data } = err.response;
+        const detail = data?.detail ?? data;
 
-        if (status === 429) {
+        if (status === 402) {
+          const quotaData = detail?.quota;
+          validationError = {
+            type: 'quota',
+            message: detail?.message || 'Your validation quota has been reached.',
+            statusCode: status,
+            quota: quotaData
+              ? {
+                  used: quotaData.used ?? 0,
+                  limit: quotaData.limit ?? null,
+                  remaining: quotaData.remaining ?? null,
+                }
+              : undefined,
+            nextActionUrl: detail?.next_action_url ?? detail?.nextActionUrl ?? null,
+          };
+        } else if (status === 429) {
           validationError = {
             type: 'rate_limit',
-            message: data.message || 'Too many requests. Please try again later.',
+            message: detail?.message || 'Too many requests. Please try again later.',
             statusCode: status,
           };
         } else if (status >= 400 && status < 500) {
           validationError = {
             type: 'validation',
-            message: data.message || 'Validation request failed.',
+            message: detail?.message || 'Validation request failed.',
             statusCode: status,
           };
         } else {
           validationError = {
             type: 'server',
-            message: data.message || 'Server error occurred.',
+            message: detail?.message || 'Server error occurred.',
             statusCode: status,
           };
         }
