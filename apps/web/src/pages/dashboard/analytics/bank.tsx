@@ -20,18 +20,68 @@ import { TrendingUp, TrendingDown, AlertTriangle, Users, FileText, Clock } from 
 
 export default function BankAnalyticsPage() {
   const { user } = useAuth();
+  const isBank = !!user && user.role === "bank";
   const [filters, setFilters] = React.useState<AnalyticsFilters>({
     timeRange: "30d",
     startDate: subDays(new Date(), 30),
     endDate: new Date(),
   });
 
-  const {
-    data: dashboard,
-    isLoading,
-    error,
-    refetch
-  } = useQuery({
+  // When not a bank user, show a public demo (no API calls)
+  const demoDashboard: AnalyticsDashboard = {
+    summary: {
+      total_jobs: 12540,
+      rejection_rate: 8.7,
+      avg_processing_time_minutes: 12.4,
+      doc_distribution: { lc: 7420, invoice: 3200, bl: 1920 },
+    },
+    trends: {
+      job_volume_trend: 4.6,
+      success_rate_trend: 1.8,
+      processing_time_trend: -0.9,
+      daily_volumes: Array.from({ length: 14 }).map((_, i) => ({
+        date: subDays(new Date(), 13 - i).toISOString().slice(0, 10),
+        count: 700 + Math.round(Math.sin(i / 2) * 80),
+      })),
+      success_rates: Array.from({ length: 14 }).map((_, i) => ({
+        date: subDays(new Date(), 13 - i).toISOString().slice(0, 10),
+        success_rate: 91 + Math.sin(i / 3) * 3,
+        rejection_rate: 9 - Math.sin(i / 3) * 3,
+      })),
+      processing_times: Array.from({ length: 14 }).map((_, i) => ({
+        date: subDays(new Date(), 13 - i).toISOString().slice(0, 10),
+        avg_time: 12 + Math.cos(i / 4),
+      })),
+      daily_discrepancies: Array.from({ length: 14 }).map((_, i) => ({
+        date: subDays(new Date(), 13 - i).toISOString().slice(0, 10),
+        count: 60 + Math.round(Math.cos(i / 2) * 20),
+      })),
+    },
+    users: Array.from({ length: 12 }).map((_, i) => ({
+      user_id: `u${i + 1}`,
+      username: `Client ${i + 1}`,
+      email: undefined as unknown as string,
+      role: "exporter",
+      job_count: 100 - i * 5,
+      success_rate: 80 + (i % 4) * 5,
+    })),
+    discrepancies: {
+      total_discrepancies: 260,
+      by_type: [
+        { discrepancy_type: "late_shipment", count: 75 },
+        { discrepancy_type: "amount_mismatch", count: 58 },
+        { discrepancy_type: "missing_docs", count: 42 },
+        { discrepancy_type: "expiry_issue", count: 28 },
+      ],
+      by_severity: [
+        { severity: "high", count: 65 },
+        { severity: "medium", count: 110 },
+        { severity: "low", count: 85 },
+      ],
+    },
+  } as unknown as AnalyticsDashboard;
+
+  const query = useQuery({
     queryKey: ['analytics-dashboard', filters],
     queryFn: () => analyticsApi.getDashboard({
       time_range: filters.timeRange,
@@ -40,18 +90,13 @@ export default function BankAnalyticsPage() {
     }),
     staleTime: 5 * 60 * 1000,
     retry: 2,
+    enabled: isBank,
   });
 
-  if (!user || user.role !== "bank") {
-    return (
-      <div className="container mx-auto py-6">
-        <ErrorState
-          error="Access denied. This page is for bank users only."
-          className="max-w-md mx-auto"
-        />
-      </div>
-    );
-  }
+  const dashboard = (isBank ? query.data : demoDashboard) as AnalyticsDashboard | undefined;
+  const isLoading = isBank ? query.isLoading : false;
+  const error = isBank ? query.error : undefined;
+  const refetch = query.refetch;
 
   if (isLoading) {
     return (
