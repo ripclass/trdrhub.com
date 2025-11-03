@@ -10,15 +10,22 @@ import hmac
 import json
 import requests
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlencode
 
 from .base import (
-    PaymentProvider, PaymentIntent, PaymentResult, RefundResult,
-    WebhookEvent, PaymentStatus, PaymentMethod, PaymentProviderError,
-    PaymentProviderFactory
+    PaymentProvider,
+    PaymentIntent,
+    PaymentResult,
+    RefundResult,
+    WebhookEvent,
+    PaymentStatus,
+    PaymentMethod,
+    PaymentProviderError,
+    PaymentProviderFactory,
 )
 
 
@@ -42,12 +49,15 @@ class SSLCommerzProvider(PaymentProvider):
         # Set API endpoints
         if self.sandbox:
             self.base_url = "https://sandbox.sslcommerz.com"
+            self.validation_url = f"{self.base_url}/validator/api/validationserverAPI.php"
+            self.refund_url = f"{self.base_url}/validator/api/merchantTransIDvalidationAPI.php"
         else:
             self.base_url = "https://securepay.sslcommerz.com"
+            self.validation_url = f"{self.base_url}/validator/api/validationserverAPI.php"
+            self.refund_url = f"{self.base_url}/validator/api/merchantTransIDvalidationAPI.php"
 
         self.session_url = f"{self.base_url}/gwprocess/v4/api.php"
-        self.validation_url = f"{self.base_url}/validator/api/validationserverAPI.php"
-        self.refund_url = f"{self.base_url}/validator/api/merchantTransIDvalidationAPI.php"
+        self.ipn_validation_url = f"{self.base_url}/validator/api/validationserverAPI.php"
 
         self.validate_config()
 
@@ -196,10 +206,7 @@ class SSLCommerzProvider(PaymentProvider):
         payment_id: str,
         amount: Optional[Decimal] = None
     ) -> PaymentResult:
-        """
-        SSLCommerz doesn't require explicit capture - payments are captured automatically.
-        This method just returns the current status.
-        """
+        """SSLCommerz auto-captures payments on success. Return current status."""
         return self.get_payment_status(payment_id)
 
     def refund_payment(
