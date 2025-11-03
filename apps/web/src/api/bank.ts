@@ -20,7 +20,7 @@ export interface BankResult {
   lc_number?: string;
   submitted_at?: string;
   completed_at?: string;
-  status: 'compliant' | 'discrepancies';
+  status: 'compliant' | 'discrepancies' | 'failed';
   compliance_score: number;
   discrepancy_count: number;
   document_count: number;
