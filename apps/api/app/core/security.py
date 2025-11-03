@@ -113,7 +113,7 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
             email=email,
             full_name=full_name,
             role=role_value,
-            hashed_password=hash_password("external-auth"),
+            hashed_password=None,  # external users don't require local password
             is_active=True,
         )
         db.add(user)
