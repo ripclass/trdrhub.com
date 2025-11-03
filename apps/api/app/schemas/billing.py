@@ -170,6 +170,11 @@ class PaymentIntentCreate(BaseModel):
     payment_method_types: Optional[List[str]] = None
     return_url: Optional[str] = None
     cancel_url: Optional[str] = None
+    provider: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    price_id: Optional[str] = None
+    quantity: Optional[int] = Field(default=1, ge=1)
+    mode: Optional[str] = Field(default=None, description="Checkout mode for Stripe (payment|subscription)")
 
     @validator('currency')
     def validate_currency(cls, v):
@@ -177,6 +182,24 @@ class PaymentIntentCreate(BaseModel):
         if v.upper() not in supported:
             raise ValueError(f"Currency must be one of: {', '.join(supported)}")
         return v.upper()
+
+    @validator('provider')
+    def validate_provider(cls, v):
+        if v is None:
+            return v
+        provider = v.lower()
+        if provider not in {"sslcommerz", "stripe"}:
+            raise ValueError("Provider must be either 'sslcommerz' or 'stripe'")
+        return provider
+
+    @validator('mode')
+    def validate_mode(cls, v):
+        if v is None:
+            return v
+        mode = v.lower()
+        if mode not in {"payment", "subscription"}:
+            raise ValueError("Mode must be either 'payment' or 'subscription'")
+        return mode
 
 
 class PaymentIntent(BaseModel):

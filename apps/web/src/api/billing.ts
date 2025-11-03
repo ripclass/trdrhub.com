@@ -23,6 +23,7 @@ import type {
   SMEMetrics,
   ComplianceFilters
 } from '../types/billing';
+import { PaymentProvider } from '../types/billing';
 
 // Company billing endpoints
 export const billingApi = {
@@ -104,32 +105,51 @@ export const billingApi = {
   },
 
   // Start checkout process
-  startCheckout: async (request: CheckoutRequest): Promise<{ checkout_url: string; payment_intent_id: string }> => {
-    // Create payment intent based on plan
-    const planPrices = {
+  startCheckout: async (request: CheckoutRequest): Promise<PaymentIntent> => {
+    const planPrices: Record<string, number> = {
+      FREE: 0,
       STARTER: 15000,
       PROFESSIONAL: 45000,
-      ENTERPRISE: 0 // Custom pricing
+      ENTERPRISE: 0,
     };
 
-    const amount = planPrices[request.plan as keyof typeof planPrices] || 0;
-
-    const paymentIntent = await api.post('/billing/payments/intents', {
-      amount,
-      currency: 'BDT',
+    const payload: Record<string, unknown> = {
       provider: request.provider,
       return_url: request.return_url || `${window.location.origin}/dashboard/billing?success=true`,
       cancel_url: request.cancel_url || `${window.location.origin}/dashboard/billing?cancelled=true`,
       metadata: {
         plan: request.plan,
-        upgrade: true
-      }
+        ...(request.metadata || {}),
+      },
+    };
+
+    if (typeof request.amount === 'number') {
+      payload.amount = request.amount;
+    }
+
+    if (request.currency) {
+      payload.currency = request.currency.toUpperCase();
+    }
+
+    if (request.priceId) {
+      payload.price_id = request.priceId;
+      payload.mode = request.mode || 'subscription';
+      payload.quantity = request.quantity || 1;
+      payload.currency = (request.currency || 'USD').toUpperCase();
+    } else if (request.provider === PaymentProvider.SSLCOMMERZ) {
+      payload.amount = payload.amount ?? planPrices[request.plan] ?? 0;
+      payload.currency = 'BDT';
+    }
+
+    if (request.paymentMethodTypes) {
+      payload.payment_method_types = request.paymentMethodTypes;
+    }
+
+    const response = await api.post('/billing/payments/intents', payload, {
+      params: { provider: request.provider },
     });
 
-    return {
-      checkout_url: paymentIntent.data.checkout_url,
-      payment_intent_id: paymentIntent.data.id
-    };
+    return response.data;
   },
 
   // Download invoice PDF

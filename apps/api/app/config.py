@@ -69,10 +69,27 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # development, staging, production
     DEBUG: bool = False
 
+    # URLs
+    FRONTEND_URL: str = "http://localhost:5173"
+    API_BASE_URL: str = "http://localhost:8000"
+
     # RulHub Integration
     USE_RULHUB_API: bool = False
     RULHUB_API_URL: str = ""
     RULHUB_API_KEY: str = ""
+
+    # Stripe configuration
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    STRIPE_PRICE_STARTER: Optional[str] = None
+    STRIPE_PRICE_PROFESSIONAL: Optional[str] = None
+    STRIPE_PRICE_ENTERPRISE: Optional[str] = None
+
+    # SSLCommerz configuration
+    SSLCOMMERZ_STORE_ID: Optional[str] = None
+    SSLCOMMERZ_STORE_PASSWORD: Optional[str] = None
+    SSLCOMMERZ_SANDBOX: bool = True
     
     # CORS Configuration
     CORS_ALLOW_ORIGINS: List[str] = ["*"]  # Default to all, override in production

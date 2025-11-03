@@ -367,6 +367,14 @@ class PaymentProvider(ABC):
                 raise PaymentProviderError(f"Missing required config key: {key}")
         return True
 
+    def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str,
+    ) -> str:
+        """Create a billing portal session for managing subscriptions."""
+        raise PaymentProviderError("Billing portal is not supported for this provider")
+
 
 class PaymentProviderError(Exception):
     """Base exception for payment provider errors."""

@@ -223,6 +223,13 @@ export interface CheckoutRequest {
   provider: PaymentProvider;
   return_url?: string;
   cancel_url?: string;
+  amount?: number;
+  currency?: string;
+  priceId?: string;
+  quantity?: number;
+  mode?: 'payment' | 'subscription';
+  metadata?: Record<string, any>;
+  paymentMethodTypes?: string[];
 }
 
 export interface CompanyBillingUpdate {

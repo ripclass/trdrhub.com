@@ -248,14 +248,24 @@ async def generate_invoice(
 @router.post("/payments/intents", response_model=schemas.PaymentIntent)
 async def create_payment_intent(
     payment_data: schemas.PaymentIntentCreate,
-    provider: str = Query("sslcommerz", description="Payment provider (sslcommerz or stripe)"),
+    provider_override: Optional[str] = Query(None, description="Payment provider (sslcommerz or stripe)"),
     current_user: User = Depends(get_current_user),
     billing_service: BillingService = Depends(get_billing_service),
     db: Session = Depends(get_db)
 ):
     """Create payment intent for invoice or custom amount."""
     try:
-        # If invoice_id provided, get invoice amount
+        provider_name = provider_override or payment_data.provider or "sslcommerz"
+        provider_name = provider_name.lower()
+        if provider_name not in {"sslcommerz", "stripe"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported payment provider"
+            )
+
+        # Determine amount/currency
+        amount: Decimal
+        currency: str
         if payment_data.invoice_id:
             invoice = db.query(InvoiceModel).filter(
                 InvoiceModel.id == payment_data.invoice_id,
@@ -271,25 +281,20 @@ async def create_payment_intent(
             amount = invoice.amount
             currency = invoice.currency
         else:
-            if not payment_data.amount:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Amount is required when not paying for an invoice"
-                )
-            amount = payment_data.amount
-            currency = payment_data.currency
+            amount = Decimal(str(payment_data.amount)) if payment_data.amount is not None else Decimal("0")
+            currency = payment_data.currency or ("USD" if provider_name == "stripe" else "BDT")
 
         # Get payment provider
-        payment_provider = get_payment_provider(provider)
+        payment_provider = get_payment_provider(provider_name)
 
         # Create customer if not exists
         company = billing_service.get_company_billing_info(current_user.company_id)
-        customer_id = company.payment_customer_id
+        customer_id = company.get("payment_customer_id")
 
         if not customer_id:
             customer_id = payment_provider.create_customer(
-                email=company.billing_email or current_user.email,
-                name=company.name,
+                email=company.get("billing_email") or current_user.email,
+                name=company.get("name"),
                 metadata={"company_id": str(current_user.company_id)}
             )
             billing_service.update_company_billing(
@@ -297,23 +302,34 @@ async def create_payment_intent(
                 {"payment_customer_id": customer_id}
             )
 
-        # Create payment intent
+        metadata = payment_data.metadata or {}
+        metadata.setdefault("company_id", str(current_user.company_id))
+        metadata.setdefault("user_id", str(current_user.id))
+        if payment_data.invoice_id:
+            metadata.setdefault("invoice_id", str(payment_data.invoice_id))
+        if payment_data.price_id:
+            metadata.setdefault("price_id", payment_data.price_id)
+        if payment_data.mode:
+            metadata.setdefault("checkout_mode", payment_data.mode)
+        if payment_data.quantity and payment_data.quantity > 1:
+            metadata.setdefault("quantity", payment_data.quantity)
+
+        # Determine defaults for Stripe subscriptions when amount not provided
+        if provider_name == "stripe" and amount <= 0:
+            amount = Decimal("0")
+            currency = payment_data.currency or "USD"
+
         intent = payment_provider.create_payment_intent(
             amount=amount,
             currency=currency,
             customer_id=customer_id,
-            description=f"Payment for {company.name}",
-            metadata={
-                "company_id": str(current_user.company_id),
-                "invoice_id": str(payment_data.invoice_id) if payment_data.invoice_id else None,
-                "user_id": str(current_user.id)
-            },
-            return_url=payment_data.return_url,
-            cancel_url=payment_data.cancel_url,
-            payment_method_types=payment_data.payment_method_types
+            description=metadata.get("description") or f"Payment for {company.get('name')}",
+            metadata=metadata,
+            return_url=payment_data.return_url or f"{settings.FRONTEND_URL}/dashboard/billing?success=true",
+            cancel_url=payment_data.cancel_url or f"{settings.FRONTEND_URL}/dashboard/billing?cancelled=true",
+            payment_method_types=payment_data.payment_method_types,
         )
 
-        # Update invoice with payment intent
         if payment_data.invoice_id:
             billing_service.update_invoice_payment_intent(payment_data.invoice_id, intent.id)
 
@@ -391,6 +407,43 @@ async def refund_payment(
             payment_id=payment_id,
             amount=refund_data.amount,
             reason=refund_data.reason
+        )
+
+
+@router.post("/payments/portal", response_model=Dict[str, str])
+async def create_billing_portal(
+    current_user: User = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service),
+):
+    """Create a billing portal session for Stripe customers."""
+    try:
+        provider = get_payment_provider("stripe")
+        company = billing_service.get_company_billing_info(current_user.company_id)
+        customer_id = company.get("payment_customer_id")
+        if not customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No Stripe customer associated with this company yet",
+            )
+
+        portal_url = provider.create_billing_portal_session(
+            customer_id=customer_id,
+            return_url=f"{settings.FRONTEND_URL}/dashboard/billing",
+        )
+
+        return {"url": portal_url}
+
+    except HTTPException:
+        raise
+    except PaymentProviderError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment provider error: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create billing portal session: {str(e)}",
         )
 
         return schemas.RefundResult(

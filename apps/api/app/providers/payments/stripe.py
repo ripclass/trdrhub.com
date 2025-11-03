@@ -57,22 +57,61 @@ class StripeProvider(PaymentProvider):
         cancel_url: Optional[str] = None,
         payment_method_types: Optional[List[str]] = None
     ) -> PaymentIntent:
-        """Create Stripe payment intent."""
+        """Create Stripe payment intent or checkout session."""
+
+        metadata = metadata or {}
+        price_id = metadata.get("price_id")
+        checkout_mode = metadata.get("checkout_mode") or metadata.get("mode")
+        quantity = int(metadata.get("quantity") or 1)
 
         try:
-            # Convert amount to cents (Stripe's smallest unit)
+            stripe_metadata = {}
+            for key, value in metadata.items():
+                if value is None:
+                    continue
+                if isinstance(value, (dict, list)):
+                    stripe_metadata[key] = json.dumps(value)
+                else:
+                    stripe_metadata[key] = str(value)
+
+            if price_id:
+                session_params: Dict[str, Any] = {
+                    "customer": customer_id,
+                    "mode": checkout_mode or "subscription",
+                    "success_url": return_url or self.config.get("success_url") or "https://example.com/success",
+                    "cancel_url": cancel_url or self.config.get("cancel_url") or "https://example.com/cancel",
+                    "line_items": [
+                        {
+                            "price": price_id,
+                            "quantity": max(1, quantity),
+                        }
+                    ],
+                    "metadata": stripe_metadata,
+                }
+
+                session = stripe.checkout.Session.create(**session_params)
+
+                amount_total = session.get("amount_total") or 0
+                session_currency = session.get("currency", currency).upper()
+
+                return PaymentIntent(
+                    id=session.id,
+                    amount=self.parse_amount(amount_total, session_currency) if amount_total else amount,
+                    currency=session_currency,
+                    status=PaymentStatus.PENDING,
+                    payment_method_types=session.get("payment_method_types", payment_method_types or ["card"]),
+                    checkout_url=session.url,
+                    metadata={
+                        "stripe_session_id": session.id,
+                        "original_metadata": metadata,
+                    },
+                    created_at=datetime.utcfromtimestamp(session.created),
+                    expires_at=datetime.utcfromtimestamp(session.expires_at) if getattr(session, "expires_at", None) else None,
+                )
+
+            # Default to PaymentIntent flow when no price ID provided
             amount_cents = self.format_amount(amount, currency)
 
-            # Prepare metadata for Stripe (flatten nested objects)
-            stripe_metadata = {}
-            if metadata:
-                for key, value in metadata.items():
-                    if isinstance(value, (dict, list)):
-                        stripe_metadata[key] = json.dumps(value)
-                    else:
-                        stripe_metadata[key] = str(value)
-
-            # Create payment intent
             intent = stripe.PaymentIntent.create(
                 amount=amount_cents,
                 currency=currency.lower(),
@@ -80,7 +119,7 @@ class StripeProvider(PaymentProvider):
                 description=description or "LCopilot LC Validation Service",
                 metadata=stripe_metadata,
                 payment_method_types=payment_method_types or ['card'],
-                setup_future_usage='off_session' if customer_id else None,  # Save for future payments
+                setup_future_usage='off_session' if customer_id else None,
             )
 
             return PaymentIntent(
@@ -392,6 +431,26 @@ class StripeProvider(PaymentProvider):
             if not self.config.get(key):
                 raise PaymentProviderError(f"Missing required Stripe config: {key}")
         return True
+
+    def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str,
+    ) -> str:
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=return_url,
+            )
+            return session.url
+        except stripe.error.StripeError as e:
+            raise PaymentProviderError(
+                f"Stripe error creating billing portal session: {str(e)}",
+                error_code=e.code,
+                provider_error=e.json_body if hasattr(e, 'json_body') else None,
+            )
+        except Exception as e:
+            raise PaymentProviderError(f"Error creating billing portal session: {str(e)}")
 
     def _map_stripe_status(self, stripe_status: str) -> PaymentStatus:
         """Map Stripe status to our standard status."""

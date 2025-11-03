@@ -26,7 +26,7 @@ import {
   getPlanDisplayName
 } from '@/types/billing';
 import { useCheckout } from '@/hooks/useBilling';
-import type { CompanyBillingInfo } from '@/types/billing';
+import type { CompanyBillingInfo, CheckoutRequest } from '@/types/billing';
 
 interface UpgradeModalProps {
   open: boolean;
@@ -34,6 +34,26 @@ interface UpgradeModalProps {
   currentBillingInfo: CompanyBillingInfo;
   onSuccess?: () => void;
 }
+
+const STRIPE_PRICE_IDS: Record<PlanType, string | undefined> = {
+  [PlanType.FREE]: undefined,
+  [PlanType.STARTER]: import.meta.env.VITE_STRIPE_PRICE_STARTER as string | undefined,
+  [PlanType.PROFESSIONAL]: import.meta.env.VITE_STRIPE_PRICE_PROFESSIONAL as string | undefined,
+  [PlanType.ENTERPRISE]: import.meta.env.VITE_STRIPE_PRICE_ENTERPRISE as string | undefined,
+};
+
+const PLAN_PRICES_BDT: Record<PlanType, number> = {
+  [PlanType.FREE]: 0,
+  [PlanType.STARTER]: 15000,
+  [PlanType.PROFESSIONAL]: 45000,
+  [PlanType.ENTERPRISE]: 0,
+};
+
+const stripeSupported = Boolean(
+  STRIPE_PRICE_IDS[PlanType.STARTER] ||
+  STRIPE_PRICE_IDS[PlanType.PROFESSIONAL] ||
+  STRIPE_PRICE_IDS[PlanType.ENTERPRISE]
+);
 
 export function UpgradeModal({
   open,
@@ -101,12 +121,30 @@ export function UpgradeModal({
     setStep('processing');
 
     try {
-      await checkout.mutateAsync({
+      const payload: CheckoutRequest = {
         plan: selectedPlan,
         provider: selectedProvider,
         return_url: `${window.location.origin}/dashboard/billing?success=true&plan=${selectedPlan}`,
-        cancel_url: `${window.location.origin}/dashboard/billing?cancelled=true`
-      });
+        cancel_url: `${window.location.origin}/dashboard/billing?cancelled=true`,
+        metadata: { plan: selectedPlan },
+      };
+
+      if (selectedProvider === PaymentProvider.SSLCOMMERZ) {
+        Object.assign(payload, {
+          amount: PLAN_PRICES_BDT[selectedPlan],
+          currency: 'BDT',
+        });
+      } else if (selectedProvider === PaymentProvider.STRIPE) {
+        const priceId = STRIPE_PRICE_IDS[selectedPlan];
+        Object.assign(payload, {
+          currency: 'USD',
+          mode: 'subscription' as const,
+          priceId,
+          paymentMethodTypes: ['card'],
+        });
+      }
+
+      await checkout.mutateAsync(payload);
 
       onSuccess?.();
       onOpenChange(false);
@@ -260,7 +298,11 @@ export function UpgradeModal({
             </div>
 
             <div className="flex items-center space-x-3 p-3 border rounded-lg">
-              <RadioGroupItem value={PaymentProvider.STRIPE} id="stripe" />
+              <RadioGroupItem
+                value={PaymentProvider.STRIPE}
+                id="stripe"
+                disabled={!stripeSupported}
+              />
               <Label htmlFor="stripe" className="flex-1 cursor-pointer">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -274,6 +316,11 @@ export function UpgradeModal({
                   </div>
                   <Badge variant="secondary">Global</Badge>
                 </div>
+                {!stripeSupported && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Stripe pricing IDs not configured. Add VITE_STRIPE_PRICE_* env values to enable.
+                  </p>
+                )}
               </Label>
             </div>
           </RadioGroup>
