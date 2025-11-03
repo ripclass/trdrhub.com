@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { clearSupabaseSession } from './auth'
 
 const API_BASE_URL_VALUE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
 const api = axios.create({
@@ -35,9 +36,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      clearSupabaseSession()
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login'
+      // In guest mode, do not redirect on 401; allow pages to continue.
+      if (!GUEST_MODE) {
+        clearSupabaseSession()
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(error)

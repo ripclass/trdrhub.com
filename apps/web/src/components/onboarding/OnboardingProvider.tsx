@@ -33,18 +33,45 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const { user } = useAuth()
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
 
   const loadStatus = async () => {
     if (!user) {
-      setStatus(null)
+      if (GUEST_MODE) {
+        setStatus({
+          user_id: 'guest',
+          role: 'exporter',
+          company_id: null,
+          completed: true,
+          step: null,
+          status: 'active',
+          kyc_status: 'none',
+          required: {},
+        } as any)
+      } else {
+        setStatus(null)
+      }
       setIsLoading(false)
       return
     }
 
     try {
       setIsLoading(true)
-      const onboardingStatus = await getOnboardingStatus()
-      setStatus(onboardingStatus)
+      if (GUEST_MODE) {
+        setStatus({
+          user_id: user.id,
+          role: user.role,
+          company_id: null,
+          completed: true,
+          step: null,
+          status: 'active',
+          kyc_status: 'none',
+          required: {},
+        } as any)
+      } else {
+        const onboardingStatus = await getOnboardingStatus()
+        setStatus(onboardingStatus)
+      }
     } catch (error) {
       console.error('Failed to load onboarding status:', error)
       setStatus(null)
@@ -59,8 +86,12 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   const updateProgress = async (payload: OnboardingProgressPayload) => {
     try {
+      if (GUEST_MODE) {
+        // no-op in guest mode
+        return
+      }
       const updatedStatus = await updateOnboardingProgress(payload)
-      setStatus(updatedStatus)
+      setStatus(updatedStatus as any)
     } catch (error) {
       console.error('Failed to update onboarding progress:', error)
       throw error

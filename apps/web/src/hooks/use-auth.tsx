@@ -41,6 +41,18 @@ const mapBackendRole = (backendRole: string): Role => {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
+  const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
+
+  const setGuest = () => {
+    setUser({
+      id: 'guest',
+      email: 'guest@trdrhub.com',
+      full_name: 'Guest',
+      username: 'Guest',
+      role: 'exporter',
+      isActive: true,
+    })
+  }
 
   const AUTH_TIMEOUT_MS = 10000
 
@@ -72,6 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return mapped
     } catch (error) {
       console.error('Failed to load user profile', error)
+      if (GUEST_MODE) {
+        setGuest()
+        return {
+          id: 'guest', email: 'guest@trdrhub.com', full_name: 'Guest', username: 'Guest', role: 'exporter', isActive: true,
+        }
+      }
       setUser(null)
       throw error
     }
@@ -91,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) setIsLoading(false)
         }
       } else {
+        if (GUEST_MODE) setGuest()
         setIsLoading(false)
       }
     }
