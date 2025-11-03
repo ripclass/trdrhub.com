@@ -22,8 +22,11 @@ export default function BankDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("upload");
 
-  // Only show for bank users
-  if (!user || user.role !== "bank") {
+  // Check if user is a bank user
+  // Frontend maps bank_officer and bank_admin to "bank" role
+  const isBankUser = user && user.role === "bank";
+
+  if (!isBankUser) {
     return (
       <div className="container mx-auto py-6">
         <Card className="max-w-md mx-auto">
@@ -31,6 +34,11 @@ export default function BankDashboard() {
             <CardTitle>Access Restricted</CardTitle>
             <CardDescription>
               This dashboard is only available for bank users.
+              {user && (
+                <span className="block mt-2 text-xs">
+                  Your role: {user.role}
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
