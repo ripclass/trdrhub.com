@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,12 +24,15 @@ import {
   FileText,
   Eye,
   Download as DownloadIcon,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { format } from "date-fns";
 import { bankApi, BankResult } from "@/api/bank";
 import { sanitizeDisplayText } from "@/lib/sanitize";
 import { generateCSV } from "@/lib/csv";
 import { LCResultDetailModal } from "./LCResultDetailModal";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface ResultsTableProps {}
 
@@ -41,6 +43,7 @@ export function ResultsTable({}: ResultsTableProps) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
   const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
   // Calculate date range for API
   const getDateRange = () => {
@@ -89,6 +92,35 @@ export function ResultsTable({}: ResultsTableProps) {
     return dateB - dateA;
   });
 
+  // Get selected results (if any selected, use those; otherwise use filtered)
+  const exportResults = selectedRows.size > 0
+    ? filteredResults.filter(r => selectedRows.has(r.jobId))
+    : filteredResults;
+
+  // Selection handlers
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedRows(new Set(filteredResults.map(r => r.jobId)));
+    } else {
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleSelectRow = (jobId: string, checked: boolean) => {
+    const newSelected = new Set(selectedRows);
+    if (checked) {
+      newSelected.add(jobId);
+    } else {
+      newSelected.delete(jobId);
+    }
+    setSelectedRows(newSelected);
+  };
+
+  // Clear selection when filters change
+  useEffect(() => {
+    setSelectedRows(new Set());
+  }, [statusFilter, clientFilter, dateRange]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "compliant":
@@ -119,7 +151,7 @@ export function ResultsTable({}: ResultsTableProps) {
         "Discrepancy Count",
         "Document Count",
       ],
-      ...filteredResults.map((r) => {
+      ...exportResults.map((r) => {
         const submittedAt = r.submitted_at ? new Date(r.submitted_at) : null;
         const processingStartedAt = r.processing_started_at ? new Date(r.processing_started_at) : null;
         const completedAt = r.completed_at ? new Date(r.completed_at) : null;
@@ -150,25 +182,39 @@ export function ResultsTable({}: ResultsTableProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `bank-lc-results-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
+    a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleExportPDF = async () => {
     try {
-      const pdfBlob = await bankApi.exportResultsPDF({
+      const params: any = {
         ...getDateRange(),
         client_name: clientFilter || undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
         limit: 500, // Export all filtered results
-      });
+      };
+
+      // If rows are selected, send job IDs instead of filters
+      if (selectedRows.size > 0) {
+        params.job_ids = Array.from(selectedRows).join(",");
+        // Clear other filters when using job_ids
+        delete params.start_date;
+        delete params.end_date;
+        delete params.client_name;
+        delete params.status;
+      }
+
+      const pdfBlob = await bankApi.exportResultsPDF(params);
 
       // Create download link
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `bank-lc-results-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+      const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
+      a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error: any) {
@@ -205,13 +251,35 @@ export function ResultsTable({}: ResultsTableProps) {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredResults.length === 0}>
+            {selectedRows.size > 0 && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>{selectedRows.size} selected</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedRows(new Set())}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleExportCSV} 
+              disabled={exportResults.length === 0}
+            >
               <DownloadIcon className="w-4 h-4 mr-2" />
-              Export CSV
+              Export CSV {selectedRows.size > 0 ? `(${selectedRows.size})` : ""}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredResults.length === 0}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleExportPDF} 
+              disabled={exportResults.length === 0}
+            >
               <FileText className="w-4 h-4 mr-2" />
-              Export PDF
+              Export PDF {selectedRows.size > 0 ? `(${selectedRows.size})` : ""}
             </Button>
           </div>
         </div>
@@ -279,6 +347,13 @@ export function ResultsTable({}: ResultsTableProps) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={isAllSelected}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
                   <TableHead>LC Number</TableHead>
                   <TableHead>Client Name</TableHead>
                   <TableHead>Date</TableHead>
@@ -294,9 +369,17 @@ export function ResultsTable({}: ResultsTableProps) {
                   const completedAt = result.completed_at ? new Date(result.completed_at) : new Date();
                   const clientName = sanitizeDisplayText(result.client_name, "Unknown");
                   const lcNumber = sanitizeDisplayText(result.lc_number, "N/A");
+                  const isSelected = selectedRows.has(result.jobId);
 
                   return (
-                    <TableRow key={result.id}>
+                    <TableRow key={result.id} className={isSelected ? "bg-muted/50" : ""}>
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={(checked) => handleSelectRow(result.jobId, checked === true)}
+                          aria-label={`Select ${lcNumber}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {lcNumber}
                       </TableCell>

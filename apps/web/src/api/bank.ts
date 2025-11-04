@@ -54,6 +54,7 @@ export interface BankResultsFilters {
   status?: 'compliant' | 'discrepancies';
   limit?: number;
   offset?: number;
+  job_ids?: string; // Comma-separated job IDs for bulk export
 }
 
 export interface BankClientsResponse {

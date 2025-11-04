@@ -15,6 +15,9 @@ from ..database import get_db
 from ..models import User, ValidationSession, SessionStatus
 from ..services.analytics_service import AnalyticsService
 from ..services.audit_service import AuditService
+from ..middleware.bank_rate_limit import bank_rate_limit
+from ..middleware.audit_middleware import create_audit_context
+from ..models.audit_log import AuditAction, AuditResult
 
 
 router = APIRouter(prefix="/bank", tags=["bank"])
@@ -131,33 +134,140 @@ def list_bank_jobs(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_bank_or_admin),
     db: Session = Depends(get_db),
+    request: Request = None,
 ):
     """List validation jobs for the bank user."""
-    query = db.query(ValidationSession).filter(
-        ValidationSession.user_id == current_user.id,
-        ValidationSession.deleted_at.is_(None)
-    )
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
     
-    # Filter by status if provided
-    if status:
-        query = query.filter(ValidationSession.status == status)
+    try:
+        query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None)
+        )
+        
+        # Filter by status if provided
+        if status:
+            query = query.filter(ValidationSession.status == status)
+        
+        # Order by created_at desc
+        query = query.order_by(ValidationSession.created_at.desc())
+        
+        # Count total
+        total = query.count()
+        
+        # Apply pagination
+        jobs = query.offset(offset).limit(limit).all()
+        
+        results = []
+        for job in jobs:
+            # Extract bank metadata from extracted_data
+            metadata = job.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            
+            results.append({
+                "id": str(job.id),
+                "job_id": str(job.id),
+                "client_name": bank_metadata.get("client_name"),
+                "lc_number": bank_metadata.get("lc_number"),
+                "date_received": bank_metadata.get("date_received"),
+                "status": job.status,
+                "progress": _calculate_progress(job.status),
+                "submitted_at": job.created_at.isoformat() if job.created_at else None,
+                "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
+            })
+        
+        # Log job list access
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_jobs",
+            resource_id=f"list-{len(results)}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "job_count": len(results),
+                "total_available": total,
+                "filters": {
+                    "status": status,
+                    "limit": limit,
+                    "offset": offset,
+                }
+            }
+        )
+        
+        return {
+            "total": total,
+            "count": len(results),
+            "jobs": results,
+        }
+    except Exception as e:
+        # Log failed request
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_jobs",
+            resource_id="list-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise
+
+
+@router.get("/jobs/{job_id}")
+def get_job_status(
+    job_id: UUID,
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """Get status of a specific validation job."""
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
     
-    # Order by created_at desc
-    query = query.order_by(ValidationSession.created_at.desc())
-    
-    # Count total
-    total = query.count()
-    
-    # Apply pagination
-    jobs = query.offset(offset).limit(limit).all()
-    
-    results = []
-    for job in jobs:
-        # Extract bank metadata from extracted_data
+    try:
+        job = db.query(ValidationSession).filter(
+            ValidationSession.id == job_id,
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None)
+        ).first()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Extract bank metadata
         metadata = job.extracted_data or {}
         bank_metadata = metadata.get("bank_metadata", {})
         
-        results.append({
+        # Log job status access
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_job",
+            resource_id=str(job_id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "job_status": job.status,
+                "client_name": bank_metadata.get("client_name"),
+                "lc_number": bank_metadata.get("lc_number"),
+            }
+        )
+        
+        return {
             "id": str(job.id),
             "job_id": str(job.id),
             "client_name": bank_metadata.get("client_name"),
@@ -167,47 +277,26 @@ def list_bank_jobs(
             "progress": _calculate_progress(job.status),
             "submitted_at": job.created_at.isoformat() if job.created_at else None,
             "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
-        })
-    
-    return {
-        "total": total,
-        "count": len(results),
-        "jobs": results,
-    }
-
-
-@router.get("/jobs/{job_id}")
-def get_job_status(
-    job_id: UUID,
-    current_user: User = Depends(require_bank_or_admin),
-    db: Session = Depends(get_db),
-):
-    """Get status of a specific validation job."""
-    job = db.query(ValidationSession).filter(
-        ValidationSession.id == job_id,
-        ValidationSession.user_id == current_user.id,
-        ValidationSession.deleted_at.is_(None)
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    # Extract bank metadata
-    metadata = job.extracted_data or {}
-    bank_metadata = metadata.get("bank_metadata", {})
-    
-    return {
-        "id": str(job.id),
-        "job_id": str(job.id),
-        "client_name": bank_metadata.get("client_name"),
-        "lc_number": bank_metadata.get("lc_number"),
-        "date_received": bank_metadata.get("date_received"),
-        "status": job.status,
-        "progress": _calculate_progress(job.status),
-        "submitted_at": job.created_at.isoformat() if job.created_at else None,
-        "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
-        "processing_started_at": job.processing_started_at.isoformat() if job.processing_started_at else None,
-    }
+            "processing_started_at": job.processing_started_at.isoformat() if job.processing_started_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log failed request
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_job",
+            resource_id=str(job_id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise
 
 
 @router.get("/results")
@@ -220,162 +309,274 @@ def get_bank_results(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_bank_or_admin),
     db: Session = Depends(get_db),
+    request: Request = None,
 ):
     """Get validation results with filters."""
-    query = db.query(ValidationSession).filter(
-        ValidationSession.user_id == current_user.id,
-        ValidationSession.deleted_at.is_(None),
-        ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
-    )
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
     
-    # Date filters
-    if start_date:
-        query = query.filter(ValidationSession.created_at >= start_date)
-    if end_date:
-        query = query.filter(ValidationSession.created_at <= end_date)
-    
-    # Order by completed date desc
-    query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
-    
-    # Count total
-    total = query.count()
-    
-    # Apply pagination
-    sessions = query.offset(offset).limit(limit).all()
-    
-    results = []
-    for session in sessions:
-        # Extract bank metadata
-        metadata = session.extracted_data or {}
-        bank_metadata = metadata.get("bank_metadata", {})
+    try:
+        query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None),
+            ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+        )
         
-        # Extract validation results
-        validation_results = session.validation_results or {}
-        discrepancies = validation_results.get("discrepancies", [])
+        # Date filters
+        if start_date:
+            query = query.filter(ValidationSession.created_at >= start_date)
+        if end_date:
+            query = query.filter(ValidationSession.created_at <= end_date)
         
-        # Determine compliance status
-        has_discrepancies = len(discrepancies) > 0
-        compliance_status = "discrepancies" if has_discrepancies else "compliant"
+        # Order by completed date desc
+        query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
         
-        # Apply status filter
-        if status and compliance_status != status:
-            continue
+        # Count total
+        total = query.count()
         
-        # Apply client name filter (case-insensitive partial match)
-        client_name_val = bank_metadata.get("client_name", "")
-        if client_name and client_name.lower() not in client_name_val.lower():
-            continue
+        # Apply pagination
+        sessions = query.offset(offset).limit(limit).all()
         
-        # Count documents
-        document_count = len(session.documents) if session.documents else 0
+        results = []
+        for session in sessions:
+            # Extract bank metadata
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            
+            # Extract validation results
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            
+            # Determine compliance status
+            has_discrepancies = len(discrepancies) > 0
+            compliance_status = "discrepancies" if has_discrepancies else "compliant"
+            
+            # Apply status filter
+            if status and compliance_status != status:
+                continue
+            
+            # Apply client name filter (case-insensitive partial match)
+            client_name_val = bank_metadata.get("client_name", "")
+            if client_name and client_name.lower() not in client_name_val.lower():
+                continue
+            
+            # Count documents
+            document_count = len(session.documents) if session.documents else 0
+            
+            # Calculate compliance score (simplified - can be enhanced)
+            compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+            
+            # Calculate processing time in seconds
+            processing_time_seconds = None
+            if session.processing_started_at and session.processing_completed_at:
+                delta = session.processing_completed_at - session.processing_started_at
+                processing_time_seconds = round(delta.total_seconds(), 2)
+            
+            results.append({
+                "id": str(session.id),
+                "job_id": str(session.id),
+                "jobId": str(session.id),
+                "client_name": client_name_val,
+                "lc_number": bank_metadata.get("lc_number"),
+                "date_received": bank_metadata.get("date_received"),
+                "submitted_at": session.created_at.isoformat() if session.created_at else None,
+                "processing_started_at": session.processing_started_at.isoformat() if session.processing_started_at else None,
+                "completed_at": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
+                "processing_time_seconds": processing_time_seconds,
+                "status": compliance_status,
+                "compliance_score": compliance_score,
+                "discrepancy_count": len(discrepancies),
+                "document_count": document_count,
+            })
         
-        # Calculate compliance score (simplified - can be enhanced)
-        compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+        # Log results view
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results",
+            resource_id=f"list-{len(results)}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "result_count": len(results),
+                "total_available": total,
+                "filters": {
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "client_name": client_name,
+                    "status": status,
+                    "limit": limit,
+                    "offset": offset,
+                }
+            }
+        )
         
-        # Calculate processing time in seconds
-        processing_time_seconds = None
-        if session.processing_started_at and session.processing_completed_at:
-            delta = session.processing_completed_at - session.processing_started_at
-            processing_time_seconds = round(delta.total_seconds(), 2)
-        
-        results.append({
-            "id": str(session.id),
-            "job_id": str(session.id),
-            "jobId": str(session.id),
-            "client_name": client_name_val,
-            "lc_number": bank_metadata.get("lc_number"),
-            "date_received": bank_metadata.get("date_received"),
-            "submitted_at": session.created_at.isoformat() if session.created_at else None,
-            "processing_started_at": session.processing_started_at.isoformat() if session.processing_started_at else None,
-            "completed_at": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
-            "processing_time_seconds": processing_time_seconds,
-            "status": compliance_status,
-            "compliance_score": compliance_score,
-            "discrepancy_count": len(discrepancies),
-            "document_count": document_count,
-        })
-    
-    return {
-        "total": total,
-        "count": len(results),
-        "results": results,
-    }
+        return {
+            "total": total,
+            "count": len(results),
+            "results": results,
+        }
+    except Exception as e:
+        # Log failed request
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results",
+            resource_id="list-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise
 
 
 @router.get("/results/export-pdf")
+@bank_rate_limit(limiter_type="export", limit=10, window_seconds=60)
 async def export_results_pdf(
     start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
     end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
     client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
     status: Optional[str] = Query(None, description="Filter by compliance status (compliant/discrepancies)"),
+    job_ids: Optional[str] = Query(None, description="Comma-separated list of job IDs to export (if provided, other filters are ignored)"),
     current_user: User = Depends(require_bank_or_admin),
     db: Session = Depends(get_db),
     request: Request = None,
 ):
-    """Generate a PDF report for filtered validation results."""
+    """Generate a PDF report for filtered or selected validation results."""
+    import time
+    start_time = time.time()
+    
     from ..reports.generator import ReportGenerator
-    from ..services import ReportService
     from io import BytesIO
     from fastapi.responses import Response
     
-    # Get filtered results (reuse logic from get_bank_results)
-    query = db.query(ValidationSession).filter(
-        ValidationSession.user_id == current_user.id,
-        ValidationSession.deleted_at.is_(None),
-        ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
-    )
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
     
-    # Date filters
-    if start_date:
-        query = query.filter(ValidationSession.created_at >= start_date)
-    if end_date:
-        query = query.filter(ValidationSession.created_at <= end_date)
-    
-    # Order by completed date desc
-    query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
-    
-    sessions = query.all()
-    
-    # Apply filters (same logic as get_bank_results)
-    filtered_sessions = []
-    for session in sessions:
-        metadata = session.extracted_data or {}
-        bank_metadata = metadata.get("bank_metadata", {})
-        validation_results = session.validation_results or {}
-        discrepancies = validation_results.get("discrepancies", [])
-        has_discrepancies = len(discrepancies) > 0
-        compliance_status = "discrepancies" if has_discrepancies else "compliant"
+    try:
+        # If specific job IDs provided, use those
+        if job_ids:
+            job_id_list = [UUID(jid.strip()) for jid in job_ids.split(",") if jid.strip()]
+            sessions = db.query(ValidationSession).filter(
+                ValidationSession.id.in_(job_id_list),
+                ValidationSession.user_id == current_user.id,
+                ValidationSession.deleted_at.is_(None)
+            ).all()
+            filtered_sessions = sessions
+        else:
+            # Get filtered results (reuse logic from get_bank_results)
+            query = db.query(ValidationSession).filter(
+                ValidationSession.user_id == current_user.id,
+                ValidationSession.deleted_at.is_(None),
+                ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+            )
+            
+            # Date filters
+            if start_date:
+                query = query.filter(ValidationSession.created_at >= start_date)
+            if end_date:
+                query = query.filter(ValidationSession.created_at <= end_date)
+            
+            # Order by completed date desc
+            query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
+            
+            sessions = query.all()
+            
+            # Apply filters (same logic as get_bank_results)
+            filtered_sessions = []
+            for session in sessions:
+                metadata = session.extracted_data or {}
+                bank_metadata = metadata.get("bank_metadata", {})
+                validation_results = session.validation_results or {}
+                discrepancies = validation_results.get("discrepancies", [])
+                has_discrepancies = len(discrepancies) > 0
+                compliance_status = "discrepancies" if has_discrepancies else "compliant"
+                
+                # Apply status filter
+                if status and compliance_status != status:
+                    continue
+                
+                # Apply client name filter
+                client_name_val = bank_metadata.get("client_name", "")
+                if client_name and client_name.lower() not in client_name_val.lower():
+                    continue
+                
+                filtered_sessions.append(session)
         
-        # Apply status filter
-        if status and compliance_status != status:
-            continue
+        # Generate summary PDF report
+        report_generator = ReportGenerator()
         
-        # Apply client name filter
-        client_name_val = bank_metadata.get("client_name", "")
-        if client_name and client_name.lower() not in client_name_val.lower():
-            continue
+        # Create HTML summary report
+        html_content = _generate_summary_report_html(filtered_sessions, current_user)
         
-        filtered_sessions.append(session)
-    
-    # Generate summary PDF report
-    report_generator = ReportGenerator()
-    
-    # Create HTML summary report
-    html_content = _generate_summary_report_html(filtered_sessions, current_user)
-    
-    # Convert to PDF
-    pdf_buffer = report_generator._html_to_pdf(html_content)
-    
-    # Return PDF as response
-    filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.pdf"
-    
-    return Response(
-        content=pdf_buffer.getvalue(),
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
-    )
+        # Convert to PDF
+        pdf_buffer = report_generator._html_to_pdf(html_content)
+        # Return PDF as response
+        filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+        if job_ids and len(filtered_sessions) < len(sessions):
+            filename = f"bank-lc-results-selected-{len(filtered_sessions)}-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # Log successful export
+        audit_service.log_action(
+            action=AuditAction.DOWNLOAD,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results_export",
+            resource_id=f"pdf-{len(filtered_sessions)}-results",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            duration_ms=duration_ms,
+            audit_metadata={
+                "export_type": "pdf",
+                "result_count": len(filtered_sessions),
+                "filters": {
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "client_name": client_name,
+                    "status": status,
+                    "job_ids_count": len(job_ids.split(",")) if job_ids else None,
+                }
+            }
+        )
+        
+        return Response(
+            content=pdf_buffer.getvalue(),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        # Log failed export
+        audit_service.log_action(
+            action=AuditAction.DOWNLOAD,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results_export",
+            resource_id="pdf-export-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            duration_ms=duration_ms,
+            error_message=str(e),
+        )
+        raise
 
 
 def _generate_summary_report_html(sessions: List[ValidationSession], user: User) -> str:
@@ -518,49 +719,90 @@ def _generate_summary_report_html(sessions: List[ValidationSession], user: User)
 
 
 @router.get("/clients")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
 def get_client_names(
     query: Optional[str] = Query(None, description="Filter client names by search query"),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(require_bank_or_admin),
     db: Session = Depends(get_db),
+    request: Request = None,
 ):
     """Get distinct client names for autocomplete."""
-    # Query all validation sessions for this user
-    sessions_query = db.query(ValidationSession).filter(
-        ValidationSession.user_id == current_user.id,
-        ValidationSession.deleted_at.is_(None),
-        ValidationSession.extracted_data.isnot(None)
-    )
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
     
-    # Extract distinct client names from extracted_data
-    client_names = set()
-    sessions = sessions_query.all()
-    
-    for session in sessions:
-        metadata = session.extracted_data or {}
-        bank_metadata = metadata.get("bank_metadata", {})
-        client_name = bank_metadata.get("client_name")
+    try:
+        # Query all validation sessions for this user
+        sessions_query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None),
+            ValidationSession.extracted_data.isnot(None)
+        )
         
-        if client_name and isinstance(client_name, str):
-            client_name_clean = client_name.strip()
-            if client_name_clean:
-                client_names.add(client_name_clean)
-    
-    # Convert to sorted list
-    client_list = sorted(list(client_names))
-    
-    # Apply search filter if provided
-    if query:
-        query_lower = query.lower()
-        client_list = [name for name in client_list if query_lower in name.lower()]
-    
-    # Apply limit
-    client_list = client_list[:limit]
-    
-    return {
-        "count": len(client_list),
-        "clients": client_list,
-    }
+        # Extract distinct client names from extracted_data
+        client_names = set()
+        sessions = sessions_query.all()
+        
+        for session in sessions:
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            client_name = bank_metadata.get("client_name")
+            
+            if client_name and isinstance(client_name, str):
+                client_name_clean = client_name.strip()
+                if client_name_clean:
+                    client_names.add(client_name_clean)
+        
+        # Convert to sorted list
+        client_list = sorted(list(client_names))
+        
+        # Apply search filter if provided
+        if query:
+            query_lower = query.lower()
+            client_list = [name for name in client_list if query_lower in name.lower()]
+        
+        # Apply limit
+        client_list = client_list[:limit]
+        
+        # Log client list access
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_clients",
+            resource_id="autocomplete",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "query": query,
+                "results_count": len(client_list),
+                "limit": limit,
+            }
+        )
+        
+        return {
+            "count": len(client_list),
+            "clients": client_list,
+        }
+    except Exception as e:
+        # Log failed request
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_clients",
+            resource_id="autocomplete-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise
 
 
 def _calculate_progress(status: str) -> int:

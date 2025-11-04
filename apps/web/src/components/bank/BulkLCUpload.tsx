@@ -61,11 +61,21 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const { toast } = useToast();
   const { validate, isLoading: isValidating } = useValidate();
 
+  // Debounced client name for API calls
+  const [debouncedClientName, setDebouncedClientName] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedClientName(clientName);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clientName]);
+
   // Fetch client names for autocomplete
   const { data: clientsData } = useQuery({
-    queryKey: ['bank-clients', clientName],
-    queryFn: () => bankApi.getClients(clientName || undefined, 20),
-    enabled: clientNameOpen || clientName.length > 0,
+    queryKey: ['bank-clients', debouncedClientName],
+    queryFn: () => bankApi.getClients(debouncedClientName || undefined, 20),
+    enabled: clientNameOpen && debouncedClientName.length > 0,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
