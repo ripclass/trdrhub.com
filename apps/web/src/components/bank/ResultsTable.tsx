@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { bankApi, BankResult } from "@/api/bank";
-import { sanitizeText } from "@/lib/sanitize";
+import { sanitizeDisplayText } from "@/lib/sanitize";
 import { generateCSV } from "@/lib/csv";
 
 interface ResultsTableProps {}
@@ -104,8 +104,8 @@ export function ResultsTable({}: ResultsTableProps) {
       ...filteredResults.map((r) => {
         const completedAt = r.completed_at ? new Date(r.completed_at) : new Date();
         return [
-          r.lc_number || "N/A",
-          r.client_name || "",
+          sanitizeDisplayText(r.lc_number, "N/A"),
+          sanitizeDisplayText(r.client_name, ""),
           format(completedAt, "yyyy-MM-dd HH:mm:ss"),
           r.status,
           r.compliance_score.toString(),
@@ -233,8 +233,8 @@ export function ResultsTable({}: ResultsTableProps) {
               <TableBody>
                 {filteredResults.map((result) => {
                   const completedAt = result.completed_at ? new Date(result.completed_at) : new Date();
-                  const clientName = result.client_name ? sanitizeText(result.client_name) : "Unknown";
-                  const lcNumber = result.lc_number ? sanitizeText(result.lc_number) : "N/A";
+                  const clientName = sanitizeDisplayText(result.client_name, "Unknown");
+                  const lcNumber = sanitizeDisplayText(result.lc_number, "N/A");
 
                   return (
                     <TableRow key={result.id}>

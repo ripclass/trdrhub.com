@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { sanitizeText } from '@/lib/sanitize';
 
 interface AISummaryPanelProps {
   lcId: string;
@@ -154,12 +155,9 @@ export default function AISummaryPanel({
             </div>
 
             <div className="prose prose-sm max-w-none">
-              <div
-                className="text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{
-                  __html: summary.content.replace(/\n/g, '<br />'),
-                }}
-              />
+              <p className="text-sm leading-relaxed whitespace-pre-line">
+                {sanitizeText(summary.content) || 'No summary available.'}
+              </p>
             </div>
 
             <div className="border-t pt-3">

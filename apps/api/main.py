@@ -23,7 +23,7 @@ except ImportError:
 from app.utils.logger import configure_logging, get_logger, log_exception
 from app.middleware.logging import RequestIDMiddleware, RequestContextMiddleware
 from app.middleware.tenant_resolver import TenantResolverMiddleware
-# from app.middleware.audit_middleware import AuditMiddleware
+from app.middleware.audit_middleware import AuditMiddleware
 
 # Import performance monitoring (optional for basic operation)
 try:
@@ -57,6 +57,7 @@ from app.routes.debug import router as debug_router
 from app.schemas import ApiError
 from app.config import settings
 from app.middleware.quota_middleware import QuotaEnforcementMiddleware
+from app.middleware.rate_limit import RateLimiterMiddleware
 
 
 @asynccontextmanager
@@ -224,14 +225,51 @@ app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(TenantResolverMiddleware)
 
+# Baseline abuse protection
+_rate_limit = os.getenv("API_RATE_LIMIT")
+_rate_window = os.getenv("API_RATE_WINDOW")
+
+try:
+    rate_limit_per_window = int(_rate_limit) if _rate_limit is not None else 120
+except ValueError:
+    rate_limit_per_window = 120
+
+try:
+    rate_limit_window_seconds = int(_rate_window) if _rate_window is not None else 60
+except ValueError:
+    rate_limit_window_seconds = 60
+
+app.add_middleware(
+    RateLimiterMiddleware,
+    limit=rate_limit_per_window,
+    window_seconds=rate_limit_window_seconds,
+    exempt_paths=(
+        "/health",
+        "/health/info",
+        "/health/live",
+        "/health/ready",
+        "/metrics",
+        "/docs",
+        "/openapi.json",
+        "/warm",
+    ),
+)
+
 # Add quota enforcement middleware (before audit middleware)
 app.add_middleware(QuotaEnforcementMiddleware)
 
 # Add audit middleware for compliance traceability
-# app.add_middleware(
-#     AuditMiddleware,
-#     excluded_paths=["/docs", "/redoc", "/openapi.json", "/health", "/metrics", "/warm"]
-# )
+app.add_middleware(
+    AuditMiddleware,
+    excluded_paths=[
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/health",
+        "/metrics",
+        "/warm",
+    ],
+)
 
 # Add CORS middleware
 # In production, restrict to specific domains for security
@@ -250,12 +288,27 @@ if settings.is_production() and cors_origins == ["*"]:
         "Set CORS_ALLOW_ORIGINS env var for security."
     )
 
+if not settings.is_production() and cors_origins == ["http://localhost:5173"]:
+    cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+allowed_headers = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "X-Requested-With",
+    "X-CSRF-Token",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=allowed_methods,
+    allow_headers=allowed_headers,
 )
 
 
@@ -272,9 +325,14 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Get logger with request context
     logger = get_request_logger(request, "exception_handler")
 
+    error_identifier = type(exc).__name__.lower()
+    message = str(exc)
+    if settings.is_production():
+        message = "An unexpected error occurred. Please contact support if the issue persists."
+
     error_response = ApiError(
-        error=type(exc).__name__.lower(),
-        message=str(exc),
+        error=error_identifier if not settings.is_production() else "server_error",
+        message=message,
         timestamp=datetime.now(timezone.utc),
         path=str(request.url.path),
         method=request.method

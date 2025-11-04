@@ -9,9 +9,21 @@ export function sanitizeText(input: string): string {
   if (!input || typeof input !== 'string') {
     return '';
   }
-  
+
   // Remove HTML tags and trim whitespace
   return input.replace(/<[^>]*>/g, '').trim();
+}
+
+/**
+ * Sanitize display text while guaranteeing a non-empty fallback.
+ */
+export function sanitizeDisplayText(input: string | undefined | null, fallback: string): string {
+  if (!input || typeof input !== 'string') {
+    return fallback;
+  }
+
+  const sanitized = sanitizeText(input);
+  return sanitized || fallback;
 }
 
 /**

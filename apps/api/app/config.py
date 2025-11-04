@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     SSLCOMMERZ_SANDBOX: bool = True
     
     # CORS Configuration
-    CORS_ALLOW_ORIGINS: List[str] = ["*"]  # Default to all, override in production
+    CORS_ALLOW_ORIGINS: List[str] = ["http://localhost:5173"]  # Override per environment
     
     model_config = SettingsConfigDict(
         # Load .env.production if ENVIRONMENT is production, otherwise .env

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { bankApi, BankJob } from "@/api/bank";
-import { sanitizeText } from "@/lib/sanitize";
+import { sanitizeDisplayText } from "@/lib/sanitize";
 
 interface ProcessingQueueProps {
   onJobComplete?: () => void;
@@ -126,8 +126,8 @@ export function ProcessingQueue({ onJobComplete }: ProcessingQueueProps) {
       <CardContent>
         <div className="space-y-4">
           {activeJobs.map((job) => {
-            const clientName = job.client_name ? sanitizeText(job.client_name) : "Unknown Client";
-            const lcNumber = job.lc_number ? sanitizeText(job.lc_number) : undefined;
+            const clientName = sanitizeDisplayText(job.client_name, "Unknown Client");
+            const lcNumber = sanitizeDisplayText(job.lc_number, "");
             const submittedAt = job.submitted_at ? new Date(job.submitted_at) : new Date();
             const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
 
