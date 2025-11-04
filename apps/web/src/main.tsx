@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './hooks/use-auth'
 import { AdminAuthProvider } from './lib/admin/auth'
 import { OnboardingProvider } from './components/onboarding/OnboardingProvider'
+import { ThemeProvider } from './providers/ThemeProvider'
 import App from './App.tsx'
 import './index.css'
 import { Toaster } from './components/ui/toaster'
@@ -24,19 +25,21 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AuthProvider>
-      <OnboardingProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <AdminAuthProvider>
-              <ErrorBoundary>
-                <App />
-              </ErrorBoundary>
-              <Toaster />
-            </AdminAuthProvider>
-          </BrowserRouter>
-        </QueryClientProvider>
-      </OnboardingProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <OnboardingProvider>
+          <QueryClientProvider client={queryClient}>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <AdminAuthProvider>
+                <ErrorBoundary>
+                  <App />
+                </ErrorBoundary>
+                <Toaster />
+              </AdminAuthProvider>
+            </BrowserRouter>
+          </QueryClientProvider>
+        </OnboardingProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 )

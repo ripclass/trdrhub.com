@@ -372,27 +372,27 @@ export function ResultsTable({}: ResultsTableProps) {
           </div>
         ) : (
           <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
+            <Table dense sticky>
+              <TableHeader sticky>
+                <TableRow dense>
+                  <TableHead dense className="w-12">
                     <Checkbox
                       checked={filteredResults.length > 0 && selectedRows.size === filteredResults.length}
                       onCheckedChange={handleSelectAll}
                       aria-label="Select all"
                     />
                   </TableHead>
-                  <TableHead>LC Number</TableHead>
-                  <TableHead>Client Name</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Score</TableHead>
-                  <TableHead className="text-right">Discrepancies</TableHead>
-                  <TableHead className="text-right">Documents</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead dense>LC Number</TableHead>
+                  <TableHead dense>Client Name</TableHead>
+                  <TableHead dense>Date</TableHead>
+                  <TableHead dense>Status</TableHead>
+                  <TableHead dense numeric>Score</TableHead>
+                  <TableHead dense numeric>Discrepancies</TableHead>
+                  <TableHead dense numeric>Documents</TableHead>
+                  <TableHead dense className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody zebra>
                 {filteredResults.map((result) => {
                   const completedAt = result.completed_at ? new Date(result.completed_at) : new Date();
                   const clientName = sanitizeDisplayText(result.client_name, "Unknown");
@@ -400,26 +400,26 @@ export function ResultsTable({}: ResultsTableProps) {
                   const isSelected = selectedRows.has(result.jobId);
 
                   return (
-                    <TableRow key={result.id} className={isSelected ? "bg-muted/50" : ""}>
-                      <TableCell>
+                    <TableRow dense key={result.id} className={isSelected ? "bg-muted/50" : ""}>
+                      <TableCell dense>
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) => handleSelectRow(result.jobId, checked === true)}
                           aria-label={`Select ${lcNumber}`}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
+                      <TableCell dense className="font-medium">
+                        <div className="flex items-center gap-1.5">
                           {lcNumber}
                           {result.duplicate_count && result.duplicate_count > 0 && (
-                            <Badge variant="outline" className="text-xs" title={`This LC has been validated ${result.duplicate_count} time(s) before`}>
-                              <Copy className="w-3 h-3 mr-1" />
+                            <Badge variant="outline" className="text-[10px] h-4 px-1" title={`This LC has been validated ${result.duplicate_count} time(s) before`}>
+                              <Copy className="w-2.5 h-2.5 mr-0.5" />
                               {result.duplicate_count}x
                             </Badge>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell dense>
                         <button
                           onClick={() => navigate(`/lcopilot/bank-dashboard/client/${encodeURIComponent(clientName)}`)}
                           className="text-primary hover:underline font-medium"
@@ -427,20 +427,20 @@ export function ResultsTable({}: ResultsTableProps) {
                           {clientName}
                         </button>
                       </TableCell>
-                      <TableCell>
-                        {format(completedAt, "MMM dd, yyyy HH:mm")}
+                      <TableCell dense>
+                        {format(completedAt, "MMM dd, HH:mm")}
                       </TableCell>
-                      <TableCell>{getStatusBadge(result.status)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell dense>{getStatusBadge(result.status)}</TableCell>
+                      <TableCell dense numeric>
                         {result.compliance_score}%
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell dense numeric>
                         {result.discrepancy_count}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell dense numeric>
                         {result.document_count}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell dense className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"

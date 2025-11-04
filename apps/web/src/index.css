@@ -8,6 +8,7 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
+    /* Base semantic tokens */
     --background: 0 0% 100%;
     --foreground: 220 13% 18%;
 
@@ -45,6 +46,28 @@ All colors MUST be HSL.
     --info: 221 83% 53%;
     --info-foreground: 0 0% 98%;
 
+    /* Professional density tokens */
+    --spacing-compact: 0.25rem;
+    --spacing-tight: 0.5rem;
+    --spacing-normal: 0.75rem;
+    --spacing-relaxed: 1rem;
+
+    /* Data-dense typography scale */
+    --text-xs: 0.6875rem; /* 11px */
+    --text-sm: 0.8125rem; /* 13px */
+    --text-base: 0.875rem; /* 14px */
+    --text-lg: 1rem; /* 16px */
+    --text-xl: 1.125rem; /* 18px */
+    
+    --line-height-tight: 1.35;
+    --line-height-normal: 1.45;
+    --line-height-relaxed: 1.6;
+
+    /* Table density */
+    --table-row-height: 2.5rem;
+    --table-padding-x: 0.75rem;
+    --table-padding-y: 0.5rem;
+
     /* Exporter theme (Blue) */
     --exporter-primary: 210 100% 50%;
     --exporter-primary-foreground: 0 0% 100%;
@@ -68,96 +91,159 @@ All colors MUST be HSL.
     --gradient-exporter: linear-gradient(135deg, hsl(var(--exporter-primary)) 0%, hsl(210 80% 60%) 100%);
     --gradient-importer: linear-gradient(135deg, hsl(var(--importer-primary)) 0%, hsl(142 60% 55%) 100%);
 
-    /* Professional shadows */
-    --shadow-soft: 0 2px 8px -2px hsl(158 64% 25% / 0.1);
-    --shadow-medium: 0 8px 25px -5px hsl(158 64% 25% / 0.15);
-    --shadow-strong: 0 25px 50px -12px hsl(158 64% 25% / 0.25);
+    /* Professional shadows - subtle for light theme */
+    --shadow-soft: 0 1px 3px 0 rgba(0, 0, 0, 0.06);
+    --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+    --shadow-strong: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 
-    --radius: 0.5rem;
+    --radius: 0.375rem; /* 6px - tighter for density */
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    --background: 220 13% 9%;
-    --foreground: 0 0% 95%;
+    /* Bloomberg-style dark: deep backgrounds, high contrast */
+    --background: 220 13% 6%; /* Darker canvas */
+    --foreground: 220 5% 92%; /* Bright text */
 
-    --card: 220 13% 9%;
-    --card-foreground: 0 0% 95%;
+    --card: 220 13% 9%; /* Slightly elevated from canvas */
+    --card-foreground: 220 5% 92%;
 
-    --popover: 220 13% 9%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 220 13% 11%;
+    --popover-foreground: 220 5% 92%;
 
-    --primary: 158 64% 35%;
+    --primary: 158 64% 40%; /* Brighter for dark mode */
     --primary-foreground: 0 0% 98%;
 
-    --secondary: 220 13% 15%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 220 13% 14%;
+    --secondary-foreground: 220 5% 92%;
 
-    --muted: 220 13% 15%;
-    --muted-foreground: 220 9% 65%;
+    --muted: 220 13% 14%;
+    --muted-foreground: 220 9% 68%; /* Better readability */
 
-    --accent: 158 64% 35%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 190 100% 50%; /* Bloomberg cyan for accents */
+    --accent-foreground: 220 13% 6%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 220 13% 20%;
-    --input: 220 13% 20%;
-    --ring: 158 64% 35%;
+    --border: 220 13% 18%; /* Subtle borders */
+    --input: 220 13% 16%;
+    --ring: 190 100% 50%; /* Match accent for focus */
 
-    --success: 142 76% 36%;
+    --success: 142 76% 42%;
     --success-foreground: 0 0% 98%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 220 13% 9%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 220 13% 6%;
 
-    --info: 221 83% 53%;
+    --info: 210 100% 60%;
     --info-foreground: 0 0% 98%;
 
+    /* Professional density tokens (same as light) */
+    --spacing-compact: 0.25rem;
+    --spacing-tight: 0.5rem;
+    --spacing-normal: 0.75rem;
+    --spacing-relaxed: 1rem;
+
+    /* Data-dense typography scale (same as light) */
+    --text-xs: 0.6875rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.875rem;
+    --text-lg: 1rem;
+    --text-xl: 1.125rem;
+    
+    --line-height-tight: 1.35;
+    --line-height-normal: 1.45;
+    --line-height-relaxed: 1.6;
+
+    /* Table density (same as light) */
+    --table-row-height: 2.5rem;
+    --table-padding-x: 0.75rem;
+    --table-padding-y: 0.5rem;
+
     /* Dark mode gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(158 64% 35%), hsl(158 54% 45%));
-    --gradient-secondary: linear-gradient(135deg, hsl(220 13% 15%), hsl(220 13% 20%));
-    --gradient-hero: linear-gradient(135deg, hsl(158 64% 35%) 0%, hsl(221 83% 53%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(158 64% 38%), hsl(158 54% 48%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 13% 14%), hsl(220 13% 18%));
+    --gradient-hero: linear-gradient(135deg, hsl(158 64% 38%) 0%, hsl(210 100% 55%) 100%);
+    --gradient-exporter: linear-gradient(135deg, hsl(210 100% 55%) 0%, hsl(210 80% 65%) 100%);
+    --gradient-importer: linear-gradient(135deg, hsl(142 71% 48%) 0%, hsl(142 60% 58%) 100%);
 
-    /* Dark mode shadows */
-    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.3);
-    --shadow-medium: 0 8px 25px -5px hsl(0 0% 0% / 0.4);
-    --shadow-strong: 0 25px 50px -12px hsl(0 0% 0% / 0.5);
+    /* Dark mode shadows - more pronounced */
+    --shadow-soft: 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --shadow-medium: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+    --shadow-strong: 0 10px 20px -5px rgba(0, 0, 0, 0.6);
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --radius: 0.375rem; /* 6px - consistent */
+
+    --sidebar-background: 220 13% 8%;
+    --sidebar-foreground: 220 5% 90%;
+    --sidebar-primary: 190 100% 50%;
+    --sidebar-primary-foreground: 220 13% 6%;
+    --sidebar-accent: 220 13% 14%;
+    --sidebar-accent-foreground: 220 5% 90%;
+    --sidebar-border: 220 13% 16%;
+    --sidebar-ring: 190 100% 50%;
   }
 }
 
 @layer base {
   * {
-    @apply border-gray-200;
+    @apply border-border;
   }
 
   body {
     @apply bg-background text-foreground;
+    font-size: var(--text-base);
+    line-height: var(--line-height-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Professional data-dense typography */
+  h1, h2, h3, h4, h5, h6 {
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+
+  h1 { font-size: var(--text-xl); }
+  h2 { font-size: var(--text-lg); }
+  h3 { font-size: var(--text-base); }
+  h4, h5, h6 { font-size: var(--text-sm); }
+
+  /* High-contrast focus rings for accessibility */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+
+  /* Improved scrollbar styling for data-dense tables */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 5px;
+    border: 2px solid hsl(var(--muted));
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 }
 

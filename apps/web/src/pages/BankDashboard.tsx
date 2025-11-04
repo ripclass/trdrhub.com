@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { getStubStatus } from "@/api/sessions";
@@ -95,38 +96,25 @@ export default function BankDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card border-b sticky top-0 z-50 backdrop-blur-sm bg-card/95">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-gradient-primary p-2 rounded-lg">
-                  <FileText className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-foreground">Bank LC Validation</h1>
-                  <p className="text-sm text-muted-foreground">Bulk validation dashboard</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/lcopilot/analytics/bank">
-                  <BarChart3 className="w-4 h-4 mr-2" />
-                  System Analytics
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-4 py-8">
-        {/* Quick Stats */}
-        <BankQuickStats />
+    <AppShell
+      title="Bank LC Validation"
+      subtitle="Bulk document validation and compliance checking"
+      breadcrumbs={[
+        { label: "LCopilot", href: "/lcopilot" },
+        { label: "Bank Dashboard" },
+      ]}
+      actions={
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/lcopilot/analytics/bank">
+            <BarChart3 className="w-4 h-4" />
+            Analytics
+          </Link>
+        </Button>
+      }
+      compact
+    >
+      {/* Quick Stats */}
+      <BankQuickStats />
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-8">
@@ -173,7 +161,6 @@ export default function BankDashboard() {
             <NotificationPreferences />
           </TabsContent>
         </Tabs>
-      </div>
-    </div>
+    </AppShell>
   );
 }
