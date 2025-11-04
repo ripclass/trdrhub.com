@@ -15,6 +15,7 @@ from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
+from app.utils.file_validation import validate_upload_file
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -36,11 +37,32 @@ async def validate_doc(
     try:
         content_type = request.headers.get("content-type", "")
         payload: dict
+        files_list = []  # Collect files for validation
+        
         if content_type.startswith("multipart/form-data"):
             form = await request.form()
             payload = {}
             for key, value in form.multi_items():
                 if hasattr(value, "filename"):
+                    # This is a file upload - validate it
+                    file_obj = value
+                    header_bytes = await file_obj.read(8)
+                    await file_obj.seek(0)  # Reset for processing
+                    
+                    # Content-based validation
+                    is_valid, error_message = validate_upload_file(
+                        header_bytes,
+                        filename=file_obj.filename,
+                        content_type=file_obj.content_type
+                    )
+                    
+                    if not is_valid:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Invalid file content for {file_obj.filename}: {error_message}. File content does not match declared type."
+                        )
+                    
+                    files_list.append(file_obj)
                     continue
                 payload[key] = value
         else:

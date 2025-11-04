@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { bankApi } from "@/api/bank";
 import { sanitizeText, sanitizeFileName } from "@/lib/sanitize";
 import { MAX_FILE_SIZE, MAX_TOTAL_SIZE } from "@/lib/constants";
+import { validateFilesContent } from "@/lib/file-validation";
 import {
   Upload,
   FileText,
@@ -81,8 +82,8 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
 
   const clientSuggestions = clientsData?.clients || [];
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    // Validate file sizes
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    // Validate file sizes first
     const oversizedFiles = acceptedFiles.filter(f => f.size > MAX_FILE_SIZE);
     if (oversizedFiles.length > 0) {
       toast({
@@ -99,6 +100,18 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       toast({
         title: "Total Size Exceeded",
         description: `Total file size cannot exceed 50MB`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Content-based validation (magic bytes)
+    const validationResult = await validateFilesContent(acceptedFiles);
+    if (!validationResult.valid) {
+      const errorMessages = validationResult.errors.map(e => `${e.filename}: ${e.error}`).join('\n');
+      toast({
+        title: "Invalid File Content",
+        description: errorMessages || "File content does not match declared type. Please upload valid PDF, JPEG, PNG, or TIFF files.",
         variant: "destructive",
       });
       return;

@@ -24,6 +24,7 @@ from ..services.audit_service import AuditService
 from ..models.audit_log import AuditAction, AuditResult
 from ..middleware.audit_middleware import get_correlation_id, create_audit_context
 from ..config import settings
+from ..utils.file_validation import validate_upload_file
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -84,9 +85,28 @@ async def process_document(
             detail="Maximum 3 files allowed"
         )
 
-    # Validate file types
+    # Validate file types with content-based validation
     allowed_types = {'application/pdf', 'image/jpeg', 'image/png', 'image/tiff'}
     for file in files:
+        # Read file header for content validation (first 8 bytes)
+        await file.seek(0)
+        header_bytes = await file.read(8)
+        await file.seek(0)  # Reset for processing
+        
+        # Content-based validation
+        is_valid, error_message = validate_upload_file(
+            header_bytes,
+            filename=file.filename,
+            content_type=file.content_type
+        )
+        
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file content for {file.filename}: {error_message}. File content does not match declared type."
+            )
+        
+        # Also check declared content type as secondary validation
         if file.content_type not in allowed_types:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
