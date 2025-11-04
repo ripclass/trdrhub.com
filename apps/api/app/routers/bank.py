@@ -6,10 +6,13 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, cast, case
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import JSONB
+import asyncio
+import json
 
 from ..core.security import require_bank_or_admin
 from ..database import get_db
@@ -856,3 +859,148 @@ def _calculate_progress(status: str) -> int:
         SessionStatus.FAILED.value: 0,
     }
     return status_map.get(status, 0)
+
+
+@router.get("/jobs/stream")
+async def stream_job_updates(
+    request: Request,
+    token: Optional[str] = Query(None, description="Optional auth token (for SSE compatibility)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Server-Sent Events (SSE) stream for real-time job status updates.
+    Streams job status changes for the authenticated bank user.
+    
+    Note: Supports both Authorization header and token query parameter for SSE compatibility.
+    """
+    # Handle authentication (SSE doesn't support custom headers, so support query param fallback)
+    from ..core.security import decode_access_token
+    
+    authenticated_user = None
+    
+    # Try Authorization header first
+    try:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token_from_header = auth_header.replace("Bearer ", "")
+            payload = decode_access_token(token_from_header)
+            user_id = UUID(payload.get("sub"))
+            authenticated_user = db.query(User).filter(User.id == user_id).first()
+    except:
+        pass
+    
+    # Fallback to query parameter (for SSE compatibility)
+    if not authenticated_user and token:
+        try:
+            payload = decode_access_token(token)
+            user_id = UUID(payload.get("sub"))
+            authenticated_user = db.query(User).filter(User.id == user_id).first()
+        except:
+            pass
+    
+    if not authenticated_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    
+    # Verify user has bank access
+    if not (authenticated_user.role in ["bank_officer", "bank_admin", "system_admin"] or authenticated_user.is_bank_officer()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bank access required"
+        )
+    
+    current_user = authenticated_user
+    async def event_generator():
+        """Generate SSE events with job status updates."""
+        last_seen_ids = set()
+        last_poll_time = 0
+        
+        try:
+            while True:
+                # Poll database every 1 second for job updates
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_poll_time >= 1.0:
+                    # Query active jobs (pending, processing, uploading, created)
+                    active_jobs = db.query(ValidationSession).filter(
+                        ValidationSession.user_id == current_user.id,
+                        ValidationSession.deleted_at.is_(None),
+                        ValidationSession.status.in_([
+                            SessionStatus.CREATED.value,
+                            SessionStatus.UPLOADING.value,
+                            SessionStatus.PROCESSING.value,
+                        ])
+                    ).all()
+                    
+                    # Also check recently completed/failed jobs (within last 30 seconds)
+                    from datetime import datetime, timedelta
+                    recent_threshold = datetime.now() - timedelta(seconds=30)
+                    recent_jobs = db.query(ValidationSession).filter(
+                        ValidationSession.user_id == current_user.id,
+                        ValidationSession.deleted_at.is_(None),
+                        ValidationSession.status.in_([
+                            SessionStatus.COMPLETED.value,
+                            SessionStatus.FAILED.value,
+                        ]),
+                        ValidationSession.updated_at >= recent_threshold
+                    ).all()
+                    
+                    all_jobs = active_jobs + recent_jobs
+                    
+                    # Check for new or updated jobs
+                    current_ids = {str(job.id) for job in all_jobs}
+                    new_or_updated = [
+                        job for job in all_jobs
+                        if str(job.id) not in last_seen_ids or job.updated_at.timestamp() > last_poll_time
+                    ]
+                    
+                    # Send updates for new or changed jobs
+                    for job in new_or_updated:
+                        metadata = job.extracted_data or {}
+                        bank_metadata = metadata.get("bank_metadata", {})
+                        
+                        job_data = {
+                            "id": str(job.id),
+                            "job_id": str(job.id),
+                            "client_name": bank_metadata.get("client_name"),
+                            "lc_number": bank_metadata.get("lc_number"),
+                            "date_received": bank_metadata.get("date_received"),
+                            "status": job.status,
+                            "progress": _calculate_progress(job.status),
+                            "submitted_at": job.created_at.isoformat() if job.created_at else None,
+                            "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
+                            "processing_started_at": job.processing_started_at.isoformat() if job.processing_started_at else None,
+                        }
+                        
+                        # Send SSE event
+                        yield f"data: {json.dumps(job_data)}\n\n"
+                    
+                    # Update tracking
+                    last_seen_ids = current_ids
+                    last_poll_time = current_time
+                    
+                    # Keep-alive ping every 30 seconds
+                    if int(current_time) % 30 == 0:
+                        yield ": keepalive\n\n"
+                
+                # Small delay to prevent tight loop
+                await asyncio.sleep(0.5)
+                
+        except asyncio.CancelledError:
+            # Client disconnected
+            pass
+        except Exception as e:
+            # Send error event
+            error_data = {"error": str(e)}
+            yield f"data: {json.dumps(error_data)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable buffering for nginx
+        }
+    )

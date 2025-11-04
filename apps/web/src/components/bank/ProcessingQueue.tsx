@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { bankApi, BankJob } from "@/api/bank";
+import { BankJob } from "@/api/bank";
 import { sanitizeDisplayText } from "@/lib/sanitize";
+import { useJobStatusStream } from "@/hooks/use-job-status-stream";
 
 interface ProcessingQueueProps {
   onJobComplete?: () => void;
@@ -14,35 +14,36 @@ interface ProcessingQueueProps {
 export function ProcessingQueue({ onJobComplete }: ProcessingQueueProps) {
   const [completedJobs, setCompletedJobs] = useState<Set<string>>(new Set());
 
-  // Poll for jobs every 2 seconds
-  const { data: jobsData, isLoading } = useQuery({
-    queryKey: ['bank-jobs'],
-    queryFn: () => bankApi.getJobs({ status: undefined }), // Get all statuses
-    refetchInterval: 2000, // Poll every 2 seconds
+  // Use SSE stream for real-time updates instead of polling
+  const { jobs, isConnected } = useJobStatusStream({
+    enabled: true,
+    onJobUpdate: (job) => {
+      // Handle job updates - check for completed jobs
+      if (job.status === "completed") {
+        setCompletedJobs((prev) => {
+          if (!prev.has(job.id)) {
+            // This is a newly completed job
+            if (onJobComplete) {
+              setTimeout(() => {
+                onJobComplete();
+              }, 1000);
+            }
+            return new Set(prev).add(job.id);
+          }
+          return prev;
+        });
+      }
+    },
   });
 
-  const jobs: BankJob[] = jobsData?.jobs || [];
-
-  // Filter to only pending/processing jobs
+  // Filter to only active jobs (pending/processing/uploading/created)
   const activeJobs = jobs.filter(
-    (job) => job.status === "pending" || job.status === "processing" || job.status === "created"
+    (job) => 
+      job.status === "pending" || 
+      job.status === "processing" || 
+      job.status === "created" ||
+      job.status === "uploading"
   );
-
-  // Check for newly completed jobs
-  useEffect(() => {
-    const completed = jobs.filter(
-      (job) => job.status === "completed" && !completedJobs.has(job.id)
-    );
-    
-    if (completed.length > 0 && onJobComplete) {
-      completed.forEach((job) => setCompletedJobs((prev) => new Set(prev).add(job.id)));
-      // Trigger callback after a short delay
-      const timeout = setTimeout(() => {
-        onJobComplete();
-      }, 1000);
-      return () => clearTimeout(timeout);
-    }
-  }, [jobs, completedJobs, onJobComplete]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -76,17 +77,17 @@ export function ProcessingQueue({ onJobComplete }: ProcessingQueueProps) {
     }
   };
 
-  if (isLoading && activeJobs.length === 0) {
+  if (!isConnected && activeJobs.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Processing Queue</CardTitle>
-          <CardDescription>Loading jobs...</CardDescription>
+          <CardDescription>Connecting to real-time updates...</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
             <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4 animate-spin" />
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">Connecting...</p>
           </div>
         </CardContent>
       </Card>
