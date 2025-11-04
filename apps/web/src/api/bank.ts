@@ -18,8 +18,11 @@ export interface BankResult {
   jobId: string;
   client_name?: string;
   lc_number?: string;
+  date_received?: string;
   submitted_at?: string;
+  processing_started_at?: string;
   completed_at?: string;
+  processing_time_seconds?: number;
   status: 'compliant' | 'discrepancies' | 'failed';
   compliance_score: number;
   discrepancy_count: number;
@@ -93,6 +96,17 @@ export const bankApi = {
   getClients: async (query?: string, limit?: number): Promise<BankClientsResponse> => {
     const response = await api.get<BankClientsResponse>('/bank/clients', {
       params: { query, limit },
+    });
+    return response.data;
+  },
+
+  /**
+   * Export filtered results as PDF
+   */
+  exportResultsPDF: async (filters?: BankResultsFilters): Promise<Blob> => {
+    const response = await api.get<Blob>('/bank/results/export-pdf', {
+      params: filters,
+      responseType: 'blob',
     });
     return response.data;
   },

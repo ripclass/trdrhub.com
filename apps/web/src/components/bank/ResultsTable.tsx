@@ -103,14 +103,39 @@ export function ResultsTable({}: ResultsTableProps) {
   };
 
   const handleExportCSV = () => {
+    // Enhanced CSV with all available fields
     const csvRows = [
-      ["LC Number", "Client Name", "Date", "Status", "Score", "Discrepancies", "Documents"],
+      [
+        "Job ID",
+        "LC Number",
+        "Client Name",
+        "Date Received",
+        "Submitted At",
+        "Processing Started At",
+        "Completed At",
+        "Processing Time (seconds)",
+        "Status",
+        "Compliance Score (%)",
+        "Discrepancy Count",
+        "Document Count",
+      ],
       ...filteredResults.map((r) => {
-        const completedAt = r.completed_at ? new Date(r.completed_at) : new Date();
+        const submittedAt = r.submitted_at ? new Date(r.submitted_at) : null;
+        const processingStartedAt = r.processing_started_at ? new Date(r.processing_started_at) : null;
+        const completedAt = r.completed_at ? new Date(r.completed_at) : null;
+        const dateReceived = r.date_received || "";
+
         return [
+          r.jobId || r.id,
           sanitizeDisplayText(r.lc_number, "N/A"),
           sanitizeDisplayText(r.client_name, ""),
-          format(completedAt, "yyyy-MM-dd HH:mm:ss"),
+          dateReceived,
+          submittedAt ? format(submittedAt, "yyyy-MM-dd HH:mm:ss") : "",
+          processingStartedAt ? format(processingStartedAt, "yyyy-MM-dd HH:mm:ss") : "",
+          completedAt ? format(completedAt, "yyyy-MM-dd HH:mm:ss") : "",
+          r.processing_time_seconds !== undefined && r.processing_time_seconds !== null
+            ? r.processing_time_seconds.toString()
+            : "",
           r.status,
           r.compliance_score.toString(),
           r.discrepancy_count.toString(),
@@ -121,7 +146,7 @@ export function ResultsTable({}: ResultsTableProps) {
 
     const csvContent = generateCSV(csvRows);
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -130,9 +155,26 @@ export function ResultsTable({}: ResultsTableProps) {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportPDF = () => {
-    // TODO: Implement PDF export
-    alert("PDF export coming soon!");
+  const handleExportPDF = async () => {
+    try {
+      const pdfBlob = await bankApi.exportResultsPDF({
+        ...getDateRange(),
+        client_name: clientFilter || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        limit: 500, // Export all filtered results
+      });
+
+      // Create download link
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bank-lc-results-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error("Failed to export PDF:", error);
+      alert("Failed to export PDF. Please try again.");
+    }
   };
 
   const handleViewDetails = (result: BankResult) => {

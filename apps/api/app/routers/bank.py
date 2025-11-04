@@ -272,14 +272,23 @@ def get_bank_results(
         # Calculate compliance score (simplified - can be enhanced)
         compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
         
+        # Calculate processing time in seconds
+        processing_time_seconds = None
+        if session.processing_started_at and session.processing_completed_at:
+            delta = session.processing_completed_at - session.processing_started_at
+            processing_time_seconds = round(delta.total_seconds(), 2)
+        
         results.append({
             "id": str(session.id),
             "job_id": str(session.id),
             "jobId": str(session.id),
             "client_name": client_name_val,
             "lc_number": bank_metadata.get("lc_number"),
+            "date_received": bank_metadata.get("date_received"),
             "submitted_at": session.created_at.isoformat() if session.created_at else None,
+            "processing_started_at": session.processing_started_at.isoformat() if session.processing_started_at else None,
             "completed_at": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
+            "processing_time_seconds": processing_time_seconds,
             "status": compliance_status,
             "compliance_score": compliance_score,
             "discrepancy_count": len(discrepancies),
@@ -291,6 +300,221 @@ def get_bank_results(
         "count": len(results),
         "results": results,
     }
+
+
+@router.get("/results/export-pdf")
+async def export_results_pdf(
+    start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
+    end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
+    client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
+    status: Optional[str] = Query(None, description="Filter by compliance status (compliant/discrepancies)"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """Generate a PDF report for filtered validation results."""
+    from ..reports.generator import ReportGenerator
+    from ..services import ReportService
+    from io import BytesIO
+    from fastapi.responses import Response
+    
+    # Get filtered results (reuse logic from get_bank_results)
+    query = db.query(ValidationSession).filter(
+        ValidationSession.user_id == current_user.id,
+        ValidationSession.deleted_at.is_(None),
+        ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+    )
+    
+    # Date filters
+    if start_date:
+        query = query.filter(ValidationSession.created_at >= start_date)
+    if end_date:
+        query = query.filter(ValidationSession.created_at <= end_date)
+    
+    # Order by completed date desc
+    query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
+    
+    sessions = query.all()
+    
+    # Apply filters (same logic as get_bank_results)
+    filtered_sessions = []
+    for session in sessions:
+        metadata = session.extracted_data or {}
+        bank_metadata = metadata.get("bank_metadata", {})
+        validation_results = session.validation_results or {}
+        discrepancies = validation_results.get("discrepancies", [])
+        has_discrepancies = len(discrepancies) > 0
+        compliance_status = "discrepancies" if has_discrepancies else "compliant"
+        
+        # Apply status filter
+        if status and compliance_status != status:
+            continue
+        
+        # Apply client name filter
+        client_name_val = bank_metadata.get("client_name", "")
+        if client_name and client_name.lower() not in client_name_val.lower():
+            continue
+        
+        filtered_sessions.append(session)
+    
+    # Generate summary PDF report
+    report_generator = ReportGenerator()
+    
+    # Create HTML summary report
+    html_content = _generate_summary_report_html(filtered_sessions, current_user)
+    
+    # Convert to PDF
+    pdf_buffer = report_generator._html_to_pdf(html_content)
+    
+    # Return PDF as response
+    filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    
+    return Response(
+        content=pdf_buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+def _generate_summary_report_html(sessions: List[ValidationSession], user: User) -> str:
+    """Generate HTML summary report for multiple validation sessions."""
+    from datetime import datetime
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Bank LC Validation Results Summary</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                color: #333;
+            }}
+            h1 {{
+                color: #1f2937;
+                border-bottom: 2px solid #3b82f6;
+                padding-bottom: 10px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #3b82f6;
+                color: white;
+                font-weight: bold;
+            }}
+            tr:nth-child(even) {{
+                background-color: #f9fafb;
+            }}
+            .summary {{
+                margin: 20px 0;
+                padding: 15px;
+                background-color: #f3f4f6;
+                border-radius: 5px;
+            }}
+            .compliant {{
+                color: #10b981;
+                font-weight: bold;
+            }}
+            .discrepancies {{
+                color: #f59e0b;
+                font-weight: bold;
+            }}
+            .failed {{
+                color: #ef4444;
+                font-weight: bold;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Bank LC Validation Results Summary</h1>
+        <div class="summary">
+            <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>Total Results:</strong> {len(sessions)}</p>
+            <p><strong>Generated By:</strong> {user.email if user else 'System'}</p>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>LC Number</th>
+                    <th>Client Name</th>
+                    <th>Date Received</th>
+                    <th>Submitted At</th>
+                    <th>Completed At</th>
+                    <th>Processing Time (s)</th>
+                    <th>Status</th>
+                    <th>Score (%)</th>
+                    <th>Discrepancies</th>
+                    <th>Documents</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    for session in sessions:
+        metadata = session.extracted_data or {}
+        bank_metadata = metadata.get("bank_metadata", {})
+        validation_results = session.validation_results or {}
+        discrepancies = validation_results.get("discrepancies", [])
+        
+        client_name = bank_metadata.get("client_name", "")
+        lc_number = bank_metadata.get("lc_number", "")
+        date_received = bank_metadata.get("date_received", "")
+        
+        has_discrepancies = len(discrepancies) > 0
+        compliance_status = "discrepancies" if has_discrepancies else "compliant"
+        if session.status == SessionStatus.FAILED.value:
+            compliance_status = "failed"
+        
+        compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+        document_count = len(session.documents) if session.documents else 0
+        
+        processing_time = ""
+        if session.processing_started_at and session.processing_completed_at:
+            delta = session.processing_completed_at - session.processing_started_at
+            processing_time = f"{round(delta.total_seconds(), 2)}"
+        
+        submitted_at = session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else ""
+        completed_at = session.processing_completed_at.strftime("%Y-%m-%d %H:%M:%S") if session.processing_completed_at else ""
+        
+        status_class = compliance_status
+        html += f"""
+                <tr>
+                    <td>{str(session.id)[:8]}...</td>
+                    <td>{lc_number or "N/A"}</td>
+                    <td>{client_name or ""}</td>
+                    <td>{date_received or ""}</td>
+                    <td>{submitted_at}</td>
+                    <td>{completed_at}</td>
+                    <td>{processing_time}</td>
+                    <td class="{status_class}">{compliance_status.upper()}</td>
+                    <td>{compliance_score}</td>
+                    <td>{len(discrepancies)}</td>
+                    <td>{document_count}</td>
+                </tr>
+        """
+    
+    html += """
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+    
+    return html
 
 
 @router.get("/clients")
