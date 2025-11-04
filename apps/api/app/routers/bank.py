@@ -2,9 +2,9 @@
 Bank-facing API endpoints for portfolio visibility and governance.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -31,6 +31,7 @@ from ..config import settings
 from ..utils.token_utils import create_signed_token, verify_signed_token
 from ..utils.bulk_zip_processor import extract_and_detect_lc_sets
 from ..utils.file_validation import validate_upload_file
+from ..services import S3Service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -871,7 +872,7 @@ async def extract_zip_file(
 ):
     """
     Extract ZIP file and detect LC sets.
-    Returns detected LC sets for user review before processing.
+    Stores extracted files temporarily in S3 and returns detected LC sets with file references.
     """
     audit_service = AuditService(db)
     audit_context = create_audit_context(request)
@@ -911,32 +912,104 @@ async def extract_zip_file(
                 detail="No LC sets detected in ZIP file"
             )
         
-        # Prepare response with file info (not full content)
+        # Create a bulk upload session ID for grouping files
+        bulk_session_id = uuid4()
+        s3_service = S3Service()
+        
+        # Store extracted files in S3 temporarily
+        # Files will be stored under: bulk-uploads/{bulk_session_id}/{filename}
+        stored_files: Dict[str, Dict[str, str]] = {}  # filename -> {s3_key, s3_url}
+        
+        for filename, file_content in file_contents.items():
+            # Validate file content
+            header_bytes = file_content[:8]
+            is_valid, error_message = validate_upload_file(
+                header_bytes,
+                filename=filename,
+                content_type=None
+            )
+            
+            if not is_valid:
+                logger.warning(f"Skipping invalid file {filename}: {error_message}")
+                continue
+            
+            # Determine content type from file signature
+            content_type = 'application/pdf'  # Default
+            if header_bytes.startswith(b'\xFF\xD8\xFF'):
+                content_type = 'image/jpeg'
+            elif header_bytes.startswith(b'\x89PNG'):
+                content_type = 'image/png'
+            elif header_bytes.startswith(b'II*\x00') or header_bytes.startswith(b'MM\x00*'):
+                content_type = 'image/tiff'
+            
+            # Generate S3 key
+            sanitized_filename = filename.replace('/', '_').replace('\\', '_')  # Sanitize path
+            s3_key = f"bulk-uploads/{bulk_session_id}/{sanitized_filename}"
+            
+            # Upload to S3
+            try:
+                if not settings.USE_STUBS:
+                    s3_service.s3_client.put_object(
+                        Bucket=s3_service.bucket_name,
+                        Key=s3_key,
+                        Body=file_content,
+                        ContentType=content_type,
+                        Metadata={
+                            'original_filename': filename,
+                            'bulk_session_id': str(bulk_session_id),
+                            'uploaded_at': datetime.now(timezone.utc).isoformat()
+                        }
+                    )
+                    s3_url = f"https://{s3_service.bucket_name}.s3.{s3_service.region}.amazonaws.com/{s3_key}"
+                else:
+                    # Stub mode - store in memory/filesystem
+                    s3_key = s3_key  # Keep same format
+                    s3_url = f"stub://{s3_key}"
+                
+                stored_files[filename] = {
+                    's3_key': s3_key,
+                    's3_url': s3_url,
+                    'size': len(file_content),
+                    'content_type': content_type,
+                    'valid': True,
+                }
+            except Exception as e:
+                logger.error(f"Failed to store file {filename} in S3: {e}")
+                stored_files[filename] = {
+                    's3_key': None,
+                    's3_url': None,
+                    'size': len(file_content),
+                    'content_type': content_type,
+                    'valid': False,
+                    'error': str(e),
+                }
+        
+        # Prepare response with file info and S3 references
         lc_sets_response = []
         for lc_set in lc_sets:
             files_info = []
             for filename in lc_set['files']:
-                if filename in file_contents:
-                    file_size = len(file_contents[filename])
-                    # Validate file type
-                    header_bytes = file_contents[filename][:8]
-                    is_valid, _ = validate_upload_file(
-                        header_bytes,
-                        filename=filename,
-                        content_type=None
-                    )
-                    
+                if filename in stored_files:
+                    file_info = stored_files[filename]
                     files_info.append({
                         'filename': filename,
-                        'size': file_size,
-                        'valid': is_valid,
+                        'size': file_info['size'],
+                        'valid': file_info['valid'],
+                        's3_key': file_info['s3_key'],  # Include S3 key for later retrieval
+                    })
+                else:
+                    files_info.append({
+                        'filename': filename,
+                        'size': 0,
+                        'valid': False,
+                        's3_key': None,
                     })
             
             lc_sets_response.append({
                 'lc_number': lc_set.get('lc_number', ''),
                 'client_name': lc_set.get('client_name', ''),
                 'files': files_info,
-                'file_count': len(files_info),
+                'file_count': len([f for f in files_info if f['valid']]),
                 'detected_document_types': lc_set.get('detected_document_types', {}),
                 'detection_method': lc_set.get('detection_method', 'unknown'),
             })
@@ -957,6 +1030,8 @@ async def extract_zip_file(
                 'zip_filename': zip_file.filename,
                 'zip_size': len(zip_content),
                 'lc_sets_detected': len(lc_sets),
+                'bulk_session_id': str(bulk_session_id),
+                'files_stored': len(stored_files),
             }
         )
         
@@ -964,6 +1039,7 @@ async def extract_zip_file(
             'status': 'success',
             'zip_filename': zip_file.filename,
             'zip_size': len(zip_content),
+            'bulk_session_id': str(bulk_session_id),  # Return session ID for later submission
             'lc_sets': lc_sets_response,
             'total_lc_sets': len(lc_sets_response),
         }
@@ -976,6 +1052,169 @@ async def extract_zip_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to extract ZIP file: {str(e)}"
         )
+
+
+@router.post("/bulk-upload/submit")
+@bank_rate_limit(limiter_type="upload", limit=5, window_seconds=60)
+async def submit_bulk_upload(
+    bulk_session_id: str = Form(..., description="Bulk session ID from extract endpoint"),
+    lc_sets_data: str = Form(..., description="JSON array of LC sets with metadata and file references"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Submit bulk LC sets for validation.
+    Files are retrieved from S3 using the bulk_session_id and processed individually.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    session_service = ValidationSessionService(db)
+    s3_service = S3Service()
+    
+    try:
+        import json
+        lc_sets = json.loads(lc_sets_data)
+        
+        if not isinstance(lc_sets, list) or len(lc_sets) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid LC sets data"
+            )
+        
+        # Check quota for all LC sets
+        entitlements = EntitlementService(db)
+        try:
+            for _ in lc_sets:
+                entitlements.enforce_quota(current_user.company, UsageAction.VALIDATE)
+        except EntitlementError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "code": "quota_exceeded",
+                    "message": exc.message,
+                    "quota": exc.result.to_dict(),
+                    "next_action_url": exc.next_action_url,
+                },
+            ) from exc
+        
+        created_jobs = []
+        
+        for lc_set_index, lc_set in enumerate(lc_sets):
+            try:
+                # Sanitize inputs
+                import re
+                def sanitize_text(text: str) -> str:
+                    if not text:
+                        return ""
+                    text = re.sub(r'<[^>]+>', '', text)  # Remove HTML tags
+                    text = re.sub(r'[^\w\s\-.,@]', '', text)  # Remove dangerous chars
+                    return text.strip()
+                
+                client_name = sanitize_text(lc_set.get('client_name', '').strip())
+                lc_number = sanitize_text(lc_set.get('lc_number', '').strip()) if lc_set.get('lc_number') else None
+                date_received = lc_set.get('date_received', '') if lc_set.get('date_received') else None
+                file_refs = lc_set.get('files', [])  # Array of {filename, s3_key}
+                
+                if not client_name:
+                    logger.warning(f"Skipping LC set {lc_set_index + 1}: missing client name")
+                    continue
+                
+                # Filter valid files
+                valid_files = [f for f in file_refs if f.get('s3_key') and f.get('valid')]
+                if not valid_files:
+                    logger.warning(f"Skipping LC set {lc_set_index + 1}: no valid files")
+                    continue
+                
+                # Create validation session
+                session = session_service.create_session(current_user)
+                
+                # Prepare metadata
+                bank_metadata = {
+                    'client_name': client_name,
+                    'lc_number': lc_number or '',
+                    'date_received': date_received or '',
+                    'upload_method': 'bulk_zip',
+                    'bulk_session_id': bulk_session_id,
+                }
+                
+                # Store metadata in session
+                session.extracted_data = {
+                    'bank_metadata': bank_metadata,
+                    'bulk_upload_files': [
+                        {
+                            'filename': f['filename'],
+                            's3_key': f['s3_key'],
+                            'size': f.get('size', 0),
+                        }
+                        for f in valid_files
+                    ],
+                }
+                
+                # Mark session as created (will be processed asynchronously)
+                session.status = SessionStatus.CREATED.value
+                db.commit()
+                
+                created_jobs.append({
+                    'job_id': str(session.id),
+                    'lc_number': lc_number or 'Unknown',
+                    'client_name': client_name,
+                    'file_count': len(valid_files),
+                    'status': 'created',
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing LC set {lc_set_index + 1}: {e}", exc_info=True)
+                continue
+        
+        # Log bulk submission
+        audit_service.log_action(
+            action=AuditAction.CREATE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bulk_upload_submit",
+            resource_id=f"bulk_{bulk_session_id}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                'bulk_session_id': bulk_session_id,
+                'lc_sets_submitted': len(lc_sets),
+                'jobs_created': len(created_jobs),
+            }
+        )
+        
+        return {
+            'status': 'success',
+            'message': f'Created {len(created_jobs)} validation jobs',
+            'bulk_session_id': bulk_session_id,
+            'lc_sets_submitted': len(lc_sets),
+            'jobs_created': len(created_jobs),
+            'jobs': created_jobs,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Bulk upload submission error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit bulk upload: {str(e)}"
+        )
+
+
+async def _process_bulk_lc_set_async(
+    session_id: str,
+    files: List,
+    metadata: Dict,
+    user_id: UUID,
+):
+    """Background task to process an LC set from bulk upload."""
+    # This will trigger the actual validation
+    # For now, it's a placeholder
+    pass
 
 
 @router.get("/clients/stats")

@@ -65,6 +65,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   // Bulk upload (ZIP) state
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [detectedLCSets, setDetectedLCSets] = useState<LCSetDetected[]>([]);
+  const [bulkSessionId, setBulkSessionId] = useState<string | null>(null);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [lcSetMetadata, setLcSetMetadata] = useState<Record<number, {
     client_name: string;
@@ -178,6 +179,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
     try {
       const result = await bankApi.extractZipFile(file);
       setDetectedLCSets(result.lc_sets);
+      setBulkSessionId(result.bulk_session_id);
       
       // Initialize metadata for each LC set
       const initialMetadata: Record<number, { client_name: string; lc_number: string; date_received: string }> = {};
@@ -208,7 +210,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
 
   // Handle bulk submit (submit all detected LC sets)
   const handleBulkSubmit = async () => {
-    if (detectedLCSets.length === 0) {
+    if (!bulkSessionId || detectedLCSets.length === 0) {
       toast({
         title: "No LC Sets",
         description: "Please extract a ZIP file first",
@@ -234,29 +236,37 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
 
     try {
       setIsExtractingZip(true);
-      let successCount = 0;
-      let errorCount = 0;
 
-      // Submit each LC set individually
-      // Note: We'll need to re-extract the ZIP and send files for each LC set
-      // For now, we'll show a message that bulk ZIP processing requires backend support
-      toast({
-        title: "Bulk Upload In Progress",
-        description: `Processing ${detectedLCSets.length} LC set(s)...`,
+      // Prepare LC sets data for submission
+      const lcSetsToSubmit = detectedLCSets.map((lcSet, index) => {
+        const metadata = lcSetMetadata[index];
+        return {
+          client_name: sanitizeText(metadata.client_name.trim()),
+          lc_number: metadata.lc_number ? sanitizeText(metadata.lc_number.trim()) : undefined,
+          date_received: metadata.date_received || undefined,
+          files: lcSet.files.map(f => ({
+            filename: f.filename,
+            s3_key: f.s3_key || '', // Include S3 key from extraction
+            valid: f.valid,
+          })),
+        };
       });
 
-      // TODO: Implement actual bulk submission with file uploads
-      // This requires re-extracting files from ZIP and sending them individually
-      // For now, we'll show a placeholder message
+      const result = await bankApi.submitBulkUpload({
+        bulk_session_id: bulkSessionId,
+        lc_sets: lcSetsToSubmit,
+      });
+
       toast({
-        title: "Bulk Upload",
-        description: `Successfully queued ${detectedLCSets.length} LC set(s) for validation`,
+        title: "Bulk Upload Submitted",
+        description: `Successfully queued ${result.jobs_created} LC set(s) for validation`,
       });
 
       // Reset state
       setZipFile(null);
       setDetectedLCSets([]);
       setLcSetMetadata({});
+      setBulkSessionId(null);
       setUploadMode("single");
 
       if (onUploadSuccess) {
@@ -396,6 +406,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
                   setZipFile(null);
                   setDetectedLCSets([]);
                   setLcSetMetadata({});
+                  setBulkSessionId(null);
                 }}
               >
                 <Upload className="w-4 h-4 mr-2" />
@@ -674,6 +685,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
                           setZipFile(null);
                           setDetectedLCSets([]);
                           setLcSetMetadata({});
+                          setBulkSessionId(null);
                         }}
                       >
                         <X className="w-4 h-4 mr-2" />

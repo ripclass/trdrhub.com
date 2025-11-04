@@ -92,6 +92,7 @@ export interface LCSetDetected {
     filename: string;
     size: number;
     valid: boolean;
+    s3_key?: string; // S3 key for file retrieval
   }>;
   file_count: number;
   detected_document_types: Record<string, string>;
@@ -102,8 +103,38 @@ export interface BulkUploadExtractResponse {
   status: string;
   zip_filename: string;
   zip_size: number;
+  bulk_session_id: string; // Session ID for later submission
   lc_sets: LCSetDetected[];
   total_lc_sets: number;
+}
+
+export interface BulkUploadSubmitRequest {
+  bulk_session_id: string;
+  lc_sets: Array<{
+    client_name: string;
+    lc_number?: string;
+    date_received?: string;
+    files: Array<{
+      filename: string;
+      s3_key: string;
+      valid: boolean;
+    }>;
+  }>;
+}
+
+export interface BulkUploadSubmitResponse {
+  status: string;
+  message: string;
+  bulk_session_id: string;
+  lc_sets_submitted: number;
+  jobs_created: number;
+  jobs: Array<{
+    job_id: string;
+    lc_number: string;
+    client_name: string;
+    file_count: number;
+    status: string;
+  }>;
 }
 
 export const bankApi = {
@@ -174,6 +205,22 @@ export const bankApi = {
     formData.append('zip_file', zipFile);
     
     const response = await api.post<BulkUploadExtractResponse>('/bank/bulk-upload/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  /**
+   * Submit bulk LC sets for validation
+   */
+  submitBulkUpload: async (request: BulkUploadSubmitRequest): Promise<BulkUploadSubmitResponse> => {
+    const formData = new FormData();
+    formData.append('bulk_session_id', request.bulk_session_id);
+    formData.append('lc_sets_data', JSON.stringify(request.lc_sets));
+    
+    const response = await api.post<BulkUploadSubmitResponse>('/bank/bulk-upload/submit', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
