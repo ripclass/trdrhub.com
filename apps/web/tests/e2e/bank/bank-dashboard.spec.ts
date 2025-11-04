@@ -147,6 +147,28 @@ test.describe('Bank dashboard hardening', () => {
       });
     });
 
+    await page.route('**/bank/jobs', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          total: 1,
+          count: 1,
+          jobs: [
+            {
+              id: 'job-1',
+              job_id: 'job-1',
+              client_name: "<img src=x onerror=alert('xss')>",
+              lc_number: '<b>LC-401</b>',
+              status: 'processing',
+              progress: 42,
+              submitted_at: now,
+            },
+          ],
+        }),
+      });
+    });
+
     let dialogTriggered = false;
     page.on('dialog', async (dialog) => {
       dialogTriggered = true;

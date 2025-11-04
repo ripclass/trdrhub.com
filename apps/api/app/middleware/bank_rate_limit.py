@@ -2,10 +2,13 @@
 
 from functools import wraps
 from typing import Callable
-from fastapi import Request, HTTPException, status
+from fastapi import HTTPException, status
 from collections import defaultdict, deque
 import time
 import asyncio
+from redis.exceptions import RedisError
+
+from app.utils.redis_cache import get_redis
 
 
 # In-memory rate limiters for bank operations
@@ -66,13 +69,41 @@ def bank_rate_limit(
                 return await func(*args, **kwargs)
             
             user_id = str(current_user.id)
-            
-            # Check rate limit with per-user lock
+
+            redis_client = None
+            try:
+                redis_client = await get_redis()
+            except RedisError:
+                redis_client = None
+
+            if redis_client:
+                redis_key = f"rate:bank:{limiter_type}:{user_id}"
+                try:
+                    count = await redis_client.incr(redis_key)
+                    ttl = await redis_client.ttl(redis_key)
+                    if count == 1 or ttl is None or ttl < 0:
+                        await redis_client.expire(redis_key, window_seconds)
+                        ttl = window_seconds
+                except RedisError:
+                    redis_client = None
+                else:
+                    if ttl is None or ttl < 0:
+                        ttl = window_seconds
+                    if count > limit:
+                        retry_after = max(int(ttl), 1)
+                        raise HTTPException(
+                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=error_message,
+                            headers={"Retry-After": str(retry_after)},
+                        )
+                    return await func(*args, **kwargs)
+
+            # Fallback to in-memory limiter when Redis is unavailable
             lock_key = (limiter_type, user_id)
             lock = _rate_limit_locks.setdefault(lock_key, asyncio.Lock())
             async with lock:
                 allowed = await _check_rate_limit(limiter_type, user_id, limit, window_seconds)
-            
+
             if not allowed:
                 retry_after = window_seconds
                 raise HTTPException(
@@ -80,7 +111,7 @@ def bank_rate_limit(
                     detail=error_message,
                     headers={"Retry-After": str(retry_after)},
                 )
-            
+
             return await func(*args, **kwargs)
         
         return wrapper

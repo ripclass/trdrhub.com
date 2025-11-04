@@ -102,7 +102,7 @@ async def get_csrf_token():
     from ..middleware.csrf import generate_csrf_token
     from ..config import settings
     
-    token, cookie_settings = generate_csrf_token(
+    token, cookie_settings = await generate_csrf_token(
         secret_key=settings.SECRET_KEY,
         expiry_seconds=3600  # 1 hour
     )
