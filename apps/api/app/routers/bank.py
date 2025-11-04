@@ -7,8 +7,9 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, cast, case
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import JSONB
 
 from ..core.security import require_bank_or_admin
 from ..database import get_db
@@ -322,21 +323,58 @@ def get_bank_results(
             ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
         )
         
-        # Date filters
+        # Date filters (already in SQL)
         if start_date:
             query = query.filter(ValidationSession.created_at >= start_date)
         if end_date:
             query = query.filter(ValidationSession.created_at <= end_date)
         
+        # Client name filter using JSON operators (SQL-based)
+        if client_name:
+            # Use PostgreSQL JSON operators to filter by client_name in extracted_data.bank_metadata.client_name
+            # Cast JSON to JSONB for better operator support, then use ->> to extract text
+            # Handle potential NULL values safely
+            client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(f"%{client_name}%")
+            # Also check that extracted_data is not null
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                client_name_condition
+            )
+        
+        # Status filter using JSON operators (SQL-based)
+        if status:
+            # Cast validation_results to JSONB for JSON operations
+            discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+            
+            if status == "compliant":
+                # Compliant = no discrepancies or empty discrepancies array
+                # Check if discrepancies array is empty or doesn't exist
+                no_discrepancies = func.jsonb_array_length(discrepancies_path).is_(None) | \
+                                  (func.jsonb_array_length(discrepancies_path) == 0)
+                query = query.filter(
+                    ValidationSession.validation_results.isnot(None),
+                    no_discrepancies
+                )
+            elif status == "discrepancies":
+                # Has discrepancies = discrepancies array exists and has length > 0
+                has_discrepancies = func.jsonb_array_length(discrepancies_path) > 0
+                query = query.filter(
+                    ValidationSession.validation_results.isnot(None),
+                    has_discrepancies
+                )
+        
         # Order by completed date desc
         query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
         
-        # Count total
+        # Count total (now accurate after SQL filtering)
         total = query.count()
         
         # Apply pagination
         sessions = query.offset(offset).limit(limit).all()
         
+        # Build results (no Python filtering needed - all done in SQL)
         results = []
         for session in sessions:
             # Extract bank metadata
@@ -350,15 +388,8 @@ def get_bank_results(
             # Determine compliance status
             has_discrepancies = len(discrepancies) > 0
             compliance_status = "discrepancies" if has_discrepancies else "compliant"
-            
-            # Apply status filter
-            if status and compliance_status != status:
-                continue
-            
-            # Apply client name filter (case-insensitive partial match)
-            client_name_val = bank_metadata.get("client_name", "")
-            if client_name and client_name.lower() not in client_name_val.lower():
-                continue
+            if session.status == SessionStatus.FAILED.value:
+                compliance_status = "failed"
             
             # Count documents
             document_count = len(session.documents) if session.documents else 0
@@ -376,7 +407,7 @@ def get_bank_results(
                 "id": str(session.id),
                 "job_id": str(session.id),
                 "jobId": str(session.id),
-                "client_name": client_name_val,
+                "client_name": bank_metadata.get("client_name"),
                 "lc_number": bank_metadata.get("lc_number"),
                 "date_received": bank_metadata.get("date_received"),
                 "submitted_at": session.created_at.isoformat() if session.created_at else None,
@@ -472,44 +503,52 @@ async def export_results_pdf(
             ).all()
             filtered_sessions = sessions
         else:
-            # Get filtered results (reuse logic from get_bank_results)
+            # Get filtered results using optimized SQL queries (same logic as get_bank_results)
             query = db.query(ValidationSession).filter(
                 ValidationSession.user_id == current_user.id,
                 ValidationSession.deleted_at.is_(None),
                 ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
             )
             
-            # Date filters
+            # Date filters (SQL-based)
             if start_date:
                 query = query.filter(ValidationSession.created_at >= start_date)
             if end_date:
                 query = query.filter(ValidationSession.created_at <= end_date)
             
+            # Client name filter using JSON operators (SQL-based)
+            if client_name:
+                client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+                    'bank_metadata'
+                ]['client_name'].astext.ilike(f"%{client_name}%")
+                query = query.filter(
+                    ValidationSession.extracted_data.isnot(None),
+                    client_name_condition
+                )
+            
+            # Status filter using JSON operators (SQL-based)
+            if status:
+                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+                
+                if status == "compliant":
+                    no_discrepancies = func.jsonb_array_length(discrepancies_path).is_(None) | \
+                                      (func.jsonb_array_length(discrepancies_path) == 0)
+                    query = query.filter(
+                        ValidationSession.validation_results.isnot(None),
+                        no_discrepancies
+                    )
+                elif status == "discrepancies":
+                    has_discrepancies = func.jsonb_array_length(discrepancies_path) > 0
+                    query = query.filter(
+                        ValidationSession.validation_results.isnot(None),
+                        has_discrepancies
+                    )
+            
             # Order by completed date desc
             query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
             
-            sessions = query.all()
-            
-            # Apply filters (same logic as get_bank_results)
-            filtered_sessions = []
-            for session in sessions:
-                metadata = session.extracted_data or {}
-                bank_metadata = metadata.get("bank_metadata", {})
-                validation_results = session.validation_results or {}
-                discrepancies = validation_results.get("discrepancies", [])
-                has_discrepancies = len(discrepancies) > 0
-                compliance_status = "discrepancies" if has_discrepancies else "compliant"
-                
-                # Apply status filter
-                if status and compliance_status != status:
-                    continue
-                
-                # Apply client name filter
-                client_name_val = bank_metadata.get("client_name", "")
-                if client_name and client_name.lower() not in client_name_val.lower():
-                    continue
-                
-                filtered_sessions.append(session)
+            # Get all matching sessions (no pagination for export)
+            filtered_sessions = query.all()
         
         # Generate summary PDF report
         report_generator = ReportGenerator()
@@ -521,7 +560,7 @@ async def export_results_pdf(
         pdf_buffer = report_generator._html_to_pdf(html_content)
         # Return PDF as response
         filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.pdf"
-        if job_ids and len(filtered_sessions) < len(sessions):
+        if job_ids:
             filename = f"bank-lc-results-selected-{len(filtered_sessions)}-{datetime.now().strftime('%Y-%m-%d')}.pdf"
         
         duration_ms = int((time.time() - start_time) * 1000)
@@ -739,6 +778,13 @@ def get_client_names(
             ValidationSession.extracted_data.isnot(None)
         )
         
+        # If search query provided, filter in SQL (optimized)
+        if query:
+            client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(f"%{query}%")
+            sessions_query = sessions_query.filter(client_name_condition)
+        
         # Extract distinct client names from extracted_data
         client_names = set()
         sessions = sessions_query.all()
@@ -755,11 +801,6 @@ def get_client_names(
         
         # Convert to sorted list
         client_list = sorted(list(client_names))
-        
-        # Apply search filter if provided
-        if query:
-            query_lower = query.lower()
-            client_list = [name for name in client_list if query_lower in name.lower()]
         
         # Apply limit
         client_list = client_list[:limit]
