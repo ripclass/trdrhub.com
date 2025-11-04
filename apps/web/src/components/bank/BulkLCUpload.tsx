@@ -7,8 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate } from "@/hooks/use-lcopilot";
+import { useQuery } from "@tanstack/react-query";
+import { bankApi } from "@/api/bank";
 import { sanitizeText, sanitizeFileName } from "@/lib/sanitize";
 import { MAX_FILE_SIZE, MAX_TOTAL_SIZE } from "@/lib/constants";
 import {
@@ -17,7 +21,10 @@ import {
   X,
   AlertCircle,
   Clock,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface UploadedFile {
   id: string;
@@ -49,9 +56,20 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const [dateReceived, setDateReceived] = useState("");
   const [notes, setNotes] = useState("");
   const [clientNameError, setClientNameError] = useState("");
+  const [clientNameOpen, setClientNameOpen] = useState(false);
 
   const { toast } = useToast();
   const { validate, isLoading: isValidating } = useValidate();
+
+  // Fetch client names for autocomplete
+  const { data: clientsData } = useQuery({
+    queryKey: ['bank-clients', clientName],
+    queryFn: () => bankApi.getClients(clientName || undefined, 20),
+    enabled: clientNameOpen || clientName.length > 0,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  const clientSuggestions = clientsData?.clients || [];
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Validate file sizes
@@ -218,21 +236,76 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Client Name - Required */}
+          {/* Client Name - Required with Autocomplete */}
           <div className="space-y-2">
             <Label htmlFor="clientName">
               Client Name <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="clientName"
-              value={clientName}
-              onChange={(e) => {
-                setClientName(e.target.value);
-                setClientNameError("");
-              }}
-              placeholder="Enter client/company name"
-              className={clientNameError ? "border-destructive" : ""}
-            />
+            <Popover open={clientNameOpen} onOpenChange={setClientNameOpen}>
+              <div className="relative">
+                <Input
+                  id="clientName"
+                  value={clientName}
+                  onChange={(e) => {
+                    setClientName(e.target.value);
+                    setClientNameError("");
+                    setClientNameOpen(true);
+                  }}
+                  onFocus={() => setClientNameOpen(true)}
+                  placeholder="Enter client/company name..."
+                  className={cn(clientNameError ? "border-destructive" : "")}
+                />
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setClientNameOpen(!clientNameOpen);
+                    }}
+                  >
+                    <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+              </div>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command>
+                  <CommandInput
+                    placeholder="Search client name..."
+                    value={clientName}
+                    onValueChange={(value) => {
+                      setClientName(value);
+                      setClientNameError("");
+                    }}
+                  />
+                  <CommandList>
+                    <CommandEmpty>No client found. Type to add new client.</CommandEmpty>
+                    <CommandGroup>
+                      {clientSuggestions.map((client) => (
+                        <CommandItem
+                          key={client}
+                          value={client}
+                          onSelect={(currentValue) => {
+                            setClientName(currentValue === clientName ? "" : currentValue);
+                            setClientNameOpen(false);
+                            setClientNameError("");
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              clientName === client ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {client}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {clientNameError && (
               <p className="text-sm text-destructive flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />

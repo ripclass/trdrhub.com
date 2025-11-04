@@ -293,6 +293,52 @@ def get_bank_results(
     }
 
 
+@router.get("/clients")
+def get_client_names(
+    query: Optional[str] = Query(None, description="Filter client names by search query"),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+):
+    """Get distinct client names for autocomplete."""
+    # Query all validation sessions for this user
+    sessions_query = db.query(ValidationSession).filter(
+        ValidationSession.user_id == current_user.id,
+        ValidationSession.deleted_at.is_(None),
+        ValidationSession.extracted_data.isnot(None)
+    )
+    
+    # Extract distinct client names from extracted_data
+    client_names = set()
+    sessions = sessions_query.all()
+    
+    for session in sessions:
+        metadata = session.extracted_data or {}
+        bank_metadata = metadata.get("bank_metadata", {})
+        client_name = bank_metadata.get("client_name")
+        
+        if client_name and isinstance(client_name, str):
+            client_name_clean = client_name.strip()
+            if client_name_clean:
+                client_names.add(client_name_clean)
+    
+    # Convert to sorted list
+    client_list = sorted(list(client_names))
+    
+    # Apply search filter if provided
+    if query:
+        query_lower = query.lower()
+        client_list = [name for name in client_list if query_lower in name.lower()]
+    
+    # Apply limit
+    client_list = client_list[:limit]
+    
+    return {
+        "count": len(client_list),
+        "clients": client_list,
+    }
+
+
 def _calculate_progress(status: str) -> int:
     """Calculate progress percentage based on status."""
     status_map = {

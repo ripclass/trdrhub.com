@@ -30,6 +30,7 @@ import { format } from "date-fns";
 import { bankApi, BankResult } from "@/api/bank";
 import { sanitizeDisplayText } from "@/lib/sanitize";
 import { generateCSV } from "@/lib/csv";
+import { LCResultDetailModal } from "./LCResultDetailModal";
 
 interface ResultsTableProps {}
 
@@ -37,6 +38,9 @@ export function ResultsTable({}: ResultsTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState("");
   const [dateRange, setDateRange] = useState("90"); // days
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
+  const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
 
   // Calculate date range for API
   const getDateRange = () => {
@@ -132,7 +136,20 @@ export function ResultsTable({}: ResultsTableProps) {
   };
 
   const handleViewDetails = (result: BankResult) => {
-    window.location.href = `/lcopilot/results/${result.jobId}`;
+    setSelectedJobId(result.jobId);
+    setSelectedClientName(result.client_name);
+    setSelectedLcNumber(result.lc_number);
+  };
+
+  const handleDownloadPDF = async (result: BankResult) => {
+    try {
+      const { getReportDownloadUrl } = await import("@/api/sessions");
+      const reportData = await getReportDownloadUrl(result.jobId);
+      window.open(reportData.download_url, "_blank");
+    } catch (error: any) {
+      console.error("Failed to download report:", error);
+      alert("Failed to download report. Please try again.");
+    }
   };
 
   return (
@@ -261,10 +278,16 @@ export function ResultsTable({}: ResultsTableProps) {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleViewDetails(result)}
+                            title="View Details"
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="sm">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownloadPDF(result)}
+                            title="Download PDF Report"
+                          >
                             <Download className="w-4 h-4" />
                           </Button>
                         </div>
@@ -277,6 +300,19 @@ export function ResultsTable({}: ResultsTableProps) {
           </div>
         )}
       </CardContent>
+      <LCResultDetailModal
+        jobId={selectedJobId}
+        open={!!selectedJobId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedJobId(null);
+            setSelectedClientName(undefined);
+            setSelectedLcNumber(undefined);
+          }
+        }}
+        clientName={selectedClientName}
+        lcNumber={selectedLcNumber}
+      />
     </Card>
   );
 }

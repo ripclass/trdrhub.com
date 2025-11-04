@@ -53,6 +53,11 @@ export interface BankResultsFilters {
   offset?: number;
 }
 
+export interface BankClientsResponse {
+  count: number;
+  clients: string[];
+}
+
 export const bankApi = {
   /**
    * Get list of bank validation jobs
@@ -78,6 +83,16 @@ export const bankApi = {
   getResults: async (filters?: BankResultsFilters): Promise<BankResultsResponse> => {
     const response = await api.get<BankResultsResponse>('/bank/results', {
       params: filters,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get distinct client names for autocomplete
+   */
+  getClients: async (query?: string, limit?: number): Promise<BankClientsResponse> => {
+    const response = await api.get<BankClientsResponse>('/bank/clients', {
+      params: { query, limit },
     });
     return response.data;
   },
