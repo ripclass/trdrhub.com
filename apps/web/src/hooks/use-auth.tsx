@@ -81,6 +81,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isActive: userData.is_active,
       }
       setUser(mapped)
+      
+      // Fetch CSRF token after successful profile fetch
+      try {
+        const { fetchCsrfToken } = await import('@/lib/csrf')
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+        await fetchCsrfToken(API_BASE_URL)
+      } catch (csrfError) {
+        console.warn('Failed to fetch CSRF token:', csrfError)
+        // Non-critical, continue without CSRF token
+      }
+      
       return mapped
     } catch (error) {
       console.error('Failed to load user profile', error)

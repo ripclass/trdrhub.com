@@ -3,7 +3,7 @@ Authentication API endpoints.
 """
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -94,6 +94,41 @@ async def login_user(
         expires_in=token_data["expires_in"],
         role=token_data["role"]
     )
+
+
+@router.get("/csrf-token")
+async def get_csrf_token(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and return a CSRF token for the authenticated user."""
+    from ..middleware.csrf import generate_csrf_token
+    from ..config import settings
+    
+    token, cookie_settings = generate_csrf_token(
+        secret_key=settings.SECRET_KEY,
+        expiry_seconds=3600  # 1 hour
+    )
+    
+    # Create response with token in JSON body
+    from fastapi.responses import JSONResponse
+    
+    response = JSONResponse({
+        "csrf_token": token,
+        "expires_in": 3600
+    })
+    
+    # Set CSRF token cookie (must be readable by JS for double-submit pattern)
+    response.set_cookie(
+        key=cookie_settings["key"],
+        value=cookie_settings["value"],
+        httponly=False,  # Must be readable by JavaScript
+        samesite="lax",
+        secure=settings.is_production(),  # HTTPS only in production
+        max_age=cookie_settings["max_age"],
+    )
+    
+    return response
 
 
 @router.get("/me", response_model=UserProfile)

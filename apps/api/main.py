@@ -58,6 +58,7 @@ from app.schemas import ApiError
 from app.config import settings
 from app.middleware.quota_middleware import QuotaEnforcementMiddleware
 from app.middleware.rate_limit import RateLimiterMiddleware
+from app.middleware.csrf import CSRFMiddleware
 
 
 @asynccontextmanager
@@ -269,6 +270,30 @@ app.add_middleware(
         "/metrics",
         "/warm",
     ],
+)
+
+# Add CSRF protection middleware (before CORS)
+# Only protect state-changing methods (POST, PUT, DELETE, PATCH)
+# Exempt paths: health, docs, auth endpoints (except login/register which need CSRF)
+app.add_middleware(
+    CSRFMiddleware,
+    secret_key=settings.SECRET_KEY,
+    cookie_name="csrf_token",
+    header_name="X-CSRF-Token",
+    exempt_paths={
+        "/health",
+        "/health/info",
+        "/health/live",
+        "/health/ready",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/metrics",
+        "/warm",
+        "/auth/csrf-token",  # CSRF token endpoint itself
+    },
+    exempt_methods={"GET", "HEAD", "OPTIONS"},
+    token_expiry_seconds=3600,  # 1 hour
 )
 
 # Add CORS middleware
