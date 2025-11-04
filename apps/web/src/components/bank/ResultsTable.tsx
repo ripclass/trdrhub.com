@@ -42,6 +42,7 @@ interface ResultsTableProps {}
 
 export function ResultsTable({}: ResultsTableProps) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const clientFromUrl = searchParams.get("client") || "";
   
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -409,7 +410,14 @@ export function ResultsTable({}: ResultsTableProps) {
                       <TableCell className="font-medium">
                         {lcNumber}
                       </TableCell>
-                      <TableCell>{clientName}</TableCell>
+                      <TableCell>
+                        <button
+                          onClick={() => navigate(`/lcopilot/bank-dashboard/client/${encodeURIComponent(clientName)}`)}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          {clientName}
+                        </button>
+                      </TableCell>
                       <TableCell>
                         {format(completedAt, "MMM dd, yyyy HH:mm")}
                       </TableCell>

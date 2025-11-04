@@ -1462,7 +1462,237 @@ def get_client_stats(
         raise
 
 
-STREAM_TOKEN_EXPIRY_SECONDS = 180
+@router.get("/clients/{client_name}/dashboard")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def get_client_dashboard(
+    client_name: str,
+    start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
+    end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Get comprehensive dashboard data for a specific client.
+    Returns client statistics, all LCs, and performance trends.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        # Query all validation sessions for this client
+        query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None),
+            ValidationSession.extracted_data.isnot(None),
+            ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+        )
+        
+        # Filter by client name (exact match, case-insensitive)
+        client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['client_name'].astext.ilike(client_name)
+        query = query.filter(client_name_condition)
+        
+        # Date filters
+        if start_date:
+            query = query.filter(ValidationSession.created_at >= start_date)
+        if end_date:
+            query = query.filter(ValidationSession.created_at <= end_date)
+        
+        # Get all sessions for this client
+        sessions = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last()).all()
+        
+        if not sessions:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No validation sessions found for client: {client_name}"
+            )
+        
+        # Calculate aggregate statistics
+        total_validations = len(sessions)
+        compliant_count = 0
+        discrepancies_count = 0
+        failed_count = 0
+        total_discrepancies = 0
+        compliance_scores = []
+        processing_times = []
+        
+        # Track dates for trend analysis
+        validation_dates = []
+        
+        for session in sessions:
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            discrepancy_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+            
+            # Determine status
+            if session.status == SessionStatus.FAILED.value:
+                failed_count += 1
+            elif discrepancy_count == 0:
+                compliant_count += 1
+            else:
+                discrepancies_count += 1
+            
+            total_discrepancies += discrepancy_count
+            
+            # Calculate compliance score
+            compliance_score = max(0, min(100, 100 - (discrepancy_count * 5)))
+            compliance_scores.append(compliance_score)
+            
+            # Processing time
+            if session.processing_started_at and session.processing_completed_at:
+                delta = session.processing_completed_at - session.processing_started_at
+                processing_times.append(delta.total_seconds())
+            
+            # Track validation date for trends
+            if session.processing_completed_at:
+                validation_dates.append(session.processing_completed_at.date())
+        
+        # Calculate averages
+        avg_compliance_score = sum(compliance_scores) / len(compliance_scores) if compliance_scores else 0
+        avg_processing_time = sum(processing_times) / len(processing_times) if processing_times else None
+        compliance_rate = (compliant_count / total_validations * 100) if total_validations > 0 else 0
+        
+        # Calculate trend data (group by date)
+        from collections import defaultdict
+        daily_stats = defaultdict(lambda: {
+            'count': 0,
+            'compliant': 0,
+            'discrepancies': 0,
+            'failed': 0,
+            'avg_score': [],
+        })
+        
+        for session in sessions:
+            if not session.processing_completed_at:
+                continue
+            
+            date_key = session.processing_completed_at.date().isoformat()
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            discrepancy_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+            
+            daily_stats[date_key]['count'] += 1
+            compliance_score = max(0, min(100, 100 - (discrepancy_count * 5)))
+            daily_stats[date_key]['avg_score'].append(compliance_score)
+            
+            if session.status == SessionStatus.FAILED.value:
+                daily_stats[date_key]['failed'] += 1
+            elif discrepancy_count == 0:
+                daily_stats[date_key]['compliant'] += 1
+            else:
+                daily_stats[date_key]['discrepancies'] += 1
+        
+        # Format trend data
+        trend_data = []
+        for date_str in sorted(daily_stats.keys()):
+            stats = daily_stats[date_str]
+            trend_data.append({
+                'date': date_str,
+                'validations': stats['count'],
+                'compliant': stats['compliant'],
+                'discrepancies': stats['discrepancies'],
+                'failed': stats['failed'],
+                'avg_compliance_score': sum(stats['avg_score']) / len(stats['avg_score']) if stats['avg_score'] else 0,
+            })
+        
+        # Build LC results list (similar to get_bank_results)
+        lc_results = []
+        for session in sessions:
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            
+            has_discrepancies = len(discrepancies) > 0
+            compliance_status = "discrepancies" if has_discrepancies else "compliant"
+            if session.status == SessionStatus.FAILED.value:
+                compliance_status = "failed"
+            
+            document_count = len(session.documents) if session.documents else 0
+            compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+            
+            processing_time_seconds = None
+            if session.processing_started_at and session.processing_completed_at:
+                delta = session.processing_completed_at - session.processing_started_at
+                processing_time_seconds = round(delta.total_seconds(), 2)
+            
+            lc_results.append({
+                "id": str(session.id),
+                "job_id": str(session.id),
+                "jobId": str(session.id),
+                "client_name": bank_metadata.get("client_name"),
+                "lc_number": bank_metadata.get("lc_number"),
+                "date_received": bank_metadata.get("date_received"),
+                "submitted_at": session.created_at.isoformat() if session.created_at else None,
+                "processing_started_at": session.processing_started_at.isoformat() if session.processing_started_at else None,
+                "completed_at": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
+                "processing_time_seconds": processing_time_seconds,
+                "status": compliance_status,
+                "compliance_score": compliance_score,
+                "discrepancy_count": len(discrepancies),
+                "document_count": document_count,
+            })
+        
+        # Log dashboard access
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="client_dashboard",
+            resource_id=f"client_{client_name}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "client_name": client_name,
+                "total_validations": total_validations,
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
+            }
+        )
+        
+        return {
+            "client_name": client_name,
+            "statistics": {
+                "total_validations": total_validations,
+                "compliant_count": compliant_count,
+                "discrepancies_count": discrepancies_count,
+                "failed_count": failed_count,
+                "total_discrepancies": total_discrepancies,
+                "average_compliance_score": round(avg_compliance_score, 1),
+                "compliance_rate": round(compliance_rate, 1),
+                "average_processing_time_seconds": round(avg_processing_time, 2) if avg_processing_time else None,
+                "first_validation_date": min(validation_dates).isoformat() if validation_dates else None,
+                "last_validation_date": max(validation_dates).isoformat() if validation_dates else None,
+            },
+            "trend_data": trend_data,
+            "lc_results": lc_results,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Client dashboard error: {e}", exc_info=True)
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="client_dashboard",
+            resource_id=f"client_{client_name}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load client dashboard: {str(e)}"
+        )
 
 
 @router.get("/jobs/stream-token")

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { bankApi, ClientStats } from "@/api/bank";
 import { format } from "date-fns";
-import { Search, Users, CheckCircle, XCircle, AlertCircle, TrendingUp, FileText, ExternalLink } from "lucide-react";
+import { Search, Users, CheckCircle, XCircle, AlertCircle, TrendingUp, FileText, ExternalLink, BarChart3 } from "lucide-react";
 import { sanitizeText } from "@/lib/sanitize";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +33,11 @@ export function ClientManagement({}: ClientManagementProps) {
   const handleViewResults = (clientName: string) => {
     // Navigate to Results tab with client filter applied
     navigate('/lcopilot/bank-dashboard?tab=results&client=' + encodeURIComponent(clientName));
+  };
+
+  const handleViewDashboard = (clientName: string) => {
+    // Navigate to client dashboard
+    navigate(`/lcopilot/bank-dashboard/client/${encodeURIComponent(clientName)}`);
   };
 
   const getStatusBadge = (stats: ClientStats) => {
@@ -286,15 +291,26 @@ export function ClientManagement({}: ClientManagementProps) {
                         {getStatusBadge(client)}
                       </td>
                       <td className="p-3 text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewResults(client.client_name)}
-                          className="h-8"
-                        >
-                          <ExternalLink className="w-4 h-4 mr-1" />
-                          View Results
-                        </Button>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewDashboard(client.client_name)}
+                            className="h-8"
+                          >
+                            <BarChart3 className="w-4 h-4 mr-1" />
+                            Dashboard
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewResults(client.client_name)}
+                            className="h-8"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-1" />
+                            Results
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

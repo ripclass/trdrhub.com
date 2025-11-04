@@ -125,19 +125,34 @@ export interface BulkUploadSubmitRequest {
   }>;
 }
 
-export interface BulkUploadSubmitResponse {
-  status: string;
-  message: string;
-  bulk_session_id: string;
-  lc_sets_submitted: number;
-  jobs_created: number;
-  jobs: Array<{
-    job_id: string;
-    lc_number: string;
-    client_name: string;
-    file_count: number;
-    status: string;
+export interface ClientDashboardResponse {
+  client_name: string;
+  statistics: {
+    total_validations: number;
+    compliant_count: number;
+    discrepancies_count: number;
+    failed_count: number;
+    total_discrepancies: number;
+    average_compliance_score: number;
+    compliance_rate: number;
+    average_processing_time_seconds: number | null;
+    first_validation_date: string | null;
+    last_validation_date: string | null;
+  };
+  trend_data: Array<{
+    date: string;
+    validations: number;
+    compliant: number;
+    discrepancies: number;
+    failed: number;
+    avg_compliance_score: number;
   }>;
+  lc_results: BankResult[];
+}
+
+export interface ClientDashboardFilters {
+  start_date?: string; // ISO date string
+  end_date?: string; // ISO date string
 }
 
 export const bankApi = {
@@ -197,6 +212,22 @@ export const bankApi = {
     const response = await api.get<BankClientStatsResponse>('/bank/clients/stats', {
       params: filters,
     });
+    return response.data;
+  },
+
+  /**
+   * Get comprehensive dashboard data for a specific client
+   */
+  getClientDashboard: async (
+    clientName: string,
+    filters?: ClientDashboardFilters
+  ): Promise<ClientDashboardResponse> => {
+    const response = await api.get<ClientDashboardResponse>(
+      `/bank/clients/${encodeURIComponent(clientName)}/dashboard`,
+      {
+        params: filters,
+      }
+    );
     return response.data;
   },
 
