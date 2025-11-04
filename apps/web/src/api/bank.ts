@@ -62,6 +62,31 @@ export interface BankClientsResponse {
   clients: string[];
 }
 
+export interface ClientStats {
+  client_name: string;
+  total_validations: number;
+  compliant_count: number;
+  discrepancies_count: number;
+  failed_count: number;
+  total_discrepancies: number;
+  average_compliance_score: number;
+  compliance_rate: number;
+  last_validation_date: string | null;
+  first_validation_date: string | null;
+}
+
+export interface BankClientStatsResponse {
+  total: number;
+  count: number;
+  clients: ClientStats[];
+}
+
+export interface BankClientStatsFilters {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const bankApi = {
   /**
    * Get list of bank validation jobs
@@ -108,6 +133,16 @@ export const bankApi = {
     const response = await api.get<Blob>('/bank/results/export-pdf', {
       params: filters,
       responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  /**
+   * Get client statistics with validation counts and compliance metrics
+   */
+  getClientStats: async (filters?: BankClientStatsFilters): Promise<BankClientStatsResponse> => {
+    const response = await api.get<BankClientStatsResponse>('/bank/clients/stats', {
+      params: filters,
     });
     return response.data;
   },

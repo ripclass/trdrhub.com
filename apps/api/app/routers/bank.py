@@ -3,7 +3,7 @@ Bank-facing API endpoints for portfolio visibility and governance.
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -839,6 +839,175 @@ def get_client_names(
             correlation_id=audit_context['correlation_id'],
             resource_type="bank_clients",
             resource_id="autocomplete-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise
+
+
+@router.get("/clients/stats")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def get_client_stats(
+    query: Optional[str] = Query(None, description="Filter client names by search query"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """Get client statistics with validation counts and compliance metrics."""
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        # Query all validation sessions for this user
+        sessions_query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None),
+            ValidationSession.extracted_data.isnot(None),
+            ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+        )
+        
+        # If search query provided, filter in SQL
+        if query:
+            client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(f"%{query}%")
+            sessions_query = sessions_query.filter(client_name_condition)
+        
+        # Get all matching sessions
+        all_sessions = sessions_query.all()
+        
+        # Aggregate statistics by client name
+        client_stats: Dict[str, Dict] = {}
+        
+        for session in all_sessions:
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            client_name = bank_metadata.get("client_name")
+            
+            if not client_name or not isinstance(client_name, str):
+                continue
+            
+            client_name_clean = client_name.strip()
+            if not client_name_clean:
+                continue
+            
+            # Initialize client stats if not exists
+            if client_name_clean not in client_stats:
+                client_stats[client_name_clean] = {
+                    "client_name": client_name_clean,
+                    "total_validations": 0,
+                    "compliant_count": 0,
+                    "discrepancies_count": 0,
+                    "failed_count": 0,
+                    "total_discrepancies": 0,
+                    "compliance_scores": [],
+                    "last_validation_date": None,
+                    "first_validation_date": None,
+                }
+            
+            stats = client_stats[client_name_clean]
+            stats["total_validations"] += 1
+            
+            # Extract validation results
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            discrepancy_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+            
+            # Determine status
+            if session.status == SessionStatus.FAILED.value:
+                stats["failed_count"] += 1
+            elif discrepancy_count == 0:
+                stats["compliant_count"] += 1
+            else:
+                stats["discrepancies_count"] += 1
+            
+            stats["total_discrepancies"] += discrepancy_count
+            
+            # Calculate compliance score
+            compliance_score = max(0, min(100, 100 - (discrepancy_count * 5)))
+            stats["compliance_scores"].append(compliance_score)
+            
+            # Track dates
+            if session.processing_completed_at:
+                completed_date = session.processing_completed_at
+                if not stats["last_validation_date"] or completed_date > stats["last_validation_date"]:
+                    stats["last_validation_date"] = completed_date
+                if not stats["first_validation_date"] or completed_date < stats["first_validation_date"]:
+                    stats["first_validation_date"] = completed_date
+        
+        # Convert to list and calculate averages
+        client_list = []
+        for client_name, stats in client_stats.items():
+            avg_score = 0
+            if stats["compliance_scores"]:
+                avg_score = sum(stats["compliance_scores"]) / len(stats["compliance_scores"])
+            
+            compliance_rate = 0
+            if stats["total_validations"] > 0:
+                compliance_rate = (stats["compliant_count"] / stats["total_validations"]) * 100
+            
+            client_list.append({
+                "client_name": client_name,
+                "total_validations": stats["total_validations"],
+                "compliant_count": stats["compliant_count"],
+                "discrepancies_count": stats["discrepancies_count"],
+                "failed_count": stats["failed_count"],
+                "total_discrepancies": stats["total_discrepancies"],
+                "average_compliance_score": round(avg_score, 1),
+                "compliance_rate": round(compliance_rate, 1),
+                "last_validation_date": stats["last_validation_date"].isoformat() if stats["last_validation_date"] else None,
+                "first_validation_date": stats["first_validation_date"].isoformat() if stats["first_validation_date"] else None,
+            })
+        
+        # Sort by total validations (descending) or last validation date
+        client_list.sort(key=lambda x: (
+            x["last_validation_date"] or "1970-01-01"
+        ), reverse=True)
+        
+        # Apply pagination
+        total = len(client_list)
+        paginated_list = client_list[offset:offset + limit]
+        
+        # Log client stats access
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_clients_stats",
+            resource_id="list",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "query": query,
+                "results_count": len(paginated_list),
+                "total_clients": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+        
+        return {
+            "total": total,
+            "count": len(paginated_list),
+            "clients": paginated_list,
+        }
+    except Exception as e:
+        # Log failed request
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_clients_stats",
+            resource_id="list-failed",
             ip_address=audit_context['ip_address'],
             user_agent=audit_context['user_agent'],
             endpoint=audit_context['endpoint'],

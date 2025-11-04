@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,13 +38,24 @@ import { Checkbox } from "@/components/ui/checkbox";
 interface ResultsTableProps {}
 
 export function ResultsTable({}: ResultsTableProps) {
+  const [searchParams] = useSearchParams();
+  const clientFromUrl = searchParams.get("client") || "";
+  
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [clientFilter, setClientFilter] = useState("");
+  const [clientFilter, setClientFilter] = useState(clientFromUrl);
   const [dateRange, setDateRange] = useState("90"); // days
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
   const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
+  // Update client filter when URL changes
+  useEffect(() => {
+    const clientFromUrl = searchParams.get("client") || "";
+    if (clientFromUrl && clientFromUrl !== clientFilter) {
+      setClientFilter(clientFromUrl);
+    }
+  }, [searchParams, clientFilter]);
 
   // Calculate date range for API
   const getDateRange = () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { BulkLCUpload } from "@/components/bank/BulkLCUpload";
 import { ProcessingQueue } from "@/components/bank/ProcessingQueue";
 import { ResultsTable } from "@/components/bank/ResultsTable";
 import { BankQuickStats } from "@/components/bank/BankQuickStats";
+import { ClientManagement } from "@/components/bank/ClientManagement";
 import {
   FileText,
   Upload,
@@ -18,11 +19,14 @@ import {
   Clock,
   CheckCircle,
   AlertTriangle,
+  Users,
 } from "lucide-react";
 
 export default function BankDashboard() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("upload");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab") || "upload";
+  const [activeTab, setActiveTab] = useState(tabFromUrl);
 
   // Check if stub mode is enabled
   const { data: stubStatus } = useQuery({
@@ -37,6 +41,26 @@ export default function BankDashboard() {
   // Frontend maps bank_officer and bank_admin to "bank" role
   // In stub mode, allow access regardless of role
   const isBankUser = isStubMode || (user && user.role === "bank");
+
+  // Update tab when URL changes
+  useEffect(() => {
+    const tabFromUrl = searchParams.get("tab") || "upload";
+    if (tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams, activeTab]);
+
+  // Update URL when tab changes
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("tab", newTab);
+    // Remove client filter if not navigating to results
+    if (newTab !== "results") {
+      newParams.delete("client");
+    }
+    setSearchParams(newParams);
+  };
 
   if (!isBankUser) {
     return (
@@ -103,8 +127,8 @@ export default function BankDashboard() {
         <BankQuickStats />
 
         {/* Main Content Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-          <TabsList className="grid w-full grid-cols-3 max-w-2xl">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-8">
+          <TabsList className="grid w-full grid-cols-4 max-w-3xl">
             <TabsTrigger value="upload" className="flex items-center gap-2">
               <Upload className="w-4 h-4" />
               Upload LC
@@ -117,18 +141,26 @@ export default function BankDashboard() {
               <CheckCircle className="w-4 h-4" />
               Results
             </TabsTrigger>
+            <TabsTrigger value="clients" className="flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Clients
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="mt-6">
-            <BulkLCUpload onUploadSuccess={() => setActiveTab("queue")} />
+            <BulkLCUpload onUploadSuccess={() => handleTabChange("queue")} />
           </TabsContent>
 
           <TabsContent value="queue" className="mt-6">
-            <ProcessingQueue onJobComplete={() => setActiveTab("results")} />
+            <ProcessingQueue onJobComplete={() => handleTabChange("results")} />
           </TabsContent>
 
           <TabsContent value="results" className="mt-6">
             <ResultsTable />
+          </TabsContent>
+
+          <TabsContent value="clients" className="mt-6">
+            <ClientManagement />
           </TabsContent>
         </Tabs>
       </div>
