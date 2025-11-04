@@ -316,6 +316,114 @@ def get_job_status(
         raise
 
 
+@router.get("/notification-preferences")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def get_notification_preferences(
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Get user's notification preferences.
+    Returns default preferences if not set.
+    """
+    # Get preferences from user's onboarding_data or return defaults
+    preferences = current_user.onboarding_data or {}
+    notification_prefs = preferences.get("notifications", {})
+    
+    return {
+        "email_enabled": notification_prefs.get("email_enabled", True),
+        "sms_enabled": notification_prefs.get("sms_enabled", False),
+        "job_completion_enabled": notification_prefs.get("job_completion_enabled", True),
+        "high_discrepancy_enabled": notification_prefs.get("high_discrepancy_enabled", True),
+        "high_discrepancy_threshold": notification_prefs.get("high_discrepancy_threshold", 5),
+    }
+
+
+@router.put("/notification-preferences")
+@bank_rate_limit(limiter_type="api", limit=10, window_seconds=60)
+def update_notification_preferences(
+    email_enabled: Optional[bool] = Query(None),
+    sms_enabled: Optional[bool] = Query(None),
+    job_completion_enabled: Optional[bool] = Query(None),
+    high_discrepancy_enabled: Optional[bool] = Query(None),
+    high_discrepancy_threshold: Optional[int] = Query(None, ge=1, le=20),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Update user's notification preferences.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        # Get current preferences
+        preferences = current_user.onboarding_data or {}
+        notification_prefs = preferences.get("notifications", {})
+        
+        # Update preferences
+        if email_enabled is not None:
+            notification_prefs["email_enabled"] = email_enabled
+        if sms_enabled is not None:
+            notification_prefs["sms_enabled"] = sms_enabled
+        if job_completion_enabled is not None:
+            notification_prefs["job_completion_enabled"] = job_completion_enabled
+        if high_discrepancy_enabled is not None:
+            notification_prefs["high_discrepancy_enabled"] = high_discrepancy_enabled
+        if high_discrepancy_threshold is not None:
+            notification_prefs["high_discrepancy_threshold"] = high_discrepancy_threshold
+        
+        # Save to user's onboarding_data
+        if not current_user.onboarding_data:
+            current_user.onboarding_data = {}
+        current_user.onboarding_data["notifications"] = notification_prefs
+        
+        db.commit()
+        db.refresh(current_user)
+        
+        # Log preference update
+        audit_service.log_action(
+            action=AuditAction.UPDATE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="notification_preferences",
+            resource_id=str(current_user.id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "preferences": notification_prefs
+            }
+        )
+        
+        return {
+            "message": "Notification preferences updated successfully",
+            "preferences": notification_prefs
+        }
+    except Exception as e:
+        logger.error(f"Failed to update notification preferences: {e}", exc_info=True)
+        audit_service.log_action(
+            action=AuditAction.UPDATE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="notification_preferences",
+            resource_id=str(current_user.id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update notification preferences: {str(e)}"
+        )
+
+
 @router.get("/duplicates/check")
 @bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
 def check_duplicate_lc(

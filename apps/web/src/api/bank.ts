@@ -162,7 +162,47 @@ export interface ClientDashboardFilters {
   end_date?: string; // ISO date string
 }
 
+export interface NotificationPreferences {
+  email_enabled: boolean;
+  sms_enabled: boolean;
+  job_completion_enabled: boolean;
+  high_discrepancy_enabled: boolean;
+  high_discrepancy_threshold: number;
+}
+
+export interface UpdateNotificationPreferencesRequest {
+  email_enabled?: boolean;
+  sms_enabled?: boolean;
+  job_completion_enabled?: boolean;
+  high_discrepancy_enabled?: boolean;
+  high_discrepancy_threshold?: number;
+}
+
 export const bankApi = {
+  /**
+   * Get user's notification preferences
+   */
+  getNotificationPreferences: async (): Promise<NotificationPreferences> => {
+    const response = await api.get<NotificationPreferences>('/bank/notification-preferences');
+    return response.data;
+  },
+
+  /**
+   * Update user's notification preferences
+   */
+  updateNotificationPreferences: async (
+    preferences: UpdateNotificationPreferencesRequest
+  ): Promise<{ message: string; preferences: NotificationPreferences }> => {
+    const response = await api.put<{ message: string; preferences: NotificationPreferences }>(
+      '/bank/notification-preferences',
+      null,
+      {
+        params: preferences,
+      }
+    );
+    return response.data;
+  },
+
   /**
    * Get list of bank validation jobs
    */

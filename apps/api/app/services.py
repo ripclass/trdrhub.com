@@ -215,10 +215,91 @@ class ValidationSessionService:
             session.processing_started_at = datetime.now(timezone.utc)
         elif status == SessionStatus.COMPLETED:
             session.processing_completed_at = datetime.now(timezone.utc)
+            # Trigger notification after status update
+            self._trigger_completion_notification(session)
         
         self.db.commit()
         self.db.refresh(session)
         return session
+    
+    def _trigger_completion_notification(self, session: ValidationSession):
+        """Trigger notification when validation completes."""
+        try:
+            # Import here to avoid circular dependencies
+            from .bank_notification_service import BankNotificationService
+            from fastapi import BackgroundTasks
+            
+            # Get user
+            user = self.db.query(User).filter(User.id == session.user_id).first()
+            if not user:
+                return
+            
+            # Extract validation results
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            discrepancy_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+            
+            # Calculate compliance score
+            compliance_score = max(0, min(100, 100 - (discrepancy_count * 5)))
+            
+            # Create notification service instance
+            notification_service = BankNotificationService(self.db)
+            
+            # Send notification asynchronously using background task
+            # Note: This requires BackgroundTasks to be passed from the route handler
+            # For now, we'll send synchronously but in a non-blocking way
+            import asyncio
+            import threading
+            
+            def send_notifications():
+                """Send notifications in a separate thread."""
+                try:
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Send completion notification
+                    loop.run_until_complete(
+                        notification_service.send_job_completion_notification(
+                            user=user,
+                            session=session,
+                            discrepancy_count=discrepancy_count,
+                            compliance_score=compliance_score
+                        )
+                    )
+                    
+                    # Send high discrepancy alert if threshold exceeded
+                    # Get threshold from user preferences
+                    user_prefs = user.onboarding_data or {}
+                    notification_prefs = user_prefs.get("notifications", {})
+                    threshold = notification_prefs.get("high_discrepancy_threshold", 5)
+                    
+                    if discrepancy_count >= threshold:
+                        loop.run_until_complete(
+                            notification_service.send_high_discrepancy_alert(
+                                user=user,
+                                session=session,
+                                discrepancy_count=discrepancy_count,
+                                compliance_score=compliance_score,
+                                threshold=threshold
+                            )
+                        )
+                    
+                    loop.close()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to send notification in background thread: {str(e)}", exc_info=True)
+            
+            # Start notification in background thread
+            thread = threading.Thread(target=send_notifications, daemon=True)
+            thread.start()
+            
+        except Exception as e:
+            # Don't fail validation if notification fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to trigger completion notification: {str(e)}", exc_info=True)
 
 
 class DocumentProcessingService:

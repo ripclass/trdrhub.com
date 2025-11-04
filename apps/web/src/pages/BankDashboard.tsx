@@ -12,6 +12,7 @@ import { ProcessingQueue } from "@/components/bank/ProcessingQueue";
 import { ResultsTable } from "@/components/bank/ResultsTable";
 import { BankQuickStats } from "@/components/bank/BankQuickStats";
 import { ClientManagement } from "@/components/bank/ClientManagement";
+import { NotificationPreferences } from "@/components/bank/NotificationPreferences";
 import {
   FileText,
   Upload,
@@ -20,6 +21,7 @@ import {
   CheckCircle,
   AlertTriangle,
   Users,
+  Bell,
 } from "lucide-react";
 
 export default function BankDashboard() {
@@ -128,7 +130,7 @@ export default function BankDashboard() {
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-8">
-          <TabsList className="grid w-full grid-cols-4 max-w-3xl">
+          <TabsList className="grid w-full grid-cols-5 max-w-4xl">
             <TabsTrigger value="upload" className="flex items-center gap-2">
               <Upload className="w-4 h-4" />
               Upload LC
@@ -144,6 +146,10 @@ export default function BankDashboard() {
             <TabsTrigger value="clients" className="flex items-center gap-2">
               <Users className="w-4 h-4" />
               Clients
+            </TabsTrigger>
+            <TabsTrigger value="notifications" className="flex items-center gap-2">
+              <Bell className="w-4 h-4" />
+              Notifications
             </TabsTrigger>
           </TabsList>
 
@@ -161,6 +167,10 @@ export default function BankDashboard() {
 
           <TabsContent value="clients" className="mt-6">
             <ClientManagement />
+          </TabsContent>
+
+          <TabsContent value="notifications" className="mt-6">
+            <NotificationPreferences />
           </TabsContent>
         </Tabs>
       </div>
