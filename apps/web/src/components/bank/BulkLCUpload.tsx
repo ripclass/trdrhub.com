@@ -27,7 +27,7 @@ import {
   Archive,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 interface UploadedFile {
   id: string;
@@ -67,11 +67,12 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const [detectedLCSets, setDetectedLCSets] = useState<LCSetDetected[]>([]);
   const [bulkSessionId, setBulkSessionId] = useState<string | null>(null);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
-  const [lcSetMetadata, setLcSetMetadata] = useState<Record<number, {
-    client_name: string;
-    lc_number: string;
-    date_received: string;
-  }>>({});
+  const [duplicateCheck, setDuplicateCheck] = useState<{
+    isDuplicate: boolean;
+    duplicateCount: number;
+    previousValidations: any[];
+  } | null>(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   const { toast } = useToast();
   const { validate, isLoading: isValidating } = useValidate();
@@ -94,7 +95,44 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  const clientSuggestions = clientsData?.clients || [];
+  // Check for duplicates when LC number and client name are provided
+  const { data: duplicateData, refetch: checkDuplicate } = useQuery({
+    queryKey: ['duplicate-check', clientName.trim(), lcNumber.trim()],
+    queryFn: () => {
+      if (!clientName.trim() || !lcNumber.trim()) {
+        return null;
+      }
+      return bankApi.checkDuplicate(lcNumber.trim(), clientName.trim());
+    },
+    enabled: false, // Don't auto-fetch, we'll trigger manually
+    staleTime: 30 * 1000,
+  });
+
+  // Check for duplicates when both fields are filled (with debounce)
+  useEffect(() => {
+    if (clientName.trim() && lcNumber.trim() && uploadMode === "single") {
+      const timer = setTimeout(() => {
+        setIsCheckingDuplicate(true);
+        checkDuplicate().finally(() => setIsCheckingDuplicate(false));
+      }, 500); // Debounce 500ms
+      return () => clearTimeout(timer);
+    } else {
+      setDuplicateCheck(null);
+    }
+  }, [clientName, lcNumber, uploadMode, checkDuplicate]);
+
+  // Update duplicate check state when data changes
+  useEffect(() => {
+    if (duplicateData) {
+      setDuplicateCheck({
+        isDuplicate: duplicateData.is_duplicate,
+        duplicateCount: duplicateData.duplicate_count,
+        previousValidations: duplicateData.previous_validations || [],
+      });
+    } else {
+      setDuplicateCheck(null);
+    }
+  }, [duplicateData]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     // Validate file sizes first
@@ -340,6 +378,24 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       const sanitizedLcNumber = lcNumber ? sanitizeText(lcNumber.trim()) : undefined;
       const sanitizedNotes = notes ? sanitizeText(notes.trim()) : undefined;
 
+      // Check for duplicates before submitting (only warn, don't block)
+      if (sanitizedLcNumber && sanitizedClientName) {
+        try {
+          const duplicateResult = await bankApi.checkDuplicate(sanitizedLcNumber, sanitizedClientName);
+          if (duplicateResult.is_duplicate) {
+            // Show warning but allow submission
+            toast({
+              title: "Duplicate LC Detected",
+              description: `This LC has been validated ${duplicateResult.duplicate_count} time(s) before. You can still proceed with this upload.`,
+              variant: "default",
+            });
+          }
+        } catch (error) {
+          // Don't block submission if duplicate check fails
+          console.error("Failed to check for duplicates:", error);
+        }
+      }
+
       // Prepare validation request
       const response = await validate({
         files: uploadedFiles.map((f) => f.file),
@@ -510,9 +566,76 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
             )}
           </div>
 
+          {/* Duplicate Warning */}
+          {duplicateCheck?.isDuplicate && (
+            <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-yellow-900 dark:text-yellow-100">
+                      Duplicate LC Detected
+                    </p>
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200 mt-1">
+                      This LC ({sanitizeText(lcNumber)}) for {sanitizeText(clientName)} has been validated{" "}
+                      {duplicateCheck.duplicateCount} time(s) before. You can still proceed with this upload.
+                    </p>
+                    {duplicateCheck.previousValidations.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-medium text-yellow-900 dark:text-yellow-100">
+                          Previous Validations:
+                        </p>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {duplicateCheck.previousValidations.slice(0, 3).map((prev: any) => (
+                            <div
+                              key={prev.id}
+                              className="text-xs bg-white dark:bg-yellow-900 p-2 rounded border border-yellow-200 dark:border-yellow-800"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">
+                                  {prev.completed_at
+                                    ? format(new Date(prev.completed_at), "MMM d, yyyy HH:mm")
+                                    : "N/A"}
+                                </span>
+                                <Badge
+                                  variant={
+                                    prev.status === "compliant"
+                                      ? "default"
+                                      : prev.status === "discrepancies"
+                                      ? "secondary"
+                                      : "destructive"
+                                  }
+                                  className="text-xs"
+                                >
+                                  {prev.status === "compliant"
+                                    ? "Compliant"
+                                    : prev.status === "discrepancies"
+                                    ? "Discrepancies"
+                                    : "Failed"}
+                                </Badge>
+                              </div>
+                              <div className="text-muted-foreground mt-1">
+                                Score: {prev.compliance_score}% | Discrepancies: {prev.discrepancy_count}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* LC Number - Optional */}
           <div className="space-y-2">
-            <Label htmlFor="lcNumber">LC Number (Optional)</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="lcNumber">LC Number (Optional)</Label>
+              {isCheckingDuplicate && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
             <Input
               id="lcNumber"
               value={lcNumber}

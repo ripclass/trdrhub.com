@@ -34,6 +34,7 @@ import {
   Download,
   Users,
   BarChart3,
+  Copy,
 } from "lucide-react";
 import { format } from "date-fns";
 import { bankApi, BankResult } from "@/api/bank";
@@ -426,7 +427,17 @@ export default function ClientDashboard() {
 
                       return (
                         <TableRow key={result.id}>
-                          <TableCell className="font-medium">{lcNumber}</TableCell>
+                          <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {lcNumber}
+                          {result.duplicate_count && result.duplicate_count > 0 && (
+                            <Badge variant="outline" className="text-xs" title={`This LC has been validated ${result.duplicate_count} time(s) before`}>
+                              <Copy className="w-3 h-3 mr-1" />
+                              {result.duplicate_count}x
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                           <TableCell>{dateReceived || "N/A"}</TableCell>
                           <TableCell>
                             {format(completedAt, "MMM dd, yyyy HH:mm")}

@@ -31,6 +31,13 @@ export interface BankResult {
   compliance_score: number;
   discrepancy_count: number;
   document_count: number;
+  duplicate_count?: number; // Number of previous validations for same LC+client
+}
+
+export interface DuplicateCheckResponse {
+  is_duplicate: boolean;
+  duplicate_count: number;
+  previous_validations: BankResult[];
 }
 
 export interface BankJobsResponse {
@@ -216,9 +223,20 @@ export const bankApi = {
   },
 
   /**
-   * Get comprehensive dashboard data for a specific client
+   * Check for duplicate LC (same LC number + client name)
    */
-  getClientDashboard: async (
+  checkDuplicate: async (
+    lcNumber: string,
+    clientName: string
+  ): Promise<DuplicateCheckResponse> => {
+    const response = await api.get<DuplicateCheckResponse>('/bank/duplicates/check', {
+      params: {
+        lc_number: lcNumber,
+        client_name: clientName,
+      },
+    });
+    return response.data;
+  },
     clientName: string,
     filters?: ClientDashboardFilters
   ): Promise<ClientDashboardResponse> => {

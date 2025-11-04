@@ -28,6 +28,7 @@ import {
   Download as DownloadIcon,
   ChevronDown,
   ChevronUp,
+  Copy,
 } from "lucide-react";
 import { format } from "date-fns";
 import { bankApi, BankResult, BankResultsFilters } from "@/api/bank";
@@ -408,7 +409,15 @@ export function ResultsTable({}: ResultsTableProps) {
                         />
                       </TableCell>
                       <TableCell className="font-medium">
-                        {lcNumber}
+                        <div className="flex items-center gap-2">
+                          {lcNumber}
+                          {result.duplicate_count && result.duplicate_count > 0 && (
+                            <Badge variant="outline" className="text-xs" title={`This LC has been validated ${result.duplicate_count} time(s) before`}>
+                              <Copy className="w-3 h-3 mr-1" />
+                              {result.duplicate_count}x
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <button

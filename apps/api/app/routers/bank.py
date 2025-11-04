@@ -316,6 +316,140 @@ def get_job_status(
         raise
 
 
+@router.get("/duplicates/check")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def check_duplicate_lc(
+    lc_number: str = Query(..., description="LC number to check"),
+    client_name: str = Query(..., description="Client name to check"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Check if an LC with the same LC number and client name has been validated before.
+    Returns previous validation results if duplicates exist.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        # Query for existing validation sessions with matching LC number and client name
+        query = db.query(ValidationSession).filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None),
+            ValidationSession.extracted_data.isnot(None),
+            ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+        )
+        
+        # Filter by LC number (case-insensitive, trimmed)
+        lc_number_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['lc_number'].astext.ilike(lc_number.strip())
+        
+        # Filter by client name (case-insensitive, trimmed)
+        client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['client_name'].astext.ilike(client_name.strip())
+        
+        query = query.filter(
+            lc_number_condition,
+            client_name_condition
+        )
+        
+        # Order by completion date (most recent first)
+        existing_sessions = query.order_by(
+            ValidationSession.processing_completed_at.desc().nulls_last()
+        ).limit(10).all()  # Limit to 10 most recent
+        
+        if not existing_sessions:
+            return {
+                "is_duplicate": False,
+                "duplicate_count": 0,
+                "previous_validations": [],
+            }
+        
+        # Build previous validation results
+        previous_validations = []
+        for session in existing_sessions:
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            
+            has_discrepancies = len(discrepancies) > 0
+            compliance_status = "discrepancies" if has_discrepancies else "compliant"
+            if session.status == SessionStatus.FAILED.value:
+                compliance_status = "failed"
+            
+            document_count = len(session.documents) if session.documents else 0
+            compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+            
+            processing_time_seconds = None
+            if session.processing_started_at and session.processing_completed_at:
+                delta = session.processing_completed_at - session.processing_started_at
+                processing_time_seconds = round(delta.total_seconds(), 2)
+            
+            previous_validations.append({
+                "id": str(session.id),
+                "job_id": str(session.id),
+                "lc_number": bank_metadata.get("lc_number"),
+                "client_name": bank_metadata.get("client_name"),
+                "date_received": bank_metadata.get("date_received"),
+                "submitted_at": session.created_at.isoformat() if session.created_at else None,
+                "completed_at": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
+                "processing_time_seconds": processing_time_seconds,
+                "status": compliance_status,
+                "compliance_score": compliance_score,
+                "discrepancy_count": len(discrepancies),
+                "document_count": document_count,
+            })
+        
+        # Log duplicate check
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="duplicate_check",
+            resource_id=f"lc_{lc_number}_client_{client_name}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "lc_number": lc_number,
+                "client_name": client_name,
+                "duplicate_count": len(existing_sessions),
+                "is_duplicate": True,
+            }
+        )
+        
+        return {
+            "is_duplicate": True,
+            "duplicate_count": len(existing_sessions),
+            "previous_validations": previous_validations,
+        }
+    except Exception as e:
+        logger.error(f"Duplicate check error: {e}", exc_info=True)
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="duplicate_check",
+            resource_id=f"lc_{lc_number}_client_{client_name}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check for duplicates: {str(e)}"
+        )
+
+
 @router.get("/results")
 @bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
 def get_bank_results(
@@ -466,6 +600,32 @@ def get_bank_results(
                 delta = session.processing_completed_at - session.processing_started_at
                 processing_time_seconds = round(delta.total_seconds(), 2)
             
+            # Check for duplicates (same LC number + client name)
+            lc_number_val = bank_metadata.get("lc_number")
+            client_name_val = bank_metadata.get("client_name")
+            duplicate_count = 0
+            if lc_number_val and client_name_val:
+                duplicate_query = db.query(ValidationSession).filter(
+                    ValidationSession.user_id == current_user.id,
+                    ValidationSession.deleted_at.is_(None),
+                    ValidationSession.extracted_data.isnot(None),
+                    ValidationSession.id != session.id,  # Exclude current session
+                    ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+                )
+                
+                duplicate_lc_condition = cast(ValidationSession.extracted_data, JSONB)[
+                    'bank_metadata'
+                ]['lc_number'].astext.ilike(lc_number_val.strip())
+                
+                duplicate_client_condition = cast(ValidationSession.extracted_data, JSONB)[
+                    'bank_metadata'
+                ]['client_name'].astext.ilike(client_name_val.strip())
+                
+                duplicate_count = duplicate_query.filter(
+                    duplicate_lc_condition,
+                    duplicate_client_condition
+                ).count()
+            
             results.append({
                 "id": str(session.id),
                 "job_id": str(session.id),
@@ -481,6 +641,7 @@ def get_bank_results(
                 "compliance_score": compliance_score,
                 "discrepancy_count": len(discrepancies),
                 "document_count": document_count,
+                "duplicate_count": duplicate_count,  # Add duplicate count
             })
         
         # Log results view
