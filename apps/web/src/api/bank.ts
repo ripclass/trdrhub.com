@@ -85,10 +85,25 @@ export interface BankClientStatsResponse {
   clients: ClientStats[];
 }
 
-export interface BankClientStatsFilters {
-  query?: string;
-  limit?: number;
-  offset?: number;
+export interface LCSetDetected {
+  lc_number: string;
+  client_name: string;
+  files: Array<{
+    filename: string;
+    size: number;
+    valid: boolean;
+  }>;
+  file_count: number;
+  detected_document_types: Record<string, string>;
+  detection_method: string;
+}
+
+export interface BulkUploadExtractResponse {
+  status: string;
+  zip_filename: string;
+  zip_size: number;
+  lc_sets: LCSetDetected[];
+  total_lc_sets: number;
 }
 
 export const bankApi = {
@@ -147,6 +162,21 @@ export const bankApi = {
   getClientStats: async (filters?: BankClientStatsFilters): Promise<BankClientStatsResponse> => {
     const response = await api.get<BankClientStatsResponse>('/bank/clients/stats', {
       params: filters,
+    });
+    return response.data;
+  },
+
+  /**
+   * Extract ZIP file and detect LC sets
+   */
+  extractZipFile: async (zipFile: File): Promise<BulkUploadExtractResponse> => {
+    const formData = new FormData();
+    formData.append('zip_file', zipFile);
+    
+    const response = await api.post<BulkUploadExtractResponse>('/bank/bulk-upload/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     return response.data;
   },

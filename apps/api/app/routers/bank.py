@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, cast, case
 from sqlalchemy.orm import Session
@@ -18,14 +18,22 @@ import time
 
 from ..core.security import require_bank_or_admin
 from ..database import get_db, SessionLocal
-from ..models import User, ValidationSession, SessionStatus
+from ..models import User, ValidationSession, SessionStatus, UsageAction
 from ..services.analytics_service import AnalyticsService
-from ..services.audit_service import AuditService
+from ..services.entitlements import EntitlementService, EntitlementError
+from ..services import ValidationSessionService
+from ..services.validator import validate_document
 from ..middleware.bank_rate_limit import bank_rate_limit
+from ..services.audit_service import AuditService
 from ..middleware.audit_middleware import create_audit_context
 from ..models.audit_log import AuditAction, AuditResult
 from ..config import settings
 from ..utils.token_utils import create_signed_token, verify_signed_token
+from ..utils.bulk_zip_processor import extract_and_detect_lc_sets
+from ..utils.file_validation import validate_upload_file
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/bank", tags=["bank"])
@@ -851,6 +859,123 @@ def get_client_names(
             error_message=str(e),
         )
         raise
+
+
+@router.post("/bulk-upload/extract")
+@bank_rate_limit(limiter_type="upload", limit=10, window_seconds=60)
+async def extract_zip_file(
+    zip_file: UploadFile = File(..., description="ZIP file containing multiple LC document sets"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Extract ZIP file and detect LC sets.
+    Returns detected LC sets for user review before processing.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    MAX_ZIP_SIZE = 100 * 1024 * 1024  # 100MB
+    
+    try:
+        # Read zip file content
+        zip_content = await zip_file.read()
+        
+        # Validate zip file size
+        if len(zip_content) > MAX_ZIP_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"ZIP file exceeds maximum size of {MAX_ZIP_SIZE / (1024 * 1024):.0f}MB"
+            )
+        
+        # Validate zip file content (check magic bytes)
+        if not zip_content.startswith(b'PK'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ZIP file format"
+            )
+        
+        # Extract and detect LC sets
+        try:
+            lc_sets, file_contents = extract_and_detect_lc_sets(zip_content)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        if not lc_sets:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No LC sets detected in ZIP file"
+            )
+        
+        # Prepare response with file info (not full content)
+        lc_sets_response = []
+        for lc_set in lc_sets:
+            files_info = []
+            for filename in lc_set['files']:
+                if filename in file_contents:
+                    file_size = len(file_contents[filename])
+                    # Validate file type
+                    header_bytes = file_contents[filename][:8]
+                    is_valid, _ = validate_upload_file(
+                        header_bytes,
+                        filename=filename,
+                        content_type=None
+                    )
+                    
+                    files_info.append({
+                        'filename': filename,
+                        'size': file_size,
+                        'valid': is_valid,
+                    })
+            
+            lc_sets_response.append({
+                'lc_number': lc_set.get('lc_number', ''),
+                'client_name': lc_set.get('client_name', ''),
+                'files': files_info,
+                'file_count': len(files_info),
+                'detected_document_types': lc_set.get('detected_document_types', {}),
+                'detection_method': lc_set.get('detection_method', 'unknown'),
+            })
+        
+        # Log extraction
+        audit_service.log_action(
+            action=AuditAction.READ,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bulk_upload_extract",
+            resource_id=f"zip_{zip_file.filename}",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                'zip_filename': zip_file.filename,
+                'zip_size': len(zip_content),
+                'lc_sets_detected': len(lc_sets),
+            }
+        )
+        
+        return {
+            'status': 'success',
+            'zip_filename': zip_file.filename,
+            'zip_size': len(zip_content),
+            'lc_sets': lc_sets_response,
+            'total_lc_sets': len(lc_sets_response),
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Bulk upload extraction error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract ZIP file: {str(e)}"
+        )
 
 
 @router.get("/clients/stats")

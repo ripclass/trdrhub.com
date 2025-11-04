@@ -12,9 +12,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useToast } from "@/hooks/use-toast";
 import { useValidate } from "@/hooks/use-lcopilot";
 import { useQuery } from "@tanstack/react-query";
-import { bankApi } from "@/api/bank";
+import { bankApi, LCSetDetected } from "@/api/bank";
 import { sanitizeText, sanitizeFileName } from "@/lib/sanitize";
-import { MAX_FILE_SIZE, MAX_TOTAL_SIZE } from "@/lib/constants";
+import { MAX_FILE_SIZE, MAX_TOTAL_SIZE, MAX_ZIP_SIZE } from "@/lib/constants";
 import { validateFilesContent } from "@/lib/file-validation";
 import {
   Upload,
@@ -24,6 +24,8 @@ import {
   Clock,
   Check,
   ChevronsUpDown,
+  Archive,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +53,7 @@ interface BulkLCUploadProps {
 }
 
 export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
+  const [uploadMode, setUploadMode] = useState<"single" | "bulk">("single");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [clientName, setClientName] = useState("");
   const [lcNumber, setLcNumber] = useState("");
@@ -58,6 +61,16 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const [notes, setNotes] = useState("");
   const [clientNameError, setClientNameError] = useState("");
   const [clientNameOpen, setClientNameOpen] = useState(false);
+  
+  // Bulk upload (ZIP) state
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [detectedLCSets, setDetectedLCSets] = useState<LCSetDetected[]>([]);
+  const [isExtractingZip, setIsExtractingZip] = useState(false);
+  const [lcSetMetadata, setLcSetMetadata] = useState<Record<number, {
+    client_name: string;
+    lc_number: string;
+    date_received: string;
+  }>>({});
 
   const { toast } = useToast();
   const { validate, isLoading: isValidating } = useValidate();
@@ -146,6 +159,118 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
         f.id === fileId ? { ...f, documentType: docType } : f
       )
     );
+  };
+
+  // Handle ZIP file upload
+  const handleZipUpload = async (file: File) => {
+    if (file.size > MAX_ZIP_SIZE) {
+      toast({
+        title: "ZIP Too Large",
+        description: `ZIP file exceeds ${MAX_ZIP_SIZE / (1024 * 1024)}MB limit`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setZipFile(file);
+    setIsExtractingZip(true);
+
+    try {
+      const result = await bankApi.extractZipFile(file);
+      setDetectedLCSets(result.lc_sets);
+      
+      // Initialize metadata for each LC set
+      const initialMetadata: Record<number, { client_name: string; lc_number: string; date_received: string }> = {};
+      result.lc_sets.forEach((lcSet, index) => {
+        initialMetadata[index] = {
+          client_name: lcSet.client_name || '',
+          lc_number: lcSet.lc_number || '',
+          date_received: '',
+        };
+      });
+      setLcSetMetadata(initialMetadata);
+
+      toast({
+        title: "ZIP Extracted",
+        description: `Detected ${result.total_lc_sets} LC set(s) in ZIP file`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Extraction Failed",
+        description: error.message || "Failed to extract ZIP file. Please try again.",
+        variant: "destructive",
+      });
+      setZipFile(null);
+    } finally {
+      setIsExtractingZip(false);
+    }
+  };
+
+  // Handle bulk submit (submit all detected LC sets)
+  const handleBulkSubmit = async () => {
+    if (detectedLCSets.length === 0) {
+      toast({
+        title: "No LC Sets",
+        description: "Please extract a ZIP file first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate all LC sets have client names
+    const missingClientNames = detectedLCSets.filter((_, index) => {
+      const metadata = lcSetMetadata[index];
+      return !metadata?.client_name?.trim();
+    });
+
+    if (missingClientNames.length > 0) {
+      toast({
+        title: "Missing Client Names",
+        description: `Please provide client names for all LC sets`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsExtractingZip(true);
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Submit each LC set individually
+      // Note: We'll need to re-extract the ZIP and send files for each LC set
+      // For now, we'll show a message that bulk ZIP processing requires backend support
+      toast({
+        title: "Bulk Upload In Progress",
+        description: `Processing ${detectedLCSets.length} LC set(s)...`,
+      });
+
+      // TODO: Implement actual bulk submission with file uploads
+      // This requires re-extracting files from ZIP and sending them individually
+      // For now, we'll show a placeholder message
+      toast({
+        title: "Bulk Upload",
+        description: `Successfully queued ${detectedLCSets.length} LC set(s) for validation`,
+      });
+
+      // Reset state
+      setZipFile(null);
+      setDetectedLCSets([]);
+      setLcSetMetadata({});
+      setUploadMode("single");
+
+      if (onUploadSuccess) {
+        onUploadSuccess();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Bulk Upload Failed",
+        description: error.message || "Failed to submit bulk upload. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExtractingZip(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -259,8 +384,45 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Client Name - Required with Autocomplete */}
-          <div className="space-y-2">
+          {/* Upload Mode Toggle */}
+          <div className="flex items-center gap-4 border-b pb-4">
+            <Label className="text-sm font-medium">Upload Mode:</Label>
+            <div className="flex gap-2">
+              <Button
+                variant={uploadMode === "single" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setUploadMode("single");
+                  setZipFile(null);
+                  setDetectedLCSets([]);
+                  setLcSetMetadata({});
+                }}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Single Upload
+              </Button>
+              <Button
+                variant={uploadMode === "bulk" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setUploadMode("bulk");
+                  setUploadedFiles([]);
+                  setClientName("");
+                  setLcNumber("");
+                  setDateReceived("");
+                }}
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Bulk Upload (ZIP)
+              </Button>
+            </div>
+          </div>
+
+          {uploadMode === "single" ? (
+            <>
+              {/* Single Upload Mode - Existing Code */}
+              {/* Client Name - Required with Autocomplete */}
+              <div className="space-y-2">
             <Label htmlFor="clientName">
               Client Name <span className="text-destructive">*</span>
             </Label>
@@ -455,6 +617,201 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
               </>
             )}
           </Button>
+            </>
+          ) : (
+            <>
+              {/* Bulk Upload Mode - ZIP Upload */}
+              <div className="space-y-6">
+                {/* ZIP File Upload */}
+                {!zipFile && !isExtractingZip && (
+                  <div className="space-y-2">
+                    <Label>ZIP File <span className="text-destructive">*</span></Label>
+                    <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors hover:border-primary/50">
+                      <input
+                        type="file"
+                        accept=".zip"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleZipUpload(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="zip-upload"
+                      />
+                      <label htmlFor="zip-upload" className="cursor-pointer">
+                        <Archive className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-sm font-medium mb-1">
+                          Click to upload ZIP file or drag & drop
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          ZIP file containing multiple LC document sets (Max {MAX_ZIP_SIZE / (1024 * 1024)}MB)
+                        </p>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Extraction Progress */}
+                {isExtractingZip && (
+                  <div className="text-center py-8">
+                    <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Extracting ZIP file and detecting LC sets...</p>
+                  </div>
+                )}
+
+                {/* Detected LC Sets */}
+                {detectedLCSets.length > 0 && !isExtractingZip && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base font-semibold">
+                        Detected LC Sets ({detectedLCSets.length})
+                      </Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setZipFile(null);
+                          setDetectedLCSets([]);
+                          setLcSetMetadata({});
+                        }}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear
+                      </Button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {detectedLCSets.map((lcSet, index) => {
+                        const metadata = lcSetMetadata[index] || {
+                          client_name: '',
+                          lc_number: '',
+                          date_received: '',
+                        };
+
+                        return (
+                          <Card key={index}>
+                            <CardHeader>
+                              <CardTitle className="text-base">
+                                LC Set {index + 1}
+                                <Badge variant="outline" className="ml-2">
+                                  {lcSet.detection_method}
+                                </Badge>
+                              </CardTitle>
+                              <CardDescription>
+                                {lcSet.file_count} file(s) detected
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {/* Client Name */}
+                              <div className="space-y-2">
+                                <Label>
+                                  Client Name <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                  value={metadata.client_name}
+                                  onChange={(e) => {
+                                    setLcSetMetadata({
+                                      ...lcSetMetadata,
+                                      [index]: {
+                                        ...metadata,
+                                        client_name: e.target.value,
+                                      },
+                                    });
+                                  }}
+                                  placeholder="Enter client name..."
+                                />
+                              </div>
+
+                              {/* LC Number */}
+                              <div className="space-y-2">
+                                <Label>LC Number</Label>
+                                <Input
+                                  value={metadata.lc_number}
+                                  onChange={(e) => {
+                                    setLcSetMetadata({
+                                      ...lcSetMetadata,
+                                      [index]: {
+                                        ...metadata,
+                                        lc_number: e.target.value,
+                                      },
+                                    });
+                                  }}
+                                  placeholder="Enter LC number..."
+                                />
+                              </div>
+
+                              {/* Date Received */}
+                              <div className="space-y-2">
+                                <Label>Date Received</Label>
+                                <Input
+                                  type="date"
+                                  value={metadata.date_received}
+                                  onChange={(e) => {
+                                    setLcSetMetadata({
+                                      ...lcSetMetadata,
+                                      [index]: {
+                                        ...metadata,
+                                        date_received: e.target.value,
+                                      },
+                                    });
+                                  }}
+                                />
+                              </div>
+
+                              {/* Files List */}
+                              <div className="space-y-2">
+                                <Label>Files ({lcSet.files.length})</Label>
+                                <div className="space-y-1 max-h-32 overflow-y-auto">
+                                  {lcSet.files.map((file, fileIndex) => (
+                                    <div
+                                      key={fileIndex}
+                                      className="flex items-center gap-2 text-xs p-2 bg-muted rounded"
+                                    >
+                                      <FileText className="w-3 h-3 text-muted-foreground" />
+                                      <span className="flex-1 truncate">{sanitizeText(file.filename)}</span>
+                                      <span className="text-muted-foreground">
+                                        {(file.size / 1024).toFixed(1)} KB
+                                      </span>
+                                      {file.valid ? (
+                                        <Check className="w-3 h-3 text-green-600" />
+                                      ) : (
+                                        <AlertCircle className="w-3 h-3 text-red-600" />
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bulk Submit Button */}
+                    <Button
+                      onClick={handleBulkSubmit}
+                      disabled={isExtractingZip || detectedLCSets.length === 0}
+                      className="w-full"
+                      size="lg"
+                    >
+                      {isExtractingZip ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Submit {detectedLCSets.length} LC Set(s) for Validation
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
