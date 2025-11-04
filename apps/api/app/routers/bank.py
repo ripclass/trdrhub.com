@@ -317,11 +317,15 @@ def get_job_status(
 
 
 @router.get("/results")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
 def get_bank_results(
     start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
     end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
     client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
     status: Optional[str] = Query(None, description="Filter by compliance status (compliant/discrepancies)"),
+    min_score: Optional[int] = Query(None, ge=0, le=100, description="Minimum compliance score (0-100)"),
+    max_score: Optional[int] = Query(None, ge=0, le=100, description="Maximum compliance score (0-100)"),
+    discrepancy_type: Optional[str] = Query(None, description="Filter by discrepancy type (date_mismatch, amount_mismatch, party_mismatch, port_mismatch, missing_field, invalid_format)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_bank_or_admin),
@@ -379,6 +383,49 @@ def get_bank_results(
                 query = query.filter(
                     ValidationSession.validation_results.isnot(None),
                     has_discrepancies
+                )
+            
+            # Compliance score range filter (SQL-based)
+            # Score is calculated as: 100 - (discrepancy_count * 5)
+            # So we need to filter based on discrepancy count
+            if min_score is not None or max_score is not None:
+                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+                discrepancy_count_expr = func.coalesce(
+                    func.jsonb_array_length(discrepancies_path),
+                    0
+                )
+                
+                # Calculate score: 100 - (discrepancy_count * 5)
+                # Rearrange: discrepancy_count = (100 - score) / 5
+                if min_score is not None:
+                    # For min_score, we need max discrepancy_count
+                    # min_score = 100 - (max_discrepancy_count * 5)
+                    # max_discrepancy_count = (100 - min_score) / 5
+                    max_discrepancy_count = (100 - min_score) / 5
+                    query = query.filter(discrepancy_count_expr <= max_discrepancy_count)
+                
+                if max_score is not None:
+                    # For max_score, we need min discrepancy_count
+                    # max_score = 100 - (min_discrepancy_count * 5)
+                    # min_discrepancy_count = (100 - max_score) / 5
+                    min_discrepancy_count = (100 - max_score) / 5
+                    query = query.filter(discrepancy_count_expr >= min_discrepancy_count)
+            
+            # Discrepancy type filter (SQL-based using JSONB contains)
+            if discrepancy_type:
+                # Check if discrepancies array contains an object with matching discrepancy_type
+                # Using JSONB path exists: validation_results->discrepancies @> '[{"discrepancy_type": "..."}]'
+                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+                
+                # Create a JSONB array with the target discrepancy type
+                target_type_json = json.dumps([{"discrepancy_type": discrepancy_type}])
+                target_type_jsonb = cast(target_type_json, JSONB)
+                
+                # Check if discrepancies array contains the target type
+                # Using @> operator (contains)
+                query = query.filter(
+                    ValidationSession.validation_results.isnot(None),
+                    discrepancies_path.op('@>')(target_type_jsonb)
                 )
         
         # Order by completed date desc
@@ -456,6 +503,9 @@ def get_bank_results(
                     "end_date": end_date.isoformat() if end_date else None,
                     "client_name": client_name,
                     "status": status,
+                    "min_score": min_score,
+                    "max_score": max_score,
+                    "discrepancy_type": discrepancy_type,
                     "limit": limit,
                     "offset": offset,
                 }
@@ -559,6 +609,32 @@ async def export_results_pdf(
                         ValidationSession.validation_results.isnot(None),
                         has_discrepancies
                     )
+            
+            # Compliance score range filter (SQL-based)
+            if min_score is not None or max_score is not None:
+                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+                discrepancy_count_expr = func.coalesce(
+                    func.jsonb_array_length(discrepancies_path),
+                    0
+                )
+                
+                if min_score is not None:
+                    max_discrepancy_count = (100 - min_score) / 5
+                    query = query.filter(discrepancy_count_expr <= max_discrepancy_count)
+                
+                if max_score is not None:
+                    min_discrepancy_count = (100 - max_score) / 5
+                    query = query.filter(discrepancy_count_expr >= min_discrepancy_count)
+            
+            # Discrepancy type filter (SQL-based using JSONB contains)
+            if discrepancy_type:
+                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+                target_type_json = json.dumps([{"discrepancy_type": discrepancy_type}])
+                target_type_jsonb = cast(target_type_json, JSONB)
+                query = query.filter(
+                    ValidationSession.validation_results.isnot(None),
+                    discrepancies_path.op('@>')(target_type_jsonb)
+                )
             
             # Order by completed date desc
             query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())

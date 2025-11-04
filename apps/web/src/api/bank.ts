@@ -56,6 +56,9 @@ export interface BankResultsFilters {
   end_date?: string; // ISO date string
   client_name?: string;
   status?: 'compliant' | 'discrepancies';
+  min_score?: number; // 0-100
+  max_score?: number; // 0-100
+  discrepancy_type?: 'date_mismatch' | 'amount_mismatch' | 'party_mismatch' | 'port_mismatch' | 'missing_field' | 'invalid_format';
   limit?: number;
   offset?: number;
   job_ids?: string; // Comma-separated job IDs for bulk export

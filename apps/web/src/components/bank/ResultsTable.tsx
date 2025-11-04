@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,15 +26,17 @@ import {
   FileText,
   Eye,
   Download as DownloadIcon,
-  CheckSquare,
-  Square,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format } from "date-fns";
-import { bankApi, BankResult } from "@/api/bank";
+import { bankApi, BankResult, BankResultsFilters } from "@/api/bank";
 import { sanitizeDisplayText } from "@/lib/sanitize";
 import { generateCSV } from "@/lib/csv";
 import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AdvancedFilters } from "./AdvancedFilters";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface ResultsTableProps {}
 
@@ -44,10 +47,12 @@ export function ResultsTable({}: ResultsTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState(clientFromUrl);
   const [dateRange, setDateRange] = useState("90"); // days
+  const [advancedFilters, setAdvancedFilters] = useState<BankResultsFilters>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
   const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
 
   // Update client filter when URL changes
   useEffect(() => {
@@ -68,41 +73,24 @@ export function ResultsTable({}: ResultsTableProps) {
     };
   };
 
-  // Fetch results from API
+  // Build API filters
+  const apiFilters: BankResultsFilters = {
+    ...getDateRange(),
+    client_name: clientFilter || undefined,
+    status: statusFilter !== "all" ? statusFilter as "compliant" | "discrepancies" : undefined,
+    ...advancedFilters,
+    limit: 500,
+    offset: 0,
+  };
+
+  // Fetch results from API with all filters
   const { data: resultsData, isLoading } = useQuery({
-    queryKey: ['bank-results', dateRange],
-    queryFn: () => bankApi.getResults({
-      ...getDateRange(),
-      limit: 500,
-      offset: 0,
-    }),
+    queryKey: ['bank-results', dateRange, statusFilter, clientFilter, advancedFilters],
+    queryFn: () => bankApi.getResults(apiFilters),
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
-  const allResults: BankResult[] = resultsData?.results || [];
-
-  // Apply filters
-  const filteredResults = allResults.filter((result) => {
-    // Status filter
-    if (statusFilter !== "all" && result.status !== statusFilter) {
-      return false;
-    }
-
-    // Client name filter
-    if (clientFilter.trim()) {
-      const clientName = result.client_name || "";
-      if (!clientName.toLowerCase().includes(clientFilter.toLowerCase())) {
-        return false;
-      }
-    }
-
-    return true;
-  }).sort((a, b) => {
-    // Sort by completed date (newest first)
-    const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-    const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-    return dateB - dateA;
-  });
+  const filteredResults: BankResult[] = resultsData?.results || [];
 
   // Get selected results (if any selected, use those; otherwise use filtered)
   const exportResults = selectedRows.size > 0
@@ -131,7 +119,7 @@ export function ResultsTable({}: ResultsTableProps) {
   // Clear selection when filters change
   useEffect(() => {
     setSelectedRows(new Set());
-  }, [statusFilter, clientFilter, dateRange]);
+  }, [statusFilter, clientFilter, dateRange, advancedFilters]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -206,6 +194,7 @@ export function ResultsTable({}: ResultsTableProps) {
         ...getDateRange(),
         client_name: clientFilter || undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
+        ...advancedFilters,
         limit: 500, // Export all filtered results
       };
 
@@ -297,7 +286,7 @@ export function ResultsTable({}: ResultsTableProps) {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Filters */}
+        {/* Basic Filters */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="space-y-2">
             <Label>Date Range</Label>
@@ -340,6 +329,31 @@ export function ResultsTable({}: ResultsTableProps) {
           </div>
         </div>
 
+        {/* Advanced Filters */}
+        <Collapsible open={isAdvancedFiltersOpen} onOpenChange={setIsAdvancedFiltersOpen} className="mb-6">
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full">
+              {isAdvancedFiltersOpen ? (
+                <>
+                  <ChevronUp className="w-4 h-4 mr-2" />
+                  Hide Advanced Filters
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4 mr-2" />
+                  Show Advanced Filters
+                </>
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4">
+            <AdvancedFilters
+              filters={advancedFilters}
+              onFiltersChange={setAdvancedFilters}
+            />
+          </CollapsibleContent>
+        </Collapsible>
+
         {/* Results Table */}
         {isLoading ? (
           <div className="text-center py-12">
@@ -361,7 +375,7 @@ export function ResultsTable({}: ResultsTableProps) {
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox
-                      checked={isAllSelected}
+                      checked={filteredResults.length > 0 && selectedRows.size === filteredResults.length}
                       onCheckedChange={handleSelectAll}
                       aria-label="Select all"
                     />
