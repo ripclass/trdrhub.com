@@ -44,6 +44,69 @@ test.describe('Bank dashboard hardening', () => {
 
     const now = new Date().toISOString();
 
+    await page.route('**/bank/jobs/stream-token', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ token: 'stub-token', expires_in: 120 }),
+      });
+    });
+
+    await page.addInitScript(() => {
+      class MockEventSource {
+        url: string;
+        withCredentials?: boolean;
+        readyState: number;
+        onopen: ((this: EventSource, ev: Event) => any) | null = null;
+        onmessage: ((this: EventSource, ev: MessageEvent) => any) | null = null;
+        onerror: ((this: EventSource, ev: Event) => any) | null = null;
+
+        constructor(url: string, init?: EventSourceInit) {
+          this.url = url;
+          this.withCredentials = init?.withCredentials;
+          this.readyState = 1;
+
+          setTimeout(() => {
+            this.onopen?.call(this as unknown as EventSource, new Event('open'));
+          }, 0);
+
+          setTimeout(() => {
+            const payload = {
+              id: 'job-1',
+              job_id: 'job-1',
+              client_name: "<img src=x onerror=alert('xss')>",
+              lc_number: '<b>LC-401</b>',
+              status: 'processing',
+              progress: 42,
+              submitted_at: new Date().toISOString(),
+              processing_started_at: new Date().toISOString(),
+              completed_at: null,
+              processing_time_seconds: null,
+              discrepancy_count: 0,
+              document_count: 2,
+            };
+
+            this.onmessage?.call(
+              this as unknown as EventSource,
+              new MessageEvent('message', { data: JSON.stringify(payload) })
+            );
+          }, 10);
+        }
+
+        close() {
+          this.readyState = 2;
+        }
+
+        addEventListener() {}
+        removeEventListener() {}
+        dispatchEvent(): boolean {
+          return true;
+        }
+      }
+
+      window.EventSource = MockEventSource as unknown as typeof EventSource;
+    });
+
     await page.route('**/auth/me', (route) => {
       route.fulfill({
         status: 200,
@@ -54,28 +117,6 @@ test.describe('Bank dashboard hardening', () => {
           full_name: 'Bank User',
           role: 'bank_officer',
           is_active: true,
-        }),
-      });
-    });
-
-    await page.route('**/bank/jobs', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          total: 1,
-          count: 1,
-          jobs: [
-            {
-              id: 'job-1',
-              job_id: 'job-1',
-              client_name: "<img src=x onerror=alert('xss')>",
-              lc_number: '<b>LC-401</b>',
-              status: 'processing',
-              progress: 42,
-              submitted_at: now,
-            },
-          ],
         }),
       });
     });

@@ -2,8 +2,8 @@
 Bank-facing API endpoints for portfolio visibility and governance.
 """
 
-from datetime import datetime
-from typing import Optional, List, Dict
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -13,15 +13,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import JSONB
 import asyncio
 import json
+import secrets
+import time
 
 from ..core.security import require_bank_or_admin
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from ..models import User, ValidationSession, SessionStatus
 from ..services.analytics_service import AnalyticsService
 from ..services.audit_service import AuditService
 from ..middleware.bank_rate_limit import bank_rate_limit
 from ..middleware.audit_middleware import create_audit_context
 from ..models.audit_log import AuditAction, AuditResult
+from ..config import settings
+from ..utils.token_utils import create_signed_token, verify_signed_token
 
 
 router = APIRouter(prefix="/bank", tags=["bank"])
@@ -1018,6 +1022,31 @@ def get_client_stats(
         raise
 
 
+STREAM_TOKEN_EXPIRY_SECONDS = 180
+
+
+@router.get("/jobs/stream-token")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def get_job_stream_token(
+    current_user: User = Depends(require_bank_or_admin),
+):
+    """Issue a short-lived token for establishing the SSE job stream."""
+
+    token = create_signed_token(
+        secret_key=settings.SECRET_KEY,
+        payload={
+            "uid": str(current_user.id),
+            "nonce": secrets.token_urlsafe(8),
+        },
+        expires_in=STREAM_TOKEN_EXPIRY_SECONDS,
+    )
+
+    return {
+        "token": token,
+        "expires_in": STREAM_TOKEN_EXPIRY_SECONDS,
+    }
+
+
 def _calculate_progress(status: str) -> int:
     """Calculate progress percentage based on status."""
     status_map = {
@@ -1033,143 +1062,155 @@ def _calculate_progress(status: str) -> int:
 @router.get("/jobs/stream")
 async def stream_job_updates(
     request: Request,
-    token: Optional[str] = Query(None, description="Optional auth token (for SSE compatibility)"),
-    db: Session = Depends(get_db),
+    sse_token: str = Query(..., description="Short-lived signed token for SSE authentication"),
 ):
-    """
-    Server-Sent Events (SSE) stream for real-time job status updates.
-    Streams job status changes for the authenticated bank user.
-    
-    Note: Supports both Authorization header and token query parameter for SSE compatibility.
-    """
-    # Handle authentication (SSE doesn't support custom headers, so support query param fallback)
-    from ..core.security import decode_access_token
-    
-    authenticated_user = None
-    
-    # Try Authorization header first
+    """Server-Sent Events stream for real-time job status updates."""
+
     try:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token_from_header = auth_header.replace("Bearer ", "")
-            payload = decode_access_token(token_from_header)
-            user_id = UUID(payload.get("sub"))
-            authenticated_user = db.query(User).filter(User.id == user_id).first()
-    except:
-        pass
-    
-    # Fallback to query parameter (for SSE compatibility)
-    if not authenticated_user and token:
-        try:
-            payload = decode_access_token(token)
-            user_id = UUID(payload.get("sub"))
-            authenticated_user = db.query(User).filter(User.id == user_id).first()
-        except:
-            pass
-    
-    if not authenticated_user:
+        payload = verify_signed_token(settings.SECRET_KEY, sse_token)
+        user_id = UUID(payload["uid"])
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
+            detail="Invalid or expired stream token",
         )
-    
-    # Verify user has bank access
-    if not (authenticated_user.role in ["bank_officer", "bank_admin", "system_admin"] or authenticated_user.is_bank_officer()):
+
+    session = SessionLocal()
+    try:
+        current_user = session.query(User).filter(User.id == user_id).first()
+    finally:
+        session.close()
+
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    if not (current_user.role in ["bank_officer", "bank_admin", "system_admin"] or current_user.is_bank_officer()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bank access required"
+            detail="Bank access required",
         )
-    
-    current_user = authenticated_user
-    async def event_generator():
-        """Generate SSE events with job status updates."""
-        last_seen_ids = set()
-        last_poll_time = 0
-        
-        try:
-            while True:
-                # Poll database every 1 second for job updates
-                current_time = asyncio.get_event_loop().time()
-                if current_time - last_poll_time >= 1.0:
-                    # Query active jobs (pending, processing, uploading, created)
-                    active_jobs = db.query(ValidationSession).filter(
-                        ValidationSession.user_id == current_user.id,
-                        ValidationSession.deleted_at.is_(None),
-                        ValidationSession.status.in_([
+
+    async def _fetch_job_snapshots(user: User) -> List[Dict[str, Any]]:
+        def _sync_fetch() -> List[Dict[str, Any]]:
+            db_session = SessionLocal()
+            try:
+                active_jobs = db_session.query(ValidationSession).filter(
+                    ValidationSession.user_id == user.id,
+                    ValidationSession.deleted_at.is_(None),
+                    ValidationSession.status.in_(
+                        [
                             SessionStatus.CREATED.value,
                             SessionStatus.UPLOADING.value,
                             SessionStatus.PROCESSING.value,
-                        ])
-                    ).all()
-                    
-                    # Also check recently completed/failed jobs (within last 30 seconds)
-                    from datetime import datetime, timedelta
-                    recent_threshold = datetime.now() - timedelta(seconds=30)
-                    recent_jobs = db.query(ValidationSession).filter(
-                        ValidationSession.user_id == current_user.id,
-                        ValidationSession.deleted_at.is_(None),
-                        ValidationSession.status.in_([
-                            SessionStatus.COMPLETED.value,
-                            SessionStatus.FAILED.value,
-                        ]),
-                        ValidationSession.updated_at >= recent_threshold
-                    ).all()
-                    
-                    all_jobs = active_jobs + recent_jobs
-                    
-                    # Check for new or updated jobs
-                    current_ids = {str(job.id) for job in all_jobs}
-                    new_or_updated = [
-                        job for job in all_jobs
-                        if str(job.id) not in last_seen_ids or job.updated_at.timestamp() > last_poll_time
-                    ]
-                    
-                    # Send updates for new or changed jobs
-                    for job in new_or_updated:
-                        metadata = job.extracted_data or {}
-                        bank_metadata = metadata.get("bank_metadata", {})
-                        
-                        job_data = {
-                            "id": str(job.id),
-                            "job_id": str(job.id),
-                            "client_name": bank_metadata.get("client_name"),
-                            "lc_number": bank_metadata.get("lc_number"),
-                            "date_received": bank_metadata.get("date_received"),
-                            "status": job.status,
-                            "progress": _calculate_progress(job.status),
-                            "submitted_at": job.created_at.isoformat() if job.created_at else None,
-                            "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
-                            "processing_started_at": job.processing_started_at.isoformat() if job.processing_started_at else None,
+                        ]
+                    ),
+                ).all()
+
+                recent_threshold = datetime.utcnow() - timedelta(seconds=30)
+                recent_jobs = db_session.query(ValidationSession).filter(
+                    ValidationSession.user_id == user.id,
+                    ValidationSession.deleted_at.is_(None),
+                    ValidationSession.status.in_(
+                        [SessionStatus.COMPLETED.value, SessionStatus.FAILED.value]
+                    ),
+                    ValidationSession.updated_at >= recent_threshold,
+                ).all()
+
+                jobs = active_jobs + recent_jobs
+
+                snapshots: List[Dict[str, Any]] = []
+                for job in jobs:
+                    metadata = job.extracted_data or {}
+                    bank_metadata = metadata.get("bank_metadata", {})
+
+                    processing_time = None
+                    if job.processing_started_at and job.processing_completed_at:
+                        processing_time = int(
+                            max(
+                                0,
+                                (job.processing_completed_at - job.processing_started_at).total_seconds(),
+                            )
+                        )
+
+                    updated_at = (
+                        job.updated_at
+                        or job.processing_completed_at
+                        or job.processing_started_at
+                        or job.created_at
+                    )
+                    version_marker = updated_at.isoformat() if updated_at else str(time.time())
+
+                    snapshots.append(
+                        {
+                            "payload": {
+                                "id": str(job.id),
+                                "job_id": str(job.id),
+                                "client_name": bank_metadata.get("client_name"),
+                                "lc_number": bank_metadata.get("lc_number"),
+                                "date_received": bank_metadata.get("date_received"),
+                                "status": job.status,
+                                "progress": _calculate_progress(job.status),
+                                "submitted_at": job.created_at.isoformat() if job.created_at else None,
+                                "processing_started_at": job.processing_started_at.isoformat() if job.processing_started_at else None,
+                                "completed_at": job.processing_completed_at.isoformat() if job.processing_completed_at else None,
+                                "processing_time_seconds": processing_time,
+                                "discrepancy_count": len((job.validation_results or {}).get("discrepancies", [])),
+                                "document_count": len(job.documents) if job.documents else 0,
+                            },
+                            "version": version_marker,
                         }
-                        
-                        # Send SSE event
-                        yield f"data: {json.dumps(job_data)}\n\n"
-                    
-                    # Update tracking
-                    last_seen_ids = current_ids
+                    )
+
+                return snapshots
+            finally:
+                db_session.close()
+
+        return await asyncio.to_thread(_sync_fetch)
+
+    async def event_generator():
+        last_sent_versions: Dict[str, str] = {}
+        last_poll_time = 0.0
+        last_keepalive = time.monotonic()
+
+        try:
+            while True:
+                current_time = time.monotonic()
+
+                if current_time - last_poll_time >= 1.0:
+                    snapshots = await _fetch_job_snapshots(current_user)
+
+                    for snapshot in snapshots:
+                        payload = snapshot["payload"]
+                        job_id = payload["id"]
+                        version_marker = snapshot["version"]
+
+                        if last_sent_versions.get(job_id) != version_marker:
+                            yield f"data: {json.dumps(payload)}\n\n"
+                            last_sent_versions[job_id] = version_marker
+
                     last_poll_time = current_time
-                    
-                    # Keep-alive ping every 30 seconds
-                    if int(current_time) % 30 == 0:
-                        yield ": keepalive\n\n"
-                
-                # Small delay to prevent tight loop
+
+                if current_time - last_keepalive >= 30:
+                    yield ": keepalive\n\n"
+                    last_keepalive = current_time
+
                 await asyncio.sleep(0.5)
-                
+
         except asyncio.CancelledError:
-            # Client disconnected
             pass
-        except Exception as e:
-            # Send error event
-            error_data = {"error": str(e)}
+        except Exception as exc:  # pragma: no cover - defensive logging
+            error_data = {"error": str(exc)}
             yield f"data: {json.dumps(error_data)}\n\n"
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable buffering for nginx
-        }
+            "X-Accel-Buffering": "no",
+        },
     )

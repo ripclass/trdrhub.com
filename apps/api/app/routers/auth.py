@@ -3,7 +3,7 @@ Authentication API endpoints.
 """
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -97,10 +97,7 @@ async def login_user(
 
 
 @router.get("/csrf-token")
-async def get_csrf_token(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-):
+async def get_csrf_token():
     """Generate and return a CSRF token for the authenticated user."""
     from ..middleware.csrf import generate_csrf_token
     from ..config import settings

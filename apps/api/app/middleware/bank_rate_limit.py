@@ -15,6 +15,8 @@ _bank_rate_limiters = {
     "api": defaultdict(lambda: deque()),     # General API: 60 per minute
 }
 
+_rate_limit_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
 
 async def _check_rate_limit(limiter_key: str, user_id: str, limit: int, window_seconds: int) -> bool:
     """Check if user is within rate limit."""
@@ -65,8 +67,10 @@ def bank_rate_limit(
             
             user_id = str(current_user.id)
             
-            # Check rate limit
-            async with asyncio.Lock():
+            # Check rate limit with per-user lock
+            lock_key = (limiter_type, user_id)
+            lock = _rate_limit_locks.setdefault(lock_key, asyncio.Lock())
+            async with lock:
                 allowed = await _check_rate_limit(limiter_type, user_id, limit, window_seconds)
             
             if not allowed:

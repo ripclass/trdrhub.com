@@ -9,7 +9,11 @@ export interface BankJob {
   status: string;
   progress: number;
   submitted_at?: string;
+  processing_started_at?: string;
   completed_at?: string;
+  processing_time_seconds?: number | null;
+  discrepancy_count?: number;
+  document_count?: number;
 }
 
 export interface BankResult {
