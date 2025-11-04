@@ -11,6 +11,19 @@ from ..config import settings
 # Only create router if stub mode is enabled
 if settings.USE_STUBS:
     router = APIRouter(tags=["fake-s3"])
+
+    def _ensure_stub_access(request: Request) -> None:
+        if not settings.USE_STUBS:
+            raise HTTPException(status_code=404, detail="Stub mode disabled")
+
+        if settings.STUB_STATUS_TOKEN:
+            token = request.headers.get("X-Stub-Auth") or request.query_params.get("token")
+            if token != settings.STUB_STATUS_TOKEN:
+                raise HTTPException(status_code=403, detail="Stub access token required")
+        else:
+            client_host = getattr(request.client, "host", "")
+            if client_host not in {"127.0.0.1", "::1", "localhost"}:
+                raise HTTPException(status_code=403, detail="Stub storage limited to local access")
     
     @router.put("/fake-s3/{session_id}/{document_type}/{file_id}")
     async def fake_s3_upload(
@@ -20,6 +33,7 @@ if settings.USE_STUBS:
         request: Request
     ):
         """Handle fake S3 upload for stub mode."""
+        _ensure_stub_access(request)
         from ..stubs.storage_stub import StubS3Service
         from ..services import DocumentProcessingService
         from app.models import DocumentType, ValidationSession
@@ -88,8 +102,9 @@ if settings.USE_STUBS:
         }
     
     @router.get("/fake-s3-download/{s3_key:path}")
-    async def fake_s3_download(s3_key: str):
+    async def fake_s3_download(s3_key: str, request: Request):
         """Serve files for fake S3 download URLs."""
+        _ensure_stub_access(request)
         from ..stubs.storage_stub import StubS3Service
         
         stub_storage = StubS3Service()

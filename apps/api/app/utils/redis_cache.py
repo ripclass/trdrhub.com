@@ -5,8 +5,15 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 
+import logging
+
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+
+from app.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 _redis_client: Optional[Redis] = None
@@ -28,7 +35,10 @@ def _build_redis_options() -> Optional[Dict[str, Any]]:
 
     # If nothing is configured, treat Redis as unavailable
     if not host and not password:
-        return None
+        if settings.USE_STUBS:
+            logger.debug("Redis configuration missing; falling back to in-memory store (stub mode)")
+            return None
+        raise RuntimeError("Redis configuration is required for distributed security features")
 
     host = host or "localhost"
     port = int(os.getenv("REDIS_PORT", "6379"))
@@ -73,8 +83,11 @@ async def get_redis() -> Optional[Redis]:
             client = Redis(**options)
 
         await client.ping()
-    except RedisError:
-        return None
+    except RedisError as exc:
+        logger.warning("Failed to connect to Redis: %s", exc)
+        if settings.USE_STUBS:
+            return None
+        raise RuntimeError("Unable to connect to Redis") from exc
 
     _redis_client = client
     return _redis_client

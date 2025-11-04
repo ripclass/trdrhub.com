@@ -97,7 +97,9 @@ async def login_user(
 
 
 @router.get("/csrf-token")
-async def get_csrf_token():
+async def get_csrf_token(
+    current_user: User = Depends(get_current_user),
+):
     """Generate and return a CSRF token for the authenticated user."""
     from ..middleware.csrf import generate_csrf_token
     from ..config import settings

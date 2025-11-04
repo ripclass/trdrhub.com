@@ -8,6 +8,7 @@ import time
 import asyncio
 from redis.exceptions import RedisError
 
+from app.config import settings
 from app.utils.redis_cache import get_redis
 
 
@@ -73,7 +74,13 @@ def bank_rate_limit(
             redis_client = None
             try:
                 redis_client = await get_redis()
+            except RuntimeError:
+                if not settings.USE_STUBS:
+                    raise
+                redis_client = None
             except RedisError:
+                if not settings.USE_STUBS:
+                    raise
                 redis_client = None
 
             if redis_client:

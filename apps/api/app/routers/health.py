@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ..config import settings
@@ -17,9 +17,21 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("/stub-status")
-async def get_stub_status() -> Dict:
+async def get_stub_status(request: Request) -> Dict:
     """Get current stub mode status and configuration."""
-    
+
+    if not settings.USE_STUBS:
+        raise HTTPException(status_code=404, detail="Stub mode disabled")
+
+    if settings.STUB_STATUS_TOKEN:
+        provided_token = request.headers.get("X-Stub-Auth") or request.query_params.get("token")
+        if provided_token != settings.STUB_STATUS_TOKEN:
+            raise HTTPException(status_code=403, detail="Stub access token required")
+    else:
+        client_host = getattr(request.client, "host", "")
+        if client_host not in {"127.0.0.1", "::1", "localhost"}:
+            raise HTTPException(status_code=403, detail="Stub diagnostics limited to local access")
+
     status = {
         "stub_mode_enabled": settings.USE_STUBS,
         "timestamp": datetime.now(timezone.utc).isoformat(),

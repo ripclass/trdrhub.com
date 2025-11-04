@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from redis.exceptions import RedisError
 
+from app.config import settings
 from app.utils.redis_cache import get_redis
 from app.utils.token_utils import create_signed_token, verify_signed_token
 
@@ -149,20 +150,40 @@ async def generate_csrf_token(secret_key: str, expiry_seconds: int = 3600) -> tu
 
 
 async def _store_nonce(nonce: str, expiry_seconds: int) -> None:
-    redis = await get_redis()
+    try:
+        redis = await get_redis()
+    except RuntimeError as exc:
+        if not settings.USE_STUBS:
+            raise
+        redis = None
+
     if redis:
         try:
             await redis.setex(_nonce_key(nonce), expiry_seconds, "1")
             return
         except RedisError:
-            pass
+            if not settings.USE_STUBS:
+                raise
+            redis = None
 
     async with _LOCAL_LOCK:
-        _LOCAL_TOKEN_STORE[nonce] = time.time() + expiry_seconds
+        now = time.time()
+        # prune expired entries
+        expired = [key for key, expiry in _LOCAL_TOKEN_STORE.items() if expiry <= now]
+        for key in expired:
+            _LOCAL_TOKEN_STORE.pop(key, None)
+
+        _LOCAL_TOKEN_STORE[nonce] = now + expiry_seconds
 
 
 async def _nonce_is_valid(nonce: str, expiry_seconds: int) -> bool:
-    redis = await get_redis()
+    try:
+        redis = await get_redis()
+    except RuntimeError as exc:
+        if not settings.USE_STUBS:
+            raise
+        redis = None
+
     if redis:
         try:
             exists = await redis.exists(_nonce_key(nonce))
@@ -170,12 +191,15 @@ async def _nonce_is_valid(nonce: str, expiry_seconds: int) -> bool:
                 await redis.expire(_nonce_key(nonce), expiry_seconds)
                 return True
         except RedisError:
-            pass
+            if not settings.USE_STUBS:
+                raise
 
     async with _LOCAL_LOCK:
+        now = time.time()
         expiry_at = _LOCAL_TOKEN_STORE.get(nonce)
-        if not expiry_at or time.time() > expiry_at:
+        if not expiry_at or now > expiry_at:
             _LOCAL_TOKEN_STORE.pop(nonce, None)
             return False
-        _LOCAL_TOKEN_STORE[nonce] = time.time() + expiry_seconds
+
+        _LOCAL_TOKEN_STORE[nonce] = now + expiry_seconds
         return True

@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     STRIPE_PRICE_PROFESSIONAL: Optional[str] = None
     STRIPE_PRICE_ENTERPRISE: Optional[str] = None
 
+    # Stub tooling guard
+    STUB_STATUS_TOKEN: Optional[str] = None
+
     # SSLCommerz configuration
     SSLCOMMERZ_STORE_ID: Optional[str] = None
     SSLCOMMERZ_STORE_PASSWORD: Optional[str] = None
