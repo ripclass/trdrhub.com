@@ -2,15 +2,22 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
-// Import cn with explicit path to ensure bundling
-import { cn as cnUtil } from '@/lib/utils';
-// Fallback cn function if import fails - inline implementation as backup
-const cn = cnUtil || ((...classes: (string | undefined | null | boolean | Record<string, boolean>)[]) => {
+
+// Inline cn function to avoid import issues - direct implementation
+function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
+  try {
+    // Try to use the real cn if available
+    const { cn: cnUtil } = require('@/lib/utils');
+    if (cnUtil) return cnUtil(...classes);
+  } catch {
+    // Fallback to simple implementation
+  }
+  
   return classes
     .filter(Boolean)
     .map((cls) => {
       if (typeof cls === 'string') return cls;
-      if (typeof cls === 'object') {
+      if (typeof cls === 'object' && cls !== null) {
         return Object.entries(cls)
           .filter(([_, val]) => val)
           .map(([key]) => key)
@@ -20,7 +27,7 @@ const cn = cnUtil || ((...classes: (string | undefined | null | boolean | Record
     })
     .filter(Boolean)
     .join(' ');
-});
+}
 
 interface AppShellProps {
   children: ReactNode;
