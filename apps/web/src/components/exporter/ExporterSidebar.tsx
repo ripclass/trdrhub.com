@@ -1,35 +1,38 @@
-import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle } from "lucide-react";
+import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle, Ship } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/hooks/use-auth";
 
 const navMain = [
   {
-    title: "Upload LC",
-    url: "/lcopilot/exporter-dashboard?tab=upload",
+    title: "Dashboard",
+    url: "/lcopilot/exporter-dashboard",
+    icon: BarChart3,
+  },
+  {
+    title: "Upload Documents",
+    url: "/export-lc-upload",
     icon: Upload,
   },
   {
-    title: "Processing Queue",
-    url: "/lcopilot/exporter-dashboard?tab=queue",
-    icon: FileText,
-  },
-  {
     title: "Review Results",
-    url: "/lcopilot/exporter-dashboard?tab=results",
+    url: "/lcopilot/exporter-results",
     icon: History,
   },
   {
     title: "Analytics",
-    url: "/lcopilot/exporter-dashboard?tab=analytics",
+    url: "/lcopilot/exporter-analytics",
     icon: BarChart3,
   },
   {
@@ -42,51 +45,78 @@ const navMain = [
 const navSecondary = [
   {
     title: "Settings",
-    url: "/lcopilot/exporter-dashboard?tab=settings",
+    url: "#",
     icon: Settings,
   },
   {
     title: "Help",
-    url: "/help",
+    url: "#",
     icon: HelpCircle,
   },
 ];
 
-export function ExporterSidebar() {
+export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const location = useLocation();
+  const { user } = useAuth();
+  
+  const isActive = (url: string) => {
+    if (url === "#") return false;
+    return location.pathname === url || location.pathname + location.search === url;
+  };
+
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <Link to="/lcopilot">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-exporter/10 text-exporter">
+                  <Ship className="size-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">LCopilot</span>
+                  <span className="text-xs text-muted-foreground">Exporter Portal</span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      
       <SidebarContent>
-        {/* Main Navigation */}
         <SidebarGroup>
           <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navMain.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url}>
-                      <item.icon className="h-4 w-4" />
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url}>
+                      <item.icon />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* Secondary Navigation */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Support</SidebarGroupLabel>
+        
+        <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
               {navSecondary.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url}>
-                      <item.icon className="h-4 w-4" />
+                  <SidebarMenuButton asChild tooltip={item.title}>
+                    <Link to={item.url}>
+                      <item.icon />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -94,12 +124,23 @@ export function ExporterSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
+      
       <SidebarFooter>
-        <div className="p-4 text-xs text-muted-foreground">
-          <p className="font-medium">Exporter Dashboard</p>
-          <p>LC Review & Compliance</p>
-        </div>
+        {user && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  {user.email?.charAt(0).toUpperCase() || "U"}
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="truncate font-medium text-sm">{user.email}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
