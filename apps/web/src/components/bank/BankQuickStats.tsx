@@ -65,7 +65,7 @@ export function BankQuickStats() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="overflow-hidden">
-        <CardContent className="p-6">
+        <CardContent className="p-6 pt-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-muted-foreground mb-2">Today's Validations</p>
@@ -81,7 +81,7 @@ export function BankQuickStats() {
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-6">
+        <CardContent className="p-6 pt-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-muted-foreground mb-2">Average Score</p>
@@ -97,7 +97,7 @@ export function BankQuickStats() {
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-6">
+        <CardContent className="p-6 pt-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-muted-foreground mb-2">Total Discrepancies</p>
@@ -113,7 +113,7 @@ export function BankQuickStats() {
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-6">
+        <CardContent className="p-6 pt-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-muted-foreground mb-2">Avg Processing Time</p>
