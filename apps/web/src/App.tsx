@@ -29,6 +29,7 @@ import AnalyticsPage from './pages/dashboard/analytics/index'
 import ExporterAnalyticsPage from './pages/dashboard/analytics/exporter'
 import BankAnalyticsPage from './pages/dashboard/analytics/bank'
 import BankDashboard from './pages/BankDashboard'
+import BankDashboardV2 from './pages/BankDashboardV2'
 import ClientDashboard from './pages/ClientDashboard'
 import ComponentGallery from './pages/ComponentGallery'
 import ExporterDocumentCorrections from './pages/ExporterDocumentCorrections'
@@ -81,6 +82,7 @@ function App() {
         <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
         <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
         <Route path="/lcopilot/bank-dashboard" element={<BankDashboard />} />
+        <Route path="/lcopilot/bank-dashboard/v2" element={<BankDashboardV2 />} />
         <Route path="/lcopilot/bank-dashboard/client/:clientName" element={<ClientDashboard />} />
         <Route path="/lcopilot/component-gallery" element={<ComponentGallery />} />
         <Route path="/lcopilot/exporter-corrections" element={<ExporterDocumentCorrections />} />
