@@ -2,8 +2,7 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
-// Ensure cn is imported correctly - use direct import if alias fails
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 interface AppShellProps {
   children: ReactNode;
