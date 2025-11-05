@@ -13,4 +13,8 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    // Force clean build - disable build cache
+    emptyOutDir: true,
+  },
 })
