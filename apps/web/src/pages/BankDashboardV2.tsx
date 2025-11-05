@@ -8,10 +8,6 @@ import { ResultsTable } from "@/components/bank/ResultsTable";
 import { ClientManagement } from "@/components/bank/ClientManagement";
 import { NotificationPreferences } from "@/components/bank/NotificationPreferences";
 import { BankAnalytics } from "@/components/bank/BankAnalytics";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
 
 export default function BankDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -34,14 +30,6 @@ export default function BankDashboardV2() {
         { label: "LCopilot", href: "/lcopilot" },
         { label: "Bank Dashboard" },
       ]}
-      actions={
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/lcopilot/bank-dashboard/legacy">
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Legacy Layout
-          </Link>
-        </Button>
-      }
     >
       <div className="flex flex-col gap-6 p-4 lg:p-6">
         {/* Quick Stats */}
