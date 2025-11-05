@@ -14,54 +14,6 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import type { LucideIcon } from "lucide-react";
-
-interface NavItem {
-  title: string;
-  url: string;
-  icon?: LucideIcon;
-}
-
-const navMain: NavItem[] = [
-  {
-    title: "Dashboard",
-    url: "/lcopilot/exporter-dashboard",
-    icon: BarChart3,
-  },
-  {
-    title: "Upload Documents",
-    url: "/export-lc-upload",
-    icon: Upload,
-  },
-  {
-    title: "Review Results",
-    url: "/lcopilot/exporter-results",
-    icon: Clock,
-  },
-  {
-    title: "Analytics",
-    url: "/lcopilot/exporter-analytics",
-    icon: BarChart3,
-  },
-  {
-    title: "Notifications",
-    url: "/lcopilot/exporter-dashboard?tab=notifications",
-    icon: Bell,
-  },
-];
-
-const navSecondary: NavItem[] = [
-  {
-    title: "Settings",
-    url: "#",
-    icon: Settings,
-  },
-  {
-    title: "Help",
-    url: "#",
-    icon: HelpCircle,
-  },
-];
 
 export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
@@ -72,16 +24,26 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
     return location.pathname === url || location.pathname + location.search === url;
   };
 
-  const mainItems = navMain.filter((item): item is NavItem => Boolean(item?.title && item?.url));
-  const secondaryItems = navSecondary.filter((item): item is NavItem => Boolean(item?.title && item?.url));
-  const isDev = typeof import.meta !== "undefined" ? !import.meta.env?.PROD : true;
-
-  if (isDev && mainItems.length !== navMain.length) {
-    console.warn("ExporterSidebar: filtered invalid main nav items", navMain);
-  }
-  if (isDev && secondaryItems.length !== navSecondary.length) {
-    console.warn("ExporterSidebar: filtered invalid secondary nav items", navSecondary);
-  }
+  const secondaryLinks = (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild tooltip="Settings" isActive={isActive("/lcopilot/exporter-dashboard?tab=settings")}>
+          <Link to="/lcopilot/exporter-dashboard?tab=settings">
+            <Settings />
+            <span>Settings</span>
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild tooltip="Help">
+          <Link to="/help">
+            <HelpCircle />
+            <span>Help</span>
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </>
+  );
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -108,44 +70,53 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
           <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => {
-                const Icon = item.icon ?? BarChart3;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive(item.url)}
-                      tooltip={item.title}
-                    >
-                      <Link to={item.url}>
-                        <Icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Dashboard" isActive={isActive("/lcopilot/exporter-dashboard")}>
+                  <Link to="/lcopilot/exporter-dashboard">
+                    <BarChart3 />
+                    <span>Dashboard</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Upload Documents" isActive={isActive("/export-lc-upload")}>
+                  <Link to="/export-lc-upload">
+                    <Upload />
+                    <span>Upload Documents</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Review Results" isActive={isActive("/lcopilot/exporter-results")}>
+                  <Link to="/lcopilot/exporter-results">
+                    <Clock />
+                    <span>Review Results</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Analytics" isActive={isActive("/lcopilot/exporter-analytics")}>
+                  <Link to="/lcopilot/exporter-analytics">
+                    <BarChart3 />
+                    <span>Analytics</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Notifications" isActive={isActive("/lcopilot/exporter-dashboard?tab=notifications")}>
+                  <Link to="/lcopilot/exporter-dashboard?tab=notifications">
+                    <Bell />
+                    <span>Notifications</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
         
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
-            <SidebarMenu>
-              {secondaryItems.map((item) => {
-                const Icon = item.icon ?? HelpCircle;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild tooltip={item.title}>
-                      <Link to={item.url}>
-                        <Icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            <SidebarMenu>{secondaryLinks}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
