@@ -3,16 +3,9 @@ import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
 
-// Inline cn function to avoid import issues - direct implementation
+// Inline cn function to avoid import/bundling issues
+// This is a simplified version that handles the most common cases
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
-  try {
-    // Try to use the real cn if available
-    const { cn: cnUtil } = require('@/lib/utils');
-    if (cnUtil) return cnUtil(...classes);
-  } catch {
-    // Fallback to simple implementation
-  }
-  
   return classes
     .filter(Boolean)
     .map((cls) => {
