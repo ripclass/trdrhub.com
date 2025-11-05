@@ -75,9 +75,9 @@ function App() {
         <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
         <Route path="/import/results/:jobId" element={<ImportResults />} />
         <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
-        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboard />} />
-        <Route path="/lcopilot/exporter-dashboard/v2" element={<ExporterDashboardV2 />} />
+        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboardV2 />} />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
+        <Route path="/lcopilot/exporter-dashboard/v2" element={<ExporterDashboardV2 />} />
         <Route path="/lcopilot/importer-dashboard" element={<ImporterDashboardV2 />} />
         <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
         <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
