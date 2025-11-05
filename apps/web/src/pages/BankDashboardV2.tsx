@@ -32,20 +32,15 @@ export default function BankDashboardV2() {
       sidebar={<BankSidebar />}
       breadcrumbs={[
         { label: "LCopilot", href: "/lcopilot" },
-        { label: "Bank Dashboard V2" },
+        { label: "Bank Dashboard" },
       ]}
       actions={
-        <>
-          <Badge variant="outline" className="text-xs">
-            New Layout
-          </Badge>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/lcopilot/bank-dashboard">
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Old Layout
-            </Link>
-          </Button>
-        </>
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/lcopilot/bank-dashboard/legacy">
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Legacy Layout
+          </Link>
+        </Button>
       }
     >
       <div className="flex flex-col gap-6 p-4 lg:p-6">

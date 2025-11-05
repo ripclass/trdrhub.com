@@ -98,19 +98,26 @@ export default function BankDashboard() {
 
   return (
     <AppShell
-      title="Bank LC Validation"
-      subtitle="Bulk document validation and compliance checking"
+      title="Bank LC Validation (Legacy)"
+      subtitle="Previous layout version - use new dashboard for improved experience"
       breadcrumbs={[
         { label: "LCopilot", href: "/lcopilot" },
-        { label: "Bank Dashboard" },
+        { label: "Bank Dashboard (Legacy)" },
       ]}
       actions={
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/lcopilot/analytics/bank">
-            <BarChart3 className="w-4 h-4" />
-            Analytics
-          </Link>
-        </Button>
+        <>
+          <Button variant="default" size="sm" asChild>
+            <Link to="/lcopilot/bank-dashboard">
+              Switch to New Layout
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/lcopilot/analytics/bank">
+              <BarChart3 className="w-4 h-4" />
+              Analytics
+            </Link>
+          </Button>
+        </>
       }
       compact
     >

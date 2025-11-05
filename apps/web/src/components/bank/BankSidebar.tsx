@@ -17,32 +17,32 @@ import { useAuth } from "@/hooks/use-auth";
 const navMain = [
   {
     title: "Upload LC",
-    url: "/lcopilot/bank-dashboard/v2?tab=upload",
+    url: "/lcopilot/bank-dashboard?tab=upload",
     icon: Upload,
   },
   {
     title: "Processing Queue",
-    url: "/lcopilot/bank-dashboard/v2?tab=queue",
+    url: "/lcopilot/bank-dashboard?tab=queue",
     icon: Clock,
   },
   {
     title: "Results",
-    url: "/lcopilot/bank-dashboard/v2?tab=results",
+    url: "/lcopilot/bank-dashboard?tab=results",
     icon: CheckCircle,
   },
   {
     title: "Clients",
-    url: "/lcopilot/bank-dashboard/v2?tab=clients",
+    url: "/lcopilot/bank-dashboard?tab=clients",
     icon: Users,
   },
   {
     title: "Analytics",
-    url: "/lcopilot/bank-dashboard/v2?tab=analytics",
+    url: "/lcopilot/bank-dashboard?tab=analytics",
     icon: BarChart3,
   },
   {
     title: "Notifications",
-    url: "/lcopilot/bank-dashboard/v2?tab=notifications",
+    url: "/lcopilot/bank-dashboard?tab=notifications",
     icon: Bell,
   },
 ];

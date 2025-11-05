@@ -104,11 +104,11 @@ export function UserMenu() {
           <UserIcon className="mr-2 h-4 w-4" />
           <span>Account</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard/v2?tab=results")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard?tab=results")}> 
           <CreditCard className="mr-2 h-4 w-4" />
           <span>Billing</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard/v2?tab=notifications")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard?tab=notifications")}> 
           <Bell className="mr-2 h-4 w-4" />
           <span>Notifications</span>
         </DropdownMenuItem>

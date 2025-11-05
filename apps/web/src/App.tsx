@@ -81,8 +81,8 @@ function App() {
         <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
         <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
         <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
-        <Route path="/lcopilot/bank-dashboard" element={<BankDashboard />} />
-        <Route path="/lcopilot/bank-dashboard/v2" element={<BankDashboardV2 />} />
+        <Route path="/lcopilot/bank-dashboard" element={<BankDashboardV2 />} />
+        <Route path="/lcopilot/bank-dashboard/legacy" element={<BankDashboard />} />
         <Route path="/lcopilot/bank-dashboard/client/:clientName" element={<ClientDashboard />} />
         <Route path="/lcopilot/component-gallery" element={<ComponentGallery />} />
         <Route path="/lcopilot/exporter-corrections" element={<ExporterDocumentCorrections />} />
