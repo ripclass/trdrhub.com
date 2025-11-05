@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
+import { UserMenu } from '@/components/layout/UserMenu';
 
 // Inline cn function to avoid import/bundling issues
 // This is a simplified version that handles the most common cases
@@ -69,6 +70,7 @@ export function AppShell({
           
           {/* Right: Theme Toggle */}
           <div className="ml-auto flex items-center gap-2">
+            <UserMenu />
             <ThemeToggle />
           </div>
         </div>
