@@ -2,7 +2,13 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
+// Import cn with explicit path to ensure bundling
 import { cn } from '@/lib/utils';
+
+// Re-export cn to ensure it's available at runtime
+if (typeof cn === 'undefined') {
+  console.error('cn utility is not available - check utils.ts import');
+}
 
 interface AppShellProps {
   children: ReactNode;
