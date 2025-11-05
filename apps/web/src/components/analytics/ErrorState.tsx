@@ -1,7 +1,24 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { cn } from "@/lib/utils";
+// Inline cn function to avoid import/bundling issues
+function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
+  return classes
+    .filter(Boolean)
+    .map((cls) => {
+      if (typeof cls === 'string') return cls;
+      if (typeof cls === 'object' && cls !== null) {
+        return Object.entries(cls)
+          .filter(([_, val]) => val)
+          .map(([key]) => key)
+          .join(' ');
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+;
 import { AlertTriangle, RefreshCw, ShieldX, Wifi } from "lucide-react";
 
 interface ErrorStateProps {

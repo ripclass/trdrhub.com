@@ -2,7 +2,24 @@ import * as React from "react"
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group"
 import { type VariantProps } from "class-variance-authority"
 
-import { cn } from "@/lib/utils"
+// Inline cn function to avoid import/bundling issues
+function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
+  return classes
+    .filter(Boolean)
+    .map((cls) => {
+      if (typeof cls === 'string') return cls;
+      if (typeof cls === 'object' && cls !== null) {
+        return Object.entries(cls)
+          .filter(([_, val]) => val)
+          .map(([key]) => key)
+          .join(' ');
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
 import { toggleVariants } from "@/components/ui/toggle"
 
 const ToggleGroupContext = React.createContext<
