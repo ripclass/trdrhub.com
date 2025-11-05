@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle, Package } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -14,8 +14,15 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
+import type { LucideIcon } from "lucide-react";
 
-const navMain = [
+interface NavItem {
+  title: string;
+  url: string;
+  icon?: LucideIcon;
+}
+
+const navMain: NavItem[] = [
   {
     title: "Dashboard",
     url: "/lcopilot/importer-dashboard",
@@ -43,7 +50,7 @@ const navMain = [
   },
 ];
 
-const navSecondary = [
+const navSecondary: NavItem[] = [
   {
     title: "Settings",
     url: "#",
@@ -64,6 +71,17 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
     if (url === "#") return false;
     return location.pathname === url || location.pathname + location.search === url;
   };
+
+  const mainItems = navMain.filter((item): item is NavItem => Boolean(item?.title && item?.url));
+  const secondaryItems = navSecondary.filter((item): item is NavItem => Boolean(item?.title && item?.url));
+  const isDev = typeof import.meta !== "undefined" ? !import.meta.env?.PROD : true;
+
+  if (isDev && mainItems.length !== navMain.length) {
+    console.warn("ImporterSidebar: filtered invalid main nav items", navMain);
+  }
+  if (isDev && secondaryItems.length !== navSecondary.length) {
+    console.warn("ImporterSidebar: filtered invalid secondary nav items", navSecondary);
+  }
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -90,20 +108,23 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
           <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navMain.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <Link to={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {mainItems.map((item) => {
+                const Icon = item.icon ?? BarChart3;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.url)}
+                      tooltip={item.title}
+                    >
+                      <Link to={item.url}>
+                        <Icon />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -111,16 +132,19 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              {navSecondary.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
-                    <Link to={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {secondaryItems.map((item) => {
+                const Icon = item.icon ?? HelpCircle;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild tooltip={item.title}>
+                      <Link to={item.url}>
+                        <Icon />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
