@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { ModeToggle } from "@/components/ui/theme-toggle";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // Inline cn function to avoid import/bundling issues
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
@@ -82,7 +82,7 @@ export function DashboardLayout({
             {/* Actions */}
             <div className="ml-auto flex items-center gap-2">
               {actions}
-              <ModeToggle />
+              <ThemeToggle />
             </div>
           </div>
         </header>
