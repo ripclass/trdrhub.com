@@ -191,143 +191,138 @@ export default function ImporterDashboardV2() {
             </p>
           </div>
 
-          {(loadingDrafts || drafts.length > 0) && (
-            <Card className="shadow-soft border-0">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Edit3 className="w-5 h-5" />
-                  Your LC Workspace
-                </CardTitle>
-                <CardDescription>
-                  Resume drafts or track amendments that need attention
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loadingDrafts ? (
-                  <div className="flex items-center justify-center py-8 text-muted-foreground">
-                    Loading drafts...
-                  </div>
-                ) : (
-                  <Tabs defaultValue="drafts" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="drafts" className="flex items-center gap-2">
-                        <Edit3 className="w-4 h-4" /> Drafts ({importerDrafts.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="amendments" className="flex items-center gap-2">
-                        <GitBranch className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
-                      </TabsTrigger>
-                    </TabsList>
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5" /> Your LC Workspace
+              </CardTitle>
+              <CardDescription>Resume drafts or track amendments that need attention</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingDrafts ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  Loading drafts...
+                </div>
+              ) : (
+                <Tabs defaultValue="drafts" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="drafts" className="flex items-center gap-2">
+                      <Edit3 className="w-4 h-4" /> Drafts ({importerDrafts.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="amendments" className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
+                    </TabsTrigger>
+                  </TabsList>
 
-                    <TabsContent value="drafts" className="mt-6 space-y-4">
-                      {importerDrafts.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                          <p>No draft LC validations saved</p>
-                          <p className="text-sm">Start a new validation to create a draft</p>
-                        </div>
-                      ) : (
-                        importerDrafts.map((draft) => (
-                          <div
-                            key={draft.draft_id}
-                            className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="bg-importer/10 p-3 rounded-lg">
-                                <FileText className="w-5 h-5 text-importer" />
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-foreground">
-                                  {draft.lc_number || "Untitled Draft"}
-                                </h4>
-                                <p className="text-sm text-muted-foreground">
-                                  {draft.uploaded_docs.length} document
-                                  {draft.uploaded_docs.length !== 1 ? "s" : ""} uploaded
-                                </p>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                                  Saved {formatTimeAgo(draft.updated_at)}
-                                </div>
-                              </div>
+                  <TabsContent value="drafts" className="mt-6 space-y-4">
+                    {importerDrafts.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                        <p>No draft LC validations saved</p>
+                        <p className="text-sm">Start a new validation to create a draft</p>
+                      </div>
+                    ) : (
+                      importerDrafts.map((draft) => (
+                        <div
+                          key={draft.draft_id}
+                          className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="bg-importer/10 p-3 rounded-lg">
+                              <Edit3 className="w-5 h-5 text-importer" />
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleResumeDraft(draft)}
-                                className="flex items-center gap-2"
-                              >
-                                <ArrowRight className="w-4 h-4" /> Resume
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDeleteDraft(draft.draft_id)}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                            <div>
+                              <h4 className="font-semibold text-foreground">
+                                {draft.lc_number || "Untitled Draft"}
+                              </h4>
+                              <p className="text-sm text-muted-foreground">
+                                {draft.uploaded_docs.length} document
+                                {draft.uploaded_docs.length !== 1 ? "s" : ""} uploaded
+                              </p>
+                              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                Saved {formatTimeAgo(draft.updated_at)}
+                              </div>
                             </div>
                           </div>
-                        ))
-                      )}
-                    </TabsContent>
-
-                    <TabsContent value="amendments" className="mt-6 space-y-4">
-                      {amendmentDrafts.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                          <p>No amendments captured yet</p>
-                          <p className="text-sm">Updates to supplier documents will appear here</p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResumeDraft(draft)}
+                              className="flex items-center gap-2"
+                            >
+                              <ArrowRight className="w-4 h-4" /> Resume
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteDraft(draft.draft_id)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                      ) : (
-                        amendmentDrafts.map((draft) => (
-                          <div
-                            key={draft.draft_id}
-                            className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="bg-importer/10 p-3 rounded-lg">
-                                <GitBranch className="w-5 h-5 text-importer" />
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-foreground">
-                                  {draft.lc_number || "Untitled Draft"}
-                                </h4>
-                                <p className="text-sm text-muted-foreground">
-                                  {draft.uploaded_docs.length} document
-                                  {draft.uploaded_docs.length !== 1 ? "s" : ""} updated
-                                </p>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                                  Saved {formatTimeAgo(draft.updated_at)}
-                                </div>
-                              </div>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="amendments" className="mt-6 space-y-4">
+                    {amendmentDrafts.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                        <p>No amendments captured yet</p>
+                        <p className="text-sm">Updates to supplier documents will appear here</p>
+                      </div>
+                    ) : (
+                      amendmentDrafts.map((draft) => (
+                        <div
+                          key={draft.draft_id}
+                          className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="bg-importer/10 p-3 rounded-lg">
+                              <GitBranch className="w-5 h-5 text-importer" />
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleResumeDraft(draft)}
-                                className="flex items-center gap-2"
-                              >
-                                <ArrowRight className="w-4 h-4" /> Resume
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDeleteDraft(draft.draft_id)}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                            <div>
+                              <h4 className="font-semibold text-foreground">
+                                {draft.lc_number || "Untitled Draft"}
+                              </h4>
+                              <p className="text-sm text-muted-foreground">
+                                {draft.uploaded_docs.length} document
+                                {draft.uploaded_docs.length !== 1 ? "s" : ""} updated
+                              </p>
+                              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                Saved {formatTimeAgo(draft.updated_at)}
+                              </div>
                             </div>
                           </div>
-                        ))
-                      )}
-                    </TabsContent>
-                  </Tabs>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResumeDraft(draft)}
+                              className="flex items-center gap-2"
+                            >
+                              <ArrowRight className="w-4 h-4" /> Resume
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteDraft(draft.draft_id)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </TabsContent>
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Main Content */}
@@ -365,21 +360,19 @@ export default function ImporterDashboardV2() {
                               {item.type} #{item.id}
                             </h4>
                             <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-xs text-muted-foreground">{item.date}</span>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <span>{item.date}</span>
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <StatusBadge status={item.status === "approved" ? "success" : "warning"}>
-                              {item.risks === 0
-                                ? "No issues"
-                                : item.risks === 1
-                                ? "1 issue"
-                                : `${item.risks} issues`}
-                            </StatusBadge>
-                          </div>
+                          <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
+                            {item.risks === 0
+                              ? "No issues"
+                              : item.risks === 1
+                              ? "1 issue"
+                              : `${item.risks} issues`}
+                          </StatusBadge>
                           <Button variant="outline" size="sm">
                             View
                           </Button>
@@ -451,7 +444,7 @@ export default function ImporterDashboardV2() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Documents Processed</span>
-                      <span className="font-medium">{dashboardStats.documentsProcessed}</span>
+                      <span className="text-foreground font-medium">{dashboardStats.documentsProcessed}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Average Processing</span>
