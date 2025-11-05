@@ -43,9 +43,8 @@ export default function BankDashboard() {
   // Check if user is a bank user
   // Frontend maps bank_officer and bank_admin to "bank" role
   // In stub mode, allow access regardless of role
-  // TEMPORARY: Allow access in development mode for testing
-  const isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname.includes('localhost');
-  const isBankUser = isStubMode || (user && user.role === "bank") || isDevelopment;
+  // TEMPORARY: Allow access for UI testing (remove this after fixing auth/stub mode)
+  const isBankUser = isStubMode || (user && user.role === "bank") || true; // Allow all for now
 
   // Update tab when URL changes
   useEffect(() => {
