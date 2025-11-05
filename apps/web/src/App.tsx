@@ -30,6 +30,8 @@ import ExporterAnalyticsPage from './pages/dashboard/analytics/exporter'
 import BankAnalyticsPage from './pages/dashboard/analytics/bank'
 import BankDashboard from './pages/BankDashboard'
 import BankDashboardV2 from './pages/BankDashboardV2'
+import ImporterDashboardV2 from './pages/ImporterDashboardV2'
+import ExporterDashboardV2 from './pages/ExporterDashboardV2'
 import ClientDashboard from './pages/ClientDashboard'
 import ComponentGallery from './pages/ComponentGallery'
 import ExporterDocumentCorrections from './pages/ExporterDocumentCorrections'
@@ -73,8 +75,10 @@ function App() {
         <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
         <Route path="/import/results/:jobId" element={<ImportResults />} />
         <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
-        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboard />} />
-        <Route path="/lcopilot/importer-dashboard" element={<ImporterDashboard />} />
+        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboardV2 />} />
+        <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
+        <Route path="/lcopilot/importer-dashboard" element={<ImporterDashboardV2 />} />
+        <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
         <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
         <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />
         <Route path="/lcopilot/importer-analytics" element={<ImporterAnalytics />} />
