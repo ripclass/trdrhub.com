@@ -14,12 +14,10 @@ import { useVersions } from "@/hooks/use-versions";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import {
-  Upload,
   FileText,
   CheckCircle,
   AlertTriangle,
   Bell,
-  Plus,
   BarChart3,
   TrendingUp,
   Clock,
@@ -27,7 +25,6 @@ import {
   Trash2,
   ArrowRight,
   GitBranch,
-  XCircle,
 } from "lucide-react";
 
 const dashboardStats = {
@@ -35,8 +32,8 @@ const dashboardStats = {
   successRate: 94.2,
   avgProcessingTime: "2.3 minutes",
   discrepanciesFound: 8,
-  totalChecks: 24,
-  documentsProcessed: 96,
+  totalReviews: 18,
+  documentsProcessed: 54,
 };
 
 const mockHistory = [
@@ -69,22 +66,22 @@ const mockHistory = [
 const notifications = [
   {
     id: 1,
-    title: "New ICC Update Available",
-    message: "UCP 600 guidelines have been updated. Review new discrepancy rules.",
+    title: "Import Regulations Update",
+    message: "New customs requirements effective Feb 1st. Review your upcoming shipments.",
     type: "info" as const,
     timestamp: "2 hours ago",
   },
   {
     id: 2,
-    title: "LC Processing Complete",
-    message: "BD-2024-005 has been processed successfully with no discrepancies.",
+    title: "LC Review Complete",
+    message: "Your draft LC has been reviewed with no critical risks identified.",
     type: "success" as const,
-    timestamp: "4 hours ago",
+    timestamp: "5 hours ago",
   },
   {
     id: 3,
-    title: "Discrepancy Alert",
-    message: "BD-2024-006 has 2 discrepancies that need attention.",
+    title: "Risk Alert",
+    message: "Unrealistic shipment date detected in LC-IMP-2024-003.",
     type: "warning" as const,
     timestamp: "1 day ago",
   },
@@ -189,35 +186,6 @@ export default function ExporterDashboardV2() {
             <p className="text-muted-foreground">
               Here’s everything that’s happening with your export LC validations today.
             </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link to="/export-lc-upload" className="flex-1">
-              <Button className="w-full h-16 bg-gradient-exporter hover:opacity-90 text-left justify-start shadow-medium group">
-                <div className="flex items-center gap-4">
-                  <div className="bg-white/20 p-3 rounded-lg group-hover:scale-110 transition-transform">
-                    <Plus className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">Upload Documents</div>
-                    <div className="text-sm opacity-90">Start a new validation session</div>
-                  </div>
-                </div>
-              </Button>
-            </Link>
-            <Link to="/lcopilot/exporter-analytics" className="flex-1">
-              <Button variant="outline" className="w-full h-16 text-left justify-start">
-                <div className="flex items-center gap-4">
-                  <div className="bg-exporter/10 p-3 rounded-lg">
-                    <BarChart3 className="w-6 h-6 text-exporter" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">View Analytics</div>
-                    <div className="text-sm text-muted-foreground">Performance & discrepancy trends</div>
-                  </div>
-                </div>
-              </Button>
-            </Link>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -394,12 +362,9 @@ export default function ExporterDashboardV2() {
                                 </div>
                               </div>
                             </div>
-                            <Link to={`/lcopilot/exporter-results?lc=${lc.lc_number}`}>
-                              <Button variant="outline" size="sm" className="flex items-center gap-2">
-                                <Clock className="w-4 h-4" />
-                                View
-                              </Button>
-                            </Link>
+                            <Button variant="outline" size="sm" className="flex items-center gap-2">
+                              <Clock className="w-4 h-4" /> View
+                            </Button>
                           </div>
                         ))}
                       </div>
@@ -456,7 +421,11 @@ export default function ExporterDashboardV2() {
                         <div className="flex items-center gap-3">
                           <StatusBadge
                             status={
-                              item.status === "approved" ? "success" : item.status === "rejected" ? "error" : "warning"
+                              item.discrepancies === 0
+                                ? "success"
+                                : item.discrepancies === 1
+                                ? "warning"
+                                : "error"
                             }
                           >
                             {item.discrepancies === 0
@@ -466,7 +435,7 @@ export default function ExporterDashboardV2() {
                               : `${item.discrepancies} issues`}
                           </StatusBadge>
                           <Button variant="outline" size="sm">
-                            Download
+                            View
                           </Button>
                         </div>
                       </div>
@@ -488,7 +457,7 @@ export default function ExporterDashboardV2() {
                 <CardContent>
                   <div className="space-y-4">
                     {notifications.map((notification) => (
-                      <div key={notification.id} className="p-3 rounded-lg border">
+                      <div key={notification.id} className="p-3 rounded-lg border border-gray-200/50">
                         <div className="flex items-start gap-3">
                           <div
                             className={`p-1 rounded-full ${
@@ -528,8 +497,8 @@ export default function ExporterDashboardV2() {
                 <CardContent>
                   <div className="space-y-4 text-sm">
                     <div className="flex justify-between text-muted-foreground">
-                      <span>Total Checks</span>
-                      <span className="text-foreground font-medium">{dashboardStats.totalChecks}</span>
+                      <span>Total Reviews</span>
+                      <span className="text-foreground font-medium">{dashboardStats.totalReviews}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>Documents Processed</span>

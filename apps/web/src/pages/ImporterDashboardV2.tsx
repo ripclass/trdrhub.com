@@ -1,6 +1,6 @@
 // ImporterDashboardV2 - Full-featured Importer Dashboard with sidebar layout  
 import { useState, useEffect } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,17 +14,12 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ImporterSidebar } from "@/components/importer/ImporterSidebar";
 import {
-  Upload,
   FileText,
   CheckCircle,
   AlertTriangle,
-  Eye,
   Bell,
-  Plus,
-  BarChart3,
   TrendingUp,
   Clock,
-  FileCheck,
   Edit3,
   Trash2,
   ArrowRight,
@@ -172,8 +167,8 @@ export default function ImporterDashboardV2() {
     return date.toLocaleDateString();
   };
 
-  const draftLCRisks = drafts.filter((d) => d.draft_type === "importer_draft");
-  const supplierDrafts = drafts.filter((d) => d.draft_type === "importer_supplier");
+  const importerDrafts = drafts.filter((d) => d.draft_type === "importer_draft");
+  const amendmentDrafts = drafts.filter((d) => d.draft_type === "importer_supplier");
 
   return (
     <>
@@ -195,248 +190,136 @@ export default function ImporterDashboardV2() {
             </p>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link to="/lcopilot/import-upload" className="flex-1">
-              <Button className="w-full h-16 bg-gradient-importer hover:opacity-90 text-left justify-start shadow-medium group">
-                <div className="flex items-center gap-4">
-                  <div className="bg-white/20 p-3 rounded-lg group-hover:scale-110 transition-transform">
-                    <Plus className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">Upload LC</div>
-                    <div className="text-sm opacity-90">Start validation process</div>
-                  </div>
-                </div>
-              </Button>
-            </Link>
-            <Link to="/lcopilot/importer-analytics" className="flex-1">
-              <Button variant="outline" className="w-full h-16 text-left justify-start">
-                <div className="flex items-center gap-4">
-                  <div className="bg-importer/10 p-3 rounded-lg">
-                    <BarChart3 className="w-6 h-6 text-importer" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">View Analytics</div>
-                    <div className="text-sm text-muted-foreground">Performance insights</div>
-                  </div>
-                </div>
-              </Button>
-            </Link>
-          </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="overflow-hidden shadow-soft border-0">
-              <CardContent className="p-6 pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground mb-2">This Month</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">
-                      {dashboardStats.thisMonth}
-                    </p>
-                    <p className="text-xs text-success mt-1">+20% from last month</p>
-                  </div>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-importer/10">
-                    <FileText className="h-6 w-6 text-importer" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden shadow-soft border-0">
-              <CardContent className="p-6 pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground mb-2">Success Rate</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">
-                      {dashboardStats.successRate}%
-                    </p>
-                    <Progress value={dashboardStats.successRate} className="mt-2 h-2" />
-                  </div>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-success/10">
-                    <TrendingUp className="h-6 w-6 text-success" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden shadow-soft border-0">
-              <CardContent className="p-6 pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground mb-2">Avg Processing</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">
-                      {dashboardStats.avgProcessingTime}
-                    </p>
-                    <p className="text-xs text-success mt-1">10s faster</p>
-                  </div>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-info/10">
-                    <Clock className="h-6 w-6 text-info" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden shadow-soft border-0">
-              <CardContent className="p-6 pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground mb-2">Risks Identified</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">
-                      {dashboardStats.risksIdentified}
-                    </p>
-                    <p className="text-xs text-warning mt-1">Review required</p>
-                  </div>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-warning/10">
-                    <AlertTriangle className="h-6 w-6 text-warning" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Your Drafts Section */}
           {(loadingDrafts || drafts.length > 0) && (
             <Card className="shadow-soft border-0">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Edit3 className="w-5 h-5" />
-                  Your Drafts
+                  Your LC Workspace
                 </CardTitle>
-                <CardDescription>Resume your saved LC validations</CardDescription>
+                <CardDescription>
+                  Resume drafts or track amendments that need attention
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {loadingDrafts ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-muted-foreground">Loading drafts...</div>
+                  <div className="flex items-center justify-center py-8 text-muted-foreground">
+                    Loading drafts...
                   </div>
                 ) : (
-                  <Tabs defaultValue="draft-lc" className="w-full">
+                  <Tabs defaultValue="drafts" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="draft-lc" className="flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        Draft LC Risk ({draftLCRisks.length})
+                      <TabsTrigger value="drafts" className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Drafts ({importerDrafts.length})
                       </TabsTrigger>
-                      <TabsTrigger value="supplier-docs" className="flex items-center gap-2">
-                        <FileCheck className="w-4 h-4" />
-                        Supplier Documents ({supplierDrafts.length})
+                      <TabsTrigger value="amendments" className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
                       </TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="draft-lc" className="mt-6">
-                      {draftLCRisks.length === 0 ? (
+                    <TabsContent value="drafts" className="mt-6 space-y-4">
+                      {importerDrafts.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                           <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
                           <p>No draft LC validations saved</p>
                           <p className="text-sm">Start a new validation to create a draft</p>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {draftLCRisks.map((draft) => (
-                            <div
-                              key={draft.draft_id}
-                              className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className="bg-importer/10 p-3 rounded-lg">
-                                  <FileText className="w-5 h-5 text-importer" />
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-foreground">
-                                    {draft.lc_number || "Untitled Draft"}
-                                  </h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    {draft.uploaded_docs.length} document
-                                    {draft.uploaded_docs.length !== 1 ? "s" : ""} uploaded
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-xs text-muted-foreground">
-                                      Saved {formatTimeAgo(draft.updated_at)}
-                                    </span>
-                                  </div>
-                                </div>
+                        importerDrafts.map((draft) => (
+                          <div
+                            key={draft.draft_id}
+                            className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="bg-importer/10 p-3 rounded-lg">
+                                <FileText className="w-5 h-5 text-importer" />
                               </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleResumeDraft(draft)}
-                                  className="flex items-center gap-2"
-                                >
-                                  <ArrowRight className="w-4 h-4" />
-                                  Resume
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDeleteDraft(draft.draft_id)}
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                              <div>
+                                <h4 className="font-semibold text-foreground">
+                                  {draft.lc_number || "Untitled Draft"}
+                                </h4>
+                                <p className="text-sm text-muted-foreground">
+                                  {draft.uploaded_docs.length} document
+                                  {draft.uploaded_docs.length !== 1 ? "s" : ""} uploaded
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                  Saved {formatTimeAgo(draft.updated_at)}
+                                </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleResumeDraft(draft)}
+                                className="flex items-center gap-2"
+                              >
+                                <ArrowRight className="w-4 h-4" /> Resume
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteDraft(draft.draft_id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </TabsContent>
 
-                    <TabsContent value="supplier-docs" className="mt-6">
-                      {supplierDrafts.length === 0 ? (
+                    <TabsContent value="amendments" className="mt-6 space-y-4">
+                      {amendmentDrafts.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
-                          <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                          <p>No supplier document drafts saved</p>
-                          <p className="text-sm">Start a new validation to create a draft</p>
+                          <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                          <p>No amendments captured yet</p>
+                          <p className="text-sm">Updates to supplier documents will appear here</p>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {supplierDrafts.map((draft) => (
-                            <div
-                              key={draft.draft_id}
-                              className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className="bg-importer/10 p-3 rounded-lg">
-                                  <FileCheck className="w-5 h-5 text-importer" />
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-foreground">
-                                    {draft.lc_number || "Untitled Draft"}
-                                  </h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    {draft.uploaded_docs.length} document
-                                    {draft.uploaded_docs.length !== 1 ? "s" : ""} uploaded
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-xs text-muted-foreground">
-                                      Saved {formatTimeAgo(draft.updated_at)}
-                                    </span>
-                                  </div>
-                                </div>
+                        amendmentDrafts.map((draft) => (
+                          <div
+                            key={draft.draft_id}
+                            className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="bg-importer/10 p-3 rounded-lg">
+                                <FileText className="w-5 h-5 text-importer" />
                               </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleResumeDraft(draft)}
-                                  className="flex items-center gap-2"
-                                >
-                                  <ArrowRight className="w-4 h-4" />
-                                  Resume
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDeleteDraft(draft.draft_id)}
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                              <div>
+                                <h4 className="font-semibold text-foreground">
+                                  {draft.lc_number || "Untitled Draft"}
+                                </h4>
+                                <p className="text-sm text-muted-foreground">
+                                  {draft.uploaded_docs.length} document
+                                  {draft.uploaded_docs.length !== 1 ? "s" : ""} updated
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                  Saved {formatTimeAgo(draft.updated_at)}
+                                </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleResumeDraft(draft)}
+                                className="flex items-center gap-2"
+                              >
+                                <ArrowRight className="w-4 h-4" /> Resume
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteDraft(draft.draft_id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </TabsContent>
                   </Tabs>
@@ -497,7 +380,6 @@ export default function ImporterDashboardV2() {
                             </StatusBadge>
                           </div>
                           <Button variant="outline" size="sm">
-                            <Eye className="w-4 h-4 mr-2" />
                             View
                           </Button>
                         </div>
