@@ -11,6 +11,7 @@ import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import { AppShell } from "@/components/layout/AppShell";
 import {
   Upload,
   FileText,
@@ -155,42 +156,32 @@ export default function ExporterDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card border-b border-gray-200 sticky top-0 z-50 backdrop-blur-sm bg-card/95">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-gradient-exporter p-2 rounded-lg">
-                  <FileText className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-foreground">LCopilot</h1>
-                  <p className="text-sm text-muted-foreground">Dashboard</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Button variant="outline" size="sm">
-                <Bell className="w-4 h-4 mr-2" />
-                Notifications
-                <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 text-xs">3</Badge>
-              </Button>
-              <Button variant="outline" size="sm">
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </Button>
-              <Button variant="outline" size="sm">
-                <Settings className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-4 py-8">
+    <>
+      <AppShell
+        title="Exporter Dashboard"
+        subtitle="LC document validation and compliance checking"
+        breadcrumbs={[
+          { label: "LCopilot", href: "/lcopilot" },
+          { label: "Exporter Dashboard" },
+        ]}
+        actions={
+          <>
+            <Button variant="outline" size="sm">
+              <Bell className="w-4 h-4 mr-2" />
+              Notifications
+              <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 text-xs">3</Badge>
+            </Button>
+            <Button variant="outline" size="sm">
+              <User className="w-4 h-4 mr-2" />
+              Profile
+            </Button>
+            <Button variant="outline" size="sm">
+              <Settings className="w-4 h-4" />
+            </Button>
+          </>
+        }
+        compact
+      >
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-foreground mb-2">
@@ -549,7 +540,7 @@ export default function ExporterDashboard() {
             </Card>
           </div>
         </div>
-      </div>
+      </AppShell>
 
       {/* Onboarding Wizard */}
       <OnboardingWizard
@@ -563,6 +554,6 @@ export default function ExporterDashboard() {
           });
         }}
       />
-    </div>
+    </>
   );
 }
