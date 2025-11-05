@@ -167,11 +167,7 @@ export function BankAnalytics() {
         </div>
         <div className="flex items-center gap-2">
           <DateRangePicker value={filters} onChange={setFilters} />
-          <ExportButtons
-            data={dashboard}
-            filename={`bank-analytics-${filters.timeRange}`}
-            disabled={!dashboard}
-          />
+          <ExportButtons filters={filters} />
         </div>
       </div>
 
