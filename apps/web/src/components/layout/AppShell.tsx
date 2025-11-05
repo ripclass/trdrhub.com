@@ -4,9 +4,23 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
 // Import cn with explicit path to ensure bundling
 import { cn as cnUtil } from '@/lib/utils';
-// Fallback cn function if import fails
-const cn = cnUtil || ((...classes: (string | undefined | null | boolean)[]) => 
-  classes.filter(Boolean).join(' '));
+// Fallback cn function if import fails - inline implementation as backup
+const cn = cnUtil || ((...classes: (string | undefined | null | boolean | Record<string, boolean>)[]) => {
+  return classes
+    .filter(Boolean)
+    .map((cls) => {
+      if (typeof cls === 'string') return cls;
+      if (typeof cls === 'object') {
+        return Object.entries(cls)
+          .filter(([_, val]) => val)
+          .map(([key]) => key)
+          .join(' ');
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join(' ');
+});
 
 interface AppShellProps {
   children: ReactNode;
