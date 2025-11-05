@@ -277,6 +277,11 @@ export const bankApi = {
     });
     return response.data;
   },
+
+  /**
+   * Get client dashboard with statistics, trends, and LC results
+   */
+  getClientDashboard: async (
     clientName: string,
     filters?: ClientDashboardFilters
   ): Promise<ClientDashboardResponse> => {
