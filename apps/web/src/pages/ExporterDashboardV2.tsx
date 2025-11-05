@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,38 +28,38 @@ import {
 } from "lucide-react";
 
 const dashboardStats = {
-  thisMonth: 12,
-  successRate: 94.2,
-  avgProcessingTime: "2.3 minutes",
-  discrepanciesFound: 8,
+  thisMonth: 6,
+  successRate: 91.7,
+  avgProcessingTime: "2.8 minutes",
+  discrepanciesFound: 3,
   totalReviews: 18,
   documentsProcessed: 54,
 };
 
 const mockHistory = [
   {
-    id: "BD-2024-001",
-    date: "2024-01-15",
-    company: "Dhaka Exports Ltd",
-    documents: 5,
+    id: "1",
+    date: "2024-01-18",
+    type: "LC Review",
+    supplier: "ABC Exports Ltd.",
     status: "approved" as const,
-    discrepancies: 0,
+    risks: 2,
   },
   {
-    id: "BD-2024-002",
-    date: "2024-01-14",
-    company: "Bengal Trade Co",
-    documents: 7,
-    status: "rejected" as const,
-    discrepancies: 3,
-  },
-  {
-    id: "BD-2024-003",
-    date: "2024-01-14",
-    company: "Chittagong Imports",
-    documents: 4,
+    id: "2",
+    date: "2024-01-12",
+    type: "Document Check",
+    supplier: "XYZ Trading Co.",
     status: "flagged" as const,
-    discrepancies: 1,
+    risks: 4,
+  },
+  {
+    id: "3",
+    date: "2024-01-08",
+    type: "LC Review",
+    supplier: "Global Textiles Inc.",
+    status: "approved" as const,
+    risks: 1,
   },
 ];
 
@@ -92,6 +92,7 @@ export default function ExporterDashboardV2() {
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
+  const navigate = useNavigate();
 
   const [drafts, setDrafts] = useState<DraftData[]>([]);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
@@ -139,6 +140,10 @@ export default function ExporterDashboardV2() {
       setShowOnboarding(true);
     }
   }, [needsOnboarding, isLoadingOnboarding]);
+
+  const handleResumeDraft = (draft: DraftData) => {
+    navigate(`/export-lc-upload?draftId=${draft.id}`);
+  };
 
   const handleDeleteDraft = (draftId: string) => {
     try {
@@ -307,12 +312,9 @@ export default function ExporterDashboardV2() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Link to={`/export-lc-upload?draftId=${draft.id}`}>
-                                  <Button variant="outline" size="sm" className="flex items-center gap-2">
-                                    <ArrowRight className="w-4 h-4" />
-                                    Resume
-                                  </Button>
-                                </Link>
+                                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                                  <ArrowRight className="w-4 h-4" /> Resume
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -398,10 +400,6 @@ export default function ExporterDashboardV2() {
                               <div className="bg-success/10 p-2 rounded-lg">
                                 <CheckCircle className="w-5 h-5 text-success" />
                               </div>
-                            ) : item.status === "rejected" ? (
-                              <div className="bg-destructive/10 p-2 rounded-lg">
-                                <XCircle className="w-5 h-5 text-destructive" />
-                              </div>
                             ) : (
                               <div className="bg-warning/10 p-2 rounded-lg">
                                 <AlertTriangle className="w-5 h-5 text-warning" />
@@ -409,30 +407,22 @@ export default function ExporterDashboardV2() {
                             )}
                           </div>
                           <div>
-                            <h4 className="font-semibold text-foreground">{item.id}</h4>
-                            <p className="text-sm text-muted-foreground">{item.company}</p>
+                            <h4 className="font-semibold text-foreground">
+                              {item.type} #{item.id}
+                            </h4>
+                            <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
                             <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                               <span>{item.date}</span>
-                              <span>•</span>
-                              <span>{item.documents} document{item.documents === 1 ? "" : "s"}</span>
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <StatusBadge
-                            status={
-                              item.discrepancies === 0
-                                ? "success"
-                                : item.discrepancies === 1
-                                ? "warning"
-                                : "error"
-                            }
-                          >
-                            {item.discrepancies === 0
+                          <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
+                            {item.risks === 0
                               ? "No issues"
-                              : item.discrepancies === 1
+                              : item.risks === 1
                               ? "1 issue"
-                              : `${item.discrepancies} issues`}
+                              : `${item.risks} issues`}
                           </StatusBadge>
                           <Button variant="outline" size="sm">
                             View

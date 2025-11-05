@@ -23,6 +23,7 @@ import {
   Edit3,
   Trash2,
   ArrowRight,
+  GitBranch,
 } from "lucide-react";
 
 // Dashboard stats for importers
@@ -210,10 +211,10 @@ export default function ImporterDashboardV2() {
                   <Tabs defaultValue="drafts" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="drafts" className="flex items-center gap-2">
-                        <FileText className="w-4 h-4" /> Drafts ({importerDrafts.length})
+                        <Edit3 className="w-4 h-4" /> Drafts ({importerDrafts.length})
                       </TabsTrigger>
                       <TabsTrigger value="amendments" className="flex items-center gap-2">
-                        <FileText className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
+                        <GitBranch className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
                       </TabsTrigger>
                     </TabsList>
 
@@ -285,7 +286,7 @@ export default function ImporterDashboardV2() {
                           >
                             <div className="flex items-center gap-4">
                               <div className="bg-importer/10 p-3 rounded-lg">
-                                <FileText className="w-5 h-5 text-importer" />
+                                <GitBranch className="w-5 h-5 text-importer" />
                               </div>
                               <div>
                                 <h4 className="font-semibold text-foreground">
