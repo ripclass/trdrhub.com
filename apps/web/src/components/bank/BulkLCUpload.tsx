@@ -113,6 +113,23 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
+  const clientSuggestions = useMemo(() => {
+    if (!clientsData?.clients) return [] as string[];
+    const sanitized = clientsData.clients
+      .map((name) => sanitizeText(name).trim())
+      .filter((name) => name.length > 0);
+    // Remove duplicates while preserving order
+    const unique: string[] = [];
+    const seen = new Set<string>();
+    for (const name of sanitized) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        unique.push(name);
+      }
+    }
+    return unique;
+  }, [clientsData]);
+
   // Check for duplicates when LC number and client name are provided
   const { data: duplicateData, refetch: checkDuplicate } = useQuery({
     queryKey: ['duplicate-check', clientName.trim(), lcNumber.trim()],
