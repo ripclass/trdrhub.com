@@ -131,7 +131,11 @@ const mockExporterResults = {
   ]
 };
 
-export default function ExporterResults() {
+type ExporterResultsProps = {
+  embedded?: boolean;
+};
+
+export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
   const [searchParams] = useSearchParams();
   const lcNumber = searchParams.get('lc') || mockExporterResults.lcNumber;
   const [activeTab, setActiveTab] = useState("overview");
@@ -141,49 +145,40 @@ export default function ExporterResults() {
   const errorCount = 0; // No error status in current mock data
   const successRate = Math.round((successCount / mockExporterResults.totalDocuments) * 100);
 
+  const containerClass = embedded
+    ? "mx-auto w-full max-w-6xl py-4"
+    : "container mx-auto px-4 py-8 max-w-6xl";
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? "bg-transparent" : "bg-background min-h-screen"}>
       {/* Header */}
-      <header className="bg-card border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/exporter-dashboard">
-                <Button variant="outline" size="sm">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Dashboard
-                </Button>
-              </Link>
-              <div className="flex items-center gap-3">
-                <div className="bg-gradient-primary p-2 rounded-lg">
-                  <Package className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-foreground">Export Document Results</h1>
-                  <p className="text-sm text-muted-foreground">LC Number: {lcNumber}</p>
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Link to="/lcopilot/exporter-dashboard">
+                  <Button variant="outline" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-3">
+                  <div className="bg-gradient-exporter p-2 rounded-lg">
+                    <FileText className="w-6 h-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-foreground">Export LC Validation Results</h1>
+                    <p className="text-sm text-muted-foreground">Review the results of your latest document validation</p>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm">
-                <Share2 className="w-4 h-4 mr-2" />
-                Share
-              </Button>
-              <Button variant="outline" size="sm">
-                <PrinterIcon className="w-4 h-4 mr-2" />
-                Print
-              </Button>
-              <Button className="bg-gradient-primary hover:opacity-90">
-                <Download className="w-4 h-4 mr-2" />
-                Download Customs Pack
-              </Button>
-            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className={containerClass}>
         {/* Status Overview */}
         <Card className="mb-8 shadow-soft border-0">
           <CardContent className="p-6">

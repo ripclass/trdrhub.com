@@ -49,7 +49,12 @@ const exportDocumentTypes = [
   { value: "other", label: "Other Trade Documents" }
 ];
 
-export default function ExportLCUpload() {
+type ExportLCUploadProps = {
+  embedded?: boolean;
+  onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
+};
+
+export default function ExportLCUpload({ embedded = false, onComplete }: ExportLCUploadProps = {}) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lcNumber, setLcNumber] = useState("");
   const [notes, setNotes] = useState("");
@@ -205,8 +210,10 @@ export default function ExportLCUpload() {
         description: "Your progress has been saved. You can resume later from your dashboard.",
       });
 
-      // Navigate to dashboard - user likely wants to work on other things
-      navigate('/lcopilot/exporter-dashboard');
+      // Navigate back to dashboard only when in standalone mode
+      if (!embedded) {
+        navigate('/lcopilot/exporter-dashboard');
+      }
     } catch (error: any) {
       console.error('Failed to save draft:', error);
       toast({
@@ -381,7 +388,9 @@ export default function ExportLCUpload() {
 
       toast({
         title: "Validation In Progress",
-        description: "Documents uploaded successfully. Redirecting to compliance results...",
+        description: embedded
+          ? "Documents uploaded successfully. Loading your compliance results..."
+          : "Documents uploaded successfully. Redirecting to compliance results...",
       });
 
       // Remove draft from storage if we're working with a draft
@@ -394,11 +403,16 @@ export default function ExportLCUpload() {
         }
       }
 
-      // Navigate to results page with jobId
-      console.log('🚀 Navigating to results page with jobId:', mockJobId);
-      setTimeout(() => {
-        navigate(`/lcopilot/results/${mockJobId}`);
-      }, 1500);
+      if (embedded && onComplete) {
+        setTimeout(() => {
+          onComplete({ jobId: mockJobId, lcNumber: lcNumber.trim() });
+        }, 800);
+      } else {
+        console.log('🚀 Navigating to results page with jobId:', mockJobId);
+        setTimeout(() => {
+          navigate(`/lcopilot/results/${mockJobId}`);
+        }, 1500);
+      }
 
     } catch (error: any) {
       console.error('❌ Validation error:', error);
@@ -425,45 +439,51 @@ export default function ExportLCUpload() {
   const completedFiles = uploadedFiles.filter(f => f.status === "completed");
   const isReadyToProcess = completedFiles.length > 0 && lcNumber.trim() && !isValidating;
 
+  const wrapperClass = embedded
+    ? "mx-auto w-full max-w-4xl py-4"
+    : "container mx-auto px-4 py-8 max-w-4xl";
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? "bg-transparent" : "bg-background"}>
       {/* Header */}
-      <header className="bg-card border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/lcopilot/exporter-dashboard">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-exporter p-2 rounded-lg">
-                <Upload className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-foreground">Export LC & Trade Documents</h1>
-                  {currentDraftId && (
-                    <Badge variant="outline" className="text-xs">
-                      Draft Mode
-                    </Badge>
-                  )}
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center gap-4">
+              <Link to="/lcopilot/exporter-dashboard">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Dashboard
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-exporter p-2 rounded-lg">
+                  <Upload className="w-6 h-6 text-primary-foreground" />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {currentDraftId
-                    ? "Continue working on your saved draft"
-                    : "Upload LC and trade documents to generate customs-ready pack"
-                  }
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground">Export LC & Trade Documents</h1>
+                    {currentDraftId && (
+                      <Badge variant="outline" className="text-xs">
+                        Draft Mode
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {currentDraftId
+                      ? "Continue working on your saved draft"
+                      : "Upload LC and trade documents to generate customs-ready pack"
+                    }
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {isLoadingDraft && (
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className={embedded ? "mx-auto w-full max-w-4xl px-0 py-6" : "container mx-auto px-4 py-8 max-w-4xl"}>
           <Card>
             <CardContent className="p-8 text-center">
               <div className="animate-spin w-8 h-8 border-2 border-exporter border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -475,7 +495,7 @@ export default function ExportLCUpload() {
       )}
 
       {!isLoadingDraft && (
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className={wrapperClass}>
         {/* LC Information */}
         <Card className="mb-8 shadow-soft border-0">
           <CardHeader>

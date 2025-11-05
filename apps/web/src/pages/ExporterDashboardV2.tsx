@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,13 @@ import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import ExportLCUpload from "./ExportLCUpload";
+import ExporterAnalytics from "./ExporterAnalytics";
+import ExporterResults from "./ExporterResults";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   FileText,
   CheckCircle,
@@ -26,6 +33,15 @@ import {
   ArrowRight,
   GitBranch,
 } from "lucide-react";
+
+type Section =
+  | "dashboard"
+  | "upload"
+  | "reviews"
+  | "analytics"
+  | "notifications"
+  | "settings"
+  | "help";
 
 const dashboardStats = {
   thisMonth: 6,
@@ -92,7 +108,6 @@ export default function ExporterDashboardV2() {
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [drafts, setDrafts] = useState<DraftData[]>([]);
@@ -102,14 +117,6 @@ export default function ExporterDashboardV2() {
   >([]);
   const [isLoadingAmendments, setIsLoadingAmendments] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  type Section =
-    | "dashboard"
-    | "upload"
-    | "reviews"
-    | "analytics"
-    | "notifications"
-    | "settings"
-    | "help";
 
   const parseSection = (value: string | null): Section => {
     const allowed: Section[] = [
@@ -172,17 +179,40 @@ export default function ExporterDashboardV2() {
     }
   }, [searchParams]);
 
-  const handleSectionChange = (section: Section) => {
+  const handleSectionChange = (section: Section, extras: Record<string, string | undefined> = {}) => {
     setActiveSection(section);
+
+    const next = new URLSearchParams(searchParams);
+
     if (section === "dashboard") {
-      setSearchParams({}, { replace: true });
+      next.delete("section");
     } else {
-      setSearchParams({ section }, { replace: true });
+      next.set("section", section);
     }
+
+    if (section !== "upload") {
+      next.delete("draftId");
+    }
+
+    if (section !== "reviews") {
+      next.delete("jobId");
+      next.delete("lc");
+    }
+
+    Object.entries(extras).forEach(([key, value]) => {
+      if (!value) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    });
+
+    setSearchParams(next, { replace: true });
   };
 
   const handleResumeDraft = (draft: DraftData) => {
-    navigate(`/export-lc-upload?draftId=${draft.id}`);
+    setWorkspaceTab("drafts");
+    handleSectionChange("upload", { draftId: draft.id });
   };
 
   const handleDeleteDraft = (draftId: string) => {
@@ -243,24 +273,23 @@ export default function ExporterDashboardV2() {
           )}
 
           {activeSection === "upload" && (
-            <UploadPanel
-              onOpenUpload={() => navigate("/export-lc-upload")}
-              drafts={drafts}
-              isLoadingDrafts={isLoadingDrafts}
-              onResumeDraft={handleResumeDraft}
+            <ExportLCUpload
+              embedded
+              onComplete={({ jobId, lcNumber }) => {
+                handleSectionChange("reviews", {
+                  jobId,
+                  lc: lcNumber || undefined,
+                });
+              }}
             />
           )}
 
           {activeSection === "reviews" && (
-            <RecentValidationsCard
-              title="Review Results"
-              description="Validate your recent LC checks"
-              history={mockHistory}
-            />
+            <ExporterResults embedded />
           )}
 
           {activeSection === "analytics" && (
-            <AnalyticsPanel stats={dashboardStats} />
+            <ExporterAnalytics embedded />
           )}
 
           {activeSection === "notifications" && <NotificationsCard notifications={notifications} />}
@@ -693,125 +722,97 @@ function QuickStatsCard({ stats }: { stats: typeof dashboardStats }) {
   );
 }
 
-function UploadPanel({
-  onOpenUpload,
-  drafts,
-  isLoadingDrafts,
-  onResumeDraft,
-}: {
-  onOpenUpload: () => void;
-  drafts: WorkspaceDraft[];
-  isLoadingDrafts: boolean;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <Card className="shadow-soft border-0">
-        <CardHeader>
-          <CardTitle>Upload Documents</CardTitle>
-          <CardDescription>
-            Prepare and submit export documents for validation directly from your workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Use the document uploader to validate LC packages, invoices, packing lists, and other trade
-            documentation. You can save drafts to resume later or submit for validation when ready.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button className="bg-gradient-exporter hover:opacity-90" onClick={onOpenUpload}>
-              Open Upload Workspace
-            </Button>
-            <Button variant="outline" onClick={() => window.open("/export-lc-upload", "_blank")}>Learn about document requirements</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-soft border-0">
-        <CardHeader>
-          <CardTitle>Recent Drafts</CardTitle>
-          <CardDescription>Resume an existing draft to continue uploading files.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingDrafts ? (
-            <div className="flex items-center justify-center gap-3 py-6 text-muted-foreground">
-              <div className="w-5 h-5 rounded-full border-2 border-exporter border-t-transparent animate-spin" />
-              Loading drafts...
-            </div>
-          ) : drafts.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Edit3 className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p>No drafts saved</p>
-              <p className="text-sm">Upload documents to save a draft and resume later.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {drafts.slice(0, 5).map((draft) => (
-                <div
-                  key={draft.id}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-secondary/20"
-                >
-                  <div>
-                    <h4 className="font-semibold text-foreground">{draft.lcNumber || "Untitled Draft"}</h4>
-                    <p className="text-xs text-muted-foreground">Updated {new Date(draft.updatedAt).toLocaleDateString()}</p>
-                  </div>
-                  <Button variant="outline" size="sm" className="flex items-center gap-2" onClick={() => onResumeDraft(draft)}>
-                    <ArrowRight className="w-4 h-4" /> Resume
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function AnalyticsPanel({ stats }: { stats: typeof dashboardStats }) {
-  return (
-    <div className="space-y-6">
-      <StatGrid stats={stats} />
-      <Card className="shadow-soft border-0">
-        <CardHeader>
-          <CardTitle>Performance Overview</CardTitle>
-          <CardDescription>
-            Summary of exporter validation performance and discrepancy trends.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-muted-foreground">
-          <p>
-            Success rate remains strong at <strong>{stats.successRate}%</strong>. Average processing time is
-            currently <strong>{stats.avgProcessingTime}</strong>, which is <strong>12 seconds faster</strong> than
-            last month. Discrepancies remain low with <strong>{stats.discrepanciesFound}</strong> items flagged for
-            review.
-          </p>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="rounded-lg border border-gray-200/50 bg-secondary/20 p-4">
-              <h4 className="font-semibold text-foreground mb-2">Validation Mix</h4>
-              <p>LC reviews account for 62% of activity, document checks 28%, and ancillary validations 10%.</p>
-            </div>
-            <div className="rounded-lg border border-gray-200/50 bg-secondary/20 p-4">
-              <h4 className="font-semibold text-foreground mb-2">Discrepancy Drivers</h4>
-              <p>Most discrepancies relate to shipment dates and invoice mismatches. Track amendments to stay ahead.</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function SettingsPanel() {
+  const { toast } = useToast();
+  const [emailAlerts, setEmailAlerts] = useState(true);
+  const [autoArchiveDrafts, setAutoArchiveDrafts] = useState(false);
+  const [digestFrequency, setDigestFrequency] = useState("daily");
+  const [defaultView, setDefaultView] = useState<Section>("dashboard");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = () => {
+    setSaving(true);
+    setTimeout(() => {
+      setSaving(false);
+      toast({
+        title: "Preferences updated",
+        description: "Your exporter workspace settings were saved successfully.",
+      });
+    }, 600);
+  };
+
+  const handleReset = () => {
+    setEmailAlerts(true);
+    setAutoArchiveDrafts(false);
+    setDigestFrequency("daily");
+    setDefaultView("dashboard");
+  };
+
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
         <CardTitle>Workspace Settings</CardTitle>
-        <CardDescription>Adjust preferences for notifications, drafts, and validation defaults.</CardDescription>
+        <CardDescription>Configure exporter notifications, drafts, and default view preferences.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 text-sm text-muted-foreground">
-        <p>Settings management is coming soon. In the meantime, contact support to configure workspace preferences.</p>
-        <Button variant="outline" className="w-fit" onClick={() => window.open("mailto:support@trdrhub.com")}>Contact Support</Button>
+      <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Email alerts for discrepancies</p>
+              <p className="text-xs text-muted-foreground">Receive an email whenever a validation is flagged.</p>
+            </div>
+            <Switch checked={emailAlerts} onCheckedChange={setEmailAlerts} aria-label="Toggle discrepancy email alerts" />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Auto-archive completed drafts</p>
+              <p className="text-xs text-muted-foreground">Move drafts to archive 7 days after successful validation.</p>
+            </div>
+            <Switch checked={autoArchiveDrafts} onCheckedChange={setAutoArchiveDrafts} aria-label="Toggle auto archive" />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="digest-frequency">Notification digest</Label>
+            <Select value={digestFrequency} onValueChange={setDigestFrequency}>
+              <SelectTrigger id="digest-frequency">
+                <SelectValue placeholder="Select frequency" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="instant">Instant</SelectItem>
+                <SelectItem value="hourly">Hourly</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Choose how often you receive summary notifications.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="default-view">Default workspace view</Label>
+            <Select value={defaultView} onValueChange={(value) => setDefaultView(value as Section)}>
+              <SelectTrigger id="default-view">
+                <SelectValue placeholder="Select default view" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dashboard">Dashboard metrics</SelectItem>
+                <SelectItem value="upload">Upload documents</SelectItem>
+                <SelectItem value="reviews">Review results</SelectItem>
+                <SelectItem value="analytics">Analytics</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">The section that opens first each time you visit.</p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3">
+          <Button variant="outline" onClick={handleReset}>Reset</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save preferences"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -822,16 +823,52 @@ function HelpPanel() {
     <Card className="shadow-soft border-0">
       <CardHeader>
         <CardTitle>Need Help?</CardTitle>
-        <CardDescription>Access guidance and resources for exporter workflows.</CardDescription>
+        <CardDescription>Browse exporter resources, walkthroughs, and contact options.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 text-sm text-muted-foreground">
-        <p>
-          Browse our knowledge base for common exporter workflows, or reach out to our team for personalised
-          assistance.
-        </p>
+      <CardContent className="space-y-6 text-sm text-muted-foreground">
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>Support Center</Button>
+          <Button variant="outline" onClick={() => window.open("/docs/exporter-runbook", "_blank")}>Exporter Runbook</Button>
           <Button variant="outline" onClick={() => window.open("mailto:support@trdrhub.com")}>Email Support</Button>
+        </div>
+
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="faq-1">
+            <AccordionTrigger>How do I validate a new LC package?</AccordionTrigger>
+            <AccordionContent>
+              Select <span className="font-medium">Upload Documents</span>, attach the LC and supporting files, then run
+              validation. Results appear under <span className="font-medium">Review Results</span> with discrepancy
+              details and downloadable packs.
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="faq-2">
+            <AccordionTrigger>Where can I track discrepancy trends?</AccordionTrigger>
+            <AccordionContent>
+              Use the <span className="font-medium">Analytics</span> view to monitor month-over-month exports, common
+              discrepancy drivers, and compliance rates by document type or destination market.
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="faq-3">
+            <AccordionTrigger>Who receives notifications?</AccordionTrigger>
+            <AccordionContent>
+              Notification recipients are defined in <span className="font-medium">Workspace Settings</span>. Enable
+              email alerts or set digest frequency to control how your compliance team is notified.
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        <div className="rounded-lg border border-gray-200/60 bg-secondary/20 p-4">
+          <p className="text-xs">
+            Need a guided walkthrough? Schedule a 30-minute onboarding session with our success team and we&apos;ll review
+            your exporter workflow end-to-end.
+          </p>
+          <Button
+            size="sm"
+            className="mt-3"
+            onClick={() => window.open("https://cal.com/trdrhub/exporter-onboarding", "_blank")}
+          >
+            Book onboarding session
+          </Button>
         </div>
       </CardContent>
     </Card>
