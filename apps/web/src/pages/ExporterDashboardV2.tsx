@@ -782,7 +782,7 @@ function AnalyticsPanel({ stats }: { stats: typeof dashboardStats }) {
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <p>
             Success rate remains strong at <strong>{stats.successRate}%</strong>. Average processing time is
-            currently <strong>{stats.avgProcessingTime}</strong>, which is <strong>10 seconds faster</strong> than
+            currently <strong>{stats.avgProcessingTime}</strong>, which is <strong>12 seconds faster</strong> than
             last month. Discrepancies remain low with <strong>{stats.discrepanciesFound}</strong> items flagged for
             review.
           </p>
