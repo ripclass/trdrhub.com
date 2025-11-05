@@ -1,5 +1,5 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle, Ship } from "lucide-react";
+import { Upload, FileText, Clock, Bell, BarChart3, Settings, HelpCircle, Building2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -29,7 +29,7 @@ const navMain = [
   {
     title: "Review Results",
     url: "/lcopilot/exporter-results",
-    icon: History,
+    icon: Clock,
   },
   {
     title: "Analytics",
@@ -73,7 +73,7 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
             <SidebarMenuButton size="lg" asChild>
               <Link to="/lcopilot">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-exporter/10 text-exporter">
-                  <Ship className="size-4" />
+                  <Building2 className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">LCopilot</span>
