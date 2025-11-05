@@ -3,12 +3,10 @@ import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Separator } from '@/components/ui/separator';
 // Import cn with explicit path to ensure bundling
-import { cn } from '@/lib/utils';
-
-// Re-export cn to ensure it's available at runtime
-if (typeof cn === 'undefined') {
-  console.error('cn utility is not available - check utils.ts import');
-}
+import { cn as cnUtil } from '@/lib/utils';
+// Fallback cn function if import fails
+const cn = cnUtil || ((...classes: (string | undefined | null | boolean)[]) => 
+  classes.filter(Boolean).join(' '));
 
 interface AppShellProps {
   children: ReactNode;
