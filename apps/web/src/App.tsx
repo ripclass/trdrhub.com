@@ -75,7 +75,8 @@ function App() {
         <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
         <Route path="/import/results/:jobId" element={<ImportResults />} />
         <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
-        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboardV2 />} />
+        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboard />} />
+        <Route path="/lcopilot/exporter-dashboard/v2" element={<ExporterDashboardV2 />} />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
         <Route path="/lcopilot/importer-dashboard" element={<ImporterDashboardV2 />} />
         <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
@@ -85,8 +86,8 @@ function App() {
         <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
         <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
         <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
-        <Route path="/lcopilot/bank-dashboard" element={<BankDashboardV2 />} />
-        <Route path="/lcopilot/bank-dashboard/legacy" element={<BankDashboard />} />
+        <Route path="/lcopilot/bank-dashboard" element={<BankDashboard />} />
+        <Route path="/lcopilot/bank-dashboard/legacy" element={<BankDashboardLegacy />} />
         <Route path="/lcopilot/bank-dashboard/client/:clientName" element={<ClientDashboard />} />
         <Route path="/lcopilot/component-gallery" element={<ComponentGallery />} />
         <Route path="/lcopilot/exporter-corrections" element={<ExporterDocumentCorrections />} />
