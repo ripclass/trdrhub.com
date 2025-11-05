@@ -1,6 +1,6 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
 import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -15,7 +15,21 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
 
-export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+type ExporterSection =
+  | "dashboard"
+  | "upload"
+  | "reviews"
+  | "analytics"
+  | "notifications"
+  | "settings"
+  | "help";
+
+interface ExporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  activeSection: ExporterSection;
+  onSectionChange: (section: ExporterSection) => void;
+}
+
+export function ExporterSidebar({ activeSection, onSectionChange, ...props }: ExporterSidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
   
@@ -24,34 +38,13 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
     return location.pathname === url || location.pathname + location.search === url;
   };
 
-  const secondaryLinks = (
-    <>
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild tooltip="Settings" isActive={isActive("/lcopilot/exporter-dashboard?tab=settings")}>
-          <Link to="/lcopilot/exporter-dashboard?tab=settings">
-            <Settings />
-            <span>Settings</span>
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild tooltip="Help">
-          <Link to="/help">
-            <HelpCircle />
-            <span>Help</span>
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </>
-  );
-
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/lcopilot">
+              <div className="flex items-center gap-3">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-exporter/10 text-exporter">
                   <Building2 className="size-4" />
                 </div>
@@ -59,7 +52,7 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
                   <span className="font-semibold">LCopilot</span>
                   <span className="text-xs text-muted-foreground">Exporter Portal</span>
                 </div>
-              </Link>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -71,43 +64,52 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Dashboard" isActive={isActive("/lcopilot/exporter-dashboard")}>
-                  <Link to="/lcopilot/exporter-dashboard">
-                    <BarChart3 />
-                    <span>Dashboard</span>
-                  </Link>
+                <SidebarMenuButton
+                  isActive={activeSection === "dashboard"}
+                  onClick={() => onSectionChange("dashboard")}
+                >
+                  <BarChart3 />
+                  <span>Dashboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Upload Documents" isActive={isActive("/export-lc-upload")}>
-                  <Link to="/export-lc-upload">
-                    <Upload />
-                    <span>Upload Documents</span>
-                  </Link>
+                <SidebarMenuButton
+                  isActive={activeSection === "upload"}
+                  onClick={() => onSectionChange("upload")}
+                  tooltip="Upload Documents"
+                >
+                  <Upload />
+                  <span>Upload Documents</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Review Results" isActive={isActive("/lcopilot/exporter-results")}>
-                  <Link to="/lcopilot/exporter-results">
-                    <Clock />
-                    <span>Review Results</span>
-                  </Link>
+                <SidebarMenuButton
+                  isActive={activeSection === "reviews"}
+                  onClick={() => onSectionChange("reviews")}
+                  tooltip="Review Results"
+                >
+                  <Clock />
+                  <span>Review Results</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Analytics" isActive={isActive("/lcopilot/exporter-analytics")}>
-                  <Link to="/lcopilot/exporter-analytics">
-                    <BarChart3 />
-                    <span>Analytics</span>
-                  </Link>
+                <SidebarMenuButton
+                  isActive={activeSection === "analytics"}
+                  onClick={() => onSectionChange("analytics")}
+                  tooltip="Analytics"
+                >
+                  <BarChart3 />
+                  <span>Analytics</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Notifications" isActive={isActive("/lcopilot/exporter-dashboard?tab=notifications")}>
-                  <Link to="/lcopilot/exporter-dashboard?tab=notifications">
-                    <Bell />
-                    <span>Notifications</span>
-                  </Link>
+                <SidebarMenuButton
+                  isActive={activeSection === "notifications"}
+                  onClick={() => onSectionChange("notifications")}
+                  tooltip="Notifications"
+                >
+                  <Bell />
+                  <span>Notifications</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -116,7 +118,28 @@ export function ExporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
         
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
-            <SidebarMenu>{secondaryLinks}</SidebarMenu>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "settings" || isActive("/lcopilot/exporter-dashboard?tab=settings")}
+                  onClick={() => onSectionChange("settings")}
+                  tooltip="Settings"
+                >
+                  <Settings />
+                  <span>Settings</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "help"}
+                  onClick={() => onSectionChange("help")}
+                  tooltip="Help"
+                >
+                  <HelpCircle />
+                  <span>Help</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
