@@ -1,3 +1,4 @@
+// ImporterSidebar - Navigation component for Importer Dashboard
 import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle, Package } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {

@@ -1,3 +1,4 @@
+// ExporterSidebar - Navigation component for Exporter Dashboard
 import { Upload, FileText, History, Bell, BarChart3, Settings, HelpCircle, Ship } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {

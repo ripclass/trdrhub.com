@@ -1,3 +1,4 @@
+// ExporterDashboardV2 - Full-featured Exporter Dashboard with sidebar layout
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";

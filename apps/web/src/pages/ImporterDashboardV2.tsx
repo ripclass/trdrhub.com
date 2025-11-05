@@ -1,3 +1,4 @@
+// ImporterDashboardV2 - Full-featured Importer Dashboard with sidebar layout  
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
