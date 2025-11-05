@@ -16,5 +16,13 @@ export default defineConfig({
   build: {
     // Force clean build - disable build cache
     emptyOutDir: true,
+    // Force new bundle hash with timestamp
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`,
+      },
+    },
   },
 })
