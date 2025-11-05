@@ -36,6 +36,11 @@ const navMain = [
     icon: Users,
   },
   {
+    title: "Analytics",
+    url: "/lcopilot/bank-dashboard/v2?tab=analytics",
+    icon: BarChart3,
+  },
+  {
     title: "Notifications",
     url: "/lcopilot/bank-dashboard/v2?tab=notifications",
     icon: Bell,
@@ -43,11 +48,6 @@ const navMain = [
 ];
 
 const navSecondary = [
-  {
-    title: "Analytics",
-    url: "/lcopilot/analytics/bank",
-    icon: BarChart3,
-  },
   {
     title: "Settings",
     url: "#",

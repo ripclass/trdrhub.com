@@ -7,6 +7,7 @@ import { ProcessingQueue } from "@/components/bank/ProcessingQueue";
 import { ResultsTable } from "@/components/bank/ResultsTable";
 import { ClientManagement } from "@/components/bank/ClientManagement";
 import { NotificationPreferences } from "@/components/bank/NotificationPreferences";
+import { BankAnalytics } from "@/components/bank/BankAnalytics";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
@@ -97,6 +98,12 @@ export default function BankDashboardV2() {
               </p>
             </div>
             <ClientManagement />
+          </div>
+        )}
+
+        {activeTab === "analytics" && (
+          <div className="space-y-4">
+            <BankAnalytics />
           </div>
         )}
 
