@@ -65,64 +65,64 @@ export function BankQuickStats() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Today's Validations</p>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Today's Validations</p>
               <p className="text-2xl font-bold text-foreground tabular-nums">
                 {stats.todayCount}
               </p>
             </div>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <FileText className="h-5 w-5 text-primary" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <FileText className="h-6 w-6 text-primary" />
             </div>
           </div>
         </CardContent>
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Average Score</p>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Average Score</p>
               <p className="text-2xl font-bold text-foreground tabular-nums">
                 {stats.avgScore}%
               </p>
             </div>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-500/10">
-              <TrendingUp className="h-5 w-5 text-green-500" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-green-500/10">
+              <TrendingUp className="h-6 w-6 text-green-500" />
             </div>
           </div>
         </CardContent>
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Total Discrepancies</p>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Total Discrepancies</p>
               <p className="text-2xl font-bold text-foreground tabular-nums">
                 {stats.totalDiscrepancies}
               </p>
             </div>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-yellow-500/10">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-yellow-500/10">
+              <AlertTriangle className="h-6 w-6 text-yellow-500" />
             </div>
           </div>
         </CardContent>
       </Card>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Avg Processing Time</p>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Avg Processing Time</p>
               <p className="text-2xl font-bold text-foreground tabular-nums">
                 {stats.processingTime}
               </p>
             </div>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-              <CheckCircle className="h-5 w-5 text-blue-500" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+              <CheckCircle className="h-6 w-6 text-blue-500" />
             </div>
           </div>
         </CardContent>
