@@ -66,6 +66,19 @@ const documentTypes = [
   { value: "other", label: "Other Trade Documents" }
 ];
 
+function formatBytes(bytes: number): string {
+  if (!bytes) {
+    return "0 Bytes";
+  }
+
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+
+  return `${parseFloat(value.toFixed(2))} ${sizes[i]}`;
+}
+
 interface BulkLCUploadProps {
   onUploadSuccess?: () => void;
 }
@@ -78,6 +91,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
   const [dateReceived, setDateReceived] = useState("");
   const [notes, setNotes] = useState("");
   const [clientNameError, setClientNameError] = useState("");
+  const [lcNumberError, setLcNumberError] = useState("");
   const [clientNameOpen, setClientNameOpen] = useState(false);
   
   // Bulk upload (ZIP) state
@@ -235,6 +249,27 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
     );
   };
 
+  const totalFileSize = useMemo(
+    () => uploadedFiles.reduce((sum, file) => sum + file.size, 0),
+    [uploadedFiles]
+  );
+
+  const summaryLcNumber = useMemo(
+    () => (lcNumber.trim() ? sanitizeText(lcNumber.trim()) : "Not provided"),
+    [lcNumber]
+  );
+
+  const summaryDocuments = useMemo(() => {
+    const count = uploadedFiles.length;
+    const label = count === 1 ? "file" : "files";
+    return `${count} ${label} uploaded`;
+  }, [uploadedFiles]);
+
+  const summaryTotalSize = useMemo(
+    () => (totalFileSize > 0 ? formatBytes(totalFileSize) : "0 Bytes"),
+    [totalFileSize]
+  );
+
   // Handle ZIP file upload
   const handleZipUpload = async (file: File) => {
     if (file.size > MAX_ZIP_SIZE) {
@@ -369,6 +404,17 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       return;
     }
 
+    const sanitizedLcNumber = sanitizeText(lcNumber.trim());
+    if (!sanitizedLcNumber) {
+      setLcNumberError("LC number is required");
+      toast({
+        title: "Validation Error",
+        description: "Please enter the LC number",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (uploadedFiles.length === 0) {
       toast({
         title: "No Files",
@@ -410,11 +456,10 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       });
 
       // Sanitize inputs before sending
-      const sanitizedLcNumber = lcNumber ? sanitizeText(lcNumber.trim()) : undefined;
       const sanitizedNotes = notes ? sanitizeText(notes.trim()) : undefined;
 
       // Check for duplicates before submitting (only warn, don't block)
-      if (sanitizedLcNumber && sanitizedClientName) {
+      if (sanitizedClientName) {
         try {
           const duplicateResult = await bankApi.checkDuplicate(sanitizedLcNumber, sanitizedClientName);
           if (duplicateResult.is_duplicate) {
@@ -461,6 +506,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
       setDateReceived("");
       setNotes("");
       setClientNameError("");
+      setLcNumberError("");
 
       // Switch to queue tab
       if (onUploadSuccess) {
@@ -498,6 +544,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
                   setDetectedLCSets([]);
                   setLcSetMetadata({});
                   setBulkSessionId(null);
+                  setLcNumberError("");
                 }}
               >
                 <Upload className="w-4 h-4 mr-2" />
@@ -512,6 +559,7 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
                   setClientName("");
                   setLcNumber("");
                   setDateReceived("");
+                  setLcNumberError("");
                 }}
               >
                 <Archive className="w-4 h-4 mr-2" />
@@ -663,10 +711,12 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
             </Card>
           )}
 
-          {/* LC Number - Optional */}
+          {/* LC Number - Required */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="lcNumber">LC Number (Optional)</Label>
+              <Label htmlFor="lcNumber">
+                LC Number <span className="text-destructive">*</span>
+              </Label>
               {isCheckingDuplicate && (
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               )}
@@ -674,9 +724,19 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
             <Input
               id="lcNumber"
               value={lcNumber}
-              onChange={(e) => setLcNumber(e.target.value)}
+              onChange={(e) => {
+                setLcNumber(e.target.value);
+                setLcNumberError("");
+              }}
               placeholder="e.g., BD-2024-001"
+              className={cn(lcNumberError ? "border-destructive" : "")}
             />
+            {lcNumberError && (
+              <p className="text-sm text-destructive flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                {lcNumberError}
+              </p>
+            )}
           </div>
 
           {/* Date Received - Optional */}
@@ -767,10 +827,34 @@ export function BulkLCUpload({ onUploadSuccess }: BulkLCUploadProps) {
             />
           </div>
 
+          {/* Upload Summary */}
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <h3 className="text-sm font-semibold mb-3">Upload Summary</h3>
+            <dl className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">LC Number</dt>
+                <dd className="text-sm font-medium mt-1 break-words">{summaryLcNumber}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Documents</dt>
+                <dd className="text-sm font-medium mt-1">{summaryDocuments}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Total Size</dt>
+                <dd className="text-sm font-medium mt-1">{summaryTotalSize}</dd>
+              </div>
+            </dl>
+          </div>
+
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
-            disabled={isValidating || uploadedFiles.length === 0 || !clientName.trim()}
+            disabled={
+              isValidating ||
+              uploadedFiles.length === 0 ||
+              !clientName.trim() ||
+              !lcNumber.trim()
+            }
             className="w-full"
             size="lg"
           >
