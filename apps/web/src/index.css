@@ -11,8 +11,7 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
   :root {
     /* Base semantic tokens */
     --background: 0 0% 100%;
-    --foreground: 220 13% 18%;
-    /* Cache bust: 2025-11-05 */
+    --foreground: 220 13% 18.1%; /* Cache bust: changed from 18% */
 
     --card: 0 0% 100%;
     --card-foreground: 220 13% 18%;
