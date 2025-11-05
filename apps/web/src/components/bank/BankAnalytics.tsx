@@ -16,7 +16,7 @@ import { analyticsApi } from "@/api/analytics";
 import { useAuth } from "@/hooks/use-auth";
 import type { AnalyticsFilters, AnalyticsDashboard } from "@/types/analytics";
 import { subDays } from "date-fns";
-import { TrendingUp, TrendingDown, AlertTriangle, Users, FileText, Clock } from "lucide-react";
+import { TrendingUp, AlertTriangle, Users, FileText, Clock } from "lucide-react";
 
 // Inline cn function to avoid import/bundling issues
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
@@ -149,20 +149,11 @@ export function BankAnalytics() {
     return <NoDataState />;
   }
 
-  const formatTrend = (value: number) => {
-    const formatted = Math.abs(value).toFixed(1);
-    return value > 0 ? `+${formatted}%` : `-${formatted}%`;
-  };
-
-  const getTrendIcon = (value: number, inverse = false) => {
-    const isPositive = inverse ? value < 0 : value > 0;
-    return isPositive ? TrendingUp : TrendingDown;
-  };
-
-  const getTrendColor = (value: number, inverse = false) => {
-    const isPositive = inverse ? value < 0 : value > 0;
-    return isPositive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
-  };
+  const jobTrend = Number((dashboard as any)?.trends?.job_volume_trend ?? 0);
+  const successTrend = Number((dashboard as any)?.trends?.success_rate_trend ?? 0);
+  const processingTrend = Number((dashboard as any)?.trends?.processing_time_trend ?? 0);
+  const rejectionTrend = -successTrend;
+  const avgProcessingMinutes = dashboard.summary.avg_processing_time_minutes ?? 0;
 
   return (
     <div className="space-y-6">
@@ -189,37 +180,33 @@ export function BankAnalytics() {
         <KpiCard
           title="Total Validations"
           value={dashboard.summary.total_jobs.toLocaleString()}
-          icon={FileText}
-          trend={formatTrend(dashboard.trends.job_volume_trend)}
-          trendIcon={getTrendIcon(dashboard.trends.job_volume_trend)}
-          trendColorClass={getTrendColor(dashboard.trends.job_volume_trend)}
+          icon={<FileText className="h-4 w-4" />}
+          change={Math.abs(jobTrend)}
+          changeType={jobTrend === 0 ? undefined : jobTrend > 0 ? "increase" : "decrease"}
           description="Total LC validations processed"
         />
         <KpiCard
           title="Success Rate"
           value={`${(100 - dashboard.summary.rejection_rate).toFixed(1)}%`}
-          icon={TrendingUp}
-          trend={formatTrend(dashboard.trends.success_rate_trend)}
-          trendIcon={getTrendIcon(dashboard.trends.success_rate_trend)}
-          trendColorClass={getTrendColor(dashboard.trends.success_rate_trend)}
+          icon={<TrendingUp className="h-4 w-4" />}
+          change={Math.abs(successTrend)}
+          changeType={successTrend === 0 ? undefined : successTrend > 0 ? "increase" : "decrease"}
           description="Percentage of validations passed"
         />
         <KpiCard
           title="Rejection Rate"
           value={`${dashboard.summary.rejection_rate.toFixed(1)}%`}
-          icon={AlertTriangle}
-          trend={formatTrend(-dashboard.trends.success_rate_trend)}
-          trendIcon={getTrendIcon(-dashboard.trends.success_rate_trend, true)}
-          trendColorClass={getTrendColor(-dashboard.trends.success_rate_trend, true)}
+          icon={<AlertTriangle className="h-4 w-4" />}
+          change={Math.abs(rejectionTrend)}
+          changeType={rejectionTrend === 0 ? undefined : rejectionTrend > 0 ? "increase" : "decrease"}
           description="Percentage of validations rejected"
         />
         <KpiCard
           title="Avg Processing Time"
-          value={`${dashboard.summary.avg_processing_time_minutes.toFixed(1)}m`}
-          icon={Clock}
-          trend={formatTrend(dashboard.trends.processing_time_trend)}
-          trendIcon={getTrendIcon(dashboard.trends.processing_time_trend, true)}
-          trendColorClass={getTrendColor(dashboard.trends.processing_time_trend, true)}
+          value={`${avgProcessingMinutes.toFixed(1)}m`}
+          icon={<Clock className="h-4 w-4" />}
+          change={Math.abs(processingTrend)}
+          changeType={processingTrend === 0 ? undefined : processingTrend > 0 ? "increase" : "decrease"}
           description="Average time per validation"
         />
       </div>
