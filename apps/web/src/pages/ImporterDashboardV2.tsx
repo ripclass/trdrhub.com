@@ -191,6 +191,68 @@ export default function ImporterDashboardV2() {
             </p>
           </div>
 
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="overflow-hidden shadow-soft border-0">
+              <CardContent className="p-6 pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground mb-2">This Month</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{dashboardStats.thisMonth}</p>
+                    <p className="text-xs text-success mt-1">+20% from last month</p>
+                  </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-importer/10">
+                    <FileText className="h-6 w-6 text-importer" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden shadow-soft border-0">
+              <CardContent className="p-6 pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Success Rate</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{dashboardStats.successRate}%</p>
+                    <Progress value={dashboardStats.successRate} className="mt-2 h-2" />
+                  </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-success/10">
+                    <TrendingUp className="h-6 w-6 text-success" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden shadow-soft border-0">
+              <CardContent className="p-6 pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Avg Processing</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{dashboardStats.avgProcessingTime}</p>
+                    <p className="text-xs text-success mt-1">10s faster</p>
+                  </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-info/10">
+                    <Clock className="h-6 w-6 text-info" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden shadow-soft border-0">
+              <CardContent className="p-6 pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Risks Identified</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{dashboardStats.risksIdentified}</p>
+                    <p className="text-xs text-warning mt-1">Review required</p>
+                  </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-warning/10">
+                    <AlertTriangle className="h-6 w-6 text-warning" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card className="shadow-soft border-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
