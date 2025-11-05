@@ -247,12 +247,14 @@ export function BankAnalytics() {
 
       {/* Tabs for Different Views */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
-          <TabsTrigger value="risk">Risk Analysis</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="compliance">Compliance</TabsTrigger>
+        <TabsList className="flex w-full flex-wrap gap-2">
+          <TabsTrigger value="overview" className="flex-1 min-w-[120px]">Overview</TabsTrigger>
+          <TabsTrigger value="trends" className="flex-1 min-w-[120px]">Trends</TabsTrigger>
+          <TabsTrigger value="clients" className="flex-1 min-w-[120px]">Clients</TabsTrigger>
+          <TabsTrigger value="risk" className="flex-1 min-w-[120px]">Risk Analysis</TabsTrigger>
+          <TabsTrigger value="performance" className="flex-1 min-w-[120px]">Performance</TabsTrigger>
+          <TabsTrigger value="compliance" className="flex-1 min-w-[120px]">Compliance</TabsTrigger>
+          <TabsTrigger value="discrepancies" className="flex-1 min-w-[120px]">Discrepancies</TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -323,6 +325,94 @@ export function BankAnalytics() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Trends */}
+        <TabsContent value="trends" className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Daily Validation Volume</CardTitle>
+                <CardDescription>Track day-over-day submission volume</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {dailyVolumes.length > 0 ? (
+                  <ChartArea
+                    data={dailyVolumes}
+                    height={280}
+                    areas={[{ dataKey: "count", name: "Validations", color: "hsl(var(--primary))", fillOpacity: 0.25 }]}
+                  />
+                ) : (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">No volume data</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Success vs Rejection Rate</CardTitle>
+                <CardDescription>Compare success and rejection rates over time</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {successRates.length > 0 ? (
+                  <ChartLine
+                    data={successRates}
+                    xKey="date"
+                    lines={[
+                      { key: "success_rate", label: "Success Rate", color: "#16a34a" },
+                      { key: "rejection_rate", label: "Rejection Rate", color: "#ef4444" },
+                    ]}
+                    height={280}
+                    yAxisFormatter={(value) => `${value.toFixed(0)}%`}
+                  />
+                ) : (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">No rate data</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Processing Time Trend</CardTitle>
+                <CardDescription>Average turnaround for validation completions</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {processingTimes.length > 0 ? (
+                  <ChartLine
+                    data={processingTimes}
+                    xKey="date"
+                    lines={[{ key: "avg_time", label: "Avg Minutes", color: "#6366f1" }]}
+                    height={280}
+                    yAxisFormatter={(value) => `${value.toFixed(1)}m`}
+                  />
+                ) : (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">No processing time data</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Daily Discrepancies</CardTitle>
+                <CardDescription>Volume of discrepancies detected per day</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {dailyDiscrepancies.length > 0 ? (
+                  <ChartBar
+                    data={dailyDiscrepancies.map((item) => ({ ...item, value: item.count }))}
+                    layout="horizontal"
+                    bars={[{ dataKey: "value", name: "Discrepancies", color: "#f97316" }]}
+                    xAxisKey="date"
+                    height={280}
+                  />
+                ) : (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">No discrepancy data</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Clients */}
@@ -533,6 +623,73 @@ export function BankAnalytics() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Discrepancies */}
+        <TabsContent value="discrepancies" className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <KpiCard
+              title="Total Discrepancies"
+              value={discrepancies.total_discrepancies.toLocaleString()}
+              description="Issues detected in the selected range"
+            />
+            <KpiCard
+              title="High Severity"
+              value={discrepancies.by_severity.find((item) => item.severity === "high")?.count?.toLocaleString() ?? "0"}
+              description="Critical discrepancies requiring review"
+            />
+            <KpiCard
+              title="Average Daily"
+              value={dailyDiscrepancies.length > 0 ? Math.round(dailyDiscrepancies.reduce((sum, item) => sum + item.count, 0) / dailyDiscrepancies.length).toLocaleString() : "0"}
+              description="Typical discrepancies per day"
+            />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Discrepancy Breakdown</CardTitle>
+                <CardDescription>Distribution by discrepancy type</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {discrepancies.by_type.length > 0 ? (
+                  <ChartBar
+                    data={discrepancies.by_type.map((item) => ({
+                      name: item.discrepancy_type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+                      value: item.count,
+                    }))}
+                    layout="vertical"
+                    bars={[{ dataKey: "value", name: "Count", color: "#fb923c" }]}
+                    height={300}
+                  />
+                ) : (
+                  <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">No discrepancy breakdown available</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card dense>
+              <CardHeader dense>
+                <CardTitle>Discrepancy Severity Trend</CardTitle>
+                <CardDescription>Daily discrepancies with threshold overlay</CardDescription>
+              </CardHeader>
+              <CardContent dense>
+                {dailyDiscrepancies.length > 0 ? (
+                  <ChartLine
+                    data={dailyDiscrepancies.map((item) => ({ ...item, risk_threshold: 30 }))}
+                    xKey="date"
+                    lines={[
+                      { key: "count", label: "Discrepancies", color: "#ef4444" },
+                      { key: "risk_threshold", label: "Threshold", color: "#f59e0b" },
+                    ]}
+                    height={300}
+                  />
+                ) : (
+                  <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">No discrepancy trend data</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
