@@ -90,7 +90,7 @@ export function DashboardLayout({
         </header>
 
         {/* Main Content */}
-        <main className="flex flex-1 flex-col">
+        <main className="flex flex-1 flex-col pt-6">
           {children}
         </main>
       </SidebarInset>
