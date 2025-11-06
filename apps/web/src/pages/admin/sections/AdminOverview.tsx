@@ -1,252 +1,239 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import * as React from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
+import { AdminToolbar } from "@/components/admin/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Activity,
-  Users,
-  DollarSign,
-  Clock,
-  AlertTriangle,
-  CheckCircle,
-  TrendingUp,
+  AlertCircle,
+  ArrowUpRight,
+  CheckCircle2,
   Server,
   Shield,
-} from 'lucide-react';
-import { useAdminAuth } from '@/lib/admin/auth';
+  Users,
+} from "lucide-react";
 
-// Simple KPI Card component
-const SimpleKPICard = ({ title, value, icon, status }: {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  status: 'good' | 'warning' | 'critical'
-}) => {
-  const statusColors = {
-    good: 'text-success',
-    warning: 'text-warning',
-    critical: 'text-destructive'
-  };
+import { useAdminAuth } from "@/lib/admin/auth";
+import { getAdminService } from "@/lib/admin/services";
+import type { AdminSection, KPIStat, TimeRange } from "@/lib/admin/types";
+import { cn } from "@/lib/utils";
 
+const RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
+  { label: "24h", value: "24h" },
+  { label: "7d", value: "7d" },
+  { label: "30d", value: "30d" },
+  { label: "90d", value: "90d" },
+];
+
+const DEFAULT_RANGE: TimeRange = "7d";
+
+const service = getAdminService();
+
+function KpiCard({ stat, onNavigate }: { stat: KPIStat; onNavigate: (section: AdminSection | undefined) => void }) {
+  const changeColor =
+    stat.changeDirection === "up" ? "text-emerald-500" : stat.changeDirection === "down" ? "text-rose-500" : "text-muted-foreground";
+  const Icon = stat.icon;
+  const hasLink = Boolean(stat.href);
   return (
-    <Card className="shadow-soft border-0">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-2">{title}</p>
-            <p className="text-2xl font-bold text-foreground">{value}</p>
-          </div>
-          <div className={`${statusColors[status]}`}>
-            {icon}
+    <button
+      type="button"
+      onClick={() => hasLink && onNavigate(stat.href as AdminSection | undefined)}
+      className="group h-full rounded-xl border border-border/60 bg-card p-6 text-left shadow-sm transition hover:border-primary/60 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-semibold text-foreground">{stat.value}</span>
+            <span className={cn("flex items-center gap-1 text-xs", changeColor)}>
+              {stat.changeDirection !== "flat" && <ArrowUpRight className="h-3 w-3" />}
+              {stat.changeLabel}
+            </span>
           </div>
         </div>
-      </CardContent>
-    </Card>
+        <div className="rounded-lg bg-muted/60 p-3 text-muted-foreground group-hover:text-primary">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      {stat.emphasis && <Badge className="mt-4" variant="secondary">Key metric</Badge>}
+    </button>
   );
-};
+}
 
 export function AdminOverview() {
   const { user } = useAdminAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const range = (searchParams.get("range") as TimeRange) ?? DEFAULT_RANGE;
+
+  const [stats, setStats] = React.useState<KPIStat[]>([]);
+  const [loading, setLoading] = React.useState<boolean>(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+    setLoading(true);
+    service
+      .getDashboardStats(range)
+      .then((data) => {
+        if (!active) return;
+        setStats(data);
+        setError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setError("Unable to load dashboard metrics");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [range]);
+
+  const handleRangeChange = (value: TimeRange) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === DEFAULT_RANGE) {
+      next.delete("range");
+    } else {
+      next.set("range", value);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const handleNavigate = (section: AdminSection | undefined) => {
+    if (!section) return;
+    const next = new URLSearchParams(searchParams);
+    if (section === "overview") {
+      next.delete("section");
+    } else {
+      next.set("section", section);
+    }
+    navigate({ pathname: "/admin", search: next.toString() });
+  };
 
   return (
-    <>
-      {/* Welcome Section */}
-      <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back, {user?.name}!</h2>
-        <p className="text-muted-foreground">
-          Overview of LCopilot platform operations and health
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <AdminToolbar
+        title={`Welcome back, ${user?.name ?? "Admin"}`}
+        description="Real-time snapshot of LCopilot operations, compliance and customer health"
+      >
+        <div className="flex items-center gap-2">
+          {RANGE_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={range === option.value ? "default" : "outline"}
+              onClick={() => handleRangeChange(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </AdminToolbar>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <SimpleKPICard
-          title="System Uptime"
-          value="99.9%"
-          icon={<Activity className="w-6 h-6" />}
-          status="good"
-        />
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {loading && (
+          <>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="rounded-xl border border-border/60 bg-card p-6">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="mt-4 h-7 w-32" />
+                <Skeleton className="mt-2 h-4 w-40" />
+              </div>
+            ))}
+          </>
+        )}
+        {!loading && error && (
+          <Card className="col-span-full border-dashed border-destructive/40 bg-destructive/5 text-destructive">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-5 w-5" />
+                {error}
+              </CardTitle>
+              <CardDescription>Retry shortly or check monitoring services.</CardDescription>
+            </CardHeader>
+          </Card>
+        )}
+        {!loading && !error && stats.map((stat) => (
+          <KpiCard key={stat.id} stat={stat} onNavigate={handleNavigate} />
+        ))}
+      </section>
 
-        <SimpleKPICard
-          title="Active Users (24h)"
-          value="2,547"
-          icon={<Users className="w-6 h-6" />}
-          status="good"
-        />
-
-        <SimpleKPICard
-          title="Revenue (24h)"
-          value="$12,456"
-          icon={<DollarSign className="w-6 h-6" />}
-          status="good"
-        />
-
-        <SimpleKPICard
-          title="P95 Latency"
-          value="245ms"
-          icon={<Clock className="w-6 h-6" />}
-          status="good"
-        />
-      </div>
-
-      {/* Secondary Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <SimpleKPICard
-          title="Error Rate"
-          value="0.02%"
-          icon={<AlertTriangle className="w-6 h-6" />}
-          status="good"
-        />
-
-        <SimpleKPICard
-          title="Jobs Processed (24h)"
-          value="8,932"
-          icon={<TrendingUp className="w-6 h-6" />}
-          status="good"
-        />
-
-        <SimpleKPICard
-          title="Active Alerts"
-          value="0"
-          icon={<CheckCircle className="w-6 h-6" />}
-          status="good"
-        />
-      </div>
-
-      {/* Role-based Features */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* System Status */}
-        <Card className="shadow-soft border-0">
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="border-border/60">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Server className="w-5 h-5 text-primary" />
-              System Status
+              <Server className="h-5 w-5 text-primary" />
+              System status
             </CardTitle>
-            <CardDescription>
-              Health status of core services and dependencies
-            </CardDescription>
+            <CardDescription>Top-level signals for core platform services</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg">
-                <span className="text-sm font-medium">API Gateway</span>
-                <span className="text-success text-sm">Healthy</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg">
-                <span className="text-sm font-medium">Database</span>
-                <span className="text-success text-sm">Healthy</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg">
-                <span className="text-sm font-medium">Queue Service</span>
-                <span className="text-success text-sm">Healthy</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg">
-                <span className="text-sm font-medium">Storage</span>
-                <span className="text-success text-sm">Healthy</span>
-              </div>
+            <div className="grid gap-3">
+              {["API Gateway", "Database", "Workflow Queue", "Storage"].map((serviceName) => (
+                <div
+                  key={serviceName}
+                  className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/40 px-4 py-3"
+                >
+                  <span className="text-sm font-medium text-foreground">{serviceName}</span>
+                  <span className="flex items-center gap-2 text-sm text-emerald-500">
+                    <CheckCircle2 className="h-4 w-4" /> Healthy
+                  </span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Role-specific Actions */}
-        <Card className="shadow-soft border-0">
+        <Card className="border-border/60">
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>
-              Common administrative tasks for {user?.role?.replace('_', ' ')}
-            </CardDescription>
+            <CardTitle>Quick actions</CardTitle>
+            <CardDescription>Common workflows you might need today</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-3">
-              {user?.role === 'super_admin' && (
-                <>
-                  <Button variant="outline" className="justify-start">
-                    <Users className="w-4 h-4 mr-2" />
-                    Manage Users
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    <Server className="w-4 h-4 mr-2" />
-                    System Configuration
-                  </Button>
-                </>
-              )}
-              {(user?.role === 'ops_admin' || user?.role === 'super_admin') && (
-                <>
-                  <Button variant="outline" className="justify-start">
-                    <Activity className="w-4 h-4 mr-2" />
-                    Monitor Jobs
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    <TrendingUp className="w-4 h-4 mr-2" />
-                    View Metrics
-                  </Button>
-                </>
-              )}
-              {(user?.role === 'security_admin' || user?.role === 'super_admin') && (
-                <>
-                  <Button variant="outline" className="justify-start">
-                    <Shield className="w-4 h-4 mr-2" />
-                    Security Audit
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    <AlertTriangle className="w-4 h-4 mr-2" />
-                    Review Alerts
-                  </Button>
-                </>
-              )}
-              {(user?.role === 'finance_admin' || user?.role === 'super_admin') && (
-                <>
-                  <Button variant="outline" className="justify-start">
-                    <DollarSign className="w-4 h-4 mr-2" />
-                    Billing Reports
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    <TrendingUp className="w-4 h-4 mr-2" />
-                    Revenue Analytics
-                  </Button>
-                </>
-              )}
-            </div>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("security-users")}>Manage users</Button>
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("ops-jobs")}>Review jobs</Button>
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("ops-alerts")}>Open alerts</Button>
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("audit-logs")}>Audit trail</Button>
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("billing-disputes")}>Billing disputes</Button>
+            <Button variant="outline" className="justify-start" onClick={() => handleNavigate("system-settings")}>System settings</Button>
           </CardContent>
         </Card>
-      </div>
+      </section>
 
-      {/* Recent Activity */}
-      <Card className="shadow-soft border-0">
+      <Card className="border-border/60">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-success" />
-            Recent Activity
+            <Activity className="h-5 w-5 text-primary" />
+            Recent administrative activity
           </CardTitle>
-          <CardDescription>
-            Latest admin actions and system events
-          </CardDescription>
+          <CardDescription>Full trail available in Audit Logs</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="text-sm font-medium">User login</p>
-                <p className="text-xs text-muted-foreground">admin@lcopilot.com logged in</p>
+        <CardContent className="grid gap-3">
+          {[0, 1, 2].map((index) => (
+            <div
+              key={index}
+              className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-4 py-3"
+            >
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  Admin action #{index + 1}
+                </p>
+                <p className="text-xs text-muted-foreground">Sample activity from mock data service</p>
               </div>
-              <span className="text-xs text-muted-foreground">2 minutes ago</span>
+              <span className="text-xs text-muted-foreground">Moments ago</span>
             </div>
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="text-sm font-medium">Job completed</p>
-                <p className="text-xs text-muted-foreground">Document processing job #12345</p>
-              </div>
-              <span className="text-xs text-muted-foreground">5 minutes ago</span>
-            </div>
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="text-sm font-medium">System health check</p>
-                <p className="text-xs text-muted-foreground">All services healthy</p>
-              </div>
-              <span className="text-xs text-muted-foreground">10 minutes ago</span>
-            </div>
-          </div>
+          ))}
         </CardContent>
       </Card>
-    </>
+    </div>
   );
 }
 
