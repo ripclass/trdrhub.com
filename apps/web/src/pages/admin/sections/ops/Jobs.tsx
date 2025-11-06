@@ -107,6 +107,7 @@ export function OpsJobs() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [actionJobId, setActionJobId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -133,21 +134,18 @@ export function OpsJobs() {
         search: searchTerm || undefined,
       })
       .then((result) => {
+        setError(null);
         setJobs(result.items);
         setTotal(result.total);
       })
       .catch((error) => {
         console.error("Failed to load jobs", error);
-        toast({
-          title: "Unable to load queue metrics",
-          description: "Showing cached mock data instead.",
-          variant: "destructive",
-        });
+        setError("Unable to load queue metrics. Showing cached mock data.");
         setJobs(FALLBACK_JOBS);
         setTotal(FALLBACK_JOBS.length);
       })
       .finally(() => setLoading(false));
-  }, [page, searchTerm, statusFilter, toast]);
+  }, [page, searchTerm, statusFilter]);
 
   React.useEffect(() => {
     updateQuery({
@@ -226,6 +224,12 @@ export function OpsJobs() {
           ]}
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[

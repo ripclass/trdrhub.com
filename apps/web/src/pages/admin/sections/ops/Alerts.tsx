@@ -98,6 +98,7 @@ export function OpsAlerts() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [actionId, setActionId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -123,21 +124,18 @@ export function OpsAlerts() {
         status: statusFilter as "active" | "acknowledged" | "resolved" | undefined,
       })
       .then((result) => {
+        setError(null);
         setAlerts(result.items);
         setTotal(result.total);
       })
       .catch((error) => {
         console.error("Failed to load alerts", error);
-        toast({
-          title: "Unable to load alerts",
-          description: "Showing cached mock data instead.",
-          variant: "destructive",
-        });
+        setError("Unable to load alerts. Showing cached mock data.");
         setAlerts(FALLBACK_ALERTS);
         setTotal(FALLBACK_ALERTS.length);
       })
       .finally(() => setLoading(false));
-  }, [page, severityFilter, statusFilter, toast]);
+  }, [page, severityFilter, statusFilter]);
 
   React.useEffect(() => {
     updateQuery({
@@ -216,6 +214,12 @@ export function OpsAlerts() {
           ]}
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[
