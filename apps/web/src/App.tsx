@@ -42,7 +42,7 @@ import NotFound from './pages/NotFound'
 import StubModeIndicator from './components/StubModeIndicator'
 import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
-import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminShell from './pages/admin/AdminShell'
 import { Toaster } from './components/ui/toaster'
 
 function App() {
@@ -96,7 +96,7 @@ function App() {
         <Route path="/test-import" element={<ImportResultsSimple />} />
         <Route path="/lcopilot/support" element={<Support />} />
         <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin" element={<AdminShell />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       <StubModeIndicator />

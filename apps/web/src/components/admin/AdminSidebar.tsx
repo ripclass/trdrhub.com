@@ -1,23 +1,17 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-// Inline cn function to avoid import/bundling issues
-function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
-  return classes
-    .filter(Boolean)
-    .map((cls) => {
-      if (typeof cls === 'string') return cls;
-      if (typeof cls === 'object' && cls !== null) {
-        return Object.entries(cls)
-          .filter(([_, val]) => val)
-          .map(([key]) => key)
-          .join(' ');
-      }
-      return '';
-    })
-    .filter(Boolean)
-    .join(' ');
-}
-;
+import { useLocation } from 'react-router-dom';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
   Activity,
@@ -45,6 +39,38 @@ import {
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
 
+type AdminSection =
+  | "overview"
+  | "ops-monitoring"
+  | "ops-jobs"
+  | "ops-alerts"
+  | "audit-logs"
+  | "audit-approvals"
+  | "audit-compliance"
+  | "security-users"
+  | "security-access"
+  | "security-sessions"
+  | "billing-plans"
+  | "billing-adjustments"
+  | "billing-disputes"
+  | "partners-registry"
+  | "partners-connectors"
+  | "partners-webhooks"
+  | "llm-prompts"
+  | "llm-budgets"
+  | "llm-evaluations"
+  | "compliance-residency"
+  | "compliance-retention"
+  | "compliance-legal-holds"
+  | "system-feature-flags"
+  | "system-releases"
+  | "system-settings";
+
+interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  activeSection: AdminSection;
+  onSectionChange: (section: AdminSection) => void;
+}
+
 interface SidebarSection {
   title: string;
   items: SidebarItem[];
@@ -52,7 +78,7 @@ interface SidebarSection {
 
 interface SidebarItem {
   name: string;
-  href: string;
+  section: AdminSection;
   icon: React.ComponentType<{ className?: string }>;
   permissions?: string[];
   badge?: string;
@@ -62,78 +88,78 @@ const navigation: SidebarSection[] = [
   {
     title: 'Overview',
     items: [
-      { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+      { name: 'Dashboard', section: 'overview', icon: LayoutDashboard },
     ],
   },
   {
     title: 'Operations',
     items: [
-      { name: 'Monitoring', href: '/admin/ops/monitoring', icon: Activity, permissions: ['ops:read'] },
-      { name: 'Jobs & Queue', href: '/admin/ops/jobs', icon: Zap, permissions: ['jobs:read'] },
-      { name: 'Alerts', href: '/admin/ops/alerts', icon: AlertTriangle, permissions: ['ops:read'], badge: '2' },
+      { name: 'Monitoring', section: 'ops-monitoring', icon: Activity, permissions: ['ops:read'] },
+      { name: 'Jobs & Queue', section: 'ops-jobs', icon: Zap, permissions: ['jobs:read'] },
+      { name: 'Alerts', section: 'ops-alerts', icon: AlertTriangle, permissions: ['ops:read'], badge: '2' },
     ],
   },
   {
     title: 'Audit & Governance',
     items: [
-      { name: 'Audit Logs', href: '/admin/audit/logs', icon: Search, permissions: ['audit:read'] },
-      { name: 'Approvals', href: '/admin/audit/approvals', icon: CheckSquare, permissions: ['approvals:read'], badge: '3' },
-      { name: 'Compliance', href: '/admin/audit/compliance', icon: Shield, permissions: ['compliance:read'] },
+      { name: 'Audit Logs', section: 'audit-logs', icon: Search, permissions: ['audit:read'] },
+      { name: 'Approvals', section: 'audit-approvals', icon: CheckSquare, permissions: ['approvals:read'], badge: '3' },
+      { name: 'Compliance', section: 'audit-compliance', icon: Shield, permissions: ['compliance:read'] },
     ],
   },
   {
     title: 'Security & Access',
     items: [
-      { name: 'Users & Tenants', href: '/admin/security/users', icon: Users, permissions: ['users:read'] },
-      { name: 'API Keys', href: '/admin/security/access', icon: Lock, permissions: ['api_keys:read'] },
-      { name: 'Sessions', href: '/admin/security/sessions', icon: Clock, permissions: ['sessions:read'] },
+      { name: 'Users & Tenants', section: 'security-users', icon: Users, permissions: ['users:read'] },
+      { name: 'API Keys', section: 'security-access', icon: Lock, permissions: ['api_keys:read'] },
+      { name: 'Sessions', section: 'security-sessions', icon: Clock, permissions: ['sessions:read'] },
     ],
   },
   {
     title: 'Billing & Finance',
     items: [
-      { name: 'Plans & Pricing', href: '/admin/billing/plans', icon: CreditCard, permissions: ['billing:read'] },
-      { name: 'Adjustments', href: '/admin/billing/adjustments', icon: DollarSign, permissions: ['billing:read'] },
-      { name: 'Disputes', href: '/admin/billing/disputes', icon: AlertTriangle, permissions: ['disputes:read'] },
+      { name: 'Plans & Pricing', section: 'billing-plans', icon: CreditCard, permissions: ['billing:read'] },
+      { name: 'Adjustments', section: 'billing-adjustments', icon: DollarSign, permissions: ['billing:read'] },
+      { name: 'Disputes', section: 'billing-disputes', icon: AlertTriangle, permissions: ['disputes:read'] },
     ],
   },
   {
     title: 'Partners & Integration',
     items: [
-      { name: 'Partner Registry', href: '/admin/partners/registry', icon: Building, permissions: ['partners:read'] },
-      { name: 'Connectors', href: '/admin/partners/connectors', icon: Webhook, permissions: ['partners:read'] },
-      { name: 'Webhooks', href: '/admin/partners/webhooks', icon: Globe, permissions: ['webhooks:read'] },
+      { name: 'Partner Registry', section: 'partners-registry', icon: Building, permissions: ['partners:read'] },
+      { name: 'Connectors', section: 'partners-connectors', icon: Webhook, permissions: ['partners:read'] },
+      { name: 'Webhooks', section: 'partners-webhooks', icon: Globe, permissions: ['webhooks:read'] },
     ],
   },
   {
     title: 'LLM Operations',
     items: [
-      { name: 'Prompts', href: '/admin/llm/prompts', icon: Brain, permissions: ['llm:read'] },
-      { name: 'Budgets', href: '/admin/llm/budgets', icon: BarChart3, permissions: ['llm:read'] },
-      { name: 'Evaluations', href: '/admin/llm/evaluations', icon: TestTube, permissions: ['llm:read'] },
+      { name: 'Prompts', section: 'llm-prompts', icon: Brain, permissions: ['llm:read'] },
+      { name: 'Budgets', section: 'llm-budgets', icon: BarChart3, permissions: ['llm:read'] },
+      { name: 'Evaluations', section: 'llm-evaluations', icon: TestTube, permissions: ['llm:read'] },
     ],
   },
   {
     title: 'Compliance & Data',
     items: [
-      { name: 'Data Residency', href: '/admin/compliance/residency', icon: Globe, permissions: ['compliance:read'] },
-      { name: 'Retention', href: '/admin/compliance/retention', icon: Database, permissions: ['compliance:read'] },
-      { name: 'Legal Holds', href: '/admin/compliance/legal-holds', icon: Folder, permissions: ['legal_holds:read'] },
+      { name: 'Data Residency', section: 'compliance-residency', icon: Globe, permissions: ['compliance:read'] },
+      { name: 'Retention', section: 'compliance-retention', icon: Database, permissions: ['compliance:read'] },
+      { name: 'Legal Holds', section: 'compliance-legal-holds', icon: Folder, permissions: ['legal_holds:read'] },
     ],
   },
   {
     title: 'System',
     items: [
-      { name: 'Feature Flags', href: '/admin/system/feature-flags', icon: Flag, permissions: ['feature_flags:read'] },
-      { name: 'Releases', href: '/admin/system/releases', icon: FileText, permissions: ['releases:read'] },
-      { name: 'Settings', href: '/admin/system/settings', icon: Settings, permissions: ['settings:read'] },
+      { name: 'Feature Flags', section: 'system-feature-flags', icon: Flag, permissions: ['feature_flags:read'] },
+      { name: 'Releases', section: 'system-releases', icon: FileText, permissions: ['releases:read'] },
+      { name: 'Settings', section: 'system-settings', icon: Settings, permissions: ['settings:read'] },
     ],
   },
 ];
 
-export function AdminSidebar() {
-  const { pathname } = useLocation();
-  const { permissions } = useAdminAuth();
+export function AdminSidebar({ activeSection, onSectionChange, ...props }: AdminSidebarProps) {
+  const location = useLocation();
+  const { permissions, user } = useAdminAuth();
 
   const hasPermission = (requiredPermissions?: string[]) => {
     if (!requiredPermissions) return true;
@@ -142,60 +168,73 @@ export function AdminSidebar() {
   };
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto">
-      <div className="p-6">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">LC</span>
-          </div>
-          <span className="font-bold text-gray-900">Admin Console</span>
-        </div>
-      </div>
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <div className="flex items-center gap-3">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-blue-600 text-white">
+                  <Shield className="size-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">Admin Console</span>
+                  <span className="text-xs text-muted-foreground">System Administration</span>
+                </div>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
 
-      <nav className="px-4 pb-4">
+      <SidebarContent>
         {navigation.map((section) => (
-          <div key={section.title} className="mb-6">
-            <h3 className="px-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {section.title}
-            </h3>
-            <ul className="space-y-1">
-              {section.items
-                .filter(item => hasPermission(item.permissions))
-                .map((item) => {
-                  const isActive = pathname === item.href;
-                  return (
-                    <li key={item.name}>
-                      <Link
-                        to={item.href}
-                        className={cn(
-                          'group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors',
-                          isActive
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                        )}
+          <SidebarGroup key={section.title}>
+            <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.items
+                  .filter(item => hasPermission(item.permissions))
+                  .map((item) => (
+                    <SidebarMenuItem key={item.section}>
+                      <SidebarMenuButton
+                        isActive={activeSection === item.section}
+                        onClick={() => onSectionChange(item.section)}
+                        tooltip={item.name}
                       >
-                        <item.icon
-                          className={cn(
-                            'mr-3 h-5 w-5 flex-shrink-0',
-                            isActive
-                              ? 'text-blue-500'
-                              : 'text-gray-400 group-hover:text-gray-500'
-                          )}
-                        />
-                        <span className="flex-1">{item.name}</span>
+                        <item.icon />
+                        <span>{item.name}</span>
                         {item.badge && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive">
                             {item.badge}
                           </span>
                         )}
-                      </Link>
-                    </li>
-                  );
-                })}
-            </ul>
-          </div>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         ))}
-      </nav>
-    </div>
+      </SidebarContent>
+
+      <SidebarFooter>
+        {user && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  {user.email?.charAt(0).toUpperCase() || user.name?.charAt(0).toUpperCase() || "A"}
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role?.replace('_', ' ')}</span>
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
+      </SidebarFooter>
+    </Sidebar>
   );
 }
