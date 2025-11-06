@@ -22,6 +22,42 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
+const FALLBACK_JOBS: OpsJob[] = [
+  {
+    id: "job-fallback-1",
+    name: "Daily Settlement",
+    type: "cron",
+    status: "succeeded",
+    queue: "critical",
+    retries: 0,
+    maxRetries: 5,
+    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    completedAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
+    durationMs: 180000,
+  },
+  {
+    id: "job-fallback-2",
+    name: "Fraud Signal Sweep",
+    type: "workflow",
+    status: "running",
+    queue: "standard",
+    retries: 1,
+    maxRetries: 5,
+    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    startedAt: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
+  },
+  {
+    id: "job-fallback-3",
+    name: "Document OCR ingest",
+    type: "ingest",
+    status: "failed",
+    queue: "bulk",
+    retries: 2,
+    maxRetries: 5,
+    createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+  },
+];
+
 const JOB_STATUS_OPTIONS: { label: string; value: JobStatus }[] = [
   { label: "Queued", value: "queued" },
   { label: "Running", value: "running" },
@@ -100,8 +136,18 @@ export function OpsJobs() {
         setJobs(result.items);
         setTotal(result.total);
       })
+      .catch((error) => {
+        console.error("Failed to load jobs", error);
+        toast({
+          title: "Unable to load queue metrics",
+          description: "Showing cached mock data instead.",
+          variant: "destructive",
+        });
+        setJobs(FALLBACK_JOBS);
+        setTotal(FALLBACK_JOBS.length);
+      })
       .finally(() => setLoading(false));
-  }, [page, searchTerm, statusFilter]);
+  }, [page, searchTerm, statusFilter, toast]);
 
   React.useEffect(() => {
     updateQuery({
