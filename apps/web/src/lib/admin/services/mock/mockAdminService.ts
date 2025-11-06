@@ -823,16 +823,21 @@ export class MockAdminService implements AdminService {
   }
 
   async listJobs(params: { page: number; pageSize: number; status?: JobStatus[]; search?: string }): Promise<PaginatedResult<OpsJob>> {
-    const { status, search } = params;
-    let results = [...this.jobs];
-    if (status?.length) {
-      results = results.filter((job) => status.includes(job.status));
+    try {
+      const { status, search } = params;
+      let results = [...this.jobs];
+      if (status?.length) {
+        results = results.filter((job) => status.includes(job.status));
+      }
+      if (search) {
+        const term = search.toLowerCase();
+        results = results.filter((job) => job.name.toLowerCase().includes(term) || job.id.includes(term));
+      }
+      return this.paginate(results, params);
+    } catch (error) {
+      console.error("MockAdminService.listJobs failed, returning fallback data", error);
+      return this.paginate([...this.jobs], params);
     }
-    if (search) {
-      const term = search.toLowerCase();
-      results = results.filter((job) => job.name.toLowerCase().includes(term) || job.id.includes(term));
-    }
-    return this.paginate(results, params);
   }
 
   async retryJob(id: string): Promise<MutationResult> {
@@ -855,20 +860,25 @@ export class MockAdminService implements AdminService {
   }
 
   async listAlerts(params: { page: number; pageSize: number; severity?: OpsAlert["severity"][]; status?: "active" | "acknowledged" | "resolved" }): Promise<PaginatedResult<OpsAlert>> {
-    const { severity, status } = params;
-    let results = [...this.alerts];
-    if (severity?.length) {
-      results = results.filter((alert) => severity.includes(alert.severity));
+    try {
+      const { severity, status } = params;
+      let results = [...this.alerts];
+      if (severity?.length) {
+        results = results.filter((alert) => severity.includes(alert.severity));
+      }
+      if (status) {
+        results = results.filter((alert) => {
+          if (status === "active") return !alert.acknowledgedAt;
+          if (status === "acknowledged") return !!alert.acknowledgedAt && !alert.resolvedAt;
+          if (status === "resolved") return !!alert.resolvedAt;
+          return true;
+        });
+      }
+      return this.paginate(results, params);
+    } catch (error) {
+      console.error("MockAdminService.listAlerts failed, returning fallback data", error);
+      return this.paginate([...this.alerts], params);
     }
-    if (status) {
-      results = results.filter((alert) => {
-        if (status === "active") return !alert.acknowledgedAt;
-        if (status === "acknowledged") return !!alert.acknowledgedAt && !alert.resolvedAt;
-        if (status === "resolved") return !!alert.resolvedAt;
-        return true;
-      });
-    }
-    return this.paginate(results, params);
   }
 
   async acknowledgeAlert(id: string): Promise<MutationResult> {
