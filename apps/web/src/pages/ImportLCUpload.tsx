@@ -58,7 +58,12 @@ const supplierDocTypes = [
   { value: "other", label: "Other Trade Documents" }
 ];
 
-export default function ImportLCUpload() {
+type ImportLCUploadProps = {
+  embedded?: boolean;
+  onComplete?: (payload: { jobId: string; lcNumber: string; mode: "draft" | "supplier" }) => void;
+};
+
+export default function ImportLCUpload({ embedded = false, onComplete }: ImportLCUploadProps = {}) {
   const [draftLCFiles, setDraftLCFiles] = useState<UploadedFile[]>([]);
   const [supplierFiles, setSupplierFiles] = useState<UploadedFile[]>([]);
   const [lcNumber, setLcNumber] = useState("");
@@ -182,11 +187,12 @@ export default function ImportLCUpload() {
 
       toast({
         title: "Draft Saved",
-        description: `Your ${draftType === 'draft' ? 'Draft LC Risk' : 'Supplier Document'} progress has been saved. You can resume later from your dashboard.`,
+        description: "Your progress has been saved. You can resume later from your dashboard.",
       });
 
-      // Navigate to dashboard - consistent with exporter flow
-      navigate('/lcopilot/importer-dashboard');
+      if (!embedded) {
+        navigate('/lcopilot/importer-dashboard');
+      }
     } catch (error: any) {
       console.error('Failed to save draft:', error);
       toast({
@@ -390,8 +396,13 @@ export default function ImportLCUpload() {
         description: processDescription,
       });
 
-      // Navigate to unified results page with mode parameter
-      navigate(`/import/results/${response.jobId}?mode=${processType}`);
+      if (embedded && onComplete) {
+        setTimeout(() => {
+          onComplete({ jobId: response.jobId, lcNumber, mode: processType });
+        }, 500);
+      } else {
+        navigate(`/import/results/${response.jobId}?mode=${processType}`);
+      }
 
     } catch (error: any) {
       console.error("Validation failed:", error);
@@ -436,8 +447,13 @@ export default function ImportLCUpload() {
           }
         }
 
-        // Navigate to unified results page with mode parameter
-        navigate(`/import/results/${mockJobId}?mode=${processType}`);
+        if (embedded && onComplete) {
+          setTimeout(() => {
+            onComplete({ jobId: mockJobId, lcNumber, mode: processType });
+          }, 500);
+        } else {
+          navigate(`/import/results/${mockJobId}?mode=${processType}`);
+        }
         return; // Exit early, don't show error
       }
 
@@ -475,7 +491,14 @@ export default function ImportLCUpload() {
           }
         }
 
-        navigate(`/import/results/${mockJobId}?mode=${processType}`);
+        if (embedded && onComplete) {
+          setTimeout(() => {
+            onComplete({ jobId: mockJobId, lcNumber, mode: processType });
+          }, 500);
+        } else {
+          navigate(`/import/results/${mockJobId}?mode=${processType}`);
+        }
+        return;
       }
     } finally {
       setIsProcessing(false);
@@ -713,45 +736,51 @@ export default function ImportLCUpload() {
     );
   };
 
+  const containerClass = embedded
+    ? "mx-auto w-full max-w-6xl py-4"
+    : "container mx-auto px-4 py-8 max-w-6xl";
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? "bg-transparent" : "min-h-screen bg-background"}>
       {/* Header */}
-      <header className="bg-card border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/lcopilot/importer-dashboard">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-importer p-2 rounded-lg">
-                <Upload className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-foreground">Import LC Management</h1>
-                  {currentDraftId && (
-                    <Badge variant="outline" className="text-xs">
-                      Draft Mode
-                    </Badge>
-                  )}
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center gap-4">
+              <Link to="/lcopilot/importer-dashboard">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Dashboard
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-importer p-2 rounded-lg">
+                  <Upload className="w-6 h-6 text-primary-foreground" />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {currentDraftId
-                    ? "Continue working on your saved draft"
-                    : "Analyze draft LC risks and check supplier document compliance"
-                  }
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground">Import LC Validation</h1>
+                    {currentDraftId && (
+                      <Badge variant="outline" className="text-xs">
+                        Draft Mode
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {currentDraftId
+                      ? "Continue working on your saved draft"
+                      : "Upload draft LCs or supplier documents for compliance review"
+                    }
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {isLoadingDraft && (
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className={embedded ? "mx-auto w-full max-w-6xl px-0 py-6" : "container mx-auto px-4 py-8 max-w-6xl"}>
           <Card>
             <CardContent className="p-8 text-center">
               <div className="animate-spin w-8 h-8 border-2 border-importer border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -763,7 +792,7 @@ export default function ImportLCUpload() {
       )}
 
       {!isLoadingDraft && (
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className={containerClass}>
         {/* LC Information */}
         <Card className="mb-8 shadow-soft border-0">
           <CardHeader>

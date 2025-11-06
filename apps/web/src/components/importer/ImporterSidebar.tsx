@@ -1,6 +1,6 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
 import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -14,74 +14,26 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import type { LucideIcon } from "lucide-react";
 
-interface NavItem {
-  title: string;
-  url: string;
-  icon?: LucideIcon;
+type ImporterSection =
+  | "dashboard"
+  | "upload"
+  | "reviews"
+  | "analytics"
+  | "notifications"
+  | "settings"
+  | "help";
+
+interface ImporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  activeSection: ImporterSection;
+  onSectionChange: (section: ImporterSection) => void;
 }
 
-const navMain: NavItem[] = [
-  {
-    title: "Dashboard",
-    url: "/lcopilot/importer-dashboard",
-    icon: BarChart3,
-  },
-  {
-    title: "Upload LC",
-    url: "/lcopilot/import-upload",
-    icon: Upload,
-  },
-  {
-    title: "Review Results",
-    url: "/lcopilot/importer-dashboard?tab=results",
-    icon: History,
-  },
-  {
-    title: "Analytics",
-    url: "/lcopilot/importer-analytics",
-    icon: BarChart3,
-  },
-  {
-    title: "Notifications",
-    url: "/lcopilot/importer-dashboard?tab=notifications",
-    icon: Bell,
-  },
-];
-
-const navSecondary: NavItem[] = [
-  {
-    title: "Settings",
-    url: "#",
-    icon: Settings,
-  },
-  {
-    title: "Help",
-    url: "#",
-    icon: HelpCircle,
-  },
-];
-
-export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function ImporterSidebar({ activeSection, onSectionChange, ...props }: ImporterSidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
   
-  const isActive = (url: string) => {
-    if (url === "#") return false;
-    return location.pathname === url || location.pathname + location.search === url;
-  };
-
-  const mainItems = navMain.filter((item): item is NavItem => Boolean(item?.title && item?.url));
-  const secondaryItems = navSecondary.filter((item): item is NavItem => Boolean(item?.title && item?.url));
-  const isDev = typeof import.meta !== "undefined" ? !import.meta.env?.PROD : true;
-
-  if (isDev && mainItems.length !== navMain.length) {
-    console.warn("ImporterSidebar: filtered invalid main nav items", navMain);
-  }
-  if (isDev && secondaryItems.length !== navSecondary.length) {
-    console.warn("ImporterSidebar: filtered invalid secondary nav items", navSecondary);
-  }
+  const isActive = (matcher: string) => location.pathname === matcher;
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -89,7 +41,7 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/lcopilot">
+              <div className="flex items-center gap-3">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-importer/10 text-importer">
                   <Package className="size-4" />
                 </div>
@@ -97,7 +49,7 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
                   <span className="font-semibold">LCopilot</span>
                   <span className="text-xs text-muted-foreground">Importer Portal</span>
                 </div>
-              </Link>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -108,23 +60,55 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
           <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => {
-                const Icon = item.icon ?? BarChart3;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive(item.url)}
-                      tooltip={item.title}
-                    >
-                      <Link to={item.url}>
-                        <Icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "dashboard" || isActive("/lcopilot/importer-dashboard")}
+                  onClick={() => onSectionChange("dashboard")}
+                >
+                  <BarChart3 />
+                  <span>Dashboard</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "upload"}
+                  onClick={() => onSectionChange("upload")}
+                  tooltip="Upload LC"
+                >
+                  <Upload />
+                  <span>Upload LC</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "reviews"}
+                  onClick={() => onSectionChange("reviews")}
+                  tooltip="Review Results"
+                >
+                  <History />
+                  <span>Review Results</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "analytics"}
+                  onClick={() => onSectionChange("analytics")}
+                  tooltip="Analytics"
+                >
+                  <BarChart3 />
+                  <span>Analytics</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "notifications"}
+                  onClick={() => onSectionChange("notifications")}
+                  tooltip="Notifications"
+                >
+                  <Bell />
+                  <span>Notifications</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -132,19 +116,26 @@ export function ImporterSidebar({ ...props }: React.ComponentProps<typeof Sideba
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              {secondaryItems.map((item) => {
-                const Icon = item.icon ?? HelpCircle;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild tooltip={item.title}>
-                      <Link to={item.url}>
-                        <Icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "settings"}
+                  onClick={() => onSectionChange("settings")}
+                  tooltip="Settings"
+                >
+                  <Settings />
+                  <span>Settings</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "help"}
+                  onClick={() => onSectionChange("help")}
+                  tooltip="Help"
+                >
+                  <HelpCircle />
+                  <span>Help</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

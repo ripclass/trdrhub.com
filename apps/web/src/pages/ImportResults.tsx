@@ -729,10 +729,35 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
 
   // Main results view
   return (
-    <div className="min-h-screen bg-background">
-      {renderHeader()}
+    <div className={embedded ? "bg-transparent" : "bg-background min-h-screen"}>
+      {/* Header */}
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Link to="/lcopilot/importer-dashboard">
+                  <Button variant="outline" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-3">
+                  <div className="bg-gradient-importer p-2 rounded-lg">
+                    <FileText className="w-6 h-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-foreground">Import Validation Results</h1>
+                    <p className="text-sm text-muted-foreground">Review the results of your latest LC or supplier document validation</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+      )}
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className={embedded ? "mx-auto w-full max-w-6xl py-4" : "container mx-auto px-4 py-8 max-w-6xl"}>
         {/* Status and Action Bar */}
         <Card className="mb-6">
           <CardContent className="p-6">

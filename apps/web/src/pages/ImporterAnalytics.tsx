@@ -53,37 +53,47 @@ const mockAnalytics = {
   ]
 };
 
-export default function ImporterAnalytics() {
+type ImporterAnalyticsProps = {
+  embedded?: boolean;
+};
+
+export default function ImporterAnalytics({ embedded = false }: ImporterAnalyticsProps = {}) {
   const [activeTab, setActiveTab] = useState("overview");
 
+  const containerClasses = embedded
+    ? "mx-auto w-full max-w-6xl py-4"
+    : "container mx-auto px-4 py-8 max-w-6xl";
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? "bg-transparent" : "min-h-screen bg-background"}>
       {/* Header */}
-      <header className="bg-card border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/importer-dashboard">
-                <Button variant="outline" size="sm">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Dashboard
-                </Button>
-              </Link>
-              <div className="flex items-center gap-3">
-                <div className="bg-gradient-primary p-2 rounded-lg">
-                  <BarChart3 className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-foreground">Importer Analytics</h1>
-                  <p className="text-sm text-muted-foreground">Performance insights and trends</p>
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Link to="/lcopilot/importer-dashboard">
+                  <Button variant="outline" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-3">
+                  <div className="bg-gradient-primary p-2 rounded-lg">
+                    <BarChart3 className="w-6 h-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-foreground">Importer Analytics</h1>
+                    <p className="text-sm text-muted-foreground">Performance insights and trends</p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className={containerClasses}>
         {/* Key Metrics Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <Card className="shadow-soft border-0">
