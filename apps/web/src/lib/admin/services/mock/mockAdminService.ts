@@ -53,9 +53,26 @@ type PaginateParams = {
 
 const clone = <T>(value: T): T => {
   if (typeof structuredClone === "function") {
-    return structuredClone(value);
+    try {
+      return structuredClone(value);
+    } catch (error) {
+      console.warn("structuredClone failed for admin mock data, falling back to manual clone", error);
+    }
   }
-  return JSON.parse(JSON.stringify(value)) as T;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => (typeof item === "function" ? item : clone(item))) as unknown as T;
+  }
+
+  if (value && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = entry && typeof entry === "object" ? clone(entry) : entry;
+    }
+    return result as T;
+  }
+
+  return value;
 };
 
 const randomId = () => Math.random().toString(36).slice(2, 10);
