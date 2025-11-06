@@ -29,6 +29,46 @@ const RISK_OPTIONS = [
   { label: "High", value: "high" },
 ];
 
+const nowIso = new Date().toISOString();
+const FALLBACK_SESSIONS: SessionRecord[] = [
+  {
+    id: "session-fallback-1",
+    userId: "admin-fallback-1",
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+    ipAddress: "172.16.0.12",
+    location: "New York, USA",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+    device: "MacBook Pro",
+    platform: "macOS",
+    riskLevel: "low",
+  },
+  {
+    id: "session-fallback-2",
+    userId: "admin-fallback-2",
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+    ipAddress: "172.16.4.54",
+    location: "London, UK",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    device: "Windows Desktop",
+    platform: "windows",
+    riskLevel: "medium",
+  },
+  {
+    id: "session-fallback-3",
+    userId: "admin-fallback-3",
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+    ipAddress: "172.16.12.89",
+    location: "Singapore",
+    userAgent: "Mozilla/5.0 (iPad; CPU OS 17_1 like Mac OS X)",
+    device: "iPad",
+    platform: "ios",
+    riskLevel: "high",
+  },
+];
+
 function formatRelativeTime(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
   if (diffMs < 60_000) return "just now";
@@ -53,6 +93,7 @@ export function SecuritySessions() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [actionId, setActionId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -65,8 +106,15 @@ export function SecuritySessions() {
         risk: riskFilter === "all" ? undefined : riskFilter,
       })
       .then((result) => {
+        setError(null);
         setSessions(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load sessions", error);
+        setError("Unable to load sessions. Showing cached mock data.");
+        setSessions(FALLBACK_SESSIONS);
+        setTotal(FALLBACK_SESSIONS.length);
       })
       .finally(() => setLoading(false));
   }, [page, riskFilter]);
@@ -77,7 +125,9 @@ export function SecuritySessions() {
     else next.set("sessionsPage", String(page));
     if (riskFilter === "all") next.delete("sessionsRisk");
     else next.set("sessionsRisk", riskFilter);
-    setSearchParams(next, { replace: true });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
   }, [page, riskFilter, searchParams, setSearchParams]);
 
   React.useEffect(() => {
@@ -126,6 +176,12 @@ export function SecuritySessions() {
           }
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[

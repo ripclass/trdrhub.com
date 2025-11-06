@@ -34,6 +34,36 @@ const service = getAdminService();
 const PAGE_SIZE = 10;
 const DEFAULT_SCOPES = ["read", "write", "ingest", "webhooks"];
 
+const nowIso = new Date().toISOString();
+const FALLBACK_KEYS: ApiKeyRecord[] = [
+  {
+    id: "api-fallback-1",
+    name: "Production API",
+    status: "active",
+    createdAt: nowIso,
+    lastUsedAt: nowIso,
+    scopes: ["read", "write"],
+    environment: "production",
+  },
+  {
+    id: "api-fallback-2",
+    name: "Webhook Signer",
+    status: "rotating",
+    createdAt: nowIso,
+    scopes: ["webhooks"],
+    environment: "staging",
+  },
+  {
+    id: "api-fallback-3",
+    name: "Sandbox Integration",
+    status: "revoked",
+    createdAt: nowIso,
+    expiresAt: nowIso,
+    scopes: ["ingest"],
+    environment: "development",
+  },
+];
+
 export function SecurityAccess() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -45,6 +75,7 @@ export function SecurityAccess() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [actionId, setActionId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
@@ -61,7 +92,9 @@ export function SecurityAccess() {
         if (!value) next.delete(key);
         else next.set(key, value);
       });
-      setSearchParams(next, { replace: true });
+      if (next.toString() !== searchParams.toString()) {
+        setSearchParams(next, { replace: true });
+      }
     },
     [searchParams, setSearchParams],
   );
@@ -75,8 +108,15 @@ export function SecurityAccess() {
         environment: environment === "all" ? undefined : environment,
       })
       .then((result) => {
+        setError(null);
         setApiKeys(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load api keys", error);
+        setError("Unable to load API keys. Showing cached mock data.");
+        setApiKeys(FALLBACK_KEYS);
+        setTotal(FALLBACK_KEYS.length);
       })
       .finally(() => setLoading(false));
   }, [page, environment]);
@@ -251,6 +291,12 @@ export function SecurityAccess() {
           <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
         </Button>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[

@@ -33,6 +33,47 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
+const FALLBACK_ROLES: RoleDefinition[] = [
+  { id: "super_admin", name: "Super Admin", description: "Full platform access", permissions: ["*"] },
+  { id: "admin", name: "Administrator", description: "Manage operations", permissions: ["admin:read"] },
+  { id: "viewer", name: "Viewer", description: "Read-only", permissions: ["admin:read"], editable: true },
+];
+
+const nowIso = new Date().toISOString();
+const FALLBACK_USERS: AdminUser[] = [
+  {
+    id: "admin-fallback-1",
+    name: "Alicia Chen",
+    email: "admin1@trdrhub.com",
+    role: "super_admin",
+    status: "active",
+    invitedAt: nowIso,
+    lastActiveAt: nowIso,
+    mfaEnabled: true,
+    tenants: ["global", "emea"],
+  },
+  {
+    id: "admin-fallback-2",
+    name: "Marcus Bell",
+    email: "ops@trdrhub.com",
+    role: "admin",
+    status: "invited",
+    invitedAt: nowIso,
+    mfaEnabled: false,
+    tenants: ["global"],
+  },
+  {
+    id: "admin-fallback-3",
+    name: "Nina Alvarez",
+    email: "security@trdrhub.com",
+    role: "viewer",
+    status: "disabled",
+    invitedAt: nowIso,
+    mfaEnabled: true,
+    tenants: ["emea"],
+  },
+];
+
 export function SecurityUsers() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,6 +87,7 @@ export function SecurityUsers() {
   const [loading, setLoading] = React.useState(true);
   const [actionId, setActionId] = React.useState<string | null>(null);
   const audit = useAdminAudit("security-users");
+  const [error, setError] = React.useState<string | null>(null);
 
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState("");
@@ -60,7 +102,9 @@ export function SecurityUsers() {
         if (!value) next.delete(key);
         else next.set(key, value);
       });
-      setSearchParams(next, { replace: true });
+      if (next.toString() !== searchParams.toString()) {
+        setSearchParams(next, { replace: true });
+      }
     },
     [searchParams, setSearchParams],
   );
@@ -75,14 +119,27 @@ export function SecurityUsers() {
         role: roleFilter,
       })
       .then((result) => {
+        setError(null);
         setUsers(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load users", error);
+        setError("Unable to load administrators. Showing cached mock data.");
+        setUsers(FALLBACK_USERS);
+        setTotal(FALLBACK_USERS.length);
       })
       .finally(() => setLoading(false));
   }, [page, searchTerm, roleFilter]);
 
   React.useEffect(() => {
-    service.listRoles().then(setRoles);
+    service
+      .listRoles()
+      .then(setRoles)
+      .catch((error) => {
+        console.error("Failed to load roles", error);
+        setRoles(FALLBACK_ROLES);
+      });
   }, []);
 
   React.useEffect(() => {
@@ -222,6 +279,12 @@ export function SecurityUsers() {
           ]}
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[
