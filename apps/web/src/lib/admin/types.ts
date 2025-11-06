@@ -456,6 +456,7 @@ export interface AdminService {
   revokeSession(id: string): Promise<MutationResult>;
 
   listBillingPlans(): Promise<BillingPlan[]>;
+  updateBillingPlan(id: string, payload: Partial<BillingPlan>): Promise<MutationResult<BillingPlan>>;
   listBillingAdjustments(params: { page: number; pageSize: number }): Promise<PaginatedResult<BillingAdjustment>>;
   addBillingAdjustment(payload: BillingAdjustment): Promise<MutationResult>;
   listBillingDisputes(params: { page: number; pageSize: number; status?: BillingDispute["status"][] }): Promise<PaginatedResult<BillingDispute>>;

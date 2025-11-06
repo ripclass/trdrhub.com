@@ -1016,6 +1016,23 @@ export class MockAdminService implements AdminService {
     return clone(this.billingPlans);
   }
 
+  async updateBillingPlan(id: string, payload: Partial<BillingPlan>): Promise<MutationResult<BillingPlan>> {
+    const planIndex = this.billingPlans.findIndex((plan) => plan.id === id);
+    if (planIndex === -1) {
+      return { success: false, message: "Plan not found" };
+    }
+
+    const updated: BillingPlan = {
+      ...this.billingPlans[planIndex],
+      ...payload,
+      features: payload.features ?? this.billingPlans[planIndex].features,
+      limits: payload.limits ?? this.billingPlans[planIndex].limits,
+    };
+
+    this.billingPlans[planIndex] = updated;
+    return { success: true, data: clone(updated), message: "Plan updated" };
+  }
+
   async listBillingAdjustments(params: { page: number; pageSize: number }): Promise<PaginatedResult<BillingAdjustment>> {
     return this.paginate(this.billingAdjustments, params);
   }

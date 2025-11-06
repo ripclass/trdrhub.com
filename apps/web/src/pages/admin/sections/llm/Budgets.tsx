@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { AdminEmptyState, AdminToolbar } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";

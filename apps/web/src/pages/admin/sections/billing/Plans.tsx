@@ -5,18 +5,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/use-toast";
 import { CreditCard } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
 import { getAdminService } from "@/lib/admin/services";
+import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 import type { BillingPlan } from "@/lib/admin/types";
 
 const service = getAdminService();
 
 export function BillingPlans() {
   const enabled = isAdminFeatureEnabled("billing");
+  const { toast } = useToast();
+  const audit = useAdminAudit("billing-plans");
   const [plans, setPlans] = React.useState<BillingPlan[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [updatingId, setUpdatingId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -25,6 +30,43 @@ export function BillingPlans() {
       .then((data) => setPlans(data))
       .finally(() => setLoading(false));
   }, [enabled]);
+
+  const handleEditPlan = async (plan: BillingPlan) => {
+    const priceInput = window.prompt("Set monthly price (USD)", String(Math.round(plan.pricePerMonth / 100)));
+    if (priceInput === null) {
+      return;
+    }
+
+    const price = Number(priceInput);
+    if (Number.isNaN(price) || price < 0) {
+      toast({ title: "Invalid price", description: "Enter a non-negative number", variant: "destructive" });
+      return;
+    }
+
+    const statusInput = window.prompt('Update status ("active" or "deprecated")', plan.status);
+    const normalizedStatus = (statusInput ?? plan.status).trim().toLowerCase();
+    if (normalizedStatus !== "active" && normalizedStatus !== "deprecated") {
+      toast({ title: "Invalid status", description: "Status must be active or deprecated", variant: "destructive" });
+      return;
+    }
+
+    setUpdatingId(plan.id);
+    const result = await service.updateBillingPlan(plan.id, {
+      pricePerMonth: Math.round(price * 100),
+      status: normalizedStatus as BillingPlan["status"],
+    });
+    setUpdatingId(null);
+
+    if (!result.success || !result.data) {
+      toast({ title: "Plan update failed", description: result.message ?? "Unexpected error", variant: "destructive" });
+      return;
+    }
+
+    const updatedPlan = result.data;
+    setPlans((prev) => prev.map((item) => (item.id === plan.id ? updatedPlan : item)));
+    toast({ title: "Plan updated", description: `${updatedPlan.name} now costs ${updatedPlan.currency} ${(updatedPlan.pricePerMonth / 100).toLocaleString()}/mo` });
+    await audit("update_plan", { entityId: plan.id, metadata: { pricePerMonth: updatedPlan.pricePerMonth, status: updatedPlan.status } });
+  };
 
   if (!enabled) {
     return (
@@ -99,8 +141,14 @@ export function BillingPlans() {
                     </p>
                   ))}
                 </div>
-                <Button variant="outline" size="sm" className="w-full" disabled>
-                  <CreditCard className="mr-2 h-4 w-4" /> Plan editing coming soon
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => handleEditPlan(plan)}
+                  disabled={updatingId === plan.id}
+                >
+                  <CreditCard className="mr-2 h-4 w-4" /> Edit plan
                 </Button>
               </CardContent>
             </Card>
