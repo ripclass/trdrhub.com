@@ -22,6 +22,57 @@ import { generateCSV } from "@/lib/csv";
 const service = getAdminService();
 const PAGE_SIZE = 12;
 
+const FALLBACK_LOGS: AuditLogEntry[] = [
+  {
+    id: "audit-fallback-1",
+    actor: {
+      id: "admin-1",
+      name: "Alicia Chen",
+      email: "admin1@trdrhub.com",
+      role: "Super Admin",
+    },
+    action: "updated",
+    entity: "feature_flag",
+    entityId: "flag-new-analytics",
+    summary: "Updated rollout percentage",
+    createdAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+    ip: "10.10.0.12",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+  },
+  {
+    id: "audit-fallback-2",
+    actor: {
+      id: "admin-2",
+      name: "Marcus Bell",
+      email: "ops@trdrhub.com",
+      role: "Ops Admin",
+    },
+    action: "created",
+    entity: "partner",
+    entityId: "partner-1",
+    summary: "Linked new risk data provider",
+    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    ip: "10.10.0.56",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+  },
+  {
+    id: "audit-fallback-3",
+    actor: {
+      id: "admin-3",
+      name: "Nina Alvarez",
+      email: "security@trdrhub.com",
+      role: "Security Admin",
+    },
+    action: "revoked",
+    entity: "api_key",
+    entityId: "key-7",
+    summary: "Revoked stale integration key",
+    createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    ip: "10.10.0.91",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5)",
+  },
+];
+
 function formatRelativeTime(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
   if (diffMs < 60_000) return "just now";
@@ -47,6 +98,7 @@ export function AuditLogs() {
   const [loading, setLoading] = React.useState(true);
   const [availableActors, setAvailableActors] = React.useState<string[]>([]);
   const [availableActions, setAvailableActions] = React.useState<string[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -57,12 +109,14 @@ export function AuditLogs() {
         if (!value) next.delete(key);
         else next.set(key, value);
       });
-      setSearchParams(next, { replace: true });
+      if (next.toString() !== searchParams.toString()) {
+        setSearchParams(next, { replace: true });
+      }
     },
     [searchParams, setSearchParams],
   );
 
-  const loadLogs = React.useCallback(() => {
+const loadLogs = React.useCallback(() => {
     setLoading(true);
     service
       .listAuditLogs({
@@ -83,6 +137,13 @@ export function AuditLogs() {
           const actions = Array.from(new Set(result.items.map((item) => item.action)));
           return actions.length ? actions : prev;
         });
+        setError(null);
+      })
+      .catch((error) => {
+        console.error("Failed to load audit logs", error);
+        setError("Unable to load audit activity. Showing cached mock data.");
+        setLogs(FALLBACK_LOGS);
+        setTotal(FALLBACK_LOGS.length);
       })
       .finally(() => setLoading(false));
   }, [page, searchTerm, actorFilter, actionFilter]);
@@ -175,6 +236,12 @@ export function AuditLogs() {
           ]}
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[
