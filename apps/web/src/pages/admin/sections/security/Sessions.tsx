@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { Globe, Monitor, ShieldAlert } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { SessionRecord } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Shield, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { CompliancePolicyResult } from "@/lib/admin/types";
 
 const service = getAdminService();

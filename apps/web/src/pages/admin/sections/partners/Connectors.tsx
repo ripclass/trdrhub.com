@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Cable, Wrench } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { ConnectorConfig } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

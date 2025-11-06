@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Building2, ToggleLeft, ToggleRight } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { PartnerRecord } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

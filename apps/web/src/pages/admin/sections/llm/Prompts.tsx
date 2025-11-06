@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { BrainCircuit, Upload } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { PromptRecord } from "@/lib/admin/types";
 
 const service = getAdminService();

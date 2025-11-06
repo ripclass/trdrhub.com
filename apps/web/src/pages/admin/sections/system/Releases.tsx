@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { GitCommit } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { ReleaseRecord } from "@/lib/admin/types";
 
 const service = getAdminService();

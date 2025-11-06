@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { DatabaseZap } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { RetentionSchedule } from "@/lib/admin/types";
 
 const service = getAdminService();

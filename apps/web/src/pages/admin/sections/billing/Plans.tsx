@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CreditCard } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { BillingPlan } from "@/lib/admin/types";
 
 const service = getAdminService();

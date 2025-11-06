@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Activity, AlertTriangle, ArrowUpRight, RefreshCw } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { OpsMetric, TimeRange } from "@/lib/admin/types";
 import { cn } from "@/lib/utils";
 

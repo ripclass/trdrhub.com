@@ -15,7 +15,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { FlaskConical } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services/index";
+import { getAdminService } from "@/lib/admin/services";
 import type { EvaluationRun } from "@/lib/admin/types";
 
 const service = getAdminService();
