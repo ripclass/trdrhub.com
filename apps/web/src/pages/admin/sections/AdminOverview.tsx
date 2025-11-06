@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { useAdminAuth } from "@/lib/admin/auth";
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { AdminSection, KPIStat, TimeRange } from "@/lib/admin/types";
 import { cn } from "@/lib/utils";
 

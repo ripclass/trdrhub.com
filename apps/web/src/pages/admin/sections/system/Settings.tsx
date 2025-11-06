@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { AdminSettings } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

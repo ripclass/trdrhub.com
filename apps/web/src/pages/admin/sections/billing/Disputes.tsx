@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { AlertCircle, CheckCircle2, ShieldHalf } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { BillingDispute } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

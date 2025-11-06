@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { Check, FileDiff, X } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { ApprovalRequest, ApprovalStatus } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

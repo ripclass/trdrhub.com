@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { RefreshCw, RotateCcw, StopCircle } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { JobStatus, OpsJob } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

@@ -16,7 +16,7 @@ import {
   resetAdminFeatureFlags,
   setAdminFeatureFlag,
 } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { FeatureFlagRecord } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 

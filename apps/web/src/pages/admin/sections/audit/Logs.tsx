@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { Download, RefreshCw } from "lucide-react";
 
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { AuditLogEntry } from "@/lib/admin/types";
 import { generateCSV } from "@/lib/csv";
 

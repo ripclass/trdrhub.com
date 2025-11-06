@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { FolderLock, Lock, Unlock } from "lucide-react";
 
 import { isAdminFeatureEnabled } from "@/config/featureFlags";
-import { getAdminService } from "@/lib/admin/services";
+import { getAdminService } from "@/lib/admin/services/index";
 import type { LegalHold } from "@/lib/admin/types";
 
 const service = getAdminService();
