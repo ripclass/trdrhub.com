@@ -178,18 +178,45 @@ const mockSupplierResults = {
   ]
 };
 
-export default function ImportResults() {
-  const { jobId } = useParams<{ jobId: string }>();
+const mockLCValidationTrends = [
+  { month: "Jul", riskScore: 78, supplierIssues: 6 },
+  { month: "Aug", riskScore: 74, supplierIssues: 5 },
+  { month: "Sep", riskScore: 70, supplierIssues: 4 },
+  { month: "Oct", riskScore: 67, supplierIssues: 4 },
+  { month: "Nov", riskScore: 63, supplierIssues: 3 },
+  { month: "Dec", riskScore: 59, supplierIssues: 2 }
+];
+
+type ImportResultsProps = {
+  embedded?: boolean;
+  jobId?: string;
+  lcNumber?: string;
+  mode?: "draft" | "supplier";
+};
+
+export default function ImportResults({
+  embedded = false,
+  jobId: jobIdOverride,
+  lcNumber: lcNumberOverride,
+  mode: modeOverride,
+}: ImportResultsProps = {}) {
+  const params = useParams<{ jobId: string }>();
   const [searchParams] = useSearchParams();
-  const mode = searchParams.get('mode') as 'draft' | 'supplier' || 'draft';
   const { toast } = useToast();
 
-  // Hooks for API calls - only use for non-demo jobs
-  const shouldUseAPI = jobId && !jobId.startsWith('demo-');
+  const mode = (modeOverride ?? searchParams.get('mode') ?? 'draft') as 'draft' | 'supplier';
+  const rawJobId = jobIdOverride ?? params.jobId ?? searchParams.get('jobId') ?? undefined;
+  const jobId = rawJobId ?? `demo-${mode}`;
+  const lcNumber = lcNumberOverride ?? searchParams.get('lc') ?? (
+    mode === 'draft' ? mockDraftLCResults.lcNumber : mockSupplierResults.lcNumber
+  );
+
+  const isDemoJob = !rawJobId || jobId.startsWith('demo-');
+  const shouldUseAPI = !isDemoJob;
+
   const { jobStatus, isPolling, startPolling } = useJob(shouldUseAPI ? jobId : null);
   const { results, getResults, isLoading: isLoadingResults } = useResults();
   const { generatePackage, downloadPackage, isLoading: isGeneratingPackage } = usePackage();
-
   const [activeTab, setActiveTab] = useState("overview");
   const [useMockData, setUseMockData] = useState(false);
 
@@ -198,7 +225,7 @@ export default function ImportResults() {
 
   useEffect(() => {
     // For demo job IDs, immediately use mock data
-    if (jobId && jobId.startsWith('demo-')) {
+    if (isDemoJob) {
       console.log('Demo job detected, using mock data immediately');
       setUseMockData(true);
       return;
@@ -213,32 +240,27 @@ export default function ImportResults() {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [jobId, jobStatus]);
+  }, [jobId, jobStatus, isDemoJob]);
 
   useEffect(() => {
-    if (jobId && jobStatus?.status === 'completed') {
+    if (!isDemoJob && jobId && jobStatus?.status === 'active' && !isPolling) {
+      console.log('Starting polling for job:', jobId);
+      startPolling(jobId);
+    }
+
+    if (!isDemoJob && jobId && jobStatus?.status === 'completed') {
+      console.log('Job completed, fetching results');
       getResults(jobId);
     }
-  }, [jobId, jobStatus, getResults]);
+  }, [jobId, jobStatus, getResults, isDemoJob, isPolling, startPolling]);
 
   const handleDownloadReport = async () => {
     console.log("Download button clicked, jobId:", jobId);
 
-    if (!jobId) {
-      console.log("No jobId, returning early");
-      toast({
-        title: "Error",
-        description: "No job ID found. Please try re-analyzing.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Demo mode: simulate download for demo job IDs
-    if (jobId.startsWith('demo-')) {
+    if (isDemoJob) {
       console.log("Demo mode detected, creating mock download");
 
-      // Create mock file content
       const reportType = mode === 'draft' ? 'Risk Analysis' : 'Compliance Check';
       const fileName = `${mode === 'draft' ? 'LC_Risk_Analysis' : 'Supplier_Compliance'}_Report_${jobId.split('-').pop()}.txt`;
 
