@@ -109,7 +109,9 @@ export function OpsAlerts() {
         if (!value) next.delete(key);
         else next.set(key, value);
       });
-      setSearchParams(next, { replace: true });
+      if (next.toString() !== searchParams.toString()) {
+        setSearchParams(next, { replace: true });
+      }
     },
     [searchParams, setSearchParams],
   );
