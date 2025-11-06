@@ -38,6 +38,7 @@ import {
   Folder
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
+import { UserMenu } from '@/components/layout/UserMenu';
 
 type AdminSection =
   | "overview"
@@ -220,19 +221,7 @@ export function AdminSidebar({ activeSection, onSectionChange, ...props }: Admin
 
       <SidebarFooter>
         {user && (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.email?.charAt(0).toUpperCase() || user.name?.charAt(0).toUpperCase() || "A"}
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role?.replace('_', ' ')}</span>
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <UserMenu variant="sidebar" />
         )}
       </SidebarFooter>
     </Sidebar>

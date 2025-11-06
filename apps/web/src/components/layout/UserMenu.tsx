@@ -10,7 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useAuth } from "@/hooks/use-auth"
+import { useAdminAuth } from "@/lib/admin/auth"
+import type { AdminSection } from "@/lib/admin/types"
 import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 
 function getInitials(name?: string | null, email?: string | null) {
@@ -26,17 +27,26 @@ function getInitials(name?: string | null, email?: string | null) {
     .toUpperCase()
 }
 
-export function UserMenu() {
+interface UserMenuProps {
+  variant?: "header" | "sidebar"
+}
+
+export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
-  const { user, logout, isLoading } = useAuth()
+  const { user, logout, isLoading } = useAdminAuth()
 
   const displayName = user?.full_name || user?.username || user?.email?.split("@")[0] || "Guest"
   const email = user?.email || "guest@trdrhub.com"
   const initials = getInitials(displayName, email)
 
   const handleNavigate = useCallback(
-    (path: string) => {
-      navigate(path)
+    (section: AdminSection | "overview") => {
+      if (section === "overview") {
+        navigate({ pathname: "/admin" })
+      } else {
+        const search = new URLSearchParams({ section })
+        navigate({ pathname: "/admin", search: `?${search.toString()}` })
+      }
     },
     [navigate]
   )
@@ -51,23 +61,11 @@ export function UserMenu() {
     }
   }, [logout, navigate])
 
-  if (isLoading) {
-    return (
-      <div className="flex h-8 w-32 animate-pulse items-center justify-end gap-2 rounded-full bg-muted/50 px-3" />
-    )
-  }
-
-  if (!user) {
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        className="rounded-full"
-        onClick={() => navigate("/login")}
-      >
-        Sign in
-      </Button>
-    )
+  if (isLoading || !user) {
+    const baseClass = variant === "sidebar"
+      ? "flex h-10 w-full animate-pulse items-center justify-start gap-2 rounded-lg bg-muted/50 px-3"
+      : "flex h-8 w-32 animate-pulse items-center justify-end gap-2 rounded-full bg-muted/50 px-3"
+    return <div className={baseClass} />
   }
 
   const avatarSeed = encodeURIComponent(email || displayName)
@@ -76,8 +74,8 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
-          className="flex h-auto items-center gap-2 rounded-full px-2 py-1"
+          variant={variant === "sidebar" ? "outline" : "ghost"}
+          className={variant === "sidebar" ? "w-full justify-start gap-3 rounded-lg px-3 py-2" : "flex h-auto items-center gap-2 rounded-full px-2 py-1"}
         >
           <Avatar className="h-8 w-8">
             <AvatarImage
@@ -86,13 +84,13 @@ export function UserMenu() {
             />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <div className="hidden text-left sm:flex sm:flex-col">
+          <div className={variant === "sidebar" ? "flex flex-col text-left" : "hidden text-left sm:flex sm:flex-col"}>
             <span className="text-sm font-medium leading-none">{displayName}</span>
             <span className="text-xs text-muted-foreground leading-none">{email}</span>
           </div>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56" forceMount>
+      <DropdownMenuContent align={variant === "sidebar" ? "start" : "end"} className="w-56" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium leading-none">{displayName}</span>
@@ -100,15 +98,15 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => handleNavigate("/dashboard")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("overview")}> 
           <UserIcon className="mr-2 h-4 w-4" />
           <span>Account</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard?tab=results")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("billing-plans")}> 
           <CreditCard className="mr-2 h-4 w-4" />
           <span>Billing</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("/lcopilot/bank-dashboard?tab=notifications")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("system-settings")}> 
           <Bell className="mr-2 h-4 w-4" />
           <span>Notifications</span>
         </DropdownMenuItem>
