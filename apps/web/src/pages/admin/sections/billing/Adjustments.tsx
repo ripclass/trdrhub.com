@@ -34,6 +34,40 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
+const nowIso = new Date().toISOString();
+const FALLBACK_ADJUSTMENTS: BillingAdjustment[] = [
+  {
+    id: "adjustment-fallback-1",
+    customer: "Bank of Asia",
+    amount: 25000,
+    currency: "USD",
+    reason: "Usage overage",
+    createdAt: nowIso,
+    createdBy: "billing@trdrhub.com",
+    status: "pending",
+  },
+  {
+    id: "adjustment-fallback-2",
+    customer: "GlobalTrade Inc.",
+    amount: -15000,
+    currency: "USD",
+    reason: "Service credit",
+    createdAt: nowIso,
+    createdBy: "billing@trdrhub.com",
+    status: "posted",
+  },
+  {
+    id: "adjustment-fallback-3",
+    customer: "LatAm Exports",
+    amount: 32000,
+    currency: "USD",
+    reason: "Custom implementation",
+    createdAt: nowIso,
+    createdBy: "billing@trdrhub.com",
+    status: "void",
+  },
+];
+
 export function BillingAdjustments() {
   const enabled = isAdminFeatureEnabled("billing");
   const { toast } = useToast();
@@ -43,6 +77,7 @@ export function BillingAdjustments() {
   const [adjustments, setAdjustments] = React.useState<BillingAdjustment[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [form, setForm] = React.useState({ customer: "", amount: "", reason: "", currency: "USD", type: "credit" as "credit" | "charge" });
@@ -55,8 +90,15 @@ export function BillingAdjustments() {
     service
       .listBillingAdjustments({ page, pageSize: PAGE_SIZE })
       .then((result) => {
+        setError(null);
         setAdjustments(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load adjustments", error);
+        setError("Unable to load adjustments. Showing cached mock data.");
+        setAdjustments(FALLBACK_ADJUSTMENTS);
+        setTotal(FALLBACK_ADJUSTMENTS.length);
       })
       .finally(() => setLoading(false));
   }, [enabled, page]);
@@ -65,7 +107,9 @@ export function BillingAdjustments() {
     const next = new URLSearchParams(searchParams);
     if (page === 1) next.delete("adjustmentsPage");
     else next.set("adjustmentsPage", String(page));
-    setSearchParams(next, { replace: true });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
   }, [page, searchParams, setSearchParams]);
 
   React.useEffect(() => {
@@ -174,6 +218,12 @@ export function BillingAdjustments() {
           </Dialog>
         }
       />
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[

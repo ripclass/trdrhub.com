@@ -23,6 +23,43 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
+const nowIso = new Date().toISOString();
+const FALLBACK_DISPUTES: BillingDispute[] = [
+  {
+    id: "dispute-fallback-1",
+    customer: "Regency Trade",
+    amount: 420000,
+    currency: "USD",
+    reason: "Duplicate charge",
+    openedAt: nowIso,
+    status: "open",
+    evidenceDueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    notes: "Awaiting customer documentation",
+  },
+  {
+    id: "dispute-fallback-2",
+    customer: "Pacific Credit",
+    amount: 380000,
+    currency: "USD",
+    reason: "Service not rendered",
+    openedAt: nowIso,
+    status: "under_review",
+    evidenceDueAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    notes: "Billing team preparing evidence",
+  },
+  {
+    id: "dispute-fallback-3",
+    customer: "Global Freight",
+    amount: 450000,
+    currency: "USD",
+    reason: "Contract mismatch",
+    openedAt: nowIso,
+    status: "won",
+    evidenceDueAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    notes: "Ruling in our favor",
+  },
+];
+
 const STATUS_OPTIONS = [
   { label: "All statuses", value: "all" },
   { label: "Open", value: "open" },
@@ -45,6 +82,7 @@ export function BillingDisputes() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [actionId, setActionId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -58,8 +96,15 @@ export function BillingDisputes() {
         status: statusFilter === "all" ? undefined : [statusFilter],
       })
       .then((result) => {
+        setError(null);
         setDisputes(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load disputes", error);
+        setError("Unable to load disputes. Showing cached mock data.");
+        setDisputes(FALLBACK_DISPUTES);
+        setTotal(FALLBACK_DISPUTES.length);
       })
       .finally(() => setLoading(false));
   }, [enabled, page, statusFilter]);
@@ -70,7 +115,9 @@ export function BillingDisputes() {
     else next.set("disputesPage", String(page));
     if (statusFilter === "all") next.delete("disputesStatus");
     else next.set("disputesStatus", statusFilter);
-    setSearchParams(next, { replace: true });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
   }, [page, statusFilter, searchParams, setSearchParams]);
 
   React.useEffect(() => {
@@ -127,6 +174,12 @@ export function BillingDisputes() {
           }
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[
