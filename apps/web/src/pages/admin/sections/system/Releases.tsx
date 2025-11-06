@@ -20,6 +20,46 @@ import type { ReleaseRecord } from "@/lib/admin/types";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
+const nowIso = new Date().toISOString();
+const FALLBACK_RELEASES: ReleaseRecord[] = [
+  {
+    id: "release-fallback-1",
+    version: "v2.24.0",
+    deployedAt: nowIso,
+    environment: "production",
+    author: "CI/CD",
+    summary: "Deployment summary placeholder for mock data.",
+    commitSha: "abc123",
+    status: "succeeded",
+    services: [
+      { name: "web", previousVersion: "v2.23.0" },
+      { name: "api", previousVersion: "v2.23.0" },
+    ],
+  },
+  {
+    id: "release-fallback-2",
+    version: "v2.23.1",
+    deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    environment: "staging",
+    author: "Sarah Jenkins",
+    summary: "Deployment summary placeholder for mock data.",
+    commitSha: "def456",
+    status: "in_progress",
+    services: [{ name: "web", previousVersion: "v2.23.0" }],
+  },
+  {
+    id: "release-fallback-3",
+    version: "v2.23.0",
+    deployedAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+    environment: "production",
+    author: "DevOps Bot",
+    summary: "Deployment summary placeholder for mock data.",
+    commitSha: "ghi789",
+    status: "failed",
+    services: [{ name: "api", previousVersion: "v2.22.4" }],
+  },
+];
+
 const ENVIRONMENTS = [
   { label: "All environments", value: "all" },
   { label: "Production", value: "production" },
@@ -34,6 +74,7 @@ export function SystemReleases() {
   const [releases, setReleases] = React.useState<ReleaseRecord[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -46,8 +87,15 @@ export function SystemReleases() {
         environment: environment === "all" ? undefined : environment,
       })
       .then((result) => {
+        setError(null);
         setReleases(result.items);
         setTotal(result.total);
+      })
+      .catch((error) => {
+        console.error("Failed to load releases", error);
+        setError("Unable to load releases. Showing cached mock data.");
+        setReleases(FALLBACK_RELEASES);
+        setTotal(FALLBACK_RELEASES.length);
       })
       .finally(() => setLoading(false));
   }, [page, environment]);
@@ -58,7 +106,9 @@ export function SystemReleases() {
     else next.set("releasesPage", String(page));
     if (environment === "all") next.delete("releasesEnv");
     else next.set("releasesEnv", environment);
-    setSearchParams(next, { replace: true });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
   }, [page, environment, searchParams, setSearchParams]);
 
   React.useEffect(() => {
@@ -91,6 +141,12 @@ export function SystemReleases() {
           ]}
         />
       </AdminToolbar>
+
+      {error && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          {error}
+        </div>
+      )}
 
       <DataTable
         columns={[
