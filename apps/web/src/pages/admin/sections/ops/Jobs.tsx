@@ -55,7 +55,7 @@ function formatRelativeTime(iso: string | undefined) {
   return `${days}d ago`;
 }
 
-export default function Jobs() {
+export function OpsJobs() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const audit = useAdminAudit("ops-jobs");
@@ -310,4 +310,6 @@ export default function Jobs() {
     </div>
   );
 }
+
+export default OpsJobs;
 

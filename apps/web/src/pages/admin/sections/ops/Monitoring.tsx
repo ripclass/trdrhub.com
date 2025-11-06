@@ -65,7 +65,7 @@ function MetricCard({ metric }: { metric: OpsMetric }) {
   );
 }
 
-export default function Monitoring() {
+export function OpsMonitoring() {
   const [searchParams, setSearchParams] = useSearchParams();
   const range = (searchParams.get("opsRange") as TimeRange) ?? DEFAULT_RANGE;
   const [metrics, setMetrics] = React.useState<OpsMetric[]>([]);
@@ -180,4 +180,6 @@ export default function Monitoring() {
     </div>
   );
 }
+
+export default OpsMonitoring;
 
