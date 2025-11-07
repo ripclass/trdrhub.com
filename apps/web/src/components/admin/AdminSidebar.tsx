@@ -51,6 +51,7 @@ type AdminSection =
   | "security-users"
   | "security-access"
   | "security-sessions"
+  | "billing-overview"
   | "billing-plans"
   | "billing-adjustments"
   | "billing-disputes"
@@ -119,6 +120,7 @@ const navigation: SidebarSection[] = [
   {
     title: 'Billing & Finance',
     items: [
+      { name: 'Overview', section: 'billing-overview', icon: BarChart3, permissions: ['billing:read'] },
       { name: 'Plans & Pricing', section: 'billing-plans', icon: CreditCard, permissions: ['billing:read'] },
       { name: 'Adjustments', section: 'billing-adjustments', icon: DollarSign, permissions: ['billing:read'] },
       { name: 'Disputes', section: 'billing-disputes', icon: AlertTriangle, permissions: ['disputes:read'] },

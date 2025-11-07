@@ -19,6 +19,7 @@ import { AuditCompliance } from "./sections/audit/Compliance";
 import { SecurityUsers } from "./sections/security/Users";
 import { SecurityAccess } from "./sections/security/Access";
 import { SecuritySessions } from "./sections/security/Sessions";
+import { BillingOverview } from "./sections/billing/Overview";
 import { BillingPlans } from "./sections/billing/Plans";
 import { BillingAdjustments } from "./sections/billing/Adjustments";
 import { BillingDisputes } from "./sections/billing/Disputes";
@@ -47,6 +48,7 @@ const SECTION_OPTIONS = [
   "security-users",
   "security-access",
   "security-sessions",
+  "billing-overview",
   "billing-plans",
   "billing-adjustments",
   "billing-disputes",
@@ -140,6 +142,7 @@ export default function AdminShell() {
           {activeSection === "security-users" && <SecurityUsers />}
           {activeSection === "security-access" && <SecurityAccess />}
           {activeSection === "security-sessions" && <SecuritySessions />}
+          {activeSection === "billing-overview" && <BillingOverview />}
           {activeSection === "billing-plans" && <BillingPlans />}
           {activeSection === "billing-adjustments" && <BillingAdjustments />}
           {activeSection === "billing-disputes" && <BillingDisputes />}

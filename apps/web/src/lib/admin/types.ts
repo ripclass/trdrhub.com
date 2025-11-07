@@ -11,6 +11,7 @@ export type AdminSection =
   | "security-users"
   | "security-access"
   | "security-sessions"
+  | "billing-overview"
   | "billing-plans"
   | "billing-adjustments"
   | "billing-disputes"
@@ -236,6 +237,17 @@ export interface BillingDispute {
   notes?: string;
 }
 
+export interface BillingSummary {
+  mrrCents: number;
+  arrCents: number;
+  monthToDateCents: number;
+  netRevenueCents: number;
+  refundsCents: number;
+  disputesOpen: number;
+  invoicesThisMonth: number;
+  adjustmentsPending: number;
+}
+
 export interface PartnerRecord {
   id: string;
   name: string;
@@ -455,6 +467,7 @@ export interface AdminService {
   listSessions(params: { page: number; pageSize: number; risk?: "low" | "medium" | "high" }): Promise<PaginatedResult<SessionRecord>>;
   revokeSession(id: string): Promise<MutationResult>;
 
+  getBillingSummary(range?: TimeRange, currency?: string): Promise<BillingSummary>;
   listBillingPlans(): Promise<BillingPlan[]>;
   updateBillingPlan(id: string, payload: Partial<BillingPlan>): Promise<MutationResult<BillingPlan>>;
   listBillingAdjustments(params: { page: number; pageSize: number }): Promise<PaginatedResult<BillingAdjustment>>;

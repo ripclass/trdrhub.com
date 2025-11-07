@@ -19,6 +19,7 @@ import {
   BillingAdjustment,
   BillingDispute,
   BillingPlan,
+  BillingSummary,
   CompliancePolicyResult,
   ConnectorConfig,
   EvaluationRun,
@@ -1037,6 +1038,66 @@ export class MockAdminService implements AdminService {
     if (!session) return { success: false, message: "Session not found" };
     this.sessions = this.sessions.filter((item) => item.id !== id);
     return { success: true, message: "Session revoked" };
+  }
+
+  async getBillingSummary(range?: TimeRange, currency?: string): Promise<BillingSummary> {
+    void range; // Ignore range for now in mock
+    void currency; // Ignore currency for now in mock
+
+    // Compute MRR from active plans (sum of pricePerMonth in cents)
+    const mrrCents = this.billingPlans
+      .filter((plan) => plan.status === "active")
+      .reduce((sum, plan) => sum + plan.pricePerMonth, 0);
+
+    // ARR = MRR * 12
+    const arrCents = mrrCents * 12;
+
+    // Month-to-date revenue: sum of posted adjustments + synthetic payments
+    // For mock, use posted adjustments and add some synthetic payment data
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const postedAdjustments = this.billingAdjustments
+      .filter((adj) => adj.status === "posted" && new Date(adj.createdAt) >= monthStart)
+      .reduce((sum, adj) => sum + Math.max(0, adj.amount), 0);
+
+    // Synthetic payments for mock (simulate some monthly recurring revenue)
+    const syntheticPayments = mrrCents * 0.85; // Assume 85% collection rate for mock
+
+    const monthToDateCents = postedAdjustments + syntheticPayments;
+
+    // Refunds: sum of negative adjustments
+    const refundsCents = Math.abs(
+      this.billingAdjustments
+        .filter((adj) => adj.status === "posted" && new Date(adj.createdAt) >= monthStart && adj.amount < 0)
+        .reduce((sum, adj) => sum + adj.amount, 0)
+    );
+
+    // Net revenue = MTD - refunds
+    const netRevenueCents = monthToDateCents - refundsCents;
+
+    // Disputes open: count disputes with status "open" or "under_review"
+    const disputesOpen = this.billingDisputes.filter(
+      (dispute) => dispute.status === "open" || dispute.status === "under_review"
+    ).length;
+
+    // Invoices this month: synthetic count (would come from invoice service)
+    const invoicesThisMonth = Math.floor(mrrCents / 2000); // Rough estimate
+
+    // Adjustments pending: count adjustments with status "pending"
+    const adjustmentsPending = this.billingAdjustments.filter((adj) => adj.status === "pending").length;
+
+    return {
+      mrrCents,
+      arrCents,
+      monthToDateCents: Math.round(monthToDateCents),
+      netRevenueCents: Math.round(netRevenueCents),
+      refundsCents: Math.round(refundsCents),
+      disputesOpen,
+      invoicesThisMonth,
+      adjustmentsPending,
+    };
   }
 
   async listBillingPlans(): Promise<BillingPlan[]> {
