@@ -1041,6 +1041,19 @@ export class MockAdminService implements AdminService {
   }
 
   async getBillingSummary(range?: TimeRange, currency?: string): Promise<BillingSummary> {
+    // Try to get from aggregator first, fallback to mock
+    try {
+      const { getBillingSummaryFromAggregator } = await import("../billingIntegration");
+      const aggregatorResult = await getBillingSummaryFromAggregator(range, currency);
+      
+      if (aggregatorResult) {
+        return aggregatorResult;
+      }
+    } catch (error) {
+      console.warn("Billing aggregator not available, using mock", error);
+    }
+
+    // Fallback to mock calculation
     void range; // Ignore range for now in mock
     void currency; // Ignore currency for now in mock
 

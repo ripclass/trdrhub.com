@@ -20,6 +20,9 @@ import { SecurityUsers } from "./sections/security/Users";
 import { SecurityAccess } from "./sections/security/Access";
 import { SecuritySessions } from "./sections/security/Sessions";
 import { BillingOverview } from "./sections/billing/Overview";
+import { BillingInvoicesPayments } from "./sections/billing/InvoicesPayments";
+import { BillingRecognition } from "./sections/billing/Recognition";
+import { BillingTaxes } from "./sections/billing/Taxes";
 import { BillingPlans } from "./sections/billing/Plans";
 import { BillingAdjustments } from "./sections/billing/Adjustments";
 import { BillingDisputes } from "./sections/billing/Disputes";
@@ -49,6 +52,9 @@ const SECTION_OPTIONS = [
   "security-access",
   "security-sessions",
   "billing-overview",
+  "billing-invoices-payments",
+  "billing-recognition",
+  "billing-taxes",
   "billing-plans",
   "billing-adjustments",
   "billing-disputes",
@@ -143,6 +149,9 @@ export default function AdminShell() {
           {activeSection === "security-access" && <SecurityAccess />}
           {activeSection === "security-sessions" && <SecuritySessions />}
           {activeSection === "billing-overview" && <BillingOverview />}
+          {activeSection === "billing-invoices-payments" && <BillingInvoicesPayments />}
+          {activeSection === "billing-recognition" && <BillingRecognition />}
+          {activeSection === "billing-taxes" && <BillingTaxes />}
           {activeSection === "billing-plans" && <BillingPlans />}
           {activeSection === "billing-adjustments" && <BillingAdjustments />}
           {activeSection === "billing-disputes" && <BillingDisputes />}

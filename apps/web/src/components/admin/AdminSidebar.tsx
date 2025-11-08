@@ -35,7 +35,10 @@ import {
   CreditCard,
   Webhook,
   TestTube,
-  Folder
+  Folder,
+  Receipt,
+  TrendingUp,
+  Calculator
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
 import { UserMenu } from '@/components/layout/UserMenu';
@@ -52,6 +55,9 @@ type AdminSection =
   | "security-access"
   | "security-sessions"
   | "billing-overview"
+  | "billing-invoices-payments"
+  | "billing-recognition"
+  | "billing-taxes"
   | "billing-plans"
   | "billing-adjustments"
   | "billing-disputes"
@@ -121,6 +127,9 @@ const navigation: SidebarSection[] = [
     title: 'Billing & Finance',
     items: [
       { name: 'Overview', section: 'billing-overview', icon: BarChart3, permissions: ['billing:read'] },
+      { name: 'Invoices & Payments', section: 'billing-invoices-payments', icon: Receipt, permissions: ['billing:read'] },
+      { name: 'Revenue Recognition', section: 'billing-recognition', icon: TrendingUp, permissions: ['billing:read'] },
+      { name: 'Taxes', section: 'billing-taxes', icon: Calculator, permissions: ['billing:read'] },
       { name: 'Plans & Pricing', section: 'billing-plans', icon: CreditCard, permissions: ['billing:read'] },
       { name: 'Adjustments', section: 'billing-adjustments', icon: DollarSign, permissions: ['billing:read'] },
       { name: 'Disputes', section: 'billing-disputes', icon: AlertTriangle, permissions: ['disputes:read'] },
