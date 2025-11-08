@@ -26,7 +26,10 @@ export type AdminSection =
   | "compliance-legal-holds"
   | "system-feature-flags"
   | "system-releases"
-  | "system-settings";
+  | "system-settings"
+  | "rules-list"
+  | "rules-upload"
+  | "rules-active";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 
@@ -421,6 +424,55 @@ export interface AdminSettings {
   };
 }
 
+export type RulesetStatus = "draft" | "active" | "archived" | "scheduled";
+
+export interface RulesetRecord {
+  id: string;
+  domain: string;
+  jurisdiction: string;
+  rulesetVersion: string;
+  rulebookVersion: string;
+  filePath: string;
+  status: RulesetStatus;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  checksumMd5: string;
+  ruleCount: number;
+  createdBy?: string;
+  createdAt: string;
+  publishedBy?: string;
+  publishedAt?: string;
+  notes?: string;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  ruleCount: number;
+  errors: string[];
+  warnings: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface RulesetUploadResult {
+  ruleset: RulesetRecord;
+  validation: ValidationReport;
+}
+
+export interface ActiveRulesetResult {
+  ruleset: RulesetRecord;
+  signedUrl?: string;
+  content?: unknown[];
+}
+
+export interface RulesetAuditLog {
+  id: string;
+  rulesetId: string;
+  action: "upload" | "validate" | "publish" | "rollback" | "archive";
+  actorId?: string;
+  detail?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AdminAuditEvent {
   id: string;
   actor: string;
@@ -504,6 +556,13 @@ export interface AdminService {
 
   getSettings(): Promise<AdminSettings>;
   updateSettings(settings: Partial<AdminSettings>): Promise<MutationResult<AdminSettings>>;
+
+  listRulesets(params: { page: number; pageSize: number; domain?: string; jurisdiction?: string; status?: RulesetStatus }): Promise<PaginatedResult<RulesetRecord>>;
+  uploadRuleset(file: File, domain: string, jurisdiction: string, rulesetVersion: string, rulebookVersion: string, effectiveFrom?: string, effectiveTo?: string, notes?: string): Promise<MutationResult<RulesetUploadResult>>;
+  publishRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
+  rollbackRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
+  getActiveRuleset(domain: string, jurisdiction: string, includeContent?: boolean): Promise<ActiveRulesetResult>;
+  getRulesetAudit(id: string): Promise<RulesetAuditLog[]>;
 
   recordAdminAudit(event: Omit<AdminAuditEvent, "id" | "createdAt">): Promise<MutationResult>;
   listAdminAuditLog(params: { page: number; pageSize: number }): Promise<PaginatedResult<AdminAuditEvent>>;
