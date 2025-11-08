@@ -39,6 +39,7 @@ import { SystemFeatureFlags } from "./sections/system/FeatureFlags";
 import { SystemReleases } from "./sections/system/Releases";
 import { SystemSettings } from "./sections/system/Settings";
 import { RulesList } from "./sections/rules/List";
+import { RulesUpload } from "./sections/rules/Upload";
 
 // Define all possible sections
 const SECTION_OPTIONS = [
@@ -72,6 +73,7 @@ const SECTION_OPTIONS = [
   "system-releases",
   "system-settings",
   "rules-list",
+  "rules-upload",
 ] as const;
 
 type Section = (typeof SECTION_OPTIONS)[number];
@@ -170,6 +172,7 @@ export default function AdminShell() {
           {activeSection === "system-releases" && <SystemReleases />}
           {activeSection === "system-settings" && <SystemSettings />}
           {activeSection === "rules-list" && <RulesList />}
+          {activeSection === "rules-upload" && <RulesUpload />}
         </div>
       </DashboardLayout>
 

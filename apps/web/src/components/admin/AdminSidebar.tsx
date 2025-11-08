@@ -74,7 +74,8 @@ type AdminSection =
   | "system-feature-flags"
   | "system-releases"
   | "system-settings"
-  | "rules-list";
+  | "rules-list"
+  | "rules-upload";
 
 interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeSection: AdminSection;

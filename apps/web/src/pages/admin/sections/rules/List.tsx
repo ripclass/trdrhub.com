@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AdminEmptyState, AdminFilters, AdminToolbar, DataTable } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +115,7 @@ function getStatusBadge(status: RulesetStatus) {
 }
 
 export function RulesList() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const audit = useAdminAudit("rules-list");
@@ -244,7 +245,7 @@ export function RulesList() {
             <Button variant="outline" size="sm" onClick={loadRulesets} disabled={loading} className="gap-2">
               <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
             </Button>
-            <Button size="sm" onClick={() => window.location.hash = "#upload"} className="gap-2">
+            <Button size="sm" onClick={() => navigate("/admin?section=rules-upload")} className="gap-2">
               <Upload className="h-4 w-4" /> Upload Ruleset
             </Button>
           </div>
@@ -398,9 +399,13 @@ export function RulesList() {
                   )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => {
-                      // Navigate to audit log view
-                      window.location.hash = `#audit-${ruleset.id}`;
+                    onClick={async () => {
+                      // TODO: Navigate to audit log view when implemented
+                      const auditLogs = await service.getRulesetAudit(ruleset.id);
+                      toast({
+                        title: "Audit Log",
+                        description: `Found ${auditLogs.length} audit entries for this ruleset.`,
+                      });
                     }}
                   >
                     <FileText className="mr-2 h-4 w-4" /> View Audit Log
@@ -414,11 +419,11 @@ export function RulesList() {
         loading={loading}
         emptyState={
           <AdminEmptyState
-            icon={FileText}
+            icon={<FileText className="h-8 w-8" />}
             title="No rulesets found"
             description="Upload your first ruleset to get started with LC validation rules."
             action={
-              <Button size="sm" onClick={() => window.location.hash = "#upload"}>
+              <Button size="sm" onClick={() => navigate("/admin?section=rules-upload")}>
                 <Upload className="mr-2 h-4 w-4" /> Upload Ruleset
               </Button>
             }
