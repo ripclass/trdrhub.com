@@ -309,14 +309,14 @@ export function BillingOverview() {
           value={formatCompactCurrency(summary.monthToDateCents)}
           secondary={formatCurrency(summary.monthToDateCents)}
           icon={FileText}
-          onClick={() => handleNavigate("billing-adjustments")}
+          onClick={() => handleNavigate("billing-invoices-payments")}
         />
         <KpiCard
           label="Net Revenue"
           value={formatCompactCurrency(summary.netRevenueCents)}
           secondary={formatCurrency(summary.netRevenueCents)}
           icon={DollarSign}
-          onClick={() => handleNavigate("billing-adjustments")}
+          onClick={() => handleNavigate("billing-invoices-payments")}
         />
       </div>
 
