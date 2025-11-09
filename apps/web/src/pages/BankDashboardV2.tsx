@@ -26,7 +26,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { DataRetentionView } from "./settings/DataRetention";
-import { FileText, CheckCircle, AlertTriangle, Clock } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Clock, Bell } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
 import { useAuth } from "@/hooks/use-auth";
