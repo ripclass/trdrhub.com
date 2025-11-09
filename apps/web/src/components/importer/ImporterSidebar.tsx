@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Receipt } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Receipt, Sparkles, Library, Calendar } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -25,6 +25,9 @@ type ImporterSection =
   | "notifications"
   | "billing"
   | "billing-invoices"
+  | "ai-assistance"
+  | "content-library"
+  | "shipment-timeline"
   | "settings"
   | "help";
 
@@ -151,6 +154,44 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                 >
                   <Receipt />
                   <span>Invoices & Payments</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>AI & Tools</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "ai-assistance"}
+                  onClick={() => onSectionChange("ai-assistance")}
+                  tooltip="AI Assistance"
+                >
+                  <Sparkles />
+                  <span>AI Assistance</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "content-library"}
+                  onClick={() => onSectionChange("content-library")}
+                  tooltip="Content Library"
+                >
+                  <Library />
+                  <span>Content Library</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "shipment-timeline"}
+                  onClick={() => onSectionChange("shipment-timeline")}
+                  tooltip="Shipment Timeline"
+                >
+                  <Calendar />
+                  <span>Shipment Timeline</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

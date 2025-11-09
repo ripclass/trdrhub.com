@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
 import { useToast } from "@/hooks/use-toast";
 import { useJob, useResults, usePackage } from "@/hooks/use-lcopilot";
 import {
@@ -786,7 +787,9 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <StatusBadge status={mockData.overallStatus} />
+                <StatusBadge status={mockData.overallStatus}>
+                  {mockData.overallStatus === "success" ? "Success" : mockData.overallStatus === "error" ? "Error" : "Warning"}
+                </StatusBadge>
                 <div>
                   <h2 className="text-lg font-semibold">{mockData.lcNumber}</h2>
                   <p className="text-sm text-muted-foreground">
@@ -895,7 +898,9 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                             <p className="text-sm text-muted-foreground">{doc.type}</p>
                           </div>
                           <div className="text-right">
-                            <StatusBadge status={doc.status} />
+                            <StatusBadge status={doc.status}>
+                              {doc.status === "success" ? "Success" : doc.status === "error" ? "Error" : "Warning"}
+                            </StatusBadge>
                             <p className="text-sm text-muted-foreground mt-1">
                               Score: {doc.complianceScore}%
                             </p>
@@ -937,46 +942,88 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {(mode === 'draft' ? mockData.risks : mockSupplierResults.issues).map((issue) => (
-                    <div key={issue.id} className={`border rounded-lg p-4 ${
-                      issue.severity === 'high' ? 'border-destructive/20 bg-destructive/5' :
-                      issue.severity === 'medium' ? 'border-warning/20 bg-warning/5' :
-                      'border-success/20 bg-success/5'
-                    }`}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={issue.severity === 'high' ? 'destructive' :
-                                   issue.severity === 'medium' ? 'secondary' : 'default'}
-                          >
-                            {issue.severity.toUpperCase()}
-                          </Badge>
-                          <span className="font-medium">{issue.category}</span>
-                        </div>
-                      </div>
-                      <h4 className="font-semibold mb-2">{issue.title}</h4>
-                      <p className="text-sm text-muted-foreground mb-3">{issue.description}</p>
-
-                      {mode === 'draft' && 'businessImpact' in issue && (
-                        <div className="space-y-2 mb-3 text-sm">
-                          <div>
-                            <strong>Business Impact:</strong> {issue.businessImpact}
+                  {mode === 'draft' ? (
+                    // Draft mode: Show risk analysis (keep existing format)
+                    mockData.risks.map((issue) => (
+                      <div key={issue.id} className={`border rounded-lg p-4 ${
+                        issue.severity === 'high' ? 'border-destructive/20 bg-destructive/5' :
+                        issue.severity === 'medium' ? 'border-warning/20 bg-warning/5' :
+                        'border-success/20 bg-success/5'
+                      }`}>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={issue.severity === 'high' ? 'destructive' :
+                                     issue.severity === 'medium' ? 'secondary' : 'default'}
+                            >
+                              {issue.severity.toUpperCase()}
+                            </Badge>
+                            <span className="font-medium">{issue.category}</span>
                           </div>
-                          {'financialImpact' in issue && (
-                            <div>
-                              <strong>Financial Impact:</strong> {issue.financialImpact}
-                            </div>
-                          )}
                         </div>
-                      )}
-
-                      <div className="bg-card p-3 rounded border">
-                        <p className="text-sm">
-                          <strong>Recommendation:</strong> {issue.recommendation}
-                        </p>
+                        <h4 className="font-semibold mb-2">{issue.title}</h4>
+                        <p className="text-sm text-muted-foreground mb-3">{issue.description}</p>
+                        {('businessImpact' in issue) && (
+                          <div className="space-y-2 mb-3 text-sm">
+                            <div>
+                              <strong>Business Impact:</strong> {issue.businessImpact}
+                            </div>
+                            {'financialImpact' in issue && (
+                              <div>
+                                <strong>Financial Impact:</strong> {issue.financialImpact}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="bg-card p-3 rounded border">
+                          <p className="text-sm">
+                            <strong>Recommendation:</strong> {issue.recommendation}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    // Supplier document mode: Use DiscrepancyGuidance component
+                    mockSupplierResults.issues.map((issue) => {
+                      // Map issue structure to DiscrepancyGuidance format
+                      const document = mockSupplierResults.documents.find(d => d.id === issue.documentId);
+                      return (
+                        <DiscrepancyGuidance
+                          key={issue.id}
+                          discrepancy={{
+                            id: issue.id,
+                            title: issue.title,
+                            description: issue.description,
+                            severity: issue.severity === 'high' ? 'critical' : issue.severity === 'medium' ? 'major' : 'minor',
+                            documentName: document?.name || 'Unknown Document',
+                            documentType: document?.type,
+                            rule: issue.category,
+                            expected: 'expected' in issue ? (issue as any).expected : '',
+                            actual: 'actual' in issue ? (issue as any).actual : '',
+                            suggestion: issue.recommendation,
+                            field: 'field' in issue ? (issue as any).field : undefined,
+                          }}
+                          onRevalidate={async (id) => {
+                            // In a real app, call API to re-validate
+                            console.log("Re-validating discrepancy:", id);
+                            toast({
+                              title: "Re-validation Started",
+                              description: "Your documents are being re-validated. Results will appear shortly.",
+                            });
+                          }}
+                          onUploadFixed={async (id, file) => {
+                            // In a real app, upload fixed document
+                            console.log("Uploading fixed document for discrepancy:", id, file.name);
+                            toast({
+                              title: "File Uploaded",
+                              description: "Your corrected document has been uploaded. Click 'Re-validate' to check again.",
+                            });
+                          }}
+                          validationSessionId={mockSupplierResults.lcNumber}
+                        />
+                      );
+                    })
+                  )}
                 </div>
               </CardContent>
             </Card>

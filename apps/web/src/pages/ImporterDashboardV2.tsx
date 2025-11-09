@@ -20,6 +20,9 @@ import { LCWorkspaceView } from "./sme/LCWorkspace";
 import { DataRetentionView } from "./settings/DataRetention";
 import { TemplatesView } from "./sme/Templates";
 import { CompanyProfileView } from "./settings/CompanyProfile";
+import { AIAssistance } from "@/components/sme/AIAssistance";
+import { ContentLibrary } from "@/components/sme/ContentLibrary";
+import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
@@ -56,10 +59,13 @@ type Section =
   | "billing"
   | "billing-usage"
   | "billing-invoices"
+  | "ai-assistance"
+  | "content-library"
+  | "shipment-timeline"
   | "settings"
   | "help";
 
-const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-usage", "billing-invoices", "settings", "help"];
+const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-usage", "billing-invoices", "ai-assistance", "content-library", "shipment-timeline", "settings", "help"];
 
 const dashboardStats = {
   thisMonth: 6,
@@ -370,6 +376,9 @@ export default function ImporterDashboardV2() {
 
           {activeSection === "settings" && <SettingsPanel />}
 
+          {activeSection === "ai-assistance" && <AIAssistance embedded />}
+          {activeSection === "content-library" && <ContentLibrary embedded />}
+          {activeSection === "shipment-timeline" && <ShipmentTimeline embedded />}
           {activeSection === "help" && <HelpPanel />}
         </div>
       </DashboardLayout>

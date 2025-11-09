@@ -39,6 +39,8 @@ import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AdvancedFilters } from "./AdvancedFilters";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { SavedViewsManager } from "@/components/shared/SavedViewsManager";
+import { parseDeepLinkFilters } from "@/lib/savedViews";
 
 interface ResultsTableProps {}
 
@@ -56,6 +58,18 @@ export function ResultsTable({}: ResultsTableProps) {
   const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+
+  // Handle deep link views
+  useEffect(() => {
+    const deepLink = parseDeepLinkFilters(searchParams);
+    if (deepLink.viewId && deepLink.filters) {
+      // Apply filters from deep link
+      if (deepLink.filters.status) setStatusFilter(deepLink.filters.status);
+      if (deepLink.filters.client_name) setClientFilter(deepLink.filters.client_name);
+      if (deepLink.filters.dateRange) setDateRange(deepLink.filters.dateRange);
+      if (deepLink.filters.advancedFilters) setAdvancedFilters(deepLink.filters.advancedFilters);
+    }
+  }, [searchParams]);
 
   // Update client filter when URL changes
   useEffect(() => {
@@ -290,10 +304,11 @@ export function ResultsTable({}: ResultsTableProps) {
       </CardHeader>
       <CardContent>
         {/* Basic Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="space-y-2">
-            <Label>Date Range</Label>
-            <Select value={dateRange} onValueChange={setDateRange}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+            <div className="space-y-2">
+              <Label>Date Range</Label>
+              <Select value={dateRange} onValueChange={setDateRange}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -328,6 +343,26 @@ export function ResultsTable({}: ResultsTableProps) {
               placeholder="Search by client name..."
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
+            />
+          </div>
+          
+          {/* Saved Views Manager */}
+          <div className="ml-4">
+            <SavedViewsManager
+              dashboard="bank"
+              section="results"
+              currentFilters={{
+                status: statusFilter,
+                client_name: clientFilter,
+                dateRange,
+                advancedFilters,
+              }}
+              onLoadView={(filters) => {
+                if (filters.status) setStatusFilter(filters.status);
+                if (filters.client_name) setClientFilter(filters.client_name);
+                if (filters.dateRange) setDateRange(filters.dateRange);
+                if (filters.advancedFilters) setAdvancedFilters(filters.advancedFilters);
+              }}
             />
           </div>
         </div>

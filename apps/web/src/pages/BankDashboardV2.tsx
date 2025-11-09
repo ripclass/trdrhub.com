@@ -17,6 +17,8 @@ import { BankNotificationsView } from "./bank/BankNotifications";
 import { QueueOperationsView } from "./bank/QueueOperations";
 import { SLADashboardsView } from "./bank/SLADashboards";
 import { EvidencePacksView } from "./bank/EvidencePacks";
+import { HealthLatencyBanner } from "@/components/bank/HealthLatencyBanner";
+import { InAppTutorials } from "@/components/shared/InAppTutorials";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
@@ -78,6 +80,9 @@ export default function BankDashboardV2() {
       ]}
     >
       <div className="flex flex-col gap-6 p-6 lg:p-8">
+        {/* Health/Latency Banner */}
+        <HealthLatencyBanner />
+        
         {/* Dashboard Tab - Shows Welcome, Stats, Recent Validations, Notifications */}
         {activeTab === "dashboard" && <DashboardOverview />}
 
@@ -498,8 +503,13 @@ function HelpPanel() {
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
-        <CardTitle>Need Help?</CardTitle>
-        <CardDescription>Browse bank resources, walkthroughs, and contact options.</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Need Help?</CardTitle>
+            <CardDescription>Browse bank resources, walkthroughs, and contact options.</CardDescription>
+          </div>
+          <InAppTutorials dashboard="bank" />
+        </div>
       </CardHeader>
       <CardContent className="space-y-6 text-sm text-muted-foreground">
         <div className="flex flex-wrap gap-3">

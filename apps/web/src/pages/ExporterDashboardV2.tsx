@@ -21,6 +21,9 @@ import { LCWorkspaceView } from "./sme/LCWorkspace";
 import { TemplatesView } from "./sme/Templates";
 import { DataRetentionView } from "./settings/DataRetention";
 import { CompanyProfileView } from "./settings/CompanyProfile";
+import { AIAssistance } from "@/components/sme/AIAssistance";
+import { ContentLibrary } from "@/components/sme/ContentLibrary";
+import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
@@ -57,6 +60,9 @@ type Section =
   | "billing"
   | "billing-usage"
   | "billing-invoices"
+  | "ai-assistance"
+  | "content-library"
+  | "shipment-timeline"
   | "settings"
   | "help";
 
@@ -355,6 +361,10 @@ export default function ExporterDashboardV2() {
           {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
 
           {activeSection === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} />}
+
+          {activeSection === "ai-assistance" && <AIAssistance embedded />}
+          {activeSection === "content-library" && <ContentLibrary embedded />}
+          {activeSection === "shipment-timeline" && <ShipmentTimeline embedded />}
 
           {activeSection === "settings" && <SettingsPanel />}
 

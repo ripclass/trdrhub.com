@@ -2,6 +2,8 @@ import * as React from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { getAdminService } from "@/lib/admin/services";
+import type { AdminSettings } from "@/lib/admin/types";
 import {
   Dialog,
   DialogContent,
@@ -87,7 +89,7 @@ export function useSessionTimeout({ timeoutMinutes = 30, warningMinutes = 5 }: S
     }, checkInterval);
 
     return () => clearInterval(interval);
-  }, [user, lastActivity, timeoutMinutes, warningMinutes, showWarning, toast]);
+  }, [user, lastActivity, effectiveTimeoutMinutes, warningMinutes, showWarning, toast]);
 
   const handleExtendSession = async () => {
     // In a real app, call API to refresh session
@@ -115,14 +117,35 @@ export function useSessionTimeout({ timeoutMinutes = 30, warningMinutes = 5 }: S
 }
 
 export function SessionTimeoutDialog() {
+  const { user } = useAuth();
+  const [settings, setSettings] = React.useState<AdminSettings | null>(null);
+
+  // Fetch admin settings
+  React.useEffect(() => {
+    if (!user) return;
+    
+    const loadSettings = async () => {
+      try {
+        const adminService = getAdminService();
+        const adminSettings = await adminService.getSettings();
+        setSettings(adminSettings);
+      } catch (error) {
+        console.warn("Failed to load admin settings, using defaults", error);
+      }
+    };
+    
+    loadSettings();
+  }, [user]);
+
+  const timeoutMinutes = settings?.authentication.sessionTimeoutMinutes ?? 30;
   const { timeRemaining, showWarning, showExpired, handleExtendSession, handleLogout } = useSessionTimeout({
-    timeoutMinutes: 30,
+    timeoutMinutes,
     warningMinutes: 5,
   });
 
   const remainingMinutes = timeRemaining ? Math.floor(timeRemaining / 60) : 0;
   const remainingSeconds = timeRemaining ? timeRemaining % 60 : 0;
-  const progress = timeRemaining ? (timeRemaining / (30 * 60)) * 100 : 0;
+  const progress = timeRemaining ? (timeRemaining / (timeoutMinutes * 60)) * 100 : 0;
 
   return (
     <>
