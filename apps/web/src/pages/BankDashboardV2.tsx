@@ -80,8 +80,8 @@ export default function BankDashboardV2() {
       ]}
     >
       <div className="flex flex-col gap-6 p-6 lg:p-8">
-        {/* Health/Latency Banner */}
-        <HealthLatencyBanner />
+        {/* Health/Latency Banner - Only show on dashboard tab */}
+        {activeTab === "dashboard" && <HealthLatencyBanner />}
         
         {/* Dashboard Tab - Shows Welcome, Stats, Recent Validations, Notifications */}
         {activeTab === "dashboard" && <DashboardOverview />}
