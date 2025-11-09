@@ -19,6 +19,7 @@ import { SLADashboardsView } from "./bank/SLADashboards";
 import { EvidencePacksView } from "./bank/EvidencePacks";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
+import { BillingUsagePage } from "./BillingUsagePage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -54,6 +55,16 @@ export default function BankDashboardV2() {
       newParams.delete("client");
     }
     setSearchParams(newParams);
+  };
+
+  const handleBillingTabChange = (tab: string) => {
+    const tabMap: Record<string, string> = {
+      overview: "billing",
+      usage: "billing-usage",
+      invoices: "billing-invoices",
+    };
+    const newTab = tabMap[tab] || "billing";
+    handleTabChange(newTab);
   };
 
   return (
@@ -151,9 +162,11 @@ export default function BankDashboardV2() {
 
         {activeTab === "notifications" && <BankNotificationsView embedded />}
 
-        {activeTab === "billing" && <BillingOverviewPage />}
+        {activeTab === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
 
-        {activeTab === "billing-invoices" && <BillingInvoicesPage />}
+        {activeTab === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
+
+        {activeTab === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} />}
 
         {activeTab === "settings" && <SettingsPanel />}
 

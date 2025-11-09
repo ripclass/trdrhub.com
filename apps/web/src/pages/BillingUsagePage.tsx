@@ -51,7 +51,7 @@ import {
 import { formatCurrency } from '@/types/billing';
 import type { UsageRecordsFilters } from '@/types/billing';
 
-export function BillingUsagePage() {
+export function BillingUsagePage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const [filters, setFilters] = useState<UsageRecordsFilters>({
     page: 1,
     per_page: 25
@@ -146,7 +146,7 @@ export function BillingUsagePage() {
       </div>
 
       {/* Navigation */}
-      <BillingNav />
+      <BillingNav currentTab="usage" onTabChange={onTabChange} />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

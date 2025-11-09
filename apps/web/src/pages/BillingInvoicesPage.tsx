@@ -44,7 +44,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency, getInvoiceStatusColor } from '@/types/billing';
 import type { Invoice, InvoiceStatus, InvoicesFilters } from '@/types/billing';
 
-export function BillingInvoicesPage() {
+export function BillingInvoicesPage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [filters, setFilters] = useState<InvoicesFilters>({
@@ -156,7 +156,7 @@ export function BillingInvoicesPage() {
       </div>
 
       {/* Navigation */}
-      <BillingNav />
+      <BillingNav currentTab="invoices" onTabChange={onTabChange} />
 
       {/* Status Summary */}
       {statusSummary && (

@@ -32,7 +32,7 @@ import { useAuth } from '@/hooks/use-auth';
 // Types
 import { InvoiceStatus, PlanType, type CompanyBillingInfo, type UsageStats } from '@/types/billing';
 
-export function BillingOverviewPage() {
+export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const [searchParams] = useSearchParams();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
@@ -188,6 +188,8 @@ export function BillingOverviewPage() {
 
       {/* Navigation */}
       <BillingNav
+        currentTab="overview"
+        onTabChange={onTabChange}
         onUpgrade={handleUpgradeClick}
         onRefresh={refreshBillingData}
         pendingInvoicesCount={

@@ -22,6 +22,7 @@ import { TemplatesView } from "./sme/Templates";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
+import { BillingUsagePage } from "./BillingUsagePage";
 import {
   FileText,
   CheckCircle,
@@ -53,11 +54,12 @@ type Section =
   | "analytics"
   | "notifications"
   | "billing"
+  | "billing-usage"
   | "billing-invoices"
   | "settings"
   | "help";
 
-const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-invoices", "settings", "help"];
+const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-usage", "billing-invoices", "settings", "help"];
 
 const dashboardStats = {
   thisMonth: 6,
@@ -253,6 +255,16 @@ export default function ImporterDashboardV2() {
     setSearchParams(next, { replace: true });
   };
 
+  const handleBillingTabChange = (tab: string) => {
+    const sectionMap: Record<string, Section> = {
+      overview: "billing",
+      usage: "billing-usage",
+      invoices: "billing-invoices",
+    };
+    const section = sectionMap[tab] || "billing";
+    handleSectionChange(section);
+  };
+
   const handleDeleteDraft = async (draftId: string) => {
     try {
       await deleteDraft(draftId);
@@ -350,9 +362,11 @@ export default function ImporterDashboardV2() {
             <NotificationsCard notifications={notifications} />
           )}
 
-          {activeSection === "billing" && <BillingOverviewPage />}
+          {activeSection === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
 
-          {activeSection === "billing-invoices" && <BillingInvoicesPage />}
+          {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
+
+          {activeSection === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} />}
 
           {activeSection === "settings" && <SettingsPanel />}
 
