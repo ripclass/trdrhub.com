@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -259,8 +259,8 @@ export function ResultsTable({}: ResultsTableProps) {
   };
 
   return (
-    <>
-    <Card>
+    <React.Fragment>
+      <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -530,6 +530,6 @@ export function ResultsTable({}: ResultsTableProps) {
       clientName={selectedClientName}
       lcNumber={selectedLcNumber}
     />
-    </>
+    </React.Fragment>
   );
 }
