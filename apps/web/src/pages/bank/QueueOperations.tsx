@@ -617,10 +617,10 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
                           job.status === "succeeded"
                             ? "success"
                             : job.status === "failed"
-                            ? "destructive"
+                            ? "error"
                             : job.status === "running"
-                            ? "info"
-                            : "secondary"
+                            ? "pending"
+                            : "warning"
                         }
                       >
                         {job.status}

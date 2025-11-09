@@ -154,15 +154,15 @@ const getStatusColor = (status: string) => {
     case "resolved":
       return "success";
     case "rejected":
-      return "destructive";
+      return "error";
     case "open":
-      return "info";
+      return "pending";
     case "in_progress":
       return "warning";
     case "closed":
-      return "secondary";
+      return "warning";
     default:
-      return "secondary";
+      return "warning";
   }
 };
 
