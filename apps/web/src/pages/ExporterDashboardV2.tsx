@@ -150,6 +150,7 @@ export default function ExporterDashboardV2() {
     const allowed: Section[] = [
       "dashboard",
       "workspace",
+      "templates",
       "upload",
       "reviews",
       "analytics",
