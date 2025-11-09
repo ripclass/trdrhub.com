@@ -38,15 +38,26 @@ import { NotificationList, type Notification } from "@/components/notifications/
 import { useUsageStats, useInvoices } from "@/hooks/useBilling";
 import { InvoiceStatus } from "@/types/billing";
 import { Badge } from "@/components/ui/badge";
-import { useNavigate } from "react-router-dom";
 import { CreditCard } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-const SECTION_OPTIONS = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "settings", "help"] as const;
-type Section = (typeof SECTION_OPTIONS)[number];
+type Section =
+  | "dashboard"
+  | "workspace"
+  | "templates"
+  | "upload"
+  | "reviews"
+  | "analytics"
+  | "notifications"
+  | "billing"
+  | "billing-invoices"
+  | "settings"
+  | "help";
+
+const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-invoices", "settings", "help"];
 
 const dashboardStats = {
   thisMonth: 6,
@@ -425,13 +436,12 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
   const navigate = useNavigate();
   const { data: usageStats } = useUsageStats();
   const { data: invoicesData } = useInvoices({
-    status: [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE],
-    limit: 1,
+    status: InvoiceStatus.PENDING,
   });
 
   const hasPendingInvoices = invoicesData?.invoices && invoicesData.invoices.length > 0;
-  const quotaPercentage = usageStats
-    ? Math.min(100, (usageStats.used / usageStats.limit) * 100)
+  const quotaPercentage = usageStats && usageStats.quota_limit
+    ? Math.min(100, (usageStats.quota_used / usageStats.quota_limit) * 100)
     : 0;
 
   return (
@@ -446,7 +456,7 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
                   <p className="text-sm font-medium text-muted-foreground mb-2">Usage Quota</p>
                   <div className="space-y-2">
                     <p className="text-2xl font-bold text-foreground tabular-nums">
-                      {usageStats.used.toLocaleString()} / {usageStats.limit.toLocaleString()}
+                      {usageStats.quota_used.toLocaleString()} / {usageStats.quota_limit?.toLocaleString() ?? "∞"}
                     </p>
                     <Progress value={quotaPercentage} className="h-2" />
                   </div>
