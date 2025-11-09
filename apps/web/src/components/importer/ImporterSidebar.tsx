@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileTemplate } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -87,7 +87,7 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                   onClick={() => onSectionChange("templates")}
                   tooltip="Templates"
                 >
-                  <FileTemplate />
+                  <FileText />
                   <span>Templates</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

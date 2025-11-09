@@ -1,5 +1,5 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2, FolderKanban, FileTemplate } from "lucide-react";
+import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2, FolderKanban, FileText } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -90,7 +90,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, ...props }: Ex
                   onClick={() => onSectionChange("templates")}
                   tooltip="Templates"
                 >
-                  <FileTemplate />
+                  <FileText />
                   <span>Templates</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

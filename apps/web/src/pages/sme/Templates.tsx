@@ -35,7 +35,6 @@ import {
   Copy,
   RefreshCw,
   CheckCircle2,
-  FileTemplate,
   Save,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -248,7 +247,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <FileTemplate className="h-4 w-4" />
+            <FileText className="h-4 w-4" />
             About Templates
           </CardTitle>
         </CardHeader>
@@ -295,7 +294,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
                 </div>
               ) : filteredTemplates.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <FileTemplate className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
                   <p>No {activeTab === "lc" ? "LC" : "document"} templates yet</p>
                   <p className="text-sm">Create your first template to get started</p>
                   <Button onClick={handleCreateTemplate} className="mt-4" variant="outline">
