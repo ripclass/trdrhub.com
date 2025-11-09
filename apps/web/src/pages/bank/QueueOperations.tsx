@@ -464,14 +464,14 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
             <div className="space-y-2">
               <Label>Status</Label>
               <Select
-                value={statusFilter.join(",")}
-                onValueChange={(value) => setStatusFilter(value ? value.split(",") : [])}
+                value={statusFilter.join(",") || "all"}
+                onValueChange={(value) => setStatusFilter(value === "all" ? [] : value.split(","))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="queued">Queued</SelectItem>
                   <SelectItem value="running">Running</SelectItem>
                   <SelectItem value="succeeded">Succeeded</SelectItem>
@@ -483,14 +483,14 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
             <div className="space-y-2">
               <Label>Priority</Label>
               <Select
-                value={priorityFilter.join(",")}
-                onValueChange={(value) => setPriorityFilter(value ? value.split(",") : [])}
+                value={priorityFilter.join(",") || "all"}
+                onValueChange={(value) => setPriorityFilter(value === "all" ? [] : value.split(","))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All Priorities" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Priorities</SelectItem>
+                  <SelectItem value="all">All Priorities</SelectItem>
                   <SelectItem value="9,10">High (9-10)</SelectItem>
                   <SelectItem value="7,8">Medium-High (7-8)</SelectItem>
                   <SelectItem value="5,6">Medium (5-6)</SelectItem>
@@ -501,14 +501,14 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
             <div className="space-y-2">
               <Label>Queue</Label>
               <Select
-                value={queueFilter.join(",")}
-                onValueChange={(value) => setQueueFilter(value ? value.split(",") : [])}
+                value={queueFilter.join(",") || "all"}
+                onValueChange={(value) => setQueueFilter(value === "all" ? [] : value.split(","))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All Queues" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Queues</SelectItem>
+                  <SelectItem value="all">All Queues</SelectItem>
                   <SelectItem value="priority">Priority</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="bulk">Bulk</SelectItem>
