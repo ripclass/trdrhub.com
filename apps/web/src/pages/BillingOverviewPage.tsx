@@ -27,7 +27,7 @@ import {
   useRefreshBillingData,
   useBillingPolling
 } from '@/hooks/useBilling';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 // Types
 import { InvoiceStatus } from '@/types/billing';

@@ -38,7 +38,7 @@ import {
   useDownloadInvoice,
   useRetryPayment
 } from '@/hooks/useBilling';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 // Types
 import { formatCurrency, getInvoiceStatusColor } from '@/types/billing';
