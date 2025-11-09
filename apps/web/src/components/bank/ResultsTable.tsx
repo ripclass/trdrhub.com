@@ -259,7 +259,7 @@ export function ResultsTable({}: ResultsTableProps) {
   };
 
   return (
-    <React.Fragment>
+    <div>
       <Card>
         <CardHeader>
         <div className="flex items-center justify-between">
@@ -530,6 +530,6 @@ export function ResultsTable({}: ResultsTableProps) {
       clientName={selectedClientName}
       lcNumber={selectedLcNumber}
     />
-    </React.Fragment>
+    </div>
   );
 }
