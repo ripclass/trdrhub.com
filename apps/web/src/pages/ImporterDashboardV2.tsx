@@ -20,6 +20,8 @@ import { LCWorkspaceView } from "./sme/LCWorkspace";
 import { DataRetentionView } from "./settings/DataRetention";
 import { TemplatesView } from "./sme/Templates";
 import { CompanyProfileView } from "./settings/CompanyProfile";
+import { BillingOverviewPage } from "./BillingOverviewPage";
+import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import {
   FileText,
   CheckCircle,
@@ -33,6 +35,11 @@ import {
   GitBranch,
 } from "lucide-react";
 import { NotificationList, type Notification } from "@/components/notifications/NotificationItem";
+import { useUsageStats, useInvoices } from "@/hooks/useBilling";
+import { InvoiceStatus } from "@/types/billing";
+import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
+import { CreditCard } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -332,6 +339,10 @@ export default function ImporterDashboardV2() {
             <NotificationsCard notifications={notifications} />
           )}
 
+          {activeSection === "billing" && <BillingOverviewPage />}
+
+          {activeSection === "billing-invoices" && <BillingInvoicesPage />}
+
           {activeSection === "settings" && <SettingsPanel />}
 
           {activeSection === "help" && <HelpPanel />}
@@ -413,8 +424,72 @@ function DashboardOverview({
 }
 
 function StatGrid({ stats }: { stats: typeof dashboardStats }) {
+  const navigate = useNavigate();
+  const { data: usageStats } = useUsageStats();
+  const { data: invoicesData } = useInvoices({
+    status: [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE],
+    limit: 1,
+  });
+
+  const hasPendingInvoices = invoicesData?.invoices && invoicesData.invoices.length > 0;
+  const quotaPercentage = usageStats
+    ? Math.min(100, (usageStats.used / usageStats.limit) * 100)
+    : 0;
+
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="space-y-4">
+      {/* Billing Signals */}
+      {(usageStats || hasPendingInvoices) && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
+          {usageStats && (
+            <Card className="shadow-soft border-0">
+              <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Usage Quota</p>
+                  <div className="space-y-2">
+                    <p className="text-2xl font-bold text-foreground tabular-nums">
+                      {usageStats.used.toLocaleString()} / {usageStats.limit.toLocaleString()}
+                    </p>
+                    <Progress value={quotaPercentage} className="h-2" />
+                  </div>
+                </div>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+                  <TrendingUp className="h-6 w-6 text-blue-500" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {hasPendingInvoices && (
+            <Card className="shadow-soft border-0 border-yellow-500/20">
+              <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Pending Invoice</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-foreground tabular-nums">
+                      {invoicesData?.invoices.length || 0}
+                    </p>
+                    <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                      Action Required
+                    </Badge>
+                  </div>
+                  <button
+                    onClick={() => navigate("/lcopilot/importer-dashboard?section=billing-invoices")}
+                    className="mt-3 text-sm text-primary hover:underline w-full text-left"
+                  >
+                    View invoices →
+                  </button>
+                </div>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-yellow-500/10">
+                  <CreditCard className="h-6 w-6 text-yellow-500" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      
+      {/* Main Stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="shadow-soft border-0">
         <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
           <div>

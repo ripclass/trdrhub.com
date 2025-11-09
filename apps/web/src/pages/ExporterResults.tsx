@@ -22,8 +22,10 @@ import {
   Package,
   BarChart3,
   TrendingUp,
-  PieChart
+  PieChart,
+  Receipt
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 // Mock exporter results
 const mockExporterResults = {
@@ -138,8 +140,12 @@ type ExporterResultsProps = {
 
 export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const lcNumber = searchParams.get('lc') || mockExporterResults.lcNumber;
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // Check if result has invoiceId (future enhancement)
+  const invoiceId = (mockExporterResults as any).invoiceId;
 
   const successCount = mockExporterResults.documents.filter(d => d.status === "success").length;
   const warningCount = mockExporterResults.documents.filter(d => d.status === "warning").length;
@@ -268,6 +274,14 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         Ready for customs clearance
                       </p>
                     </>
+                  )}
+                  {invoiceId && (
+                    <Link to={`/lcopilot/exporter-dashboard?tab=billing&invoice=${invoiceId}`}>
+                      <Button variant="outline" size="sm" className="w-full">
+                        <Receipt className="w-4 h-4 mr-2" />
+                        View Invoice
+                      </Button>
+                    </Link>
                   )}
                 </div>
               </div>

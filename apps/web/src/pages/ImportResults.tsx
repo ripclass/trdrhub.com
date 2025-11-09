@@ -24,7 +24,8 @@ import {
   AlertCircle,
   BarChart3,
   TrendingUp,
-  PieChart
+  PieChart,
+  Receipt
 } from "lucide-react";
 
 // Mock data for demonstration - in real app this would come from API
@@ -810,6 +811,14 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <Download className="w-4 h-4 mr-2" />
                   {isGeneratingPackage ? 'Generating...' : `Download ${mode === 'draft' ? 'Risk Report' : 'Compliance Report'}`}
                 </Button>
+                {(mockData as any).invoiceId && (
+                  <Link to={`/lcopilot/importer-dashboard?tab=billing&invoice=${(mockData as any).invoiceId}`}>
+                    <Button variant="outline" size="sm">
+                      <Receipt className="w-4 h-4 mr-2" />
+                      Invoice
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </CardContent>

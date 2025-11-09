@@ -38,6 +38,8 @@ import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AdvancedFilters } from "./AdvancedFilters";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useInvoices } from "@/hooks/useBilling";
+import { ReceiptText } from "lucide-react";
 
 interface ResultsTableProps {}
 
@@ -442,6 +444,17 @@ export function ResultsTable({}: ResultsTableProps) {
                       </TableCell>
                       <TableCell dense className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Invoice link - check if result has invoiceId (future enhancement) */}
+                          {(result as any).invoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/lcopilot/bank-dashboard?tab=billing-invoices&invoice=${(result as any).invoiceId}`)}
+                              title="View Invoice"
+                            >
+                              <ReceiptText className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"

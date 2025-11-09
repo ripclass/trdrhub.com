@@ -17,6 +17,8 @@ import { BankNotificationsView } from "./bank/BankNotifications";
 import { QueueOperationsView } from "./bank/QueueOperations";
 import { SLADashboardsView } from "./bank/SLADashboards";
 import { EvidencePacksView } from "./bank/EvidencePacks";
+import { BillingOverviewPage } from "./BillingOverviewPage";
+import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -148,6 +150,10 @@ export default function BankDashboardV2() {
         {activeTab === "evidence-packs" && <EvidencePacksView embedded />}
 
         {activeTab === "notifications" && <BankNotificationsView embedded />}
+
+        {activeTab === "billing" && <BillingOverviewPage />}
+
+        {activeTab === "billing-invoices" && <BillingInvoicesPage />}
 
         {activeTab === "settings" && <SettingsPanel />}
 
