@@ -58,6 +58,8 @@ type Section =
   | "settings"
   | "help";
 
+type WorkspaceDraft = DraftData;
+
 const dashboardStats = {
   thisMonth: 6,
   successRate: 91.7,
@@ -359,8 +361,6 @@ export default function ExporterDashboardV2() {
     </>
   );
 }
-
-type WorkspaceDraft = DraftData;
 
 interface DashboardOverviewProps {
   stats: typeof dashboardStats;

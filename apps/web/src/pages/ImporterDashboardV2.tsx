@@ -48,6 +48,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 const SECTION_OPTIONS = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "settings", "help"] as const;
 type Section = (typeof SECTION_OPTIONS)[number];
 
+type WorkspaceDraft = Draft;
+
 const dashboardStats = {
   thisMonth: 6,
   successRate: 91.7,
@@ -363,8 +365,6 @@ export default function ImporterDashboardV2() {
     </>
   );
 }
-
-type WorkspaceDraft = Draft;
 
 interface DashboardOverviewProps {
   stats: typeof dashboardStats;
