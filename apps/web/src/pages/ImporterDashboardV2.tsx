@@ -537,6 +537,7 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
         </CardContent>
       </Card>
     </div>
+    </div>
   );
 }
 
