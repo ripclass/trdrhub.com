@@ -89,7 +89,7 @@ export function useSessionTimeout({ timeoutMinutes = 30, warningMinutes = 5 }: S
     }, checkInterval);
 
     return () => clearInterval(interval);
-  }, [user, lastActivity, effectiveTimeoutMinutes, warningMinutes, showWarning, toast]);
+  }, [user, lastActivity, timeoutMinutes, warningMinutes, showWarning, toast]);
 
   const handleExtendSession = async () => {
     // In a real app, call API to refresh session
