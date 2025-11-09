@@ -38,7 +38,6 @@ import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AdvancedFilters } from "./AdvancedFilters";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useInvoices } from "@/hooks/useBilling";
 import { ReceiptText } from "lucide-react";
 
 interface ResultsTableProps {}
