@@ -201,6 +201,7 @@ export function BankQuickStats() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
