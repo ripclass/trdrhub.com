@@ -76,7 +76,8 @@ import type {
   InvoicesFilters,
   Invoice,
   InvoiceStatus,
-  InvoiceLineItem
+  InvoiceLineItem,
+  SettlementStatus
 } from '@/types/billing';
 
 interface InvoicesTableProps {
@@ -85,6 +86,10 @@ interface InvoicesTableProps {
   onInvoiceClick?: (invoice: Invoice) => void;
   showActions?: boolean;
   compact?: boolean;
+  bankMode?: boolean;
+  clients?: Array<{ id: string; name: string }>;
+  branches?: Array<{ id: string; name: string }>;
+  products?: string[];
 }
 
 export function InvoicesTable({
@@ -92,7 +97,11 @@ export function InvoicesTable({
   initialFilters = {},
   onInvoiceClick,
   showActions = true,
-  compact = false
+  compact = false,
+  bankMode = false,
+  clients = [],
+  branches = [],
+  products = []
 }: InvoicesTableProps) {
   const [filters, setFilters] = useState<InvoicesFilters>({
     page: 1,
@@ -134,6 +143,38 @@ export function InvoicesTable({
         return 'Cancelled';
       default:
         return status;
+    }
+  };
+
+  const getSettlementStatusDisplay = (status?: SettlementStatus) => {
+    if (!status) return 'N/A';
+    switch (status) {
+      case 'PENDING':
+        return 'Pending';
+      case 'PROCESSED':
+        return 'Processed';
+      case 'RECONCILED':
+        return 'Reconciled';
+      case 'DISPUTED':
+        return 'Disputed';
+      default:
+        return status;
+    }
+  };
+
+  const getSettlementStatusColor = (status?: SettlementStatus) => {
+    if (!status) return 'text-gray-600 bg-gray-100';
+    switch (status) {
+      case 'RECONCILED':
+        return 'text-green-600 bg-green-100';
+      case 'PROCESSED':
+        return 'text-blue-600 bg-blue-100';
+      case 'PENDING':
+        return 'text-yellow-600 bg-yellow-100';
+      case 'DISPUTED':
+        return 'text-red-600 bg-red-100';
+      default:
+        return 'text-gray-600 bg-gray-100';
     }
   };
 
@@ -226,6 +267,90 @@ export function InvoicesTable({
                 </SelectContent>
               </Select>
 
+              {/* Bank-specific filters */}
+              {bankMode && (
+                <>
+                  {/* Settlement status filter */}
+                  <Select
+                    value={filters.settlement_status || 'all'}
+                    onValueChange={(value) =>
+                      handleFilterChange('settlement_status', value === 'all' ? undefined : value as SettlementStatus)
+                    }
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="All settlements" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Settlements</SelectItem>
+                      <SelectItem value="PENDING">Pending</SelectItem>
+                      <SelectItem value="PROCESSED">Processed</SelectItem>
+                      <SelectItem value="RECONCILED">Reconciled</SelectItem>
+                      <SelectItem value="DISPUTED">Disputed</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Client filter */}
+                  {clients.length > 0 && (
+                    <Select
+                      value={filters.client_id || 'all'}
+                      onValueChange={(value) => handleFilterChange('client_id', value === 'all' ? undefined : value)}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="All Clients" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* Branch filter */}
+                  {branches.length > 0 && (
+                    <Select
+                      value={filters.branch_id || 'all'}
+                      onValueChange={(value) => handleFilterChange('branch_id', value === 'all' ? undefined : value)}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="All Branches" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Branches</SelectItem>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* Product filter */}
+                  {products.length > 0 && (
+                    <Select
+                      value={filters.product || 'all'}
+                      onValueChange={(value) => handleFilterChange('product', value === 'all' ? undefined : value)}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="All Products" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Products</SelectItem>
+                        {products.map((product) => (
+                          <SelectItem key={product} value={product}>
+                            {product.replace('_', ' ')}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </>
+              )}
+
               {/* Per page selector */}
               <Select
                 value={filters.per_page?.toString() || '20'}
@@ -277,6 +402,7 @@ export function InvoicesTable({
                     <TableHead>Invoice</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
+                    {bankMode && <TableHead>Settlement</TableHead>}
                     <TableHead>Due Date</TableHead>
                     {showActions && <TableHead className="w-[50px]"></TableHead>}
                   </TableRow>
@@ -338,6 +464,17 @@ export function InvoicesTable({
                             </Badge>
                           </div>
                         </TableCell>
+
+                        {bankMode && (
+                          <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className={getSettlementStatusColor((invoice as any).settlement_status)}
+                            >
+                              {getSettlementStatusDisplay((invoice as any).settlement_status)}
+                            </Badge>
+                          </TableCell>
+                        )}
 
                         <TableCell>
                           <div className={cn(

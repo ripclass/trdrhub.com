@@ -20,6 +20,7 @@ import { EvidencePacksView } from "./bank/EvidencePacks";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
+import { BillingAllocationsPage } from "./BillingAllocationsPage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -62,6 +63,7 @@ export default function BankDashboardV2() {
       overview: "billing",
       usage: "billing-usage",
       invoices: "billing-invoices",
+      allocations: "billing-allocations",
     };
     const newTab = tabMap[tab] || "billing";
     handleTabChange(newTab);
@@ -162,11 +164,13 @@ export default function BankDashboardV2() {
 
         {activeTab === "notifications" && <BankNotificationsView embedded />}
 
-        {activeTab === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
+        {activeTab === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} mode="bank" />}
 
-        {activeTab === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
+        {activeTab === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} mode="bank" />}
 
-        {activeTab === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} />}
+        {activeTab === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} mode="bank" />}
+
+        {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
 
         {activeTab === "settings" && <SettingsPanel />}
 

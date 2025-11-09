@@ -44,13 +44,27 @@ import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency, getInvoiceStatusColor } from '@/types/billing';
 import type { Invoice, InvoiceStatus, InvoicesFilters } from '@/types/billing';
 
-export function BillingInvoicesPage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
+export function BillingInvoicesPage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [filters, setFilters] = useState<InvoicesFilters>({
     page: 1,
     per_page: 20
   });
+  const isBankMode = mode === 'bank';
+
+  // Mock data for bank filters (in real app, this would come from API)
+  const mockClients = isBankMode ? [
+    { id: 'client-1', name: 'ABC Exports Ltd' },
+    { id: 'client-2', name: 'XYZ Imports Ltd' },
+    { id: 'client-3', name: 'Global Trading Co' },
+  ] : [];
+  const mockBranches = isBankMode ? [
+    { id: 'branch-1', name: 'Dhaka Main' },
+    { id: 'branch-2', name: 'Chittagong' },
+    { id: 'branch-3', name: 'Sylhet' },
+  ] : [];
+  const mockProducts = isBankMode ? ['LC_VALIDATION', 'RE_CHECK', 'AMENDMENT'] : [];
 
   const { user } = useAuth();
 
@@ -135,9 +149,11 @@ export function BillingInvoicesPage({ onTabChange }: { onTabChange?: (tab: strin
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Invoices</h1>
+          <h1 className="text-2xl font-bold">{isBankMode ? 'Invoices & Settlements' : 'Invoices'}</h1>
           <p className="text-muted-foreground">
-            View and manage your billing invoices
+            {isBankMode 
+              ? 'View and manage invoices and settlement records'
+              : 'View and manage your invoices and payment history'}
           </p>
         </div>
 
@@ -156,7 +172,7 @@ export function BillingInvoicesPage({ onTabChange }: { onTabChange?: (tab: strin
       </div>
 
       {/* Navigation */}
-      <BillingNav currentTab="invoices" onTabChange={onTabChange} />
+      <BillingNav currentTab="invoices" onTabChange={onTabChange} mode={mode} hideUpgrade={isBankMode} />
 
       {/* Status Summary */}
       {statusSummary && (
@@ -212,6 +228,10 @@ export function BillingInvoicesPage({ onTabChange }: { onTabChange?: (tab: strin
       {/* Invoices Table */}
       <InvoicesTable
         initialFilters={filters}
+        bankMode={isBankMode}
+        clients={mockClients}
+        branches={mockBranches}
+        products={mockProducts}
         onInvoiceClick={handleInvoiceClick}
       />
 

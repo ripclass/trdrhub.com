@@ -15,7 +15,8 @@ import {
   Download,
   RefreshCw,
   Crown,
-  Building2
+  Building2,
+  PieChart
 } from 'lucide-react';
 // Inline cn function to avoid import/bundling issues
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
@@ -47,6 +48,8 @@ interface BillingNavProps {
   showActions?: boolean;
   pendingInvoicesCount?: number;
   overdueInvoicesCount?: number;
+  mode?: 'sme' | 'bank';
+  hideUpgrade?: boolean;
 }
 
 export function BillingNav({
@@ -58,7 +61,9 @@ export function BillingNav({
   className,
   showActions = true,
   pendingInvoicesCount = 0,
-  overdueInvoicesCount = 0
+  overdueInvoicesCount = 0,
+  mode = 'sme',
+  hideUpgrade = false
 }: BillingNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -93,6 +98,9 @@ export function BillingNav({
         case 'invoices':
           navigate(`${basePath}/invoices`);
           break;
+        case 'allocations':
+          navigate(`${basePath}/allocations`);
+          break;
         case 'settings':
           navigate(`${basePath}/settings`);
           break;
@@ -110,15 +118,23 @@ export function BillingNav({
   const isBank = user?.role === 'bank';
   const canManageSettings = isAdmin || isCompanyAdmin;
   const canViewBankCompliance = isAdmin || isBank;
+  const isBankMode = mode === 'bank';
+  const showUpgrade = !hideUpgrade && !isBankMode && onUpgrade;
 
   return (
     <div className={cn('flex items-center justify-between', className)}>
       {/* Navigation tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className={`grid w-full lg:w-auto ${
-          canViewBankCompliance && canManageSettings ? 'grid-cols-3 lg:grid-cols-5' :
-          canViewBankCompliance || canManageSettings ? 'grid-cols-3 lg:grid-cols-4' :
-          'grid-cols-3'
+          isBankMode ? (
+            canViewBankCompliance && canManageSettings ? 'grid-cols-4 lg:grid-cols-6' :
+            canViewBankCompliance || canManageSettings ? 'grid-cols-4 lg:grid-cols-5' :
+            'grid-cols-4'
+          ) : (
+            canViewBankCompliance && canManageSettings ? 'grid-cols-3 lg:grid-cols-5' :
+            canViewBankCompliance || canManageSettings ? 'grid-cols-3 lg:grid-cols-4' :
+            'grid-cols-3'
+          )
         }`}>
           <TabsTrigger value="overview" className="gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -132,7 +148,7 @@ export function BillingNav({
 
           <TabsTrigger value="invoices" className="gap-2 relative">
             <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">Invoices</span>
+            <span className="hidden sm:inline">{isBankMode ? 'Invoices & Settlements' : 'Invoices'}</span>
             {(pendingInvoicesCount > 0 || overdueInvoicesCount > 0) && (
               <Badge
                 variant={overdueInvoicesCount > 0 ? "destructive" : "secondary"}
@@ -142,6 +158,13 @@ export function BillingNav({
               </Badge>
             )}
           </TabsTrigger>
+
+          {isBankMode && (
+            <TabsTrigger value="allocations" className="gap-2">
+              <PieChart className="h-4 w-4" />
+              <span className="hidden sm:inline">Allocations</span>
+            </TabsTrigger>
+          )}
 
           {canViewBankCompliance && (
             <TabsTrigger value="bank-compliance" className="gap-2">
@@ -187,7 +210,7 @@ export function BillingNav({
           )}
 
           {/* Upgrade button */}
-          {onUpgrade && (
+          {showUpgrade && (
             <Button
               size="sm"
               onClick={onUpgrade}

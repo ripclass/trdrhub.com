@@ -64,13 +64,21 @@ interface UsageTableProps {
   initialFilters?: UsageRecordsFilters;
   onRowClick?: (record: UsageRecord) => void;
   showExport?: boolean;
+  bankMode?: boolean;
+  clients?: Array<{ id: string; name: string }>;
+  branches?: Array<{ id: string; name: string }>;
+  products?: string[];
 }
 
 export function UsageTable({
   className,
   initialFilters = {},
   onRowClick,
-  showExport = true
+  showExport = true,
+  bankMode = false,
+  clients = [],
+  branches = [],
+  products = []
 }: UsageTableProps) {
   const [filters, setFilters] = useState<UsageRecordsFilters>({
     page: 1,
@@ -271,6 +279,71 @@ export function UsageTable({
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Bank-specific filters */}
+          {bankMode && (
+            <>
+              {/* Client filter */}
+              {clients.length > 0 && (
+                <Select
+                  value={filters.client_id || 'all'}
+                  onValueChange={(value) => handleFilterChange('client_id', value === 'all' ? undefined : value)}
+                >
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue placeholder="All Clients" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Branch filter */}
+              {branches.length > 0 && (
+                <Select
+                  value={filters.branch_id || 'all'}
+                  onValueChange={(value) => handleFilterChange('branch_id', value === 'all' ? undefined : value)}
+                >
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue placeholder="All Branches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Branches</SelectItem>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Product filter */}
+              {products.length > 0 && (
+                <Select
+                  value={filters.product || 'all'}
+                  onValueChange={(value) => handleFilterChange('product', value === 'all' ? undefined : value)}
+                >
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue placeholder="All Products" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Products</SelectItem>
+                    {products.map((product) => (
+                      <SelectItem key={product} value={product}>
+                        {product.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </>
+          )}
 
           {/* Per page selector */}
           <Select

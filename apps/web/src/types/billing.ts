@@ -17,6 +17,13 @@ export enum InvoiceStatus {
   FAILED = 'FAILED'
 }
 
+export enum SettlementStatus {
+  PENDING = 'PENDING',
+  PROCESSED = 'PROCESSED',
+  RECONCILED = 'RECONCILED',
+  DISPUTED = 'DISPUTED'
+}
+
 export enum PaymentProvider {
   SSLCOMMERZ = 'sslcommerz',
   STRIPE = 'stripe'
@@ -210,12 +217,21 @@ export interface UsageRecordsFilters {
   start_date?: string;
   end_date?: string;
   action?: string;
+  // Bank-specific filters
+  client_id?: string;
+  branch_id?: string;
+  product?: string;
 }
 
 export interface InvoicesFilters {
   page?: number;
   per_page?: number;
   status?: InvoiceStatus;
+  // Bank-specific filters
+  client_id?: string;
+  branch_id?: string;
+  product?: string;
+  settlement_status?: SettlementStatus;
 }
 
 export interface CheckoutRequest {
@@ -365,4 +381,63 @@ export function getInvoiceStatusColor(status: InvoiceStatus): string {
     default:
       return 'text-gray-600 bg-gray-100';
   }
+}
+
+// Bank-specific types
+export interface BankContract {
+  id: string;
+  bank_id: string;
+  contract_number: string;
+  plan: PlanType;
+  contract_term_months: number;
+  start_date: string;
+  end_date: string;
+  quota_limit: number | null;
+  overage_rate: number; // per validation
+  billing_contact_name: string;
+  billing_contact_email: string;
+  billing_contact_phone: string | null;
+  po_reference: string | null;
+  next_settlement_date: string;
+  payment_terms: string; // e.g., "Net-30", "Net-45"
+  currency: Currency;
+  status: 'active' | 'expired' | 'terminated';
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface Allocation {
+  id: string;
+  bank_id: string;
+  client_id: string | null; // null for bank-wide allocation
+  client_name: string | null;
+  branch_id: string | null;
+  branch_name: string | null;
+  product: string | null; // e.g., "LC_VALIDATION", "RE_CHECK"
+  budget_limit: number | null; // null for unlimited
+  quota_limit: number | null;
+  usage_current_period: number;
+  usage_cost_current_period: number;
+  remaining_budget: number | null;
+  alerts_enabled: boolean;
+  alert_threshold_percent: number; // e.g., 80 for 80% warning
+  period_start: string;
+  period_end: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface AllocationList {
+  allocations: Allocation[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface AllocationUpdate {
+  budget_limit?: number | null;
+  quota_limit?: number | null;
+  alerts_enabled?: boolean;
+  alert_threshold_percent?: number;
 }

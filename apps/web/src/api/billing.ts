@@ -21,7 +21,11 @@ import type {
   SystemBillingKPIs,
   BankComplianceReport,
   SMEMetrics,
-  ComplianceFilters
+  ComplianceFilters,
+  BankContract,
+  Allocation,
+  AllocationList,
+  AllocationUpdate
 } from '../types/billing';
 import { PaymentProvider, PlanType, Currency, InvoiceStatus } from '../types/billing';
 
@@ -70,6 +74,64 @@ const getMockUsageRecords = (filters: UsageRecordsFilters = {}): UsageRecordList
     page: filters.page || 1,
     per_page: filters.per_page || 20,
     pages: 0,
+  };
+};
+
+const getMockBankContract = (): BankContract => ({
+  id: 'mock-contract-1',
+  bank_id: 'mock-bank-1',
+  contract_number: 'CNT-2024-001',
+  plan: PlanType.ENTERPRISE,
+  contract_term_months: 12,
+  start_date: new Date(new Date().getFullYear(), 0, 1).toISOString(),
+  end_date: new Date(new Date().getFullYear() + 1, 0, 1).toISOString(),
+  quota_limit: null, // unlimited
+  overage_rate: 50,
+  billing_contact_name: 'John Doe',
+  billing_contact_email: 'billing@bank.com',
+  billing_contact_phone: '+880-1234-567890',
+  po_reference: 'PO-2024-001',
+  next_settlement_date: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString(),
+  payment_terms: 'Net-30',
+  currency: Currency.BDT,
+  status: 'active',
+  created_at: new Date(new Date().getFullYear(), 0, 1).toISOString(),
+  updated_at: null,
+});
+
+const getMockAllocations = (filters: { page?: number; per_page?: number } = {}): AllocationList => {
+  const page = filters.page || 1;
+  const perPage = filters.per_page || 20;
+  
+  const mockAllocations: Allocation[] = [
+    {
+      id: 'alloc-1',
+      bank_id: 'mock-bank-1',
+      client_id: 'client-1',
+      client_name: 'ABC Exports Ltd',
+      branch_id: null,
+      branch_name: null,
+      product: 'LC_VALIDATION',
+      budget_limit: 100000,
+      quota_limit: 1000,
+      usage_current_period: 450,
+      usage_cost_current_period: 22500,
+      remaining_budget: 77500,
+      alerts_enabled: true,
+      alert_threshold_percent: 80,
+      period_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+      period_end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: null,
+    },
+  ];
+  
+  return {
+    allocations: mockAllocations,
+    total: mockAllocations.length,
+    page,
+    per_page: perPage,
+    pages: Math.ceil(mockAllocations.length / perPage),
   };
 };
 
@@ -277,7 +339,60 @@ export const billingApi = {
       provider
     });
     return response.data;
-  }
+  },
+
+  // Bank-specific endpoints
+  // Get bank contract
+  getBankContract: async (): Promise<BankContract> => {
+    return withMockFallback(
+      async () => {
+        const response = await api.get('/billing/bank/contract');
+        return response.data;
+      },
+      getMockBankContract()
+    );
+  },
+
+  // Get allocations
+  getAllocations: async (filters: { page?: number; per_page?: number } = {}): Promise<AllocationList> => {
+    return withMockFallback(
+      async () => {
+        const response = await api.get('/billing/bank/allocations', { params: filters });
+        return response.data;
+      },
+      getMockAllocations(filters)
+    );
+  },
+
+  // Update allocation
+  updateAllocation: async (allocationId: string, data: AllocationUpdate): Promise<Allocation> => {
+    return withMockFallback(
+      async () => {
+        const response = await api.put(`/billing/bank/allocations/${allocationId}`, data);
+        return response.data;
+      },
+      {
+        id: allocationId,
+        bank_id: 'mock-bank-1',
+        client_id: 'client-1',
+        client_name: 'ABC Exports Ltd',
+        branch_id: null,
+        branch_name: null,
+        product: 'LC_VALIDATION',
+        budget_limit: data.budget_limit ?? 100000,
+        quota_limit: data.quota_limit ?? 1000,
+        usage_current_period: 450,
+        usage_cost_current_period: 22500,
+        remaining_budget: data.budget_limit ? data.budget_limit - 22500 : null,
+        alerts_enabled: data.alerts_enabled ?? true,
+        alert_threshold_percent: data.alert_threshold_percent ?? 80,
+        period_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+        period_end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Allocation
+    );
+  },
 };
 
 // Admin billing endpoints

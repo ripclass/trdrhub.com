@@ -51,11 +51,25 @@ import {
 import { formatCurrency } from '@/types/billing';
 import type { UsageRecordsFilters } from '@/types/billing';
 
-export function BillingUsagePage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
+export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
   const [filters, setFilters] = useState<UsageRecordsFilters>({
     page: 1,
     per_page: 25
   });
+  const isBankMode = mode === 'bank';
+
+  // Mock data for bank filters (in real app, this would come from API)
+  const mockClients = isBankMode ? [
+    { id: 'client-1', name: 'ABC Exports Ltd' },
+    { id: 'client-2', name: 'XYZ Imports Ltd' },
+    { id: 'client-3', name: 'Global Trading Co' },
+  ] : [];
+  const mockBranches = isBankMode ? [
+    { id: 'branch-1', name: 'Dhaka Main' },
+    { id: 'branch-2', name: 'Chittagong' },
+    { id: 'branch-3', name: 'Sylhet' },
+  ] : [];
+  const mockProducts = isBankMode ? ['LC_VALIDATION', 'RE_CHECK', 'AMENDMENT'] : [];
 
   const [chartView, setChartView] = useState<'trend' | 'breakdown' | 'cost'>('trend');
 
@@ -146,7 +160,7 @@ export function BillingUsagePage({ onTabChange }: { onTabChange?: (tab: string) 
       </div>
 
       {/* Navigation */}
-      <BillingNav currentTab="usage" onTabChange={onTabChange} />
+      <BillingNav currentTab="usage" onTabChange={onTabChange} mode={mode} hideUpgrade={isBankMode} />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -400,6 +414,10 @@ export function BillingUsagePage({ onTabChange }: { onTabChange?: (tab: string) 
       {/* Detailed Usage Table */}
       <UsageTable
         initialFilters={filters}
+        bankMode={isBankMode}
+        clients={mockClients}
+        branches={mockBranches}
+        products={mockProducts}
         onRowClick={(record) => {
           console.log('Usage record clicked:', record);
           // Could open a modal with detailed information

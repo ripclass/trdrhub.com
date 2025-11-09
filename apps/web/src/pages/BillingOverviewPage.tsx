@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
@@ -12,6 +13,7 @@ import { AlertCircle, TrendingUp, Calendar, Download } from 'lucide-react';
 // Billing components
 import { QuotaMeter } from '@/components/billing/QuotaMeter';
 import { PlanCard } from '@/components/billing/PlanCard';
+import { ContractCard } from '@/components/billing/ContractCard';
 import { UsageSummaryGrid } from '@/components/billing/UsageSummaryCard';
 import { AlertBanner } from '@/components/billing/AlertBanner';
 import { BillingNav, BillingBreadcrumb } from '@/components/billing/BillingNav';
@@ -30,15 +32,17 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 
 // Types
-import { InvoiceStatus, PlanType, type CompanyBillingInfo, type UsageStats } from '@/types/billing';
+import { InvoiceStatus, PlanType, type CompanyBillingInfo, type UsageStats, type BankContract } from '@/types/billing';
+import { billingApi } from '@/api/billing';
 
-export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
+export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
   const [searchParams] = useSearchParams();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
 
   const { user } = useAuth();
   const refreshBillingData = useRefreshBillingData();
+  const isBankMode = mode === 'bank';
 
   // Queries
   const { data: billingInfo, isLoading: billingLoading, error: billingError } = useBillingInfo();
@@ -46,6 +50,13 @@ export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: strin
   const { data: recentInvoices, isLoading: invoicesLoading } = useInvoices({
     page: 1,
     per_page: 5
+  });
+
+  // Bank contract query (bank mode only)
+  const { data: bankContract, isLoading: contractLoading } = useQuery({
+    queryKey: ['bankContract'],
+    queryFn: () => billingApi.getBankContract(),
+    enabled: isBankMode,
   });
 
   // Enable polling when there are pending payments
@@ -192,6 +203,8 @@ export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: strin
         onTabChange={onTabChange}
         onUpgrade={handleUpgradeClick}
         onRefresh={refreshBillingData}
+        mode={mode}
+        hideUpgrade={isBankMode}
         pendingInvoicesCount={
           recentInvoices?.invoices.filter(i => i.status === InvoiceStatus.PENDING).length || 0
         }
@@ -253,11 +266,17 @@ export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: strin
             plan={effectiveBillingInfo.plan}
           />
 
-          {/* Plan Card */}
-          <PlanCard
-            billingInfo={effectiveBillingInfo}
-            onUpgrade={handleUpgradeClick}
-          />
+          {/* Plan/Contract Card */}
+          {isBankMode && bankContract ? (
+            <ContractCard contract={bankContract} />
+          ) : !isBankMode ? (
+            <PlanCard
+              billingInfo={effectiveBillingInfo}
+              onUpgrade={handleUpgradeClick}
+            />
+          ) : (
+            <Skeleton className="h-[300px]" />
+          )}
 
           {/* Quick Actions */}
           <div className="space-y-3">
@@ -273,7 +292,7 @@ export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: strin
               Generate Invoice
             </Button>
 
-            {effectiveBillingInfo.plan !== 'ENTERPRISE' && (
+            {!isBankMode && effectiveBillingInfo.plan !== 'ENTERPRISE' && (
               <Button
                 onClick={handleUpgradeClick}
                 className="w-full gap-2"
@@ -286,13 +305,15 @@ export function BillingOverviewPage({ onTabChange }: { onTabChange?: (tab: strin
         </div>
       </div>
 
-      {/* Upgrade Modal */}
-      <UpgradeModal
-        open={showUpgradeModal}
-        onOpenChange={setShowUpgradeModal}
-        currentBillingInfo={effectiveBillingInfo}
-        onSuccess={handleUpgradeSuccess}
-      />
+      {/* Upgrade Modal (SME only) */}
+      {!isBankMode && (
+        <UpgradeModal
+          open={showUpgradeModal}
+          onOpenChange={setShowUpgradeModal}
+          currentBillingInfo={effectiveBillingInfo}
+          onSuccess={handleUpgradeSuccess}
+        />
+      )}
     </div>
   );
 }
