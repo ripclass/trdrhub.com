@@ -472,10 +472,10 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
                           <StatusBadge
                             status={
                               breach.severity === "critical"
-                                ? "destructive"
+                                ? "error"
                                 : breach.severity === "major"
                                 ? "warning"
-                                : "info"
+                                : "pending"
                             }
                           >
                             {breach.severity}
