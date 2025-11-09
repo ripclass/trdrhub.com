@@ -367,6 +367,7 @@ export function ResultsTable({}: ResultsTableProps) {
             />
           </div>
         </div>
+        </div>
 
         {/* Advanced Filters */}
         <Collapsible open={isAdvancedFiltersOpen} onOpenChange={setIsAdvancedFiltersOpen} className="mb-6">
