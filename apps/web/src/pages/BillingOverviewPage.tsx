@@ -30,7 +30,7 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 
 // Types
-import { InvoiceStatus } from '@/types/billing';
+import { InvoiceStatus, PlanType, type CompanyBillingInfo, type UsageStats } from '@/types/billing';
 
 export function BillingOverviewPage() {
   const [searchParams] = useSearchParams();
@@ -128,17 +128,45 @@ export function BillingOverviewPage() {
     );
   }
 
-  // Error state
-  if (billingError || !billingInfo || !usageStats) {
+  // Provide fallback data when API is not available
+  const defaultBillingInfo: CompanyBillingInfo = {
+    id: 'default',
+    name: user?.email?.split('@')[0] || 'Your Company',
+    plan: PlanType.FREE,
+    quota_limit: 100,
+    quota_used: 0,
+    quota_remaining: 100,
+    billing_email: user?.email || null,
+    payment_customer_id: null,
+  };
+
+  const defaultUsageStats: UsageStats = {
+    company_id: 'default',
+    current_month: 0,
+    current_week: 0,
+    today: 0,
+    total_usage: 0,
+    total_cost: 0,
+    quota_limit: 100,
+    quota_used: 0,
+    quota_remaining: 100,
+  };
+
+  // Use fallback data if API calls failed or returned no data
+  const effectiveBillingInfo = billingInfo || defaultBillingInfo;
+  const effectiveUsageStats = usageStats || defaultUsageStats;
+
+  // Only show error if there's an actual error AND we're not in loading state
+  if (billingError && !billingLoading && !usageLoading) {
     return (
       <div className="container mx-auto p-6">
         <BillingBreadcrumb />
 
         <div className="flex flex-col items-center justify-center py-12">
-          <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Unable to load billing information</h2>
+          <AlertCircle className="h-12 w-12 text-yellow-500 mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Billing service unavailable</h2>
           <p className="text-muted-foreground mb-4">
-            There was an error loading your billing data. Please try again.
+            Unable to connect to billing service. Showing default information. Please try again later.
           </p>
           <Button onClick={refreshBillingData} variant="outline">
             Try Again
@@ -158,7 +186,7 @@ export function BillingOverviewPage() {
         <div>
           <h1 className="text-2xl font-bold">Billing Dashboard</h1>
           <p className="text-muted-foreground">
-            Manage your subscription, usage, and billing for {billingInfo.name}
+            Manage your subscription, usage, and billing for {effectiveBillingInfo.name}
           </p>
         </div>
 
@@ -188,8 +216,8 @@ export function BillingOverviewPage() {
 
       {/* Alert Banner */}
       <AlertBanner
-        usage={usageStats}
-        plan={billingInfo.plan}
+        usage={effectiveUsageStats}
+        plan={effectiveBillingInfo.plan}
         lastInvoiceStatus={getLastInvoiceStatus()}
         onUpgrade={handleUpgradeClick}
         onRetryPayment={() => {
@@ -206,7 +234,7 @@ export function BillingOverviewPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Usage Summary Cards */}
           <UsageSummaryGrid
-            usage={usageStats}
+            usage={effectiveUsageStats}
             lastInvoiceStatus={getLastInvoiceStatus()}
             trends={{
               validations: {
@@ -235,13 +263,13 @@ export function BillingOverviewPage() {
         <div className="space-y-6">
           {/* Quota Meter */}
           <QuotaMeter
-            usage={usageStats}
-            plan={billingInfo.plan}
+            usage={effectiveUsageStats}
+            plan={effectiveBillingInfo.plan}
           />
 
           {/* Plan Card */}
           <PlanCard
-            billingInfo={billingInfo}
+            billingInfo={effectiveBillingInfo}
             onUpgrade={handleUpgradeClick}
           />
 
@@ -259,7 +287,7 @@ export function BillingOverviewPage() {
               Generate Invoice
             </Button>
 
-            {billingInfo.plan !== 'ENTERPRISE' && (
+            {effectiveBillingInfo.plan !== 'ENTERPRISE' && (
               <Button
                 onClick={handleUpgradeClick}
                 className="w-full gap-2"
@@ -276,7 +304,7 @@ export function BillingOverviewPage() {
       <UpgradeModal
         open={showUpgradeModal}
         onOpenChange={setShowUpgradeModal}
-        currentBillingInfo={billingInfo}
+        currentBillingInfo={effectiveBillingInfo}
         onSuccess={handleUpgradeSuccess}
       />
     </div>

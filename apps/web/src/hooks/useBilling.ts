@@ -43,6 +43,8 @@ export const useBillingInfo = () => {
     queryFn: billingApi.getBillingInfo,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 2,
+    retryOnMount: false, // Don't retry on mount if it failed before
+    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid spam
   });
 };
 
@@ -53,6 +55,8 @@ export const useUsageStats = () => {
     queryFn: billingApi.getUsageStats,
     staleTime: 2 * 60 * 1000, // 2 minutes
     retry: 2,
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
   });
 };
 
