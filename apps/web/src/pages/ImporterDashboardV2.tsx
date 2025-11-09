@@ -470,9 +470,9 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
   return (
     <div className="space-y-4">
       {/* Billing Signals */}
-      {(usageStats || hasPendingInvoices) && (
+      {(usageStats || hasPendingInvoices) ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
-          {usageStats && (
+          {usageStats ? (
             <Card className="shadow-soft border-0">
               <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
                 <div className="flex-1 min-w-0">
@@ -489,8 +489,8 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
                 </div>
               </CardContent>
             </Card>
-          )}
-          {hasPendingInvoices && (
+          ) : null}
+          {hasPendingInvoices ? (
             <Card className="shadow-soft border-0 border-yellow-500/20">
               <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
                 <div className="flex-1 min-w-0">
@@ -515,9 +515,9 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
                 </div>
               </CardContent>
             </Card>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
       
       {/* Main Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
