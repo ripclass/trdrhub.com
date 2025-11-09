@@ -7,6 +7,7 @@ import { BulkLCUpload } from "@/components/bank/BulkLCUpload";
 import { ProcessingQueue } from "@/components/bank/ProcessingQueue";
 import { ResultsTable } from "@/components/bank/ResultsTable";
 import { ClientManagement } from "@/components/bank/ClientManagement";
+import { ClientDashboardView } from "@/components/bank/ClientDashboardView";
 import { NotificationPreferences } from "@/components/bank/NotificationPreferences";
 import { BankAnalytics } from "@/components/bank/BankAnalytics";
 import { ApprovalsView } from "./bank/Approvals";
@@ -26,7 +27,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { DataRetentionView } from "./settings/DataRetention";
-import { FileText, CheckCircle, AlertTriangle, Clock, Bell } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Clock, Bell, ArrowLeft } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
 import { useAuth } from "@/hooks/use-auth";
@@ -105,6 +106,30 @@ export default function BankDashboardV2() {
             <ClientManagement />
           </div>
         )}
+
+        {activeTab === "client-dashboard" && (() => {
+          const clientName = searchParams.get("client");
+          if (!clientName) {
+            return (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-destructive">Client name is required</p>
+                  <Button onClick={() => handleTabChange("clients")} className="mt-4">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Clients
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+          return (
+            <ClientDashboardView
+              clientName={decodeURIComponent(clientName)}
+              embedded
+              onBack={() => handleTabChange("clients")}
+            />
+          );
+        })()}
 
         {activeTab === "analytics" && (
           <div className="space-y-4">

@@ -36,8 +36,8 @@ export function ClientManagement({}: ClientManagementProps) {
   };
 
   const handleViewDashboard = (clientName: string) => {
-    // Navigate to client dashboard
-    navigate(`/lcopilot/bank-dashboard/client/${encodeURIComponent(clientName)}`);
+    // Navigate to client dashboard tab within Bank Dashboard V2
+    navigate(`/lcopilot/bank-dashboard?tab=client-dashboard&client=${encodeURIComponent(clientName)}`);
   };
 
   const getStatusBadge = (stats: ClientStats) => {
