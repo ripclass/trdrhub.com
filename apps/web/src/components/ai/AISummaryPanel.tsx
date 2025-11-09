@@ -23,6 +23,11 @@ interface NormalizedSummary {
   fallbackUsed: boolean;
   language?: string;
   auditEventId?: string;
+  ruleReferences?: Array<{
+    regulation: string;
+    article: string;
+    description?: string;
+  }>;
 }
 
 const confidenceToScore = (confidence?: string): number => {
@@ -80,6 +85,7 @@ export default function AISummaryPanel({
         fallbackUsed: Boolean(data.fallback_used),
         language: data.language,
         auditEventId: data.audit_event_id || data.event_id,
+        ruleReferences: data.rule_references || [],
       });
       onRefresh?.();
     } catch (err) {
@@ -139,7 +145,7 @@ export default function AISummaryPanel({
 
         {summary && !loading && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <Badge className={getConfidenceColor(summary.confidenceScore)}>
                 {getConfidenceIcon(summary.confidenceScore)}
                 {Math.round(summary.confidenceScore * 100)}% confidence
@@ -152,6 +158,10 @@ export default function AISummaryPanel({
               )}
 
               <Badge variant="secondary">{summary.modelUsed || 'LLM'}</Badge>
+              
+              <Badge variant="outline" className="text-amber-600 border-amber-300">
+                AI-generated; not legal advice
+              </Badge>
             </div>
 
             <div className="prose prose-sm max-w-none">
@@ -159,6 +169,20 @@ export default function AISummaryPanel({
                 {sanitizeText(summary.content) || 'No summary available.'}
               </p>
             </div>
+
+            {/* Article References */}
+            {summary.ruleReferences && summary.ruleReferences.length > 0 && (
+              <div className="border-t pt-3">
+                <p className="text-xs font-medium text-muted-foreground mb-2">References:</p>
+                <div className="flex flex-wrap gap-2">
+                  {summary.ruleReferences.map((ref: any, idx: number) => (
+                    <Badge key={idx} variant="outline" className="text-xs">
+                      {ref.regulation} Article {ref.article}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="border-t pt-3">
               <p className="text-xs text-muted-foreground">

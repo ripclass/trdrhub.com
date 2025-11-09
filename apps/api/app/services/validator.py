@@ -10,6 +10,91 @@ from app.services.rulhub_client import fetch_rules_from_rulhub
 logger = logging.getLogger(__name__)
 
 
+async def enrich_validation_results_with_ai(
+    validation_results: List[Dict[str, Any]],
+    document_data: Dict[str, Any],
+    session_id: str,
+    user_id: str,
+    db_session
+) -> Dict[str, Any]:
+    """
+    Optionally enrich validation results with AI-generated explanations.
+    
+    Only runs if AI_ENRICHMENT feature flag is enabled and user/tenant has access.
+    
+    Returns:
+        Dict with 'ai_enrichment' key containing explanations and suggestions
+    """
+    ai_enrichment_enabled = os.getenv("AI_ENRICHMENT", "false").lower() == "true"
+    
+    if not ai_enrichment_enabled:
+        return {}
+    
+    try:
+        from app.services.llm_assist import LLMAssistService, DiscrepancySummaryRequest, AILanguage
+        from app.models import ValidationSession, User
+        
+        # Get session and user
+        session = db_session.query(ValidationSession).filter(
+            ValidationSession.id == session_id
+        ).first()
+        
+        user = db_session.query(User).filter(User.id == user_id).first()
+        
+        if not session or not user:
+            logger.warning("Session or user not found for AI enrichment")
+            return {}
+        
+        # Extract discrepancies (failed rules)
+        discrepancies = [
+            {
+                "rule_code": r.get("rule", r.get("rule_id", "unknown")),
+                "title": r.get("title", ""),
+                "message": r.get("message", ""),
+                "severity": r.get("severity", "warning")
+            }
+            for r in validation_results
+            if not r.get("passed", False)
+        ]
+        
+        if not discrepancies:
+            # No discrepancies to enrich
+            return {}
+        
+        # Check if AI assist is enabled for this tenant
+        # For now, check feature flag; in production check tenant settings
+        llm_service = LLMAssistService(db_session)
+        
+        # Generate AI enrichment
+        enrichment_request = DiscrepancySummaryRequest(
+            session_id=session_id,
+            discrepancies=discrepancies,
+            language=AILanguage.ENGLISH,
+            include_explanations=True,
+            include_fix_suggestions=True
+        )
+        
+        ai_response = await llm_service.generate_discrepancy_summary(
+            enrichment_request,
+            user
+        )
+        
+        return {
+            "ai_enrichment": {
+                "summary": ai_response.output,
+                "confidence": ai_response.confidence.value,
+                "rule_references": ai_response.rule_references,
+                "suggestions": ai_response.suggestions,
+                "fallback_used": ai_response.fallback_used
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"AI enrichment failed: {e}", exc_info=True)
+        # Don't fail validation if AI enrichment fails
+        return {}
+
+
 async def validate_document_async(document_data: Dict[str, Any], document_type: str) -> List[Dict[str, Any]]:
     """
     Async version of validate_document that supports JSON rulesets.

@@ -5,7 +5,7 @@ Provides AI summaries, explanations, and drafting while enforcing compliance gua
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from enum import Enum
 import logging
@@ -18,8 +18,11 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from ..models.base import Base
 from ..models import ValidationSession, User
 from ..core.validation_engine import ValidationEngine
-from ..core.prompt_library import PromptLibrary
+from ..core.prompt_library import PromptLibrary, PromptTemplate
 from ..config import settings
+from .llm_provider import LLMProviderFactory
+from .text_guard import TextGuard
+from .ai_usage_tracker import AIUsageTracker, AIFeature
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,12 @@ class AIAssistEvent(Base):
     input_data = Column(JSONB, nullable=False)
     ai_output = Column(Text, nullable=False)
     fallback_used = Column(Boolean, nullable=False, default=False)
+    
+    # Token and Cost Tracking
+    tokens_in = Column(Integer, nullable=True)
+    tokens_out = Column(Integer, nullable=True)
+    estimated_cost_usd = Column(String(20), nullable=True)
+    lc_session_id = Column(UUID(as_uuid=True), ForeignKey('validation_sessions.id'), nullable=True)
 
     # Traceability
     rule_references = Column(JSONB, nullable=True)  # ICC/UCP clause references
@@ -132,6 +141,18 @@ class LLMAssistService:
         self.prompt_library = PromptLibrary()
         self.model_version = settings.LLM_MODEL_VERSION
         self.confidence_threshold = 0.7  # Minimum confidence for AI responses
+        
+        # Initialize new services
+        self.usage_tracker = AIUsageTracker(db)
+        self.text_guard = TextGuard()
+        
+        # Determine max tokens based on output type
+        self.max_tokens_map = {
+            AIOutputType.DISCREPANCY_SUMMARY: settings.AI_MAX_OUTPUT_TOKENS_SYSTEM,
+            AIOutputType.BANK_DRAFT: settings.AI_MAX_OUTPUT_TOKENS_LETTER,
+            AIOutputType.AMENDMENT_DRAFT: settings.AI_MAX_OUTPUT_TOKENS_LETTER,
+            AIOutputType.CHAT_RESPONSE: settings.AI_MAX_OUTPUT_TOKENS_CHAT,
+        }
 
     async def generate_discrepancy_summary(
         self,
@@ -149,6 +170,20 @@ class LLMAssistService:
         if not session:
             raise ValueError(f"Session {request.session_id} not found")
 
+        # Check quota before proceeding
+        is_bank = self._is_bank_user(user)
+        feature = AIFeature.SUMMARY
+        
+        allowed, error_msg, remaining = self.usage_tracker.check_quota(
+            user=user,
+            session=session,
+            feature=feature,
+            is_bank=is_bank
+        )
+        
+        if not allowed:
+            raise ValueError(error_msg or "Quota exceeded")
+
         # Prepare input data
         input_data = {
             "discrepancies": request.discrepancies,
@@ -162,14 +197,16 @@ class LLMAssistService:
             # Get prompt template
             prompt_template = self.prompt_library.get_template(
                 "discrepancy_summary",
-                request.language
+                request.language.value
             )
 
             # Generate AI response
-            ai_output, confidence, rule_refs = await self._call_llm_api(
+            ai_output, confidence, rule_refs, tokens_in, tokens_out, estimated_cost = await self._call_llm_api(
                 prompt_template,
                 input_data,
-                AIOutputType.DISCREPANCY_SUMMARY
+                AIOutputType.DISCREPANCY_SUMMARY,
+                user,
+                session
             )
 
             # Apply guardrails
@@ -180,9 +217,22 @@ class LLMAssistService:
                 )
                 fallback_used = True
                 confidence = ConfidenceLevel.HIGH  # Rule-based is always high confidence
+                tokens_in = 0
+                tokens_out = 0
+                estimated_cost = 0.0
             else:
                 fallback_used = False
                 confidence = self._map_confidence_score(confidence)
+                
+                # Record usage
+                self.usage_tracker.record_usage(
+                    user=user,
+                    session=session,
+                    feature=feature,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    estimated_cost=estimated_cost
+                )
 
             # Generate fix suggestions if requested
             suggestions = []
@@ -207,6 +257,10 @@ class LLMAssistService:
                 input_data=input_data,
                 ai_output=ai_output,
                 fallback_used=fallback_used,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                estimated_cost_usd=str(estimated_cost) if estimated_cost else None,
+                lc_session_id=session.id,
                 rule_references=rule_refs,
                 prompt_template_id=prompt_template.id,
                 processing_time_ms=processing_time
@@ -252,6 +306,20 @@ class LLMAssistService:
         if not session:
             raise ValueError(f"Session {request.session_id} not found")
 
+        # Check quota
+        is_bank = self._is_bank_user(user)
+        feature = AIFeature.LETTER
+        
+        allowed, error_msg, remaining = self.usage_tracker.check_quota(
+            user=user,
+            session=session,
+            feature=feature,
+            is_bank=is_bank
+        )
+        
+        if not allowed:
+            raise ValueError(error_msg or "Quota exceeded")
+
         input_data = {
             "discrepancy_list": request.discrepancy_list,
             "lc_data": session.validation_results.get("lc_data", {}),
@@ -263,13 +331,15 @@ class LLMAssistService:
         try:
             prompt_template = self.prompt_library.get_template(
                 "bank_draft",
-                request.language
+                request.language.value
             )
 
-            ai_output, confidence, rule_refs = await self._call_llm_api(
+            ai_output, confidence, rule_refs, tokens_in, tokens_out, estimated_cost = await self._call_llm_api(
                 prompt_template,
                 input_data,
-                AIOutputType.BANK_DRAFT
+                AIOutputType.BANK_DRAFT,
+                user,
+                session
             )
 
             # Enhanced guardrails for bank communications
@@ -280,9 +350,22 @@ class LLMAssistService:
                 )
                 fallback_used = True
                 confidence = ConfidenceLevel.HIGH
+                tokens_in = 0
+                tokens_out = 0
+                estimated_cost = 0.0
             else:
                 fallback_used = False
                 confidence = self._map_confidence_score(confidence)
+                
+                # Record usage
+                self.usage_tracker.record_usage(
+                    user=user,
+                    session=session,
+                    feature=feature,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    estimated_cost=estimated_cost
+                )
 
             processing_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -298,6 +381,10 @@ class LLMAssistService:
                 input_data=input_data,
                 ai_output=ai_output,
                 fallback_used=fallback_used,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                estimated_cost_usd=str(estimated_cost) if estimated_cost else None,
+                lc_session_id=session.id,
                 rule_references=rule_refs,
                 prompt_template_id=prompt_template.id,
                 processing_time_ms=processing_time
@@ -342,6 +429,20 @@ class LLMAssistService:
         if not session:
             raise ValueError(f"Session {request.session_id} not found")
 
+        # Check quota
+        is_bank = self._is_bank_user(user)
+        feature = AIFeature.LETTER
+        
+        allowed, error_msg, remaining = self.usage_tracker.check_quota(
+            user=user,
+            session=session,
+            feature=feature,
+            is_bank=is_bank
+        )
+        
+        if not allowed:
+            raise ValueError(error_msg or "Quota exceeded")
+
         input_data = {
             "amendment_details": request.amendment_details,
             "amendment_type": request.amendment_type,
@@ -352,13 +453,15 @@ class LLMAssistService:
         try:
             prompt_template = self.prompt_library.get_template(
                 "amendment_draft",
-                request.language
+                request.language.value
             )
 
-            ai_output, confidence, rule_refs = await self._call_llm_api(
+            ai_output, confidence, rule_refs, tokens_in, tokens_out, estimated_cost = await self._call_llm_api(
                 prompt_template,
                 input_data,
-                AIOutputType.AMENDMENT_DRAFT
+                AIOutputType.AMENDMENT_DRAFT,
+                user,
+                session
             )
 
             if confidence < self.confidence_threshold:
@@ -369,9 +472,22 @@ class LLMAssistService:
                 )
                 fallback_used = True
                 confidence = ConfidenceLevel.HIGH
+                tokens_in = 0
+                tokens_out = 0
+                estimated_cost = 0.0
             else:
                 fallback_used = False
                 confidence = self._map_confidence_score(confidence)
+                
+                # Record usage
+                self.usage_tracker.record_usage(
+                    user=user,
+                    session=session,
+                    feature=feature,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    estimated_cost=estimated_cost
+                )
 
             processing_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -387,6 +503,10 @@ class LLMAssistService:
                 input_data=input_data,
                 ai_output=ai_output,
                 fallback_used=fallback_used,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                estimated_cost_usd=str(estimated_cost) if estimated_cost else None,
+                lc_session_id=session.id,
                 rule_references=rule_refs,
                 prompt_template_id=prompt_template.id,
                 processing_time_ms=processing_time
@@ -431,6 +551,20 @@ class LLMAssistService:
         if not session:
             raise ValueError(f"Session {request.session_id} not found")
 
+        # Check quota
+        is_bank = self._is_bank_user(user)
+        feature = AIFeature.CHAT
+        
+        allowed, error_msg, remaining = self.usage_tracker.check_quota(
+            user=user,
+            session=session,
+            feature=feature,
+            is_bank=is_bank
+        )
+        
+        if not allowed:
+            raise ValueError(error_msg or "Quota exceeded")
+
         # Build context from session data
         context = {
             "question": request.question,
@@ -443,13 +577,15 @@ class LLMAssistService:
         try:
             prompt_template = self.prompt_library.get_template(
                 "chat_response",
-                request.language
+                request.language.value
             )
 
-            ai_output, confidence, rule_refs = await self._call_llm_api(
+            ai_output, confidence, rule_refs, tokens_in, tokens_out, estimated_cost = await self._call_llm_api(
                 prompt_template,
                 context,
-                AIOutputType.CHAT_RESPONSE
+                AIOutputType.CHAT_RESPONSE,
+                user,
+                session
             )
 
             if confidence < self.confidence_threshold:
@@ -460,9 +596,22 @@ class LLMAssistService:
                 rule_refs = []
                 fallback_used = True
                 confidence = ConfidenceLevel.MEDIUM
+                tokens_in = 0
+                tokens_out = 0
+                estimated_cost = 0.0
             else:
                 fallback_used = False
                 confidence = self._map_confidence_score(confidence)
+                
+                # Record usage
+                self.usage_tracker.record_usage(
+                    user=user,
+                    session=session,
+                    feature=feature,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    estimated_cost=estimated_cost
+                )
 
             processing_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -478,6 +627,10 @@ class LLMAssistService:
                 input_data=context,
                 ai_output=ai_output,
                 fallback_used=fallback_used,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                estimated_cost_usd=str(estimated_cost) if estimated_cost else None,
+                lc_session_id=session.id,
                 rule_references=rule_refs,
                 prompt_template_id=prompt_template.id,
                 processing_time_ms=processing_time
@@ -506,45 +659,105 @@ class LLMAssistService:
                 session,
                 AIOutputType.CHAT_RESPONSE
             )
+    
+    async def chat(self, request: ChatRequest, user: User) -> AIResponse:
+        """Alias for handle_chat_query for backward compatibility."""
+        return await self.handle_chat_query(request, user)
 
+    def _is_bank_user(self, user: User) -> bool:
+        """Check if user belongs to a bank company."""
+        # Check user role or company type
+        # For now, assume bank if company has bank-related attributes
+        # In production, check company.type == "bank" or user.role includes "bank"
+        return hasattr(user, 'company') and hasattr(user.company, 'type') and user.company.type == "bank"
+    
     async def _call_llm_api(
         self,
-        prompt_template: str,
+        prompt_template: PromptTemplate,
         input_data: Dict[str, Any],
-        output_type: AIOutputType
-    ) -> Tuple[str, float, List[Dict[str, str]]]:
-        """Call external LLM API with prompt and data."""
-        # This would integrate with OpenAI, Anthropic, or local LLM
-        # For now, returning mock response
-
-        # Mock confidence scoring based on input complexity
-        confidence = 0.85 if len(str(input_data)) > 100 else 0.65
-
-        # Mock rule references
-        rule_refs = [
-            {
-                "regulation": "UCP 600",
-                "article": "14.b",
-                "description": "Documents must be consistent"
-            },
-            {
-                "regulation": "ISBP 745",
-                "article": "A22",
-                "description": "Certificate requirements"
-            }
+        output_type: AIOutputType,
+        user: User,
+        session: Optional[ValidationSession] = None
+    ) -> Tuple[str, float, List[Dict[str, str]], int, int, float]:
+        """
+        Call external LLM API with prompt and data.
+        
+        Returns:
+            (output_text, confidence_score, rule_refs, tokens_in, tokens_out, estimated_cost)
+        """
+        max_tokens = self.max_tokens_map.get(output_type, 600)
+        
+        # Format prompt from template
+        user_prompt = prompt_template.user_template.format(**input_data)
+        
+        try:
+            # Call provider with fallback
+            output_text, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+                prompt=user_prompt,
+                system_prompt=prompt_template.system_prompt,
+                max_tokens=max_tokens,
+                temperature=0.3,
+                primary_provider=settings.LLM_PROVIDER
+            )
+            
+            # Estimate cost
+            provider = LLMProviderFactory.create_provider(provider_used)
+            estimated_cost = provider.estimate_cost(tokens_in, tokens_out)
+            
+            # Validate output with text guard
+            is_valid, validated_output, warning = self.text_guard.validate_output(output_text)
+            
+            if not is_valid and warning:
+                logger.warning(f"Text guard flagged output: {warning}")
+                # For now, use sanitized version; in production could retry with rephrase instruction
+                output_text = validated_output
+            
+            # Extract rule references from output (simple regex-based extraction)
+            rule_refs = self._extract_rule_references(output_text)
+            
+            # Calculate confidence (simplified - in production could use model confidence scores)
+            confidence = 0.85 if len(output_text) > 50 and tokens_out > 20 else 0.65
+            
+            return output_text, confidence, rule_refs, tokens_in, tokens_out, estimated_cost
+            
+        except Exception as e:
+            logger.error(f"LLM API call failed: {e}")
+            # Return fallback values
+            return "", 0.0, [], 0, 0, 0.0
+    
+    def _extract_rule_references(self, text: str) -> List[Dict[str, str]]:
+        """Extract UCP/ISBP article references from text."""
+        import re
+        
+        rule_refs = []
+        
+        # Pattern: UCP 600 Article 14.b, ISBP 745 A22, etc.
+        patterns = [
+            r'(UCP\s*600)\s*(?:Article|Art\.?)\s*(\d+[a-z]?)',
+            r'(ISBP\s*745)\s*(?:Article|Art\.?|A)\s*(\d+[a-z]?)',
         ]
-
-        # Mock AI output based on type
-        if output_type == AIOutputType.DISCREPANCY_SUMMARY:
-            output = "Your LC has 3 discrepancies: date inconsistency, amount mismatch, and missing certificate. These are common issues that can be resolved with minor amendments."
-        elif output_type == AIOutputType.BANK_DRAFT:
-            output = "We have examined the documents and found the following discrepancies: 1) Latest date of shipment has been exceeded, 2) Commercial invoice amount differs from LC amount."
-        elif output_type == AIOutputType.AMENDMENT_DRAFT:
-            output = "Amendment to extend latest shipment date from [current date] to [new date] to provide sufficient time for document preparation and shipment."
-        else:
-            output = "I can help you understand your LC validation results. Based on your documents, the main issue is..."
-
-        return output, confidence, rule_refs
+        
+        for pattern in patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                regulation = match.group(1).upper()
+                article = match.group(2)
+                rule_refs.append({
+                    "regulation": regulation,
+                    "article": article,
+                    "description": f"{regulation} Article {article}"
+                })
+        
+        # Deduplicate
+        seen = set()
+        unique_refs = []
+        for ref in rule_refs:
+            key = (ref["regulation"], ref["article"])
+            if key not in seen:
+                seen.add(key)
+                unique_refs.append(ref)
+        
+        return unique_refs
 
     def _fallback_to_rules(
         self,

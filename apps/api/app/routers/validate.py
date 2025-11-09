@@ -10,7 +10,7 @@ from app.core.security import get_current_user
 from app.database import get_db
 from app.models import UsageAction, User, ValidationSession, SessionStatus
 from app.services.entitlements import EntitlementError, EntitlementService
-from app.services.validator import validate_document
+from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
@@ -163,9 +163,25 @@ async def validate_doc(
 
         # Update session status if created
         if validation_session:
+            # Optionally enrich with AI (if feature flag enabled)
+            ai_enrichment = {}
+            try:
+                ai_enrichment = await enrich_validation_results_with_ai(
+                    validation_results=results,
+                    document_data=payload,
+                    session_id=str(validation_session.id),
+                    user_id=str(current_user.id),
+                    db_session=db
+                )
+            except Exception as e:
+                # Don't fail validation if AI enrichment fails
+                import logging
+                logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
+            
             validation_session.validation_results = {
                 "discrepancies": [r for r in results if not r.get("passed", False)],
                 "results": results,
+                **ai_enrichment  # Merge AI enrichment if present
             }
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()

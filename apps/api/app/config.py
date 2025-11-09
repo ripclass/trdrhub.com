@@ -98,6 +98,43 @@ class Settings(BaseSettings):
     SSLCOMMERZ_STORE_PASSWORD: Optional[str] = None
     SSLCOMMERZ_SANDBOX: bool = True
     
+    # AI/LLM Configuration
+    AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
+    LLM_PROVIDER: str = "openai"  # openai|anthropic
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
+    LLM_MODEL_VERSION: str = "gpt-4o-mini"  # OpenAI model
+    ANTHROPIC_MODEL_VERSION: str = "claude-3-haiku-20240307"  # Anthropic model
+    AI_MAX_OUTPUT_TOKENS_SYSTEM: int = 600  # System enrichment max tokens
+    AI_MAX_OUTPUT_TOKENS_LETTER: int = 800  # Letter generation max tokens
+    AI_MAX_OUTPUT_TOKENS_TRANSLATE: int = 600  # Translation max tokens
+    AI_MAX_OUTPUT_TOKENS_CHAT: int = 400  # Chat max tokens
+    AI_TIMEOUT_MS: int = 15000  # LLM API timeout
+    
+    # AI Rate Limits
+    AI_RATE_LIMIT_PER_USER_PER_MIN: int = 10
+    AI_RATE_LIMIT_PER_TENANT_PER_MIN: int = 50
+    AI_MIN_INTERVAL_PER_LC_MS: int = 2000
+    
+    # SME Per-LC Limits
+    SME_PER_LC_LIMIT_LETTERS: int = 3
+    SME_PER_LC_LIMIT_SUMMARIES: int = 3
+    SME_PER_LC_LIMIT_TRANSLATIONS: int = 5
+    SME_PER_LC_LIMIT_CHAT: int = 10
+    
+    # Bank Per-LC Limits
+    BANK_PER_LC_LIMIT_LETTERS: int = 5
+    BANK_PER_LC_LIMIT_SUMMARIES: int = 5
+    BANK_PER_LC_LIMIT_TRANSLATIONS: int = 10
+    BANK_PER_LC_LIMIT_CHAT: int = 20
+    
+    # Bank Tenant Monthly Pools
+    BANK_TENANT_MONTHLY_LETTERS: int = 1000
+    BANK_TENANT_MONTHLY_TRANSLATIONS: int = 2000
+    BANK_TENANT_MONTHLY_SUMMARIES: int = 2000
+    BANK_TENANT_MONTHLY_CHAT: int = 5000
+    BANK_TENANT_RESERVE_PERCENT: float = 30.0  # Reserve 30% for system enrichment
+    
     # CORS Configuration
     CORS_ALLOW_ORIGINS: List[str] = ["http://localhost:5173"]  # Override per environment
     

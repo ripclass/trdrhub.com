@@ -34,6 +34,11 @@ interface NormalizedAmendment {
   fallbackUsed: boolean;
   language?: string;
   auditEventId?: string;
+  ruleReferences?: Array<{
+    regulation: string;
+    article: string;
+    description?: string;
+  }>;
   suggestedFields: Array<{
     fieldName: string;
     currentValue: string;
@@ -100,6 +105,7 @@ export default function AIAmendmentFlow({
         fallbackUsed: Boolean(data.fallback_used),
         language: data.language,
         auditEventId: data.audit_event_id || data.event_id,
+        ruleReferences: data.rule_references || [],
         suggestedFields: (data.suggested_fields || []).map((field: any) => ({
           fieldName: field.field_name,
           currentValue: field.current_value,
@@ -242,7 +248,7 @@ export default function AIAmendmentFlow({
 
             {!loading && amendment && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={getConfidenceColor(amendment.confidenceScore)}>
                     {getConfidenceIcon(amendment.confidenceScore)}
                     {Math.round(amendment.confidenceScore * 100)}% confidence
@@ -253,6 +259,9 @@ export default function AIAmendmentFlow({
                     </Badge>
                   )}
                   <Badge variant="secondary">{amendment.modelUsed || 'LLM'}</Badge>
+                  <Badge variant="outline" className="text-amber-600 border-amber-300">
+                    AI-generated; not legal advice
+                  </Badge>
                 </div>
 
                 <div className="border rounded-md p-4 bg-muted/20 space-y-3">
@@ -278,6 +287,20 @@ export default function AIAmendmentFlow({
                     Download Draft
                   </Button>
                 </div>
+
+                {/* Article References */}
+                {amendment.ruleReferences && amendment.ruleReferences.length > 0 && (
+                  <div className="border-t pt-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">References:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {amendment.ruleReferences.map((ref: any, idx: number) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {ref.regulation} Article {ref.article}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {amendment.suggestedFields.length > 0 && (
                   <div>

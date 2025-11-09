@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -229,4 +230,98 @@ async def ai_health_check():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI service unavailable"
+        )
+
+@router.get("/usage")
+async def get_ai_usage(
+    session_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get AI usage statistics for current user or session.
+    
+    Returns per-LC and tenant monthly usage stats.
+    """
+    try:
+        from ..services.llm_assist import LLMAssistService
+        from ..models import ValidationSession
+        
+        llm_service = LLMAssistService(db)
+        
+        session = None
+        if session_id:
+            session = db.query(ValidationSession).filter(
+                ValidationSession.id == session_id
+            ).first()
+        
+        is_bank = llm_service._is_bank_user(current_user)
+        stats = llm_service.usage_tracker.get_usage_stats(
+            user=current_user,
+            session=session,
+            is_bank=is_bank
+        )
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Failed to get AI usage: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve usage statistics"
+        )
+
+@router.get("/limits")
+async def get_ai_limits(
+    session_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current quota limits and remaining capacity.
+    
+    Returns limits for per-LC, per-user/day, and tenant monthly pools.
+    """
+    try:
+        from ..services.llm_assist import LLMAssistService
+        from ..models import ValidationSession
+        from ..services.ai_usage_tracker import AIFeature
+        
+        llm_service = LLMAssistService(db)
+        
+        session = None
+        if session_id:
+            session = db.query(ValidationSession).filter(
+                ValidationSession.id == session_id
+            ).first()
+        
+        is_bank = llm_service._is_bank_user(current_user)
+        
+        # Get limits for each feature
+        limits = {}
+        for feature in [AIFeature.LETTER, AIFeature.SUMMARY, AIFeature.TRANSLATION, AIFeature.CHAT]:
+            allowed, error_msg, remaining = llm_service.usage_tracker.check_quota(
+                user=current_user,
+                session=session,
+                feature=feature,
+                is_bank=is_bank
+            )
+            limits[feature.value] = {
+                "allowed": allowed,
+                "remaining": remaining,
+                "error": error_msg
+            }
+        
+        return {
+            "user_id": str(current_user.id),
+            "is_bank": is_bank,
+            "session_id": session_id,
+            "limits": limits
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get AI limits: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve quota limits"
         )

@@ -13,6 +13,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps', 'api'))
 from app.config import settings
 from app.models.base import Base
 
+# Import all models to ensure they're registered with Base
+from app.models import *  # Import all standard models
+# Import AI models from services (they inherit from Base)
+from app.services.llm_assist import AIAssistEvent
+from app.services.ai_usage_tracker import AIUsageRecord
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
