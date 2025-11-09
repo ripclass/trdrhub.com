@@ -1,5 +1,5 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2, FolderKanban, FileText, CreditCard, ReceiptText } from "lucide-react";
+import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2, FolderKanban, FileText, CreditCard, Receipt } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -152,7 +152,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, ...props }: Ex
                   onClick={() => onSectionChange("billing-invoices")}
                   tooltip="Invoices & Payments"
                 >
-                  <ReceiptText />
+                  <Receipt />
                   <span>Invoices & Payments</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
