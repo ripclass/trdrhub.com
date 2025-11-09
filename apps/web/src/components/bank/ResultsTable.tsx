@@ -261,7 +261,7 @@ export function ResultsTable({}: ResultsTableProps) {
   return (
     <React.Fragment>
       <Card>
-      <CardHeader>
+        <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Validation Results</CardTitle>
