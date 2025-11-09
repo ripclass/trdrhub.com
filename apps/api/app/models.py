@@ -26,6 +26,24 @@ from .models.usage_record import UsageRecord, UsageAction
 # Import ruleset models
 from .models.ruleset import Ruleset, RulesetStatus, RulesetAudit, RulesetAuditAction
 
+# Import SME workspace models
+from .models.sme_workspace import (
+    LCWorkspace, Draft, Amendment,
+    DraftStatus, AmendmentStatus, DocumentChecklistStatus
+)
+
+# Import bank workflow models
+from .models.bank_workflow import (
+    BankApproval, DiscrepancyWorkflow,
+    ApprovalStatus, ApprovalStage, DiscrepancyWorkflowStatus
+)
+
+# Import company profile models
+from .models.company_profile import (
+    CompanyAddress, CompanyComplianceInfo, DefaultConsigneeShipper,
+    AddressType, ComplianceStatus
+)
+
 
 class UserRole(str, Enum):
     """User role types for access control."""

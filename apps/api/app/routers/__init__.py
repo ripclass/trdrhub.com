@@ -43,9 +43,12 @@ admin = _load_router_module("admin")
 analytics = _load_router_module("analytics")
 billing = _load_router_module("billing")
 bank = _load_router_module("bank")
+bank_workflow = _load_router_module("bank_workflow")
 onboarding = _load_router_module("onboarding")
 validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
+sme = _load_router_module("sme")
+company_profile = _load_router_module("company_profile")
 
 __all__ = [
     "auth",
@@ -58,7 +61,10 @@ __all__ = [
     "analytics",
     "billing",
     "bank",
+    "bank_workflow",
     "onboarding",
     "validate",
     "rules_admin",
+    "sme",
+    "company_profile",
 ]

@@ -51,7 +51,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, validate, rules_admin, onboarding
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, validate, rules_admin, onboarding, sme, company_profile
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -206,7 +206,10 @@ app.include_router(admin.router)        # Admin endpoints for user and role mana
 app.include_router(analytics.router)    # Analytics dashboard endpoints
 app.include_router(billing.router)      # Billing and payment management endpoints
 app.include_router(bank.router)  # Bank portfolio endpoints
+app.include_router(bank_workflow.router)  # Bank workflow endpoints (approvals, discrepancy workflow)
 app.include_router(onboarding.router)   # Onboarding wizard endpoints
+app.include_router(sme.router)          # SME workspace endpoints (LC Workspace, Drafts, Amendments)
+app.include_router(company_profile.router)  # Company profile endpoints (addresses, compliance, consignee/shipper)
 app.include_router(health_router)       # Use the new comprehensive health endpoints
 
 # Development-only routes
