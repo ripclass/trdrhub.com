@@ -75,12 +75,12 @@ const navMain = [
 const navSecondary = [
   {
     title: "Settings",
-    url: "#",
+    url: "/lcopilot/bank-dashboard?tab=settings",
     icon: Settings,
   },
   {
     title: "Help",
-    url: "#",
+    url: "/lcopilot/bank-dashboard?tab=help",
     icon: HelpCircle,
   },
 ];
@@ -91,7 +91,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
   
   const isActive = (url: string) => {
     if (url === "#") return false;
-    const urlParams = new URLSearchParams(url.split("?")[1]);
+    const urlParams = new URLSearchParams(url.split("?")[1] || "");
     const currentParams = new URLSearchParams(location.search);
     const urlTab = urlParams.get("tab");
     const currentTab = currentParams.get("tab") || "upload";
@@ -146,7 +146,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             <SidebarMenu>
               {navSecondary.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
+                  <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
                     <Link to={item.url}>
                       <item.icon />
                       <span>{item.title}</span>
