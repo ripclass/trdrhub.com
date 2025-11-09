@@ -63,16 +63,18 @@ import {
   useExportMonitoringData
 } from '@/hooks/useMonitoring';
 import { formatCurrency } from '@/types/billing';
-import type {
-  SystemKPIs,
-  SystemAlert,
-  AnomalyData,
-  MonitoringFilters,
+import {
+  AlertType,
+  AlertSeverity,
   AlertStatus,
-  AlertSeverity
+  type SystemAlert,
+  type SystemKPIs,
+  type AnomalyData,
+  type MonitoringFilters,
+  getAlertSeverityColor,
+  getAlertStatusColor
 } from '@/types/monitoring';
-import { RoleType } from '@/types/auth';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 interface MonitoringPanelProps {
   className?: string;
@@ -92,7 +94,7 @@ export function MonitoringPanel({
   const { user } = useAuth();
 
   // Role-based access control
-  const canViewMonitoring = user?.role === RoleType.ADMIN;
+  const canViewMonitoring = user?.role === 'admin';
 
   // Queries with auto-refresh
   const { data: systemKPIs, isLoading: kpisLoading, refetch: refetchKPIs } = useSystemKPIs(
@@ -106,8 +108,8 @@ export function MonitoringPanel({
   const { data: systemAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useSystemAlerts(
     {
       status: alertFilter === 'all' ? undefined :
-             alertFilter === 'unacknowledged' ? 'UNACKNOWLEDGED' : undefined,
-      severity: alertFilter === 'critical' ? 'CRITICAL' : undefined,
+             alertFilter === 'unacknowledged' ? AlertStatus.UNACKNOWLEDGED : undefined,
+      severity: alertFilter === 'critical' ? AlertSeverity.CRITICAL : undefined,
       limit: 50
     },
     {

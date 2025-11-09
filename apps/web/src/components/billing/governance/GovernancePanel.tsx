@@ -63,16 +63,17 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 
 // Hooks and types
-import {
-  useGovernanceActions,
-  useGovernanceStats,
-  useApproveAction,
-  useRejectAction,
-  useCreateGovernanceAction,
-  useRoleDelegations,
-  useCreateRoleDelegation,
-  useRevokeRoleDelegation
-} from '@/hooks/useGovernance';
+// TODO: Implement useGovernance hook - currently using mock data
+// import {
+//   useGovernanceActions,
+//   useGovernanceStats,
+//   useApproveAction,
+//   useRejectAction,
+//   useCreateGovernanceAction,
+//   useRoleDelegations,
+//   useCreateRoleDelegation,
+//   useRevokeRoleDelegation
+// } from '@/hooks/useGovernance';
 import {
   GovernanceActionType,
   ApprovalStatus,
@@ -93,8 +94,7 @@ import type {
   RejectActionRequest,
   CreateDelegationRequest
 } from '@/types/governance';
-import { RoleType } from '@/types/auth';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 interface GovernancePanelProps {
   className?: string;
@@ -117,29 +117,21 @@ export function GovernancePanel({ className }: GovernancePanelProps) {
   const { user } = useAuth();
 
   // Role-based access control
-  const canManageGovernance = user?.role === RoleType.ADMIN || user?.role === RoleType.BANK;
+  const canManageGovernance = user?.role === 'admin' || user?.role === 'bank';
 
-  // Queries
-  const { data: actions, isLoading: actionsLoading, refetch: refetchActions } = useGovernanceActions(
-    filters,
-    { enabled: canManageGovernance }
-  );
+  // Queries - TODO: Replace with real hooks when useGovernance is implemented
+  // Using mock data for now
+  const actionsLoading = false;
+  const statsLoading = false;
+  const delegationsLoading = false;
+  const refetchActions = () => {};
 
-  const { data: stats, isLoading: statsLoading } = useGovernanceStats(
-    { time_range: '30d' },
-    { enabled: canManageGovernance }
-  );
-
-  const { data: delegations, isLoading: delegationsLoading } = useRoleDelegations(
-    { enabled: canManageGovernance && activeTab === 'delegations' }
-  );
-
-  // Mutations
-  const approveAction = useApproveAction();
-  const rejectAction = useRejectAction();
-  const createAction = useCreateGovernanceAction();
-  const createDelegation = useCreateRoleDelegation();
-  const revokeDelegation = useRevokeRoleDelegation();
+  // Mutations - TODO: Replace with real hooks when useGovernance is implemented
+  const approveAction = { mutate: () => {}, isPending: false };
+  const rejectAction = { mutate: () => {}, isPending: false };
+  const createAction = { mutate: () => {}, isPending: false };
+  const createDelegation = { mutate: () => {}, isPending: false };
+  const revokeDelegation = { mutate: () => {}, isPending: false };
 
   // Access denied for unauthorized roles
   if (!canManageGovernance) {

@@ -56,8 +56,7 @@ import { format, subMonths, startOfMonth, endOfMonth, subDays } from 'date-fns';
 import { useBankComplianceReport, useSMEMetrics, useExportComplianceData } from '@/hooks/useBilling';
 import { formatCurrency, PlanType, PLAN_DEFINITIONS } from '@/types/billing';
 import type { BankComplianceReport, SMEMetrics, ComplianceFilters } from '@/types/billing';
-import { RoleType } from '@/types/auth';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 interface BankComplianceViewProps {
   className?: string;
@@ -78,7 +77,7 @@ export function BankComplianceView({
   const { user } = useAuth();
 
   // Role-based access control
-  const canViewBankData = user?.role === RoleType.BANK || user?.role === RoleType.ADMIN;
+  const canViewBankData = user?.role === 'bank' || user?.role === 'admin';
 
   // Calculate date range based on selected period
   const getDateRange = () => {

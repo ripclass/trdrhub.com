@@ -97,8 +97,7 @@ import type {
   CreateChannelRequest,
   NotificationFilters
 } from '@/types/notifications';
-import { RoleType } from '@/types/auth';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/use-auth';
 
 interface NotificationsPanelProps {
   className?: string;
@@ -116,7 +115,7 @@ export function NotificationsPanel({ className }: NotificationsPanelProps) {
   const { user } = useAuth();
 
   // Role-based access control
-  const canManageNotifications = user?.role === RoleType.ADMIN;
+  const canManageNotifications = user?.role === 'admin';
 
   // Queries
   const { data: channels, isLoading: channelsLoading, refetch: refetchChannels } = useNotificationChannels(

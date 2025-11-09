@@ -35,8 +35,7 @@ function cn(...classes: (string | undefined | null | boolean | Record<string, bo
     .join(' ');
 }
 ;
-import { useAuth } from '@/hooks/useAuth';
-import { RoleType } from '@/types/auth';
+import { useAuth } from '@/hooks/use-auth';
 
 interface BillingNavProps {
   currentTab?: string;
@@ -106,9 +105,9 @@ export function BillingNav({
     }
   };
 
-  const isAdmin = user?.role === RoleType.ADMIN;
-  const isCompanyAdmin = user?.role === RoleType.COMPANY_ADMIN;
-  const isBank = user?.role === RoleType.BANK;
+  const isAdmin = user?.role === 'admin';
+  const isCompanyAdmin = user?.role === 'admin'; // Company admin maps to admin role
+  const isBank = user?.role === 'bank';
   const canManageSettings = isAdmin || isCompanyAdmin;
   const canViewBankCompliance = isAdmin || isBank;
 
