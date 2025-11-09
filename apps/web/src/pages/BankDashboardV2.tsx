@@ -19,6 +19,7 @@ import { SLADashboardsView } from "./bank/SLADashboards";
 import { EvidencePacksView } from "./bank/EvidencePacks";
 import { HealthLatencyBanner } from "@/components/bank/HealthLatencyBanner";
 import { InAppTutorials } from "@/components/shared/InAppTutorials";
+import { AIAssistance } from "@/components/bank/AIAssistance";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
@@ -178,6 +179,8 @@ export default function BankDashboardV2() {
         {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
 
         {activeTab === "settings" && <SettingsPanel />}
+
+        {activeTab === "ai-assistance" && <AIAssistance embedded />}
 
         {activeTab === "help" && <HelpPanel />}
       </div>

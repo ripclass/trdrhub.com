@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Receipt } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Receipt, Sparkles } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -87,6 +87,14 @@ const navMain = [
   },
 ];
 
+const navAITools = [
+  {
+    title: "AI Assistance",
+    url: "/lcopilot/bank-dashboard?tab=ai-assistance",
+    icon: Sparkles,
+  },
+];
+
 const navSecondary = [
   {
     title: "Settings",
@@ -139,6 +147,28 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
           <SidebarGroupContent>
             <SidebarMenu>
               {navMain.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>AI & Tools</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navAITools.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
