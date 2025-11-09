@@ -40,6 +40,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AdvancedFilters } from "./AdvancedFilters";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
+interface ResultsTableProps {}
+
 export function ResultsTable({}: ResultsTableProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
