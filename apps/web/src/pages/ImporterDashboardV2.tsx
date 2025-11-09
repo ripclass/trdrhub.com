@@ -48,8 +48,6 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 const SECTION_OPTIONS = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "settings", "help"] as const;
 type Section = (typeof SECTION_OPTIONS)[number];
 
-type WorkspaceDraft = Draft;
-
 const dashboardStats = {
   thisMonth: 6,
   successRate: 91.7,
@@ -368,9 +366,9 @@ export default function ImporterDashboardV2() {
 
 interface DashboardOverviewProps {
   stats: typeof dashboardStats;
-  drafts: WorkspaceDraft[];
+  drafts: Draft[];
   loadingDrafts: boolean;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
+  onResumeDraft: (draft: Draft) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
   workspaceTab: "drafts" | "amendments";
@@ -543,9 +541,9 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
 }
 
 interface WorkspaceCardProps {
-  drafts: WorkspaceDraft[];
+  drafts: Draft[];
   loadingDrafts: boolean;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
+  onResumeDraft: (draft: Draft) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
   workspaceTab: "drafts" | "amendments";
@@ -637,9 +635,9 @@ function WorkspaceCard({
 }
 
 interface WorkspaceListItemProps {
-  draft: WorkspaceDraft;
+  draft: Draft;
   documentLabel: string;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
+  onResumeDraft: (draft: Draft) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
 }

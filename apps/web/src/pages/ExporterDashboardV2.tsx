@@ -58,8 +58,6 @@ type Section =
   | "settings"
   | "help";
 
-type WorkspaceDraft = DraftData;
-
 const dashboardStats = {
   thisMonth: 6,
   successRate: 91.7,
@@ -364,11 +362,11 @@ export default function ExporterDashboardV2() {
 
 interface DashboardOverviewProps {
   stats: typeof dashboardStats;
-  drafts: WorkspaceDraft[];
+  drafts: DraftData[];
   amendedLCs: Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>;
   isLoadingDrafts: boolean;
   isLoadingAmendments: boolean;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
+  onResumeDraft: (draft: DraftData) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
   recentHistory: typeof mockHistory;
@@ -549,11 +547,11 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
 }
 
 interface WorkspaceCardProps {
-  drafts: WorkspaceDraft[];
+  drafts: DraftData[];
   amendedLCs: Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>;
   isLoadingDrafts: boolean;
   isLoadingAmendments: boolean;
-  onResumeDraft: (draft: WorkspaceDraft) => void;
+  onResumeDraft: (draft: DraftData) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
   workspaceTab: string;
