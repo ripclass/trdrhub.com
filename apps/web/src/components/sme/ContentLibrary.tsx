@@ -399,7 +399,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
       </Card>
 
       {/* Add Content Dialog */}
-      {showAddDialog ? (
+      {showAddDialog && (
         <Card>
           <CardHeader>
             <CardTitle>Add Content to Library</CardTitle>
@@ -455,7 +455,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
             </div>
           </CardContent>
         </Card>
-      ) : null}
+      )}
     </div>
   );
 }
