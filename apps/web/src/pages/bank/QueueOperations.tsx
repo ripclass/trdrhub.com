@@ -192,15 +192,31 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
 
   // Update URL params when filters change
   React.useEffect(() => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(searchParams);
+    // Preserve the tab parameter
+    const currentTab = searchParams.get("tab");
+    
+    // Update filter params
     if (statusFilter.length) params.set("status", statusFilter.join(","));
+    else params.delete("status");
+    
     if (priorityFilter.length) params.set("priority", priorityFilter.join(","));
+    else params.delete("priority");
+    
     if (queueFilter.length) params.set("queue", queueFilter.join(","));
+    else params.delete("queue");
+    
     if (searchQuery) params.set("search", searchQuery);
+    else params.delete("search");
+    
     if (activeView) params.set("view", activeView);
+    else params.delete("view");
+    
+    // Ensure tab parameter is preserved
+    if (currentTab) params.set("tab", currentTab);
     
     setSearchParams(params, { replace: true });
-  }, [statusFilter, priorityFilter, queueFilter, searchQuery, activeView, setSearchParams]);
+  }, [statusFilter, priorityFilter, queueFilter, searchQuery, activeView, searchParams, setSearchParams]);
 
   // Apply saved view
   React.useEffect(() => {
