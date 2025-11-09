@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { BankSidebar } from "@/components/bank/BankSidebar";
 import { BankQuickStats } from "@/components/bank/BankQuickStats";
@@ -18,9 +19,16 @@ import { EvidencePacksView } from "./bank/EvidencePacks";
 
 export default function BankDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") || "upload";
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "upload");
+
+  // Sync activeTab with URL changes
+  useEffect(() => {
+    const tabFromUrl = searchParams.get("tab") || "upload";
+    setActiveTab(tabFromUrl);
+  }, [searchParams]);
 
   const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
     const newParams = new URLSearchParams(searchParams);
     newParams.set("tab", newTab);
     // Remove client filter if not navigating to results
