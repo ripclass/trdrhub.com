@@ -29,16 +29,8 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Receipt,
 } from "lucide-react";
-import { format } from "date-fns";
-import { bankApi, BankResult, BankResultsFilters } from "@/api/bank";
-import { sanitizeDisplayText } from "@/lib/sanitize";
-import { generateCSV } from "@/lib/csv";
-import { LCResultDetailModal } from "./LCResultDetailModal";
-import { Checkbox } from "@/components/ui/checkbox";
-import { AdvancedFilters } from "./AdvancedFilters";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Receipt } from "lucide-react";
 
 interface ResultsTableProps {}
 
