@@ -41,6 +41,14 @@ const navMain = [
     icon: Users,
   },
   {
+    title: "Notifications",
+    url: "/lcopilot/bank-dashboard?tab=notifications",
+    icon: Bell,
+  },
+];
+
+const navAnalytics = [
+  {
     title: "Analytics",
     url: "/lcopilot/bank-dashboard?tab=analytics",
     icon: BarChart3,
@@ -50,6 +58,9 @@ const navMain = [
     url: "/lcopilot/bank-dashboard?tab=sla",
     icon: Gauge,
   },
+];
+
+const navOperations = [
   {
     title: "Approvals",
     url: "/lcopilot/bank-dashboard?tab=approvals",
@@ -70,11 +81,9 @@ const navMain = [
     url: "/lcopilot/bank-dashboard?tab=evidence-packs",
     icon: Package,
   },
-  {
-    title: "Notifications",
-    url: "/lcopilot/bank-dashboard?tab=notifications",
-    icon: Bell,
-  },
+];
+
+const navBilling = [
   {
     title: "Billing",
     url: "/lcopilot/bank-dashboard?tab=billing",
@@ -147,6 +156,72 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
           <SidebarGroupContent>
             <SidebarMenu>
               {navMain.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>Analytics & Reporting</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navAnalytics.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>Operations</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navOperations.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>Billing & Finance</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navBilling.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
