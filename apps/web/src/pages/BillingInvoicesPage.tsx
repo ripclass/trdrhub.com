@@ -43,7 +43,6 @@ import { useAuth } from '@/hooks/use-auth';
 // Types
 import { formatCurrency, getInvoiceStatusColor } from '@/types/billing';
 import type { Invoice, InvoiceStatus, InvoicesFilters } from '@/types/billing';
-import { RoleType } from '@/types/auth';
 
 export function BillingInvoicesPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -58,8 +57,7 @@ export function BillingInvoicesPage() {
   // Queries
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(filters);
   const { data: invoiceDetails, isLoading: invoiceDetailsLoading } = useInvoice(
-    selectedInvoice?.id || '',
-    { enabled: !!selectedInvoice?.id }
+    selectedInvoice?.id || ''
   );
 
   // Mutations
@@ -67,7 +65,7 @@ export function BillingInvoicesPage() {
   const downloadInvoice = useDownloadInvoice();
   const retryPayment = useRetryPayment();
 
-  const canGenerateInvoices = user?.role === RoleType.ADMIN || user?.role === RoleType.COMPANY_ADMIN;
+  const canGenerateInvoices = user?.role === 'admin';
 
   const handleInvoiceClick = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
