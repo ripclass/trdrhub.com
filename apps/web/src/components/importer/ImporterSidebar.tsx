@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileTemplate } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -17,6 +17,8 @@ import { useAuth } from "@/hooks/use-auth";
 
 type ImporterSection =
   | "dashboard"
+  | "workspace"
+  | "templates"
   | "upload"
   | "reviews"
   | "analytics"
@@ -67,6 +69,26 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                 >
                   <BarChart3 />
                   <span>Dashboard</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "workspace"}
+                  onClick={() => onSectionChange("workspace")}
+                  tooltip="LC Workspace"
+                >
+                  <FolderKanban />
+                  <span>LC Workspace</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "templates"}
+                  onClick={() => onSectionChange("templates")}
+                  tooltip="Templates"
+                >
+                  <FileTemplate />
+                  <span>Templates</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

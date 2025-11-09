@@ -77,6 +77,9 @@ class Company(Base):
     invoices = relationship("Invoice", back_populates="company")
     usage_records = relationship("UsageRecord", back_populates="company")
     kyc_documents = relationship("KYCDocument", back_populates="company")
+    addresses = relationship("CompanyAddress", back_populates="company", cascade="all, delete-orphan")
+    compliance_info = relationship("CompanyComplianceInfo", back_populates="company", cascade="all, delete-orphan", uselist=False)
+    default_consignee_shipper = relationship("DefaultConsigneeShipper", back_populates="company", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Company(id={self.id}, name='{self.name}', plan={self.plan})>"

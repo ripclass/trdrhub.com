@@ -140,7 +140,16 @@ async def validate_doc(
         else:
             job_id = payload.get("job_id") or f"job_{uuid4()}"
 
-        results = validate_document(payload, doc_type)
+        # Use async validation if JSON rules are enabled
+        from app.services.validator import validate_document_async, validate_document
+        import os
+        
+        use_json_rules = os.getenv("USE_JSON_RULES", "false").lower() == "true"
+        if use_json_rules:
+            # Use async validation (router is already async)
+            results = await validate_document_async(payload, doc_type)
+        else:
+            results = validate_document(payload, doc_type)
 
         # Record usage - link to session if created
         quota = entitlements.record_usage(

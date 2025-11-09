@@ -6,6 +6,7 @@ import { AuthProvider } from './hooks/use-auth'
 import { AdminAuthProvider } from './lib/admin/auth'
 import { OnboardingProvider } from './components/onboarding/OnboardingProvider'
 import { ThemeProvider } from './providers/ThemeProvider'
+import { SessionTimeoutDialog } from './components/security/SessionTimeout'
 import App from './App.tsx'
 import './index.css'
 import { Toaster } from './components/ui/toaster'
@@ -33,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <AdminAuthProvider>
                 <ErrorBoundary>
                   <App />
+                  <SessionTimeoutDialog />
                 </ErrorBoundary>
                 <Toaster />
               </AdminAuthProvider>

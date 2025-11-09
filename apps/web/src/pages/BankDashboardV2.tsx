@@ -8,6 +8,13 @@ import { ResultsTable } from "@/components/bank/ResultsTable";
 import { ClientManagement } from "@/components/bank/ClientManagement";
 import { NotificationPreferences } from "@/components/bank/NotificationPreferences";
 import { BankAnalytics } from "@/components/bank/BankAnalytics";
+import { ApprovalsView } from "./bank/Approvals";
+import { DiscrepanciesView } from "./bank/Discrepancies";
+import { PolicySurface } from "./bank/PolicySurface";
+import { BankNotificationsView } from "./bank/BankNotifications";
+import { QueueOperationsView } from "./bank/QueueOperations";
+import { SLADashboardsView } from "./bank/SLADashboards";
+import { EvidencePacksView } from "./bank/EvidencePacks";
 
 export default function BankDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -49,15 +56,7 @@ export default function BankDashboardV2() {
         )}
 
         {activeTab === "queue" && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Processing Queue</h2>
-              <p className="text-sm text-muted-foreground">
-                Monitor active validation jobs and their status
-              </p>
-            </div>
-            <ProcessingQueue onJobComplete={() => handleTabChange("results")} />
-          </div>
+          <QueueOperationsView embedded />
         )}
 
         {activeTab === "results" && (
@@ -90,17 +89,17 @@ export default function BankDashboardV2() {
           </div>
         )}
 
-        {activeTab === "notifications" && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Notification Preferences</h2>
-              <p className="text-sm text-muted-foreground">
-                Configure email and SMS alerts for validations
-              </p>
-            </div>
-            <NotificationPreferences />
-          </div>
-        )}
+        {activeTab === "sla" && <SLADashboardsView embedded />}
+
+        {activeTab === "approvals" && <ApprovalsView embedded />}
+
+        {activeTab === "discrepancies" && <DiscrepanciesView embedded />}
+
+        {activeTab === "policy" && <PolicySurface embedded />}
+
+        {activeTab === "evidence-packs" && <EvidencePacksView embedded />}
+
+        {activeTab === "notifications" && <BankNotificationsView embedded />}
       </div>
     </DashboardLayout>
   );

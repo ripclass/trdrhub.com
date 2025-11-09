@@ -3,6 +3,7 @@ Admin API endpoints for ruleset management (upload, validate, publish, rollback)
 """
 import json
 import hashlib
+import logging
 from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
@@ -36,6 +37,8 @@ except ImportError:
     validate = None
     ValidationError = Exception
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/rulesets", tags=["admin-rules"])
 
@@ -293,6 +296,16 @@ async def publish_ruleset(
     
     db.commit()
     db.refresh(ruleset)
+    
+    # Invalidate cache for this domain/jurisdiction
+    try:
+        from app.services.rules_service import get_rules_service
+        rules_service = get_rules_service()
+        if hasattr(rules_service, 'clear_cache'):
+            rules_service.clear_cache(domain=ruleset.domain, jurisdiction=ruleset.jurisdiction)
+            logger.info(f"Cleared cache for {ruleset.domain}/{ruleset.jurisdiction} after publish")
+    except Exception as e:
+        logger.warning(f"Failed to clear cache after publish: {e}")
     
     return RulesetResponse.model_validate(ruleset)
 

@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2 } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -39,6 +39,31 @@ const navMain = [
     title: "Analytics",
     url: "/lcopilot/bank-dashboard?tab=analytics",
     icon: BarChart3,
+  },
+  {
+    title: "SLA Dashboards",
+    url: "/lcopilot/bank-dashboard?tab=sla",
+    icon: Gauge,
+  },
+  {
+    title: "Approvals",
+    url: "/lcopilot/bank-dashboard?tab=approvals",
+    icon: FileCheck,
+  },
+  {
+    title: "Discrepancies",
+    url: "/lcopilot/bank-dashboard?tab=discrepancies",
+    icon: AlertTriangle,
+  },
+  {
+    title: "Policy",
+    url: "/lcopilot/bank-dashboard?tab=policy",
+    icon: Shield,
+  },
+  {
+    title: "Evidence Packs",
+    url: "/lcopilot/bank-dashboard?tab=evidence-packs",
+    icon: Package,
   },
   {
     title: "Notifications",

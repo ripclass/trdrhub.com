@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
 import { 
   FileText, 
   Download, 
@@ -432,45 +433,22 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
               </Card>
             ) : (
               mockExporterResults.discrepancies.map((discrepancy) => (
-                <Card key={discrepancy.id} className="shadow-soft border-0">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg mt-1 bg-warning/10">
-                          <AlertTriangle className="w-5 h-5 text-warning" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <CardTitle className="text-base">{discrepancy.title}</CardTitle>
-                            <Badge variant="secondary" className="text-xs">
-                              {discrepancy.severity} priority
-                            </Badge>
-                          </div>
-                          <CardDescription className="text-sm mb-2">
-                            {discrepancy.documentName} • {discrepancy.rule}
-                          </CardDescription>
-                          <p className="text-sm text-muted-foreground">{discrepancy.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="grid md:grid-cols-2 gap-4 mb-4">
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expected</p>
-                        <p className="text-sm font-mono bg-muted/50 p-2 rounded border">{discrepancy.expected}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Found</p>
-                        <p className="text-sm font-mono bg-muted/50 p-2 rounded border">{discrepancy.actual}</p>
-                      </div>
-                    </div>
-                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                      <p className="text-xs font-medium text-primary mb-1">💡 Suggested Solution</p>
-                      <p className="text-sm text-muted-foreground">{discrepancy.suggestion}</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                <DiscrepancyGuidance
+                  key={discrepancy.id}
+                  discrepancy={{
+                    ...discrepancy,
+                    documentType: discrepancy.documentName,
+                    severity: discrepancy.severity === "medium" ? "major" : discrepancy.severity as "critical" | "major" | "minor",
+                  }}
+                  onRevalidate={async (id) => {
+                    // In a real app, call API to re-validate
+                    console.log("Re-validating discrepancy:", id);
+                  }}
+                  onUploadFixed={async (id, file) => {
+                    // In a real app, upload fixed document
+                    console.log("Uploading fixed document for discrepancy:", id, file.name);
+                  }}
+                />
               ))
             )}
           </TabsContent>

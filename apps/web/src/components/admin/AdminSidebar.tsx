@@ -75,7 +75,8 @@ type AdminSection =
   | "system-releases"
   | "system-settings"
   | "rules-list"
-  | "rules-upload";
+  | "rules-upload"
+  | "rules-active";
 
 interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeSection: AdminSection;
@@ -169,6 +170,7 @@ const navigation: SidebarSection[] = [
       { name: 'Releases', section: 'system-releases', icon: FileText, permissions: ['releases:read'] },
       { name: 'Settings', section: 'system-settings', icon: Settings, permissions: ['settings:read'] },
       { name: 'Rules', section: 'rules-list', icon: BookOpen, permissions: ['rule:read'] },
+      { name: 'Active Rulesets', section: 'rules-active', icon: FileText, permissions: ['rule:read'] },
     ],
   },
 ];

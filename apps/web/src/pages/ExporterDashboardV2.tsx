@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,10 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterAnalytics from "./ExporterAnalytics";
 import ExporterResults from "./ExporterResults";
+import { LCWorkspaceView } from "./sme/LCWorkspace";
+import { TemplatesView } from "./sme/Templates";
+import { DataRetentionView } from "./settings/DataRetention";
+import { CompanyProfileView } from "./settings/CompanyProfile";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,9 +38,12 @@ import {
   ArrowRight,
   GitBranch,
 } from "lucide-react";
+import { NotificationList, type Notification } from "@/components/notifications/NotificationItem";
 
 type Section =
   | "dashboard"
+  | "workspace"
+  | "templates"
   | "upload"
   | "reviews"
   | "analytics"
@@ -79,27 +87,47 @@ const mockHistory = [
   },
 ];
 
-const notifications = [
+const notifications: Notification[] = [
   {
     id: 1,
-    title: "Import Regulations Update",
+    title: "Export Regulations Update",
     message: "New customs requirements effective Feb 1st. Review your upcoming shipments.",
-    type: "info" as const,
+    type: "info",
     timestamp: "2 hours ago",
+    read: false,
+    link: "/lcopilot/exporter-dashboard?section=settings",
+    action: {
+      label: "Review Settings",
+      action: () => {},
+    },
   },
   {
     id: 2,
     title: "LC Review Complete",
     message: "Your draft LC has been reviewed with no critical risks identified.",
-    type: "success" as const,
+    type: "success",
     timestamp: "5 hours ago",
+    read: false,
+    link: "/lcopilot/exporter-dashboard?section=reviews",
+    action: {
+      label: "View Results",
+      action: () => {},
+    },
   },
   {
     id: 3,
-    title: "Risk Alert",
-    message: "Unrealistic shipment date detected in LC-IMP-2024-003.",
-    type: "warning" as const,
+    title: "Discrepancy Found",
+    message: "Bank identified discrepancies in LC-EXP-2024-005. Action required.",
+    type: "discrepancy",
     timestamp: "1 day ago",
+    read: false,
+    link: "/lcopilot/exporter-dashboard?section=reviews&lc=LC-EXP-2024-005",
+    badge: "Urgent",
+    action: {
+      label: "Review Discrepancy",
+      action: () => {},
+      variant: "destructive",
+    },
   },
 ];
 
@@ -121,6 +149,7 @@ export default function ExporterDashboardV2() {
   const parseSection = (value: string | null): Section => {
     const allowed: Section[] = [
       "dashboard",
+      "workspace",
       "upload",
       "reviews",
       "analytics",
@@ -271,6 +300,10 @@ export default function ExporterDashboardV2() {
               onWorkspaceTabChange={setWorkspaceTab}
             />
           )}
+
+          {activeSection === "workspace" && <LCWorkspaceView embedded />}
+
+          {activeSection === "templates" && <TemplatesView embedded />}
 
           {activeSection === "upload" && (
             <ExportLCUpload
@@ -648,7 +681,22 @@ function RecentValidationsCard({ title, description, history }: RecentValidation
   );
 }
 
-function NotificationsCard({ notifications }: { notifications: typeof notifications }) {
+function NotificationsCard({ notifications }: { notifications: Notification[] }) {
+  const [localNotifications, setLocalNotifications] = React.useState(notifications);
+  const navigate = useNavigate();
+
+  const handleMarkAsRead = (id: string | number) => {
+    setLocalNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  };
+
+  const handleDismiss = (id: string | number) => {
+    setLocalNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleMarkAllAsRead = () => {
+    setLocalNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
@@ -659,38 +707,13 @@ function NotificationsCard({ notifications }: { notifications: typeof notificati
         <CardDescription>Updates and alerts</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {notifications.map((notification) => (
-            <div key={notification.id} className="p-3 rounded-lg border border-gray-200/50">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`p-1 rounded-full ${
-                    notification.type === "success"
-                      ? "bg-success/10"
-                      : notification.type === "warning"
-                      ? "bg-warning/10"
-                      : "bg-info/10"
-                  }`}
-                >
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      notification.type === "success"
-                        ? "bg-success"
-                        : notification.type === "warning"
-                        ? "bg-warning"
-                        : "bg-info"
-                    }`}
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-sm text-foreground">{notification.title}</h4>
-                  <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
-                  <p className="text-xs text-muted-foreground mt-2">{notification.timestamp}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <NotificationList
+          notifications={localNotifications}
+          onMarkAsRead={handleMarkAsRead}
+          onDismiss={handleDismiss}
+          onMarkAllAsRead={handleMarkAllAsRead}
+          showHeader={false}
+        />
       </CardContent>
     </Card>
   );
@@ -729,6 +752,7 @@ function SettingsPanel() {
   const [digestFrequency, setDigestFrequency] = useState("daily");
   const [defaultView, setDefaultView] = useState<Section>("dashboard");
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("preferences");
 
   const handleSave = () => {
     setSaving(true);
@@ -751,68 +775,83 @@ function SettingsPanel() {
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
-        <CardTitle>Workspace Settings</CardTitle>
-        <CardDescription>Configure exporter notifications, drafts, and default view preferences.</CardDescription>
+        <CardTitle>Settings</CardTitle>
+        <CardDescription>Configure exporter workspace preferences and data retention.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Email alerts for discrepancies</p>
-              <p className="text-xs text-muted-foreground">Receive an email whenever a validation is flagged.</p>
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="preferences">Preferences</TabsTrigger>
+            <TabsTrigger value="company-profile">Company Profile</TabsTrigger>
+            <TabsTrigger value="data-retention">Data & Privacy</TabsTrigger>
+          </TabsList>
+          <TabsContent value="preferences" className="space-y-6 mt-6">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Email alerts for discrepancies</p>
+                  <p className="text-xs text-muted-foreground">Receive an email whenever a validation is flagged.</p>
+                </div>
+                <Switch checked={emailAlerts} onCheckedChange={setEmailAlerts} aria-label="Toggle discrepancy email alerts" />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Auto-archive completed drafts</p>
+                  <p className="text-xs text-muted-foreground">Move drafts to archive 7 days after successful validation.</p>
+                </div>
+                <Switch checked={autoArchiveDrafts} onCheckedChange={setAutoArchiveDrafts} aria-label="Toggle auto archive" />
+              </div>
             </div>
-            <Switch checked={emailAlerts} onCheckedChange={setEmailAlerts} aria-label="Toggle discrepancy email alerts" />
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Auto-archive completed drafts</p>
-              <p className="text-xs text-muted-foreground">Move drafts to archive 7 days after successful validation.</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="digest-frequency">Notification digest</Label>
+                <Select value={digestFrequency} onValueChange={setDigestFrequency}>
+                  <SelectTrigger id="digest-frequency">
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="instant">Instant</SelectItem>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Choose how often you receive summary notifications.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="default-view">Default workspace view</Label>
+                <Select value={defaultView} onValueChange={(value) => setDefaultView(value as Section)}>
+                  <SelectTrigger id="default-view">
+                    <SelectValue placeholder="Select default view" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dashboard">Dashboard metrics</SelectItem>
+                    <SelectItem value="upload">Upload documents</SelectItem>
+                    <SelectItem value="reviews">Review results</SelectItem>
+                    <SelectItem value="analytics">Analytics</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">The section that opens first each time you visit.</p>
+              </div>
             </div>
-            <Switch checked={autoArchiveDrafts} onCheckedChange={setAutoArchiveDrafts} aria-label="Toggle auto archive" />
-          </div>
-        </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="digest-frequency">Notification digest</Label>
-            <Select value={digestFrequency} onValueChange={setDigestFrequency}>
-              <SelectTrigger id="digest-frequency">
-                <SelectValue placeholder="Select frequency" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="instant">Instant</SelectItem>
-                <SelectItem value="hourly">Hourly</SelectItem>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">Choose how often you receive summary notifications.</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="default-view">Default workspace view</Label>
-            <Select value={defaultView} onValueChange={(value) => setDefaultView(value as Section)}>
-              <SelectTrigger id="default-view">
-                <SelectValue placeholder="Select default view" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dashboard">Dashboard metrics</SelectItem>
-                <SelectItem value="upload">Upload documents</SelectItem>
-                <SelectItem value="reviews">Review results</SelectItem>
-                <SelectItem value="analytics">Analytics</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">The section that opens first each time you visit.</p>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={handleReset}>Reset</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save preferences"}
-          </Button>
-        </div>
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="outline" onClick={handleReset}>Reset</Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Saving..." : "Save preferences"}
+              </Button>
+            </div>
+          </TabsContent>
+          <TabsContent value="company-profile" className="mt-6">
+            <CompanyProfileView embedded />
+          </TabsContent>
+          <TabsContent value="data-retention" className="mt-6">
+            <DataRetentionView embedded />
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
