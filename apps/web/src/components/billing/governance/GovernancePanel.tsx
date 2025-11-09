@@ -127,11 +127,11 @@ export function GovernancePanel({ className }: GovernancePanelProps) {
   const refetchActions = () => {};
 
   // Mutations - TODO: Replace with real hooks when useGovernance is implemented
-  const approveAction = { mutate: () => {}, isPending: false };
-  const rejectAction = { mutate: () => {}, isPending: false };
-  const createAction = { mutate: () => {}, isPending: false };
-  const createDelegation = { mutate: () => {}, isPending: false };
-  const revokeDelegation = { mutate: () => {}, isPending: false };
+  const approveAction = { mutate: (_: any) => {}, mutateAsync: async (_: any) => {}, isPending: false };
+  const rejectAction = { mutate: (_: any) => {}, mutateAsync: async (_: any) => {}, isPending: false };
+  const createAction = { mutate: (_: any) => {}, mutateAsync: async (_: any) => {}, isPending: false };
+  const createDelegation = { mutate: (_: any) => {}, mutateAsync: async (_: any) => {}, isPending: false };
+  const revokeDelegation = { mutate: (_: any) => {}, mutateAsync: async (_: any) => {}, isPending: false };
 
   // Access denied for unauthorized roles
   if (!canManageGovernance) {
