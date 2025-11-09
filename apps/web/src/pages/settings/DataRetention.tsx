@@ -438,10 +438,10 @@ export function DataRetentionView({ embedded = false }: { embedded?: boolean }) 
                           request.status === "completed"
                             ? "success"
                             : request.status === "failed"
-                            ? "destructive"
+                            ? "error"
                             : request.status === "cancelled"
-                            ? "secondary"
-                            : "info"
+                            ? "warning"
+                            : "pending"
                         }
                       >
                         {request.status}
