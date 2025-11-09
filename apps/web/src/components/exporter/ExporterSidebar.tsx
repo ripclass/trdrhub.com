@@ -139,6 +139,14 @@ export function ExporterSidebar({ activeSection, onSectionChange, ...props }: Ex
                   <span>Notifications</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>Billing & Finance</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={activeSection === "billing"}
