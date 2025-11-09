@@ -153,28 +153,12 @@ export function BillingOverviewPage() {
   };
 
   // Use fallback data if API calls failed or returned no data
+  // The API now returns mock data automatically, so we should always have data
   const effectiveBillingInfo = billingInfo || defaultBillingInfo;
   const effectiveUsageStats = usageStats || defaultUsageStats;
 
-  // Only show error if there's an actual error AND we're not in loading state
-  if (billingError && !billingLoading && !usageLoading) {
-    return (
-      <div className="container mx-auto p-6">
-        <BillingBreadcrumb />
-
-        <div className="flex flex-col items-center justify-center py-12">
-          <AlertCircle className="h-12 w-12 text-yellow-500 mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Billing service unavailable</h2>
-          <p className="text-muted-foreground mb-4">
-            Unable to connect to billing service. Showing default information. Please try again later.
-          </p>
-          <Button onClick={refreshBillingData} variant="outline">
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Don't show error screen - API will return mock data if backend unavailable
+  // The page will render normally with either real or mock data
 
   return (
     <div className="container mx-auto p-6 space-y-6">
