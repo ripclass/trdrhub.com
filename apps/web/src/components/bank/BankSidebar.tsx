@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -15,6 +15,11 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 
 const navMain = [
+  {
+    title: "Dashboard",
+    url: "/lcopilot/bank-dashboard?tab=dashboard",
+    icon: LayoutDashboard,
+  },
   {
     title: "Upload LC",
     url: "/lcopilot/bank-dashboard?tab=upload",
@@ -94,7 +99,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
     const urlParams = new URLSearchParams(url.split("?")[1] || "");
     const currentParams = new URLSearchParams(location.search);
     const urlTab = urlParams.get("tab");
-    const currentTab = currentParams.get("tab") || "upload";
+    const currentTab = currentParams.get("tab") || "dashboard";
     return urlTab === currentTab;
   };
 

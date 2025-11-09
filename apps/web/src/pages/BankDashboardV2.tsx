@@ -26,14 +26,19 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { DataRetentionView } from "./settings/DataRetention";
+import { FileText, CheckCircle, AlertTriangle, Clock } from "lucide-react";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { NotificationList } from "@/components/notifications/NotificationItem";
+import { useAuth } from "@/hooks/use-auth";
+import { useNavigate } from "react-router-dom";
 
 export default function BankDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "upload");
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "dashboard");
 
   // Sync activeTab with URL changes
   useEffect(() => {
-    const tabFromUrl = searchParams.get("tab") || "upload";
+    const tabFromUrl = searchParams.get("tab") || "dashboard";
     setActiveTab(tabFromUrl);
   }, [searchParams]);
 
@@ -57,8 +62,8 @@ export default function BankDashboardV2() {
       ]}
     >
       <div className="flex flex-col gap-6 p-6 lg:p-8">
-        {/* Quick Stats */}
-        <BankQuickStats />
+        {/* Dashboard Tab - Shows Welcome, Stats, Recent Validations, Notifications */}
+        {activeTab === "dashboard" && <DashboardOverview />}
 
         {/* Dynamic Content Based on Tab */}
         {activeTab === "upload" && (
@@ -124,6 +129,208 @@ export default function BankDashboardV2() {
         {activeTab === "help" && <HelpPanel />}
       </div>
     </DashboardLayout>
+  );
+}
+
+// Mock data for dashboard
+const mockRecentValidations = [
+  {
+    id: "LC-BNK-2024-001",
+    lcNumber: "LC-BNK-2024-001",
+    clientName: "Global Exports Inc.",
+    date: "2024-01-15",
+    status: "approved",
+    discrepancies: 0,
+    complianceScore: 98,
+  },
+  {
+    id: "LC-BNK-2024-002",
+    lcNumber: "LC-BNK-2024-002",
+    clientName: "Dhaka Trading Co.",
+    date: "2024-01-14",
+    status: "flagged",
+    discrepancies: 2,
+    complianceScore: 85,
+  },
+  {
+    id: "LC-BNK-2024-003",
+    lcNumber: "LC-BNK-2024-003",
+    clientName: "Chittagong Imports",
+    date: "2024-01-14",
+    status: "approved",
+    discrepancies: 0,
+    complianceScore: 96,
+  },
+];
+
+const mockBankNotifications = [
+  {
+    id: 1,
+    title: "Approval Required",
+    message: "LC-BNK-2024-001 requires your approval at Analyst Review stage.",
+    type: "approval" as const,
+    timestamp: "15 minutes ago",
+    read: false,
+    link: "/lcopilot/bank-dashboard?tab=approvals&lc=LC-BNK-2024-001",
+    badge: "Pending",
+    action: {
+      label: "Review Approval",
+      action: () => {},
+    },
+  },
+  {
+    id: 2,
+    title: "Discrepancy Assigned",
+    message: "You have been assigned to resolve discrepancy in LC-BNK-2024-002.",
+    type: "discrepancy" as const,
+    timestamp: "1 hour ago",
+    read: false,
+    link: "/lcopilot/bank-dashboard?tab=discrepancies&lc=LC-BNK-2024-002",
+    badge: "High Priority",
+    action: {
+      label: "View Discrepancy",
+      action: () => {},
+      variant: "destructive" as const,
+    },
+  },
+  {
+    id: 3,
+    title: "Validation Complete",
+    message: "LC-BNK-2024-003 validation completed successfully with no issues.",
+    type: "success" as const,
+    timestamp: "3 hours ago",
+    read: false,
+    link: "/lcopilot/bank-dashboard?tab=results&lc=LC-BNK-2024-003",
+    action: {
+      label: "View Results",
+      action: () => {},
+    },
+  },
+];
+
+function DashboardOverview() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [notifications, setNotifications] = useState(mockBankNotifications);
+
+  const handleMarkAsRead = (id: string | number) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  };
+
+  const handleDismiss = (id: string | number) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleMarkAllAsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  return (
+    <>
+      <div>
+        <h2 className="text-3xl font-bold text-foreground mb-2">
+          Welcome back, {user?.email?.split("@")[0] || "Bank User"}
+        </h2>
+        <p className="text-muted-foreground">
+          Here's what's happening with your LC validations today.
+        </p>
+      </div>
+
+      {/* Quick Stats */}
+      <BankQuickStats />
+
+      {/* Recent Validations and Notifications */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Recent LC Validations
+              </CardTitle>
+              <CardDescription>Your latest document validation results</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {mockRecentValidations.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-4 rounded-lg border bg-secondary/20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0">
+                        {item.status === "approved" ? (
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                          </div>
+                        ) : (
+                          <div className="bg-yellow-500/10 p-2 rounded-lg">
+                            <AlertTriangle className="w-5 h-5 text-yellow-500" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-foreground">{item.lcNumber}</h4>
+                        <p className="text-sm text-muted-foreground">Client: {item.clientName}</p>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                          <span>{item.date}</span>
+                          <span>•</span>
+                          <span>Score: {item.complianceScore}%</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <StatusBadge status={item.discrepancies === 0 ? "success" : "warning"}>
+                        {item.discrepancies === 0
+                          ? "No issues"
+                          : item.discrepancies === 1
+                          ? "1 issue"
+                          : `${item.discrepancies} issues`}
+                      </StatusBadge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(`/lcopilot/bank-dashboard?tab=results&lc=${item.lcNumber}`)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="space-y-6">
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="w-5 h-5" />
+                Notifications
+              </CardTitle>
+              <CardDescription>Recent updates and alerts</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <NotificationList
+                notifications={notifications.slice(0, 3)}
+                onMarkAsRead={handleMarkAsRead}
+                onDismiss={handleDismiss}
+                onMarkAllAsRead={handleMarkAllAsRead}
+                showHeader={false}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-4"
+                onClick={() => navigate("/lcopilot/bank-dashboard?tab=notifications")}
+              >
+                View All Notifications
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }
 
