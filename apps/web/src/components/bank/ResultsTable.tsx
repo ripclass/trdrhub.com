@@ -515,19 +515,19 @@ export function ResultsTable({}: ResultsTableProps) {
           </div>
         )}
       </CardContent>
-      <LCResultDetailModal
-        jobId={selectedJobId}
-        open={!!selectedJobId}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedJobId(null);
-            setSelectedClientName(undefined);
-            setSelectedLcNumber(undefined);
-          }
-        }}
-        clientName={selectedClientName}
-        lcNumber={selectedLcNumber}
-      />
     </Card>
+    <LCResultDetailModal
+      jobId={selectedJobId}
+      open={!!selectedJobId}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSelectedJobId(null);
+          setSelectedClientName(undefined);
+          setSelectedLcNumber(undefined);
+        }
+      }}
+      clientName={selectedClientName}
+      lcNumber={selectedLcNumber}
+    />
   );
 }
