@@ -12,35 +12,25 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 
-// Try to import auth hooks - they may not be available in all contexts
-let useAdminAuth: any = null;
-let useBankAuth: any = null;
-let useExporterAuth: any = null;
-let useImporterAuth: any = null;
+import { useCallback } from "react"
+import { useNavigate, useLocation } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 
-try {
-  useAdminAuth = require("@/lib/admin/auth").useAdminAuth;
-} catch (e) {
-  // Admin auth not available
-}
-
-try {
-  useBankAuth = require("@/lib/bank/auth").useBankAuth;
-} catch (e) {
-  // Bank auth not available
-}
-
-try {
-  useExporterAuth = require("@/lib/exporter/auth").useExporterAuth;
-} catch (e) {
-  // Exporter auth not available
-}
-
-try {
-  useImporterAuth = require("@/lib/importer/auth").useImporterAuth;
-} catch (e) {
-  // Importer auth not available
-}
+// Import all auth hooks - they will throw if used outside their providers, which we handle
+import { useAdminAuth } from "@/lib/admin/auth"
+import { useBankAuth } from "@/lib/bank/auth"
+import { useExporterAuth } from "@/lib/exporter/auth"
+import { useImporterAuth } from "@/lib/importer/auth"
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.split("@")[0] || "User"
@@ -63,7 +53,8 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
   const location = useLocation()
   
-  // Determine which auth context to use based on current route
+  // Try to get user from appropriate auth context
+  // Only one of these will succeed based on which provider is active
   let user: any = null;
   let logout: (() => void) | null = null;
   let isLoading = false;
@@ -71,25 +62,22 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   let email = "guest@trdrhub.com";
   let role = "";
 
-  // Try to get user from appropriate auth context
-  if (location.pathname.includes('/admin')) {
-    try {
-      const adminAuth = useAdminAuth?.();
-      if (adminAuth) {
-        user = adminAuth.user;
-        logout = adminAuth.logout;
-        isLoading = adminAuth.isLoading;
-        displayName = user?.full_name || user?.username || user?.email?.split("@")[0] || "Guest";
-        email = user?.email || "guest@trdrhub.com";
-        role = user?.role || "";
-      }
-    } catch (e) {
-      // Admin auth not available
+  // Try admin auth first
+  try {
+    const adminAuth = useAdminAuth();
+    if (adminAuth?.user) {
+      user = adminAuth.user;
+      logout = adminAuth.logout;
+      isLoading = adminAuth.isLoading;
+      displayName = user?.full_name || user?.username || user?.email?.split("@")[0] || "Guest";
+      email = user?.email || "guest@trdrhub.com";
+      role = user?.role || "";
     }
-  } else if (location.pathname.includes('/bank-dashboard')) {
+  } catch (e) {
+    // Admin auth not available, try bank auth
     try {
-      const bankAuth = useBankAuth?.();
-      if (bankAuth) {
+      const bankAuth = useBankAuth();
+      if (bankAuth?.user) {
         user = bankAuth.user;
         logout = bankAuth.logout;
         isLoading = bankAuth.isLoading;
@@ -97,36 +85,34 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
         email = user?.email || "guest@trdrhub.com";
         role = user?.role || "";
       }
-    } catch (e) {
-      // Bank auth not available
-    }
-  } else if (location.pathname.includes('/exporter-dashboard')) {
-    try {
-      const exporterAuth = useExporterAuth?.();
-      if (exporterAuth) {
-        user = exporterAuth.user;
-        logout = exporterAuth.logout;
-        isLoading = exporterAuth.isLoading;
-        displayName = user?.name || user?.email?.split("@")[0] || "Guest";
-        email = user?.email || "guest@trdrhub.com";
-        role = user?.role || "";
+    } catch (e2) {
+      // Bank auth not available, try exporter auth
+      try {
+        const exporterAuth = useExporterAuth();
+        if (exporterAuth?.user) {
+          user = exporterAuth.user;
+          logout = exporterAuth.logout;
+          isLoading = exporterAuth.isLoading;
+          displayName = user?.name || user?.email?.split("@")[0] || "Guest";
+          email = user?.email || "guest@trdrhub.com";
+          role = user?.role || "";
+        }
+      } catch (e3) {
+        // Exporter auth not available, try importer auth
+        try {
+          const importerAuth = useImporterAuth();
+          if (importerAuth?.user) {
+            user = importerAuth.user;
+            logout = importerAuth.logout;
+            isLoading = importerAuth.isLoading;
+            displayName = user?.name || user?.email?.split("@")[0] || "Guest";
+            email = user?.email || "guest@trdrhub.com";
+            role = user?.role || "";
+          }
+        } catch (e4) {
+          // No auth context available
+        }
       }
-    } catch (e) {
-      // Exporter auth not available
-    }
-  } else if (location.pathname.includes('/importer-dashboard')) {
-    try {
-      const importerAuth = useImporterAuth?.();
-      if (importerAuth) {
-        user = importerAuth.user;
-        logout = importerAuth.logout;
-        isLoading = importerAuth.isLoading;
-        displayName = user?.name || user?.email?.split("@")[0] || "Guest";
-        email = user?.email || "guest@trdrhub.com";
-        role = user?.role || "";
-      }
-    } catch (e) {
-      // Importer auth not available
     }
   }
 
