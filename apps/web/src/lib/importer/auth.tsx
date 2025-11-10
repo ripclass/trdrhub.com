@@ -26,6 +26,9 @@ interface ImporterAuthContext {
 
 const ImporterAuthContext = createContext<ImporterAuthContext | undefined>(undefined);
 
+// Export context for direct useContext usage
+export { ImporterAuthContext };
+
 // Mock importer users for development
 export const MOCK_IMPORTER_USERS = [
   {

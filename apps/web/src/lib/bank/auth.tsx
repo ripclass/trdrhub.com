@@ -29,6 +29,9 @@ interface BankAuthContext {
 
 const BankAuthContext = createContext<BankAuthContext | undefined>(undefined);
 
+// Export context for direct useContext usage
+export { BankAuthContext };
+
 // Mock bank users for development
 export const MOCK_BANK_USERS = [
   {

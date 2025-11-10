@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useContext } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,11 +12,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 
-// Import all auth hooks - we'll call them all and use the one that works
-import { useAdminAuth } from "@/lib/admin/auth"
-import { useBankAuth } from "@/lib/bank/auth"
-import { useExporterAuth } from "@/lib/exporter/auth"
-import { useImporterAuth } from "@/lib/importer/auth"
+// Import contexts directly
+import { AdminAuthContext } from "@/lib/admin/auth"
+import { BankAuthContext } from "@/lib/bank/auth"
+import { ExporterAuthContext } from "@/lib/exporter/auth"
+import { ImporterAuthContext } from "@/lib/importer/auth"
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.split("@")[0] || "User"
@@ -35,30 +35,21 @@ interface UserMenuProps {
   variant?: "header" | "sidebar"
 }
 
-// Helper to safely call a hook that might not be in its provider
-function useSafeHook<T>(hookFn: () => T): T | null {
-  try {
-    return hookFn();
-  } catch (e: any) {
-    // If error is about provider, return null
-    if (e?.message?.includes('must be used within')) {
-      return null;
-    }
-    // Re-throw other errors
-    throw e;
-  }
+// Helper to safely get context value - useContext doesn't throw, just returns undefined
+function useSafeContext<T>(context: React.Context<T | undefined>): T | null {
+  const value = useContext(context);
+  return value ?? null;
 }
 
 export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
   const location = useLocation()
   
-  // Call all hooks unconditionally (required by React)
-  // Use try-catch to handle cases where provider is not available
-  const adminAuth = useSafeHook(() => useAdminAuth());
-  const bankAuth = useSafeHook(() => useBankAuth());
-  const exporterAuth = useSafeHook(() => useExporterAuth());
-  const importerAuth = useSafeHook(() => useImporterAuth());
+  // Call all contexts unconditionally (required by React)
+  const adminAuth = useSafeContext(AdminAuthContext);
+  const bankAuth = useSafeContext(BankAuthContext);
+  const exporterAuth = useSafeContext(ExporterAuthContext);
+  const importerAuth = useSafeContext(ImporterAuthContext);
 
   // Determine which auth context to use based on localStorage and which one has a user
   const activeAuth = useMemo(() => {

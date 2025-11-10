@@ -26,6 +26,9 @@ interface ExporterAuthContext {
 
 const ExporterAuthContext = createContext<ExporterAuthContext | undefined>(undefined);
 
+// Export context for direct useContext usage
+export { ExporterAuthContext };
+
 // Mock exporter users for development
 export const MOCK_EXPORTER_USERS = [
   {

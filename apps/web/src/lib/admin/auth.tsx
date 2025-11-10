@@ -29,6 +29,9 @@ interface AdminAuthContext {
 
 const AdminAuthContext = createContext<AdminAuthContext | undefined>(undefined);
 
+// Export context for direct useContext usage
+export { AdminAuthContext };
+
 // Admin role permissions mapping
 const ADMIN_PERMISSIONS = {
   super_admin: ['*'], // All permissions
