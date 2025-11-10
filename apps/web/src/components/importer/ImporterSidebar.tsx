@@ -78,16 +78,6 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "workspace"}
-                  onClick={() => onSectionChange("workspace")}
-                  tooltip="LC Workspace"
-                >
-                  <FolderKanban />
-                  <span>LC Workspace</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
                   isActive={activeSection === "templates"}
                   onClick={() => onSectionChange("templates")}
                   tooltip="Templates"
@@ -114,6 +104,16 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                 >
                   <History />
                   <span>Review Results</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeSection === "workspace"}
+                  onClick={() => onSectionChange("workspace")}
+                  tooltip="LC Workspace"
+                >
+                  <FolderKanban />
+                  <span>LC Workspace</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
