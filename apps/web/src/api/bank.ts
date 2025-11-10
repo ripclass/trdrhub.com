@@ -997,6 +997,118 @@ export const bankAuthApi = {
   },
 };
 
+// Bank Compliance API (Data Retention) - Updated to match backend
+export interface RetentionPolicyRead {
+  id: string;
+  name: string;
+  data_type: string;
+  retention_period_days: number;
+  archive_after_days?: number;
+  delete_after_days?: number;
+  legal_basis?: string;
+  applies_to_regions?: string[];
+  is_active: boolean;
+  created_by: string;
+  approved_by?: string;
+  event_metadata?: Record<string, any>;
+  created_at: string;
+}
+
+export interface RetentionPolicyCreate {
+  name: string;
+  data_type: string;
+  retention_period_days: number;
+  archive_after_days?: number;
+  delete_after_days?: number;
+  legal_basis?: string;
+  applies_to_regions?: string[];
+  is_active?: boolean;
+}
+
+export interface RetentionPolicyUpdate {
+  name?: string;
+  data_type?: string;
+  retention_period_days?: number;
+  archive_after_days?: number;
+  delete_after_days?: number;
+  legal_basis?: string;
+  applies_to_regions?: string[];
+  is_active?: boolean;
+}
+
+export enum DataRequestType {
+  DOWNLOAD = "download",
+  DELETION = "deletion",
+}
+
+export enum DataRequestStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed",
+  FAILED = "failed",
+  CANCELLED = "cancelled",
+}
+
+export interface DataRequestCreate {
+  data_scope: string[];
+  reason?: string;
+}
+
+export interface DataRequestRead {
+  id: string;
+  type: DataRequestType;
+  status: DataRequestStatus;
+  requested_at: string;
+  requested_by: string;
+  organization_id: string;
+  data_scope: string[];
+  reason?: string;
+  completed_at?: string;
+  expires_at?: string;
+  download_url?: string;
+}
+
+export const bankComplianceApi = {
+  // Retention Policies
+  createRetentionPolicy: async (policy: RetentionPolicyCreate): Promise<RetentionPolicyRead> => {
+    const response = await api.post<RetentionPolicyRead>("/bank/compliance/retention-policy", policy);
+    return response.data;
+  },
+  getRetentionPolicies: async (): Promise<RetentionPolicyRead[]> => {
+    const response = await api.get<RetentionPolicyRead[]>("/bank/compliance/retention-policy");
+    return response.data;
+  },
+  updateRetentionPolicy: async (policyId: string, policy: RetentionPolicyUpdate): Promise<RetentionPolicyRead> => {
+    const response = await api.put<RetentionPolicyRead>(`/bank/compliance/retention-policy/${policyId}`, policy);
+    return response.data;
+  },
+  deleteRetentionPolicy: async (policyId: string): Promise<void> => {
+    await api.delete(`/bank/compliance/retention-policy/${policyId}`);
+  },
+
+  // Data Requests (Export/Erasure)
+  requestDataExport: async (request: DataRequestCreate): Promise<DataRequestRead> => {
+    const response = await api.post<DataRequestRead>("/bank/compliance/export", request);
+    return response.data;
+  },
+  listDataRequests: async (): Promise<DataRequestRead[]> => {
+    const response = await api.get<DataRequestRead[]>("/bank/compliance/data-requests");
+    return response.data;
+  },
+  getDataRequestStatus: async (requestId: string): Promise<DataRequestRead> => {
+    const response = await api.get<DataRequestRead>(`/bank/compliance/data-requests/${requestId}`);
+    return response.data;
+  },
+  cancelDataRequest: async (requestId: string): Promise<DataRequestRead> => {
+    const response = await api.post<DataRequestRead>(`/bank/compliance/data-requests/${requestId}/cancel`);
+    return response.data;
+  },
+  requestDataErasure: async (request: DataRequestCreate): Promise<DataRequestRead> => {
+    const response = await api.post<DataRequestRead>("/bank/compliance/erase", request);
+    return response.data;
+  },
+};
+
 // Bank Queue Operations API
 export interface BankQueueJob {
   id: string;

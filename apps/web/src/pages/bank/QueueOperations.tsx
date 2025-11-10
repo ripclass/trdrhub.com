@@ -43,7 +43,8 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
+import { bankQueueApi, BankQueueJob } from "@/api/bank";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -149,15 +150,16 @@ const formatRelativeTime = (iso: string | undefined) => {
 
 export function QueueOperationsView({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useBankAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Use real-time job stream
   const { jobs: streamJobs, isConnected } = useJobStatusStream({ enabled: true });
   
-  // Merge stream jobs with mock jobs for now
-  const [jobs, setJobs] = React.useState(mockJobs);
+  // State for API-loaded jobs
+  const [jobs, setJobs] = React.useState<typeof mockJobs>([]);
   const [loading, setLoading] = React.useState(false);
+  const [pagination, setPagination] = React.useState({ page: 1, total: 0, pages: 0 });
   
   // Filters from URL
   const [statusFilter, setStatusFilter] = React.useState<string[]>(() => {
@@ -233,16 +235,72 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
     }
   }, [searchParams, savedViews]);
 
-  const filteredJobs = jobs.filter((job) => {
-    const matchesStatus = statusFilter.length === 0 || statusFilter.includes(job.status);
-    const matchesPriority = priorityFilter.length === 0 || priorityFilter.includes(String(job.priority));
-    const matchesQueue = queueFilter.length === 0 || queueFilter.includes(job.queue);
-    const matchesSearch =
-      searchQuery === "" ||
-      job.lc_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.client_name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesPriority && matchesQueue && matchesSearch;
-  });
+  // Load jobs from API on mount and when filters change
+  React.useEffect(() => {
+    reloadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, searchQuery, pagination.page]);
+
+  // Helper to map API status to component status
+  const mapJobStatus = (apiStatus: string): JobStatus => {
+    const statusMap: Record<string, JobStatus> = {
+      "queued": "queued",
+      "running": "running",
+      "completed": "succeeded",
+      "failed": "failed",
+      "cancelled": "cancelled",
+    };
+    return statusMap[apiStatus] || "queued";
+  };
+
+  // Helper function to reload jobs
+  const reloadJobs = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const statusParam = statusFilter.length === 1 ? statusFilter[0] : undefined;
+      const response = await bankQueueApi.getQueue({
+        status: statusParam,
+        job_type: undefined,
+        search: searchQuery || undefined,
+        limit: 50,
+        offset: (pagination.page - 1) * 50,
+      });
+      
+      const transformedJobs = response.items.map((job: BankQueueJob) => ({
+        id: job.id,
+        lc_number: job.job_data?.lc_number || job.lc_id || `LC-${job.id.slice(0, 8)}`,
+        client_name: job.job_data?.client_name || "Unknown Client",
+        priority: job.priority,
+        status: mapJobStatus(job.status),
+        queue: job.job_type === "validation" ? "standard" : "priority",
+        attempts: job.attempts,
+        maxRetries: job.max_attempts,
+        createdAt: job.created_at,
+        scheduledAt: job.scheduled_at,
+        startedAt: job.started_at,
+        completedAt: job.completed_at,
+        errorMessage: job.error_message,
+        durationMs: job.completed_at && job.started_at
+          ? new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()
+          : undefined,
+      }));
+      
+      setJobs(transformedJobs);
+      setPagination({
+        page: response.page,
+        total: response.total,
+        pages: response.pages,
+      });
+    } catch (error: any) {
+      console.warn("Failed to reload jobs:", error?.message);
+      // Fallback to mock data on first load
+      if (jobs.length === 0) {
+        setJobs(mockJobs);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, searchQuery, pagination.page, jobs.length]);
 
   const handleRetry = async (jobId: string) => {
     if (!actionReason.trim()) {
@@ -256,23 +314,19 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
 
     setLoading(true);
     try {
-      // In a real app, call API: await bankApi.retryJob(jobId, actionReason);
+      await bankQueueApi.retryJob(jobId, actionReason);
       toast({
         title: "Job Retried",
         description: `Job ${jobId} has been queued for retry.`,
       });
-      setJobs((prev) =>
-        prev.map((j) =>
-          j.id === jobId ? { ...j, status: "queued" as const, attempts: 0, errorMessage: undefined } : j
-        )
-      );
+      await reloadJobs();
       setRetryDialogOpen(false);
       setActionReason("");
       setSelectedJob(null);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Retry Failed",
-        description: "Failed to retry job. Please try again.",
+        description: error?.response?.data?.detail || "Failed to retry job. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -292,21 +346,19 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
 
     setLoading(true);
     try {
-      // In a real app, call API: await bankApi.cancelJob(jobId, actionReason);
+      await bankQueueApi.cancelJob(jobId, actionReason);
       toast({
         title: "Job Cancelled",
         description: `Job ${jobId} has been cancelled.`,
       });
-      setJobs((prev) =>
-        prev.map((j) => (j.id === jobId ? { ...j, status: "cancelled" as const } : j))
-      );
+      await reloadJobs();
       setCancelDialogOpen(false);
       setActionReason("");
       setSelectedJob(null);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Cancel Failed",
-        description: "Failed to cancel job. Please try again.",
+        description: error?.response?.data?.detail || "Failed to cancel job. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -327,24 +379,22 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
 
     setLoading(true);
     try {
-      // In a real app, call API: await bankApi.bulkRetryJobs(Array.from(selectedJobs), actionReason);
+      await bankQueueApi.bulkAction({
+        job_ids: Array.from(selectedJobs),
+        action: "retry",
+        reason: actionReason,
+      });
       toast({
         title: "Jobs Retried",
         description: `${selectedJobs.size} job(s) have been queued for retry.`,
       });
-      setJobs((prev) =>
-        prev.map((j) =>
-          selectedJobs.has(j.id) && j.status === "failed"
-            ? { ...j, status: "queued" as const, attempts: 0, errorMessage: undefined }
-            : j
-        )
-      );
+      await reloadJobs();
       setSelectedJobs(new Set());
       setActionReason("");
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Bulk Retry Failed",
-        description: "Failed to retry jobs. Please try again.",
+        description: error?.response?.data?.detail || "Failed to retry jobs. Please try again.",
         variant: "destructive",
       });
     } finally {
