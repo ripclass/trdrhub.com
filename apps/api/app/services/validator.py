@@ -192,7 +192,9 @@ async def apply_bank_policy(
     validation_results: List[Dict[str, Any]],
     bank_id: str,
     document_data: Dict[str, Any],
-    db_session
+    db_session,
+    validation_session_id: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Apply bank policy overlay and exceptions to validation results.
@@ -202,6 +204,7 @@ async def apply_bank_policy(
     2. Applies stricter checks from overlay
     3. Loads active exceptions
     4. Applies exceptions to matching failed rules
+    5. Logs analytics events for policy application tracking
     
     Returns:
         Modified validation results with policy overlays/exceptions applied
@@ -210,19 +213,163 @@ async def apply_bank_policy(
         return validation_results
     
     try:
+        from app.models.bank_policy import BankPolicyApplicationEvent
+        from uuid import UUID
+        import time
+        
+        start_time = time.time()
+        
+        # Calculate metrics before policy application
+        discrepancies_before = len([r for r in validation_results if not r.get("passed", False)])
+        severity_before = {}
+        for result in validation_results:
+            if not result.get("passed", False):
+                severity = result.get("severity", "unknown")
+                severity_before[severity] = severity_before.get(severity, 0) + 1
+        
         # Load overlay
         overlay = get_active_overlay(bank_id, db_session)
+        overlay_id = None
+        overlay_version = None
         
-        # Apply overlay stricter checks
         if overlay:
+            overlay_id = overlay.get("id")
+            overlay_version = overlay.get("version")
             validation_results = apply_policy_overlay(validation_results, overlay, document_data)
         
         # Load exceptions
         exceptions = get_active_exceptions(bank_id, db_session)
         
-        # Apply exceptions
+        # Track exception applications
+        exception_applications = []
         if exceptions:
             validation_results = apply_policy_exceptions(validation_results, exceptions, document_data)
+            
+            # Track which exceptions were applied
+            for result in validation_results:
+                if result.get("exception_id") or result.get("waived") or result.get("overridden") or result.get("exception_applied"):
+                    exception_id = result.get("exception_id")
+                    rule_code = result.get("rule", "")
+                    effect = None
+                    if result.get("waived"):
+                        effect = "waive"
+                    elif result.get("overridden"):
+                        effect = "override"
+                    elif result.get("exception_applied"):
+                        effect = "downgrade"
+                    
+                    if exception_id and rule_code:
+                        exception_applications.append({
+                            "exception_id": exception_id,
+                            "rule_code": rule_code,
+                            "effect": effect
+                        })
+        
+        # Calculate metrics after policy application
+        discrepancies_after = len([r for r in validation_results if not r.get("passed", False)])
+        severity_after = {}
+        for result in validation_results:
+            if not result.get("passed", False):
+                severity = result.get("severity", "unknown")
+                severity_after[severity] = severity_after.get(severity, 0) + 1
+        
+        # Calculate severity changes
+        severity_changes = {}
+        all_severities = set(list(severity_before.keys()) + list(severity_after.keys()))
+        for severity in all_severities:
+            before_count = severity_before.get(severity, 0)
+            after_count = severity_after.get(severity, 0)
+            change = after_count - before_count
+            if change != 0:
+                severity_changes[severity] = change
+        
+        # Calculate result summary
+        rules_affected = []
+        severity_upgrades = 0
+        severity_downgrades = 0
+        waived_rules = 0
+        overridden_rules = 0
+        
+        for result in validation_results:
+            if result.get("waived"):
+                waived_rules += 1
+                rules_affected.append(result.get("rule", ""))
+            elif result.get("overridden"):
+                overridden_rules += 1
+                rules_affected.append(result.get("rule", ""))
+            elif result.get("exception_applied"):
+                severity_downgrades += 1
+                rules_affected.append(result.get("rule", ""))
+            elif result.get("policy_override"):
+                severity_upgrades += 1
+                rules_affected.append(result.get("rule", ""))
+        
+        result_summary = {
+            "rules_affected": list(set(rules_affected)),
+            "severity_upgrades": severity_upgrades,
+            "severity_downgrades": severity_downgrades,
+            "waived_rules": waived_rules,
+            "overridden_rules": overridden_rules
+        }
+        
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Determine application type
+        application_type = "both" if overlay and exception_applications else ("overlay" if overlay else ("exception" if exception_applications else "none"))
+        
+        # Log analytics events
+        if validation_session_id and user_id and application_type != "none":
+            try:
+                bank_uuid = UUID(bank_id) if isinstance(bank_id, str) else bank_id
+                session_uuid = UUID(validation_session_id) if isinstance(validation_session_id, str) else validation_session_id
+                user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+                
+                # Log overlay application (if applied)
+                if overlay:
+                    overlay_uuid = UUID(overlay_id) if isinstance(overlay_id, str) else overlay_id
+                    overlay_event = BankPolicyApplicationEvent(
+                        validation_session_id=session_uuid,
+                        bank_id=bank_uuid,
+                        user_id=user_uuid,
+                        overlay_id=overlay_uuid,
+                        overlay_version=overlay_version,
+                        application_type="overlay" if not exception_applications else "both",
+                        discrepancies_before=discrepancies_before,
+                        discrepancies_after=discrepancies_after,
+                        severity_changes=severity_changes,
+                        result_summary=result_summary,
+                        document_type=document_data.get("document_type"),
+                        processing_time_ms=processing_time_ms
+                    )
+                    db_session.add(overlay_event)
+                
+                # Log exception applications (one event per exception)
+                for exc_app in exception_applications:
+                    exception_uuid = UUID(exc_app["exception_id"]) if isinstance(exc_app["exception_id"], str) else exc_app["exception_id"]
+                    exception_event = BankPolicyApplicationEvent(
+                        validation_session_id=session_uuid,
+                        bank_id=bank_uuid,
+                        user_id=user_uuid,
+                        overlay_id=UUID(overlay_id) if overlay_id and isinstance(overlay_id, str) else overlay_id,
+                        overlay_version=overlay_version,
+                        exception_id=exception_uuid,
+                        application_type="exception" if not overlay else "both",
+                        rule_code=exc_app["rule_code"],
+                        exception_effect=exc_app["effect"],
+                        discrepancies_before=discrepancies_before,
+                        discrepancies_after=discrepancies_after,
+                        severity_changes=severity_changes,
+                        result_summary=result_summary,
+                        document_type=document_data.get("document_type"),
+                        processing_time_ms=processing_time_ms
+                    )
+                    db_session.add(exception_event)
+                
+                db_session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to log policy application event: {e}", exc_info=True)
+                db_session.rollback()
+                # Don't fail validation if analytics logging fails
         
         return validation_results
         

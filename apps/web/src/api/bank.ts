@@ -900,5 +900,70 @@ export const bankPolicyApi = {
     const response = await api.delete(`/bank/policy/overlays/exceptions/${exceptionId}`);
     return response.data;
   },
+
+  /**
+   * Get policy analytics
+   */
+  getAnalytics: async (timeRange: string = "30d"): Promise<PolicyAnalytics> => {
+    const response = await api.get<PolicyAnalytics>(`/bank/policy/analytics?time_range=${timeRange}`);
+    return response.data;
+  },
 };
+
+export interface PolicyUsageStats {
+  overlay_id?: string;
+  overlay_version?: number;
+  total_applications: number;
+  unique_sessions: number;
+  avg_discrepancy_reduction: number;
+  avg_processing_time_ms: number;
+  last_applied_at?: string;
+}
+
+export interface ExceptionEffectivenessStats {
+  exception_id: string;
+  rule_code: string;
+  effect: string;
+  total_applications: number;
+  waived_count: number;
+  downgraded_count: number;
+  overridden_count: number;
+  avg_discrepancy_reduction: number;
+  last_applied_at?: string;
+}
+
+export interface PolicyImpactMetrics {
+  total_validations: number;
+  validations_with_policy: number;
+  policy_usage_rate: number;
+  total_discrepancy_reduction: number;
+  avg_discrepancy_reduction_per_validation: number;
+  severity_changes: Record<string, number>;
+  most_affected_rules: Array<{
+    rule_code: string;
+    application_count: number;
+    avg_discrepancy_reduction: number;
+  }>;
+}
+
+export interface PolicyAnalytics {
+  time_range: string;
+  start_date: string;
+  end_date: string;
+  overlay_stats: PolicyUsageStats[];
+  exception_stats: ExceptionEffectivenessStats[];
+  impact_metrics: PolicyImpactMetrics;
+  top_exceptions: Array<{
+    exception_id: string;
+    rule_code: string;
+    effect: string;
+    total_applications: number;
+    avg_discrepancy_reduction: number;
+  }>;
+  overlay_adoption: Array<{
+    overlay_id: string;
+    version: number;
+    session_count: number;
+  }>;
+}
 

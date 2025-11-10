@@ -44,12 +44,22 @@ import {
   Plus,
   Trash2,
   Settings,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
-import { bankPolicyApi } from "@/api/bank";
+import { bankPolicyApi, type PolicyAnalytics } from "@/api/bank";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Mock data - replace with API calls
 const mockActiveRulesets = [
@@ -705,6 +715,359 @@ function ExceptionsTab() {
   );
 }
 
+function AnalyticsTab() {
+  const { toast } = useToast();
+  const [analytics, setAnalytics] = React.useState<PolicyAnalytics | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [timeRange, setTimeRange] = React.useState("30d");
+
+  React.useEffect(() => {
+    loadAnalytics();
+  }, [timeRange]);
+
+  const loadAnalytics = async () => {
+    setLoading(true);
+    try {
+      const data = await bankPolicyApi.getAnalytics(timeRange);
+      setAnalytics(data);
+    } catch (error) {
+      console.error("Failed to load analytics", error);
+      toast({
+        title: "Error",
+        description: "Failed to load analytics data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-muted-foreground">Loading analytics...</div>
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          No analytics data available
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Time Range Selector */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" /> Policy Analytics
+              </CardTitle>
+              <CardDescription>
+                Usage statistics and effectiveness metrics for policy overlays and exceptions
+              </CardDescription>
+            </div>
+            <Select value={timeRange} onValueChange={setTimeRange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+                <SelectItem value="365d">Last year</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Impact Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Policy Usage Rate
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{analytics.impact_metrics.policy_usage_rate}%</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {analytics.impact_metrics.validations_with_policy} of {analytics.impact_metrics.total_validations} validations
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Discrepancy Reduction
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold flex items-center gap-2">
+              {analytics.impact_metrics.total_discrepancy_reduction}
+              <TrendingDown className="h-5 w-5 text-green-600" />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Avg {analytics.impact_metrics.avg_discrepancy_reduction_per_validation.toFixed(1)} per validation
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Overlay Applications
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {analytics.overlay_stats.reduce((sum, stat) => sum + stat.total_applications, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Across {analytics.overlay_stats.length} overlay version(s)
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Exception Applications
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {analytics.exception_stats.reduce((sum, stat) => sum + stat.total_applications, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Across {analytics.exception_stats.length} exception(s)
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Overlay Statistics */}
+      {analytics.overlay_stats.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Overlay Usage Statistics</CardTitle>
+            <CardDescription>Performance metrics for policy overlay versions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Applications</TableHead>
+                  <TableHead>Unique Sessions</TableHead>
+                  <TableHead>Avg Reduction</TableHead>
+                  <TableHead>Avg Processing Time</TableHead>
+                  <TableHead>Last Applied</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics.overlay_stats.map((stat, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>
+                      <Badge variant="outline">v{stat.overlay_version}</Badge>
+                    </TableCell>
+                    <TableCell>{stat.total_applications}</TableCell>
+                    <TableCell>{stat.unique_sessions}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {stat.avg_discrepancy_reduction > 0 ? (
+                          <>
+                            <TrendingDown className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{stat.avg_discrepancy_reduction.toFixed(1)}</span>
+                          </>
+                        ) : (
+                          <span>{stat.avg_discrepancy_reduction.toFixed(1)}</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{stat.avg_processing_time_ms.toFixed(0)}ms</TableCell>
+                    <TableCell>
+                      {stat.last_applied_at
+                        ? format(new Date(stat.last_applied_at), "MMM d, yyyy HH:mm")
+                        : "Never"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Exception Effectiveness */}
+      {analytics.exception_stats.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Exception Effectiveness</CardTitle>
+            <CardDescription>Metrics for policy exceptions by rule</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rule Code</TableHead>
+                  <TableHead>Effect</TableHead>
+                  <TableHead>Applications</TableHead>
+                  <TableHead>Waived</TableHead>
+                  <TableHead>Downgraded</TableHead>
+                  <TableHead>Overridden</TableHead>
+                  <TableHead>Avg Reduction</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics.exception_stats.map((stat, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-mono text-sm">{stat.rule_code}</TableCell>
+                    <TableCell>
+                      <Badge variant={stat.effect === "waive" ? "default" : "secondary"}>
+                        {stat.effect}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{stat.total_applications}</TableCell>
+                    <TableCell>{stat.waived_count}</TableCell>
+                    <TableCell>{stat.downgraded_count}</TableCell>
+                    <TableCell>{stat.overridden_count}</TableCell>
+                    <TableCell>
+                      {stat.avg_discrepancy_reduction > 0 ? (
+                        <span className="text-green-600">{stat.avg_discrepancy_reduction.toFixed(1)}</span>
+                      ) : (
+                        <span>{stat.avg_discrepancy_reduction.toFixed(1)}</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Top Exceptions */}
+      {analytics.top_exceptions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Exceptions by Usage</CardTitle>
+            <CardDescription>Most frequently applied exceptions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analytics.top_exceptions.map((exc, idx) => (
+                <div key={idx} className="flex items-center justify-between border-b pb-3 last:border-0">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">{exc.rule_code}</span>
+                      <Badge variant="outline">{exc.effect}</Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {exc.total_applications} applications • Avg reduction: {exc.avg_discrepancy_reduction.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Most Affected Rules */}
+      {analytics.impact_metrics.most_affected_rules.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Most Affected Rules</CardTitle>
+            <CardDescription>Rules most frequently impacted by policy applications</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analytics.impact_metrics.most_affected_rules.map((rule, idx) => (
+                <div key={idx} className="flex items-center justify-between border-b pb-3 last:border-0">
+                  <div className="space-y-1">
+                    <span className="font-mono text-sm">{rule.rule_code}</span>
+                    <div className="text-sm text-muted-foreground">
+                      {rule.application_count} applications • Avg reduction: {rule.avg_discrepancy_reduction.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Severity Changes */}
+      {Object.keys(analytics.impact_metrics.severity_changes).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Severity Changes</CardTitle>
+            <CardDescription>Net changes in discrepancy severity due to policy applications</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(analytics.impact_metrics.severity_changes).map(([severity, change]) => (
+                <div key={severity} className="flex items-center justify-between">
+                  <span className="capitalize">{severity}</span>
+                  <div className="flex items-center gap-2">
+                    {change > 0 ? (
+                      <>
+                        <TrendingUp className="h-4 w-4 text-red-600" />
+                        <span className="text-red-600 font-semibold">+{change}</span>
+                      </>
+                    ) : change < 0 ? (
+                      <>
+                        <TrendingDown className="h-4 w-4 text-green-600" />
+                        <span className="text-green-600 font-semibold">{change}</span>
+                      </>
+                    ) : (
+                      <span>{change}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Overlay Adoption */}
+      {analytics.overlay_adoption.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Overlay Version Adoption</CardTitle>
+            <CardDescription>Session count by overlay version</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analytics.overlay_adoption.map((adoption, idx) => (
+                <div key={idx} className="flex items-center justify-between border-b pb-3 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">v{adoption.version}</Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {adoption.session_count} validation session(s)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export function PolicySurface({ embedded = false }: { embedded?: boolean }) {
   const [activeTab, setActiveTab] = React.useState("rulesets");
 
@@ -722,6 +1085,7 @@ export function PolicySurface({ embedded = false }: { embedded?: boolean }) {
           <TabsTrigger value="rulesets">Active Rulesets</TabsTrigger>
           <TabsTrigger value="overlays">Overlays</TabsTrigger>
           <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rulesets" className="space-y-6">
@@ -809,6 +1173,10 @@ export function PolicySurface({ embedded = false }: { embedded?: boolean }) {
 
         <TabsContent value="exceptions">
           <ExceptionsTab />
+        </TabsContent>
+
+        <TabsContent value="analytics">
+          <AnalyticsTab />
         </TabsContent>
       </Tabs>
     </div>

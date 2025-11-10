@@ -40,7 +40,7 @@ from .models.bank_workflow import (
 
 # Import bank policy models
 from .models.bank_policy import (
-    BankPolicyOverlay, BankPolicyException
+    BankPolicyOverlay, BankPolicyException, BankPolicyApplicationEvent
 )
 
 # Import company profile models

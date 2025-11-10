@@ -170,7 +170,9 @@ async def validate_doc(
                         validation_results=results,
                         bank_id=str(current_user.company_id),
                         document_data=payload,
-                        db_session=db
+                        db_session=db,
+                        validation_session_id=str(validation_session.id) if validation_session else None,
+                        user_id=str(current_user.id)
                     )
                 except Exception as e:
                     # Don't fail validation if policy application fails
