@@ -48,51 +48,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-interface ValidationSession {
-  id: string;
-  lc_number: string;
-  client_name: string;
-  status: "completed" | "failed" | "processing";
-  completed_at: string;
-  discrepancy_count: number;
-  document_count: number;
-  compliance_score: number;
-}
-
-// Mock data - replace with API calls
-const mockSessions: ValidationSession[] = [
-  {
-    id: "session-1",
-    lc_number: "LC-BNK-2024-001",
-    client_name: "Global Importers Ltd",
-    status: "completed",
-    completed_at: "2024-01-18T10:30:00Z",
-    discrepancy_count: 2,
-    document_count: 5,
-    compliance_score: 85,
-  },
-  {
-    id: "session-2",
-    lc_number: "LC-BNK-2024-002",
-    client_name: "Trade Partners Inc",
-    status: "completed",
-    completed_at: "2024-01-17T14:15:00Z",
-    discrepancy_count: 0,
-    document_count: 6,
-    compliance_score: 100,
-  },
-  {
-    id: "session-3",
-    lc_number: "LC-BNK-2024-003",
-    client_name: "Export Solutions Co",
-    status: "completed",
-    completed_at: "2024-01-16T09:20:00Z",
-    discrepancy_count: 5,
-    document_count: 4,
-    compliance_score: 60,
-  },
-];
+import { bankApi, ValidationSessionRead, GeneratePackRequest } from "@/api/bank";
+import { useQuery } from "@tanstack/react-query";
 
 export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
