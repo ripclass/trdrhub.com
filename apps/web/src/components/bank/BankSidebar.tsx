@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Receipt, Sparkles, UserCog } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Receipt, Sparkles, UserCog, LogOut } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -12,7 +12,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
+import { Button } from "@/components/ui/button";
 
 const navMain = [
   {
@@ -124,7 +125,7 @@ const navSecondary = [
 
 export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useBankAuth();
   
   const isActive = (url: string) => {
     if (url === "#") return false;
@@ -133,6 +134,10 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
     const urlTab = urlParams.get("tab");
     const currentTab = currentParams.get("tab") || "dashboard";
     return urlTab === currentTab;
+  };
+
+  const handleLogout = () => {
+    logout();
   };
 
   return (
@@ -288,15 +293,24 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
         {user && (
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg">
+              <div className="flex items-center gap-2 px-2 py-1.5 w-full">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.email?.charAt(0).toUpperCase() || "U"}
+                  {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
                 </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="truncate font-medium text-sm">{user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
+                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
+                  <span className="text-xs text-muted-foreground">{user.role === 'bank_admin' ? 'Bank Admin' : 'Bank Officer'}</span>
                 </div>
-              </SidebarMenuButton>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="h-8 w-8 p-0"
+                  title="Sign out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
         )}

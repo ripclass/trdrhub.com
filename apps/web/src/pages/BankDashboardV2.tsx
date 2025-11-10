@@ -32,7 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { DataRetentionView } from "./settings/DataRetention";
 import { FileText, CheckCircle, AlertTriangle, Clock, Bell, ArrowLeft } from "lucide-react";
@@ -41,8 +41,34 @@ import { NotificationList } from "@/components/notifications/NotificationItem";
 import { BankUsersPage } from "./bank/BankUsersPage";
 
 export default function BankDashboardV2() {
+  const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "dashboard");
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate("/lcopilot/bank-dashboard/login");
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render dashboard if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // Sync activeTab with URL changes
   useEffect(() => {
@@ -267,7 +293,7 @@ const mockBankNotifications = [
 ];
 
 function DashboardOverview() {
-  const { user } = useAuth();
+  const { user: bankUser } = useBankAuth();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState(mockBankNotifications);
 
@@ -287,7 +313,7 @@ function DashboardOverview() {
     <>
       <div>
         <h2 className="text-3xl font-bold text-foreground mb-2">
-          Welcome back, {user?.email?.split("@")[0] || "Bank User"}
+          Welcome back, {bankUser?.name || bankUser?.email?.split("@")[0] || "Bank User"}
         </h2>
         <p className="text-muted-foreground">
           Here's what's happening with your LC validations today.

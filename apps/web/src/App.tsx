@@ -30,6 +30,7 @@ import ExporterAnalyticsPage from './pages/dashboard/analytics/exporter'
 import BankAnalyticsPage from './pages/dashboard/analytics/bank'
 import BankDashboard from './pages/BankDashboard'
 import BankDashboardV2 from './pages/BankDashboardV2'
+import BankLogin from './pages/bank/BankLogin'
 import ImporterDashboardV2 from './pages/ImporterDashboardV2'
 import ExporterDashboardV2 from './pages/ExporterDashboardV2'
 import ClientDashboard from './pages/ClientDashboard'
@@ -43,6 +44,7 @@ import StubModeIndicator from './components/StubModeIndicator'
 import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminShell from './pages/admin/AdminShell'
+import { BankAuthProvider } from './lib/bank/auth'
 import { Toaster } from './components/ui/toaster'
 
 function App() {
@@ -86,9 +88,18 @@ function App() {
         <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
         <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
         <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
-        <Route path="/lcopilot/bank-dashboard" element={<BankDashboardV2 />} />
+        <Route path="/lcopilot/bank-dashboard/login" element={<BankLogin />} />
+        <Route path="/lcopilot/bank-dashboard" element={
+          <BankAuthProvider>
+            <BankDashboardV2 />
+          </BankAuthProvider>
+        } />
         <Route path="/lcopilot/bank-dashboard/legacy" element={<BankDashboard />} />
-        <Route path="/lcopilot/bank-dashboard/client/:clientName" element={<ClientDashboard />} />
+        <Route path="/lcopilot/bank-dashboard/client/:clientName" element={
+          <BankAuthProvider>
+            <ClientDashboard />
+          </BankAuthProvider>
+        } />
         <Route path="/lcopilot/component-gallery" element={<ComponentGallery />} />
         <Route path="/lcopilot/exporter-corrections" element={<ExporterDocumentCorrections />} />
         <Route path="/lcopilot/supplier-corrections" element={<SupplierDocumentCorrections />} />
