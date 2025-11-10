@@ -41,6 +41,26 @@ export function BankUsersPage() {
   const { toast } = useToast();
   const { user } = useBankAuth();
   const isBankAdmin = user?.role === "bank_admin";
+  
+  // Early return if not admin - defense in depth
+  if (!isBankAdmin) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Access Denied</CardTitle>
+          <CardDescription>
+            This section is restricted to bank administrators only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            If you believe you should have access, please contact your bank administrator.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
   const [users, setUsers] = React.useState<BankUser[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [page, setPage] = React.useState(1);

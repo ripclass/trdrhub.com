@@ -45,6 +45,7 @@ export default function BankDashboardV2() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "dashboard");
+  const isBankAdmin = bankUser?.role === 'bank_admin';
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -58,6 +59,14 @@ export default function BankDashboardV2() {
     const tabFromUrl = searchParams.get("tab") || "dashboard";
     setActiveTab(tabFromUrl);
   }, [searchParams]);
+
+  // Redirect non-admins away from users tab
+  useEffect(() => {
+    if (activeTab === "users" && !isBankAdmin) {
+      setActiveTab("dashboard");
+      navigate("/lcopilot/bank-dashboard?tab=dashboard", { replace: true });
+    }
+  }, [activeTab, isBankAdmin, navigate]);
 
   // Show loading state while checking authentication
   if (authLoading) {
@@ -204,7 +213,7 @@ export default function BankDashboardV2() {
 
         {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
 
-        {activeTab === "users" && <BankUsersPage />}
+        {activeTab === "users" && isBankAdmin && <BankUsersPage />}
 
         {activeTab === "settings" && <SettingsPanel />}
 

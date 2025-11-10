@@ -126,6 +126,7 @@ const navSecondary = [
 export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
   const { user, logout } = useBankAuth();
+  const isBankAdmin = user?.role === 'bank_admin';
   
   const isActive = (url: string) => {
     if (url === "#") return false;
@@ -274,7 +275,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              {navSecondary.map((item) => (
+              {navSecondary.filter(item => item.title !== 'Users' || isBankAdmin).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
                     <Link to={item.url}>

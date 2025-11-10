@@ -41,13 +41,14 @@ def require_bank_admin(user: User = Depends(get_current_user)) -> User:
 @router.get("", response_model=UserListResponse)
 async def list_bank_users(
     query: UserListQuery = Depends(),
-    current_user: User = Depends(require_bank_or_admin),
+    current_user: User = Depends(require_bank_admin),
     db: Session = Depends(get_db)
 ):
     """
     List users in the current bank tenant.
     
-    Bank officers and admins can view users in their bank.
+    Bank admins only can view users in their bank.
+    Bank officers should not have access to user management.
     """
     # Scope to current user's company (bank tenant)
     base_query = db.query(User).filter(User.company_id == current_user.company_id)
