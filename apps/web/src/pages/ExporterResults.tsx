@@ -309,7 +309,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 <div className="space-y-2">
                   {mockExporterResults.totalDiscrepancies > 0 ? (
                     <>
-                      <Link to="/export-lc-upload">
+                      <Link to="/lcopilot/exporter-dashboard?section=upload">
                         <Button variant="outline" size="sm" className="w-full">
                           <RefreshCw className="w-4 h-4 mr-2" />
                           Fix & Re-process
