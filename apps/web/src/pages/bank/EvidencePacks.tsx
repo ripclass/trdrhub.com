@@ -98,8 +98,6 @@ export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) 
   const { toast } = useToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [loading, setLoading] = React.useState(false);
-  const [sessions, setSessions] = React.useState<ValidationSession[]>(mockSessions);
   const [selectedSessions, setSelectedSessions] = React.useState<Set<string>>(new Set());
   const [packFormat, setPackFormat] = React.useState<"pdf" | "zip">("pdf");
   const [includeDocuments, setIncludeDocuments] = React.useState(true);
@@ -108,9 +106,12 @@ export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) 
   const [generating, setGenerating] = React.useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    // In a real app, fetch validation sessions: getBankService().listValidationSessions().then(setSessions);
-  }, []);
+  // Fetch validation sessions
+  const { data: sessions = [], isLoading, refetch } = useQuery<ValidationSessionRead[]>({
+    queryKey: ['evidence-pack-sessions'],
+    queryFn: () => bankApi.listValidationSessions({ limit: 50, status: 'completed' }),
+    staleTime: 30 * 1000,
+  });
 
   const handleSelectAll = () => {
     if (selectedSessions.size === sessions.length) {
@@ -142,19 +143,20 @@ export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) 
 
     setGenerating(true);
     try {
-      // In a real app, call API:
-      // const response = await api.post('/bank/evidence-packs/generate', {
-      //   session_ids: Array.from(selectedSessions),
-      //   format: packFormat,
-      //   include_documents: includeDocuments,
-      //   include_findings: includeFindings,
-      //   include_audit_trail: includeAuditTrail,
-      // });
-      // const downloadUrl = response.data.download_url;
-      // window.open(downloadUrl, '_blank');
+      const request: GeneratePackRequest = {
+        session_ids: Array.from(selectedSessions),
+        format: packFormat,
+        include_documents: includeDocuments,
+        include_findings: includeFindings,
+        include_audit_trail: includeAuditTrail,
+      };
 
-      // Simulate generation
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const response = await bankApi.generateEvidencePack(request);
+      
+      // Open download URL
+      if (response.download_url) {
+        window.open(response.download_url, '_blank');
+      }
 
       toast({
         title: "Evidence Pack Generated",
@@ -162,10 +164,10 @@ export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) 
       });
       setGenerateDialogOpen(false);
       setSelectedSessions(new Set());
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Generation Failed",
-        description: "Failed to generate evidence pack. Please try again.",
+        description: error.message || "Failed to generate evidence pack. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -326,7 +328,7 @@ export function EvidencePacksView({ embedded = false }: { embedded?: boolean }) 
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
               <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading sessions...
             </div>

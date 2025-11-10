@@ -53,106 +53,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-
-interface SLAMetric {
-  name: string;
-  target: number;
-  current: number;
-  unit: string;
-  status: "met" | "at_risk" | "breached";
-  trend: "up" | "down" | "stable";
-  trendPercentage: number;
-}
-
-interface SLABreach {
-  id: string;
-  lc_number: string;
-  client_name: string;
-  metric: string;
-  target: number;
-  actual: number;
-  breach_time: string;
-  severity: "critical" | "major" | "minor";
-}
-
-// Mock data - replace with API calls
-const mockSLAMetrics: SLAMetric[] = [
-  {
-    name: "Average Processing Time",
-    target: 5, // minutes
-    current: 4.2,
-    unit: "minutes",
-    status: "met",
-    trend: "down",
-    trendPercentage: -12.5,
-  },
-  {
-    name: "Time to First Review",
-    target: 15, // minutes
-    current: 18.5,
-    unit: "minutes",
-    status: "at_risk",
-    trend: "up",
-    trendPercentage: 8.2,
-  },
-  {
-    name: "Throughput (LCs/hour)",
-    target: 20,
-    current: 22,
-    unit: "LCs/hour",
-    status: "met",
-    trend: "up",
-    trendPercentage: 10.0,
-  },
-  {
-    name: "Aging (Average Queue Time)",
-    target: 30, // minutes
-    current: 35,
-    unit: "minutes",
-    status: "at_risk",
-    trend: "up",
-    trendPercentage: 16.7,
-  },
-];
-
-const mockBreaches: SLABreach[] = [
-  {
-    id: "breach-1",
-    lc_number: "LC-BNK-2024-001",
-    client_name: "Global Importers Ltd",
-    metric: "Time to First Review",
-    target: 15,
-    actual: 45,
-    breach_time: "2024-01-18T10:30:00Z",
-    severity: "major",
-  },
-  {
-    id: "breach-2",
-    lc_number: "LC-BNK-2024-002",
-    client_name: "Trade Partners Inc",
-    metric: "Aging",
-    target: 30,
-    actual: 65,
-    breach_time: "2024-01-17T14:15:00Z",
-    severity: "critical",
-  },
-];
-
-const mockThroughputData = [
-  { hour: "00:00", lcs: 12 },
-  { hour: "04:00", lcs: 8 },
-  { hour: "08:00", lcs: 25 },
-  { hour: "12:00", lcs: 32 },
-  { hour: "16:00", lcs: 28 },
-  { hour: "20:00", lcs: 18 },
-];
-
-const mockAgingData = [
-  { timeRange: "0-15 min", count: 45, percentage: 60 },
-  { timeRange: "15-30 min", count: 20, percentage: 27 },
-  { timeRange: "30-45 min", count: 7, percentage: 9 },
-  { timeRange: "45+ min", count: 3, percentage: 4 },
-];
+import { bankApi, SLAMetric, SLABreach, SLAMetricsResponse, SLABreachesResponse } from "@/api/bank";
+import { useQuery } from "@tanstack/react-query";
 
 const COLORS = {
   met: "#22c55e",
@@ -164,27 +66,42 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
   const { toast } = useToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [timeRange, setTimeRange] = React.useState<string>("today");
-  const [loading, setLoading] = React.useState(false);
-  const [metrics, setMetrics] = React.useState<SLAMetric[]>(mockSLAMetrics);
-  const [breaches, setBreaches] = React.useState<SLABreach[]>(mockBreaches);
+  const [timeRange, setTimeRange] = React.useState<string>("week");
 
-  React.useEffect(() => {
-    // In a real app, fetch SLA metrics: getSLAService().getMetrics({ timeRange }).then(setMetrics);
-    // getSLAService().getBreaches({ timeRange }).then(setBreaches);
-  }, [timeRange]);
+  // Fetch SLA metrics
+  const { data: metricsData, isLoading: isLoadingMetrics, refetch: refetchMetrics } = useQuery<SLAMetricsResponse>({
+    queryKey: ['sla-metrics', timeRange],
+    queryFn: () => bankApi.getSLAMetrics(timeRange),
+    staleTime: 30 * 1000, // 30 seconds
+  });
 
-  const overallCompliance = React.useMemo(() => {
-    const met = metrics.filter((m) => m.status === "met").length;
-    return Math.round((met / metrics.length) * 100);
-  }, [metrics]);
+  // Fetch SLA breaches
+  const { data: breachesData, isLoading: isLoadingBreaches, refetch: refetchBreaches } = useQuery<SLABreachesResponse>({
+    queryKey: ['sla-breaches', timeRange],
+    queryFn: () => bankApi.getSLABreaches(timeRange),
+    staleTime: 30 * 1000,
+  });
+
+  const metrics = metricsData?.metrics || [];
+  const breaches = breachesData?.breaches || [];
+  const overallCompliance = metricsData?.overall_compliance || 0;
+  const throughputData = metricsData?.throughput_data || [];
+  const agingData = metricsData?.aging_data || [];
 
   const handleExportReport = async () => {
-    toast({
-      title: "Exporting SLA Report",
-      description: "Generating PDF report...",
-    });
-    // In a real app, call API: await api.post('/sla/export', { timeRange, format: 'pdf' })
+    try {
+      await bankApi.exportSLAReport(timeRange, 'pdf');
+      toast({
+        title: "SLA Report Exported",
+        description: "Your SLA report has been downloaded.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export SLA report. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -365,7 +282,7 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={mockThroughputData}>
+                <BarChart data={throughputData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="hour" />
                   <YAxis />
@@ -387,14 +304,14 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
             <CardContent>
               <div className="space-y-4">
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={mockAgingData}>
+                  <BarChart data={agingData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="timeRange" />
+                    <XAxis dataKey="time_range" />
                     <YAxis />
                     <Tooltip />
                     <Legend />
                     <Bar dataKey="count" fill="#8b5cf6" name="LC Count">
-                      {mockAgingData.map((entry, index) => (
+                      {agingData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={
@@ -410,10 +327,10 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
                   </BarChart>
                 </ResponsiveContainer>
                 <div className="grid grid-cols-4 gap-2 text-sm">
-                  {mockAgingData.map((item) => (
-                    <div key={item.timeRange} className="text-center">
+                  {agingData.map((item) => (
+                    <div key={item.time_range} className="text-center">
                       <p className="font-semibold">{item.count}</p>
-                      <p className="text-xs text-muted-foreground">{item.timeRange}</p>
+                      <p className="text-xs text-muted-foreground">{item.time_range}</p>
                       <p className="text-xs text-muted-foreground">({item.percentage}%)</p>
                     </div>
                   ))}
@@ -435,7 +352,7 @@ export function SLADashboardsView({ embedded = false }: { embedded?: boolean }) 
               </div>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {isLoadingBreaches ? (
                 <div className="flex items-center justify-center py-8 text-muted-foreground">
                   <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading breaches...
                 </div>

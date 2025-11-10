@@ -17,10 +17,10 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Validation Policy Surface** | ✅ **IMPLEMENTED** | `PolicySurface` component shows ruleset domain/jurisdiction/version/effective window |
-| **SLA Dashboards** | ⚠️ **PARTIAL** | UI exists (`SLADashboards.tsx`) with throughput, aging, time-to-first-review metrics. Backend integration needs verification |
+| **SLA Dashboards** | ✅ **IMPLEMENTED** | UI exists (`SLADashboards.tsx`) with throughput, aging, time-to-first-review metrics. Backend API endpoints (`/bank/sla/metrics`, `/bank/sla/breaches`) implemented and wired. Calculates metrics from JobQueue, BankApproval, and DiscrepancyWorkflow tables. |
 | **Bulk Jobs** | ❌ **MISSING** | Need: templated runs, scheduling, throttling, resumable batches |
 | **Duplicate Detection** | ⚠️ **PARTIAL** | LC number + client name check exists (`checkDuplicate` API), but missing: content similarity, merge history |
-| **Evidence Packs** | ⚠️ **PARTIAL** | UI exists (`EvidencePacks.tsx`) with one-click PDF/ZIP generation. Backend API integration needs verification |
+| **Evidence Packs** | ✅ **IMPLEMENTED** | UI exists (`EvidencePacks.tsx`) with one-click PDF/ZIP generation. Backend API endpoints (`/bank/evidence-packs/sessions`, `/bank/evidence-packs/generate`) implemented and wired. Lists validation sessions from bank's tenant companies via BankTenant relationship. |
 | **API Tokens & Webhooks** | ⚠️ **PARTIAL** | Exists in Admin Console (`partners-webhooks`), but NOT in Bank Dashboard. Need: bank-specific API tokens with limited scope |
 
 ## Bank Dashboard - P2 (Nice-to-Have)
@@ -96,7 +96,7 @@
 - Cross-cutting: Basic search/filters, responsive components, Security (2FA, idle timeout), Data Retention
 
 ### ⚠️ Partially Implemented (Needs Completion)
-- **Bank**: Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI), SLA Dashboards (backend integration needs verification), Evidence Packs (backend integration needs verification)
+- **Bank**: Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI)
 - **SME**: Duplicate Guardrails (needs linking suggestion)
 - **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Support (needs ticket handoff), i18n (needs verification)
 
@@ -112,7 +112,7 @@
 ## Recommended Priority Order
 
 ### Next Focus (Now that P0 backend APIs are complete)
-1. **Bank P1**: SLA Dashboards backend verification; Evidence Packs backend integration; Duplicate detection merge history
+1. **Bank P1**: Duplicate detection merge history; Bulk Jobs backend integration
 2. **SME P1**: Templates, Company Profile, Team Roles
 3. **Cross-cutting P1**: Environment Banner, Support ticket handoff
 

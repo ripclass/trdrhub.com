@@ -48,6 +48,8 @@ bank_users = _load_router_module("bank_users")
 bank_queue = _load_router_module("bank_queue")
 bank_auth = _load_router_module("bank_auth")
 bank_compliance = _load_router_module("bank_compliance")
+bank_sla = _load_router_module("bank_sla")
+bank_evidence = _load_router_module("bank_evidence")
 validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
@@ -70,6 +72,8 @@ __all__ = [
     "bank_queue",
     "bank_auth",
     "bank_compliance",
+    "bank_sla",
+    "bank_evidence",
     "onboarding",
     "validate",
     "rules_admin",
