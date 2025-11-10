@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type Draft } from "@/hooks/use-drafts";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import { useImporterAuth } from "@/lib/importer/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ImporterSidebar } from "@/components/importer/ImporterSidebar";
 import ImportLCUpload from "./ImportLCUpload";
@@ -170,9 +171,18 @@ const parseSectionParam = (sectionParam: string | null, legacyTabParam: string |
 
 export default function ImporterDashboardV2() {
   const { toast } = useToast();
+  const { user: importerUser, isAuthenticated, isLoading: authLoading } = useImporterAuth();
+  const navigate = useNavigate();
   const { listDrafts, deleteDraft } = useDrafts();
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate("/lcopilot/importer-dashboard/login");
+    }
+  }, [isAuthenticated, authLoading, navigate]);
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(true);
@@ -310,6 +320,23 @@ export default function ImporterDashboardV2() {
 
     return date.toLocaleDateString();
   };
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect if not authenticated (handled by useEffect, but show nothing while redirecting)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <>

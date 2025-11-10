@@ -33,6 +33,8 @@ import BankDashboardV2 from './pages/BankDashboardV2'
 import BankLogin from './pages/bank/BankLogin'
 import ImporterDashboardV2 from './pages/ImporterDashboardV2'
 import ExporterDashboardV2 from './pages/ExporterDashboardV2'
+import ExporterLogin from './pages/exporter/ExporterLogin'
+import ImporterLogin from './pages/importer/ImporterLogin'
 import ClientDashboard from './pages/ClientDashboard'
 import ComponentGallery from './pages/ComponentGallery'
 import ExporterDocumentCorrections from './pages/ExporterDocumentCorrections'
@@ -45,6 +47,8 @@ import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminShell from './pages/admin/AdminShell'
 import { BankAuthProvider } from './lib/bank/auth'
+import { ExporterAuthProvider } from './lib/exporter/auth'
+import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
 
 function App() {
@@ -77,10 +81,32 @@ function App() {
         <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
         <Route path="/import/results/:jobId" element={<ImportResults />} />
         <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
-        <Route path="/lcopilot/exporter-dashboard" element={<ExporterDashboardV2 />} />
+        <Route path="/lcopilot/exporter-dashboard/login" element={
+          <ExporterAuthProvider>
+            <ExporterLogin />
+          </ExporterAuthProvider>
+        } />
+        <Route path="/lcopilot/exporter-dashboard" element={
+          <ExporterAuthProvider>
+            <ExporterDashboardV2 />
+          </ExporterAuthProvider>
+        } />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
-        <Route path="/lcopilot/exporter-dashboard/v2" element={<ExporterDashboardV2 />} />
-        <Route path="/lcopilot/importer-dashboard" element={<ImporterDashboardV2 />} />
+        <Route path="/lcopilot/exporter-dashboard/v2" element={
+          <ExporterAuthProvider>
+            <ExporterDashboardV2 />
+          </ExporterAuthProvider>
+        } />
+        <Route path="/lcopilot/importer-dashboard/login" element={
+          <ImporterAuthProvider>
+            <ImporterLogin />
+          </ImporterAuthProvider>
+        } />
+        <Route path="/lcopilot/importer-dashboard" element={
+          <ImporterAuthProvider>
+            <ImporterDashboardV2 />
+          </ImporterAuthProvider>
+        } />
         <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
         <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
         <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />
