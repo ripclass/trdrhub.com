@@ -1,24 +1,39 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
-import { bankApi, ClientStats } from "@/api/bank";
+import { bankApi, ClientStats, BankResult } from "@/api/bank";
 import { format } from "date-fns";
-import { Search, Users, CheckCircle, XCircle, AlertCircle, TrendingUp, FileText, ExternalLink, BarChart3 } from "lucide-react";
+import { Search, Users, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, FileText, ExternalLink, BarChart3, Activity, Copy, Clock, ArrowUp, ArrowDown, ChevronDown, ChevronRight } from "lucide-react";
 import { sanitizeText } from "@/lib/sanitize";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { ClientDetailView } from "./ClientDetailView";
 
 interface ClientManagementProps {}
 
 export function ClientManagement({}: ClientManagementProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const itemsPerPage = 20;
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const toggleClientExpansion = (clientName: string) => {
+    setExpandedClients(prev => {
+      const next = new Set(prev);
+      if (next.has(clientName)) {
+        next.delete(clientName);
+      } else {
+        next.add(clientName);
+      }
+      return next;
+    });
+  };
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['bank-client-stats', searchQuery, currentPage],
@@ -231,89 +246,119 @@ export function ClientManagement({}: ClientManagementProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {clients.map((client) => (
-                    <tr key={client.client_name} className="border-b hover:bg-muted/50">
-                      <td className="p-3 font-medium">
-                        {sanitizeText(client.client_name)}
-                      </td>
-                      <td className="p-3 text-right">
-                        {client.total_validations.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-right">
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                          {client.compliant_count}
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-right">
-                        {client.discrepancies_count > 0 ? (
-                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                            {client.discrepancies_count}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
+                  {clients.map((client) => {
+                    const isExpanded = expandedClients.has(client.client_name);
+                    return (
+                      <>
+                        <tr key={client.client_name} className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleClientExpansion(client.client_name)}>
+                          <td className="p-3 font-medium">
+                            <div className="flex items-center gap-2">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                              )}
+                              {sanitizeText(client.client_name)}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            {client.total_validations.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right">
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              {client.compliant_count}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-right">
+                            {client.discrepancies_count > 0 ? (
+                              <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                                {client.discrepancies_count}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            {client.failed_count > 0 ? (
+                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                                {client.failed_count}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-medium">
+                            {client.average_compliance_score.toFixed(1)}%
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="font-medium">{client.compliance_rate.toFixed(1)}%</span>
+                              <div className="w-16 bg-muted rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    client.compliance_rate >= 90
+                                      ? "bg-green-600"
+                                      : client.compliance_rate >= 75
+                                      ? "bg-yellow-600"
+                                      : "bg-red-600"
+                                  }`}
+                                  style={{ width: `${client.compliance_rate}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 text-left text-muted-foreground">
+                            {client.last_validation_date
+                              ? format(new Date(client.last_validation_date), "MMM d, yyyy")
+                              : "N/A"}
+                          </td>
+                          <td className="p-3 text-center">
+                            {getStatusBadge(client)}
+                          </td>
+                          <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleViewDashboard(client.client_name)}
+                                className="h-8"
+                              >
+                                <BarChart3 className="w-4 h-4 mr-1" />
+                                Dashboard
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleViewResults(client.client_name)}
+                                className="h-8"
+                              >
+                                <ExternalLink className="w-4 h-4 mr-1" />
+                                Results
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={10} className="p-0">
+                              <ClientDetailView
+                                clientName={client.client_name}
+                                clientStats={{
+                                  total_validations: client.total_validations,
+                                  compliance_rate: client.compliance_rate,
+                                  average_compliance_score: client.average_compliance_score,
+                                  total_discrepancies: client.total_discrepancies,
+                                  discrepancies_count: client.discrepancies_count,
+                                  compliant_count: client.compliant_count,
+                                  failed_count: client.failed_count,
+                                }}
+                              />
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="p-3 text-right">
-                        {client.failed_count > 0 ? (
-                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                            {client.failed_count}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-right font-medium">
-                        {client.average_compliance_score.toFixed(1)}%
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="font-medium">{client.compliance_rate.toFixed(1)}%</span>
-                          <div className="w-16 bg-muted rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                client.compliance_rate >= 90
-                                  ? "bg-green-600"
-                                  : client.compliance_rate >= 75
-                                  ? "bg-yellow-600"
-                                  : "bg-red-600"
-                              }`}
-                              style={{ width: `${client.compliance_rate}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3 text-left text-muted-foreground">
-                        {client.last_validation_date
-                          ? format(new Date(client.last_validation_date), "MMM d, yyyy")
-                          : "N/A"}
-                      </td>
-                      <td className="p-3 text-center">
-                        {getStatusBadge(client)}
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewDashboard(client.client_name)}
-                            className="h-8"
-                          >
-                            <BarChart3 className="w-4 h-4 mr-1" />
-                            Dashboard
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewResults(client.client_name)}
-                            className="h-8"
-                          >
-                            <ExternalLink className="w-4 h-4 mr-1" />
-                            Results
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

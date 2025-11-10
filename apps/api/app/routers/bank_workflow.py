@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from ..database import get_db
-from ..core.security import get_current_user, require_bank_or_admin
+from ..core.security import get_current_user, require_bank_or_admin, can_act_as_workflow_stage
 from ..models import User, ValidationSession, Discrepancy, UserRole
 from ..models.bank_workflow import (
     BankApproval, DiscrepancyWorkflow,
@@ -205,6 +205,18 @@ async def update_approval(
             detail="Approval not found or access denied"
         )
     
+    # RBAC: Verify user can modify this approval
+    # Bank admins and system admins can modify any approval
+    # Others can only modify if assigned to current stage or assigned_to_id matches
+    if not (current_user.is_bank_admin() or current_user.is_system_admin()):
+        if approval.assigned_to_id != current_user.id:
+            # Check if user is assigned to the current stage
+            if not can_act_as_workflow_stage(current_user, approval.current_stage, approval):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied. You can only modify approvals assigned to you."
+                )
+    
     # Update fields
     update_data = approval_data.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -244,6 +256,14 @@ async def approve_action(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Approval not found or access denied"
+        )
+    
+    # RBAC: Verify user can act in the current stage
+    if not can_act_as_workflow_stage(current_user, approval.current_stage, approval):
+        stage_name = approval.current_stage.replace("_", " ").title()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. You do not have permission to act as {stage_name} for this approval."
         )
     
     action = action_data.action.lower()

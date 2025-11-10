@@ -7,10 +7,10 @@
 | **Roles & Approvals** | ✅ **IMPLEMENTED** | Analyst → Reviewer → Approver flow with stages, approve/reject/reopen actions |
 | **Discrepancy Workflow** | ✅ **IMPLEMENTED** | Assign, status, due dates, comments, bulk resolve, audit logs |
 | **Queue Operations** | ✅ **IMPLEMENTED** | UI + backend (`/bank/queue`) with tenant scoping and RBAC; actions: retry/cancel/requeue/bulk wired |
-| **Client Portfolio View** | ⚠️ **PARTIAL** | `ClientManagement` component exists with basic stats, but missing: per-client KPIs, trends, recent issues, duplicates heatmap |
+| **Client Portfolio View** | ✅ **IMPLEMENTED** | `ClientManagement` component with expandable rows showing per-client KPIs, trends, recent issues, and duplicates heatmap via `ClientDetailView` |
 | **Audit Trail** | ✅ **IMPLEMENTED** | Per LC and per action (who/when/what changed), CSV exportable |
 | **Notifications** | ✅ **IMPLEMENTED** | Actionable items (open item, approve, request fix), read/unread, badges |
-| **RBAC** | ⚠️ **PARTIAL** | Basic roles exist (`require_bank_or_admin`), but granular bank roles (Admin, Approver, Reviewer, Analyst, Read-only) need verification |
+| **RBAC** | ✅ **IMPLEMENTED** | Granular bank workflow roles (`can_act_as_workflow_stage`, `require_workflow_stage_access`) with analyst, reviewer, approver stage checks; bank_admin/bank_officer permissions enforced |
 
 ## Bank Dashboard - P1 (Important)
 
@@ -41,7 +41,7 @@
 | **LC Workspace** | ✅ **IMPLEMENTED** | Checklist of required docs per LC, status per doc, missing items, re-upload loop |
 | **Drafts & Amendments** | ✅ **IMPLEMENTED** | Explicit tabs, versioning, diff of amendments, link to prior results |
 | **Discrepancy Guidance** | ✅ **IMPLEMENTED** | `DiscrepancyGuidance` component with actionable fixes, before/after examples, common mistakes, re-validate, and upload fixed documents. Used in `ExporterResults.tsx` and `ImportResults.tsx` |
-| **Result Lifecycle** | ⚠️ **PARTIAL** | `ready_for_submission` status exists, but missing: "ready to submit" badge, bank submission confirmation, history per LC |
+| **Result Lifecycle** | ✅ **IMPLEMENTED** | "Ready to submit" badge, bank submission confirmation dialog, and submission history tab added to `ExporterResults.tsx` and `ImportResults.tsx` |
 | **Notifications** | ✅ **IMPLEMENTED** | What to fix, by when; actionable notifications |
 
 ## SME Dashboard - P1 (Important)
@@ -91,14 +91,14 @@
 ## Summary
 
 ### ✅ Fully Implemented (P0)
-- Bank: Roles & Approvals, Discrepancy Workflow, Audit Trail, Notifications, Policy Surface
-- SME: LC Workspace, Drafts & Amendments, Notifications
-- Cross-cutting: Basic search/filters, responsive components
+- Bank: Roles & Approvals, Discrepancy Workflow, Audit Trail, Notifications, Policy Surface, Queue Operations, Client Portfolio (with KPIs/trends/heatmap), RBAC (granular roles)
+- SME: LC Workspace, Drafts & Amendments, Notifications, Result Lifecycle (ready to submit badge, bank submission confirmation, history per LC)
+- Cross-cutting: Basic search/filters, responsive components, Security (2FA, idle timeout), Data Retention
 
 ### ⚠️ Partially Implemented (Needs Completion)
-- **Bank**: Client Portfolio (needs KPIs/trends/heatmap), RBAC (needs granular roles), Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI)
-- **SME**: Result Lifecycle (needs bank submission confirmation/history), Duplicate Guardrails (needs linking suggestion)
-- **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Security (needs enforcement), Data Retention (needs UI), Support (needs ticket handoff), i18n (needs verification)
+- **Bank**: Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI), SLA Dashboards (backend integration needs verification), Evidence Packs (backend integration needs verification)
+- **SME**: Duplicate Guardrails (needs linking suggestion)
+- **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Support (needs ticket handoff), i18n (needs verification)
 
 ### ❌ Missing (Critical Gaps - Backend APIs)
 - **Bank P1**: Bulk Jobs backend integration
@@ -112,10 +112,9 @@
 ## Recommended Priority Order
 
 ### Next Focus (Now that P0 backend APIs are complete)
-1. **Bank P0 enhancements**: Client Portfolio KPIs/trends/duplicates heatmap; verify granular RBAC roles (Admin/Approver/Reviewer/Analyst/Read-only)
-2. **Bank P1**: SLA Dashboards backend verification; Evidence Packs backend integration; Duplicate detection merge history
-3. **SME P1**: Templates, Company Profile, Team Roles
-4. **Cross-cutting P1**: Environment Banner, Support ticket handoff
+1. **Bank P1**: SLA Dashboards backend verification; Evidence Packs backend integration; Duplicate detection merge history
+2. **SME P1**: Templates, Company Profile, Team Roles
+3. **Cross-cutting P1**: Environment Banner, Support ticket handoff
 
 ### Sprint 2 (Important P1)
 1. **SLA Dashboards** (throughput, aging, time-to-first-review, breaches)
@@ -124,8 +123,8 @@
 4. **Company Profile** (compliance info, address book)
 
 ### Sprint 3 (Enhancements)
-1. **Client Portfolio** enhancements (KPIs, trends, heatmap)
-2. **Result Lifecycle** enhancements (bank submission confirmation, history)
-3. **Saved Views** and deep links
-4. **Environment Banner** and sample data mode
+1. **Saved Views** and deep links
+2. **Environment Banner** and sample data mode
+3. **Personalization** (pin tabs, default landing per role)
+4. **Internationalization** hooks verification
 

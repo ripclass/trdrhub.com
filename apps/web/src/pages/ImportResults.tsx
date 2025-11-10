@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useJob, useResults, usePackage } from "@/hooks/use-lcopilot";
+import { format } from "date-fns";
 import {
   FileText,
   Download,
@@ -26,7 +28,10 @@ import {
   BarChart3,
   TrendingUp,
   PieChart,
-  Receipt
+  Receipt,
+  Send,
+  History,
+  Building2
 } from "lucide-react";
 
 // Mock data for demonstration - in real app this would come from API
@@ -221,9 +226,16 @@ export default function ImportResults({
   const { generatePackage, downloadPackage, isLoading: isGeneratingPackage } = usePackage();
   const [activeTab, setActiveTab] = useState("overview");
   const [useMockData, setUseMockData] = useState(false);
+  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
+  const navigate = useNavigate();
 
   // Get appropriate mock data based on mode
   const mockData = mode === 'draft' ? mockDraftLCResults : mockSupplierResults;
+  
+  // Determine if ready to submit (only for supplier mode with no issues)
+  const isReadyToSubmit = mode === 'supplier' && mockSupplierResults.totalIssues === 0;
 
   useEffect(() => {
     // For demo job IDs, immediately use mock data
@@ -378,6 +390,41 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
     setTimeout(() => {
       window.location.reload();
     }, 1500);
+  };
+
+  const handleSubmitToBank = async () => {
+    setIsSubmitting(true);
+    try {
+      // TODO: Call API to submit to bank
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+
+      toast({
+        title: "Submitted to Bank",
+        description: `LC ${lcNumber} has been successfully submitted to the bank for review.`,
+      });
+
+      setShowSubmitDialog(false);
+      // Refresh submission history (mock for now)
+      setSubmissionHistory([
+        {
+          id: `sub-${Date.now()}`,
+          lc_number: lcNumber,
+          submitted_at: new Date().toISOString(),
+          status: "pending",
+          bank_name: "Bank One",
+          submitted_by: "Current User",
+        },
+        ...submissionHistory,
+      ]);
+    } catch (error) {
+      toast({
+        title: "Submission Failed",
+        description: "Failed to submit to bank. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const renderHeader = () => {
@@ -795,6 +842,12 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <p className="text-sm text-muted-foreground">
                     Completed on {new Date(mockData.processedAt).toLocaleDateString()}
                   </p>
+                  {isReadyToSubmit && (
+                    <Badge className="mt-2 bg-green-600 text-white">
+                      <Send className="w-3 h-3 mr-1" />
+                      Ready to Submit to Bank
+                    </Badge>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -806,6 +859,16 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <Share2 className="w-4 h-4 mr-2" />
                   Share
                 </Button>
+                {isReadyToSubmit && (
+                  <Button
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    size="sm"
+                    onClick={() => setShowSubmitDialog(true)}
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    Submit to Bank
+                  </Button>
+                )}
                 <Button
                   onClick={handleDownloadReport}
                   disabled={isGeneratingPackage}
@@ -829,7 +892,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className={`grid w-full ${mode === 'supplier' ? 'grid-cols-5' : 'grid-cols-4'}`}>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="details">
               {mode === 'draft' ? 'LC Clauses' : 'Documents'}
@@ -837,6 +900,9 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
             <TabsTrigger value="issues">
               {mode === 'draft' ? 'Risk Analysis' : 'Issues'}
             </TabsTrigger>
+            {mode === 'supplier' && (
+              <TabsTrigger value="history">Submission History</TabsTrigger>
+            )}
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
@@ -1029,10 +1095,140 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
             </Card>
           </TabsContent>
 
+          {mode === 'supplier' && (
+            <TabsContent value="history" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="w-5 h-5" />
+                    Submission History
+                  </CardTitle>
+                  <CardDescription>
+                    Track all submissions of this LC to banks
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {submissionHistory.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground mb-2">No submissions yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Submit this LC to a bank to track its submission history
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {submissionHistory.map((submission) => (
+                        <Card key={submission.id} className="border-l-4 border-l-primary">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                                  <span className="font-medium">{submission.bank_name}</span>
+                                  <Badge
+                                    variant={
+                                      submission.status === "approved"
+                                        ? "default"
+                                        : submission.status === "rejected"
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {submission.status}
+                                  </Badge>
+                                </div>
+                                <div className="text-sm text-muted-foreground space-y-1">
+                                  <div>Submitted: {format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm")}</div>
+                                  <div>By: {submission.submitted_by}</div>
+                                  {submission.bank_response && (
+                                    <div className="mt-2 p-2 bg-muted rounded text-xs">
+                                      <strong>Bank Response:</strong> {submission.bank_response}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
           <TabsContent value="analytics" className="mt-6">
             {renderAnalyticsTab()}
           </TabsContent>
         </Tabs>
+
+        {/* Submit to Bank Dialog */}
+        {mode === 'supplier' && (
+          <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Send className="w-5 h-5" />
+                  Submit to Bank
+                </DialogTitle>
+                <DialogDescription>
+                  Submit LC {lcNumber} to the bank for review and approval
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-muted rounded-lg">
+                  <h4 className="font-medium mb-2">Submission Details</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">LC Number:</span>
+                      <span className="font-medium">{lcNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Documents:</span>
+                      <span className="font-medium">{mockSupplierResults.totalDocuments}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Compliance Rate:</span>
+                      <span className="font-medium text-green-600">
+                        {mockSupplierResults.complianceRate}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status:</span>
+                      <Badge className="bg-green-600">Ready to Submit</Badge>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    By submitting, you confirm that all documents are correct and ready for bank review.
+                    The bank will review your submission and provide feedback.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowSubmitDialog(false)} disabled={isSubmitting}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSubmitToBank} disabled={isSubmitting} className="bg-green-600 hover:bg-green-700">
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Submit to Bank
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   );

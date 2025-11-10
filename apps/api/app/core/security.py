@@ -432,6 +432,82 @@ def require_tenant_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def can_act_as_workflow_stage(user: User, stage: str, approval: Optional[Any] = None) -> bool:
+    """
+    Check if user can act in a specific workflow stage.
+    
+    Workflow stages: analyst, reviewer, approver
+    
+    Rules:
+    - System admins and bank admins can act in any stage
+    - Bank officers can act in any stage (flexible assignment)
+    - Users assigned to a specific stage can act in that stage
+    - For analyst stage: user must be assigned as analyst_id or be bank_officer/admin
+    - For reviewer stage: user must be assigned as reviewer_id or be bank_officer/admin
+    - For approver stage: user must be assigned as approver_id or be bank_admin/system_admin
+    
+    Args:
+        user: Current authenticated user
+        stage: Workflow stage (analyst, reviewer, approver)
+        approval: Optional BankApproval object to check assignments
+    
+    Returns:
+        True if user can act in this stage
+    """
+    from ..models.bank_workflow import ApprovalStage
+    
+    # System admins and bank admins can act in any stage
+    if user.is_system_admin() or user.is_bank_admin():
+        return True
+    
+    # Bank officers can act in analyst and reviewer stages
+    if user.is_bank_officer():
+        if stage in [ApprovalStage.ANALYST.value, ApprovalStage.REVIEWER.value]:
+            return True
+        # Bank officers can act as approver only if explicitly assigned
+        if stage == ApprovalStage.APPROVER.value and approval:
+            return approval.approver_id == user.id
+    
+    # Check specific assignments if approval object provided
+    if approval:
+        if stage == ApprovalStage.ANALYST.value:
+            return approval.analyst_id == user.id or approval.assigned_to_id == user.id
+        elif stage == ApprovalStage.REVIEWER.value:
+            return approval.reviewer_id == user.id or approval.assigned_to_id == user.id
+        elif stage == ApprovalStage.APPROVER.value:
+            return approval.approver_id == user.id or approval.assigned_to_id == user.id
+    
+    return False
+
+
+def require_workflow_stage_access(
+    stage: str,
+    approval: Optional[Any] = None,
+    user: User = Depends(get_current_user)
+) -> User:
+    """
+    Dependency to require access to a specific workflow stage.
+    
+    Args:
+        stage: Workflow stage (analyst, reviewer, approver)
+        approval: Optional BankApproval object to check assignments
+        user: Current authenticated user
+    
+    Returns:
+        User if access granted
+    
+    Raises:
+        HTTPException: 403 if access denied
+    """
+    if not can_act_as_workflow_stage(user, stage, approval):
+        stage_name = stage.replace("_", " ").title()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. You do not have permission to act as {stage_name}."
+        )
+    return user
+
+
 def require_bank_or_admin(user: User = Depends(get_current_user)) -> User:
     """
     Dependency to require bank or admin role.
