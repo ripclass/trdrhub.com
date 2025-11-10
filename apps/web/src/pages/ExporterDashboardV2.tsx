@@ -27,6 +27,7 @@ import { ContentLibrary } from "@/components/sme/ContentLibrary";
 import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingUsagePage } from "./BillingUsagePage";
+import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -188,6 +189,7 @@ export default function ExporterDashboardV2() {
 
   const [activeSection, setActiveSection] = useState<Section>(() => parseSection(searchParams.get("section")));
   const [workspaceTab, setWorkspaceTab] = useState("drafts");
+  const [billingTab, setBillingTab] = useState<string>("overview");
 
   useEffect(() => {
     const loadDrafts = () => {
@@ -266,10 +268,11 @@ export default function ExporterDashboardV2() {
   };
 
   const handleBillingTabChange = (tab: string) => {
+    setBillingTab(tab);
     const sectionMap: Record<string, Section> = {
       overview: "billing",
       usage: "billing-usage",
-      invoices: "billing", // Invoices tab is handled within Billing page
+      invoices: "billing", // Stay in billing section, but track tab
     };
     const section = sectionMap[tab] || "billing";
     handleSectionChange(section);
@@ -380,7 +383,13 @@ export default function ExporterDashboardV2() {
 
           {activeSection === "notifications" && <NotificationsCard notifications={notifications} />}
 
-          {activeSection === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
+          {activeSection === "billing" && (
+            billingTab === "invoices" ? (
+              <BillingInvoicesPage onTabChange={handleBillingTabChange} />
+            ) : (
+              <BillingOverviewPage onTabChange={handleBillingTabChange} />
+            )
+          )}
 
           {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
 

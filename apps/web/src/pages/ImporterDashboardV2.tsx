@@ -26,6 +26,7 @@ import { ContentLibrary } from "@/components/sme/ContentLibrary";
 import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingUsagePage } from "./BillingUsagePage";
+import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import {
   FileText,
   CheckCircle,
@@ -270,10 +271,11 @@ export default function ImporterDashboardV2() {
   };
 
   const handleBillingTabChange = (tab: string) => {
+    setBillingTab(tab);
     const sectionMap: Record<string, Section> = {
       overview: "billing",
       usage: "billing-usage",
-      invoices: "billing", // Invoices tab is handled within Billing page
+      invoices: "billing", // Stay in billing section, but track tab
     };
     const section = sectionMap[tab] || "billing";
     handleSectionChange(section);
@@ -393,7 +395,13 @@ export default function ImporterDashboardV2() {
             <NotificationsCard notifications={notifications} />
           )}
 
-          {activeSection === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
+          {activeSection === "billing" && (
+            billingTab === "invoices" ? (
+              <BillingInvoicesPage onTabChange={handleBillingTabChange} />
+            ) : (
+              <BillingOverviewPage onTabChange={handleBillingTabChange} />
+            )
+          )}
 
           {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
 

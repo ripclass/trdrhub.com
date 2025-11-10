@@ -22,6 +22,7 @@ import { InAppTutorials } from "@/components/shared/InAppTutorials";
 import { AIAssistance } from "@/components/bank/AIAssistance";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingUsagePage } from "./BillingUsagePage";
+import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingAllocationsPage } from "./BillingAllocationsPage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -214,7 +215,13 @@ export default function BankDashboardV2() {
 
         {activeTab === "notifications" && <BankNotificationsView embedded />}
 
-        {activeTab === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} mode="bank" />}
+        {activeTab === "billing" && (
+          billingTab === "invoices" ? (
+            <BillingInvoicesPage onTabChange={handleBillingTabChange} mode="bank" />
+          ) : (
+            <BillingOverviewPage onTabChange={handleBillingTabChange} mode="bank" />
+          )
+        )}
 
         {activeTab === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} mode="bank" />}
 
