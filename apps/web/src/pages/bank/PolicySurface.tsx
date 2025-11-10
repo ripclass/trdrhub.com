@@ -51,7 +51,7 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
 import { bankPolicyApi, type PolicyAnalytics } from "@/api/bank";
 import {
   Select,

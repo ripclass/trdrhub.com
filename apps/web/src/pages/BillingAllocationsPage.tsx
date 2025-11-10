@@ -306,15 +306,19 @@ export function BillingAllocationsPage({ onTabChange }: { onTabChange?: (tab: st
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(allocation)}
-                            className="gap-2"
-                          >
-                            <Edit className="h-4 w-4" />
-                            Edit
-                          </Button>
+                          {isBankAdmin ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(allocation)}
+                              className="gap-2"
+                            >
+                              <Edit className="h-4 w-4" />
+                              Edit
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">View only</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -332,10 +336,12 @@ export function BillingAllocationsPage({ onTabChange }: { onTabChange?: (tab: st
           <DialogHeader>
             <DialogTitle>Edit Allocation</DialogTitle>
             <DialogDescription>
-              Update budget limits, quota, and alert settings for this allocation.
+              {isBankAdmin 
+                ? "Update budget limits, quota, and alert settings for this allocation."
+                : "Only bank administrators can edit allocations."}
             </DialogDescription>
           </DialogHeader>
-          {editingAllocation && (
+          {editingAllocation && isBankAdmin && (
             <form id="allocation-form" className="space-y-4">
               <div className="space-y-2">
                 <Label>Client</Label>
@@ -390,13 +396,27 @@ export function BillingAllocationsPage({ onTabChange }: { onTabChange?: (tab: st
               </div>
             </form>
           )}
+          {!isBankAdmin && (
+            <div className="py-4 text-center text-sm text-muted-foreground">
+              Access restricted to bank administrators
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditModal(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </Button>
+            {isBankAdmin && (
+              <>
+                <Button variant="outline" onClick={() => setShowEditModal(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </>
+            )}
+            {!isBankAdmin && (
+              <Button onClick={() => setShowEditModal(false)}>
+                Close
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
