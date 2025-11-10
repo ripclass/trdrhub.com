@@ -26,7 +26,6 @@ import { AIAssistance } from "@/components/sme/AIAssistance";
 import { ContentLibrary } from "@/components/sme/ContentLibrary";
 import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
-import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -60,7 +59,6 @@ type Section =
   | "notifications"
   | "billing"
   | "billing-usage"
-  | "billing-invoices"
   | "ai-assistance"
   | "content-library"
   | "shipment-timeline"
@@ -182,7 +180,6 @@ export default function ExporterDashboardV2() {
       "notifications",
       "billing",
       "billing-usage",
-      "billing-invoices",
       "settings",
       "help",
     ];
@@ -272,7 +269,7 @@ export default function ExporterDashboardV2() {
     const sectionMap: Record<string, Section> = {
       overview: "billing",
       usage: "billing-usage",
-      invoices: "billing-invoices",
+      invoices: "billing", // Invoices tab is handled within Billing page
     };
     const section = sectionMap[tab] || "billing";
     handleSectionChange(section);
@@ -386,8 +383,6 @@ export default function ExporterDashboardV2() {
           {activeSection === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} />}
 
           {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
-
-          {activeSection === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} />}
 
           {activeSection === "ai-assistance" && <AIAssistance embedded />}
           {activeSection === "content-library" && <ContentLibrary embedded />}
@@ -531,7 +526,7 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
                     </Badge>
                   </div>
                   <button
-                    onClick={() => navigate("/lcopilot/exporter-dashboard?section=billing-invoices")}
+                    onClick={() => navigate("/lcopilot/exporter-dashboard?section=billing")}
                     className="mt-3 text-sm text-primary hover:underline w-full text-left"
                   >
                     View invoices →

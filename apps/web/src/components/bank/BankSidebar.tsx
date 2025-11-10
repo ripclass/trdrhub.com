@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Receipt, Sparkles, UserCog, LogOut, FolderKanban } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Sparkles, UserCog, LogOut, FolderKanban } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -94,11 +94,6 @@ const navBilling = [
     title: "Billing",
     url: "/lcopilot/bank-dashboard?tab=billing",
     icon: CreditCard,
-  },
-  {
-    title: "Invoices & Payments",
-    url: "/lcopilot/bank-dashboard?tab=billing-invoices",
-    icon: Receipt,
   },
 ];
 

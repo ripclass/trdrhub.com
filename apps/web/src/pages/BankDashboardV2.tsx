@@ -21,7 +21,6 @@ import { HealthLatencyBanner } from "@/components/bank/HealthLatencyBanner";
 import { InAppTutorials } from "@/components/shared/InAppTutorials";
 import { AIAssistance } from "@/components/bank/AIAssistance";
 import { BillingOverviewPage } from "./BillingOverviewPage";
-import { BillingInvoicesPage } from "./BillingInvoicesPage";
 import { BillingUsagePage } from "./BillingUsagePage";
 import { BillingAllocationsPage } from "./BillingAllocationsPage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -218,8 +217,6 @@ export default function BankDashboardV2() {
         {activeTab === "billing" && <BillingOverviewPage onTabChange={handleBillingTabChange} mode="bank" />}
 
         {activeTab === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} mode="bank" />}
-
-        {activeTab === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} mode="bank" />}
 
         {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
 

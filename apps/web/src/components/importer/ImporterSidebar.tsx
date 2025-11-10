@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Receipt, Sparkles, Library, Calendar } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Sparkles, Library, Calendar } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -24,7 +24,6 @@ type ImporterSection =
   | "analytics"
   | "notifications"
   | "billing"
-  | "billing-invoices"
   | "ai-assistance"
   | "content-library"
   | "shipment-timeline"
@@ -152,16 +151,6 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                 >
                   <CreditCard />
                   <span>Billing</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "billing-invoices"}
-                  onClick={() => onSectionChange("billing-invoices")}
-                  tooltip="Invoices & Payments"
-                >
-                  <Receipt />
-                  <span>Invoices & Payments</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
