@@ -1,5 +1,5 @@
 // ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Sparkles, Library, Calendar } from "lucide-react";
+import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Sparkles, Library, Calendar, LogOut } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -13,7 +13,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useAuth } from "@/hooks/use-auth";
+import { useImporterAuth } from "@/lib/importer/auth";
+import { Button } from "@/components/ui/button";
 
 type ImporterSection =
   | "dashboard"
@@ -37,9 +38,13 @@ interface ImporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function ImporterSidebar({ activeSection, onSectionChange, ...props }: ImporterSidebarProps) {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useImporterAuth();
   
   const isActive = (matcher: string) => location.pathname === matcher;
+
+  const handleLogout = () => {
+    logout();
+  };
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -227,15 +232,24 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
         {user && (
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg">
+              <div className="flex items-center gap-2 px-2 py-1.5 w-full">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.email?.charAt(0).toUpperCase() || "U"}
+                  {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
                 </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="truncate font-medium text-sm">{user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
+                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'tenant_admin' ? 'Admin' : 'Importer'}</span>
                 </div>
-              </SidebarMenuButton>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="h-8 w-8 p-0"
+                  title="Sign out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
         )}

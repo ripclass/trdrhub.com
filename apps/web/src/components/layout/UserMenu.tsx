@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -10,9 +10,37 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useAdminAuth } from "@/lib/admin/auth"
-import type { AdminSection } from "@/lib/admin/types"
 import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
+
+// Try to import auth hooks - they may not be available in all contexts
+let useAdminAuth: any = null;
+let useBankAuth: any = null;
+let useExporterAuth: any = null;
+let useImporterAuth: any = null;
+
+try {
+  useAdminAuth = require("@/lib/admin/auth").useAdminAuth;
+} catch (e) {
+  // Admin auth not available
+}
+
+try {
+  useBankAuth = require("@/lib/bank/auth").useBankAuth;
+} catch (e) {
+  // Bank auth not available
+}
+
+try {
+  useExporterAuth = require("@/lib/exporter/auth").useExporterAuth;
+} catch (e) {
+  // Exporter auth not available
+}
+
+try {
+  useImporterAuth = require("@/lib/importer/auth").useImporterAuth;
+} catch (e) {
+  // Importer auth not available
+}
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.split("@")[0] || "User"
@@ -33,33 +61,108 @@ interface UserMenuProps {
 
 export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
-  const { user, logout, isLoading } = useAdminAuth()
+  const location = useLocation()
+  
+  // Determine which auth context to use based on current route
+  let user: any = null;
+  let logout: (() => void) | null = null;
+  let isLoading = false;
+  let displayName = "Guest";
+  let email = "guest@trdrhub.com";
+  let role = "";
 
-  const displayName = user?.full_name || user?.username || user?.email?.split("@")[0] || "Guest"
-  const email = user?.email || "guest@trdrhub.com"
+  // Try to get user from appropriate auth context
+  if (location.pathname.includes('/admin')) {
+    try {
+      const adminAuth = useAdminAuth?.();
+      if (adminAuth) {
+        user = adminAuth.user;
+        logout = adminAuth.logout;
+        isLoading = adminAuth.isLoading;
+        displayName = user?.full_name || user?.username || user?.email?.split("@")[0] || "Guest";
+        email = user?.email || "guest@trdrhub.com";
+        role = user?.role || "";
+      }
+    } catch (e) {
+      // Admin auth not available
+    }
+  } else if (location.pathname.includes('/bank-dashboard')) {
+    try {
+      const bankAuth = useBankAuth?.();
+      if (bankAuth) {
+        user = bankAuth.user;
+        logout = bankAuth.logout;
+        isLoading = bankAuth.isLoading;
+        displayName = user?.name || user?.email?.split("@")[0] || "Guest";
+        email = user?.email || "guest@trdrhub.com";
+        role = user?.role || "";
+      }
+    } catch (e) {
+      // Bank auth not available
+    }
+  } else if (location.pathname.includes('/exporter-dashboard')) {
+    try {
+      const exporterAuth = useExporterAuth?.();
+      if (exporterAuth) {
+        user = exporterAuth.user;
+        logout = exporterAuth.logout;
+        isLoading = exporterAuth.isLoading;
+        displayName = user?.name || user?.email?.split("@")[0] || "Guest";
+        email = user?.email || "guest@trdrhub.com";
+        role = user?.role || "";
+      }
+    } catch (e) {
+      // Exporter auth not available
+    }
+  } else if (location.pathname.includes('/importer-dashboard')) {
+    try {
+      const importerAuth = useImporterAuth?.();
+      if (importerAuth) {
+        user = importerAuth.user;
+        logout = importerAuth.logout;
+        isLoading = importerAuth.isLoading;
+        displayName = user?.name || user?.email?.split("@")[0] || "Guest";
+        email = user?.email || "guest@trdrhub.com";
+        role = user?.role || "";
+      }
+    } catch (e) {
+      // Importer auth not available
+    }
+  }
+
   const initials = getInitials(displayName, email)
 
   const handleNavigate = useCallback(
-    (section: AdminSection | "overview") => {
-      if (section === "overview") {
-        navigate({ pathname: "/admin" })
-      } else {
-        const search = new URLSearchParams({ section })
-        navigate({ pathname: "/admin", search: `?${search.toString()}` })
+    (section: string) => {
+      if (location.pathname.includes('/admin')) {
+        if (section === "overview") {
+          navigate({ pathname: "/admin" })
+        } else {
+          const search = new URLSearchParams({ section })
+          navigate({ pathname: "/admin", search: `?${search.toString()}` })
+        }
+      } else if (location.pathname.includes('/bank-dashboard')) {
+        navigate(`/lcopilot/bank-dashboard?tab=${section}`)
+      } else if (location.pathname.includes('/exporter-dashboard')) {
+        navigate(`/lcopilot/exporter-dashboard?section=${section}`)
+      } else if (location.pathname.includes('/importer-dashboard')) {
+        navigate(`/lcopilot/importer-dashboard?section=${section}`)
       }
     },
-    [navigate]
+    [navigate, location]
   )
 
   const handleLogout = useCallback(async () => {
+    if (!logout) return;
+    
     try {
-      await logout()
+      if (typeof logout === 'function') {
+        logout();
+      }
     } catch (error) {
       console.error("Failed to log out", error)
-    } finally {
-      navigate("/login")
     }
-  }, [logout, navigate])
+  }, [logout])
 
   if (isLoading || !user) {
     const baseClass = variant === "sidebar"
@@ -95,31 +198,47 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium leading-none">{displayName}</span>
             <span className="text-xs text-muted-foreground leading-none">{email}</span>
+            {role && (
+              <span className="text-xs text-muted-foreground capitalize mt-1">{role}</span>
+            )}
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => handleNavigate("overview")}> 
+        <DropdownMenuItem onSelect={() => handleNavigate("settings")}> 
           <UserIcon className="mr-2 h-4 w-4" />
           <span>Account</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("billing-plans")}> 
-          <CreditCard className="mr-2 h-4 w-4" />
-          <span>Billing</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => handleNavigate("system-settings")}> 
-          <Bell className="mr-2 h-4 w-4" />
-          <span>Notifications</span>
-        </DropdownMenuItem>
+        {location.pathname.includes('/admin') && (
+          <>
+            <DropdownMenuItem onSelect={() => handleNavigate("billing-plans")}> 
+              <CreditCard className="mr-2 h-4 w-4" />
+              <span>Billing</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleNavigate("system-settings")}> 
+              <Bell className="mr-2 h-4 w-4" />
+              <span>Notifications</span>
+            </DropdownMenuItem>
+          </>
+        )}
+        {(location.pathname.includes('/bank-dashboard') || 
+          location.pathname.includes('/exporter-dashboard') || 
+          location.pathname.includes('/importer-dashboard')) && (
+          <DropdownMenuItem onSelect={() => handleNavigate("billing")}> 
+            <CreditCard className="mr-2 h-4 w-4" />
+            <span>Billing</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={handleLogout}
-          className="text-destructive focus:text-destructive"
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          <span>Log out</span>
-        </DropdownMenuItem>
+        {logout && (
+          <DropdownMenuItem
+            onSelect={handleLogout}
+            className="text-destructive focus:text-destructive"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            <span>Log out</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
 }
-
