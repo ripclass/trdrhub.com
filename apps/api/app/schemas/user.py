@@ -230,3 +230,18 @@ class AdminProfile(UserRead):
     """Admin-specific profile information."""
     # Can add admin-specific fields like permissions granted, etc.
     pass
+
+
+class BankUserInviteRequest(BaseModel):
+    """Schema for bank admin to invite users."""
+    email: EmailStr
+    full_name: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
+    role: Literal["bank_officer", "bank_admin"] = Field(..., description="Role must be bank_officer or bank_admin")
+    
+    @validator("role", pre=True, always=True)
+    def validate_bank_role(cls, v):
+        """Validate role is a bank role."""
+        if v not in ["bank_officer", "bank_admin"]:
+            raise ValueError("Role must be bank_officer or bank_admin")
+        return v

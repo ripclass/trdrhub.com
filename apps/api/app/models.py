@@ -38,6 +38,11 @@ from .models.bank_workflow import (
     ApprovalStatus, ApprovalStage, DiscrepancyWorkflowStatus
 )
 
+# Import bank policy models
+from .models.bank_policy import (
+    BankPolicyOverlay, BankPolicyException
+)
+
 # Import company profile models
 from .models.company_profile import (
     CompanyAddress, CompanyComplianceInfo, DefaultConsigneeShipper,

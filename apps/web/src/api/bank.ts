@@ -579,3 +579,217 @@ export const bankApi = {
   },
 };
 
+// Bank User Management API
+export interface BankUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: 'bank_officer' | 'bank_admin';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BankUserInviteRequest {
+  email: string;
+  full_name: string;
+  password: string;
+  role: 'bank_officer' | 'bank_admin';
+}
+
+export interface BankUserListResponse {
+  users: BankUser[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export interface BankUserListQuery {
+  role?: 'bank_officer' | 'bank_admin';
+  is_active?: boolean;
+  search?: string;
+  page?: number;
+  per_page?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+}
+
+export interface RoleUpdateRequest {
+  user_id: string;
+  role: 'bank_officer' | 'bank_admin';
+  reason?: string;
+}
+
+export const bankUsersApi = {
+  /**
+   * List users in the bank tenant
+   */
+  listUsers: async (query?: BankUserListQuery): Promise<BankUserListResponse> => {
+    const params = new URLSearchParams();
+    if (query?.role) params.append('role', query.role);
+    if (query?.is_active !== undefined) params.append('is_active', String(query.is_active));
+    if (query?.search) params.append('search', query.search);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.per_page) params.append('per_page', String(query.per_page));
+    if (query?.sort_by) params.append('sort_by', query.sort_by);
+    if (query?.sort_order) params.append('sort_order', query.sort_order);
+    
+    const response = await api.get<BankUserListResponse>(`/bank/users?${params.toString()}`);
+    return response.data;
+  },
+
+  /**
+   * Invite/create a new user
+   */
+  inviteUser: async (data: BankUserInviteRequest): Promise<BankUser> => {
+    const response = await api.post<BankUser>('/bank/users/invite', data);
+    return response.data;
+  },
+
+  /**
+   * Update user role
+   */
+  updateUserRole: async (userId: string, data: RoleUpdateRequest): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(`/bank/users/${userId}/role`, data);
+    return response.data;
+  },
+
+  /**
+   * Suspend a user
+   */
+  suspendUser: async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(`/bank/users/${userId}/suspend`);
+    return response.data;
+  },
+
+  /**
+   * Reactivate a user
+   */
+  reactivateUser: async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(`/bank/users/${userId}/reactivate`);
+    return response.data;
+  },
+
+  /**
+   * Reset 2FA for a user
+   */
+  reset2FA: async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/bank/users/${userId}/reset-2fa`);
+    return response.data;
+  },
+};
+
+// Bank Policy API
+export interface PolicyOverlay {
+  id: string;
+  bank_id: string;
+  version: number;
+  active: boolean;
+  config: {
+    stricter_checks?: {
+      max_date_slippage_days?: number;
+      mandatory_documents?: string[];
+      require_expiry_date?: boolean;
+      min_amount_threshold?: number;
+    };
+    thresholds?: {
+      discrepancy_severity_override?: string;
+      auto_reject_on?: string[];
+    };
+  };
+  created_by_id: string;
+  published_by_id?: string;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PolicyException {
+  id: string;
+  bank_id: string;
+  overlay_id?: string;
+  rule_code: string;
+  scope: {
+    client?: string;
+    branch?: string;
+    product?: string;
+  };
+  reason: string;
+  expires_at?: string;
+  effect: "waive" | "downgrade" | "override";
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PolicyOverlayCreate {
+  config: {
+    stricter_checks: Record<string, any>;
+    thresholds: Record<string, any>;
+  };
+  version?: number;
+}
+
+export interface PolicyExceptionCreate {
+  rule_code: string;
+  scope: Record<string, string>;
+  reason: string;
+  expires_at?: string;
+  effect: "waive" | "downgrade" | "override";
+}
+
+export const bankPolicyApi = {
+  /**
+   * List policy overlays
+   */
+  listOverlays: async (): Promise<PolicyOverlay[]> => {
+    const response = await api.get<PolicyOverlay[]>("/bank/policy/overlays");
+    return response.data;
+  },
+
+  /**
+   * Create or update policy overlay
+   */
+  createOverlay: async (data: PolicyOverlayCreate): Promise<PolicyOverlay> => {
+    const response = await api.post<PolicyOverlay>("/bank/policy/overlays", data);
+    return response.data;
+  },
+
+  /**
+   * Publish (activate) a policy overlay
+   */
+  publishOverlay: async (overlayId: string): Promise<PolicyOverlay> => {
+    const response = await api.post<PolicyOverlay>(`/bank/policy/overlays/publish?overlay_id=${overlayId}`);
+    return response.data;
+  },
+
+  /**
+   * List policy exceptions
+   */
+  listExceptions: async (ruleCode?: string): Promise<PolicyException[]> => {
+    const params = ruleCode ? `?rule_code=${ruleCode}` : "";
+    const response = await api.get<PolicyException[]>(`/bank/policy/overlays/exceptions${params}`);
+    return response.data;
+  },
+
+  /**
+   * Create policy exception
+   */
+  createException: async (data: PolicyExceptionCreate, overlayId?: string): Promise<PolicyException> => {
+    const params = overlayId ? `?overlay_id=${overlayId}` : "";
+    const response = await api.post<PolicyException>(`/bank/policy/overlays/exceptions${params}`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete policy exception
+   */
+  deleteException: async (exceptionId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(`/bank/policy/overlays/exceptions/${exceptionId}`);
+    return response.data;
+  },
+};
+

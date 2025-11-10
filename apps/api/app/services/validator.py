@@ -1,13 +1,235 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import os
 import re
 import logging
+from datetime import datetime
+from uuid import UUID
 
 from app.models.rules import Rule
 from app.database import SessionLocal
 from app.services.rulhub_client import fetch_rules_from_rulhub
 
 logger = logging.getLogger(__name__)
+
+
+def get_active_overlay(bank_id: str, db_session) -> Optional[Dict[str, Any]]:
+    """
+    Get the active policy overlay for a bank.
+    
+    Returns:
+        Overlay dict with config, or None if not found
+    """
+    try:
+        from app.models.bank_policy import BankPolicyOverlay
+        
+        # Convert string to UUID if needed
+        bank_uuid = UUID(bank_id) if isinstance(bank_id, str) else bank_id
+        
+        overlay = db_session.query(BankPolicyOverlay).filter(
+            BankPolicyOverlay.bank_id == bank_uuid,
+            BankPolicyOverlay.active == True
+        ).first()
+        
+        if overlay:
+            return {
+                "id": str(overlay.id),
+                "version": overlay.version,
+                "config": overlay.config,
+            }
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to load policy overlay for bank {bank_id}: {e}")
+        return None
+
+
+def get_active_exceptions(bank_id: str, db_session) -> List[Dict[str, Any]]:
+    """
+    Get active policy exceptions for a bank.
+    
+    Returns:
+        List of exception dicts
+    """
+    try:
+        from app.models.bank_policy import BankPolicyException
+        
+        # Convert string to UUID if needed
+        bank_uuid = UUID(bank_id) if isinstance(bank_id, str) else bank_id
+        
+        exceptions = db_session.query(BankPolicyException).filter(
+            BankPolicyException.bank_id == bank_uuid
+        ).filter(
+            (BankPolicyException.expires_at.is_(None)) |
+            (BankPolicyException.expires_at > datetime.utcnow())
+        ).all()
+        
+        return [
+            {
+                "id": str(e.id),
+                "rule_code": e.rule_code,
+                "scope": e.scope,
+                "effect": e.effect,
+                "expires_at": e.expires_at.isoformat() if e.expires_at else None,
+            }
+            for e in exceptions
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to load policy exceptions for bank {bank_id}: {e}")
+        return []
+
+
+def apply_policy_overlay(
+    validation_results: List[Dict[str, Any]],
+    overlay: Optional[Dict[str, Any]],
+    document_data: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """
+    Apply policy overlay stricter checks to validation results.
+    
+    Modifies results in-place based on overlay config.
+    """
+    if not overlay or not overlay.get("config"):
+        return validation_results
+    
+    config = overlay["config"]
+    stricter_checks = config.get("stricter_checks", {})
+    thresholds = config.get("thresholds", {})
+    
+    # Apply stricter checks
+    max_date_slippage = stricter_checks.get("max_date_slippage_days")
+    if max_date_slippage is not None:
+        # Check date-related rules and apply stricter tolerance
+        for result in validation_results:
+            if "date" in result.get("rule", "").lower() or "date" in result.get("title", "").lower():
+                # If rule failed due to date mismatch, check if within tolerance
+                # This is a simplified check - in production would need more sophisticated date comparison
+                pass  # TODO: Implement date slippage check
+    
+    # Apply severity override
+    severity_override = thresholds.get("discrepancy_severity_override")
+    if severity_override:
+        for result in validation_results:
+            if not result.get("passed", False):
+                result["severity"] = severity_override
+                result["policy_override"] = True
+    
+    return validation_results
+
+
+def apply_policy_exceptions(
+    validation_results: List[Dict[str, Any]],
+    exceptions: List[Dict[str, Any]],
+    document_data: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """
+    Apply policy exceptions to validation results.
+    
+    If a failed rule matches an active exception scope, apply the exception effect.
+    """
+    if not exceptions:
+        return validation_results
+    
+    for result in validation_results:
+        if result.get("passed", False):
+            continue  # Only apply exceptions to failed rules
+        
+        rule_code = result.get("rule", "")
+        
+        # Find matching exceptions
+        for exception in exceptions:
+            if exception["rule_code"] != rule_code:
+                continue
+            
+            # Check scope match
+            scope = exception.get("scope", {})
+            matches_scope = True
+            
+            if scope.get("client"):
+                doc_client = document_data.get("client_name") or document_data.get("client")
+                if doc_client != scope["client"]:
+                    matches_scope = False
+            
+            if scope.get("branch") and matches_scope:
+                doc_branch = document_data.get("branch")
+                if doc_branch != scope["branch"]:
+                    matches_scope = False
+            
+            if scope.get("product") and matches_scope:
+                doc_product = document_data.get("product")
+                if doc_product != scope["product"]:
+                    matches_scope = False
+            
+            if not matches_scope:
+                continue
+            
+            # Apply exception effect
+            effect = exception.get("effect", "waive")
+            
+            if effect == "waive":
+                result["passed"] = True
+                result["waived"] = True
+                result["waived_reason"] = f"Policy exception: {exception.get('reason', 'N/A')}"
+                result["severity"] = "info"  # Downgrade to info
+            elif effect == "downgrade":
+                # Downgrade severity
+                current_severity = result.get("severity", "critical")
+                if current_severity == "critical":
+                    result["severity"] = "major"
+                elif current_severity == "major":
+                    result["severity"] = "minor"
+                result["exception_applied"] = True
+            elif effect == "override":
+                result["passed"] = True
+                result["overridden"] = True
+                result["override_reason"] = f"Policy exception: {exception.get('reason', 'N/A')}"
+            
+            result["exception_id"] = exception.get("id")
+            break  # Apply first matching exception
+    
+    return validation_results
+
+
+async def apply_bank_policy(
+    validation_results: List[Dict[str, Any]],
+    bank_id: str,
+    document_data: Dict[str, Any],
+    db_session
+) -> List[Dict[str, Any]]:
+    """
+    Apply bank policy overlay and exceptions to validation results.
+    
+    This function:
+    1. Loads active overlay for the bank
+    2. Applies stricter checks from overlay
+    3. Loads active exceptions
+    4. Applies exceptions to matching failed rules
+    
+    Returns:
+        Modified validation results with policy overlays/exceptions applied
+    """
+    if not bank_id:
+        return validation_results
+    
+    try:
+        # Load overlay
+        overlay = get_active_overlay(bank_id, db_session)
+        
+        # Apply overlay stricter checks
+        if overlay:
+            validation_results = apply_policy_overlay(validation_results, overlay, document_data)
+        
+        # Load exceptions
+        exceptions = get_active_exceptions(bank_id, db_session)
+        
+        # Apply exceptions
+        if exceptions:
+            validation_results = apply_policy_exceptions(validation_results, exceptions, document_data)
+        
+        return validation_results
+        
+    except Exception as e:
+        logger.error(f"Failed to apply bank policy: {e}", exc_info=True)
+        # Don't fail validation if policy application fails
+        return validation_results
 
 
 async def enrich_validation_results_with_ai(

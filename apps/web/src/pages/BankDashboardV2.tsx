@@ -37,8 +37,7 @@ import { DataRetentionView } from "./settings/DataRetention";
 import { FileText, CheckCircle, AlertTriangle, Clock, Bell, ArrowLeft } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
-import { useAuth } from "@/hooks/use-auth";
-import { useNavigate } from "react-router-dom";
+import { BankUsersPage } from "./bank/BankUsersPage";
 
 export default function BankDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,6 +176,8 @@ export default function BankDashboardV2() {
         {activeTab === "billing-invoices" && <BillingInvoicesPage onTabChange={handleBillingTabChange} mode="bank" />}
 
         {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
+
+        {activeTab === "users" && <BankUsersPage />}
 
         {activeTab === "settings" && <SettingsPanel />}
 

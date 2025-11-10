@@ -10,7 +10,7 @@ from app.core.security import get_current_user
 from app.database import get_db
 from app.models import UsageAction, User, ValidationSession, SessionStatus
 from app.services.entitlements import EntitlementError, EntitlementService
-from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai
+from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai, apply_bank_policy
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
@@ -163,6 +163,20 @@ async def validate_doc(
 
         # Update session status if created
         if validation_session:
+            # Apply bank policy overlays and exceptions (if bank user)
+            if current_user.is_bank_user() and current_user.company_id:
+                try:
+                    results = await apply_bank_policy(
+                        validation_results=results,
+                        bank_id=str(current_user.company_id),
+                        document_data=payload,
+                        db_session=db
+                    )
+                except Exception as e:
+                    # Don't fail validation if policy application fails
+                    import logging
+                    logging.getLogger(__name__).warning(f"Bank policy application skipped: {e}")
+            
             # Optionally enrich with AI (if feature flag enabled)
             ai_enrichment = {}
             try:
