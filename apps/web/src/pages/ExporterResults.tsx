@@ -200,6 +200,33 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     }
   };
 
+  const handleDownloadCustomsPack = async () => {
+    try {
+      // TODO: Call API to generate and download customs pack
+      // For now, simulate download
+      toast({
+        title: "Downloading Customs Pack",
+        description: "Your customs pack is being prepared for download...",
+      });
+      
+      // Simulate API call to generate pack
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // In production, this would download a ZIP file with all documents
+      // For now, just show success message
+      toast({
+        title: "Customs Pack Ready",
+        description: "Your customs pack has been prepared. Download will start shortly.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to prepare customs pack. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const containerClass = embedded
     ? "mx-auto w-full max-w-6xl py-4"
     : "container mx-auto px-4 py-8 max-w-6xl";
@@ -321,7 +348,11 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </>
                   ) : (
                     <>
-                      <Button className="w-full bg-gradient-primary hover:opacity-90" size="sm">
+                      <Button 
+                        className="w-full bg-gradient-primary hover:opacity-90" 
+                        size="sm"
+                        onClick={handleDownloadCustomsPack}
+                      >
                         <Download className="w-4 h-4 mr-2" />
                         Download Customs Pack
                       </Button>
