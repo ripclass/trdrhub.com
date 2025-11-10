@@ -210,7 +210,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
           <SidebarGroupLabel>Operations</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navOperations.map((item) => (
+              {navOperations.filter(item => item.title !== 'Policy' || isBankAdmin).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild

@@ -1069,6 +1069,28 @@ function AnalyticsTab() {
 }
 
 export function PolicySurface({ embedded = false }: { embedded?: boolean }) {
+  const { user } = useAuth();
+  const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
+  
+  // Early return if not admin - defense in depth
+  if (!isBankAdmin) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Access Denied</CardTitle>
+          <CardDescription>
+            Policy configuration is restricted to bank administrators only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Bank officers can view active policies but cannot modify them. Contact your bank administrator for policy changes.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
   const [activeTab, setActiveTab] = React.useState("rulesets");
 
   return (

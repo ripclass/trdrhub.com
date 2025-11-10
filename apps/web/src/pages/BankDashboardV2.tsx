@@ -68,6 +68,14 @@ export default function BankDashboardV2() {
     }
   }, [activeTab, isBankAdmin, navigate]);
 
+  // Redirect non-admins away from policy tab (optional hardening)
+  useEffect(() => {
+    if (activeTab === "policy" && !isBankAdmin) {
+      setActiveTab("dashboard");
+      navigate("/lcopilot/bank-dashboard?tab=dashboard", { replace: true });
+    }
+  }, [activeTab, isBankAdmin, navigate]);
+
   // Show loading state while checking authentication
   if (authLoading) {
     return (

@@ -42,6 +42,7 @@ import {
   Users,
   DollarSign
 } from 'lucide-react';
+import { useBankAuth } from '@/lib/bank/auth';
 import { format } from 'date-fns';
 
 // Billing components
@@ -53,6 +54,8 @@ import { formatCurrency } from '@/types/billing';
 import { toast } from 'sonner';
 
 export function BillingAllocationsPage({ onTabChange }: { onTabChange?: (tab: string) => void }) {
+  const { user } = useBankAuth();
+  const isBankAdmin = user?.role === 'bank_admin';
   const [filters, setFilters] = useState({ page: 1, per_page: 20 });
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -78,6 +81,10 @@ export function BillingAllocationsPage({ onTabChange }: { onTabChange?: (tab: st
   });
 
   const handleEdit = (allocation: Allocation) => {
+    if (!isBankAdmin) {
+      toast.error('Only bank administrators can edit allocations');
+      return;
+    }
     setEditingAllocation(allocation);
     setShowEditModal(true);
   };
