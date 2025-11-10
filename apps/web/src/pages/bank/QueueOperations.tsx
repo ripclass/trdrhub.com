@@ -59,13 +59,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useJobStatusStream } from "@/hooks/use-job-status-stream";
 
 // Mock data - replace with API calls
-const mockJobs = [
+const mockJobs: QueueJob[] = [
   {
     id: "job-1",
     lc_number: "LC-BNK-2024-001",
     client_name: "Global Importers Ltd",
     priority: 5,
-    status: "queued" as const,
+    status: "queued",
     queue: "standard",
     attempts: 0,
     maxRetries: 3,
@@ -77,11 +77,12 @@ const mockJobs = [
     lc_number: "LC-BNK-2024-002",
     client_name: "Trade Partners Inc",
     priority: 8,
-    status: "running" as const,
+    status: "running",
     queue: "priority",
     attempts: 0,
     maxRetries: 3,
     createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    scheduledAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
     startedAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
   },
   {
@@ -89,11 +90,12 @@ const mockJobs = [
     lc_number: "LC-BNK-2024-003",
     client_name: "Export Solutions Co",
     priority: 3,
-    status: "failed" as const,
+    status: "failed",
     queue: "standard",
     attempts: 2,
     maxRetries: 3,
     createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    scheduledAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
     errorMessage: "Document parsing failed",
   },
   {
@@ -101,11 +103,12 @@ const mockJobs = [
     lc_number: "LC-BNK-2024-004",
     client_name: "International Trade Ltd",
     priority: 7,
-    status: "succeeded" as const,
+    status: "succeeded",
     queue: "priority",
     attempts: 0,
     maxRetries: 3,
     createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    scheduledAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     completedAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
     durationMs: 180000,
   },
@@ -113,6 +116,24 @@ const mockJobs = [
 
 type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "scheduled";
 type JobPriority = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+type QueueJob = {
+  id: string;
+  lc_number: string;
+  client_name: string;
+  priority: JobPriority;
+  status: JobStatus;
+  queue: string;
+  attempts: number;
+  maxRetries: number;
+  createdAt: string;
+  scheduledAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
+  durationMs?: number;
+};
+
 type SavedView = {
   id: string;
   name: string;
@@ -124,7 +145,7 @@ type SavedView = {
   };
 };
 
-const formatDuration = (job: typeof mockJobs[0]) => {
+const formatDuration = (job: QueueJob) => {
   if (job.durationMs) {
     if (job.durationMs < 1000) return `${job.durationMs}ms`;
     return `${(job.durationMs / 1000).toFixed(1)}s`;
@@ -157,7 +178,7 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
   const { jobs: streamJobs, isConnected } = useJobStatusStream({ enabled: true });
   
   // State for API-loaded jobs
-  const [jobs, setJobs] = React.useState<typeof mockJobs>([]);
+  const [jobs, setJobs] = React.useState<QueueJob[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [pagination, setPagination] = React.useState({ page: 1, total: 0, pages: 0 });
   
@@ -187,7 +208,7 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
   const [retryDialogOpen, setRetryDialogOpen] = React.useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = React.useState(false);
   const [saveViewDialogOpen, setSaveViewDialogOpen] = React.useState(false);
-  const [selectedJob, setSelectedJob] = React.useState<typeof mockJobs[0] | null>(null);
+  const [selectedJob, setSelectedJob] = React.useState<QueueJob | null>(null);
   const [actionReason, setActionReason] = React.useState("");
   const [selectedJobs, setSelectedJobs] = React.useState<Set<string>>(new Set());
   const [newViewName, setNewViewName] = React.useState("");
@@ -266,11 +287,11 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
         offset: (pagination.page - 1) * 50,
       });
       
-      const transformedJobs = response.items.map((job: BankQueueJob) => ({
+      const transformedJobs: QueueJob[] = response.items.map((job: BankQueueJob) => ({
         id: job.id,
         lc_number: job.job_data?.lc_number || job.lc_id || `LC-${job.id.slice(0, 8)}`,
         client_name: job.job_data?.client_name || "Unknown Client",
-        priority: job.priority,
+        priority: job.priority as JobPriority,
         status: mapJobStatus(job.status),
         queue: job.job_type === "validation" ? "standard" : "priority",
         attempts: job.attempts,
@@ -468,28 +489,30 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
 
   // Merge stream jobs with API jobs (stream takes precedence for real-time updates)
   const allJobs = React.useMemo(() => {
-    const jobMap = new Map<string, typeof mockJobs[0]>();
+    const jobMap = new Map<string, QueueJob>();
     // Add API-loaded jobs first
     jobs.forEach((job) => jobMap.set(job.id, job));
-    // Override with stream jobs if available
-    if (streamJobs) {
+    // Override with stream jobs if available (BankJob type from stream)
+    if (streamJobs && streamJobs.length > 0) {
       streamJobs.forEach((streamJob) => {
-        const mappedJob: typeof mockJobs[0] = {
+        const mappedJob: QueueJob = {
           id: streamJob.id,
-          lc_number: streamJob.job_data?.lc_number || streamJob.lc_id || `LC-${streamJob.id.slice(0, 8)}`,
-          client_name: streamJob.job_data?.client_name || "Unknown Client",
-          priority: streamJob.priority,
+          lc_number: streamJob.lc_number || `LC-${streamJob.id.slice(0, 8)}`,
+          client_name: streamJob.client_name || "Unknown Client",
+          priority: 5, // Default priority for BankJob (doesn't have priority field)
           status: mapJobStatus(streamJob.status),
-          queue: streamJob.job_type === "validation" ? "standard" : "priority",
-          attempts: streamJob.attempts,
-          maxRetries: streamJob.max_attempts,
-          createdAt: streamJob.created_at,
-          scheduledAt: streamJob.scheduled_at,
-          startedAt: streamJob.started_at,
+          queue: "standard",
+          attempts: 0, // BankJob doesn't have attempts field
+          maxRetries: 3,
+          createdAt: streamJob.submitted_at || streamJob.processing_started_at || new Date().toISOString(),
+          scheduledAt: streamJob.submitted_at || new Date().toISOString(),
+          startedAt: streamJob.processing_started_at,
           completedAt: streamJob.completed_at,
-          errorMessage: streamJob.error_message,
-          durationMs: streamJob.completed_at && streamJob.started_at
-            ? new Date(streamJob.completed_at).getTime() - new Date(streamJob.started_at).getTime()
+          errorMessage: undefined,
+          durationMs: streamJob.processing_time_seconds
+            ? streamJob.processing_time_seconds * 1000
+            : streamJob.completed_at && streamJob.processing_started_at
+            ? new Date(streamJob.completed_at).getTime() - new Date(streamJob.processing_started_at).getTime()
             : undefined,
         };
         jobMap.set(streamJob.id, mappedJob);
