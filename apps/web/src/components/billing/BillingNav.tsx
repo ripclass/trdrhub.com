@@ -186,15 +186,17 @@ export function BillingNav({
       {showActions && (
         <div className="flex items-center space-x-2">
           {/* Refresh button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRefresh}
-            className="gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
+          {onRefresh && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              className="gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+          )}
 
           {/* Export button */}
           {onExport && (
