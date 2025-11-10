@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -7,6 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   FileText, 
   Download, 
@@ -26,11 +32,16 @@ import {
   Receipt,
   Send,
   History,
-  Building2
+  Building2,
+  FileCheck,
+  X,
+  Loader2
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
+import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 
 // Mock exporter results
 const mockExporterResults = {
@@ -147,11 +158,67 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  // Get validation session ID from URL or mock
+  const validationSessionId = searchParams.get('session') || "00000000-0000-0000-0000-000000000000";
   const lcNumber = searchParams.get('lc') || mockExporterResults.lcNumber;
+  
   const [activeTab, setActiveTab] = useState("overview");
-  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
+  const [showBankSelector, setShowBankSelector] = useState(false);
+  const [showManifestPreview, setShowManifestPreview] = useState(false);
+  const [selectedBankId, setSelectedBankId] = useState<string>("");
+  const [selectedBankName, setSelectedBankName] = useState<string>("");
+  const [submissionNote, setSubmissionNote] = useState<string>("");
+  const [manifestConfirmed, setManifestConfirmed] = useState(false);
+  const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
+  
+  // Feature flags
+  const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
+  const enableCustomsPackPDF = isExporterFeatureEnabled("exporter_customs_pack_pdf");
+  
+  // Guardrails check
+  const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
+    queryKey: ['exporter-guardrails', validationSessionId],
+    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: lcNumber }),
+    enabled: !!validationSessionId && enableBankSubmission,
+    refetchInterval: 30000, // Check every 30 seconds
+  });
+  
+  // Submission history
+  const { data: submissionsData, isLoading: submissionsLoading } = useQuery({
+    queryKey: ['exporter-submissions', lcNumber, validationSessionId],
+    queryFn: () => exporterApi.listBankSubmissions({ 
+      lc_number: lcNumber, 
+      validation_session_id: validationSessionId 
+    }),
+    enabled: !!lcNumber && enableBankSubmission,
+  });
+  
+  // Poll submission status (Phase 7)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    if (submissionsData?.items) {
+      const pendingSubmissions = submissionsData.items.filter(s => s.status === 'pending');
+      if (pendingSubmissions.length > 0 && enableBankSubmission) {
+        // Poll every 5 seconds for pending submissions
+        pollingIntervalRef.current = setInterval(() => {
+          queryClient.invalidateQueries({ queryKey: ['exporter-submissions'] });
+        }, 5000);
+      } else {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      }
+    }
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [submissionsData, queryClient, enableBankSubmission]);
   
   // Check if result has invoiceId (future enhancement)
   const invoiceId = (mockExporterResults as any).invoiceId;
@@ -161,70 +228,188 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const errorCount = 0; // No error status in current mock data
   const successRate = Math.round((successCount / mockExporterResults.totalDocuments) * 100);
   
-  // Check if ready to submit (no discrepancies)
-  const isReadyToSubmit = mockExporterResults.totalDiscrepancies === 0;
+  // Check if ready to submit (Phase 5: Guardrails)
+  const isReadyToSubmit = useMemo(() => {
+    if (!enableBankSubmission) return false;
+    if (guardrailsLoading) return false;
+    if (!guardrails) return mockExporterResults.totalDiscrepancies === 0;
+    return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
+  }, [guardrails, guardrailsLoading, enableBankSubmission]);
+  
+  // Generate idempotency key (Phase 7)
+  const generateIdempotencyKey = () => {
+    return `${validationSessionId}-${Date.now()}`;
+  };
+  
+  // Mock banks list (in production, fetch from API)
+  const banks = [
+    { id: "bank-1", name: "Standard Chartered Bank" },
+    { id: "bank-2", name: "HSBC Bank" },
+    { id: "bank-3", name: "Citibank" },
+    { id: "bank-4", name: "Deutsche Bank" },
+  ];
 
-  const handleSubmitToBank = async () => {
-    setIsSubmitting(true);
-    try {
-      // TODO: Call API to submit to bank
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+  // Generate customs pack mutation (Phase 2)
+  const generateCustomsPackMutation = useMutation({
+    mutationFn: () => exporterApi.generateCustomsPack({
+      validation_session_id: validationSessionId,
+      lc_number: lcNumber,
+    }),
+    onSuccess: (data) => {
+      setManifestData(data.manifest);
       toast({
-        title: "Submitted to Bank",
-        description: `LC ${lcNumber} has been successfully submitted to the bank for review.`,
+        title: "Customs Pack Generated",
+        description: "Your customs pack has been prepared successfully.",
       });
-      
-      setShowSubmitDialog(false);
-      // Refresh submission history
-      // TODO: Fetch from API
-      setSubmissionHistory([
-        {
-          id: `sub-${Date.now()}`,
-          lc_number: lcNumber,
-          submitted_at: new Date().toISOString(),
-          status: "pending",
-          bank_name: "Bank One",
-          submitted_by: "Current User",
-        },
-        ...submissionHistory,
-      ]);
-    } catch (error) {
+      // Track telemetry (Phase 6)
+      console.log("Telemetry: customs_pack_generated", {
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        sha256: data.sha256,
+      });
+    },
+    onError: (error: any) => {
       toast({
-        title: "Submission Failed",
-        description: "Failed to submit to bank. Please try again.",
+        title: "Generation Failed",
+        description: error?.response?.data?.detail || "Failed to generate customs pack. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDownloadCustomsPack = async () => {
-    try {
-      // TODO: Call API to generate and download customs pack
-      // For now, simulate download
+    },
+  });
+  
+  // Download customs pack (Phase 2)
+  const downloadCustomsPackMutation = useMutation({
+    mutationFn: () => exporterApi.downloadCustomsPack(validationSessionId),
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Customs_Pack_${lcNumber}_${format(new Date(), 'yyyyMMdd_HHmmss')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
       toast({
-        title: "Downloading Customs Pack",
-        description: "Your customs pack is being prepared for download...",
+        title: "Download Started",
+        description: "Your customs pack is downloading.",
       });
-      
-      // Simulate API call to generate pack
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // In production, this would download a ZIP file with all documents
-      // For now, just show success message
-      toast({
-        title: "Customs Pack Ready",
-        description: "Your customs pack has been prepared. Download will start shortly.",
-      });
-    } catch (error) {
+    },
+    onError: (error: any) => {
       toast({
         title: "Download Failed",
-        description: "Failed to prepare customs pack. Please try again.",
+        description: error?.response?.data?.detail || "Failed to download customs pack. Please try again.",
         variant: "destructive",
       });
+    },
+  });
+  
+  // Create bank submission mutation (Phase 2, 7)
+  const createSubmissionMutation = useMutation({
+    mutationFn: (data: { bank_id?: string; bank_name?: string; note?: string }) => {
+      return exporterApi.createBankSubmission({
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        bank_id: data.bank_id,
+        bank_name: data.bank_name,
+        note: data.note,
+        idempotency_key: generateIdempotencyKey(), // Phase 7: Idempotency
+      });
+    },
+    onSuccess: (submission) => {
+      toast({
+        title: "Submitted to Bank",
+        description: `LC ${lcNumber} has been successfully submitted to ${submission.bank_name || 'the bank'} for review.`,
+      });
+      setShowBankSelector(false);
+      setShowManifestPreview(false);
+      setSelectedBankId("");
+      setSelectedBankName("");
+      setSubmissionNote("");
+      setManifestConfirmed(false);
+      
+      // Invalidate and refetch submissions
+      queryClient.invalidateQueries({ queryKey: ['exporter-submissions'] });
+      
+      // Track telemetry (Phase 6)
+      console.log("Telemetry: bank_submit_requested", {
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        submission_id: submission.id,
+        bank_name: submission.bank_name,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Submission Failed",
+        description: error?.response?.data?.detail || "Failed to submit to bank. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleDownloadCustomsPack = async () => {
+    try {
+      // First generate if not already generated
+      if (!manifestData) {
+        await generateCustomsPackMutation.mutateAsync();
+      }
+      // Then download
+      await downloadCustomsPackMutation.mutateAsync();
+    } catch (error) {
+      // Error handling is done in mutations
     }
+  };
+  
+  const handleSubmitToBank = async () => {
+    if (!enableBankSubmission) {
+      toast({
+        title: "Feature Disabled",
+        description: "Bank submission is currently disabled.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Phase 3: Show bank selector first
+    setShowBankSelector(true);
+  };
+  
+  const handleBankSelected = () => {
+    if (!selectedBankName) {
+      toast({
+        title: "Bank Required",
+        description: "Please select a bank.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowBankSelector(false);
+    // Phase 3: Show manifest preview
+    if (manifestData) {
+      setShowManifestPreview(true);
+    } else {
+      // Generate manifest first
+      generateCustomsPackMutation.mutate();
+      setShowManifestPreview(true);
+    }
+  };
+  
+  const handleConfirmManifest = () => {
+    if (!manifestConfirmed) {
+      toast({
+        title: "Confirmation Required",
+        description: "Please confirm that the manifest contents are accurate.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowManifestPreview(false);
+    // Phase 2: Create submission
+    createSubmissionMutation.mutate({
+      bank_id: selectedBankId || undefined,
+      bank_name: selectedBankName,
+      note: submissionNote || undefined,
+    });
   };
 
   const containerClass = embedded
@@ -356,15 +541,33 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         <Download className="w-4 h-4 mr-2" />
                         Download Customs Pack
                       </Button>
-                      {isReadyToSubmit && (
+                      {isReadyToSubmit && enableBankSubmission && (
                         <Button 
                           className="w-full bg-green-600 hover:bg-green-700 text-white" 
                           size="sm"
-                          onClick={() => setShowSubmitDialog(true)}
+                          onClick={handleSubmitToBank}
+                          disabled={createSubmissionMutation.isPending || guardrailsLoading}
                         >
-                          <Send className="w-4 h-4 mr-2" />
-                          Submit to Bank
+                          {createSubmissionMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-4 h-4 mr-2" />
+                              Submit to Bank
+                            </>
+                          )}
                         </Button>
+                      )}
+                      {!isReadyToSubmit && guardrails && guardrails.blocking_issues.length > 0 && (
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p className="font-medium text-destructive">Cannot submit:</p>
+                          {guardrails.blocking_issues.map((issue, idx) => (
+                            <p key={idx}>• {issue}</p>
+                          ))}
+                        </div>
                       )}
                       <p className="text-xs text-success text-center">
                         {isReadyToSubmit ? "Ready for bank submission" : "Ready for customs clearance"}
@@ -576,7 +779,12 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {submissionHistory.length === 0 ? (
+                {submissionsLoading ? (
+                  <div className="text-center py-12">
+                    <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
+                    <p className="text-muted-foreground">Loading submission history...</p>
+                  </div>
+                ) : !submissionsData || submissionsData.items.length === 0 ? (
                   <div className="text-center py-12">
                     <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-2">No submissions yet</p>
@@ -586,39 +794,12 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {submissionHistory.map((submission) => (
-                      <Card key={submission.id} className="border-l-4 border-l-primary">
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Building2 className="w-4 h-4 text-muted-foreground" />
-                                <span className="font-medium">{submission.bank_name}</span>
-                                <Badge
-                                  variant={
-                                    submission.status === "approved"
-                                      ? "default"
-                                      : submission.status === "rejected"
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                >
-                                  {submission.status}
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <div>Submitted: {format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm")}</div>
-                                <div>By: {submission.submitted_by}</div>
-                                {submission.bank_response && (
-                                  <div className="mt-2 p-2 bg-muted rounded text-xs">
-                                    <strong>Bank Response:</strong> {submission.bank_response}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                    {submissionsData.items.map((submission) => (
+                      <SubmissionHistoryCard 
+                        key={submission.id} 
+                        submission={submission}
+                        validationSessionId={validationSessionId}
+                      />
                     ))}
                   </div>
                 )}
@@ -771,57 +952,133 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
         </Tabs>
 
-        {/* Submit to Bank Dialog */}
-        <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
-          <DialogContent>
+        {/* Bank Selector Dialog (Phase 3) */}
+        <Dialog open={showBankSelector} onOpenChange={setShowBankSelector}>
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Send className="w-5 h-5" />
-                Submit to Bank
+                <Building2 className="w-5 h-5" />
+                Select Bank
               </DialogTitle>
               <DialogDescription>
-                Submit LC {lcNumber} to the bank for review and approval
+                Choose the bank to submit LC {lcNumber} to
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <h4 className="font-medium mb-2">Submission Details</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">LC Number:</span>
-                    <span className="font-medium">{lcNumber}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Documents:</span>
-                    <span className="font-medium">{mockExporterResults.totalDocuments}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Compliance Score:</span>
-                    <span className="font-medium text-green-600">
-                      {Math.round(((mockExporterResults.totalDocuments - mockExporterResults.totalDiscrepancies) / mockExporterResults.totalDocuments) * 100)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status:</span>
-                    <Badge className="bg-green-600">Ready to Submit</Badge>
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="bank-select">Bank</Label>
+                <Select value={selectedBankId} onValueChange={(value) => {
+                  const bank = banks.find(b => b.id === value);
+                  setSelectedBankId(value);
+                  setSelectedBankName(bank?.name || "");
+                }}>
+                  <SelectTrigger id="bank-select">
+                    <SelectValue placeholder="Select a bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {banks.map((bank) => (
+                      <SelectItem key={bank.id} value={bank.id}>
+                        {bank.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="p-4 border rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  By submitting, you confirm that all documents are correct and ready for bank review. 
-                  The bank will review your submission and provide feedback.
-                </p>
+              <div className="space-y-2">
+                <Label htmlFor="submission-note">Note (Optional)</Label>
+                <Textarea
+                  id="submission-note"
+                  placeholder="Add any notes for the bank..."
+                  value={submissionNote}
+                  onChange={(e) => setSubmissionNote(e.target.value)}
+                  rows={3}
+                />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowSubmitDialog(false)} disabled={isSubmitting}>
+              <Button variant="outline" onClick={() => setShowBankSelector(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmitToBank} disabled={isSubmitting} className="bg-green-600 hover:bg-green-700">
-                {isSubmitting ? (
+              <Button onClick={handleBankSelected} disabled={!selectedBankName}>
+                Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Manifest Preview Dialog (Phase 3) */}
+        <Dialog open={showManifestPreview} onOpenChange={setShowManifestPreview}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5" />
+                Review Manifest
+              </DialogTitle>
+              <DialogDescription>
+                Review the contents of your customs pack before submission
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {manifestData ? (
+                <>
+                  <div className="p-4 bg-muted rounded-lg space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">LC Number:</span>
+                      <span className="font-medium">{manifestData.lc_number}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Generated:</span>
+                      <span className="font-medium">{format(new Date(manifestData.generated_at), "MMM d, yyyy 'at' HH:mm")}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Documents:</span>
+                      <span className="font-medium">{manifestData.documents.length}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Documents Included:</Label>
+                    <div className="border rounded-lg p-4 space-y-2 max-h-64 overflow-y-auto">
+                      {manifestData.documents.map((doc, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-muted-foreground" />
+                            <span className="font-medium">{doc.name}</span>
+                          </div>
+                          <Badge variant="outline">{doc.type}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-4 border rounded-lg">
+                    <Checkbox
+                      id="manifest-confirm"
+                      checked={manifestConfirmed}
+                      onCheckedChange={(checked) => setManifestConfirmed(checked === true)}
+                    />
+                    <Label htmlFor="manifest-confirm" className="cursor-pointer">
+                      I confirm that the manifest contents are accurate and ready for submission
+                    </Label>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
+                  <p className="text-muted-foreground">Generating manifest...</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowManifestPreview(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleConfirmManifest} 
+                disabled={!manifestConfirmed || !manifestData || createSubmissionMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {createSubmissionMutation.isPending ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Submitting...
                   </>
                 ) : (
@@ -836,5 +1093,82 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
         </Dialog>
       </div>
     </div>
+  );
+}
+
+// Submission History Card Component (Phase 4)
+function SubmissionHistoryCard({ 
+  submission, 
+  validationSessionId 
+}: { 
+  submission: BankSubmissionRead; 
+  validationSessionId: string;
+}) {
+  const { data: eventsData } = useQuery({
+    queryKey: ['exporter-submission-events', submission.id],
+    queryFn: () => exporterApi.getSubmissionEvents(submission.id),
+    enabled: !!submission.id,
+  });
+  
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case 'accepted':
+        return 'default';
+      case 'rejected':
+      case 'failed':
+        return 'destructive';
+      case 'cancelled':
+        return 'secondary';
+      default:
+        return 'secondary';
+    }
+  };
+  
+  return (
+    <Card className="border-l-4 border-l-primary">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
+            <span className="font-medium">{submission.bank_name || 'Unknown Bank'}</span>
+            <Badge variant={getStatusVariant(submission.status)}>
+              {submission.status}
+            </Badge>
+          </div>
+          {submission.receipt_url && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={submission.receipt_url} target="_blank" rel="noopener noreferrer">
+                <Receipt className="w-4 h-4 mr-2" />
+                View Receipt
+              </a>
+            </Button>
+          )}
+        </div>
+        <div className="text-sm text-muted-foreground space-y-1">
+          <div>Submitted: {submission.submitted_at ? format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm") : 'N/A'}</div>
+          {submission.note && (
+            <div className="mt-2 p-2 bg-muted rounded text-xs">
+              <strong>Note:</strong> {submission.note}
+            </div>
+          )}
+        </div>
+        {eventsData && eventsData.items.length > 0 && (
+          <div className="mt-4 pt-4 border-t">
+            <Label className="text-xs text-muted-foreground mb-2 block">Event Timeline</Label>
+            <div className="space-y-2">
+              {eventsData.items.map((event) => (
+                <div key={event.id} className="flex items-center gap-2 text-xs">
+                  <div className="w-2 h-2 bg-primary rounded-full"></div>
+                  <span className="text-muted-foreground">
+                    {format(new Date(event.created_at), "MMM d, HH:mm")} - {event.event_type}
+                    {event.actor_name && ` by ${event.actor_name}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
