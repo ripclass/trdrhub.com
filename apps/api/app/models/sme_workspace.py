@@ -108,7 +108,7 @@ class Draft(Base):
     
     # Notes and metadata
     notes = Column(Text, nullable=True)
-    metadata = Column(JSONB, nullable=True, default=dict)
+    extra_metadata = Column(JSONB, nullable=True, default=dict)
     
     # Audit trail
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -162,7 +162,7 @@ class Amendment(Base):
     
     # Notes and metadata
     notes = Column(Text, nullable=True)
-    metadata = Column(JSONB, nullable=True, default=dict)
+    extra_metadata = Column(JSONB, nullable=True, default=dict)
     
     # Audit trail
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -74,7 +74,7 @@ class BankApproval(Base):
     
     # Metadata
     priority = Column(String(20), default="normal", nullable=False)  # "low", "normal", "high", "urgent"
-    metadata = Column(JSONB, nullable=True, default=dict)
+    extra_metadata = Column(JSONB, nullable=True, default=dict)
     
     # Audit trail
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -139,7 +139,7 @@ class DiscrepancyWorkflow(Base):
     # Metadata
     priority = Column(String(20), default="normal", nullable=False)
     tags = Column(JSONB, nullable=True, default=list)  # Array of tags
-    metadata = Column(JSONB, nullable=True, default=dict)
+    extra_metadata = Column(JSONB, nullable=True, default=dict)
     
     # Audit trail
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
