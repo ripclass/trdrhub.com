@@ -466,6 +466,71 @@ export function QueueOperationsView({ embedded = false }: { embedded?: boolean }
     });
   };
 
+  // Merge stream jobs with API jobs (stream takes precedence for real-time updates)
+  const allJobs = React.useMemo(() => {
+    const jobMap = new Map<string, typeof mockJobs[0]>();
+    // Add API-loaded jobs first
+    jobs.forEach((job) => jobMap.set(job.id, job));
+    // Override with stream jobs if available
+    if (streamJobs) {
+      streamJobs.forEach((streamJob) => {
+        const mappedJob: typeof mockJobs[0] = {
+          id: streamJob.id,
+          lc_number: streamJob.job_data?.lc_number || streamJob.lc_id || `LC-${streamJob.id.slice(0, 8)}`,
+          client_name: streamJob.job_data?.client_name || "Unknown Client",
+          priority: streamJob.priority,
+          status: mapJobStatus(streamJob.status),
+          queue: streamJob.job_type === "validation" ? "standard" : "priority",
+          attempts: streamJob.attempts,
+          maxRetries: streamJob.max_attempts,
+          createdAt: streamJob.created_at,
+          scheduledAt: streamJob.scheduled_at,
+          startedAt: streamJob.started_at,
+          completedAt: streamJob.completed_at,
+          errorMessage: streamJob.error_message,
+          durationMs: streamJob.completed_at && streamJob.started_at
+            ? new Date(streamJob.completed_at).getTime() - new Date(streamJob.started_at).getTime()
+            : undefined,
+        };
+        jobMap.set(streamJob.id, mappedJob);
+      });
+    }
+    return Array.from(jobMap.values());
+  }, [jobs, streamJobs]);
+
+  // Apply filters to jobs
+  const filteredJobs = React.useMemo(() => {
+    let result = allJobs;
+
+    // Status filter
+    if (statusFilter.length > 0) {
+      result = result.filter((job) => statusFilter.includes(job.status));
+    }
+
+    // Priority filter
+    if (priorityFilter.length > 0) {
+      const priorityNums = priorityFilter.map(Number);
+      result = result.filter((job) => priorityNums.includes(job.priority));
+    }
+
+    // Queue filter
+    if (queueFilter.length > 0) {
+      result = result.filter((job) => queueFilter.includes(job.queue));
+    }
+
+    // Search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (job) =>
+          job.lc_number.toLowerCase().includes(query) ||
+          job.client_name.toLowerCase().includes(query)
+      );
+    }
+
+    return result;
+  }, [allJobs, statusFilter, priorityFilter, queueFilter, searchQuery]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
