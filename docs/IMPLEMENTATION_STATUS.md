@@ -6,7 +6,7 @@
 |---------|--------|-------|
 | **Roles & Approvals** | ✅ **IMPLEMENTED** | Analyst → Reviewer → Approver flow with stages, approve/reject/reopen actions |
 | **Discrepancy Workflow** | ✅ **IMPLEMENTED** | Assign, status, due dates, comments, bulk resolve, audit logs |
-| **Queue Operations** | ⚠️ **PARTIAL** | UI exists (`QueueOperations.tsx`) with filters, saved views, retry/rewind. **MISSING**: Backend API endpoints (`/bank/queue`) with tenant scoping and RBAC |
+| **Queue Operations** | ✅ **IMPLEMENTED** | UI + backend (`/bank/queue`) with tenant scoping and RBAC; actions: retry/cancel/requeue/bulk wired |
 | **Client Portfolio View** | ⚠️ **PARTIAL** | `ClientManagement` component exists with basic stats, but missing: per-client KPIs, trends, recent issues, duplicates heatmap |
 | **Audit Trail** | ✅ **IMPLEMENTED** | Per LC and per action (who/when/what changed), CSV exportable |
 | **Notifications** | ✅ **IMPLEMENTED** | Actionable items (open item, approve, request fix), read/unread, badges |
@@ -69,8 +69,8 @@
 |---------|--------|-------|
 | **Search & Filters** | ⚠️ **PARTIAL** | Filters exist (`AdvancedFilters`), but missing: saved views, deep links need verification, export CSV/PDF |
 | **Mobile-Friendly** | ⚠️ **PARTIAL** | Responsive components exist (`useIsMobile`, `ResponsiveContainer`), but key flows need verification |
-| **Security** | ⚠️ **PARTIAL** | Session timeout/MFA settings exist in Admin (`SystemSettings`), but NOT enforced in bank auth. **MISSING**: 2FA prompts in `BankLogin.tsx`, idle timeout in `BankAuthProvider`, backend endpoints (`/bank/auth/request-2fa`, `/verify-2fa`) |
-| **Data Retention** | ⚠️ **PARTIAL** | UI exists (`DataRetention.tsx`) in Bank Settings with download/delete requests. **MISSING**: Backend API endpoints (`/bank/compliance/retention-policy`, `/export`, `/erase`) with bank tenant scoping |
+| **Security** | ✅ **IMPLEMENTED** | 2FA prompts in `BankLogin.tsx`, idle timeout in `BankAuthProvider`; backend endpoints (`/bank/auth/request-2fa`, `/verify-2fa`) feature-flagged |
+| **Data Retention** | ✅ **IMPLEMENTED** | Bank compliance endpoints (`/bank/compliance/retention-policy`, `/export`, `/erase`) with tenant scoping; UI wired |
 
 ## Cross-Cutting Features - P1 (Important)
 
@@ -101,10 +101,9 @@
 - **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Security (needs enforcement), Data Retention (needs UI), Support (needs ticket handoff), i18n (needs verification)
 
 ### ❌ Missing (Critical Gaps - Backend APIs)
-- **Bank P0**: Queue Operations backend API (`/bank/queue` endpoints with tenant scoping)
 - **Bank P1**: Bulk Jobs backend integration
 - **SME P1**: Templates, Company Profile, Team Roles
-- **Cross-cutting P0**: Security enforcement backend (`/bank/auth/request-2fa`, `/verify-2fa`) + frontend integration (2FA step in login, idle timeout), Data Retention backend API (`/bank/compliance/retention-policy`, `/export`, `/erase`)
+- **Cross-cutting P0**: (none) – all P0 backend APIs delivered (Queue Operations, Security 2FA, Data Retention)
 - **Cross-cutting P1**: Environment Banner, Support ticket handoff
 - **Cross-cutting P2**: Personalization, i18n hooks verification
 
@@ -112,11 +111,11 @@
 
 ## Recommended Priority Order
 
-### Sprint 1 (Critical P0 Gaps - Backend APIs)
-1. **Queue Operations** backend API (`/bank/queue` endpoints with tenant scoping and RBAC)
-2. **Security Enforcement** backend (`/bank/auth/request-2fa`, `/verify-2fa`) + frontend (2FA step in `BankLogin.tsx`, idle timeout in `BankAuthProvider`)
-3. **Data Retention** backend API (`/bank/compliance/retention-policy`, `/export`, `/erase` with bank tenant scoping)
-4. **Discrepancy Guidance** - ✅ Already implemented (UI complete, backend integration may need enhancement)
+### Next Focus (Now that P0 backend APIs are complete)
+1. **Bank P0 enhancements**: Client Portfolio KPIs/trends/duplicates heatmap; verify granular RBAC roles (Admin/Approver/Reviewer/Analyst/Read-only)
+2. **Bank P1**: SLA Dashboards backend verification; Evidence Packs backend integration; Duplicate detection merge history
+3. **SME P1**: Templates, Company Profile, Team Roles
+4. **Cross-cutting P1**: Environment Banner, Support ticket handoff
 
 ### Sprint 2 (Important P1)
 1. **SLA Dashboards** (throughput, aging, time-to-first-review, breaches)
