@@ -14,7 +14,7 @@ import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
-import { useExporterAuth } from "@/lib/exporter/auth";
+import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterAnalytics from "./ExporterAnalytics";
 import ExporterResults from "./ExporterResults";
@@ -999,6 +999,7 @@ function HelpPanel() {
       </CardHeader>
       <CardContent className="space-y-6 text-sm text-muted-foreground">
         <div className="flex flex-wrap gap-3">
+          <SupportTicketForm />
           <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>Support Center</Button>
           <Button variant="outline" onClick={() => window.open("/docs/exporter-runbook", "_blank")}>Exporter Runbook</Button>
           <Button variant="outline" onClick={() => window.open("mailto:support@trdrhub.com")}>Email Support</Button>

@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type Draft } from "@/hooks/use-drafts";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
-import { useImporterAuth } from "@/lib/importer/auth";
+import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ImporterSidebar } from "@/components/importer/ImporterSidebar";
 import ImportLCUpload from "./ImportLCUpload";

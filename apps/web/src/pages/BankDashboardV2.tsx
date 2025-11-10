@@ -18,7 +18,7 @@ import { QueueOperationsView } from "./bank/QueueOperations";
 import { SLADashboardsView } from "./bank/SLADashboards";
 import { EvidencePacksView } from "./bank/EvidencePacks";
 import { HealthLatencyBanner } from "@/components/bank/HealthLatencyBanner";
-import { InAppTutorials } from "@/components/shared/InAppTutorials";
+import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import { AIAssistance } from "@/components/bank/AIAssistance";
 import { BillingOverviewPage } from "./BillingOverviewPage";
 import { BillingUsagePage } from "./BillingUsagePage";
@@ -569,6 +569,7 @@ function HelpPanel() {
       </CardHeader>
       <CardContent className="space-y-6 text-sm text-muted-foreground">
         <div className="flex flex-wrap gap-3">
+          <SupportTicketForm />
           <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>Support Center</Button>
           <Button variant="outline" onClick={() => window.open("/docs/bank-runbook", "_blank")}>Bank Runbook</Button>
           <Button variant="outline" onClick={() => window.open("mailto:support@trdrhub.com")}>Email Support</Button>

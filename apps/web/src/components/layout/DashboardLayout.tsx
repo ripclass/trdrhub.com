@@ -3,6 +3,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { UserMenu } from "@/components/layout/UserMenu";
+import { EnvironmentBanner } from "@/components/shared/EnvironmentBanner";
 
 // Inline cn function to avoid import/bundling issues
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
@@ -90,8 +91,11 @@ export function DashboardLayout({
         </header>
 
         {/* Main Content */}
-        <main className="flex flex-1 flex-col pt-6">
-          {children}
+        <main className="flex flex-1 flex-col">
+          <EnvironmentBanner />
+          <div className="pt-6">
+            {children}
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

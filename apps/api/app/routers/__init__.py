@@ -55,7 +55,9 @@ validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
 sme_templates = _load_router_module("sme_templates")
+workspace_sharing = _load_router_module("workspace_sharing")
 company_profile = _load_router_module("company_profile")
+support = _load_router_module("support")
 
 __all__ = [
     "auth",
@@ -82,5 +84,7 @@ __all__ = [
     "rules_admin",
     "sme",
     "sme_templates",
+    "workspace_sharing",
     "company_profile",
+    "support",
 ]

@@ -44,8 +44,7 @@ import {
   RefreshCw,
   FolderKanban,
 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { TeamRoles } from "@/components/sme/TeamRoles";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -406,6 +405,19 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                           </TableBody>
                         </Table>
                       </div>
+                      <Accordion type="single" collapsible className="mt-4">
+                        <AccordionItem value="team">
+                          <AccordionTrigger className="text-sm font-medium">
+                            Team Members & Sharing
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <TeamRoles 
+                              workspaceId={workspace.id} 
+                              currentUserRole="owner" // TODO: Get actual user role from workspace member check
+                            />
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
                     </div>
                   </CardContent>
                 </Card>
