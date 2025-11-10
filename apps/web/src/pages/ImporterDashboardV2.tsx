@@ -14,6 +14,7 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ImporterSidebar } from "@/components/importer/ImporterSidebar";
+import { useImporterAuth } from "@/lib/importer/auth";
 import ImportLCUpload from "./ImportLCUpload";
 import ImporterAnalytics from "./ImporterAnalytics";
 import ImportResults from "./ImportResults";
