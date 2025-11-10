@@ -50,9 +50,11 @@ bank_auth = _load_router_module("bank_auth")
 bank_compliance = _load_router_module("bank_compliance")
 bank_sla = _load_router_module("bank_sla")
 bank_evidence = _load_router_module("bank_evidence")
+bank_bulk_jobs = _load_router_module("bank_bulk_jobs")
 validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
+sme_templates = _load_router_module("sme_templates")
 company_profile = _load_router_module("company_profile")
 
 __all__ = [
@@ -74,9 +76,11 @@ __all__ = [
     "bank_compliance",
     "bank_sla",
     "bank_evidence",
+    "bank_bulk_jobs",
     "onboarding",
     "validate",
     "rules_admin",
     "sme",
+    "sme_templates",
     "company_profile",
 ]

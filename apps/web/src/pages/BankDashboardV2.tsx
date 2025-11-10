@@ -38,7 +38,7 @@ import { DataRetentionView } from "./settings/DataRetention";
 import { FileText, CheckCircle, AlertTriangle, Clock, Bell, ArrowLeft } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
-import { BankUsersPage } from "./bank/BankUsersPage";
+import { BulkJobsView } from "./bank/BulkJobs";
 
 export default function BankDashboardV2() {
   const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
@@ -210,6 +210,8 @@ export default function BankDashboardV2() {
         {activeTab === "policy" && <PolicySurface embedded />}
 
         {activeTab === "evidence-packs" && <EvidencePacksView embedded />}
+
+        {activeTab === "bulk-jobs" && <BulkJobsView embedded />}
 
         {activeTab === "notifications" && <BankNotificationsView embedded />}
 

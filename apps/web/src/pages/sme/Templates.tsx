@@ -41,27 +41,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { smeTemplatesApi, type SMETemplate, type SMETemplateCreate, type SMETemplateUpdate } from "@/api/sme-templates";
 
-interface Template {
-  id: string;
-  name: string;
-  type: "lc" | "document";
-  document_type?: string; // For document templates: "commercial_invoice", "bill_of_lading", etc.
-  description?: string;
-  fields: Record<string, any>;
-  is_default: boolean;
-  usage_count: number;
-  created_at: string;
-  updated_at: string;
-}
+// Use SMETemplate type from API
+type Template = SMETemplate;
 
 // Mock data - replace with API calls
 const mockTemplates: Template[] = [
@@ -77,6 +60,7 @@ const mockTemplates: Template[] = [
       shipment_terms: "FOB",
     },
     is_default: true,
+    is_active: true,
     usage_count: 45,
     created_at: "2024-01-01T10:00:00Z",
     updated_at: "2024-01-15T14:30:00Z",
@@ -94,6 +78,7 @@ const mockTemplates: Template[] = [
       currency: "USD",
     },
     is_default: false,
+    is_active: true,
     usage_count: 23,
     created_at: "2024-01-05T09:00:00Z",
     updated_at: "2024-01-10T11:20:00Z",
@@ -106,7 +91,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = React.useState(false);
-  const [templates, setTemplates] = React.useState<Template[]>(mockTemplates);
+  const [templates, setTemplates] = React.useState<Template[]>([]);
   const [activeTab, setActiveTab] = React.useState<"lc" | "document">("lc");
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
   const [editDialogOpen, setEditDialogOpen] = React.useState(false);
@@ -114,10 +99,33 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const [templateName, setTemplateName] = React.useState("");
   const [templateDescription, setTemplateDescription] = React.useState("");
   const [templateFields, setTemplateFields] = React.useState<Record<string, string>>({});
+  const [documentType, setDocumentType] = React.useState<string>("commercial_invoice");
 
   React.useEffect(() => {
-    // In a real app, fetch templates: getSmeService().listTemplates({ type: activeTab }).then(setTemplates);
+    loadTemplates();
   }, [activeTab]);
+
+  const loadTemplates = async () => {
+    try {
+      setLoading(true);
+      const response = await smeTemplatesApi.list({
+        type: activeTab,
+        active_only: true,
+      });
+      setTemplates(response.items);
+    } catch (error: any) {
+      console.error("Failed to load templates:", error);
+      // Fallback to mock data
+      setTemplates(mockTemplates.filter((t) => t.type === activeTab));
+      toast({
+        title: "Warning",
+        description: "Failed to load templates. Using cached data.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateTemplate = () => {
     setTemplateName("");
@@ -145,36 +153,62 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
+    if (!user?.company_id) {
+      toast({
+        title: "Error",
+        description: "Company ID not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      // In a real app, call API:
-      // if (selectedTemplate) {
-      //   await api.put(`/sme/templates/${selectedTemplate.id}`, {
-      //     name: templateName,
-      //     description: templateDescription,
-      //     fields: templateFields,
-      //   });
-      // } else {
-      //   await api.post('/sme/templates', {
-      //     name: templateName,
-      //     type: activeTab,
-      //     document_type: activeTab === 'document' ? documentType : undefined,
-      //     description: templateDescription,
-      //     fields: templateFields,
-      //   });
-      // }
-
-      toast({
-        title: selectedTemplate ? "Template Updated" : "Template Created",
-        description: `Template "${templateName}" has been ${selectedTemplate ? "updated" : "created"} successfully.`,
-      });
-      setCreateDialogOpen(false);
-      setEditDialogOpen(false);
+      if (selectedTemplate) {
+        // Update existing template
+        const updateData: SMETemplateUpdate = {
+          name: templateName,
+          description: templateDescription || undefined,
+          fields: templateFields,
+          is_default: templates.some((t) => t.is_default && t.id !== selectedTemplate.id) ? false : true,
+        };
+        const updated = await smeTemplatesApi.update(selectedTemplate.id, updateData);
+        await loadTemplates();
+        toast({
+          title: "Template Updated",
+          description: `Template "${templateName}" has been updated successfully.`,
+        });
+        setEditDialogOpen(false);
+      } else {
+        // Create new template
+        const createData: SMETemplateCreate = {
+          name: templateName,
+          type: activeTab,
+          document_type: activeTab === "document" ? (documentType as any) : undefined,
+          description: templateDescription || undefined,
+          fields: templateFields,
+          is_default: false,
+        };
+        const created = await smeTemplatesApi.create({
+          ...createData,
+          company_id: user.company_id,
+          user_id: user.id || "",
+        });
+        await loadTemplates();
+        toast({
+          title: "Template Created",
+          description: `Template "${templateName}" has been created successfully.`,
+        });
+        setCreateDialogOpen(false);
+      }
       setSelectedTemplate(null);
-    } catch (error) {
+      setTemplateName("");
+      setTemplateDescription("");
+      setTemplateFields({});
+    } catch (error: any) {
       toast({
         title: "Save Failed",
-        description: "Failed to save template. Please try again.",
+        description: error.response?.data?.detail || "Failed to save template. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -187,16 +221,16 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
 
     setLoading(true);
     try {
-      // In a real app, call API: await api.delete(`/sme/templates/${templateId}`)
-      setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+      await smeTemplatesApi.delete(templateId);
+      await loadTemplates();
       toast({
         title: "Template Deleted",
         description: "Template has been deleted successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Delete Failed",
-        description: "Failed to delete template. Please try again.",
+        description: error.response?.data?.detail || "Failed to delete template. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -204,18 +238,34 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleUseTemplate = (template: Template) => {
-    // Navigate to upload page with template pre-filled
-    const templateData = encodeURIComponent(JSON.stringify(template.fields));
-    if (embedded) {
-      navigate(`/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload&template=${template.id}`);
-    } else {
-      navigate(`/${user?.role === "importer" ? "import" : "export"}-lc-upload?template=${template.id}`);
+  const handleUseTemplate = async (template: Template) => {
+    try {
+      // Mark template as used
+      await smeTemplatesApi.use(template.id);
+
+      // Pre-fill template fields
+      const prefilled = await smeTemplatesApi.prefill({
+        template_id: template.id,
+      });
+
+      // Navigate to upload page with pre-filled data
+      const prefilledData = encodeURIComponent(JSON.stringify(prefilled.fields));
+      if (embedded) {
+        navigate(`/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload&template=${template.id}&prefill=${prefilledData}`);
+      } else {
+        navigate(`/${user?.role === "importer" ? "import" : "export"}-lc-upload?template=${template.id}&prefill=${prefilledData}`);
+      }
+      toast({
+        title: "Template Applied",
+        description: `Template "${template.name}" has been loaded with pre-filled data.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Template Load Failed",
+        description: error.response?.data?.detail || "Failed to load template. Please try again.",
+        variant: "destructive",
+      });
     }
-    toast({
-      title: "Template Applied",
-      description: `Template "${template.name}" is being loaded.`,
-    });
   };
 
   const handleDuplicateTemplate = async (template: Template) => {
@@ -417,7 +467,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
             {activeTab === "document" && (
               <div className="space-y-2">
                 <Label>Document Type</Label>
-                <Select defaultValue="commercial_invoice">
+                <Select value={documentType} onValueChange={setDocumentType}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select document type" />
                   </SelectTrigger>
