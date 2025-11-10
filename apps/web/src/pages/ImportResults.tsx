@@ -8,9 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useJob, useResults, usePackage } from "@/hooks/use-lcopilot";
 import { format } from "date-fns";
+import { isImporterFeatureEnabled } from "@/config/importerFeatureFlags";
+import { importerApi } from "@/api/importer";
 import {
   FileText,
   Download,
@@ -31,7 +36,9 @@ import {
   Receipt,
   Send,
   History,
-  Building2
+  Building2,
+  Mail,
+  Package
 } from "lucide-react";
 
 // Mock data for demonstration - in real app this would come from API
@@ -227,15 +234,27 @@ export default function ImportResults({
   const [activeTab, setActiveTab] = useState("overview");
   const [useMockData, setUseMockData] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [showSupplierDialog, setShowSupplierDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingToSupplier, setIsSendingToSupplier] = useState(false);
+  const [isGeneratingFixPack, setIsGeneratingFixPack] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [supplierMessage, setSupplierMessage] = useState("");
   const navigate = useNavigate();
+
+  // Feature flags
+  const enableBankPrecheck = isImporterFeatureEnabled("importer_bank_precheck");
+  const enableSupplierFixPack = isImporterFeatureEnabled("supplier_fix_pack");
 
   // Get appropriate mock data based on mode
   const mockData = mode === 'draft' ? mockDraftLCResults : mockSupplierResults;
   
-  // Determine if ready to submit (only for supplier mode with no issues)
-  const isReadyToSubmit = mode === 'supplier' && mockSupplierResults.totalIssues === 0;
+  // Determine if ready to submit (only for supplier mode with no issues and feature flag enabled)
+  const isReadyToSubmit = mode === 'supplier' && mockSupplierResults.totalIssues === 0 && enableBankPrecheck;
+  
+  // Determine if supplier has issues (for supplier mode)
+  const hasSupplierIssues = mode === 'supplier' && mockSupplierResults.totalIssues > 0;
 
   useEffect(() => {
     // For demo job IDs, immediately use mock data
@@ -395,35 +414,152 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
   const handleSubmitToBank = async () => {
     setIsSubmitting(true);
     try {
-      // TODO: Call API to submit to bank
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      // Get validation session ID from jobId or results
+      const validationSessionId = results?.validation_session_id || jobId;
+      
+      if (!validationSessionId) {
+        throw new Error("Validation session ID not found");
+      }
+
+      const response = await importerApi.requestBankPrecheck({
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        bank_name: "Bank One", // TODO: Get from user settings
+      });
 
       toast({
-        title: "Submitted to Bank",
-        description: `LC ${lcNumber} has been successfully submitted to the bank for review.`,
+        title: "Bank Review Requested",
+        description: response.message || `LC ${lcNumber} has been sent to the bank for pre-check review.`,
       });
 
       setShowSubmitDialog(false);
-      // Refresh submission history (mock for now)
+      // Refresh submission history
       setSubmissionHistory([
         {
-          id: `sub-${Date.now()}`,
+          id: response.request_id,
           lc_number: lcNumber,
-          submitted_at: new Date().toISOString(),
+          submitted_at: response.submitted_at,
           status: "pending",
-          bank_name: "Bank One",
+          bank_name: response.bank_name || "Bank One",
           submitted_by: "Current User",
         },
         ...submissionHistory,
       ]);
-    } catch (error) {
+
+      // Track telemetry (Phase 6)
+      console.log("Telemetry: bank_precheck_requested", { lcNumber, validationSessionId, requestId: response.request_id });
+    } catch (error: any) {
+      console.error("Bank precheck request failed:", error);
       toast({
-        title: "Submission Failed",
-        description: "Failed to submit to bank. Please try again.",
+        title: "Request Failed",
+        description: error.response?.data?.detail || error.message || "Failed to request bank review. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDownloadSupplierFixPack = async () => {
+    setIsGeneratingFixPack(true);
+    try {
+      // Get validation session ID from jobId or results
+      const validationSessionId = results?.validation_session_id || jobId;
+      
+      if (!validationSessionId) {
+        throw new Error("Validation session ID not found");
+      }
+
+      // Download fix pack from API
+      const blob = await importerApi.downloadSupplierFixPack(validationSessionId);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Supplier_Fix_Pack_${lcNumber}_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+
+      toast({
+        title: "Fix Pack Downloaded",
+        description: "Supplier fix pack has been downloaded successfully.",
+      });
+
+      // Track event (Phase 6)
+      console.log("Telemetry: supplier_fix_pack_downloaded", { 
+        lcNumber, 
+        validationSessionId, 
+        issueCount: mockSupplierResults.totalIssues 
+      });
+    } catch (error: any) {
+      console.error("Fix pack download failed:", error);
+      toast({
+        title: "Download Failed",
+        description: error.response?.data?.detail || error.message || "Failed to generate supplier fix pack. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingFixPack(false);
+    }
+  };
+
+  const handleSendToSupplier = async () => {
+    if (!supplierEmail.trim()) {
+      toast({
+        title: "Email Required",
+        description: "Please enter supplier email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSendingToSupplier(true);
+    try {
+      // Get validation session ID from jobId or results
+      const validationSessionId = results?.validation_session_id || jobId;
+      
+      if (!validationSessionId) {
+        throw new Error("Validation session ID not found");
+      }
+
+      const response = await importerApi.notifySupplier({
+        validation_session_id: validationSessionId,
+        supplier_email: supplierEmail,
+        message: supplierMessage || undefined,
+        lc_number: lcNumber,
+      });
+
+      toast({
+        title: "Sent to Supplier",
+        description: response.message || `Supplier fix pack has been sent to ${supplierEmail}.`,
+      });
+
+      setShowSupplierDialog(false);
+      setSupplierEmail("");
+      setSupplierMessage("");
+
+      // Track event (Phase 6)
+      console.log("Telemetry: supplier_notify_sent", { 
+        lcNumber, 
+        validationSessionId, 
+        supplierEmail, 
+        notificationId: response.notification_id,
+        issueCount: mockSupplierResults.totalIssues 
+      });
+    } catch (error: any) {
+      console.error("Supplier notification failed:", error);
+      toast({
+        title: "Send Failed",
+        description: error.response?.data?.detail || error.message || "Failed to send fix pack to supplier. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingToSupplier(false);
     }
   };
 
@@ -842,15 +978,28 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <p className="text-sm text-muted-foreground">
                     Completed on {new Date(mockData.processedAt).toLocaleDateString()}
                   </p>
-                  {isReadyToSubmit && (
+                  {mode === 'supplier' && mockSupplierResults.totalIssues === 0 && (
                     <Badge className="mt-2 bg-green-600 text-white">
-                      <Send className="w-3 h-3 mr-1" />
-                      Ready to Submit to Bank
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Bank Ready
+                    </Badge>
+                  )}
+                  {mode === 'supplier' && mockSupplierResults.totalIssues > 0 && (
+                    <Badge className="mt-2 bg-warning text-white">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {mockSupplierResults.totalIssues} Issue{mockSupplierResults.totalIssues !== 1 ? 's' : ''} Require Correction
+                    </Badge>
+                  )}
+                  {mode === 'draft' && (
+                    <Badge className="mt-2 bg-blue-600 text-white">
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      Risk Analysis Complete
                     </Badge>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Common actions */}
                 <Button variant="outline" size="sm" onClick={handleReAnalyze}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Re-analyze
@@ -859,26 +1008,72 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <Share2 className="w-4 h-4 mr-2" />
                   Share
                 </Button>
-                {isReadyToSubmit && (
+
+                {/* Draft mode actions */}
+                {mode === 'draft' && (
                   <Button
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                    size="sm"
-                    onClick={() => setShowSubmitDialog(true)}
+                    onClick={handleDownloadReport}
+                    disabled={isGeneratingPackage}
+                    className="bg-gradient-importer hover:opacity-90"
                   >
-                    <Send className="w-4 h-4 mr-2" />
-                    Submit to Bank
+                    <Download className="w-4 h-4 mr-2" />
+                    {isGeneratingPackage ? 'Generating...' : 'Download Risk Report'}
                   </Button>
                 )}
-                <Button
-                  onClick={handleDownloadReport}
-                  disabled={isGeneratingPackage}
-                  className="bg-gradient-importer hover:opacity-90"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  {isGeneratingPackage ? 'Generating...' : `Download ${mode === 'draft' ? 'Risk Report' : 'Compliance Report'}`}
-                </Button>
+
+                {/* Supplier mode actions */}
+                {mode === 'supplier' && (
+                  <>
+                    {/* Supplier fix pack actions (when issues exist) */}
+                    {hasSupplierIssues && enableSupplierFixPack && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowSupplierDialog(true)}
+                        >
+                          <Mail className="w-4 h-4 mr-2" />
+                          Send to Supplier
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDownloadSupplierFixPack}
+                          disabled={isGeneratingFixPack}
+                        >
+                          <Package className="w-4 h-4 mr-2" />
+                          {isGeneratingFixPack ? 'Generating...' : 'Download Fix Pack'}
+                        </Button>
+                      </>
+                    )}
+
+                    {/* Bank precheck (when no issues and feature flag enabled) */}
+                    {isReadyToSubmit && enableBankPrecheck && (
+                      <Button
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        size="sm"
+                        onClick={() => setShowSubmitDialog(true)}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Request Bank Review
+                      </Button>
+                    )}
+
+                    {/* Compliance report download */}
+                    <Button
+                      onClick={handleDownloadReport}
+                      disabled={isGeneratingPackage}
+                      className="bg-gradient-importer hover:opacity-90"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      {isGeneratingPackage ? 'Generating...' : 'Download Compliance Report'}
+                    </Button>
+                  </>
+                )}
+
+                {/* Invoice link (if available) */}
                 {(mockData as any).invoiceId && (
-                  <Link to={`/lcopilot/importer-dashboard?tab=billing&invoice=${(mockData as any).invoiceId}`}>
+                  <Link to={`/lcopilot/importer-dashboard?section=billing&invoice=${(mockData as any).invoiceId}`}>
                     <Button variant="outline" size="sm">
                       <Receipt className="w-4 h-4 mr-2" />
                       Invoice
@@ -1164,22 +1359,22 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
           </TabsContent>
         </Tabs>
 
-        {/* Submit to Bank Dialog */}
-        {mode === 'supplier' && (
+        {/* Request Bank Review Dialog (Supplier mode, no issues, feature flag enabled) */}
+        {mode === 'supplier' && enableBankPrecheck && (
           <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Send className="w-5 h-5" />
-                  Submit to Bank
+                  Request Bank Pre-Check Review
                 </DialogTitle>
                 <DialogDescription>
-                  Submit LC {lcNumber} to the bank for review and approval
+                  Request the bank to review LC {lcNumber} before final submission
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-medium mb-2">Submission Details</h4>
+                  <h4 className="font-medium mb-2">Review Request Details</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">LC Number:</span>
@@ -1197,14 +1392,14 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Status:</span>
-                      <Badge className="bg-green-600">Ready to Submit</Badge>
+                      <Badge className="bg-green-600">Bank Ready</Badge>
                     </div>
                   </div>
                 </div>
                 <div className="p-4 border rounded-lg">
                   <p className="text-sm text-muted-foreground">
-                    By submitting, you confirm that all documents are correct and ready for bank review.
-                    The bank will review your submission and provide feedback.
+                    This will request the bank to perform a pre-check review of your LC and documents.
+                    The bank will provide feedback before final submission.
                   </p>
                 </div>
               </div>
@@ -1216,12 +1411,80 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   {isSubmitting ? (
                     <>
                       <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                      Submitting...
+                      Requesting...
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4 mr-2" />
-                      Submit to Bank
+                      Request Bank Review
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Send to Supplier Dialog (Supplier mode, issues exist) */}
+        {mode === 'supplier' && enableSupplierFixPack && (
+          <Dialog open={showSupplierDialog} onOpenChange={setShowSupplierDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Mail className="w-5 h-5" />
+                  Send Fix Pack to Supplier
+                </DialogTitle>
+                <DialogDescription>
+                  Send the supplier fix pack with all issues and corrections needed
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="supplier-email">Supplier Email Address *</Label>
+                  <Input
+                    id="supplier-email"
+                    type="email"
+                    placeholder="supplier@example.com"
+                    value={supplierEmail}
+                    onChange={(e) => setSupplierEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="supplier-message">Message (Optional)</Label>
+                  <Textarea
+                    id="supplier-message"
+                    placeholder="Add a custom message to include with the fix pack..."
+                    value={supplierMessage}
+                    onChange={(e) => setSupplierMessage(e.target.value)}
+                    rows={4}
+                  />
+                </div>
+                <div className="p-4 bg-muted rounded-lg">
+                  <h4 className="font-medium mb-2 text-sm">What will be sent:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    <li>LC Number: {lcNumber}</li>
+                    <li>{mockSupplierResults.totalIssues} issue(s) requiring correction</li>
+                    <li>Detailed recommendations for each issue</li>
+                    <li>Document status summary</li>
+                    <li>Next steps and action items</li>
+                  </ul>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowSupplierDialog(false)} disabled={isSendingToSupplier}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSendToSupplier} disabled={isSendingToSupplier || !supplierEmail.trim()}>
+                  {isSendingToSupplier ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 mr-2" />
+                      Send to Supplier
                     </>
                   )}
                 </Button>

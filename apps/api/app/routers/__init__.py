@@ -58,6 +58,7 @@ sme_templates = _load_router_module("sme_templates")
 workspace_sharing = _load_router_module("workspace_sharing")
 company_profile = _load_router_module("company_profile")
 support = _load_router_module("support")
+importer = _load_router_module("importer")
 
 __all__ = [
     "auth",
@@ -87,4 +88,5 @@ __all__ = [
     "workspace_sharing",
     "company_profile",
     "support",
+    "importer",
 ]
