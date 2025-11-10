@@ -108,7 +108,7 @@ const mockPolicyHistory = [
 
 function OverlaysTab() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useBankAuth();
   const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
   
   const [overlays, setOverlays] = React.useState<any[]>([]);
@@ -420,7 +420,7 @@ function OverlaysTab() {
 
 function ExceptionsTab() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useBankAuth();
   const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
   
   const [exceptions, setExceptions] = React.useState<any[]>([]);
@@ -1069,7 +1069,7 @@ function AnalyticsTab() {
 }
 
 export function PolicySurface({ embedded = false }: { embedded?: boolean }) {
-  const { user } = useAuth();
+  const { user } = useBankAuth();
   const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
   
   // Early return if not admin - defense in depth
