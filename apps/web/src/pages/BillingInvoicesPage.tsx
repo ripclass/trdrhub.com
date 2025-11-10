@@ -36,7 +36,8 @@ import {
   useInvoice,
   useGenerateInvoice,
   useDownloadInvoice,
-  useRetryPayment
+  useRetryPayment,
+  useRefreshBillingData
 } from '@/hooks/useBilling';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -78,6 +79,7 @@ export function BillingInvoicesPage({ onTabChange, mode = 'sme' }: { onTabChange
   const generateInvoice = useGenerateInvoice();
   const downloadInvoice = useDownloadInvoice();
   const retryPayment = useRetryPayment();
+  const refreshBillingData = useRefreshBillingData();
 
   const canGenerateInvoices = user?.role === 'admin';
 
@@ -172,7 +174,13 @@ export function BillingInvoicesPage({ onTabChange, mode = 'sme' }: { onTabChange
       </div>
 
       {/* Navigation */}
-      <BillingNav currentTab="invoices" onTabChange={onTabChange} mode={mode} hideUpgrade={isBankMode} />
+      <BillingNav 
+        currentTab="invoices" 
+        onTabChange={onTabChange} 
+        onRefresh={refreshBillingData}
+        mode={mode} 
+        hideUpgrade={isBankMode} 
+      />
 
       {/* Status Summary */}
       {statusSummary && (

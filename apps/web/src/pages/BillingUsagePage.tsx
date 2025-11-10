@@ -44,7 +44,8 @@ import {
   useBillingInfo,
   useUsageStats,
   useUsageRecords,
-  useExportUsageData
+  useExportUsageData,
+  useRefreshBillingData
 } from '@/hooks/useBilling';
 
 // Types
@@ -78,6 +79,7 @@ export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: 
   const { data: usageStats, isLoading: statsLoading } = useUsageStats();
   const { data: usageRecords } = useUsageRecords(filters);
   const exportMutation = useExportUsageData();
+  const refreshBillingData = useRefreshBillingData();
 
   // Mock data for charts (in real app, this would come from API)
   const trendData = Array.from({ length: 30 }, (_, i) => {
@@ -160,7 +162,13 @@ export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: 
       </div>
 
       {/* Navigation */}
-      <BillingNav currentTab="usage" onTabChange={onTabChange} mode={mode} hideUpgrade={isBankMode} />
+      <BillingNav 
+        currentTab="usage" 
+        onTabChange={onTabChange} 
+        onRefresh={refreshBillingData}
+        mode={mode} 
+        hideUpgrade={isBankMode} 
+      />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
