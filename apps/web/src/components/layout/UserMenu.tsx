@@ -12,20 +12,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 
-import { useCallback } from "react"
-import { useNavigate, useLocation } from "react-router-dom"
-import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
-
 // Import all auth hooks - they will throw if used outside their providers, which we handle
 import { useAdminAuth } from "@/lib/admin/auth"
 import { useBankAuth } from "@/lib/bank/auth"
