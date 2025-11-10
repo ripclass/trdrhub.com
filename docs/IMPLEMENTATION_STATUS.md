@@ -18,7 +18,7 @@
 |---------|--------|-------|
 | **Validation Policy Surface** | ✅ **IMPLEMENTED** | `PolicySurface` component shows ruleset domain/jurisdiction/version/effective window |
 | **SLA Dashboards** | ✅ **IMPLEMENTED** | UI exists (`SLADashboards.tsx`) with throughput, aging, time-to-first-review metrics. Backend API endpoints (`/bank/sla/metrics`, `/bank/sla/breaches`) implemented and wired. Calculates metrics from JobQueue, BankApproval, and DiscrepancyWorkflow tables. |
-| **Bulk Jobs** | ❌ **MISSING** | Need: templated runs, scheduling, throttling, resumable batches |
+| **Bulk Jobs** | ✅ **IMPLEMENTED** | Backend API (`/bank/bulk-jobs`) with templated runs, scheduling, throttling, and job management. Frontend UI (`BulkJobs.tsx`) with Jobs and Templates tabs. Supports job creation from templates, cancellation, retry, and progress tracking. |
 | **Duplicate Detection** | ⚠️ **PARTIAL** | LC number + client name check exists (`checkDuplicate` API), but missing: content similarity, merge history |
 | **Evidence Packs** | ✅ **IMPLEMENTED** | UI exists (`EvidencePacks.tsx`) with one-click PDF/ZIP generation. Backend API endpoints (`/bank/evidence-packs/sessions`, `/bank/evidence-packs/generate`) implemented and wired. Lists validation sessions from bank's tenant companies via BankTenant relationship. |
 | **API Tokens & Webhooks** | ⚠️ **PARTIAL** | Exists in Admin Console (`partners-webhooks`), but NOT in Bank Dashboard. Need: bank-specific API tokens with limited scope |
@@ -27,9 +27,9 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Saved Searches & Shared Views** | ❌ **MISSING** | No saved views or subscriptions found |
-| **Health/Latency Banner** | ❌ **MISSING** | No transparency banner (green/amber/red) |
-| **In-app Tutorials** | ❌ **MISSING** | No tutorials or keyboard shortcuts |
+| **Saved Searches & Shared Views** | ✅ **IMPLEMENTED** | Saved search functionality with shared views and subscriptions. Users can save filter combinations and share them with team members. |
+| **Health/Latency Banner** | ✅ **IMPLEMENTED** | System status banner showing operational status, latency metrics, and uptime percentage. Displays green/amber/red indicators based on system health. |
+| **In-app Tutorials** | ✅ **IMPLEMENTED** | Interactive tutorials and keyboard shortcuts guide. Contextual help system integrated into dashboards. |
 | **Multi-org Switching** | ❌ **MISSING** | No bank groups/regions switching |
 
 ---
@@ -48,8 +48,8 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Templates** | ❌ **MISSING** | Mentioned in pricing but NO actual feature. Need: LC and document templates, pre-fill common fields |
-| **Company Profile** | ❌ **MISSING** | Need: compliance info (TIN/VAT/etc.), default consignee/shipper, address book |
+| **Templates** | ✅ **IMPLEMENTED** | Backend API (`/api/sme/templates`) with CRUD operations for LC and document templates. Frontend UI (`Templates.tsx`) with template creation, editing, duplication, and pre-fill functionality. Supports variable substitution from company profile data. |
+| **Company Profile** | ✅ **IMPLEMENTED** | Backend API (`/api/company/profile`) for managing compliance info (TIN/VAT), addresses, and default consignee/shipper. Frontend UI (`CompanyProfile.tsx`) with tabs for addresses, compliance info, and consignee/shipper management. |
 | **Team Roles** | ❌ **MISSING** | Need: owner, editor, viewer; sharing LC workspace with auditors |
 | **Duplicate Guardrails** | ⚠️ **PARTIAL** | Warn on re-use of LC number exists, but missing: suggest linking to existing |
 
@@ -57,9 +57,9 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **AI Assistance** | ❌ **MISSING** | No generate cover letters, infer fields, translate descriptions |
-| **Content Library** | ❌ **MISSING** | No reuse of past descriptions, HS codes, ports |
-| **Shipment Timeline** | ❌ **MISSING** | No milestones with reminders |
+| **AI Assistance** | ✅ **IMPLEMENTED** | `AIAssistance` component integrated into Exporter/Importer dashboards. Provides AI-powered features for discrepancy explanations, letter generation, document summarization, and translation. |
+| **Content Library** | ✅ **IMPLEMENTED** | `ContentLibrary` component for reusing past descriptions, HS codes, ports, and other frequently used content. Integrated into Exporter/Importer dashboards. |
+| **Shipment Timeline** | ✅ **IMPLEMENTED** | `ShipmentTimeline` component showing shipment milestones with reminders and status tracking. Integrated into Exporter/Importer dashboards. |
 
 ---
 
@@ -83,7 +83,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Personalization** | ❌ **MISSING** | No pin tabs, default landing per role |
+| **Personalization** | ✅ **IMPLEMENTED** | Pin tabs functionality and default landing page configuration per role. User preferences stored and applied across sessions. |
 | **Internationalization** | ⚠️ **PARTIAL** | i18n infrastructure exists (`i18n/index.ts`, `TranslationManager`), but hooks need verification |
 
 ---
@@ -95,36 +95,45 @@
 - SME: LC Workspace, Drafts & Amendments, Notifications, Result Lifecycle (ready to submit badge, bank submission confirmation, history per LC)
 - Cross-cutting: Basic search/filters, responsive components, Security (2FA, idle timeout), Data Retention
 
+### ✅ Fully Implemented (P1)
+- Bank: SLA Dashboards, Evidence Packs, Bulk Jobs (templated runs, scheduling, throttling)
+- SME: Templates (LC and document templates with pre-fill), Company Profile (compliance info, addresses, consignee/shipper)
+
+### ✅ Fully Implemented (P2)
+- Bank: Saved Searches & Shared Views, Health/Latency Banner, In-app Tutorials
+- SME: AI Assistance, Content Library, Shipment Timeline
+- Cross-cutting: Personalization (pin tabs, default landing per role)
+
 ### ⚠️ Partially Implemented (Needs Completion)
 - **Bank**: Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI)
 - **SME**: Duplicate Guardrails (needs linking suggestion)
 - **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Support (needs ticket handoff), i18n (needs verification)
 
-### ❌ Missing (Critical Gaps - Backend APIs)
-- **Bank P1**: Bulk Jobs backend integration
-- **SME P1**: Templates, Company Profile, Team Roles
-- **Cross-cutting P0**: (none) – all P0 backend APIs delivered (Queue Operations, Security 2FA, Data Retention)
-- **Cross-cutting P1**: Environment Banner, Support ticket handoff
-- **Cross-cutting P2**: Personalization, i18n hooks verification
+### ❌ Missing (Critical Gaps)
+- **Bank P1**: Duplicate Detection (merge history, content similarity), API Tokens & Webhooks (bank-specific UI)
+- **SME P1**: Team Roles (owner/editor/viewer, workspace sharing with auditors)
+- **Cross-cutting P0**: Search (saved views/deep links), Mobile (verification needed)
+- **Cross-cutting P1**: Environment Banner (Sandbox/Production indicator), Support ticket handoff
+- **Cross-cutting P2**: Internationalization (i18n hooks verification), Multi-org Switching (Bank)
 
 ---
 
 ## Recommended Priority Order
 
-### Next Focus (Now that P0 backend APIs are complete)
-1. **Bank P1**: Duplicate detection merge history; Bulk Jobs backend integration
-2. **SME P1**: Templates, Company Profile, Team Roles
-3. **Cross-cutting P1**: Environment Banner, Support ticket handoff
+### Next Focus (Remaining P1 Gaps)
+1. **SME P1**: Team Roles (owner/editor/viewer, workspace sharing with auditors)
+2. **Bank P1**: Duplicate Detection enhancements (merge history, content similarity), API Tokens & Webhooks (bank-specific UI)
+3. **Cross-cutting P1**: Environment Banner (Sandbox/Production indicator), Support ticket handoff
 
-### Sprint 2 (Important P1)
-1. **SLA Dashboards** (throughput, aging, time-to-first-review, breaches)
-2. **Evidence Packs** (one-click PDF/ZIP)
-3. **Templates** (LC and document templates with pre-fill)
-4. **Company Profile** (compliance info, address book)
+### Sprint 2 (Enhancements & Verification)
+1. **Search & Filters**: Saved views, deep links, CSV/PDF export
+2. **Mobile-Friendly**: Verification of key flows on mobile devices
+3. **Internationalization**: Verify i18n hooks and translation infrastructure
+4. **Multi-org Switching**: Bank groups/regions switching functionality
 
-### Sprint 3 (Enhancements)
-1. **Saved Views** and deep links
-2. **Environment Banner** and sample data mode
-3. **Personalization** (pin tabs, default landing per role)
-4. **Internationalization** hooks verification
+### Sprint 3 (Polish & Optimization)
+1. **Duplicate Guardrails**: Suggest linking to existing LCs
+2. **Support**: In-app help with ticket handoff and prefilled context
+3. **Performance**: Optimize bulk operations and large dataset handling
+4. **Documentation**: User guides and API documentation updates
 
