@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,8 +39,8 @@ const PAGE_SIZE = 20;
 
 export function BankUsersPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
+  const { user } = useBankAuth();
+  const isBankAdmin = user?.role === "bank_admin";
   const [users, setUsers] = React.useState<BankUser[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [page, setPage] = React.useState(1);
