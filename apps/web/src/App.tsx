@@ -88,7 +88,11 @@ function App() {
         <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
         <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
         <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
-        <Route path="/lcopilot/bank-dashboard/login" element={<BankLogin />} />
+        <Route path="/lcopilot/bank-dashboard/login" element={
+          <BankAuthProvider>
+            <BankLogin />
+          </BankAuthProvider>
+        } />
         <Route path="/lcopilot/bank-dashboard" element={
           <BankAuthProvider>
             <BankDashboardV2 />
