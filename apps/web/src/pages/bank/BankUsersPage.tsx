@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,8 @@ const PAGE_SIZE = 20;
 
 export function BankUsersPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isBankAdmin = user?.role === "bank_admin" || user?.role === "system_admin";
   const [users, setUsers] = React.useState<BankUser[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [page, setPage] = React.useState(1);
@@ -86,6 +89,14 @@ export function BankUsersPage() {
   }, [loadUsers]);
 
   const handleInvite = async () => {
+    if (!isBankAdmin) {
+      toast({
+        title: "Permission Denied",
+        description: "Only bank admins can invite users",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!inviteData.email || !inviteData.full_name || !inviteData.password) {
       toast({
         title: "Validation Error",
@@ -117,6 +128,14 @@ export function BankUsersPage() {
   };
 
   const handleRoleChange = async (userId: string, newRole: "bank_officer" | "bank_admin") => {
+    if (!isBankAdmin) {
+      toast({
+        title: "Permission Denied",
+        description: "Only bank admins can change user roles",
+        variant: "destructive",
+      });
+      return;
+    }
     setActionId(userId);
     try {
       const data: RoleUpdateRequest = {
@@ -142,6 +161,14 @@ export function BankUsersPage() {
   };
 
   const handleSuspend = async (userId: string) => {
+    if (!isBankAdmin) {
+      toast({
+        title: "Permission Denied",
+        description: "Only bank admins can suspend users",
+        variant: "destructive",
+      });
+      return;
+    }
     setActionId(userId);
     try {
       await bankUsersApi.suspendUser(userId);
@@ -162,6 +189,14 @@ export function BankUsersPage() {
   };
 
   const handleReactivate = async (userId: string) => {
+    if (!isBankAdmin) {
+      toast({
+        title: "Permission Denied",
+        description: "Only bank admins can reactivate users",
+        variant: "destructive",
+      });
+      return;
+    }
     setActionId(userId);
     try {
       await bankUsersApi.reactivateUser(userId);
@@ -182,6 +217,14 @@ export function BankUsersPage() {
   };
 
   const handleReset2FA = async (userId: string) => {
+    if (!isBankAdmin) {
+      toast({
+        title: "Permission Denied",
+        description: "Only bank admins can reset 2FA",
+        variant: "destructive",
+      });
+      return;
+    }
     setActionId(userId);
     try {
       await bankUsersApi.reset2FA(userId);
@@ -211,13 +254,14 @@ export function BankUsersPage() {
             Manage users in your bank tenant
           </p>
         </div>
-        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Invite User
-            </Button>
-          </DialogTrigger>
+        {isBankAdmin && (
+          <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="w-4 h-4 mr-2" />
+                Invite User
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Invite Bank User</DialogTitle>
@@ -282,7 +326,8 @@ export function BankUsersPage() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        )}
       </div>
 
       <Card>
@@ -358,21 +403,25 @@ export function BankUsersPage() {
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.full_name}</TableCell>
                       <TableCell>
-                        <Select
-                          value={user.role}
-                          onValueChange={(value: "bank_officer" | "bank_admin") =>
-                            handleRoleChange(user.id, value)
-                          }
-                          disabled={actionId === user.id}
-                        >
-                          <SelectTrigger className="w-[150px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="bank_officer">Bank Officer</SelectItem>
-                            <SelectItem value="bank_admin">Bank Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {isBankAdmin ? (
+                          <Select
+                            value={user.role}
+                            onValueChange={(value: "bank_officer" | "bank_admin") =>
+                              handleRoleChange(user.id, value)
+                            }
+                            disabled={actionId === user.id}
+                          >
+                            <SelectTrigger className="w-[150px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bank_officer">Bank Officer</SelectItem>
+                              <SelectItem value="bank_admin">Bank Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="outline">{user.role === "bank_admin" ? "Bank Admin" : "Bank Officer"}</Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={user.is_active ? "default" : "secondary"}>
@@ -383,36 +432,38 @@ export function BankUsersPage() {
                         {format(new Date(user.created_at), "MMM d, yyyy")}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {user.is_active ? (
+                        {isBankAdmin && (
+                          <div className="flex justify-end gap-2">
+                            {user.is_active ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSuspend(user.id)}
+                                disabled={actionId === user.id}
+                              >
+                                <UserMinus className="w-4 h-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleReactivate(user.id)}
+                                disabled={actionId === user.id}
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleSuspend(user.id)}
+                              onClick={() => handleReset2FA(user.id)}
                               disabled={actionId === user.id}
+                              title="Reset 2FA"
                             >
-                              <UserMinus className="w-4 h-4" />
+                              <KeyRound className="w-4 h-4" />
                             </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleReactivate(user.id)}
-                              disabled={actionId === user.id}
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleReset2FA(user.id)}
-                            disabled={actionId === user.id}
-                            title="Reset 2FA"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                          </Button>
-                        </div>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
