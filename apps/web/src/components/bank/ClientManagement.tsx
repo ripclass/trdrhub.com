@@ -249,8 +249,8 @@ export function ClientManagement({}: ClientManagementProps) {
                   {clients.map((client) => {
                     const isExpanded = expandedClients.has(client.client_name);
                     return (
-                      <>
-                        <tr key={client.client_name} className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleClientExpansion(client.client_name)}>
+                      <React.Fragment key={client.client_name}>
+                        <tr className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleClientExpansion(client.client_name)}>
                           <td className="p-3 font-medium">
                             <div className="flex items-center gap-2">
                               {isExpanded ? (
