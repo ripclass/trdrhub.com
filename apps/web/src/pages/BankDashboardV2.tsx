@@ -53,6 +53,12 @@ export default function BankDashboardV2() {
     }
   }, [isAuthenticated, authLoading, navigate]);
 
+  // Sync activeTab with URL changes
+  useEffect(() => {
+    const tabFromUrl = searchParams.get("tab") || "dashboard";
+    setActiveTab(tabFromUrl);
+  }, [searchParams]);
+
   // Show loading state while checking authentication
   if (authLoading) {
     return (
@@ -69,12 +75,6 @@ export default function BankDashboardV2() {
   if (!isAuthenticated) {
     return null;
   }
-
-  // Sync activeTab with URL changes
-  useEffect(() => {
-    const tabFromUrl = searchParams.get("tab") || "dashboard";
-    setActiveTab(tabFromUrl);
-  }, [searchParams]);
 
   const handleTabChange = (newTab: string) => {
     setActiveTab(newTab);
