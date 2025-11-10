@@ -6,7 +6,7 @@
 |---------|--------|-------|
 | **Roles & Approvals** | ✅ **IMPLEMENTED** | Analyst → Reviewer → Approver flow with stages, approve/reject/reopen actions |
 | **Discrepancy Workflow** | ✅ **IMPLEMENTED** | Assign, status, due dates, comments, bulk resolve, audit logs |
-| **Queue Operations** | ❌ **MISSING** | Exists in Admin Console but NOT in Bank Dashboard. Need: priorities, filters, saved views, deep links, retry/rewind |
+| **Queue Operations** | ⚠️ **PARTIAL** | UI exists (`QueueOperations.tsx`) with filters, saved views, retry/rewind. **MISSING**: Backend API endpoints (`/bank/queue`) with tenant scoping and RBAC |
 | **Client Portfolio View** | ⚠️ **PARTIAL** | `ClientManagement` component exists with basic stats, but missing: per-client KPIs, trends, recent issues, duplicates heatmap |
 | **Audit Trail** | ✅ **IMPLEMENTED** | Per LC and per action (who/when/what changed), CSV exportable |
 | **Notifications** | ✅ **IMPLEMENTED** | Actionable items (open item, approve, request fix), read/unread, badges |
@@ -17,10 +17,10 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Validation Policy Surface** | ✅ **IMPLEMENTED** | `PolicySurface` component shows ruleset domain/jurisdiction/version/effective window |
-| **SLA Dashboards** | ❌ **MISSING** | Backend code exists (`sla_dashboard_manager.py`) but NO UI. Need: throughput, aging, time-to-first-review, breaches |
+| **SLA Dashboards** | ⚠️ **PARTIAL** | UI exists (`SLADashboards.tsx`) with throughput, aging, time-to-first-review metrics. Backend integration needs verification |
 | **Bulk Jobs** | ❌ **MISSING** | Need: templated runs, scheduling, throttling, resumable batches |
 | **Duplicate Detection** | ⚠️ **PARTIAL** | LC number + client name check exists (`checkDuplicate` API), but missing: content similarity, merge history |
-| **Evidence Packs** | ❌ **MISSING** | Mentioned in onboarding but NO actual feature. Need: one-click PDF/ZIP with findings and attachments |
+| **Evidence Packs** | ⚠️ **PARTIAL** | UI exists (`EvidencePacks.tsx`) with one-click PDF/ZIP generation. Backend API integration needs verification |
 | **API Tokens & Webhooks** | ⚠️ **PARTIAL** | Exists in Admin Console (`partners-webhooks`), but NOT in Bank Dashboard. Need: bank-specific API tokens with limited scope |
 
 ## Bank Dashboard - P2 (Nice-to-Have)
@@ -40,7 +40,7 @@
 |---------|--------|-------|
 | **LC Workspace** | ✅ **IMPLEMENTED** | Checklist of required docs per LC, status per doc, missing items, re-upload loop |
 | **Drafts & Amendments** | ✅ **IMPLEMENTED** | Explicit tabs, versioning, diff of amendments, link to prior results |
-| **Discrepancy Guidance** | ❌ **MISSING** | No actionable fixes with examples or re-validate after fix |
+| **Discrepancy Guidance** | ✅ **IMPLEMENTED** | `DiscrepancyGuidance` component with actionable fixes, before/after examples, common mistakes, re-validate, and upload fixed documents. Used in `ExporterResults.tsx` and `ImportResults.tsx` |
 | **Result Lifecycle** | ⚠️ **PARTIAL** | `ready_for_submission` status exists, but missing: "ready to submit" badge, bank submission confirmation, history per LC |
 | **Notifications** | ✅ **IMPLEMENTED** | What to fix, by when; actionable notifications |
 
@@ -69,8 +69,8 @@
 |---------|--------|-------|
 | **Search & Filters** | ⚠️ **PARTIAL** | Filters exist (`AdvancedFilters`), but missing: saved views, deep links need verification, export CSV/PDF |
 | **Mobile-Friendly** | ⚠️ **PARTIAL** | Responsive components exist (`useIsMobile`, `ResponsiveContainer`), but key flows need verification |
-| **Security** | ⚠️ **PARTIAL** | Session timeout/MFA settings exist in Admin (`SystemSettings`), but NOT enforced in app. Missing: 2FA prompts, org invite flows |
-| **Data Retention** | ⚠️ **PARTIAL** | Models exist (`RetentionPolicy`, `DataResidencyPolicy`), but NO UI controls. Missing: download/delete requests, logs visibility |
+| **Security** | ⚠️ **PARTIAL** | Session timeout/MFA settings exist in Admin (`SystemSettings`), but NOT enforced in bank auth. **MISSING**: 2FA prompts in `BankLogin.tsx`, idle timeout in `BankAuthProvider`, backend endpoints (`/bank/auth/request-2fa`, `/verify-2fa`) |
+| **Data Retention** | ⚠️ **PARTIAL** | UI exists (`DataRetention.tsx`) in Bank Settings with download/delete requests. **MISSING**: Backend API endpoints (`/bank/compliance/retention-policy`, `/export`, `/erase`) with bank tenant scoping |
 
 ## Cross-Cutting Features - P1 (Important)
 
@@ -100,12 +100,11 @@
 - **SME**: Result Lifecycle (needs bank submission confirmation/history), Duplicate Guardrails (needs linking suggestion)
 - **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Security (needs enforcement), Data Retention (needs UI), Support (needs ticket handoff), i18n (needs verification)
 
-### ❌ Missing (Critical Gaps)
-- **Bank P0**: Queue Operations in Bank Dashboard
-- **Bank P1**: SLA Dashboards, Bulk Jobs, Evidence Packs
-- **SME P0**: Discrepancy Guidance
+### ❌ Missing (Critical Gaps - Backend APIs)
+- **Bank P0**: Queue Operations backend API (`/bank/queue` endpoints with tenant scoping)
+- **Bank P1**: Bulk Jobs backend integration
 - **SME P1**: Templates, Company Profile, Team Roles
-- **Cross-cutting P0**: Security enforcement (2FA, session timeout), Data Retention UI
+- **Cross-cutting P0**: Security enforcement backend (`/bank/auth/request-2fa`, `/verify-2fa`) + frontend integration (2FA step in login, idle timeout), Data Retention backend API (`/bank/compliance/retention-policy`, `/export`, `/erase`)
 - **Cross-cutting P1**: Environment Banner, Support ticket handoff
 - **Cross-cutting P2**: Personalization, i18n hooks verification
 
@@ -113,11 +112,11 @@
 
 ## Recommended Priority Order
 
-### Sprint 1 (Critical P0 Gaps)
-1. **Queue Operations** in Bank Dashboard (move from Admin or create bank-specific)
-2. **Discrepancy Guidance** for SME (actionable fixes with examples)
-3. **Security Enforcement** (2FA prompts, session timeout enforcement)
-4. **Data Retention UI** (download/delete requests, logs visibility)
+### Sprint 1 (Critical P0 Gaps - Backend APIs)
+1. **Queue Operations** backend API (`/bank/queue` endpoints with tenant scoping and RBAC)
+2. **Security Enforcement** backend (`/bank/auth/request-2fa`, `/verify-2fa`) + frontend (2FA step in `BankLogin.tsx`, idle timeout in `BankAuthProvider`)
+3. **Data Retention** backend API (`/bank/compliance/retention-policy`, `/export`, `/erase` with bank tenant scoping)
+4. **Discrepancy Guidance** - ✅ Already implemented (UI complete, backend integration may need enhancement)
 
 ### Sprint 2 (Important P1)
 1. **SLA Dashboards** (throughput, aging, time-to-first-review, breaches)

@@ -946,24 +946,203 @@ export interface PolicyImpactMetrics {
   }>;
 }
 
-export interface PolicyAnalytics {
-  time_range: string;
-  start_date: string;
-  end_date: string;
-  overlay_stats: PolicyUsageStats[];
-  exception_stats: ExceptionEffectivenessStats[];
-  impact_metrics: PolicyImpactMetrics;
-  top_exceptions: Array<{
-    exception_id: string;
-    rule_code: string;
-    effect: string;
-    total_applications: number;
-    avg_discrepancy_reduction: number;
-  }>;
-  overlay_adoption: Array<{
-    overlay_id: string;
-    version: number;
-    session_count: number;
-  }>;
+// Bank Authentication API (2FA)
+export interface Request2FAResponse {
+  success: boolean;
+  session_id: string;
+  message: string;
+  code?: string; // Only in development
 }
+
+export interface Verify2FAResponse {
+  success: boolean;
+  message: string;
+  verified_at: string;
+}
+
+export interface SessionStatusResponse {
+  user_id: string;
+  email: string;
+  role: string;
+  idle_timeout_minutes: number;
+  "2fa_enabled": boolean;
+  session_active: boolean;
+}
+
+export const bankAuthApi = {
+  /**
+   * Request 2FA code
+   */
+  request2FA: async (): Promise<Request2FAResponse> => {
+    const response = await api.post<Request2FAResponse>("/bank/auth/request-2fa");
+    return response.data;
+  },
+
+  /**
+   * Verify 2FA code
+   */
+  verify2FA: async (code: string, sessionId: string): Promise<Verify2FAResponse> => {
+    const response = await api.post<Verify2FAResponse>(
+      `/bank/auth/verify-2fa?code=${code}&session_id=${sessionId}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Get session status
+   */
+  getSessionStatus: async (): Promise<SessionStatusResponse> => {
+    const response = await api.get<SessionStatusResponse>("/bank/auth/session-status");
+    return response.data;
+  },
+};
+
+// Bank Queue Operations API
+export interface BankQueueJob {
+  id: string;
+  job_type: string;
+  job_data: Record<string, any>;
+  priority: number;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  attempts: number;
+  max_attempts: number;
+  scheduled_at: string;
+  started_at?: string;
+  completed_at?: string;
+  failed_at?: string;
+  error_message?: string;
+  worker_id?: string;
+  organization_id?: string;
+  user_id?: string;
+  lc_id?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface BankQueueFilters {
+  status?: string;
+  job_type?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface BankQueueStats {
+  time_range: string;
+  total_jobs: number;
+  status_breakdown: Record<string, number>;
+  type_breakdown: Record<string, number>;
+  avg_processing_time_ms: number;
+  queue_depth: number;
+}
+
+export interface BulkJobActionRequest {
+  job_ids: string[];
+  action: 'retry' | 'cancel' | 'requeue';
+  reason: string;
+}
+
+export interface BulkJobActionResponse {
+  action: string;
+  success_count: number;
+  failed_jobs: string[];
+  reason: string;
+}
+
+export const bankQueueApi = {
+  /**
+   * Get job queue for bank tenant with filtering and pagination
+   */
+  getQueue: async (filters?: BankQueueFilters): Promise<PaginatedResponse<BankQueueJob>> => {
+    try {
+      const params = new URLSearchParams();
+      if (filters?.status) params.append('status', filters.status);
+      if (filters?.job_type) params.append('job_type', filters.job_type);
+      if (filters?.search) params.append('search', filters.search);
+      if (filters?.limit) params.append('limit', String(filters.limit));
+      if (filters?.offset) params.append('offset', String(filters.offset));
+      
+      const response = await api.get<PaginatedResponse<BankQueueJob>>(`/bank/queue?${params.toString()}`);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Bank queue API unavailable, returning empty response:', error?.message);
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        size: filters?.limit || 20,
+        pages: 0
+      };
+    }
+  },
+
+  /**
+   * Get queue statistics
+   */
+  getQueueStats: async (timeRange: string = '24h'): Promise<BankQueueStats> => {
+    try {
+      const response = await api.get<BankQueueStats>(`/bank/queue/stats?time_range=${timeRange}`);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Bank queue stats API unavailable, returning mock stats:', error?.message);
+      return {
+        time_range: timeRange,
+        total_jobs: 0,
+        status_breakdown: {},
+        type_breakdown: {},
+        avg_processing_time_ms: 0,
+        queue_depth: 0
+      };
+    }
+  },
+
+  /**
+   * Retry a specific job
+   */
+  retryJob: async (jobId: string, reason: string): Promise<{ message: string; job_id: string }> => {
+    const response = await api.post<{ message: string; job_id: string }>(
+      `/bank/queue/${jobId}/retry?reason=${encodeURIComponent(reason)}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Cancel a specific job
+   */
+  cancelJob: async (jobId: string, reason: string): Promise<{ message: string; job_id: string }> => {
+    const response = await api.post<{ message: string; job_id: string }>(
+      `/bank/queue/${jobId}/cancel?reason=${encodeURIComponent(reason)}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Requeue a specific job
+   */
+  requeueJob: async (jobId: string, reason?: string): Promise<{ message: string; job_id: string }> => {
+    const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    const response = await api.post<{ message: string; job_id: string }>(
+      `/bank/queue/${jobId}/requeue${params}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Perform bulk actions on multiple jobs
+   */
+  bulkAction: async (request: BulkJobActionRequest): Promise<BulkJobActionResponse> => {
+    const response = await api.post<BulkJobActionResponse>('/bank/queue/bulk-action', request);
+    return response.data;
+  },
+};
+
+// Paginated response helper type
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
 

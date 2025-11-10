@@ -2,10 +2,12 @@
  * Bank Authentication Hook and Context
  *
  * Provides authentication state management for bank users with predefined credentials.
+ * Includes idle timeout and 2FA support.
  */
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { bankAuthApi } from '@/api/bank';
 
 interface BankUser {
   id: string;
@@ -22,6 +24,7 @@ interface BankAuthContext {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  resetIdleTimer: () => void; // Reset idle timeout on user activity
 }
 
 const BankAuthContext = createContext<BankAuthContext | undefined>(undefined);
@@ -118,6 +121,82 @@ export function BankAuthProvider({ children }: BankAuthProviderProps) {
   const [user, setUser] = useState<BankUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  
+  // Idle timeout tracking
+  const idleTimeoutMinutes = 30; // Default, will be fetched from API
+  const lastActivityRef = useRef<number>(Date.now());
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionStatusRef = useRef<{ idle_timeout_minutes: number } | null>(null);
+
+  // Reset idle timer on user activity
+  const resetIdleTimer = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // Check idle timeout and logout if exceeded
+  const checkIdleTimeout = useCallback(() => {
+    if (!user) return;
+    
+    const timeoutMs = (sessionStatusRef.current?.idle_timeout_minutes || idleTimeoutMinutes) * 60 * 1000;
+    const idleTime = Date.now() - lastActivityRef.current;
+    
+    if (idleTime >= timeoutMs) {
+      console.warn('Session expired due to inactivity');
+      // Logout inline to avoid dependency issues
+      localStorage.removeItem('bank_token');
+      setUser(null);
+      lastActivityRef.current = Date.now();
+      if (idleTimerRef.current) {
+        clearInterval(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      navigate('/lcopilot/bank-dashboard/login');
+    }
+  }, [user, navigate]);
+
+  // Set up idle timeout checking
+  useEffect(() => {
+    if (!user) {
+      if (idleTimerRef.current) {
+        clearInterval(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Fetch session status to get actual timeout
+    bankAuthApi.getSessionStatus()
+      .then(status => {
+        sessionStatusRef.current = { idle_timeout_minutes: status.idle_timeout_minutes };
+      })
+      .catch(err => {
+        console.warn('Failed to fetch session status:', err);
+      });
+
+    // Check every minute
+    idleTimerRef.current = setInterval(() => {
+      checkIdleTimeout();
+    }, 60000);
+
+    // Reset timer on user activity (mouse move, key press, click, scroll)
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const handleActivity = () => {
+      resetIdleTimer();
+    };
+
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    return () => {
+      if (idleTimerRef.current) {
+        clearInterval(idleTimerRef.current);
+      }
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [user, checkIdleTimeout, resetIdleTimer]);
 
   // Check if user is authenticated and load user data
   useEffect(() => {
@@ -170,6 +249,11 @@ export function BankAuthProvider({ children }: BankAuthProviderProps) {
   const logout = () => {
     localStorage.removeItem('bank_token');
     setUser(null);
+    lastActivityRef.current = Date.now();
+    if (idleTimerRef.current) {
+      clearInterval(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
     navigate('/lcopilot/bank-dashboard/login');
   };
 
@@ -179,6 +263,7 @@ export function BankAuthProvider({ children }: BankAuthProviderProps) {
     isAuthenticated: !!user,
     login,
     logout,
+    resetIdleTimer,
   };
 
   return (

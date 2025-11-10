@@ -45,8 +45,8 @@ billing = _load_router_module("billing")
 bank = _load_router_module("bank")
 bank_workflow = _load_router_module("bank_workflow")
 bank_users = _load_router_module("bank_users")
-bank_policy = _load_router_module("bank_policy")
-onboarding = _load_router_module("onboarding")
+bank_queue = _load_router_module("bank_queue")
+bank_auth = _load_router_module("bank_auth")
 validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
@@ -66,6 +66,8 @@ __all__ = [
     "bank_workflow",
     "bank_users",
     "bank_policy",
+    "bank_queue",
+    "bank_auth",
     "onboarding",
     "validate",
     "rules_admin",
