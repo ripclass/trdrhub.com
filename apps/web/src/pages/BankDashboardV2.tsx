@@ -45,6 +45,7 @@ export default function BankDashboardV2() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "dashboard");
+  const [billingTab, setBillingTab] = useState<string>("overview");
   const isBankAdmin = bankUser?.role === 'bank_admin';
 
   // Redirect to login if not authenticated
@@ -105,10 +106,11 @@ export default function BankDashboardV2() {
   };
 
   const handleBillingTabChange = (tab: string) => {
+    setBillingTab(tab);
     const tabMap: Record<string, string> = {
       overview: "billing",
       usage: "billing-usage",
-      invoices: "billing-invoices",
+      invoices: "billing", // Stay in billing tab, but track subtab
       allocations: "billing-allocations",
     };
     const newTab = tabMap[tab] || "billing";
