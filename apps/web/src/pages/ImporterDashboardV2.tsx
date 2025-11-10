@@ -187,6 +187,7 @@ export default function ImporterDashboardV2() {
   const [loadingDrafts, setLoadingDrafts] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<"drafts" | "amendments">("drafts");
+  const [billingTab, setBillingTab] = useState<string>("overview");
 
   const [activeSection, setActiveSection] = useState<Section>(() =>
     parseSectionParam(searchParams.get("section"), searchParams.get("tab"))
