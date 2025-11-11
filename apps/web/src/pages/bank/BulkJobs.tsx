@@ -521,12 +521,12 @@ function CreateBulkJobDialog({
 
             <div className="space-y-2">
               <Label>Template (Optional)</Label>
-              <Select value={templateId} onValueChange={setTemplateId}>
+              <Select value={templateId || "none"} onValueChange={(value) => setTemplateId(value === "none" ? "" : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a template" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {templates.filter((t) => t.job_type === jobType).map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
