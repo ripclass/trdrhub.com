@@ -1,11 +1,26 @@
 # Bank Dashboard Launch Tests
 
-## Test 1: Org Isolation Test
+## ⚠️ IMPORTANT: Do You Need Org Tests?
+
+**If you DON'T have multiple organizations:**
+- ✅ That's OK! Org feature is **optional**
+- ✅ Use "All Organizations" (default)
+- ✅ Skip Test 1 if you're a single-branch bank
+- ✅ See `docs/BANK_LAUNCH_TESTS_SIMPLE.md` for simpler tests
+
+**If you DO have multiple organizations:**
+- Run Test 1 below to verify org isolation works
+
+---
+
+## Test 1: Org Isolation Test (OPTIONAL - Only if you have orgs)
 
 ### Prerequisites
 - Two bank organizations created in staging/production
 - Two bank users, each assigned to different orgs
 - At least 5 validation sessions per org (with different LC numbers)
+
+**Note:** If you don't have orgs yet, skip this test and use "All Organizations" instead.
 
 ### Test Steps
 
