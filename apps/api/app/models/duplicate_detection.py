@@ -25,7 +25,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.models import Base
+from app.database import Base
 
 
 class MergeType(str, Enum):
