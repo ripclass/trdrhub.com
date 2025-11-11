@@ -16,7 +16,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 # Import UsageAction directly from usage_record since it's an Enum and doesn't cause circular imports
-from .models.usage_record import UsageAction
+from .usage_record import UsageAction
 
 _LEGACY_MODULE_NAME = "app._legacy_models"
 _LEGACY_MODULE_PATH = Path(__file__).resolve().parent.parent / "models.py"
