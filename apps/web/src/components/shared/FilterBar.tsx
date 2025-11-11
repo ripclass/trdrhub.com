@@ -217,12 +217,12 @@ export function FilterBar({
         {resource === 'jobs' && (
           <div className="w-[150px]">
             <Label>Queue</Label>
-            <Select value={queue} onValueChange={(value) => updateFilters({ queue: value })}>
+            <Select value={queue || "all"} onValueChange={(value) => updateFilters({ queue: value === "all" ? "" : value })}>
               <SelectTrigger>
                 <SelectValue placeholder="All Queues" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Queues</SelectItem>
+                <SelectItem value="all">All Queues</SelectItem>
                 <SelectItem value="high_priority">High Priority</SelectItem>
                 <SelectItem value="normal">Normal</SelectItem>
                 <SelectItem value="low_priority">Low Priority</SelectItem>
