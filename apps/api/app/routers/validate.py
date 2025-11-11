@@ -64,9 +64,38 @@ async def validate_doc(
                     
                     files_list.append(file_obj)
                     continue
-                payload[key] = value
+                
+                # Safely handle form field values - ensure they're strings
+                # Handle potential encoding issues by converting to string safely
+                if isinstance(value, bytes):
+                    # If value is bytes, try to decode as UTF-8, fallback to latin-1
+                    try:
+                        payload[key] = value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # Fallback to latin-1 which can decode any byte sequence
+                        payload[key] = value.decode('latin-1')
+                elif isinstance(value, str):
+                    payload[key] = value
+                else:
+                    # Convert other types to string
+                    payload[key] = str(value)
         else:
             payload = await request.json()
+
+        # Parse JSON fields safely (document_tags, metadata)
+        if "document_tags" in payload and isinstance(payload["document_tags"], str):
+            try:
+                payload["document_tags"] = json.loads(payload["document_tags"])
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+                # If parsing fails, set to empty dict
+                payload["document_tags"] = {}
+        
+        if "metadata" in payload and isinstance(payload["metadata"], str):
+            try:
+                payload["metadata"] = json.loads(payload["metadata"])
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+                # If parsing fails, set to None
+                payload["metadata"] = None
 
         doc_type = (
             payload.get("document_type")
