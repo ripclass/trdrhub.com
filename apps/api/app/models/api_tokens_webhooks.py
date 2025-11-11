@@ -40,6 +40,7 @@ class DeliveryStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     RETRYING = "retrying"
+    PARKED = "parked"  # Moved to DLQ after max attempts
 
 
 class APIToken(Base):
@@ -110,6 +111,9 @@ class WebhookSubscription(Base):
     timeout_seconds = Column(Integer, nullable=False, default=30)
     retry_count = Column(Integer, nullable=False, default=3)
     retry_backoff_multiplier = Column(Float, nullable=False, default=2.0)
+    max_backoff_seconds = Column(Integer, nullable=False, default=3600)  # Cap at 1 hour
+    rate_limit_per_minute = Column(Integer, nullable=True)  # Provider rate limiting
+    rate_limit_per_hour = Column(Integer, nullable=True)  # Provider rate limiting
     
     # Headers
     headers = Column(JSONB, nullable=True)

@@ -414,7 +414,7 @@ async def translate_text(
         
         # Check quota
         is_bank = current_user.role in ["bank_admin", "bank_officer"]
-        allowed, error_msg, remaining = usage_tracker.check_quota(
+        allowed, error_msg, remaining_dict = usage_tracker.check_quota(
             user=current_user,
             session=None,
             feature=AIFeature.TRANSLATE,
@@ -426,6 +426,9 @@ async def translate_text(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=error_msg or "AI usage quota exceeded"
             )
+        
+        # Get remaining quota (use per_user_day if available, else per_lc)
+        remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0)) if isinstance(remaining_dict, dict) else (remaining_dict if remaining_dict else 0)
         
         # Get locale from request state (set by LocaleMiddleware)
         locale = getattr(http_request.state, "locale", "en") if http_request else "en"

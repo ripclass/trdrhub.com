@@ -118,12 +118,18 @@ async def validate_doc(
                     if isinstance(metadata, str):
                         metadata = json.loads(metadata)
                     
+                    # Get org_id from request state if available (for multi-org support)
+                    org_id = None
+                    if hasattr(request, 'state') and hasattr(request.state, 'org_id'):
+                        org_id = request.state.org_id
+                    
                     # Store bank metadata
                     extracted_data = {
                         "bank_metadata": {
                             "client_name": metadata.get("clientName"),
                             "lc_number": metadata.get("lcNumber"),
                             "date_received": metadata.get("dateReceived"),
+                            "org_id": org_id,  # Include org_id if available
                         }
                     }
                     validation_session.extracted_data = extracted_data

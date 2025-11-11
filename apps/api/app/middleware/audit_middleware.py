@@ -129,10 +129,13 @@ class AuditMiddleware(BaseHTTPMiddleware):
             resource_type, resource_id, lc_number = self.extract_resource_info(request)
 
             # Prepare request data (sanitized)
+            # Filter sensitive headers before logging
+            sanitized_headers = self._sanitize_headers(dict(request.headers))
+            
             request_data = {
                 "path": str(request.url.path),
                 "query_params": dict(request.query_params),
-                "headers": dict(request.headers)
+                "headers": sanitized_headers
             }
 
             # Get session ID from cookies or headers
@@ -263,6 +266,33 @@ class AuditMiddleware(BaseHTTPMiddleware):
             pass
 
         return resource_type, resource_id, lc_number
+
+    def _sanitize_headers(self, headers: dict) -> dict:
+        """Remove sensitive headers from logging."""
+        sensitive_keys = [
+            "authorization",
+            "x-api-key",
+            "x-auth-token",
+            "cookie",
+            "x-csrf-token",
+            "x-forwarded-for",  # Can contain sensitive IP info
+        ]
+        
+        sanitized = {}
+        for key, value in headers.items():
+            key_lower = key.lower()
+            if any(sensitive in key_lower for sensitive in sensitive_keys):
+                # Replace with masked value
+                if key_lower == "authorization":
+                    sanitized[key] = "Bearer ***REDACTED***"
+                elif key_lower == "cookie":
+                    sanitized[key] = "***REDACTED***"
+                else:
+                    sanitized[key] = "***REDACTED***"
+            else:
+                sanitized[key] = value
+        
+        return sanitized
 
 
 class AuditContextMiddleware(BaseHTTPMiddleware):

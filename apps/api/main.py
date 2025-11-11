@@ -26,6 +26,7 @@ from app.middleware.tenant_resolver import TenantResolverMiddleware
 from app.middleware.org_scope import OrgScopeMiddleware
 from app.middleware.locale import LocaleMiddleware
 from app.middleware.audit_middleware import AuditMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 # Import performance monitoring (optional for basic operation)
 try:
@@ -250,6 +251,7 @@ app.add_middleware(RequestIDMiddleware)
 app.add_middleware(TenantResolverMiddleware)
 app.add_middleware(OrgScopeMiddleware)  # Resolve org_id for multi-org switching
 app.add_middleware(LocaleMiddleware)  # Resolve locale for i18n
+app.add_middleware(SecurityHeadersMiddleware)  # Add security headers to all responses
 
 # Baseline abuse protection
 _rate_limit = os.getenv("API_RATE_LIMIT")

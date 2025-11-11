@@ -53,6 +53,9 @@ async def create_webhook(
         timeout_seconds=webhook_data.timeout_seconds,
         retry_count=webhook_data.retry_count,
         retry_backoff_multiplier=webhook_data.retry_backoff_multiplier,
+        max_backoff_seconds=getattr(webhook_data, 'max_backoff_seconds', 3600),  # Default 1 hour cap
+        rate_limit_per_minute=getattr(webhook_data, 'rate_limit_per_minute', None),
+        rate_limit_per_hour=getattr(webhook_data, 'rate_limit_per_hour', None),
         headers=webhook_data.headers,
         is_active=True,
     )
@@ -249,6 +252,37 @@ async def list_deliveries(
     return WebhookDeliveryListResponse(
         deliveries=[WebhookDeliveryRead.model_validate(d) for d in deliveries],
         total=total,
+    )
+
+
+@router.post("/{subscription_id}/rotate-secret", response_model=WebhookSubscriptionCreateResponse)
+async def rotate_webhook_secret(
+    subscription_id: UUID,
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+):
+    """Rotate webhook secret (generates new secret, returns it once)"""
+    subscription = db.query(WebhookSubscription).filter(
+        WebhookSubscription.id == subscription_id,
+        WebhookSubscription.company_id == current_user.company_id,
+    ).first()
+    
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook subscription not found",
+        )
+    
+    webhook_service = WebhookService(db)
+    new_secret = webhook_service.generate_secret()
+    subscription.secret = new_secret
+    
+    db.commit()
+    db.refresh(subscription)
+    
+    return WebhookSubscriptionCreateResponse(
+        subscription=WebhookSubscriptionRead.model_validate(subscription),
+        secret=new_secret,  # Return new secret once
     )
 
 

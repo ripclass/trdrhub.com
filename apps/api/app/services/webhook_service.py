@@ -177,18 +177,33 @@ class WebhookService:
         # Schedule retry if failed and attempts remaining
         if delivery.status == DeliveryStatus.FAILED.value and attempt_number < delivery.max_attempts:
             self._schedule_retry(delivery, subscription)
+        elif delivery.status == DeliveryStatus.FAILED.value and attempt_number >= delivery.max_attempts:
+            # Max attempts reached - move to PARKED (DLQ)
+            delivery.status = DeliveryStatus.PARKED.value
+            delivery.retry_reason = f"Max attempts ({delivery.max_attempts}) reached. Moved to DLQ."
+            self.db.commit()
         
         return delivery
     
     def _schedule_retry(self, delivery: WebhookDelivery, subscription: WebhookSubscription) -> None:
-        """Schedule a retry for a failed delivery"""
+        """Schedule a retry for a failed delivery with exponential backoff and cap"""
         # Calculate backoff: multiplier ^ (attempt_number - 1) seconds
         backoff_seconds = subscription.retry_backoff_multiplier ** (delivery.attempt_number - 1)
+        
+        # Cap backoff at max_backoff_seconds
+        max_backoff = subscription.max_backoff_seconds if hasattr(subscription, 'max_backoff_seconds') else 3600
+        backoff_seconds = min(backoff_seconds, max_backoff)
+        
         next_retry_at = datetime.utcnow() + timedelta(seconds=int(backoff_seconds))
         
-        delivery.status = DeliveryStatus.RETRYING.value
-        delivery.next_retry_at = next_retry_at
-        delivery.retry_reason = f"Scheduled retry after {int(backoff_seconds)}s backoff"
+        # Check if max attempts reached - move to PARKED (DLQ)
+        if delivery.attempt_number >= delivery.max_attempts:
+            delivery.status = DeliveryStatus.PARKED.value
+            delivery.retry_reason = f"Max attempts ({delivery.max_attempts}) reached. Moved to DLQ."
+        else:
+            delivery.status = DeliveryStatus.RETRYING.value
+            delivery.next_retry_at = next_retry_at
+            delivery.retry_reason = f"Scheduled retry after {int(backoff_seconds)}s backoff (capped at {max_backoff}s)"
         
         self.db.commit()
     

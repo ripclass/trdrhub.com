@@ -2055,12 +2055,18 @@ async def submit_bulk_upload(
                 session = session_service.create_session(current_user)
                 
                 # Prepare metadata
+                # Get org_id from request state if available (for multi-org support)
+                org_id = None
+                if request and hasattr(request.state, 'org_id'):
+                    org_id = request.state.org_id
+                
                 bank_metadata = {
                     'client_name': client_name,
                     'lc_number': lc_number or '',
                     'date_received': date_received or '',
                     'upload_method': 'bulk_zip',
                     'bulk_session_id': bulk_session_id,
+                    'org_id': org_id,  # Include org_id if available
                 }
                 
                 # Store metadata in session

@@ -8,9 +8,11 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import cast
 from pydantic import BaseModel
 import logging
 
@@ -60,7 +62,8 @@ async def list_validation_sessions(
     offset: int = Query(0, ge=0),
     status: Optional[str] = Query(None, description="Filter by status: completed, failed, processing"),
     current_user: User = Depends(require_bank_or_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
     List validation sessions for evidence pack generation.
@@ -78,6 +81,18 @@ async def list_validation_sessions(
     ).filter(
         BankTenant.bank_id == bank_company_id  # Sessions from bank's tenant companies
     )
+    
+    # Org scope filter (if org_id is set in request state)
+    org_id = getattr(request.state, "org_id", None) if request else None
+    if org_id:
+        # Filter by org_id in metadata (phase 1: metadata-based filtering)
+        org_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['org_id'].astext == org_id
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            org_condition
+        )
     
     # Filter by status
     if status:

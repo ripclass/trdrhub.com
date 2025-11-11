@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import cast
 
 from ..database import get_db
 from ..core.security import get_current_user, require_bank_or_admin, can_act_as_workflow_stage
@@ -120,7 +122,8 @@ async def list_approvals(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: User = Depends(require_bank_or_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """List Bank Approvals for the current user's company."""
     # Join with ValidationSession to filter by company_id
@@ -133,6 +136,18 @@ async def list_approvals(
             ValidationSession.company_id == current_user.company_id
         )
     )
+    
+    # Org scope filter (if org_id is set in request state)
+    org_id = getattr(request.state, "org_id", None) if request else None
+    if org_id:
+        # Filter by org_id in metadata (phase 1: metadata-based filtering)
+        org_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['org_id'].astext == org_id
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            org_condition
+        )
     
     if status_filter:
         query = query.filter(BankApproval.status == status_filter.value)
@@ -396,7 +411,8 @@ async def list_discrepancy_workflows(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: User = Depends(require_bank_or_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """List Discrepancy Workflows for the current user's company."""
     # Join with ValidationSession to filter by company_id
@@ -409,6 +425,18 @@ async def list_discrepancy_workflows(
             ValidationSession.company_id == current_user.company_id
         )
     )
+    
+    # Org scope filter (if org_id is set in request state)
+    org_id = getattr(request.state, "org_id", None) if request else None
+    if org_id:
+        # Filter by org_id in metadata (phase 1: metadata-based filtering)
+        org_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['org_id'].astext == org_id
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            org_condition
+        )
     
     if status_filter:
         query = query.filter(DiscrepancyWorkflow.status == status_filter.value)
