@@ -1456,12 +1456,124 @@ export const bankQueueApi = {
     return response.data;
   },
 };
-interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
+
+/**
+ * Bank AI Assistance API Client
+ */
+export interface AIUsageQuota {
+  feature: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  reset_at?: string;
 }
 
+export interface DiscrepancyExplainRequest {
+  discrepancy: string;
+  lc_number?: string;
+  validation_session_id?: string;
+  language?: string;
+}
 
+export interface LetterGenerateRequest {
+  letter_type: 'approval' | 'rejection';
+  client_name: string;
+  lc_number: string;
+  context?: string;
+  discrepancy_list?: Array<{ rule: string; description: string; severity: string }>;
+  language?: string;
+}
+
+export interface SummarizeRequest {
+  document_text: string;
+  lc_number?: string;
+  language?: string;
+}
+
+export interface TranslateRequest {
+  text: string;
+  target_language: string;
+  source_language?: string;
+}
+
+export interface AIResponse {
+  content: string;
+  rule_basis?: Array<{ rule_id: string; clause: string; description: string }>;
+  confidence_score?: number;
+  usage_remaining?: number;
+  event_id?: string;
+}
+
+export const bankAiApi = {
+  /**
+   * Get AI usage quota for a feature
+   */
+  getQuota: async (feature: string): Promise<AIUsageQuota> => {
+    try {
+      const response = await api.get<AIUsageQuota>('/bank/ai/quota', {
+        params: { feature },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.warn('AI Quota API unavailable, using mock data:', error?.message);
+      return {
+        feature,
+        used: 0,
+        limit: 1000,
+        remaining: 1000,
+      };
+    }
+  },
+
+  /**
+   * Explain a discrepancy
+   */
+  explainDiscrepancy: async (request: DiscrepancyExplainRequest): Promise<AIResponse> => {
+    try {
+      const response = await api.post<AIResponse>('/bank/ai/discrepancy-explain', request);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Discrepancy Explain API unavailable, using mock:', error?.message);
+      throw error;
+    }
+  },
+
+  /**
+   * Generate approval/rejection letter
+   */
+  generateLetter: async (request: LetterGenerateRequest): Promise<AIResponse> => {
+    try {
+      const response = await api.post<AIResponse>('/bank/ai/generate-letter', request);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Letter Generation API unavailable, using mock:', error?.message);
+      throw error;
+    }
+  },
+
+  /**
+   * Summarize document
+   */
+  summarizeDocument: async (request: SummarizeRequest): Promise<AIResponse> => {
+    try {
+      const response = await api.post<AIResponse>('/bank/ai/summarize', request);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Document Summarization API unavailable, using mock:', error?.message);
+      throw error;
+    }
+  },
+
+  /**
+   * Translate text
+   */
+  translateText: async (request: TranslateRequest): Promise<AIResponse> => {
+    try {
+      const response = await api.post<AIResponse>('/bank/ai/translate', request);
+      return response.data;
+    } catch (error: any) {
+      console.warn('Translation API unavailable, using mock:', error?.message);
+      throw error;
+    }
+  },
+};

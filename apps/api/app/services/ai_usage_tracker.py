@@ -246,6 +246,56 @@ class AIUsageTracker:
         
         return True, None, remaining
     
+    def get_quota_info(self, user: User, feature: AIFeature, is_bank: bool) -> Dict[str, Any]:
+        """Get quota information for a user and feature."""
+        is_bank = is_bank or user.role in ["bank_admin", "bank_officer"]
+        
+        # Get current usage
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        user_day_count = self.db.query(func.count(AIUsageRecord.id)).filter(
+            and_(
+                AIUsageRecord.user_id == user.id,
+                AIUsageRecord.created_at >= today_start,
+                AIUsageRecord.feature == feature.value
+            )
+        ).scalar() or 0
+        
+        # Get limits
+        if is_bank:
+            per_user_limit = 100
+            tenant_limit = self.bank_tenant_monthly.get(feature, 1000)
+            tenant_used = self.db.query(func.count(AIUsageRecord.id)).filter(
+                and_(
+                    AIUsageRecord.tenant_id == user.company_id,
+                    AIUsageRecord.created_at >= month_start,
+                    AIUsageRecord.feature == feature.value
+                )
+            ).scalar() or 0
+            tenant_remaining = max(0, tenant_limit - tenant_used)
+        else:
+            per_user_limit = 50
+            tenant_limit = 500
+            tenant_used = 0
+            tenant_remaining = tenant_limit
+        
+        # Calculate reset time (end of month for tenant, end of day for user)
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
+        reset_at = next_month.isoformat()
+        
+        return {
+            "used": user_day_count,
+            "limit": per_user_limit,
+            "remaining": max(0, per_user_limit - user_day_count),
+            "tenant_used": tenant_used,
+            "tenant_limit": tenant_limit,
+            "tenant_remaining": tenant_remaining,
+            "reset_at": reset_at
+        }
+    
     def _get_tenant_monthly_remaining(self, tenant_id: uuid.UUID, feature: AIFeature) -> int:
         """Get remaining monthly quota for tenant."""
         month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)

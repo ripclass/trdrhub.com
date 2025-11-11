@@ -1,10 +1,12 @@
 /**
  * AI Assistance Component for Bank Dashboard
  * Provides AI-powered features: discrepancy explanations, approval/rejection letters, document summarization, translation
+ * Now with state-driven UX, quota enforcement, compliance guardrails, and artifact saving
  */
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
+import { bankAiApi, type AIUsageQuota, type AIResponse } from "@/api/bank";
 import {
   Card,
   CardContent,
@@ -34,8 +36,11 @@ import {
   Loader2,
   Copy,
   CheckCircle2,
+  Save,
+  Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface AIAssistanceProps {
   embedded?: boolean;
@@ -45,12 +50,14 @@ interface AIAssistanceProps {
 
 export function AIAssistance({ embedded = false, lcData, discrepancyData }: AIAssistanceProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useBankAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<"discrepancy" | "letter" | "summarize" | "translate">("discrepancy");
   
   // Discrepancy explanation state
   const [selectedDiscrepancy, setSelectedDiscrepancy] = React.useState("");
   const [discrepancyExplanation, setDiscrepancyExplanation] = React.useState("");
+  const [discrepancyRuleBasis, setDiscrepancyRuleBasis] = React.useState<Array<{ rule_id: string; clause: string; description: string }>>([]);
   const [generatingExplanation, setGeneratingExplanation] = React.useState(false);
   
   // Letter generation state
@@ -59,6 +66,7 @@ export function AIAssistance({ embedded = false, lcData, discrepancyData }: AIAs
   const [lcNumber, setLcNumber] = React.useState("");
   const [letterContext, setLetterContext] = React.useState("");
   const [generatedLetter, setGeneratedLetter] = React.useState("");
+  const [letterRuleBasis, setLetterRuleBasis] = React.useState<Array<{ rule_id: string; clause: string; description: string }>>([]);
   const [generatingLetter, setGeneratingLetter] = React.useState(false);
   
   // Summarization state
@@ -72,6 +80,146 @@ export function AIAssistance({ embedded = false, lcData, discrepancyData }: AIAs
   const [translatedText, setTranslatedText] = React.useState("");
   const [translating, setTranslating] = React.useState(false);
 
+  // Quota state
+  const [quotaData, setQuotaData] = React.useState<Record<string, AIUsageQuota>>({});
+
+  // Auto-select letter type based on discrepancies
+  React.useEffect(() => {
+    if (discrepancyData && discrepancyData.length > 0) {
+      setLetterType("rejection");
+      // Prefill discrepancy list in letter context
+      if (!letterContext) {
+        const discList = discrepancyData.map(d => `- ${d.description} (${d.severity})`).join('\n');
+        setLetterContext(`The following discrepancies were identified:\n\n${discList}`);
+      }
+    } else {
+      setLetterType("approval");
+    }
+  }, [discrepancyData]);
+
+  // Prefill fields from lcData
+  React.useEffect(() => {
+    if (lcData) {
+      if (lcData.lc_number && !lcNumber) {
+        setLcNumber(lcData.lc_number);
+      }
+      if (lcData.client_name && !clientName) {
+        setClientName(lcData.client_name);
+      }
+      if (lcData.beneficiary && !clientName) {
+        setClientName(lcData.beneficiary);
+      }
+    }
+  }, [lcData, lcNumber, clientName]);
+
+  // Prefill selected discrepancy
+  React.useEffect(() => {
+    if (discrepancyData && discrepancyData.length > 0 && !selectedDiscrepancy) {
+      setSelectedDiscrepancy(discrepancyData[0].description);
+    }
+  }, [discrepancyData, selectedDiscrepancy]);
+
+  // Fetch quota for active tab
+  const quotaFeatureMap: Record<string, string> = {
+    discrepancy: "discrepancy",
+    letter: "letter",
+    summarize: "summarize",
+    translate: "translate",
+  };
+
+  const { data: quota } = useQuery({
+    queryKey: ['bank-ai-quota', quotaFeatureMap[activeTab]],
+    queryFn: () => bankAiApi.getQuota(quotaFeatureMap[activeTab]),
+    enabled: !!quotaFeatureMap[activeTab],
+    refetchInterval: 60000, // Refetch every minute
+  });
+
+  const explainMutation = useMutation({
+    mutationFn: bankAiApi.explainDiscrepancy,
+    onSuccess: (data) => {
+      setDiscrepancyExplanation(data.content);
+      setDiscrepancyRuleBasis(data.rule_basis || []);
+      if (data.usage_remaining !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['bank-ai-quota'] });
+      }
+      toast({
+        title: "Explanation Generated",
+        description: "AI-generated discrepancy explanation is ready.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Generation Failed",
+        description: error?.response?.data?.detail || "Failed to generate explanation. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const letterMutation = useMutation({
+    mutationFn: bankAiApi.generateLetter,
+    onSuccess: (data) => {
+      setGeneratedLetter(data.content);
+      setLetterRuleBasis(data.rule_basis || []);
+      if (data.usage_remaining !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['bank-ai-quota'] });
+      }
+      toast({
+        title: "Letter Generated",
+        description: `${letterType === "approval" ? "Approval" : "Rejection"} letter is ready.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Generation Failed",
+        description: error?.response?.data?.detail || "Failed to generate letter. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const summarizeMutation = useMutation({
+    mutationFn: bankAiApi.summarizeDocument,
+    onSuccess: (data) => {
+      setSummary(data.content);
+      if (data.usage_remaining !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['bank-ai-quota'] });
+      }
+      toast({
+        title: "Summary Generated",
+        description: "Document summary is ready.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Summarization Failed",
+        description: error?.response?.data?.detail || "Failed to generate summary. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const translateMutation = useMutation({
+    mutationFn: bankAiApi.translateText,
+    onSuccess: (data) => {
+      setTranslatedText(data.content);
+      if (data.usage_remaining !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['bank-ai-quota'] });
+      }
+      toast({
+        title: "Translation Complete",
+        description: `Text translated to ${targetLanguage}.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Translation Failed",
+        description: error?.response?.data?.detail || "Failed to translate text. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleGenerateDiscrepancyExplanation = async () => {
     if (!selectedDiscrepancy.trim()) {
       toast({
@@ -84,31 +232,11 @@ export function AIAssistance({ embedded = false, lcData, discrepancyData }: AIAs
 
     setGeneratingExplanation(true);
     try {
-      // Mock API call - replace with real endpoint
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      const mockExplanation = `**Discrepancy Explanation:**
-
-The discrepancy "${selectedDiscrepancy}" indicates a non-compliance with UCP600 Article 14(d), which requires that data in a document, when read in context with the credit, the document itself, and international standard banking practice, need not be identical to, but must not conflict with, data in that document, any other stipulated document, or the credit.
-
-**Impact:**
-- This may result in a rejection of documents if not corrected
-- The beneficiary should be notified within 5 banking days
-- Documents may need to be amended or re-presented
-
-**Recommendation:**
-Request clarification from the beneficiary or consider accepting the discrepancy if it's minor and doesn't affect the commercial transaction.`;
-
-      setDiscrepancyExplanation(mockExplanation);
-      toast({
-        title: "Explanation Generated",
-        description: "AI-generated discrepancy explanation is ready.",
-      });
-    } catch (error) {
-      toast({
-        title: "Generation Failed",
-        description: "Failed to generate explanation. Please try again.",
-        variant: "destructive",
+      await explainMutation.mutateAsync({
+        discrepancy: selectedDiscrepancy,
+        lc_number: lcNumber || lcData?.lc_number,
+        validation_session_id: lcData?.validation_session_id,
+        language: "en",
       });
     } finally {
       setGeneratingExplanation(false);
@@ -127,51 +255,13 @@ Request clarification from the beneficiary or consider accepting the discrepancy
 
     setGeneratingLetter(true);
     try {
-      // Mock API call - replace with real endpoint
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      const mockLetter = letterType === "approval"
-        ? `Dear ${clientName},
-
-RE: Letter of Credit ${lcNumber}
-
-We are pleased to inform you that the documents presented under the above-mentioned Letter of Credit have been examined and found to be in compliance with the terms and conditions of the credit.
-
-${letterContext ? `\n${letterContext}\n` : ''}
-
-Accordingly, we have honored the documents and credited the proceeds to your account as per the credit terms.
-
-Should you have any queries, please do not hesitate to contact us.
-
-Yours faithfully,
-${user?.name || 'Bank Officer'}
-LCopilot Validation Team`
-        : `Dear ${clientName},
-
-RE: Letter of Credit ${lcNumber}
-
-We regret to inform you that the documents presented under the above-mentioned Letter of Credit have been examined and found to contain the following discrepancies:
-
-${letterContext || 'Please refer to the discrepancy report for details.'}
-
-In accordance with UCP600 Article 16, we are holding the documents at your disposal pending your instructions.
-
-We await your response within the time limit specified in the credit.
-
-Yours faithfully,
-${user?.name || 'Bank Officer'}
-LCopilot Validation Team`;
-
-      setGeneratedLetter(mockLetter);
-      toast({
-        title: "Letter Generated",
-        description: `${letterType === "approval" ? "Approval" : "Rejection"} letter is ready.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Generation Failed",
-        description: "Failed to generate letter. Please try again.",
-        variant: "destructive",
+      await letterMutation.mutateAsync({
+        letter_type: letterType,
+        client_name: clientName,
+        lc_number: lcNumber,
+        context: letterContext,
+        discrepancy_list: discrepancyData,
+        language: "en",
       });
     } finally {
       setGeneratingLetter(false);
@@ -190,40 +280,10 @@ LCopilot Validation Team`;
 
     setSummarizing(true);
     try {
-      // Mock API call - replace with real endpoint
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      const mockSummary = `**Document Summary:**
-
-**Key Points:**
-- Type: Letter of Credit
-- Amount: [Extracted from document]
-- Beneficiary: [Extracted from document]
-- Expiry Date: [Extracted from document]
-- Key Terms: [Extracted from document]
-
-**Critical Conditions:**
-- Documents required: Commercial Invoice, Bill of Lading, Certificate of Origin
-- Latest shipment date: [Extracted]
-- Presentation period: [Extracted]
-
-**Risk Assessment:**
-- Compliance level: High
-- Potential discrepancies: [Listed if any]
-
-**Recommendation:**
-[AI-generated recommendation based on document analysis]`;
-
-      setSummary(mockSummary);
-      toast({
-        title: "Summary Generated",
-        description: "Document summary is ready.",
-      });
-    } catch (error) {
-      toast({
-        title: "Summarization Failed",
-        description: "Failed to generate summary. Please try again.",
-        variant: "destructive",
+      await summarizeMutation.mutateAsync({
+        document_text: documentText,
+        lc_number: lcNumber || lcData?.lc_number,
+        language: "en",
       });
     } finally {
       setSummarizing(false);
@@ -242,29 +302,10 @@ LCopilot Validation Team`;
 
     setTranslating(true);
     try {
-      // Mock API call - replace with real endpoint
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
-      const languageNames: Record<string, string> = {
-        bn: "Bengali",
-        ar: "Arabic",
-        zh: "Chinese",
-        es: "Spanish",
-        fr: "French",
-      };
-      
-      const mockTranslation = `[Translated to ${languageNames[targetLanguage] || targetLanguage}]: ${textToTranslate} (mock translation)`;
-      
-      setTranslatedText(mockTranslation);
-      toast({
-        title: "Translation Complete",
-        description: `Text translated to ${languageNames[targetLanguage] || targetLanguage}.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Translation Failed",
-        description: "Failed to translate text. Please try again.",
-        variant: "destructive",
+      await translateMutation.mutateAsync({
+        text: textToTranslate,
+        target_language: targetLanguage,
+        source_language: "en",
       });
     } finally {
       setTranslating(false);
@@ -279,6 +320,17 @@ LCopilot Validation Team`;
     });
   };
 
+  const handleSaveToEvidencePack = async (content: string, contentType: string) => {
+    // TODO: Wire to evidence pack API
+    toast({
+      title: "Save to Evidence Pack",
+      description: `Feature coming soon. Content will be saved to evidence pack.`,
+    });
+  };
+
+  const isQuotaExceeded = quota && quota.remaining <= 0;
+  const quotaWarning = quota && quota.remaining < 10;
+
   return (
     <div className="flex flex-col gap-6">
       {!embedded && (
@@ -288,6 +340,27 @@ LCopilot Validation Team`;
             Leverage AI to generate discrepancy explanations, approval/rejection letters, document summaries, and translations.
           </p>
         </div>
+      )}
+
+      {/* Quota Display */}
+      {quota && (
+        <Card className="bg-muted/50">
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  AI Usage: {quota.used} / {quota.limit} ({quota.remaining} remaining)
+                </span>
+              </div>
+              {quotaWarning && (
+                <Badge variant={isQuotaExceeded ? "destructive" : "outline"}>
+                  {isQuotaExceeded ? "Quota Exceeded" : "Low Quota"}
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="w-full">
@@ -347,7 +420,7 @@ LCopilot Validation Team`;
               
               <Button
                 onClick={handleGenerateDiscrepancyExplanation}
-                disabled={!selectedDiscrepancy.trim() || generatingExplanation}
+                disabled={!selectedDiscrepancy.trim() || generatingExplanation || isQuotaExceeded}
                 className="w-full"
               >
                 {generatingExplanation ? (
@@ -367,18 +440,40 @@ LCopilot Validation Team`;
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Generated Explanation</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(discrepancyExplanation, "Explanation")}
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(discrepancyExplanation, "Explanation")}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSaveToEvidencePack(discrepancyExplanation, "discrepancy_explanation")}
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
                   <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm">
                     {discrepancyExplanation}
                   </div>
+                  {discrepancyRuleBasis.length > 0 && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-md">
+                      <Label className="text-xs font-semibold mb-2 block">Rule Basis (Internal IDs):</Label>
+                      <ul className="text-xs space-y-1">
+                        {discrepancyRuleBasis.map((rule, idx) => (
+                          <li key={idx}>
+                            <span className="font-mono">{rule.rule_id}</span>: {rule.clause} - {rule.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -451,7 +546,7 @@ LCopilot Validation Team`;
               
               <Button
                 onClick={handleGenerateLetter}
-                disabled={!clientName.trim() || !lcNumber.trim() || generatingLetter}
+                disabled={!clientName.trim() || !lcNumber.trim() || generatingLetter || isQuotaExceeded}
                 className="w-full"
               >
                 {generatingLetter ? (
@@ -471,18 +566,40 @@ LCopilot Validation Team`;
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Generated Letter</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(generatedLetter, "Letter")}
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(generatedLetter, "Letter")}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSaveToEvidencePack(generatedLetter, "letter")}
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
                   <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm font-mono">
                     {generatedLetter}
                   </div>
+                  {letterRuleBasis.length > 0 && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-md">
+                      <Label className="text-xs font-semibold mb-2 block">Rule Basis (Internal IDs):</Label>
+                      <ul className="text-xs space-y-1">
+                        {letterRuleBasis.map((rule, idx) => (
+                          <li key={idx}>
+                            <span className="font-mono">{rule.rule_id}</span>: {rule.clause} - {rule.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -511,7 +628,7 @@ LCopilot Validation Team`;
               
               <Button
                 onClick={handleSummarize}
-                disabled={!documentText.trim() || summarizing}
+                disabled={!documentText.trim() || summarizing || isQuotaExceeded}
                 className="w-full"
               >
                 {summarizing ? (
@@ -531,14 +648,24 @@ LCopilot Validation Team`;
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Summary</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(summary, "Summary")}
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(summary, "Summary")}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSaveToEvidencePack(summary, "document_summary")}
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
                   <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm">
                     {summary}
@@ -589,7 +716,7 @@ LCopilot Validation Team`;
               
               <Button
                 onClick={handleTranslate}
-                disabled={!textToTranslate.trim() || translating}
+                disabled={!textToTranslate.trim() || translating || isQuotaExceeded}
                 className="w-full"
               >
                 {translating ? (
@@ -609,14 +736,24 @@ LCopilot Validation Team`;
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Translated Text</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(translatedText, "Translation")}
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(translatedText, "Translation")}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSaveToEvidencePack(translatedText, "translation")}
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
                   <div className="p-4 bg-muted rounded-md whitespace-pre-wrap text-sm">
                     {translatedText}
@@ -630,4 +767,3 @@ LCopilot Validation Team`;
     </div>
   );
 }
-
