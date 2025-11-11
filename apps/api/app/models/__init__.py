@@ -15,9 +15,6 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-# Import UsageAction directly from usage_record since it's an Enum and doesn't cause circular imports
-from .usage_record import UsageAction
-
 _LEGACY_MODULE_NAME = "app._legacy_models"
 _LEGACY_MODULE_PATH = Path(__file__).resolve().parent.parent / "models.py"
 
@@ -30,6 +27,9 @@ else:
     _legacy = module_from_spec(_spec)
     sys.modules[_LEGACY_MODULE_NAME] = _legacy
     _spec.loader.exec_module(_legacy)
+
+# Get UsageAction from legacy module (it's imported there from .models.usage_record)
+UsageAction = _legacy.UsageAction  # type: ignore[attr-defined]
 
 UserRole = _legacy.UserRole  # type: ignore[attr-defined]
 SessionStatus = _legacy.SessionStatus  # type: ignore[attr-defined]

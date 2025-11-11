@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     GOOGLE_DOCUMENTAI_LOCATION: str = "us"
     GOOGLE_DOCUMENTAI_PROCESSOR_ID: Optional[str] = None
     
+    # DeepSeek OCR Configuration
+    USE_DEEPSEEK_OCR: bool = False  # Enable DeepSeek OCR as primary provider
+    DEEPSEEK_OCR_MODEL_NAME: str = "deepseek-ai/deepseek-ocr"  # Hugging Face model identifier
+    DEEPSEEK_OCR_DEVICE: Optional[str] = None  # 'cuda', 'cpu', or None for auto-detect
+    
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

@@ -8,6 +8,7 @@ from typing import List, Optional
 from .base import OCRAdapter
 from .google_documentai import GoogleDocumentAIAdapter
 from .aws_textract import AWSTextractAdapter
+from .deepseek_ocr import DeepSeekOCRAdapter
 from ..config import settings
 
 
@@ -34,7 +35,23 @@ class OCRFactory:
             return
         
         # Initialize real adapters
-        # Try to initialize Google Document AI (primary)
+        # Priority order: DeepSeek OCR > Google Document AI > AWS Textract
+        
+        # Try to initialize DeepSeek OCR (if enabled)
+        if settings.USE_DEEPSEEK_OCR:
+            try:
+                deepseek_adapter = DeepSeekOCRAdapter(
+                    model_name=settings.DEEPSEEK_OCR_MODEL_NAME,
+                    device=settings.DEEPSEEK_OCR_DEVICE
+                )
+                self._adapters.append(deepseek_adapter)
+                if not self._primary_adapter:
+                    self._primary_adapter = deepseek_adapter
+                    print("DeepSeek OCR configured as primary OCR provider")
+            except Exception as e:
+                print(f"Failed to initialize DeepSeek OCR: {e}")
+        
+        # Try to initialize Google Document AI
         try:
             if (settings.GOOGLE_CLOUD_PROJECT and 
                 settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID):
@@ -43,6 +60,9 @@ class OCRFactory:
                 if not self._primary_adapter:
                     self._primary_adapter = google_adapter
                     print("Google Document AI configured as primary OCR provider")
+                elif not self._fallback_adapter:
+                    self._fallback_adapter = google_adapter
+                    print("Google Document AI configured as fallback OCR provider")
         except Exception as e:
             print(f"Failed to initialize Google Document AI: {e}")
         
@@ -54,7 +74,7 @@ class OCRFactory:
             if not self._primary_adapter:
                 self._primary_adapter = aws_adapter
                 print("AWS Textract configured as primary OCR provider")
-            else:
+            elif not self._fallback_adapter:
                 self._fallback_adapter = aws_adapter
                 print("AWS Textract configured as fallback OCR provider")
         except Exception as e:
