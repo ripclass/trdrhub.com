@@ -491,7 +491,7 @@ export function ResultsTable({}: ResultsTableProps) {
     />
     <MergeModal
       sourceSessionId={duplicateCandidatesSessionId || ''}
-      candidate={mergeCandidate!}
+      candidate={mergeCandidate || null}
       open={!!mergeCandidate}
       onOpenChange={(open) => {
         if (!open) {
