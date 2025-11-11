@@ -49,6 +49,9 @@ from .models.company_profile import (
     AddressType, ComplianceStatus
 )
 
+# Import saved view models
+from .models.saved_view import SavedView
+
 
 class UserRole(str, Enum):
     """User role types for access control."""

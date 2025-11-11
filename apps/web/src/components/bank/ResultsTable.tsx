@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -15,69 +14,51 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Download,
   FileText,
   Eye,
-  Download as DownloadIcon,
-  ChevronDown,
-  ChevronUp,
   Copy,
   Receipt,
 } from "lucide-react";
 import { format } from "date-fns";
 import { bankApi, BankResult, BankResultsFilters } from "@/api/bank";
 import { sanitizeDisplayText } from "@/lib/sanitize";
-import { generateCSV } from "@/lib/csv";
 import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AdvancedFilters } from "./AdvancedFilters";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { SavedViewsManager } from "@/components/shared/SavedViewsManager";
-import { parseDeepLinkFilters } from "@/lib/savedViews";
+import { FilterBar } from "@/components/shared/FilterBar";
+import { ExportJobHandler } from "@/components/shared/ExportJobHandler";
 
 interface ResultsTableProps {}
 
 export function ResultsTable({}: ResultsTableProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const clientFromUrl = searchParams.get("client") || "";
+  const { toast } = useToast();
   
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [clientFilter, setClientFilter] = useState(clientFromUrl);
-  const [dateRange, setDateRange] = useState("90"); // days
-  const [advancedFilters, setAdvancedFilters] = useState<BankResultsFilters>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
   const [selectedLcNumber, setSelectedLcNumber] = useState<string | undefined>();
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
 
-  // Handle deep link views
-  useEffect(() => {
-    const deepLink = parseDeepLinkFilters(searchParams);
-    if (deepLink.viewId && deepLink.filters) {
-      // Apply filters from deep link
-      if (deepLink.filters.status) setStatusFilter(deepLink.filters.status);
-      if (deepLink.filters.client_name) setClientFilter(deepLink.filters.client_name);
-      if (deepLink.filters.dateRange) setDateRange(deepLink.filters.dateRange);
-      if (deepLink.filters.advancedFilters) setAdvancedFilters(deepLink.filters.advancedFilters);
+  // Extract filters from URL
+  const q = searchParams.get('q') || '';
+  const assignee = searchParams.get('assignee') || '';
+  const queue = searchParams.get('queue') || '';
+  const status = searchParams.get('status') || 'all';
+  const clientName = searchParams.get('client_name') || '';
+  const dateRange = searchParams.get('date_range') || '90';
+  const sortBy = searchParams.get('sort_by') || 'completed_at';
+  const sortOrder = searchParams.get('sort_order') || 'desc';
+  const advancedFiltersStr = searchParams.get('advanced_filters');
+  const advancedFilters: BankResultsFilters = useMemo(() => {
+    try {
+      return advancedFiltersStr ? JSON.parse(advancedFiltersStr) : {};
+    } catch {
+      return {};
     }
-  }, [searchParams]);
-
-  // Update client filter when URL changes
-  useEffect(() => {
-    const clientFromUrl = searchParams.get("client") || "";
-    if (clientFromUrl && clientFromUrl !== clientFilter) {
-      setClientFilter(clientFromUrl);
-    }
-  }, [searchParams, clientFilter]);
+  }, [advancedFiltersStr]);
 
   // Calculate date range for API
   const getDateRange = () => {
@@ -93,8 +74,13 @@ export function ResultsTable({}: ResultsTableProps) {
   // Build API filters
   const apiFilters: BankResultsFilters = {
     ...getDateRange(),
-    client_name: clientFilter || undefined,
-    status: statusFilter !== "all" ? statusFilter as "compliant" | "discrepancies" : undefined,
+    q: q || undefined,
+    assignee: assignee || undefined,
+    queue: queue || undefined,
+    client_name: clientName || undefined,
+    status: status !== "all" ? status as "compliant" | "discrepancies" : undefined,
+    sort_by: sortBy as any,
+    sort_order: sortOrder as any,
     ...advancedFilters,
     limit: 500,
     offset: 0,
@@ -102,7 +88,7 @@ export function ResultsTable({}: ResultsTableProps) {
 
   // Fetch results from API with all filters
   const { data: resultsData, isLoading } = useQuery({
-    queryKey: ['bank-results', dateRange, statusFilter, clientFilter, advancedFilters],
+    queryKey: ['bank-results', apiFilters],
     queryFn: () => bankApi.getResults(apiFilters),
     refetchInterval: 10000, // Refresh every 10 seconds
   });
@@ -136,7 +122,7 @@ export function ResultsTable({}: ResultsTableProps) {
   // Clear selection when filters change
   useEffect(() => {
     setSelectedRows(new Set());
-  }, [statusFilter, clientFilter, dateRange, advancedFilters]);
+  }, [q, assignee, queue, status, clientName, dateRange, advancedFilters]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -151,93 +137,103 @@ export function ResultsTable({}: ResultsTableProps) {
     }
   };
 
-  const handleExportCSV = () => {
-    // Enhanced CSV with all available fields
-    const csvRows = [
-      [
-        "Job ID",
-        "LC Number",
-        "Client Name",
-        "Date Received",
-        "Submitted At",
-        "Processing Started At",
-        "Completed At",
-        "Processing Time (seconds)",
-        "Status",
-        "Compliance Score (%)",
-        "Discrepancy Count",
-        "Document Count",
-      ],
-      ...exportResults.map((r) => {
-        const submittedAt = r.submitted_at ? new Date(r.submitted_at) : null;
-        const processingStartedAt = r.processing_started_at ? new Date(r.processing_started_at) : null;
-        const completedAt = r.completed_at ? new Date(r.completed_at) : null;
-        const dateReceived = r.date_received || "";
-
-        return [
-          r.jobId || r.id,
-          sanitizeDisplayText(r.lc_number, "N/A"),
-          sanitizeDisplayText(r.client_name, ""),
-          dateReceived,
-          submittedAt ? format(submittedAt, "yyyy-MM-dd HH:mm:ss") : "",
-          processingStartedAt ? format(processingStartedAt, "yyyy-MM-dd HH:mm:ss") : "",
-          completedAt ? format(completedAt, "yyyy-MM-dd HH:mm:ss") : "",
-          r.processing_time_seconds !== undefined && r.processing_time_seconds !== null
-            ? r.processing_time_seconds.toString()
-            : "",
-          r.status,
-          r.compliance_score.toString(),
-          r.discrepancy_count.toString(),
-          r.document_count.toString(),
-        ];
-      }),
-    ];
-
-    const csvContent = generateCSV(csvRows);
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
-    a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportPDF = async () => {
+  const handleExportCSV = async () => {
     try {
-      const params: any = {
-        ...getDateRange(),
-        client_name: clientFilter || undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        ...advancedFilters,
-        limit: 500, // Export all filtered results
+      setExportLoading(true);
+      const params: BankResultsFilters = {
+        ...apiFilters,
+        limit: undefined, // Remove limit for export
+        offset: undefined,
       };
 
       // If rows are selected, send job IDs instead of filters
       if (selectedRows.size > 0) {
-        params.job_ids = Array.from(selectedRows).join(",");
-        // Clear other filters when using job_ids
-        delete params.start_date;
-        delete params.end_date;
-        delete params.client_name;
-        delete params.status;
+        (params as any).job_ids = Array.from(selectedRows).join(",");
       }
 
-      const pdfBlob = await bankApi.exportResultsPDF(params);
+      const result = await bankApi.exportResultsCSV(params);
 
-      // Create download link
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
-      a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // Check if async job was created
+      if (typeof result === 'object' && 'job_id' in result) {
+        setExportJobId(result.job_id);
+        toast({
+          title: "Export Started",
+          description: `Exporting ${result.total_rows.toLocaleString()} rows. This may take a moment...`,
+        });
+      } else {
+        // Direct download
+        const blob = result as Blob;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
+        a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({
+          title: "Export Complete",
+          description: "CSV file downloaded successfully.",
+        });
+      }
+    } catch (error: any) {
+      console.error("Failed to export CSV:", error);
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export CSV. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setExportLoading(true);
+      const params: BankResultsFilters = {
+        ...apiFilters,
+        limit: undefined, // Remove limit for export
+        offset: undefined,
+      };
+
+      // If rows are selected, send job IDs instead of filters
+      if (selectedRows.size > 0) {
+        (params as any).job_ids = Array.from(selectedRows).join(",");
+      }
+
+      const result = await bankApi.exportResultsPDF(params);
+
+      // Check if async job was created
+      if (typeof result === 'object' && 'job_id' in result) {
+        setExportJobId(result.job_id);
+        toast({
+          title: "Export Started",
+          description: `Exporting ${result.total_rows.toLocaleString()} rows. This may take a moment...`,
+        });
+      } else {
+        // Direct download
+        const blob = result as Blob;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const selectedCount = selectedRows.size > 0 ? `-selected-${selectedRows.size}` : "";
+        a.download = `bank-lc-results${selectedCount}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({
+          title: "Export Complete",
+          description: "PDF file downloaded successfully.",
+        });
+      }
     } catch (error: any) {
       console.error("Failed to export PDF:", error);
-      alert("Failed to export PDF. Please try again.");
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -266,7 +262,7 @@ export function ResultsTable({}: ResultsTableProps) {
           <div>
             <CardTitle>Validation Results</CardTitle>
             <CardDescription>
-              {isLoading ? "Loading..." : `${filteredResults.length} result(s) from last ${dateRange} days`}
+              {isLoading ? "Loading..." : `${filteredResults.length} result(s)`}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -304,95 +300,37 @@ export function ResultsTable({}: ResultsTableProps) {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Basic Filters */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-            <div className="space-y-2">
-              <Label>Date Range</Label>
-              <Select value={dateRange} onValueChange={setDateRange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="180">Last 180 days</SelectItem>
-                <SelectItem value="365">Last year</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        {/* Filter Bar */}
+        <div className="mb-6">
+          <FilterBar
+            resource="results"
+            onFiltersChange={(filters) => {
+              // Filters are managed via URL params, so this is mainly for side effects
+            }}
+            onExportCSV={handleExportCSV}
+            onExportPDF={handleExportPDF}
+            exportLoading={exportLoading}
+          />
+        </div>
 
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="compliant">Compliant</SelectItem>
-                <SelectItem value="discrepancies">With Discrepancies</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Client Name</Label>
-            <Input
-              placeholder="Search by client name..."
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-            />
-          </div>
-          
-          {/* Saved Views Manager */}
-          <div className="ml-4">
-            <SavedViewsManager
-              dashboard="bank"
-              section="results"
-              currentFilters={{
-                status: statusFilter,
-                client_name: clientFilter,
-                dateRange,
-                advancedFilters,
+        {/* Export Job Handler */}
+        {exportJobId && (
+          <div className="mb-4">
+            <ExportJobHandler
+              jobId={exportJobId}
+              onComplete={(downloadUrl) => {
+                window.open(downloadUrl, '_blank');
+                setExportJobId(null);
               }}
-              onLoadView={(filters) => {
-                if (filters.status) setStatusFilter(filters.status);
-                if (filters.client_name) setClientFilter(filters.client_name);
-                if (filters.dateRange) setDateRange(filters.dateRange);
-                if (filters.advancedFilters) setAdvancedFilters(filters.advancedFilters);
+              onError={() => {
+                setExportJobId(null);
+              }}
+              onClear={() => {
+                setExportJobId(null);
               }}
             />
           </div>
-        </div>
-        </div>
-
-        {/* Advanced Filters */}
-        <Collapsible open={isAdvancedFiltersOpen} onOpenChange={setIsAdvancedFiltersOpen} className="mb-6">
-          <CollapsibleTrigger asChild>
-            <Button variant="outline" className="w-full">
-              {isAdvancedFiltersOpen ? (
-                <>
-                  <ChevronUp className="w-4 h-4 mr-2" />
-                  Hide Advanced Filters
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="w-4 h-4 mr-2" />
-                  Show Advanced Filters
-                </>
-              )}
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-4">
-            <AdvancedFilters
-              filters={advancedFilters}
-              onFiltersChange={setAdvancedFilters}
-            />
-          </CollapsibleContent>
-        </Collapsible>
+        )}
 
         {/* Results Table */}
         {isLoading ? (

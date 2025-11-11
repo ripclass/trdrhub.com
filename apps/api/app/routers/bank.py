@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, func, cast, case
+from sqlalchemy import and_, or_, func, cast, case
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import JSONB
 import asyncio
@@ -18,7 +18,7 @@ import time
 
 from ..core.security import require_bank_or_admin
 from ..database import get_db, SessionLocal
-from ..models import User, ValidationSession, SessionStatus, UsageAction
+from ..models.admin import JobQueue, JobStatus
 from ..services.analytics_service import AnalyticsService
 from ..services.entitlements import EntitlementService, EntitlementError
 from ..services import ValidationSessionService
@@ -146,7 +146,15 @@ async def search_bank_audit_log(
 
 @router.get("/jobs")
 def list_bank_jobs(
+    q: Optional[str] = Query(None, description="Free text search across LC number, client name"),
     status: Optional[str] = Query(None, description="Filter by job status"),
+    client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
+    assignee: Optional[str] = Query(None, description="Filter by assignee user ID"),
+    queue: Optional[str] = Query(None, description="Filter by queue name"),
+    date_from: Optional[datetime] = Query(None, description="Filter jobs from this date"),
+    date_to: Optional[datetime] = Query(None, description="Filter jobs until this date"),
+    sort_by: Optional[str] = Query("created_at", description="Sort field (created_at, completed_at, client_name, lc_number)"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc, desc)"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_bank_or_admin),
@@ -163,12 +171,83 @@ def list_bank_jobs(
             ValidationSession.deleted_at.is_(None)
         )
         
+        # Free text search (q)
+        if q:
+            search_term = f"%{q}%"
+            lc_search = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['lc_number'].astext.ilike(search_term)
+            client_search = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(search_term)
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                or_(lc_search, client_search)
+            )
+        
         # Filter by status if provided
         if status:
             query = query.filter(ValidationSession.status == status)
         
-        # Order by created_at desc
-        query = query.order_by(ValidationSession.created_at.desc())
+        # Client name filter
+        if client_name:
+            client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(f"%{client_name}%")
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                client_name_condition
+            )
+        
+        # Assignee filter
+        if assignee:
+            try:
+                assignee_uuid = UUID(assignee)
+                assignee_condition = cast(ValidationSession.extracted_data, JSONB)[
+                    'bank_metadata'
+                ]['assignee_id'].astext == str(assignee_uuid)
+                query = query.filter(
+                    ValidationSession.extracted_data.isnot(None),
+                    assignee_condition
+                )
+            except ValueError:
+                pass
+        
+        # Queue filter
+        if queue:
+            queue_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['queue'].astext == queue
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                queue_condition
+            )
+        
+        # Date filters
+        if date_from:
+            query = query.filter(ValidationSession.created_at >= date_from)
+        if date_to:
+            query = query.filter(ValidationSession.created_at <= date_to)
+        
+        # Sorting
+        sort_order_func = func.desc if sort_order == "desc" else func.asc
+        if sort_by == "completed_at":
+            query = query.order_by(sort_order_func(ValidationSession.processing_completed_at).nulls_last())
+        elif sort_by == "created_at":
+            query = query.order_by(sort_order_func(ValidationSession.created_at).nulls_last())
+        elif sort_by == "client_name":
+            client_name_expr = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext
+            query = query.order_by(sort_order_func(client_name_expr).nulls_last())
+        elif sort_by == "lc_number":
+            lc_number_expr = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['lc_number'].astext
+            query = query.order_by(sort_order_func(lc_number_expr).nulls_last())
+        else:
+            # Default: order by created_at desc
+            query = query.order_by(ValidationSession.created_at.desc())
         
         # Count total
         total = query.count()
@@ -210,7 +289,15 @@ def list_bank_jobs(
                 "job_count": len(results),
                 "total_available": total,
                 "filters": {
+                    "q": q,
                     "status": status,
+                    "client_name": client_name,
+                    "assignee": assignee,
+                    "queue": queue,
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None,
+                    "sort_by": sort_by,
+                    "sort_order": sort_order,
                     "limit": limit,
                     "offset": offset,
                 }
@@ -561,6 +648,7 @@ def check_duplicate_lc(
 @router.get("/results")
 @bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
 def get_bank_results(
+    q: Optional[str] = Query(None, description="Free text search across LC number, client name, and extracted text"),
     start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
     end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
     client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
@@ -568,6 +656,10 @@ def get_bank_results(
     min_score: Optional[int] = Query(None, ge=0, le=100, description="Minimum compliance score (0-100)"),
     max_score: Optional[int] = Query(None, ge=0, le=100, description="Maximum compliance score (0-100)"),
     discrepancy_type: Optional[str] = Query(None, description="Filter by discrepancy type (date_mismatch, amount_mismatch, party_mismatch, port_mismatch, missing_field, invalid_format)"),
+    assignee: Optional[str] = Query(None, description="Filter by assignee user ID"),
+    queue: Optional[str] = Query(None, description="Filter by queue name"),
+    sort_by: Optional[str] = Query("completed_at", description="Sort field (completed_at, created_at, compliance_score, client_name, lc_number)"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc, desc)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_bank_or_admin),
@@ -584,6 +676,25 @@ def get_bank_results(
             ValidationSession.deleted_at.is_(None),
             ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
         )
+        
+        # Free text search (q) - search across LC number, client name, and extracted text
+        if q:
+            search_term = f"%{q}%"
+            # Search in LC number
+            lc_search = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['lc_number'].astext.ilike(search_term)
+            # Search in client name
+            client_search = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext.ilike(search_term)
+            # Search in OCR text (from documents)
+            # Note: This requires a join with documents table, so we'll do it separately
+            # For now, search in extracted_data text fields
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                or_(lc_search, client_search)
+            )
         
         # Date filters (already in SQL)
         if start_date:
@@ -670,8 +781,62 @@ def get_bank_results(
                     discrepancies_path.op('@>')(target_type_jsonb)
                 )
         
-        # Order by completed date desc
-        query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
+        # Assignee filter (if assignee field exists in extracted_data)
+        if assignee:
+            try:
+                assignee_uuid = UUID(assignee)
+                # Check if assignee is stored in extracted_data or validation_results
+                # For now, we'll check if there's an assignee field in bank_metadata
+                assignee_condition = cast(ValidationSession.extracted_data, JSONB)[
+                    'bank_metadata'
+                ]['assignee_id'].astext == str(assignee_uuid)
+                query = query.filter(
+                    ValidationSession.extracted_data.isnot(None),
+                    assignee_condition
+                )
+            except ValueError:
+                # Invalid UUID format, skip assignee filter
+                pass
+        
+        # Queue filter (if queue field exists)
+        if queue:
+            # Check if queue is stored in extracted_data
+            queue_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['queue'].astext == queue
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                queue_condition
+            )
+        
+        # Sorting
+        sort_order_func = func.desc if sort_order == "desc" else func.asc
+        if sort_by == "completed_at":
+            query = query.order_by(sort_order_func(ValidationSession.processing_completed_at).nulls_last())
+        elif sort_by == "created_at":
+            query = query.order_by(sort_order_func(ValidationSession.created_at).nulls_last())
+        elif sort_by == "compliance_score":
+            # Calculate compliance score from discrepancy count
+            discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+            discrepancy_count_expr = func.coalesce(
+                func.jsonb_array_length(discrepancies_path),
+                0
+            )
+            score_expr = 100 - (discrepancy_count_expr * 5)
+            query = query.order_by(sort_order_func(score_expr))
+        elif sort_by == "client_name":
+            client_name_expr = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['client_name'].astext
+            query = query.order_by(sort_order_func(client_name_expr).nulls_last())
+        elif sort_by == "lc_number":
+            lc_number_expr = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['lc_number'].astext
+            query = query.order_by(sort_order_func(lc_number_expr).nulls_last())
+        else:
+            # Default: order by completed date desc
+            query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
         
         # Count total (now accurate after SQL filtering)
         total = query.count()
@@ -768,6 +933,7 @@ def get_bank_results(
                 "result_count": len(results),
                 "total_available": total,
                 "filters": {
+                    "q": q,
                     "start_date": start_date.isoformat() if start_date else None,
                     "end_date": end_date.isoformat() if end_date else None,
                     "client_name": client_name,
@@ -775,6 +941,10 @@ def get_bank_results(
                     "min_score": min_score,
                     "max_score": max_score,
                     "discrepancy_type": discrepancy_type,
+                    "assignee": assignee,
+                    "queue": queue,
+                    "sort_by": sort_by,
+                    "sort_order": sort_order,
                     "limit": limit,
                     "offset": offset,
                 }
@@ -804,19 +974,25 @@ def get_bank_results(
         raise
 
 
-@router.get("/results/export-pdf")
+@router.post("/results/export/pdf")
 @bank_rate_limit(limiter_type="export", limit=10, window_seconds=60)
 async def export_results_pdf(
-    start_date: Optional[datetime] = Query(None, description="Filter results from this date"),
-    end_date: Optional[datetime] = Query(None, description="Filter results until this date"),
-    client_name: Optional[str] = Query(None, description="Filter by client name (partial match)"),
-    status: Optional[str] = Query(None, description="Filter by compliance status (compliant/discrepancies)"),
+    q: Optional[str] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    client_name: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    min_score: Optional[int] = Query(None),
+    max_score: Optional[int] = Query(None),
+    discrepancy_type: Optional[str] = Query(None),
+    assignee: Optional[str] = Query(None),
+    queue: Optional[str] = Query(None),
     job_ids: Optional[str] = Query(None, description="Comma-separated list of job IDs to export (if provided, other filters are ignored)"),
     current_user: User = Depends(require_bank_or_admin),
     db: Session = Depends(get_db),
     request: Request = None,
 ):
-    """Generate a PDF report for filtered or selected validation results."""
+    """Generate a PDF report. Returns async job ID if >10k rows, else streams PDF."""
     import time
     start_time = time.time()
     
@@ -828,88 +1004,80 @@ async def export_results_pdf(
     audit_context = create_audit_context(request)
     
     try:
-        # If specific job IDs provided, use those
+        # Build query
         if job_ids:
             job_id_list = [UUID(jid.strip()) for jid in job_ids.split(",") if jid.strip()]
-            sessions = db.query(ValidationSession).filter(
+            query = db.query(ValidationSession).filter(
                 ValidationSession.id.in_(job_id_list),
                 ValidationSession.user_id == current_user.id,
                 ValidationSession.deleted_at.is_(None)
-            ).all()
-            filtered_sessions = sessions
+            )
         else:
-            # Get filtered results using optimized SQL queries (same logic as get_bank_results)
-            query = db.query(ValidationSession).filter(
-                ValidationSession.user_id == current_user.id,
-                ValidationSession.deleted_at.is_(None),
-                ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+            query = _build_results_query(
+                db, current_user, q, start_date, end_date, client_name,
+                status, min_score, max_score, discrepancy_type, assignee, queue
+            )
+        
+        # Count total rows
+        total = query.count()
+        
+        # If >10k rows, create async job
+        if total > 10000:
+            job_data = {
+                "export_type": "pdf",
+                "filters": {
+                    "q": q,
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "client_name": client_name,
+                    "status": status,
+                    "min_score": min_score,
+                    "max_score": max_score,
+                    "discrepancy_type": discrepancy_type,
+                    "assignee": assignee,
+                    "queue": queue,
+                    "job_ids": job_ids,
+                },
+                "user_id": str(current_user.id),
+                "company_id": str(current_user.company_id),
+            }
+            
+            job = JobQueue(
+                job_type="bank_results_export_pdf",
+                job_data=job_data,
+                priority=5,
+                status=JobStatus.QUEUED,
+                user_id=current_user.id,
+                organization_id=current_user.company_id,
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            
+            # Log job creation
+            audit_service.log_action(
+                action=AuditAction.CREATE,
+                user=current_user,
+                correlation_id=audit_context['correlation_id'],
+                resource_type="export_job",
+                resource_id=str(job.id),
+                ip_address=audit_context['ip_address'],
+                user_agent=audit_context['user_agent'],
+                endpoint=audit_context['endpoint'],
+                http_method=audit_context['http_method'],
+                result=AuditResult.SUCCESS,
+                audit_metadata={"total_rows": total, "export_type": "pdf"},
             )
             
-            # Date filters (SQL-based)
-            if start_date:
-                query = query.filter(ValidationSession.created_at >= start_date)
-            if end_date:
-                query = query.filter(ValidationSession.created_at <= end_date)
-            
-            # Client name filter using JSON operators (SQL-based)
-            if client_name:
-                client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
-                    'bank_metadata'
-                ]['client_name'].astext.ilike(f"%{client_name}%")
-                query = query.filter(
-                    ValidationSession.extracted_data.isnot(None),
-                    client_name_condition
-                )
-            
-            # Status filter using JSON operators (SQL-based)
-            if status:
-                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
-                
-                if status == "compliant":
-                    no_discrepancies = func.jsonb_array_length(discrepancies_path).is_(None) | \
-                                      (func.jsonb_array_length(discrepancies_path) == 0)
-                    query = query.filter(
-                        ValidationSession.validation_results.isnot(None),
-                        no_discrepancies
-                    )
-                elif status == "discrepancies":
-                    has_discrepancies = func.jsonb_array_length(discrepancies_path) > 0
-                    query = query.filter(
-                        ValidationSession.validation_results.isnot(None),
-                        has_discrepancies
-                    )
-            
-            # Compliance score range filter (SQL-based)
-            if min_score is not None or max_score is not None:
-                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
-                discrepancy_count_expr = func.coalesce(
-                    func.jsonb_array_length(discrepancies_path),
-                    0
-                )
-                
-                if min_score is not None:
-                    max_discrepancy_count = (100 - min_score) / 5
-                    query = query.filter(discrepancy_count_expr <= max_discrepancy_count)
-                
-                if max_score is not None:
-                    min_discrepancy_count = (100 - max_score) / 5
-                    query = query.filter(discrepancy_count_expr >= min_discrepancy_count)
-            
-            # Discrepancy type filter (SQL-based using JSONB contains)
-            if discrepancy_type:
-                discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
-                target_type_json = json.dumps([{"discrepancy_type": discrepancy_type}])
-                target_type_jsonb = cast(target_type_json, JSONB)
-                query = query.filter(
-                    ValidationSession.validation_results.isnot(None),
-                    discrepancies_path.op('@>')(target_type_jsonb)
-                )
-            
-            # Order by completed date desc
-            query = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last())
-            
-            # Get all matching sessions (no pagination for export)
-            filtered_sessions = query.all()
+            return {
+                "job_id": str(job.id),
+                "status": "queued",
+                "total_rows": total,
+                "message": "Export job created. Use GET /bank/exports/{job_id} to check status.",
+            }
+        
+        # Small export: generate PDF immediately
+        filtered_sessions = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last()).all()
         
         # Generate summary PDF report
         report_generator = ReportGenerator()
@@ -919,6 +1087,7 @@ async def export_results_pdf(
         
         # Convert to PDF
         pdf_buffer = report_generator._html_to_pdf(html_content)
+        
         # Return PDF as response
         filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.pdf"
         if job_ids:
@@ -943,6 +1112,7 @@ async def export_results_pdf(
                 "export_type": "pdf",
                 "result_count": len(filtered_sessions),
                 "filters": {
+                    "q": q,
                     "start_date": start_date.isoformat() if start_date else None,
                     "end_date": end_date.isoformat() if end_date else None,
                     "client_name": client_name,
@@ -1116,6 +1286,378 @@ def _generate_summary_report_html(sessions: List[ValidationSession], user: User)
     """
     
     return html
+
+
+def _build_results_query(
+    db: Session,
+    current_user: User,
+    q: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    client_name: Optional[str] = None,
+    status: Optional[str] = None,
+    min_score: Optional[int] = None,
+    max_score: Optional[int] = None,
+    discrepancy_type: Optional[str] = None,
+    assignee: Optional[str] = None,
+    queue: Optional[str] = None,
+):
+    """Build filtered query for bank results (reusable for exports)."""
+    query = db.query(ValidationSession).filter(
+        ValidationSession.user_id == current_user.id,
+        ValidationSession.deleted_at.is_(None),
+        ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
+    )
+    
+    # Free text search (q)
+    if q:
+        search_term = f"%{q}%"
+        lc_search = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['lc_number'].astext.ilike(search_term)
+        client_search = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['client_name'].astext.ilike(search_term)
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            or_(lc_search, client_search)
+        )
+    
+    # Date filters
+    if start_date:
+        query = query.filter(ValidationSession.created_at >= start_date)
+    if end_date:
+        query = query.filter(ValidationSession.created_at <= end_date)
+    
+    # Client name filter
+    if client_name:
+        client_name_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['client_name'].astext.ilike(f"%{client_name}%")
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            client_name_condition
+        )
+    
+    # Status filter
+    if status:
+        discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+        if status == "compliant":
+            no_discrepancies = func.jsonb_array_length(discrepancies_path).is_(None) | \
+                              (func.jsonb_array_length(discrepancies_path) == 0)
+            query = query.filter(
+                ValidationSession.validation_results.isnot(None),
+                no_discrepancies
+            )
+        elif status == "discrepancies":
+            has_discrepancies = func.jsonb_array_length(discrepancies_path) > 0
+            query = query.filter(
+                ValidationSession.validation_results.isnot(None),
+                has_discrepancies
+            )
+    
+    # Score filters
+    if min_score is not None or max_score is not None:
+        discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+        discrepancy_count_expr = func.coalesce(
+            func.jsonb_array_length(discrepancies_path),
+            0
+        )
+        if min_score is not None:
+            max_discrepancy_count = (100 - min_score) / 5
+            query = query.filter(discrepancy_count_expr <= max_discrepancy_count)
+        if max_score is not None:
+            min_discrepancy_count = (100 - max_score) / 5
+            query = query.filter(discrepancy_count_expr >= min_discrepancy_count)
+    
+    # Discrepancy type filter
+    if discrepancy_type:
+        discrepancies_path = cast(ValidationSession.validation_results, JSONB)['discrepancies']
+        target_type_json = json.dumps([{"discrepancy_type": discrepancy_type}])
+        target_type_jsonb = cast(target_type_json, JSONB)
+        query = query.filter(
+            ValidationSession.validation_results.isnot(None),
+            discrepancies_path.op('@>')(target_type_jsonb)
+        )
+    
+    # Assignee filter
+    if assignee:
+        try:
+            assignee_uuid = UUID(assignee)
+            assignee_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['assignee_id'].astext == str(assignee_uuid)
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                assignee_condition
+            )
+        except ValueError:
+            pass
+    
+    # Queue filter
+    if queue:
+        queue_condition = cast(ValidationSession.extracted_data, JSONB)[
+            'bank_metadata'
+        ]['queue'].astext == queue
+        query = query.filter(
+            ValidationSession.extracted_data.isnot(None),
+            queue_condition
+        )
+    
+    return query
+
+
+@router.post("/results/export/csv")
+@bank_rate_limit(limiter_type="export", limit=10, window_seconds=60)
+def export_results_csv(
+    q: Optional[str] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    client_name: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    min_score: Optional[int] = Query(None),
+    max_score: Optional[int] = Query(None),
+    discrepancy_type: Optional[str] = Query(None),
+    assignee: Optional[str] = Query(None),
+    queue: Optional[str] = Query(None),
+    job_ids: Optional[str] = Query(None, description="Comma-separated job IDs (overrides filters)"),
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """Export results as CSV. Returns async job ID if >10k rows, else streams CSV."""
+    import csv
+    import io
+    from datetime import datetime
+    
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        # Build query
+        if job_ids:
+            job_id_list = [UUID(jid.strip()) for jid in job_ids.split(",") if jid.strip()]
+            query = db.query(ValidationSession).filter(
+                ValidationSession.id.in_(job_id_list),
+                ValidationSession.user_id == current_user.id,
+                ValidationSession.deleted_at.is_(None)
+            )
+        else:
+            query = _build_results_query(
+                db, current_user, q, start_date, end_date, client_name,
+                status, min_score, max_score, discrepancy_type, assignee, queue
+            )
+        
+        # Count total rows
+        total = query.count()
+        
+        # If >10k rows, create async job
+        if total > 10000:
+            job_data = {
+                "export_type": "csv",
+                "filters": {
+                    "q": q,
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "client_name": client_name,
+                    "status": status,
+                    "min_score": min_score,
+                    "max_score": max_score,
+                    "discrepancy_type": discrepancy_type,
+                    "assignee": assignee,
+                    "queue": queue,
+                    "job_ids": job_ids,
+                },
+                "user_id": str(current_user.id),
+                "company_id": str(current_user.company_id),
+            }
+            
+            job = JobQueue(
+                job_type="bank_results_export_csv",
+                job_data=job_data,
+                priority=5,
+                status=JobStatus.QUEUED,
+                user_id=current_user.id,
+                organization_id=current_user.company_id,
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            
+            # Log job creation
+            audit_service.log_action(
+                action=AuditAction.CREATE,
+                user=current_user,
+                correlation_id=audit_context['correlation_id'],
+                resource_type="export_job",
+                resource_id=str(job.id),
+                ip_address=audit_context['ip_address'],
+                user_agent=audit_context['user_agent'],
+                endpoint=audit_context['endpoint'],
+                http_method=audit_context['http_method'],
+                result=AuditResult.SUCCESS,
+                audit_metadata={"total_rows": total, "export_type": "csv"},
+            )
+            
+            return {
+                "job_id": str(job.id),
+                "status": "queued",
+                "total_rows": total,
+                "message": "Export job created. Use GET /bank/exports/{job_id} to check status.",
+            }
+        
+        # Small export: stream CSV immediately
+        sessions = query.order_by(ValidationSession.processing_completed_at.desc().nulls_last()).all()
+        
+        # Generate CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            "Job ID", "LC Number", "Client Name", "Date Received",
+            "Submitted At", "Completed At", "Status", "Compliance Score",
+            "Discrepancy Count", "Document Count", "Processing Time (s)"
+        ])
+        
+        # Write rows
+        for session in sessions:
+            metadata = session.extracted_data or {}
+            bank_metadata = metadata.get("bank_metadata", {})
+            validation_results = session.validation_results or {}
+            discrepancies = validation_results.get("discrepancies", [])
+            
+            has_discrepancies = len(discrepancies) > 0
+            compliance_status = "discrepancies" if has_discrepancies else "compliant"
+            if session.status == SessionStatus.FAILED.value:
+                compliance_status = "failed"
+            
+            compliance_score = max(0, min(100, 100 - (len(discrepancies) * 5)))
+            processing_time = None
+            if session.processing_started_at and session.processing_completed_at:
+                delta = session.processing_completed_at - session.processing_started_at
+                processing_time = round(delta.total_seconds(), 2)
+            
+            writer.writerow([
+                str(session.id),
+                bank_metadata.get("lc_number", ""),
+                bank_metadata.get("client_name", ""),
+                bank_metadata.get("date_received", ""),
+                session.created_at.isoformat() if session.created_at else "",
+                session.processing_completed_at.isoformat() if session.processing_completed_at else "",
+                compliance_status,
+                compliance_score,
+                len(discrepancies),
+                len(session.documents) if session.documents else 0,
+                processing_time or "",
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Log export
+        audit_service.log_action(
+            action=AuditAction.DOWNLOAD,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results_export",
+            resource_id=f"csv-{len(sessions)}-results",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={"export_type": "csv", "result_count": len(sessions)},
+        )
+        
+        filename = f"bank-lc-results-{datetime.now().strftime('%Y-%m-%d')}.csv"
+        if job_ids:
+            filename = f"bank-lc-results-selected-{len(sessions)}-{datetime.now().strftime('%Y-%m-%d')}.csv"
+        
+        return Response(
+            content=csv_content.encode('utf-8'),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to export CSV: {e}", exc_info=True)
+        audit_service.log_action(
+            action=AuditAction.DOWNLOAD,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_results_export",
+            resource_id="csv-export-failed",
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.ERROR,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export CSV: {str(e)}"
+        )
+
+
+@router.get("/exports/{job_id}")
+@bank_rate_limit(limiter_type="api", limit=30, window_seconds=60)
+def get_export_job_status(
+    job_id: UUID,
+    current_user: User = Depends(require_bank_or_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """Get export job status and download URL if completed."""
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        job = db.query(JobQueue).filter(
+            JobQueue.id == job_id,
+            JobQueue.user_id == current_user.id
+        ).first()
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Export job not found"
+            )
+        
+        response = {
+            "job_id": str(job.id),
+            "status": job.status.value,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "error_message": job.error_message,
+        }
+        
+        # If completed, include download URL from job_data
+        if job.status == JobStatus.COMPLETED:
+            job_data = job.job_data or {}
+            if "download_url" in job_data:
+                response["download_url"] = job_data["download_url"]
+            if "s3_key" in job_data:
+                # Generate presigned URL if S3 key exists
+                from ..services import S3Service
+                s3_service = S3Service()
+                response["download_url"] = s3_service.generate_presigned_url(
+                    job_data["s3_key"],
+                    expiration=3600  # 1 hour
+                )
+        
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get export job status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get export job status: {str(e)}"
+        )
 
 
 @router.get("/clients")

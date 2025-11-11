@@ -4,7 +4,8 @@
  */
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useBankAuth } from "@/lib/bank/auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -42,46 +43,118 @@ import {
   MoreVertical,
   Loader2,
 } from "lucide-react";
-import {
-  getSavedViews,
-  saveView,
-  updateView,
-  deleteView,
-  loadView,
-  shareView,
-  generateDeepLink,
-  type SavedView,
-} from "@/lib/savedViews";
+import { Badge } from "@/components/ui/badge";
+import { bankSavedViewsApi, type SavedView } from "@/api/bank";
+import { generateDeepLink } from "@/lib/savedViews";
 
 interface SavedViewsManagerProps {
-  dashboard: SavedView['dashboard'];
-  section: string;
+  resource: 'results' | 'jobs';
   currentFilters: Record<string, any>;
   onLoadView: (filters: Record<string, any>) => void;
   onSaveView?: (view: SavedView) => void;
 }
 
 export function SavedViewsManager({
-  dashboard,
-  section,
+  resource,
   currentFilters,
   onLoadView,
   onSaveView,
 }: SavedViewsManagerProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [views, setViews] = React.useState<SavedView[]>([]);
+  const { user } = useBankAuth();
+  const queryClient = useQueryClient();
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [viewName, setViewName] = React.useState("");
   const [viewDescription, setViewDescription] = React.useState("");
   const [isShared, setIsShared] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
+  const [isOrgDefault, setIsOrgDefault] = React.useState(false);
 
-  // Load views on mount
-  React.useEffect(() => {
-    const loaded = getSavedViews(dashboard, section);
-    setViews(loaded);
-  }, [dashboard, section]);
+  // Fetch saved views from backend
+  const { data: viewsData, isLoading: isLoadingViews } = useQuery({
+    queryKey: ['bank-saved-views', resource],
+    queryFn: () => bankSavedViewsApi.list(resource),
+  });
+
+  const views: SavedView[] = viewsData?.views || [];
+
+  // Create view mutation
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; description?: string; shared: boolean; is_org_default: boolean }) => {
+      return bankSavedViewsApi.create({
+        name: data.name,
+        resource,
+        query_params: currentFilters,
+        columns: {}, // TODO: Add column preferences
+        shared: data.shared,
+        is_org_default: data.is_org_default,
+      });
+    },
+    onSuccess: (newView) => {
+      queryClient.invalidateQueries({ queryKey: ['bank-saved-views', resource] });
+      setSaveDialogOpen(false);
+      setViewName("");
+      setViewDescription("");
+      setIsShared(false);
+      setIsOrgDefault(false);
+      toast({
+        title: "View Saved",
+        description: `Saved view "${newView.name}" has been created.`,
+      });
+      onSaveView?.(newView);
+    },
+    onError: () => {
+      toast({
+        title: "Save Failed",
+        description: "Failed to save view. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update view mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ viewId, updates }: { viewId: string; updates: Partial<SavedView> }) => {
+      return bankSavedViewsApi.update(viewId, {
+        name: updates.name,
+        query_params: updates.query_params || currentFilters,
+        shared: updates.shared,
+        is_org_default: updates.is_org_default,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bank-saved-views', resource] });
+      toast({
+        title: "View Updated",
+        description: "Saved view has been updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Update Failed",
+        description: "Failed to update view. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete view mutation
+  const deleteMutation = useMutation({
+    mutationFn: (viewId: string) => bankSavedViewsApi.delete(viewId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bank-saved-views', resource] });
+      toast({
+        title: "View Deleted",
+        description: "Saved view has been deleted.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete view. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleSave = () => {
     if (!viewName.trim()) {
@@ -102,67 +175,43 @@ export function SavedViewsManager({
       return;
     }
 
-    setLoading(true);
-    try {
-      const newView = saveView({
-        name: viewName.trim(),
-        description: viewDescription.trim() || undefined,
-        dashboard,
-        section,
-        filters: currentFilters,
-        isShared,
-        createdBy: user.id || 'anonymous',
-      });
-
-      setViews([...views, newView]);
-      setSaveDialogOpen(false);
-      setViewName("");
-      setViewDescription("");
-      setIsShared(false);
-
-      toast({
-        title: "View Saved",
-        description: `Saved view "${newView.name}" has been created.`,
-      });
-
-      onSaveView?.(newView);
-    } catch (error) {
-      toast({
-        title: "Save Failed",
-        description: "Failed to save view. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+    createMutation.mutate({
+      name: viewName.trim(),
+      description: viewDescription.trim() || undefined,
+      shared: isShared,
+      is_org_default: isOrgDefault,
+    });
   };
 
   const handleLoad = (view: SavedView) => {
-    const loaded = loadView(view.id);
-    if (loaded) {
-      onLoadView(loaded.filters);
+    if (view.query_params) {
+      onLoadView(view.query_params);
       toast({
         title: "View Loaded",
-        description: `Loaded view "${loaded.name}".`,
+        description: `Loaded view "${view.name}".`,
       });
     }
   };
 
   const handleDelete = (viewId: string, viewName: string) => {
     if (confirm(`Delete saved view "${viewName}"?`)) {
-      const deleted = deleteView(viewId);
-      if (deleted) {
-        setViews(views.filter((v) => v.id !== viewId));
-        toast({
-          title: "View Deleted",
-          description: `Deleted view "${viewName}".`,
-        });
-      }
+      deleteMutation.mutate(viewId);
     }
   };
 
   const handleCopyLink = (view: SavedView) => {
-    const link = generateDeepLink(view);
+    const link = generateDeepLink({
+      id: view.id,
+      name: view.name,
+      dashboard: 'bank' as const,
+      section: resource,
+      filters: view.query_params || {},
+      isShared: view.shared,
+      createdBy: view.owner_id || '',
+      createdAt: view.created_at,
+      updatedAt: view.updated_at || view.created_at,
+      usageCount: 0,
+    });
     navigator.clipboard.writeText(link);
     toast({
       title: "Link Copied",
@@ -171,17 +220,20 @@ export function SavedViewsManager({
   };
 
   const handleShare = (view: SavedView) => {
-    // For now, just toggle shared status
-    // In future, this could open a dialog to select users/teams
-    const updated = shareView(view.id, []);
-    if (updated) {
-      setViews(views.map((v) => (v.id === view.id ? updated : v)));
-      toast({
-        title: "View Shared",
-        description: `View "${updated.name}" is now ${updated.isShared ? 'shared' : 'private'}.`,
-      });
-    }
+    updateMutation.mutate({
+      viewId: view.id,
+      updates: { shared: !view.shared },
+    });
   };
+
+  if (isLoadingViews) {
+    return (
+      <div className="flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm text-muted-foreground">Loading views...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2">
@@ -202,6 +254,9 @@ export function SavedViewsManager({
               <SelectItem key={view.id} value={view.id}>
                 <div className="flex items-center justify-between w-full">
                   <span>{view.name}</span>
+                  {view.is_org_default && (
+                    <Badge variant="secondary" className="ml-2 text-xs">Default</Badge>
+                  )}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
@@ -220,7 +275,7 @@ export function SavedViewsManager({
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleShare(view)}>
                         <Share2 className="h-4 w-4 mr-2" />
-                        {view.isShared ? 'Unshare' : 'Share'}
+                        {view.shared ? 'Unshare' : 'Share'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -274,25 +329,39 @@ export function SavedViewsManager({
                 rows={3}
               />
             </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="is-shared"
-                checked={isShared}
-                onChange={(e) => setIsShared(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="is-shared" className="cursor-pointer">
-                Share with team
-              </Label>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is-shared"
+                  checked={isShared}
+                  onChange={(e) => setIsShared(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="is-shared" className="cursor-pointer">
+                  Share with team
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is-org-default"
+                  checked={isOrgDefault}
+                  onChange={(e) => setIsOrgDefault(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="is-org-default" className="cursor-pointer">
+                  Set as organization default
+                </Label>
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={loading || !viewName.trim()}>
-              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button onClick={handleSave} disabled={createMutation.isPending || !viewName.trim()}>
+              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save View
             </Button>
           </DialogFooter>

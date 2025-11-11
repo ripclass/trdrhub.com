@@ -51,7 +51,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_saved_views, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -215,6 +215,7 @@ app.include_router(bank_compliance.router)  # Bank compliance endpoints (data re
 app.include_router(bank_sla.router)  # Bank SLA dashboards endpoints
 app.include_router(bank_evidence.router)  # Bank evidence packs endpoints
 app.include_router(bank_ai.router)  # Bank AI assistance endpoints
+app.include_router(bank_saved_views.router)  # Bank saved views endpoints
 app.include_router(onboarding.router)   # Onboarding wizard endpoints
 app.include_router(sme.router)          # SME workspace endpoints (LC Workspace, Drafts, Amendments)
 app.include_router(sme_templates.router)  # SME templates endpoints (LC and document templates with pre-fill)

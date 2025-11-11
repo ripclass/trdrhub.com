@@ -53,12 +53,21 @@ export interface BankResultsResponse {
 }
 
 export interface BankJobFilters {
+  q?: string;
   status?: string;
+  client_name?: string;
+  assignee?: string;
+  queue?: string;
+  date_from?: string;
+  date_to?: string;
+  sort_by?: 'created_at' | 'completed_at' | 'client_name' | 'lc_number';
+  sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
 
 export interface BankResultsFilters {
+  q?: string; // Free text search
   start_date?: string; // ISO date string
   end_date?: string; // ISO date string
   client_name?: string;
@@ -66,6 +75,10 @@ export interface BankResultsFilters {
   min_score?: number; // 0-100
   max_score?: number; // 0-100
   discrepancy_type?: 'date_mismatch' | 'amount_mismatch' | 'party_mismatch' | 'port_mismatch' | 'missing_field' | 'invalid_format';
+  assignee?: string; // User ID
+  queue?: string;
+  sort_by?: 'completed_at' | 'created_at' | 'compliance_score' | 'client_name' | 'lc_number';
+  sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
   job_ids?: string; // Comma-separated job IDs for bulk export
@@ -242,13 +255,50 @@ export const bankApi = {
   },
 
   /**
-   * Export filtered results as PDF
+   * Export filtered results as PDF (POST with async job support)
    */
-  exportResultsPDF: async (filters?: BankResultsFilters): Promise<Blob> => {
-    const response = await api.get<Blob>('/bank/results/export-pdf', {
+  exportResultsPDF: async (filters?: BankResultsFilters): Promise<Blob | { job_id: string; status: string; total_rows: number; message: string }> => {
+    const response = await api.post<Blob | { job_id: string; status: string; total_rows: number; message: string }>('/bank/results/export/pdf', null, {
       params: filters,
       responseType: 'blob',
     });
+    
+    // Check if response is a job object (JSON) or blob
+    if (response.headers['content-type']?.includes('application/json')) {
+      return JSON.parse(await response.data.text());
+    }
+    return response.data;
+  },
+
+  /**
+   * Export filtered results as CSV (POST with async job support)
+   */
+  exportResultsCSV: async (filters?: BankResultsFilters): Promise<Blob | { job_id: string; status: string; total_rows: number; message: string }> => {
+    const response = await api.post<Blob | { job_id: string; status: string; total_rows: number; message: string }>('/bank/results/export/csv', null, {
+      params: filters,
+      responseType: 'blob',
+    });
+    
+    // Check if response is a job object (JSON) or blob
+    if (response.headers['content-type']?.includes('application/json')) {
+      return JSON.parse(await response.data.text());
+    }
+    return response.data;
+  },
+
+  /**
+   * Get export job status
+   */
+  getExportJobStatus: async (jobId: string): Promise<{
+    job_id: string;
+    status: string;
+    created_at?: string;
+    started_at?: string;
+    completed_at?: string;
+    error_message?: string;
+    download_url?: string;
+  }> => {
+    const response = await api.get(`/bank/exports/${jobId}`);
     return response.data;
   },
 
@@ -1575,5 +1625,89 @@ export const bankAiApi = {
       console.warn('Translation API unavailable, using mock:', error?.message);
       throw error;
     }
+  },
+};
+
+// Saved Views API
+export interface SavedView {
+  id: string;
+  company_id: string;
+  owner_id: string;
+  owner_name?: string;
+  name: string;
+  resource: 'results' | 'jobs' | 'evidence';
+  query_params: Record<string, any>;
+  columns?: Record<string, any>;
+  is_org_default: boolean;
+  shared: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedViewCreate {
+  name: string;
+  resource: 'results' | 'jobs' | 'evidence';
+  query_params: Record<string, any>;
+  columns?: Record<string, any>;
+  is_org_default?: boolean;
+  shared?: boolean;
+}
+
+export interface SavedViewUpdate {
+  name?: string;
+  query_params?: Record<string, any>;
+  columns?: Record<string, any>;
+  is_org_default?: boolean;
+  shared?: boolean;
+}
+
+export interface SavedViewListResponse {
+  total: number;
+  count: number;
+  views: SavedView[];
+}
+
+export const bankSavedViewsApi = {
+  /**
+   * Create a saved view
+   */
+  create: async (view: SavedViewCreate): Promise<SavedView> => {
+    const response = await api.post<SavedView>('/bank/saved-views', view);
+    return response.data;
+  },
+
+  /**
+   * List saved views
+   */
+  list: async (resource?: string): Promise<SavedViewListResponse> => {
+    const response = await api.get<SavedViewListResponse>('/bank/saved-views', {
+      params: resource ? { resource } : undefined,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get default view for a resource
+   */
+  getDefault: async (resource: string): Promise<SavedView | null> => {
+    const response = await api.get<SavedView | null>('/bank/saved-views/default', {
+      params: { resource },
+    });
+    return response.data;
+  },
+
+  /**
+   * Update a saved view
+   */
+  update: async (viewId: string, updates: SavedViewUpdate): Promise<SavedView> => {
+    const response = await api.put<SavedView>(`/bank/saved-views/${viewId}`, updates);
+    return response.data;
+  },
+
+  /**
+   * Delete a saved view
+   */
+  delete: async (viewId: string): Promise<void> => {
+    await api.delete(`/bank/saved-views/${viewId}`);
   },
 };
