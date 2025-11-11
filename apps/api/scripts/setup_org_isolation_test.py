@@ -83,58 +83,80 @@ def setup_test_data():
         db.flush()
         print(f"✅ Created Org 2: {org2.name} (ID: {org2_id})")
         
-        # Find or create test users
-        user1_email = "test_org1@testbank.com"
-        user2_email = "test_org2@testbank.com"
+        # Find existing bank users (use any bank user for testing)
+        bank_users = db.query(User).filter(
+            User.company_id == bank_company.id,
+            User.role.in_(['bank_admin', 'bank_officer'])
+        ).limit(2).all()
         
-        user1 = db.query(User).filter(User.email == user1_email).first()
-        if not user1:
-            print(f"⚠️  User {user1_email} not found. Please create manually or update email.")
-            user1_id = input(f"Enter User 1 ID (or press Enter to skip): ").strip()
-            if not user1_id:
-                print("⚠️  Skipping User 1 assignment")
-                user1_id = None
-            else:
-                user1_id = uuid.UUID(user1_id)
-        else:
-            user1_id = user1.id
-            print(f"✅ Found User 1: {user1.email} (ID: {user1_id})")
+        user1_id = None
+        user2_id = None
         
-        user2 = db.query(User).filter(User.email == user2_email).first()
-        if not user2:
-            print(f"⚠️  User {user2_email} not found. Please create manually or update email.")
-            user2_id = input(f"Enter User 2 ID (or press Enter to skip): ").strip()
-            if not user2_id:
-                print("⚠️  Skipping User 2 assignment")
-                user2_id = None
-            else:
-                user2_id = uuid.UUID(user2_id)
-        else:
-            user2_id = user2.id
-            print(f"✅ Found User 2: {user2.email} (ID: {user2_id})")
+        if len(bank_users) >= 1:
+            user1_id = bank_users[0].id
+            print(f"✅ Using existing User 1: {bank_users[0].email} (ID: {user1_id})")
+        
+        if len(bank_users) >= 2:
+            user2_id = bank_users[1].id
+            print(f"✅ Using existing User 2: {bank_users[1].email} (ID: {user2_id})")
+        elif len(bank_users) == 1:
+            # Use same user for both orgs (for testing)
+            user2_id = bank_users[0].id
+            print(f"✅ Using same user for both orgs: {bank_users[0].email} (ID: {user2_id})")
+        
+        if not bank_users:
+            print("⚠️  No bank users found. Orgs will be created but no user assignments.")
+            print("   You can assign users later via API or SQL.")
         
         # Assign users to orgs
         if user1_id:
-            # Remove existing access
-            db.query(UserOrgAccess).filter(UserOrgAccess.user_id == user1_id).delete()
-            access1 = UserOrgAccess(
-                user_id=user1_id,
-                org_id=org1_id,
-                role=OrgAccessRole.EDITOR.value,
-            )
-            db.add(access1)
-            print(f"✅ Assigned User 1 to Org 1")
+            # Check if access already exists
+            existing_access1 = db.query(UserOrgAccess).filter(
+                UserOrgAccess.user_id == user1_id,
+                UserOrgAccess.org_id == org1_id
+            ).first()
+            if not existing_access1:
+                access1 = UserOrgAccess(
+                    user_id=user1_id,
+                    org_id=org1_id,
+                    role=OrgAccessRole.ADMIN.value,  # Use ADMIN role for testing
+                )
+                db.add(access1)
+                print(f"✅ Assigned User 1 to Org 1")
+            else:
+                print(f"✅ User 1 already has access to Org 1")
         
-        if user2_id:
-            # Remove existing access
-            db.query(UserOrgAccess).filter(UserOrgAccess.user_id == user2_id).delete()
-            access2 = UserOrgAccess(
-                user_id=user2_id,
-                org_id=org2_id,
-                role=OrgAccessRole.EDITOR.value,
-            )
-            db.add(access2)
-            print(f"✅ Assigned User 2 to Org 2")
+        if user2_id and user2_id != user1_id:  # Only if different user
+            # Check if access already exists
+            existing_access2 = db.query(UserOrgAccess).filter(
+                UserOrgAccess.user_id == user2_id,
+                UserOrgAccess.org_id == org2_id
+            ).first()
+            if not existing_access2:
+                access2 = UserOrgAccess(
+                    user_id=user2_id,
+                    org_id=org2_id,
+                    role=OrgAccessRole.ADMIN.value,  # Use ADMIN role for testing
+                )
+                db.add(access2)
+                print(f"✅ Assigned User 2 to Org 2")
+            else:
+                print(f"✅ User 2 already has access to Org 2")
+        
+        # If same user, assign to both orgs
+        if user1_id and user2_id == user1_id:
+            existing_access2 = db.query(UserOrgAccess).filter(
+                UserOrgAccess.user_id == user1_id,
+                UserOrgAccess.org_id == org2_id
+            ).first()
+            if not existing_access2:
+                access2 = UserOrgAccess(
+                    user_id=user1_id,
+                    org_id=org2_id,
+                    role=OrgAccessRole.ADMIN.value,
+                )
+                db.add(access2)
+                print(f"✅ Assigned same user to Org 2 (for testing)")
         
         # Create test validation sessions
         print("\n📝 Creating test validation sessions...")
