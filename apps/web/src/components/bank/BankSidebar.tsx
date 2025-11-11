@@ -1,5 +1,6 @@
 import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Sparkles, UserCog, LogOut, FolderKanban, Plug } from "lucide-react";
 import { OrgSwitcher } from "./OrgSwitcher";
+import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
