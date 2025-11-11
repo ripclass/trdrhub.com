@@ -101,9 +101,9 @@ async def validate_doc(
         user_type = payload.get("userType") or payload.get("user_type")
         metadata = payload.get("metadata")
         
-        # Create ValidationSession for bank operations or if metadata is provided
+        # Create ValidationSession for bank operations, exporter/importer, or if metadata is provided
         validation_session = None
-        if user_type == "bank" or metadata:
+        if user_type in ["bank", "exporter", "importer"] or metadata:
             session_service = ValidationSessionService(db)
             validation_session = session_service.create_session(current_user)
             
@@ -111,7 +111,7 @@ async def validate_doc(
             if current_user.company_id:
                 validation_session.company_id = current_user.company_id
             
-            # Store bank metadata in extracted_data
+            # Store metadata based on user type
             if metadata:
                 try:
                     # Parse metadata if it's a string
@@ -136,6 +136,16 @@ async def validate_doc(
                 except (json.JSONDecodeError, TypeError):
                     # If metadata parsing fails, continue without it
                     pass
+            elif user_type in ["exporter", "importer"]:
+                # Store exporter/importer metadata (LC number from payload)
+                lc_number = payload.get("lc_number") or payload.get("lcNumber")
+                workflow_type = payload.get("workflow_type") or payload.get("workflowType")
+                if lc_number or workflow_type:
+                    validation_session.extracted_data = {
+                        "lc_number": lc_number,
+                        "user_type": user_type,
+                        "workflow_type": workflow_type,
+                    }
             
             # Update session status to processing
             validation_session.status = SessionStatus.PROCESSING.value

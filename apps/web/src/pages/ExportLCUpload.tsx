@@ -364,27 +364,22 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         description: "Uploading documents and checking compliance...",
       });
 
-      // For development/demo - create a mock jobId and navigate immediately
-      // TODO: Replace with real API call when backend is ready
-      const mockJobId = `job_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-
-      console.log('🔧 DEV MODE: Simulating validation with mock jobId:', mockJobId);
+      // Real API call - validate export LC documents
       console.log('📁 Files to validate:', files.map(f => f.name));
       console.log('🏷️  LC Number:', lcNumber.trim());
       console.log('📋 Document Tags:', documentTags);
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      /*
-      // Real API call - uncomment when backend is ready:
       const response = await validate({
         files,
         lcNumber: lcNumber.trim(),
         notes: notes.trim() || undefined,
         documentTags: documentTags,
+        userType: "exporter",
+        workflowType: "export-lc-upload",
       });
-      */
+
+      const jobId = response.jobId || response.job_id;
+      console.log('✅ Validation started, jobId:', jobId);
 
       toast({
         title: "Validation In Progress",
@@ -405,12 +400,12 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
       if (embedded && onComplete) {
         setTimeout(() => {
-          onComplete({ jobId: mockJobId, lcNumber: lcNumber.trim() });
+          onComplete({ jobId, lcNumber: lcNumber.trim() });
         }, 800);
       } else {
-        console.log('🚀 Navigating to results page with jobId:', mockJobId);
+        console.log('🚀 Navigating to results page with jobId:', jobId);
         setTimeout(() => {
-          navigate(`/lcopilot/results/${mockJobId}`);
+          navigate(`/lcopilot/results/${jobId}?lc=${encodeURIComponent(lcNumber.trim())}`);
         }, 1500);
       }
 
