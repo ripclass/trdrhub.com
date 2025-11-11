@@ -395,7 +395,7 @@ class PartnerRegistry(Base):
 
     # Relationships
     connectors = relationship("PartnerConnector", back_populates="partner")
-    webhook_deliveries = relationship("WebhookDelivery", back_populates="partner")
+    webhook_deliveries = relationship("PartnerWebhookDelivery", back_populates="partner")
 
 
 class PartnerConnector(Base):
@@ -422,9 +422,9 @@ class PartnerConnector(Base):
     partner = relationship("PartnerRegistry", back_populates="connectors")
 
 
-class WebhookDelivery(Base):
-    """Webhook delivery tracking with retry logic"""
-    __tablename__ = "webhook_deliveries"
+class PartnerWebhookDelivery(Base):
+    """Partner webhook delivery tracking with retry logic"""
+    __tablename__ = "partner_webhook_deliveries"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     partner_id = Column(UUID(as_uuid=True), ForeignKey("partner_registry.id"), nullable=False)
@@ -452,7 +452,7 @@ class WebhookDLQ(Base):
     __tablename__ = "webhook_dlq"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    original_delivery_id = Column(UUID(as_uuid=True), ForeignKey("webhook_deliveries.id"), nullable=False)
+    original_delivery_id = Column(UUID(as_uuid=True), ForeignKey("partner_webhook_deliveries.id"), nullable=False)
     partner_id = Column(UUID(as_uuid=True), ForeignKey("partner_registry.id"), nullable=False)
     webhook_url = Column(Text, nullable=False)
     event_type = Column(String(100), nullable=False)
