@@ -52,6 +52,12 @@ from .models.company_profile import (
 # Import saved view models
 from .models.saved_view import SavedView
 
+# Import API tokens and webhooks models
+from .models.api_tokens_webhooks import APIToken, WebhookSubscription, WebhookDelivery
+
+# Import duplicate detection models
+from .models.duplicate_detection import LCFingerprint, LCSimilarity, LCMergeHistory
+
 
 class UserRole(str, Enum):
     """User role types for access control."""

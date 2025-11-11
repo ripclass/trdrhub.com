@@ -39,6 +39,7 @@ import { FileText, CheckCircle, AlertTriangle, Clock, Bell, ArrowLeft } from "lu
 import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
 import { BulkJobsView } from "./bank/BulkJobs";
+import { IntegrationsPage } from "@/components/bank/integrations/IntegrationsPage";
 
 export default function BankDashboardV2() {
   const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
@@ -234,6 +235,8 @@ export default function BankDashboardV2() {
         {activeTab === "settings" && <SettingsPanel />}
 
         {activeTab === "ai-assistance" && <AIAssistance embedded />}
+
+        {activeTab === "integrations" && <IntegrationsPage embedded />}
 
         {activeTab === "help" && <HelpPanel />}
       </div>

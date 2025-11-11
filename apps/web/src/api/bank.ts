@@ -1804,3 +1804,285 @@ export const bankDuplicatesApi = {
     return response.data;
   },
 };
+
+// API Tokens & Webhooks API
+export interface APIToken {
+  id: string;
+  company_id: string;
+  created_by: string;
+  name: string;
+  description?: string;
+  token_prefix: string;
+  is_active: boolean;
+  scopes: string[];
+  expires_at?: string;
+  last_used_at?: string;
+  last_used_ip?: string;
+  usage_count: number;
+  rate_limit_per_minute?: number;
+  rate_limit_per_hour?: number;
+  created_at: string;
+  updated_at: string;
+  revoked_at?: string;
+  revoked_by?: string;
+  revoke_reason?: string;
+}
+
+export interface APITokenCreate {
+  name: string;
+  description?: string;
+  scopes: string[];
+  expires_at?: string;
+  rate_limit_per_minute?: number;
+  rate_limit_per_hour?: number;
+}
+
+export interface APITokenCreateResponse {
+  token: string; // Full token - only shown once!
+  token_id: string;
+  token_prefix: string;
+  expires_at?: string;
+  warning: string;
+}
+
+export interface APITokenUpdate {
+  name?: string;
+  description?: string;
+  is_active?: boolean;
+  expires_at?: string;
+  scopes?: string[];
+}
+
+export interface APITokenRevokeRequest {
+  reason?: string;
+}
+
+export interface APITokenListResponse {
+  tokens: APIToken[];
+  total: number;
+}
+
+export interface WebhookSubscription {
+  id: string;
+  company_id: string;
+  created_by: string;
+  name: string;
+  description?: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  timeout_seconds: number;
+  retry_count: number;
+  retry_backoff_multiplier: number;
+  headers?: Record<string, string>;
+  success_count: number;
+  failure_count: number;
+  last_delivery_at?: string;
+  last_success_at?: string;
+  last_failure_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookSubscriptionCreate {
+  name: string;
+  description?: string;
+  url: string;
+  events: string[];
+  timeout_seconds?: number;
+  retry_count?: number;
+  retry_backoff_multiplier?: number;
+  headers?: Record<string, string>;
+}
+
+export interface WebhookSubscriptionCreateResponse {
+  subscription: WebhookSubscription;
+  secret: string; // Secret shown once for signing
+  warning: string;
+}
+
+export interface WebhookSubscriptionUpdate {
+  name?: string;
+  description?: string;
+  url?: string;
+  events?: string[];
+  is_active?: boolean;
+  timeout_seconds?: number;
+  headers?: Record<string, string>;
+}
+
+export interface WebhookSubscriptionListResponse {
+  subscriptions: WebhookSubscription[];
+  total: number;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  subscription_id: string;
+  company_id: string;
+  event_type: string;
+  event_id?: string;
+  status: string;
+  attempt_number: number;
+  max_attempts: number;
+  http_status_code?: number;
+  response_body?: string;
+  error_message?: string;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  next_retry_at?: string;
+  retry_reason?: string;
+}
+
+export interface WebhookDeliveryListResponse {
+  deliveries: WebhookDelivery[];
+  total: number;
+}
+
+export interface WebhookTestRequest {
+  payload?: Record<string, any>;
+}
+
+export interface WebhookTestResponse {
+  delivery_id: string;
+  status: string;
+  http_status_code?: number;
+  response_body?: string;
+  duration_ms?: number;
+  error_message?: string;
+}
+
+export interface WebhookReplayRequest {
+  delivery_id: string;
+}
+
+export interface WebhookReplayResponse {
+  new_delivery_id: string;
+  status: string;
+}
+
+export const bankTokensApi = {
+  /**
+   * Create a new API token
+   */
+  create: async (tokenData: APITokenCreate): Promise<APITokenCreateResponse> => {
+    const response = await api.post<APITokenCreateResponse>('/bank/tokens', tokenData);
+    return response.data;
+  },
+
+  /**
+   * List all API tokens
+   */
+  list: async (includeRevoked?: boolean): Promise<APITokenListResponse> => {
+    const response = await api.get<APITokenListResponse>('/bank/tokens', {
+      params: { include_revoked: includeRevoked },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get a specific API token
+   */
+  get: async (tokenId: string): Promise<APIToken> => {
+    const response = await api.get<APIToken>(`/bank/tokens/${tokenId}`);
+    return response.data;
+  },
+
+  /**
+   * Update an API token
+   */
+  update: async (tokenId: string, updates: APITokenUpdate): Promise<APIToken> => {
+    const response = await api.put<APIToken>(`/bank/tokens/${tokenId}`, updates);
+    return response.data;
+  },
+
+  /**
+   * Revoke an API token
+   */
+  revoke: async (tokenId: string, reason?: string): Promise<APIToken> => {
+    const response = await api.post<APIToken>(`/bank/tokens/${tokenId}/revoke`, { reason });
+    return response.data;
+  },
+};
+
+export const bankWebhooksApi = {
+  /**
+   * Create a new webhook subscription
+   */
+  create: async (subscriptionData: WebhookSubscriptionCreate): Promise<WebhookSubscriptionCreateResponse> => {
+    const response = await api.post<WebhookSubscriptionCreateResponse>('/bank/webhooks', subscriptionData);
+    return response.data;
+  },
+
+  /**
+   * List all webhook subscriptions
+   */
+  list: async (): Promise<WebhookSubscriptionListResponse> => {
+    const response = await api.get<WebhookSubscriptionListResponse>('/bank/webhooks');
+    return response.data;
+  },
+
+  /**
+   * Get a specific webhook subscription
+   */
+  get: async (subscriptionId: string): Promise<WebhookSubscription> => {
+    const response = await api.get<WebhookSubscription>(`/bank/webhooks/${subscriptionId}`);
+    return response.data;
+  },
+
+  /**
+   * Update a webhook subscription
+   */
+  update: async (subscriptionId: string, updates: WebhookSubscriptionUpdate): Promise<WebhookSubscription> => {
+    const response = await api.put<WebhookSubscription>(`/bank/webhooks/${subscriptionId}`, updates);
+    return response.data;
+  },
+
+  /**
+   * Delete a webhook subscription
+   */
+  delete: async (subscriptionId: string): Promise<void> => {
+    await api.delete(`/bank/webhooks/${subscriptionId}`);
+  },
+
+  /**
+   * Test a webhook subscription
+   */
+  test: async (subscriptionId: string, testData?: WebhookTestRequest): Promise<WebhookTestResponse> => {
+    const response = await api.post<WebhookTestResponse>(
+      `/bank/webhooks/${subscriptionId}/test`,
+      testData || {}
+    );
+    return response.data;
+  },
+
+  /**
+   * List webhook deliveries for a subscription
+   */
+  listDeliveries: async (
+    subscriptionId: string,
+    filters?: {
+      status?: string;
+      event_type?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<WebhookDeliveryListResponse> => {
+    const response = await api.get<WebhookDeliveryListResponse>(
+      `/bank/webhooks/${subscriptionId}/deliveries`,
+      { params: filters }
+    );
+    return response.data;
+  },
+
+  /**
+   * Replay a failed webhook delivery
+   */
+  replay: async (deliveryId: string): Promise<WebhookReplayResponse> => {
+    const response = await api.post<WebhookReplayResponse>(
+      `/bank/webhooks/deliveries/${deliveryId}/replay`
+    );
+    return response.data;
+  },
+};
