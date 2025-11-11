@@ -160,6 +160,18 @@ def list_saved_views(
                 )
             query = query.filter(SavedView.resource == resource)
         
+        # Org scope filter (if org_id is set in request state)
+        org_id = getattr(request.state, "org_id", None) if request else None
+        if org_id:
+            # Filter saved views by org in query_params
+            from sqlalchemy.dialects.postgresql import JSONB
+            from sqlalchemy import cast
+            org_filter = cast(SavedView.query_params, JSONB)['org'].astext == org_id
+            query = query.filter(
+                SavedView.query_params.isnot(None),
+                org_filter
+            )
+        
         # Show user's own views and shared views
         query = query.filter(
             or_(
