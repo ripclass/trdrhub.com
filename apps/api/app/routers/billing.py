@@ -409,6 +409,26 @@ async def refund_payment(
             reason=refund_data.reason
         )
 
+        return schemas.RefundResult(
+            success=result.success,
+            refund_id=result.refund_id,
+            original_payment_id=result.original_payment_id,
+            amount=result.amount,
+            status=result.status.value,
+            error_message=result.error_message
+        )
+
+    except PaymentProviderError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment provider error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refund payment: {str(e)}"
+        )
+
 
 @router.post("/payments/portal", response_model=Dict[str, str])
 async def create_billing_portal(
@@ -444,26 +464,6 @@ async def create_billing_portal(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create billing portal session: {str(e)}",
-        )
-
-        return schemas.RefundResult(
-            success=result.success,
-            refund_id=result.refund_id,
-            original_payment_id=result.original_payment_id,
-            amount=result.amount,
-            status=result.status.value,
-            error_message=result.error_message
-        )
-
-    except PaymentProviderError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Payment provider error: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to refund payment: {str(e)}"
         )
 
 
