@@ -48,6 +48,16 @@ export function OrgSwitcher() {
     );
   }
   
+  // If no orgs exist, hide the switcher (optional feature)
+  // Or show a simplified version
+  if (orgs.length === 0) {
+    // Option: Hide completely if no orgs
+    // return null;
+    
+    // Option: Show "All Organizations" only (current behavior)
+    // This is fine - it means "show everything"
+  }
+  
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
