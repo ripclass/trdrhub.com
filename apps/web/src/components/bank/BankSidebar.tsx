@@ -119,6 +119,11 @@ const navSecondary = [
     icon: UserCog,
   },
   {
+    title: "Organizations",
+    url: "/lcopilot/bank-dashboard?tab=orgs",
+    icon: Building2,
+  },
+  {
     title: "Settings",
     url: "/lcopilot/bank-dashboard?tab=settings",
     icon: Settings,

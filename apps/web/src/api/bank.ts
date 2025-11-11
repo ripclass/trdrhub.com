@@ -2096,6 +2096,26 @@ export interface BankOrg {
   path: string;
   level: number;
   role: string;
+  is_active?: boolean;
+  sort_order?: number;
+}
+
+export interface BankOrgCreate {
+  bank_company_id: string;
+  parent_id?: string;
+  kind: "group" | "region" | "branch";
+  name: string;
+  code?: string;
+  level?: number;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+export interface BankOrgUpdate {
+  name?: string;
+  code?: string;
+  is_active?: boolean;
+  sort_order?: number;
 }
 
 export const bankOrgsApi = {
@@ -2105,5 +2125,28 @@ export const bankOrgsApi = {
   listOrgs: async (): Promise<{ orgs: BankOrg[] }> => {
     const response = await api.get<{ total: number; count: number; results: BankOrg[] }>("/bank/orgs");
     return { orgs: response.data.results };
+  },
+
+  /**
+   * Create a new organization
+   */
+  createOrg: async (data: BankOrgCreate): Promise<BankOrg> => {
+    const response = await api.post<BankOrg>("/bank/orgs", data);
+    return response.data;
+  },
+
+  /**
+   * Update an organization
+   */
+  updateOrg: async (orgId: string, data: BankOrgUpdate): Promise<BankOrg> => {
+    const response = await api.put<BankOrg>(`/bank/orgs/${orgId}`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete an organization
+   */
+  deleteOrg: async (orgId: string): Promise<void> => {
+    await api.delete(`/bank/orgs/${orgId}`);
   },
 };

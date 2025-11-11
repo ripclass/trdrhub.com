@@ -197,6 +197,8 @@ def list_user_orgs(
                 "path": org.path,
                 "level": level,
                 "role": access.role if access else ("admin" if current_user.is_bank_admin() else "viewer"),
+                "is_active": org.is_active,
+                "sort_order": org.sort_order,
             })
         
         # Log audit
@@ -237,5 +239,175 @@ def list_user_orgs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list organizations: {str(e)}"
+        )
+
+
+@router.put("/{org_id}", response_model=BankOrgRead)
+def update_bank_org(
+    org_id: UUID,
+    org_data: BankOrgUpdate,
+    current_user: User = Depends(require_bank_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Update a bank organization.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        org = db.query(BankOrg).filter(
+            BankOrg.id == org_id,
+            BankOrg.bank_company_id == current_user.company_id
+        ).first()
+        
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found"
+            )
+        
+        # Update fields
+        if org_data.name is not None:
+            org.name = org_data.name
+        if org_data.code is not None:
+            org.code = org_data.code
+        if org_data.is_active is not None:
+            org.is_active = org_data.is_active
+        if org_data.sort_order is not None:
+            org.sort_order = org_data.sort_order
+        
+        db.commit()
+        db.refresh(org)
+        
+        # Log audit
+        audit_service.log_action(
+            action=AuditAction.UPDATE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_org",
+            resource_id=str(org.id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "name": org.name,
+                "code": org.code,
+                "is_active": org.is_active,
+            }
+        )
+        
+        return BankOrgRead.model_validate(org)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        audit_service.log_action(
+            action=AuditAction.UPDATE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_org",
+            resource_id=str(org_id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.FAILURE,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update organization: {str(e)}"
+        )
+
+
+@router.delete("/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bank_org(
+    org_id: UUID,
+    current_user: User = Depends(require_bank_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Soft delete a bank organization.
+    """
+    audit_service = AuditService(db)
+    audit_context = create_audit_context(request)
+    
+    try:
+        org = db.query(BankOrg).filter(
+            BankOrg.id == org_id,
+            BankOrg.bank_company_id == current_user.company_id,
+            BankOrg.deleted_at.is_(None)
+        ).first()
+        
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found"
+            )
+        
+        # Check for child orgs
+        child_orgs = db.query(BankOrg).filter(
+            BankOrg.parent_id == org_id,
+            BankOrg.deleted_at.is_(None)
+        ).count()
+        
+        if child_orgs > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete organization with child organizations"
+            )
+        
+        # Soft delete
+        from datetime import datetime
+        org.deleted_at = datetime.utcnow()
+        org.is_active = False
+        
+        db.commit()
+        
+        # Log audit
+        audit_service.log_action(
+            action=AuditAction.DELETE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_org",
+            resource_id=str(org.id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.SUCCESS,
+            audit_metadata={
+                "name": org.name,
+            }
+        )
+        
+        return None
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        audit_service.log_action(
+            action=AuditAction.DELETE,
+            user=current_user,
+            correlation_id=audit_context['correlation_id'],
+            resource_type="bank_org",
+            resource_id=str(org_id),
+            ip_address=audit_context['ip_address'],
+            user_agent=audit_context['user_agent'],
+            endpoint=audit_context['endpoint'],
+            http_method=audit_context['http_method'],
+            result=AuditResult.FAILURE,
+            error_message=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete organization: {str(e)}"
         )
 

@@ -42,6 +42,7 @@ import { BulkJobsView } from "./bank/BulkJobs";
 import { IntegrationsPage } from "@/components/bank/integrations/IntegrationsPage";
 import { OrgProvider } from "@/contexts/OrgContext";
 import { BankUsersPage } from "./bank/BankUsersPage";
+import { BankOrgsPage } from "./bank/BankOrgsPage";
 
 export default function BankDashboardV2() {
   const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
@@ -234,6 +235,8 @@ export default function BankDashboardV2() {
         {activeTab === "billing-allocations" && <BillingAllocationsPage onTabChange={handleBillingTabChange} />}
 
         {activeTab === "users" && isBankAdmin && <BankUsersPage />}
+
+        {activeTab === "orgs" && isBankAdmin && <BankOrgsPage />}
 
         {activeTab === "settings" && <SettingsPanel />}
 
