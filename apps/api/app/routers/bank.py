@@ -18,7 +18,7 @@ import time
 
 from ..core.security import require_bank_or_admin
 from ..database import get_db, SessionLocal
-from ..models import User
+from ..models import User, ValidationSession
 from ..models.admin import JobQueue, JobStatus
 from ..services.analytics_service import AnalyticsService
 from ..services.entitlements import EntitlementService, EntitlementError
