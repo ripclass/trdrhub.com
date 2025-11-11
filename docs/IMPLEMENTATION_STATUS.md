@@ -19,9 +19,9 @@
 | **Validation Policy Surface** | ✅ **IMPLEMENTED** | `PolicySurface` component shows ruleset domain/jurisdiction/version/effective window |
 | **SLA Dashboards** | ✅ **IMPLEMENTED** | UI exists (`SLADashboards.tsx`) with throughput, aging, time-to-first-review metrics. Backend API endpoints (`/bank/sla/metrics`, `/bank/sla/breaches`) implemented and wired. Calculates metrics from JobQueue, BankApproval, and DiscrepancyWorkflow tables. |
 | **Bulk Jobs** | ✅ **IMPLEMENTED** | Backend API (`/bank/bulk-jobs`) with templated runs, scheduling, throttling, and job management. Frontend UI (`BulkJobs.tsx`) with Jobs and Templates tabs. Supports job creation from templates, cancellation, retry, and progress tracking. |
-| **Duplicate Detection** | ⚠️ **PARTIAL** | LC number + client name check exists (`checkDuplicate` API), but missing: content similarity, merge history |
+| **Duplicate Detection** | ✅ **IMPLEMENTED** | Full duplicate detection with content similarity (fingerprinting), merge history tracking, duplicate candidates panel, merge modal, and history timeline. Backend API (`/bank/duplicates`) with similarity scoring and merge operations. Frontend UI integrated into ResultsTable and LCResultDetailModal. |
 | **Evidence Packs** | ✅ **IMPLEMENTED** | UI exists (`EvidencePacks.tsx`) with one-click PDF/ZIP generation. Backend API endpoints (`/bank/evidence-packs/sessions`, `/bank/evidence-packs/generate`) implemented and wired. Lists validation sessions from bank's tenant companies via BankTenant relationship. |
-| **API Tokens & Webhooks** | ⚠️ **PARTIAL** | Exists in Admin Console (`partners-webhooks`), but NOT in Bank Dashboard. Need: bank-specific API tokens with limited scope |
+| **API Tokens & Webhooks** | ✅ **IMPLEMENTED** | Bank-specific UI (`IntegrationsPage`) with API tokens management (create, revoke, mask, usage tracking) and webhook subscriptions (CRUD, test, replay, delivery logs). Backend API (`/bank/tokens`, `/bank/webhooks`) with token lifecycle, webhook signing, retry logic, and audit logging. |
 
 ## Bank Dashboard - P2 (Nice-to-Have)
 
@@ -30,7 +30,7 @@
 | **Saved Searches & Shared Views** | ✅ **IMPLEMENTED** | Saved search functionality with shared views and subscriptions. Users can save filter combinations and share them with team members. |
 | **Health/Latency Banner** | ✅ **IMPLEMENTED** | System status banner showing operational status, latency metrics, and uptime percentage. Displays green/amber/red indicators based on system health. |
 | **In-app Tutorials** | ✅ **IMPLEMENTED** | Interactive tutorials and keyboard shortcuts guide. Contextual help system integrated into dashboards. |
-| **Multi-org Switching** | ❌ **MISSING** | No bank groups/regions switching |
+| **Multi-org Switching** | ✅ **IMPLEMENTED** | Hierarchical org units (group → region → branch) with `OrgSwitcher` component in sidebar. Backend models (`bank_orgs`, `user_org_access`), `OrgScopeMiddleware` for org filtering, and org-scoped queries across bank endpoints. URL deep links and localStorage persistence. |
 
 ---
 
@@ -67,7 +67,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Search & Filters** | ⚠️ **PARTIAL** | Filters exist (`AdvancedFilters`), but missing: saved views, deep links need verification, export CSV/PDF |
+| **Search & Filters** | ✅ **IMPLEMENTED** | Common `FilterBar` component with URL-state sync, saved views (`SavedViewsManager`), deep links via URL params, CSV/PDF export with async job handling. Backend API (`/bank/results`, `/bank/saved-views`, `/bank/results/export`) with filters, sorting, pagination, and export job queue. |
 | **Mobile-Friendly** | ⚠️ **PARTIAL** | Responsive components exist (`useIsMobile`, `ResponsiveContainer`), but key flows need verification |
 | **Security** | ✅ **IMPLEMENTED** | 2FA prompts in `BankLogin.tsx`, idle timeout in `BankAuthProvider`; backend endpoints (`/bank/auth/request-2fa`, `/verify-2fa`) feature-flagged |
 | **Data Retention** | ✅ **IMPLEMENTED** | Bank compliance endpoints (`/bank/compliance/retention-policy`, `/export`, `/erase`) with tenant scoping; UI wired |
@@ -84,7 +84,7 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **Personalization** | ✅ **IMPLEMENTED** | Pin tabs functionality and default landing page configuration per role. User preferences stored and applied across sessions. |
-| **Internationalization** | ⚠️ **PARTIAL** | i18n infrastructure exists (`i18n/index.ts`, `TranslationManager`), but hooks need verification |
+| **Internationalization** | ✅ **IMPLEMENTED** | Full i18n setup with `react-i18next`, `en` and `bn` locales, `LanguageSwitcher` component in sidebar. Backend `LocaleMiddleware` reads `Accept-Language` header or `lang` query param, propagates locale to AI endpoints. Translation files for bank dashboard with date/number formatting support. |
 
 ---
 
@@ -93,28 +93,25 @@
 ### ✅ Fully Implemented (P0)
 - Bank: Roles & Approvals, Discrepancy Workflow, Audit Trail, Notifications, Policy Surface, Queue Operations, Client Portfolio (with KPIs/trends/heatmap), RBAC (granular roles)
 - SME: LC Workspace, Drafts & Amendments, Notifications, Result Lifecycle (ready to submit badge, bank submission confirmation, history per LC)
-- Cross-cutting: Basic search/filters, responsive components, Security (2FA, idle timeout), Data Retention
+- Cross-cutting: Search & Filters (saved views, deep links, CSV/PDF export), responsive components, Security (2FA, idle timeout), Data Retention
 
 ### ✅ Fully Implemented (P1)
-- Bank: SLA Dashboards, Evidence Packs, Bulk Jobs (templated runs, scheduling, throttling)
+- Bank: SLA Dashboards, Evidence Packs, Bulk Jobs (templated runs, scheduling, throttling), Duplicate Detection (content similarity, merge history), API Tokens & Webhooks (bank-specific UI)
 - SME: Templates (LC and document templates with pre-fill), Company Profile (compliance info, addresses, consignee/shipper)
 
 ### ✅ Fully Implemented (P2)
-- Bank: Saved Searches & Shared Views, Health/Latency Banner, In-app Tutorials
+- Bank: Saved Searches & Shared Views, Health/Latency Banner, In-app Tutorials, Multi-org Switching (hierarchical org units with URL deep links)
 - SME: AI Assistance, Content Library, Shipment Timeline
-- Cross-cutting: Personalization (pin tabs, default landing per role)
+- Cross-cutting: Personalization (pin tabs, default landing per role), Internationalization (i18n with en/bn locales, backend propagation)
 
 ### ⚠️ Partially Implemented (Needs Completion)
-- **Bank**: Duplicate Detection (needs merge history), API Tokens (needs bank-specific UI)
 - **SME**: Duplicate Guardrails (needs linking suggestion)
-- **Cross-cutting**: Search (needs saved views/deep links), Mobile (needs verification), Support (needs ticket handoff), i18n (needs verification)
+- **Cross-cutting**: Mobile (needs verification), Support (needs ticket handoff)
 
 ### ❌ Missing (Critical Gaps)
-- **Bank P1**: Duplicate Detection (merge history, content similarity), API Tokens & Webhooks (bank-specific UI)
 - **SME P1**: Team Roles (owner/editor/viewer, workspace sharing with auditors)
-- **Cross-cutting P0**: Search (saved views/deep links), Mobile (verification needed)
+- **Cross-cutting P0**: Mobile (verification needed)
 - **Cross-cutting P1**: Environment Banner (Sandbox/Production indicator), Support ticket handoff
-- **Cross-cutting P2**: Internationalization (i18n hooks verification), Multi-org Switching (Bank)
 
 ---
 
@@ -122,14 +119,11 @@
 
 ### Next Focus (Remaining P1 Gaps)
 1. **SME P1**: Team Roles (owner/editor/viewer, workspace sharing with auditors)
-2. **Bank P1**: Duplicate Detection enhancements (merge history, content similarity), API Tokens & Webhooks (bank-specific UI)
-3. **Cross-cutting P1**: Environment Banner (Sandbox/Production indicator), Support ticket handoff
+2. **Cross-cutting P1**: Environment Banner (Sandbox/Production indicator), Support ticket handoff
 
 ### Sprint 2 (Enhancements & Verification)
-1. **Search & Filters**: Saved views, deep links, CSV/PDF export
-2. **Mobile-Friendly**: Verification of key flows on mobile devices
-3. **Internationalization**: Verify i18n hooks and translation infrastructure
-4. **Multi-org Switching**: Bank groups/regions switching functionality
+1. **Mobile-Friendly**: Verification of key flows on mobile devices
+2. **SME P1**: Duplicate Guardrails (suggest linking to existing LCs)
 
 ### Sprint 3 (Polish & Optimization)
 1. **Duplicate Guardrails**: Suggest linking to existing LCs

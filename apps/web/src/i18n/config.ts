@@ -5,33 +5,34 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-
-// Import translations
-import enTranslations from './locales/en.json';
-import bnTranslations from './locales/bn.json';
+import Backend from 'i18next-http-backend';
 
 i18n
-  .use(LanguageDetector) // Detects user language from browser
-  .use(initReactI18next) // Passes i18n down to react-i18next
+  .use(Backend)
+  .use(LanguageDetector)
+  .use(initReactI18next)
   .init({
-    resources: {
-      en: {
-        translation: enTranslations,
-      },
-      bn: {
-        translation: bnTranslations,
-      },
-    },
     fallbackLng: 'en',
-    defaultNS: 'translation',
+    debug: import.meta.env.DEV, // Enable debug in development
+    
     interpolation: {
-      escapeValue: false, // React already escapes values
+      escapeValue: false, // not needed for react as it escapes by default
     },
+    
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['querystring', 'cookie', 'localStorage', 'navigator', 'htmlTag'],
       caches: ['localStorage'],
-      lookupLocalStorage: 'i18nextLng',
     },
+    
+    backend: {
+      loadPath: '/locales/{{lng}}/{{ns}}.json', // Path to your translation files
+    },
+    
+    ns: ['translation'], // Default namespace
+    defaultNS: 'translation',
+    
+    supportedLngs: ['en', 'bn'], // Supported languages
+    nonExplicitSupportedLngs: true, // Allow 'en-US' to fallback to 'en'
   });
 
 export default i18n;
