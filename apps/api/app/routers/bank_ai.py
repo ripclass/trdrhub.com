@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -136,9 +137,15 @@ async def explain_discrepancy(
         )
         
         if not allowed:
-            raise HTTPException(
+            # Get remaining quota for error response
+            remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0)) if isinstance(remaining_dict, dict) else 0
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=error_msg or "AI usage quota exceeded"
+                content={
+                    "detail": error_msg or "AI usage quota exceeded",
+                    "remaining": remaining,
+                    "quota_info": remaining_dict if isinstance(remaining_dict, dict) else {}
+                }
             )
         
         # Get remaining quota (use per_user_day if available, else per_lc)
@@ -230,9 +237,15 @@ async def generate_letter(
         )
         
         if not allowed:
-            raise HTTPException(
+            # Get remaining quota for error response
+            remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0)) if isinstance(remaining_dict, dict) else 0
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=error_msg or "AI usage quota exceeded"
+                content={
+                    "detail": error_msg or "AI usage quota exceeded",
+                    "remaining": remaining,
+                    "quota_info": remaining_dict if isinstance(remaining_dict, dict) else {}
+                }
             )
         
         # Get remaining quota (use per_user_day if available, else per_lc)
@@ -334,9 +347,15 @@ async def summarize_document(
         )
         
         if not allowed:
-            raise HTTPException(
+            # Get remaining quota for error response
+            remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0)) if isinstance(remaining_dict, dict) else 0
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=error_msg or "AI usage quota exceeded"
+                content={
+                    "detail": error_msg or "AI usage quota exceeded",
+                    "remaining": remaining,
+                    "quota_info": remaining_dict if isinstance(remaining_dict, dict) else {}
+                }
             )
         
         # Get remaining quota (use per_user_day if available, else per_lc)
@@ -422,9 +441,15 @@ async def translate_text(
         )
         
         if not allowed:
-            raise HTTPException(
+            # Get remaining quota for error response
+            remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0)) if isinstance(remaining_dict, dict) else 0
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=error_msg or "AI usage quota exceeded"
+                content={
+                    "detail": error_msg or "AI usage quota exceeded",
+                    "remaining": remaining,
+                    "quota_info": remaining_dict if isinstance(remaining_dict, dict) else {}
+                }
             )
         
         # Get remaining quota (use per_user_day if available, else per_lc)

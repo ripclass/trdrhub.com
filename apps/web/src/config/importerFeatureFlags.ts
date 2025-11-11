@@ -7,8 +7,8 @@ export type ImporterFeatureFlag =
 type ImporterFeatureFlagsState = Record<ImporterFeatureFlag, boolean>;
 
 const DEFAULT_FLAGS: ImporterFeatureFlagsState = {
-  importer_bank_precheck: false,  // Default OFF - bank precheck is optional
-  supplier_fix_pack: true,        // Default ON - supplier fix pack is core feature
+  importer_bank_precheck: true,   // Default ON - verified feature per launch plan
+  supplier_fix_pack: false,       // Default OFF - unless verified per launch plan
 };
 
 const STORAGE_KEY = "importer:featureFlags";
