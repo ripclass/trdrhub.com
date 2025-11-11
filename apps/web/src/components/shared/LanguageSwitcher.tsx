@@ -53,7 +53,7 @@ export function LanguageSwitcher() {
             <span className="font-medium">{lang.nativeName}</span>
             {i18n.language === lang.code && (
               <Badge variant="secondary" className="ml-2 text-xs">
-                {t("common.current")}
+                ✓
               </Badge>
             )}
           </DropdownMenuItem>
