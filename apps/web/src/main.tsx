@@ -12,6 +12,7 @@ import App from './App.tsx'
 import './index.css'
 import { Toaster } from './components/ui/toaster'
 import ErrorBoundary from './components/app/ErrorBoundary'
+import './i18n/config' // Initialize i18n
 
 const queryClient = new QueryClient({
   defaultOptions: {

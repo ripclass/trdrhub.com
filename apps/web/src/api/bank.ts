@@ -2086,3 +2086,24 @@ export const bankWebhooksApi = {
     return response.data;
   },
 };
+
+// Bank Organizations API
+export interface BankOrg {
+  id: string;
+  name: string;
+  code?: string;
+  kind: "group" | "region" | "branch";
+  path: string;
+  level: number;
+  role: string;
+}
+
+export const bankOrgsApi = {
+  /**
+   * List organizations accessible to the current user
+   */
+  listOrgs: async (): Promise<{ orgs: BankOrg[] }> => {
+    const response = await api.get<{ total: number; count: number; results: BankOrg[] }>("/bank/orgs");
+    return { orgs: response.data.results };
+  },
+};

@@ -40,6 +40,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { NotificationList } from "@/components/notifications/NotificationItem";
 import { BulkJobsView } from "./bank/BulkJobs";
 import { IntegrationsPage } from "@/components/bank/integrations/IntegrationsPage";
+import { OrgProvider } from "@/contexts/OrgContext";
 
 export default function BankDashboardV2() {
   const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
@@ -119,13 +120,14 @@ export default function BankDashboardV2() {
   };
 
   return (
-    <DashboardLayout
-      sidebar={<BankSidebar />}
-      breadcrumbs={[
-        { label: "LCopilot", href: "/lcopilot" },
-        { label: "Bank Dashboard" },
-      ]}
-    >
+    <OrgProvider>
+      <DashboardLayout
+        sidebar={<BankSidebar />}
+        breadcrumbs={[
+          { label: "LCopilot", href: "/lcopilot" },
+          { label: "Bank Dashboard" },
+        ]}
+      >
       <div className="flex flex-col gap-6 p-6 lg:p-8">
         {/* Health/Latency Banner - Only show on dashboard tab */}
         {activeTab === "dashboard" && <HealthLatencyBanner />}
@@ -241,6 +243,7 @@ export default function BankDashboardV2() {
         {activeTab === "help" && <HelpPanel />}
       </div>
     </DashboardLayout>
+    </OrgProvider>
   );
 }
 

@@ -57,6 +57,18 @@ def get_duplicate_candidates(
         if not session:
             raise HTTPException(status_code=404, detail="Validation session not found")
         
+        # Org scope filter (if org_id is set in request state)
+        org_id = getattr(request.state, "org_id", None) if request else None
+        if org_id:
+            # Verify session belongs to the selected org
+            from sqlalchemy.dialects.postgresql import JSONB
+            from sqlalchemy import cast
+            session_org_id = cast(session.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['org_id'].astext if session.extracted_data else None
+            if session_org_id != org_id:
+                raise HTTPException(status_code=403, detail="Session does not belong to selected org")
+        
         # Check if session belongs to user's company (for bank users)
         if current_user.role == "bank" and session.company_id != current_user.company_id:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -82,11 +94,12 @@ def get_duplicate_candidates(
                 company_id=current_user.company_id if current_user.role == "bank" else None
             )
         
-        # Find duplicate candidates
+        # Find duplicate candidates (respect org scope)
         candidates_data = similarity_service.find_duplicate_candidates(
             session_id,
             threshold=threshold,
-            limit=limit
+            limit=limit,
+            org_id=org_id  # Pass org_id to filter candidates
         )
         
         # Convert to response format

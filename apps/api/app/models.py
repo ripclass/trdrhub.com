@@ -58,6 +58,9 @@ from .models.api_tokens_webhooks import APIToken, WebhookSubscription, WebhookDe
 # Import duplicate detection models
 from .models.duplicate_detection import LCFingerprint, LCSimilarity, LCMergeHistory
 
+# Import bank org models
+from .models.bank_orgs import BankOrg, UserOrgAccess, OrgKind, OrgAccessRole
+
 
 class UserRole(str, Enum):
     """User role types for access control."""

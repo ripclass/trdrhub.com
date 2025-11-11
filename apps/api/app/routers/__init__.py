@@ -53,6 +53,7 @@ bank_evidence = _load_router_module("bank_evidence")
 bank_ai = _load_router_module("bank_ai")
 bank_tokens = _load_router_module("bank_tokens")
 bank_webhooks = _load_router_module("bank_webhooks")
+bank_orgs = _load_router_module("bank_orgs")
 bank_saved_views = _load_router_module("bank_saved_views")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
@@ -85,6 +86,7 @@ __all__ = [
     "bank_ai",
     "bank_tokens",
     "bank_webhooks",
+    "bank_orgs",
     "bank_saved_views",
     "validate",
     "rules_admin",

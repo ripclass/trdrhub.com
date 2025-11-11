@@ -1,4 +1,5 @@
 import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Sparkles, UserCog, LogOut, FolderKanban, Plug } from "lucide-react";
+import { OrgSwitcher } from "./OrgSwitcher";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -164,6 +165,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <div className="px-2 py-2">
+          <OrgSwitcher />
+        </div>
       </SidebarHeader>
       
       <SidebarContent>
@@ -296,30 +300,33 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
       </SidebarContent>
       
       <SidebarFooter>
-        {user && (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <div className="flex items-center gap-2 px-2 py-1.5 w-full">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+        <div className="flex flex-col gap-2 px-2 py-2">
+          <LanguageSwitcher />
+          {user && (
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <div className="flex items-center gap-2 px-2 py-1.5 w-full">
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
+                    <span className="truncate font-medium text-sm">{user.name || user.email}</span>
+                    <span className="text-xs text-muted-foreground">{user.role === 'bank_admin' ? 'Bank Admin' : 'Bank Officer'}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLogout}
+                    className="h-8 w-8 p-0"
+                    title="Sign out"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
                 </div>
-                <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
-                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
-                  <span className="text-xs text-muted-foreground">{user.role === 'bank_admin' ? 'Bank Admin' : 'Bank Officer'}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="h-8 w-8 p-0"
-                  title="Sign out"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        )}
+              </SidebarMenuItem>
+            </SidebarMenu>
+          )}
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

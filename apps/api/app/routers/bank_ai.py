@@ -144,12 +144,16 @@ async def explain_discrepancy(
         # Get remaining quota (use per_user_day if available, else per_lc)
         remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0))
         
+        # Get locale from request state (set by LocaleMiddleware)
+        locale = getattr(http_request.state, "locale", "en") if http_request else "en"
+        language = request.language or locale  # Use request locale as fallback
+        
         # Generate explanation using LLM service
         # For now, use mock response (will wire to actual LLM service)
         from ..services.llm_assist import DiscrepancySummaryRequest, AILanguage
         
         lang = AILanguage.ENGLISH
-        if request.language == "bn":
+        if language == "bn":
             lang = AILanguage.BANGLA
         elif request.language == "ar":
             lang = AILanguage.ARABIC
@@ -234,13 +238,17 @@ async def generate_letter(
         # Get remaining quota (use per_user_day if available, else per_lc)
         remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0))
         
+        # Get locale from request state (set by LocaleMiddleware)
+        locale = getattr(http_request.state, "locale", "en") if http_request else "en"
+        language = request.language or locale  # Use request locale as fallback
+        
         # Generate letter using LLM service
         from ..services.llm_assist import BankDraftRequest, AILanguage
         
         lang = AILanguage.ENGLISH
-        if request.language == "bn":
+        if language == "bn":
             lang = AILanguage.BANGLA
-        elif request.language == "ar":
+        elif language == "ar":
             lang = AILanguage.ARABIC
         
         draft_request = BankDraftRequest(
@@ -334,11 +342,15 @@ async def summarize_document(
         # Get remaining quota (use per_user_day if available, else per_lc)
         remaining = remaining_dict.get("per_user_day", remaining_dict.get("per_lc", 0))
         
+        # Get locale from request state (set by LocaleMiddleware)
+        locale = getattr(http_request.state, "locale", "en") if http_request else "en"
+        language = request.language or locale  # Use request locale as fallback
+        
         # Use chat endpoint for summarization
         from ..services.llm_assist import ChatRequest, AILanguage
         
         lang = AILanguage.ENGLISH
-        if request.language == "bn":
+        if language == "bn":
             lang = AILanguage.BANGLA
         
         chat_request = ChatRequest(
@@ -415,6 +427,10 @@ async def translate_text(
                 detail=error_msg or "AI usage quota exceeded"
             )
         
+        # Get locale from request state (set by LocaleMiddleware)
+        locale = getattr(http_request.state, "locale", "en") if http_request else "en"
+        target_lang = request.target_language or locale  # Use request locale as fallback
+        
         # Use chat endpoint for translation
         from ..services.llm_assist import ChatRequest, AILanguage
         
@@ -424,11 +440,11 @@ async def translate_text(
             "hi": AILanguage.HINDI,
             "ur": AILanguage.URDU,
         }
-        lang = lang_map.get(request.target_language, AILanguage.ENGLISH)
+        lang = lang_map.get(target_lang, AILanguage.ENGLISH)
         
         chat_request = ChatRequest(
             session_id=str(UUID(int=0)),
-            question=f"Translate the following text to {request.target_language}:\n\n{request.text}",
+            question=f"Translate the following text to {target_lang}:\n\n{request.text}",
             language=lang,
             context_documents=[]
         )

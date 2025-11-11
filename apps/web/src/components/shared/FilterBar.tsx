@@ -50,6 +50,7 @@ export function FilterBar({
   const dateRange = searchParams.get('date_range') || '90';
   const sortBy = searchParams.get('sort_by') || 'completed_at';
   const sortOrder = searchParams.get('sort_order') || 'desc';
+  const org = searchParams.get('org') || null; // Org filter
 
   // Advanced filters (stored as JSON in URL)
   const advancedFiltersStr = searchParams.get('advanced_filters');
@@ -112,8 +113,9 @@ export function FilterBar({
     date_range: dateRange,
     sort_by: sortBy,
     sort_order: sortOrder,
+    org, // Include org in filters
     advancedFilters,
-  }), [q, assignee, queue, status, clientName, dateRange, sortBy, sortOrder, advancedFilters]);
+  }), [q, assignee, queue, status, clientName, dateRange, sortBy, sortOrder, org, advancedFilters]);
 
   // Handle loading a saved view
   const handleLoadView = React.useCallback((filters: Record<string, any>) => {

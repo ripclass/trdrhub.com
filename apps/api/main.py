@@ -23,6 +23,8 @@ except ImportError:
 from app.utils.logger import configure_logging, get_logger, log_exception
 from app.middleware.logging import RequestIDMiddleware, RequestContextMiddleware
 from app.middleware.tenant_resolver import TenantResolverMiddleware
+from app.middleware.org_scope import OrgScopeMiddleware
+from app.middleware.locale import LocaleMiddleware
 from app.middleware.audit_middleware import AuditMiddleware
 
 # Import performance monitoring (optional for basic operation)
@@ -51,7 +53,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -219,6 +221,7 @@ app.include_router(bank_duplicates.router)  # Bank duplicate detection endpoints
 app.include_router(bank_saved_views.router)  # Bank saved views endpoints
 app.include_router(bank_tokens.router)  # Bank API tokens endpoints
 app.include_router(bank_webhooks.router)  # Bank webhooks endpoints
+app.include_router(bank_orgs.router)  # Bank organizations endpoints
 app.include_router(onboarding.router)   # Onboarding wizard endpoints
 app.include_router(sme.router)          # SME workspace endpoints (LC Workspace, Drafts, Amendments)
 app.include_router(sme_templates.router)  # SME templates endpoints (LC and document templates with pre-fill)
@@ -245,6 +248,8 @@ app.include_router(rules_admin.router)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(TenantResolverMiddleware)
+app.add_middleware(OrgScopeMiddleware)  # Resolve org_id for multi-org switching
+app.add_middleware(LocaleMiddleware)  # Resolve locale for i18n
 
 # Baseline abuse protection
 _rate_limit = os.getenv("API_RATE_LIMIT")

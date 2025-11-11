@@ -52,13 +52,19 @@ def create_saved_view(
                 SavedView.is_org_default == True
             ).update({"is_org_default": False})
         
+        # Include org in query_params if present in request
+        query_params_dict = view_data.query_params.copy() if view_data.query_params else {}
+        org_id = getattr(request.state, "org_id", None) if request else None
+        if org_id:
+            query_params_dict['org'] = org_id
+        
         # Create new saved view
         saved_view = SavedView(
             company_id=current_user.company_id,
             owner_id=current_user.id,
             name=view_data.name,
             resource=view_data.resource,
-            query_params=view_data.query_params,
+            query_params=query_params_dict,
             columns=view_data.columns,
             is_org_default=view_data.is_org_default,
             shared=view_data.shared,

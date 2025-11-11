@@ -29,6 +29,25 @@ api.interceptors.request.use(
       config.headers = headers as any
     }
 
+    // Add org param for bank endpoints
+    if (urlPath.startsWith('/bank') && typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      const orgParam = url.searchParams.get('org')
+      if (orgParam && config.params) {
+        config.params = { ...config.params, org: orgParam }
+      } else if (orgParam) {
+        config.params = { org: orgParam }
+      }
+    }
+
+    // Add locale header for i18n
+    if (typeof window !== 'undefined') {
+      const lang = localStorage.getItem('i18nextLng') || 'en'
+      const headers = (config.headers ?? {}) as Record<string, string>
+      headers['Accept-Language'] = lang
+      config.headers = headers as any
+    }
+
     // Add CSRF token for state-changing methods
     if (config.method && requiresCsrfToken(config.method)) {
       const csrfToken = getCsrfToken()

@@ -219,7 +219,8 @@ class SimilarityService:
         self,
         session_id: UUID,
         threshold: float = None,
-        limit: int = 10
+        limit: int = 10,
+        org_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Find duplicate candidates for a given session"""
         if threshold is None:
@@ -269,6 +270,16 @@ class SimilarityService:
                 session = self.db.query(ValidationSession).filter(
                     ValidationSession.id == candidate_fp.validation_session_id
                 ).first()
+                
+                # Filter by org_id if provided (phase 1: metadata-based filtering)
+                if session and org_id:
+                    from sqlalchemy.dialects.postgresql import JSONB
+                    from sqlalchemy import cast
+                    session_org_id = cast(session.extracted_data, JSONB)[
+                        'bank_metadata'
+                    ]['org_id'].astext if session.extracted_data else None
+                    if session_org_id != org_id:
+                        continue  # Skip this candidate
                 
                 if session:
                     candidates.append({

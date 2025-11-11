@@ -171,6 +171,18 @@ def list_bank_jobs(
             ValidationSession.deleted_at.is_(None)
         )
         
+        # Org scope filter (if org_id is set in request state)
+        org_id = getattr(request.state, "org_id", None) if request else None
+        if org_id:
+            # Filter by org_id in metadata (phase 1: metadata-based filtering)
+            org_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['org_id'].astext == org_id
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                org_condition
+            )
+        
         # Free text search (q)
         if q:
             search_term = f"%{q}%"
@@ -676,6 +688,18 @@ def get_bank_results(
             ValidationSession.deleted_at.is_(None),
             ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
         )
+        
+        # Org scope filter (if org_id is set in request state)
+        org_id = getattr(request.state, "org_id", None) if request else None
+        if org_id:
+            # Filter by org_id in metadata (phase 1: metadata-based filtering)
+            org_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['org_id'].astext == org_id
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                org_condition
+            )
         
         # Free text search (q) - search across LC number, client name, and extracted text
         if q:
@@ -1291,6 +1315,7 @@ def _generate_summary_report_html(sessions: List[ValidationSession], user: User)
 def _build_results_query(
     db: Session,
     current_user: User,
+    request: Optional[Request] = None,
     q: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -1308,6 +1333,19 @@ def _build_results_query(
         ValidationSession.deleted_at.is_(None),
         ValidationSession.status.in_([SessionStatus.COMPLETED.value, SessionStatus.FAILED.value])
     )
+    
+    # Org scope filter (if org_id is set in request state)
+    if request:
+        org_id = getattr(request.state, "org_id", None)
+        if org_id:
+            # Filter by org_id in metadata (phase 1: metadata-based filtering)
+            org_condition = cast(ValidationSession.extracted_data, JSONB)[
+                'bank_metadata'
+            ]['org_id'].astext == org_id
+            query = query.filter(
+                ValidationSession.extracted_data.isnot(None),
+                org_condition
+            )
     
     # Free text search (q)
     if q:
@@ -1444,7 +1482,7 @@ def export_results_csv(
             )
         else:
             query = _build_results_query(
-                db, current_user, q, start_date, end_date, client_name,
+                db, current_user, request, q, start_date, end_date, client_name,
                 status, min_score, max_score, discrepancy_type, assignee, queue
             )
         
