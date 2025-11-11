@@ -51,6 +51,7 @@ bank_compliance = _load_router_module("bank_compliance")
 bank_sla = _load_router_module("bank_sla")
 bank_evidence = _load_router_module("bank_evidence")
 bank_ai = _load_router_module("bank_ai")
+bank_duplicates = _load_router_module("bank_duplicates")
 bank_saved_views = _load_router_module("bank_saved_views")
 rules_admin = _load_router_module("rules_admin")
 sme = _load_router_module("sme")
@@ -81,6 +82,7 @@ __all__ = [
     "bank_sla",
     "bank_evidence",
     "bank_ai",
+    "bank_duplicates",
     "bank_saved_views",
     "validate",
     "rules_admin",
