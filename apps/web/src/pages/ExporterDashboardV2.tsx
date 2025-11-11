@@ -394,7 +394,7 @@ export default function ExporterDashboardV2() {
 
           {activeSection === "billing-usage" && <BillingUsagePage onTabChange={handleBillingTabChange} />}
 
-          {activeSection === "ai-assistance" && <AIAssistance embedded />}
+          {activeSection === "ai-assistance" && <AIAssistance embedded role="exporter" />}
           {activeSection === "content-library" && <ContentLibrary embedded />}
           {activeSection === "shipment-timeline" && <ShipmentTimeline embedded />}
 

@@ -409,7 +409,7 @@ export default function ImporterDashboardV2() {
 
           {activeSection === "settings" && <SettingsPanel />}
 
-          {activeSection === "ai-assistance" && <AIAssistance embedded />}
+          {activeSection === "ai-assistance" && <AIAssistance embedded role="importer" />}
           {activeSection === "content-library" && <ContentLibrary embedded />}
           {activeSection === "shipment-timeline" && <ShipmentTimeline embedded />}
           {activeSection === "help" && <HelpPanel />}
