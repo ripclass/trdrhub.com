@@ -105,7 +105,9 @@ export function DuplicateCandidatesPanel({
 
         {data && data.candidates.length > 0 && (
           <div className="space-y-4">
-            {data.candidates.map((candidate) => (
+            {data.candidates.map((candidate) => {
+              if (!candidate) return null;
+              return (
               <div
                 key={candidate.session_id}
                 className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -113,7 +115,7 @@ export function DuplicateCandidatesPanel({
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <h4 className="font-semibold">{candidate.lc_number}</h4>
+                      <h4 className="font-semibold">{candidate.lc_number || "N/A"}</h4>
                       {candidate.client_name && (
                         <span className="text-sm text-muted-foreground">
                           {candidate.client_name}
@@ -209,7 +211,8 @@ export function DuplicateCandidatesPanel({
                   </Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </DialogContent>

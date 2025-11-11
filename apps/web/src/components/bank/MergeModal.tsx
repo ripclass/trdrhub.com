@@ -50,6 +50,11 @@ export function MergeModal({
     new Set(["extracted_data", "validation_results", "documents"])
   );
 
+  // Early return if candidate is null
+  if (!candidate) {
+    return null;
+  }
+
   const mergeMutation = useMutation({
     mutationFn: (request: MergeRequest) => bankDuplicatesApi.merge(request),
     onSuccess: () => {
@@ -100,7 +105,7 @@ export function MergeModal({
         <DialogHeader>
           <DialogTitle>Merge Sessions</DialogTitle>
           <DialogDescription>
-            Merge session <strong>{candidate.lc_number}</strong> into the current session.
+            Merge session <strong>{candidate?.lc_number || "N/A"}</strong> into the current session.
             This will combine data from both sessions.
           </DialogDescription>
         </DialogHeader>
