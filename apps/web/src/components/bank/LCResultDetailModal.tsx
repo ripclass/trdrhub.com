@@ -32,9 +32,7 @@ import {
   Building2,
   Hash,
 } from "lucide-react";
-import { format } from "date-fns";
-import { getValidationSession, getReportDownloadUrl, ValidationSession } from "@/api/sessions";
-import { sanitizeDisplayText } from "@/lib/sanitize";
+import { MergeHistoryTimeline } from "./MergeHistoryTimeline";
 
 interface LCResultDetailModalProps {
   jobId: string | null;
@@ -196,14 +194,17 @@ export function LCResultDetailModal({
                 </CardContent>
               </Card>
 
-              {/* Tabs for Documents and Discrepancies */}
+              {/* Tabs for Documents, Discrepancies, and History */}
               <Tabs defaultValue="documents" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="documents">
                     Documents ({session.documents?.length || 0})
                   </TabsTrigger>
                   <TabsTrigger value="discrepancies">
                     Discrepancies ({session.discrepancies?.length || 0})
+                  </TabsTrigger>
+                  <TabsTrigger value="history">
+                    History
                   </TabsTrigger>
                 </TabsList>
 
@@ -338,6 +339,10 @@ export function LCResultDetailModal({
                       )}
                     </CardContent>
                   </Card>
+                </TabsContent>
+
+                <TabsContent value="history" className="space-y-4">
+                  {jobId && <MergeHistoryTimeline sessionId={jobId} />}
                 </TabsContent>
               </Tabs>
 

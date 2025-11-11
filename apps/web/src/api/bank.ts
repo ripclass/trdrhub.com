@@ -1711,3 +1711,96 @@ export const bankSavedViewsApi = {
     await api.delete(`/bank/saved-views/${viewId}`);
   },
 };
+
+// Duplicate Detection API
+export interface DuplicateCandidate {
+  session_id: string;
+  lc_number: string;
+  client_name?: string;
+  similarity_score: number;
+  content_similarity?: number;
+  metadata_similarity?: number;
+  field_matches?: Record<string, any>;
+  detected_at: string;
+  completed_at?: string;
+}
+
+export interface DuplicateCandidatesResponse {
+  session_id: string;
+  candidates: DuplicateCandidate[];
+  total_count: number;
+}
+
+export interface MergeRequest {
+  source_session_id: string;
+  target_session_id: string;
+  merge_type?: 'duplicate' | 'amendment' | 'correction' | 'manual';
+  merge_reason?: string;
+  fields_to_merge?: string[];
+}
+
+export interface MergeResponse {
+  merge_id: string;
+  source_session_id: string;
+  target_session_id: string;
+  merge_type: string;
+  merged_at: string;
+  fields_merged?: Record<string, any>;
+}
+
+export interface MergeHistoryItem {
+  id: string;
+  source_session_id: string;
+  target_session_id: string;
+  merge_type: string;
+  merge_reason?: string;
+  merged_by: string;
+  merged_at: string;
+  fields_merged?: Record<string, any>;
+  preserved_data?: Record<string, any>;
+}
+
+export interface MergeHistoryResponse {
+  merges: MergeHistoryItem[];
+  total_count: number;
+}
+
+export const bankDuplicatesApi = {
+  /**
+   * Get duplicate candidates for a session
+   */
+  getCandidates: async (
+    sessionId: string,
+    threshold?: number,
+    limit?: number
+  ): Promise<DuplicateCandidatesResponse> => {
+    const response = await api.get<DuplicateCandidatesResponse>(
+      `/bank/duplicates/candidates/${sessionId}`,
+      {
+        params: {
+          threshold,
+          limit,
+        },
+      }
+    );
+    return response.data;
+  },
+
+  /**
+   * Merge two sessions
+   */
+  merge: async (request: MergeRequest): Promise<MergeResponse> => {
+    const response = await api.post<MergeResponse>('/bank/duplicates/merge', request);
+    return response.data;
+  },
+
+  /**
+   * Get merge history for a session
+   */
+  getMergeHistory: async (sessionId: string): Promise<MergeHistoryResponse> => {
+    const response = await api.get<MergeHistoryResponse>(
+      `/bank/duplicates/history/${sessionId}`
+    );
+    return response.data;
+  },
+};

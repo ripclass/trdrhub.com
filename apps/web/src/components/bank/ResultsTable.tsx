@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,10 @@ import { LCResultDetailModal } from "./LCResultDetailModal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FilterBar } from "@/components/shared/FilterBar";
 import { ExportJobHandler } from "@/components/shared/ExportJobHandler";
+import { DuplicateBadge } from "./DuplicateBadge";
+import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel";
+import { MergeModal } from "./MergeModal";
+import type { DuplicateCandidate } from "@/api/bank";
 
 interface ResultsTableProps {}
 
@@ -34,6 +38,7 @@ export function ResultsTable({}: ResultsTableProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | undefined>();
@@ -41,6 +46,8 @@ export function ResultsTable({}: ResultsTableProps) {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [exportJobId, setExportJobId] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [duplicateCandidatesSessionId, setDuplicateCandidatesSessionId] = useState<string | null>(null);
+  const [mergeCandidate, setMergeCandidate] = useState<DuplicateCandidate | null>(null);
 
   // Extract filters from URL
   const q = searchParams.get('q') || '';
@@ -388,10 +395,10 @@ export function ResultsTable({}: ResultsTableProps) {
                         <div className="flex items-center gap-1.5">
                           {lcNumber}
                           {result.duplicate_count && result.duplicate_count > 0 && (
-                            <Badge variant="outline" className="text-[10px] h-4 px-1" title={`This LC has been validated ${result.duplicate_count} time(s) before`}>
-                              <Copy className="w-2.5 h-2.5 mr-0.5" />
-                              {result.duplicate_count}x
-                            </Badge>
+                            <DuplicateBadge
+                              count={result.duplicate_count}
+                              onClick={() => setDuplicateCandidatesSessionId(result.jobId)}
+                            />
                           )}
                         </div>
                       </TableCell>
@@ -468,6 +475,32 @@ export function ResultsTable({}: ResultsTableProps) {
       }}
       clientName={selectedClientName}
       lcNumber={selectedLcNumber}
+    />
+    <DuplicateCandidatesPanel
+      sessionId={duplicateCandidatesSessionId || ''}
+      open={!!duplicateCandidatesSessionId}
+      onOpenChange={(open) => {
+        if (!open) setDuplicateCandidatesSessionId(null);
+      }}
+      onMerge={(candidate) => {
+        setDuplicateCandidatesSessionId(null);
+        setMergeCandidate(candidate);
+      }}
+    />
+    <MergeModal
+      sourceSessionId={duplicateCandidatesSessionId || ''}
+      candidate={mergeCandidate!}
+      open={!!mergeCandidate}
+      onOpenChange={(open) => {
+        if (!open) {
+          setMergeCandidate(null);
+          setDuplicateCandidatesSessionId(null);
+        }
+      }}
+      onSuccess={() => {
+        // Refresh results after merge
+        queryClient.invalidateQueries({ queryKey: ['bank-results'] });
+      }}
     />
     </div>
   );
