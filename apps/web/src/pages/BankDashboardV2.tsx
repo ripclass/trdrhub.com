@@ -41,6 +41,7 @@ import { NotificationList } from "@/components/notifications/NotificationItem";
 import { BulkJobsView } from "./bank/BulkJobs";
 import { IntegrationsPage } from "@/components/bank/integrations/IntegrationsPage";
 import { OrgProvider } from "@/contexts/OrgContext";
+import { BankUsersPage } from "./bank/BankUsersPage";
 
 export default function BankDashboardV2() {
   const { user: bankUser, isAuthenticated, isLoading: authLoading } = useBankAuth();
