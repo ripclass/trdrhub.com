@@ -291,7 +291,7 @@ export function ResultsTable({}: ResultsTableProps) {
               onClick={handleExportCSV} 
               disabled={exportResults.length === 0}
             >
-              <DownloadIcon className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 mr-2" />
               Export CSV {selectedRows.size > 0 ? `(${selectedRows.size})` : ""}
             </Button>
             <Button 
