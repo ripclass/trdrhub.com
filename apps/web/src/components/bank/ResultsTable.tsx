@@ -245,9 +245,10 @@ export function ResultsTable({}: ResultsTableProps) {
   };
 
   const handleViewDetails = (result: BankResult) => {
+    if (!result) return;
     setSelectedJobId(result.jobId);
     setSelectedClientName(result.client_name);
-    setSelectedLcNumber(result.lc_number);
+    setSelectedLcNumber(result.lc_number || undefined);
   };
 
   const handleDownloadPDF = async (result: BankResult) => {
@@ -377,9 +378,10 @@ export function ResultsTable({}: ResultsTableProps) {
               </TableHeader>
               <TableBody zebra>
                 {filteredResults.map((result) => {
+                  if (!result) return null;
                   const completedAt = result.completed_at ? new Date(result.completed_at) : new Date();
                   const clientName = sanitizeDisplayText(result.client_name, "Unknown");
-                  const lcNumber = sanitizeDisplayText(result.lc_number, "N/A");
+                  const lcNumber = sanitizeDisplayText(result.lc_number || "", "N/A");
                   const isSelected = selectedRows.has(result.jobId);
 
                   return (
