@@ -21,7 +21,7 @@ from app.schemas.duplicate_detection import (
     LCMergeHistoryRead,
 )
 from app.services.audit_service import AuditService
-from app.utils.audit import create_audit_context
+from app.middleware.audit_middleware import create_audit_context
 from app.models import AuditAction, AuditResult
 from fastapi import Request
 import logging
