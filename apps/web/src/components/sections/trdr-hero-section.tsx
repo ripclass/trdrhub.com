@@ -21,15 +21,15 @@ export function TRDRHeroSection() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-4xl mx-auto">
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-foreground mb-6 leading-tight">
-            The Professional Choice for{" "}
+            AI‑Powered{" "}
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Trade Risk Management
+              Trade Document Compliance
             </span>
           </h1>
           
           <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
-            From Letters of Credit validation to compliance automation, TRDR Hub helps you prevent errors, 
-            reduce risk, and stay bank-ready.
+            Validate Letters of Credit and trade documents, eliminate discrepancies, and ship faster.
+            Built for exporters, banks, and compliance teams that need accuracy and speed.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -44,7 +44,7 @@ export function TRDRHeroSection() {
             <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5" asChild>
               <a href="/register">
                 <Play className="w-4 h-4 mr-2" />
-                Get Started
+                Start Free Trial
               </a>
             </Button>
           </div>
@@ -53,7 +53,7 @@ export function TRDRHeroSection() {
           <div className="flex flex-wrap justify-center items-center gap-8 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
-              <span>ICC/UCP 600 Compliant</span>
+              <span>ICC/UCP 600 Ready</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
@@ -61,7 +61,7 @@ export function TRDRHeroSection() {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
-              <span>99.2% Accuracy Rate</span>
+              <span>Avg. Turnaround 45s</span>
             </div>
           </div>
         </div>

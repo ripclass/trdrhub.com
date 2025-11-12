@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Shield, Users, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const stats = [
   {
@@ -28,23 +29,27 @@ export function CTASection() {
         <Card className="bg-card/50 backdrop-blur-sm border border-primary/20 shadow-strong">
           <CardContent className="p-12 text-center">
             <h2 className="text-3xl lg:text-5xl font-bold text-foreground mb-6">
-              Ready to Validate Your{" "}
+              Ready to ship documents{" "}
               <span className="bg-gradient-primary bg-clip-text text-transparent">
-                LC Documents?
+                without rejects?
               </span>
             </h2>
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Join hundreds of Bangladeshi exporters who trust our platform for fast, 
-              accurate LC document validation. Get started in under 2 minutes.
+              Join hundreds of exporters who trust our platform for fast, accurate LC validation.
+              Get set up in under 2 minutes.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button size="lg" className="bg-gradient-primary hover:opacity-90 shadow-medium group">
-                Start Free Trial
-                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              <Button size="lg" className="bg-gradient-primary hover:opacity-90 shadow-medium group" asChild>
+                <Link to="/register">
+                  Start Free Trial
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Link>
               </Button>
-              <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5">
-                View Pricing
+              <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5" asChild>
+                <Link to="/pricing">
+                  View Pricing
+                </Link>
               </Button>
             </div>
 

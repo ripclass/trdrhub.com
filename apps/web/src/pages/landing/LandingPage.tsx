@@ -4,7 +4,9 @@ import { TRDRHeroSection } from "@/components/sections/trdr-hero-section";
 import { ToolsSection } from "@/components/sections/tools-section";
 import { WhyTRDRSection } from "@/components/sections/why-trdr-section";
 import { TRDRTestimonialsSection } from "@/components/sections/trdr-testimonials-section";
-import { TRDRPricingSection } from "@/components/sections/trdr-pricing-section";
+import { FeaturesSection } from "@/components/sections/features-section";
+import { ProcessSection } from "@/components/sections/process-section";
+import { CTASection } from "@/components/sections/cta-section";
 
 const LandingPage = () => {
   return (
@@ -12,10 +14,12 @@ const LandingPage = () => {
       <TRDRHeader />
       <main>
         <TRDRHeroSection />
+        <FeaturesSection />
+        <ProcessSection />
         <ToolsSection />
         <WhyTRDRSection />
         <TRDRTestimonialsSection />
-        <TRDRPricingSection />
+        <CTASection />
       </main>
       <TRDRFooter />
     </div>
