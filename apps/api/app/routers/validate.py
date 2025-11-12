@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import UsageAction, User, ValidationSession, SessionStatus
+from app.models import UsageAction, User, ValidationSession, SessionStatus, UserRole
+from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
 from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai, apply_bank_policy
 from app.services import ValidationSessionService
@@ -16,15 +17,73 @@ from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
+from fastapi import Header
+from typing import Optional
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 
 
+def get_or_create_demo_user(db: Session) -> User:
+    """Get or create a demo user for unauthenticated validation requests."""
+    demo_email = "demo@trdrhub.com"
+    user = db.query(User).filter(User.email == demo_email).first()
+    
+    if not user:
+        # Create demo company first
+        demo_company = db.query(Company).filter(Company.name == "Demo Company").first()
+        if not demo_company:
+            demo_company = Company(
+                name="Demo Company",
+                contact_email=demo_email,
+                plan=PlanType.FREE,
+                status=CompanyStatus.ACTIVE,
+            )
+            db.add(demo_company)
+            db.flush()
+        
+        # Create demo user
+        from app.core.security import hash_password
+        user = User(
+            email=demo_email,
+            hashed_password=hash_password("demo123"),  # Dummy password
+            full_name="Demo User",
+            role=UserRole.EXPORTER,
+            is_active=True,
+            company_id=demo_company.id,
+            onboarding_completed=True,
+            status="active",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    return user
+
+
+async def get_user_optional(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+) -> User:
+    """Get current user if authenticated, otherwise return demo user."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from app.core.security import get_current_user
+            from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+            security = HTTPBearer()
+            credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization[7:])
+            return await get_current_user(credentials=credentials, db=db)
+        except:
+            pass
+    
+    # Return demo user for unauthenticated requests
+    return get_or_create_demo_user(db)
+
+
 @router.post("/")
 async def validate_doc(
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_user_optional),
     db: Session = Depends(get_db),
 ):
     """Validate LC documents."""
