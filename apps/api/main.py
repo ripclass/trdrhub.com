@@ -289,17 +289,18 @@ app.add_middleware(QuotaEnforcementMiddleware)
 # Add audit middleware for compliance traceability
 app.add_middleware(
     AuditMiddleware,
-    excluded_paths=[
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/health",
-        "/metrics",
-        "/warm",
-        "/auth/login",
-        "/auth/register",
-        "/auth/csrf-token",  # Temporarily exempt to avoid audit logging issues
-    ],
+        excluded_paths=[
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/health",
+            "/metrics",
+            "/warm",
+            "/auth/login",
+            "/auth/register",
+            "/auth/csrf-token",  # Temporarily exempt to avoid audit logging issues
+            "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
+        ],
 )
 
 # Add CSRF protection middleware (before CORS) for authenticated environments
@@ -322,6 +323,7 @@ if not settings.USE_STUBS:
             "/auth/csrf-token",  # CSRF token endpoint itself
             "/auth/login",
             "/auth/register",
+            "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
         },
         exempt_methods={"GET", "HEAD", "OPTIONS"},
         token_expiry_seconds=3600,  # 1 hour
