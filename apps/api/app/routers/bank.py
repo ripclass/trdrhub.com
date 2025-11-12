@@ -16,7 +16,7 @@ import json
 import secrets
 import time
 
-from ..core.security import require_bank_or_admin
+from ..core.security import require_bank_or_admin, get_current_user
 from ..database import get_db, SessionLocal
 from ..models import User, ValidationSession
 from ..models.admin import JobQueue, JobStatus
@@ -39,6 +39,16 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/bank", tags=["bank"])
+
+
+def require_bank_admin(user: User = Depends(get_current_user)) -> User:
+    """Require bank_admin role for mutations."""
+    if not user.is_bank_admin() and not user.is_system_admin():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bank admin access required"
+        )
+    return user
 
 
 def _resolve_bank_scope(request: Request) -> tuple[str, List[str]]:
