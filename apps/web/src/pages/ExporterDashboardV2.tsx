@@ -156,9 +156,12 @@ export default function ExporterDashboardV2() {
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (unless in demo mode)
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    const demoMode = localStorage.getItem('demo_mode') === 'true' || 
+                    new URLSearchParams(window.location.search).get('demo') === 'true';
+    
+    if (!authLoading && !isAuthenticated && !demoMode) {
       navigate("/lcopilot/exporter-dashboard/login");
     }
   }, [isAuthenticated, authLoading, navigate]);

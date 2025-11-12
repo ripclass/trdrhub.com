@@ -42,6 +42,11 @@ export default function ExporterLogin() {
     setPassword(password);
   };
 
+  const handleDemoMode = () => {
+    localStorage.setItem('demo_mode', 'true');
+    window.location.href = '/lcopilot/exporter-dashboard?demo=true';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
@@ -121,6 +126,22 @@ export default function ExporterLogin() {
                 {isLoading ? 'Signing in...' : 'Sign in'}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        {/* Demo Mode Button */}
+        <Card className="border-green-200 bg-green-50">
+          <CardContent className="pt-6">
+            <Button
+              onClick={handleDemoMode}
+              className="w-full bg-green-600 hover:bg-green-700"
+              variant="default"
+            >
+              🚀 Enter Demo Mode (No Login Required)
+            </Button>
+            <p className="text-xs text-gray-600 mt-2 text-center">
+              Access dashboard without authentication for demo purposes
+            </p>
           </CardContent>
         </Card>
 

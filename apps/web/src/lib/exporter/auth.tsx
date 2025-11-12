@@ -127,7 +127,23 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
         const exporterToken = localStorage.getItem('exporter_token');
         const token = apiToken || exporterToken;
         
+        // DEMO MODE: If no token, use demo user for meeting/demo purposes
         if (!token) {
+          const demoMode = localStorage.getItem('demo_mode') === 'true' || 
+                          new URLSearchParams(window.location.search).get('demo') === 'true';
+          
+          if (demoMode) {
+            const demoUser: ExporterUser = {
+              id: 'demo@trdrhub.com',
+              name: 'Demo User',
+              email: 'demo@trdrhub.com',
+              role: 'exporter',
+            };
+            setUser(demoUser);
+            setIsLoading(false);
+            return;
+          }
+          
           setIsLoading(false);
           return;
         }
