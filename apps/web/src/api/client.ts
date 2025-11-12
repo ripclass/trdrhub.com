@@ -20,8 +20,17 @@ api.interceptors.request.use(
       return config
     }
 
+    // Try Supabase session first
     const session = await supabase.auth.getSession()
-    const token = session.data.session?.access_token
+    let token = session.data.session?.access_token
+
+    // Fallback to API token from localStorage (for testing/direct API auth)
+    if (!token && typeof window !== 'undefined') {
+      const apiToken = localStorage.getItem('trdrhub_api_token')
+      if (apiToken) {
+        token = apiToken
+      }
+    }
 
     if (token) {
       const headers = (config.headers ?? {}) as Record<string, string>
