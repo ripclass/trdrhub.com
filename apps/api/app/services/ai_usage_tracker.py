@@ -7,7 +7,7 @@ Tracks per-LC, per-user, and per-tenant AI usage with rate limiting and quota en
 import os
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 from enum import Enum
 from collections import defaultdict
 import logging
