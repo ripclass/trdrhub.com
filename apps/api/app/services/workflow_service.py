@@ -468,7 +468,8 @@ class WorkflowService:
                 "name": name,
                 "target_team": target_team,
                 "priority": priority
-            }
+            },
+            db=db
         )
 
         return escalation_rule
