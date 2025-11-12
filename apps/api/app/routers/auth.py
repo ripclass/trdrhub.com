@@ -130,6 +130,36 @@ async def get_csrf_token(
     return response
 
 
+@router.post("/fix-password")  # TEMPORARY - Remove after fixing passwords
+async def fix_password_endpoint(
+    email: str,
+    password: str,
+    db: Session = Depends(get_db)
+):
+    """
+    TEMPORARY endpoint to fix password hashes.
+    TODO: Remove this after all test users have correct password hashes.
+    """
+    from ..core.security import hash_password, verify_password
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Generate new hash
+    new_hash = hash_password(password)
+    user.hashed_password = new_hash
+    db.commit()
+    db.refresh(user)
+    
+    # Verify it works
+    if verify_password(password, new_hash):
+        return {"status": "success", "message": f"Password updated for {email}"}
+    else:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Password hash verification failed")
+
+
 @router.get("/me", response_model=UserProfile)
 async def get_user_profile(
     current_user: User = Depends(get_current_user)
