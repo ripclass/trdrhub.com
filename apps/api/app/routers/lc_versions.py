@@ -17,7 +17,7 @@ from ..schemas.lc_versions import (
     LCVersionComparison, AmendedLCInfo, LCExistsResponse
 )
 
-router = APIRouter(prefix="/lc", tags=["lc-versions"])
+router = APIRouter(prefix="/api/lc", tags=["lc-versions"])
 
 
 @router.post("/{lc_number}/versions", response_model=LCVersionRead, status_code=status.HTTP_201_CREATED)
