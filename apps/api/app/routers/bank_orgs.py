@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.bank_orgs import BankOrg, UserOrgAccess, OrgKind
 from app.models import User
-from app.routers.bank import require_bank_or_admin, require_bank_admin
+from ..core.security import require_bank_or_admin, require_bank_admin
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
