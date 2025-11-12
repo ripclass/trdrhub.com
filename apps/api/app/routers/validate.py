@@ -1,5 +1,5 @@
 from decimal import Decimal
-from uuid import uuid4
+from uuid import uuid4, uuid
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -31,16 +31,29 @@ def get_or_create_demo_user(db: Session) -> User:
     
     if not user:
         # Create demo company first
-        demo_company = db.query(Company).filter(Company.name == "Demo Company").first()
-        if not demo_company:
-            demo_company = Company(
-                name="Demo Company",
-                contact_email=demo_email,
-                plan=PlanType.FREE,
-                status=CompanyStatus.ACTIVE,
+        # Use raw SQL to avoid schema mismatch issues
+        from sqlalchemy import text
+        result = db.execute(text("SELECT id FROM companies WHERE name = :name"), {"name": "Demo Company"})
+        demo_company_row = result.first()
+        
+        if not demo_company_row:
+            # Insert demo company using raw SQL (matching actual schema)
+            company_id = uuid4()
+            db.execute(
+                text("""
+                    INSERT INTO companies (id, name, type, created_at, updated_at)
+                    VALUES (:id, :name, :type, NOW(), NOW())
+                """),
+                {
+                    "id": company_id,
+                    "name": "Demo Company",
+                    "type": "sme"
+                }
             )
-            db.add(demo_company)
             db.flush()
+            demo_company_id = company_id
+        else:
+            demo_company_id = demo_company_row[0]
         
         # Create demo user
         from app.core.security import hash_password
@@ -50,7 +63,7 @@ def get_or_create_demo_user(db: Session) -> User:
             full_name="Demo User",
             role=UserRole.EXPORTER,
             is_active=True,
-            company_id=demo_company.id,
+            company_id=demo_company_id,
             onboarding_completed=True,
             status="active",
         )
