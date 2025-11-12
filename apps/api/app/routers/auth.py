@@ -132,15 +132,31 @@ async def get_csrf_token(
 
 @router.post("/fix-password")  # TEMPORARY - Remove after fixing passwords
 async def fix_password_endpoint(
-    email: str,
-    password: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     TEMPORARY endpoint to fix password hashes.
     TODO: Remove this after all test users have correct password hashes.
+    
+    Accepts JSON body: {"email": "...", "password": "..."}
+    Or form data: email=...&password=...
     """
     from ..core.security import hash_password, verify_password
+    
+    # Try to get from JSON body first
+    try:
+        body = await request.json()
+        email = body.get("email")
+        password = body.get("password")
+    except:
+        # Fallback to form data
+        form = await request.form()
+        email = form.get("email")
+        password = form.get("password")
+    
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
     
     user = db.query(User).filter(User.email == email).first()
     if not user:
