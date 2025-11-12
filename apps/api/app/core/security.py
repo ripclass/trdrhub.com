@@ -529,6 +529,27 @@ def require_bank_or_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_bank_admin(user: User = Depends(get_current_user)) -> User:
+    """
+    Dependency to require bank_admin role for mutations.
+
+    Args:
+        user: Current authenticated user
+
+    Returns:
+        User if bank_admin or system_admin role
+
+    Raises:
+        HTTPException: 403 if not bank_admin or system_admin
+    """
+    if not user.is_bank_admin() and not user.is_system_admin():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bank admin access required"
+        )
+    return user
+
+
 def ensure_owner_or_privileged(user: User, owner_id: Union[str, UUID]) -> bool:
     """
     Check if user can access a resource (owner or privileged role).

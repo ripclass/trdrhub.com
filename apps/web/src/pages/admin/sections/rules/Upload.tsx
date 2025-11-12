@@ -18,7 +18,14 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 
 const DOMAIN_OPTIONS = [
-  { value: "icc", label: "ICC (International Chamber of Commerce)" },
+  { value: "icc.ucp600", label: "ICC · UCP 600" },
+  { value: "icc.eucp2.1", label: "ICC · eUCP v2.1" },
+  { value: "icc.isp98", label: "ICC · ISP98" },
+  { value: "icc.urdg758", label: "ICC · URDG 758" },
+  { value: "icc.urc522", label: "ICC · URC 522" },
+  { value: "icc.eurc1.0", label: "ICC · eURC 1.0" },
+  { value: "icc.urr725", label: "ICC · URR 725" },
+  { value: "icc", label: "ICC (Legacy/General)" },
   { value: "incoterms", label: "Incoterms" },
   { value: "vat", label: "VAT" },
   { value: "sanctions", label: "Sanctions" },

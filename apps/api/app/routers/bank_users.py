@@ -16,7 +16,7 @@ import math
 
 from ..database import get_db
 from app.models import User, UserRole
-from ..core.security import get_current_user, require_bank_or_admin, hash_password
+from ..core.security import get_current_user, require_bank_or_admin, require_bank_admin, hash_password
 from ..schemas.user import (
     UserRead, UserListQuery, UserListResponse,
     RoleUpdateRequest, RoleUpdateResponse, BankUserInviteRequest
@@ -26,16 +26,6 @@ from ..models.audit_log import AuditAction, AuditResult
 
 
 router = APIRouter(prefix="/bank/users", tags=["bank-users"])
-
-
-def require_bank_admin(user: User = Depends(get_current_user)) -> User:
-    """Require bank_admin role for mutations."""
-    if not user.is_bank_admin() and not user.is_system_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bank admin access required"
-        )
-    return user
 
 
 @router.get("", response_model=UserListResponse)

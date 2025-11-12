@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db
 from app.models import User
 from app.models.bank_policy import BankPolicyOverlay, BankPolicyException, BankPolicyApplicationEvent
-from ..core.security import get_current_user, require_bank_or_admin
+from ..core.security import get_current_user, require_bank_or_admin, require_bank_admin
 from ..services.audit_service import AuditService
 from ..models.audit_log import AuditAction, AuditResult
 

@@ -49,7 +49,14 @@ const STATUS_OPTIONS = [
 
 const DOMAIN_OPTIONS = [
   { label: "All domains", value: "all" },
-  { label: "ICC", value: "icc" },
+  { label: "ICC · UCP 600", value: "icc.ucp600" },
+  { label: "ICC · eUCP v2.1", value: "icc.eucp2.1" },
+  { label: "ICC · ISP98", value: "icc.isp98" },
+  { label: "ICC · URDG 758", value: "icc.urdg758" },
+  { label: "ICC · URC 522", value: "icc.urc522" },
+  { label: "ICC · eURC 1.0", value: "icc.eurc1.0" },
+  { label: "ICC · URR 725", value: "icc.urr725" },
+  { label: "ICC (Legacy/General)", value: "icc" },
   { label: "Regulations", value: "regulations" },
   { label: "Incoterms", value: "incoterms" },
   { label: "VAT", value: "vat" },
