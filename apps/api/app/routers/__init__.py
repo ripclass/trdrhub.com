@@ -45,17 +45,22 @@ billing = _load_router_module("billing")
 bank = _load_router_module("bank")
 bank_workflow = _load_router_module("bank_workflow")
 bank_users = _load_router_module("bank_users")
+bank_policy = _load_router_module("bank_policy")
 bank_queue = _load_router_module("bank_queue")
 bank_auth = _load_router_module("bank_auth")
 bank_compliance = _load_router_module("bank_compliance")
 bank_sla = _load_router_module("bank_sla")
 bank_evidence = _load_router_module("bank_evidence")
+bank_bulk_jobs = _load_router_module("bank_bulk_jobs")
 bank_ai = _load_router_module("bank_ai")
+bank_duplicates = _load_router_module("bank_duplicates")
 bank_tokens = _load_router_module("bank_tokens")
 bank_webhooks = _load_router_module("bank_webhooks")
 bank_orgs = _load_router_module("bank_orgs")
 bank_saved_views = _load_router_module("bank_saved_views")
+validate = _load_router_module("validate")
 rules_admin = _load_router_module("rules_admin")
+onboarding = _load_router_module("onboarding")
 sme = _load_router_module("sme")
 sme_templates = _load_router_module("sme_templates")
 workspace_sharing = _load_router_module("workspace_sharing")
@@ -83,13 +88,16 @@ __all__ = [
     "bank_compliance",
     "bank_sla",
     "bank_evidence",
+    "bank_bulk_jobs",
     "bank_ai",
+    "bank_duplicates",
     "bank_tokens",
     "bank_webhooks",
     "bank_orgs",
     "bank_saved_views",
     "validate",
     "rules_admin",
+    "onboarding",
     "sme",
     "sme_templates",
     "workspace_sharing",
