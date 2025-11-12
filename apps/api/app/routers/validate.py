@@ -190,25 +190,38 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
+        # Ensure user has a company (demo user will have one)
         if not current_user.company:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User is not associated with a company",
-            )
+            # Try to get or create company for user
+            demo_company = db.query(Company).filter(Company.name == "Demo Company").first()
+            if not demo_company:
+                demo_company = Company(
+                    name="Demo Company",
+                    contact_email=current_user.email or "demo@trdrhub.com",
+                    plan=PlanType.FREE,
+                    status=CompanyStatus.ACTIVE,
+                )
+                db.add(demo_company)
+                db.flush()
+            current_user.company_id = demo_company.id
+            db.commit()
+            db.refresh(current_user)
 
-        entitlements = EntitlementService(db)
-        try:
-            entitlements.enforce_quota(current_user.company, UsageAction.VALIDATE)
-        except EntitlementError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail={
-                    "code": "quota_exceeded",
-                    "message": exc.message,
-                    "quota": exc.result.to_dict(),
-                    "next_action_url": exc.next_action_url,
-                },
-            ) from exc
+        # Skip quota checks for demo user (allows validation to work without billing)
+        if current_user.email != "demo@trdrhub.com":
+            entitlements = EntitlementService(db)
+            try:
+                entitlements.enforce_quota(current_user.company, UsageAction.VALIDATE)
+            except EntitlementError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "code": "quota_exceeded",
+                        "message": exc.message,
+                        "quota": exc.result.to_dict(),
+                        "next_action_url": exc.next_action_url,
+                    },
+                ) from exc
 
         # Check if this is a bank bulk validation request
         user_type = payload.get("userType") or payload.get("user_type")
