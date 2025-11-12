@@ -8,10 +8,10 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from ...database import get_db
-from ...core.security import get_current_admin_user
+from ...core.auth import get_current_admin_user
 from ...models import User
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(tags=["admin-db"])
 
 
 @router.get("/db-audit/exporter")

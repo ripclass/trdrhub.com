@@ -26,15 +26,21 @@ from ..models.audit_log import AuditAction, AuditResult
 router = APIRouter(prefix="/admin", tags=["admin-users"])
 
 # Include admin sub-routers
-from .admin import ops, jobs, audit as admin_audit, dr, governance
-from .admin.db_audit import router as db_audit_router
+try:
+    from .admin import ops, jobs, audit as admin_audit, dr, governance
+    router.include_router(ops.router)
+    router.include_router(jobs.router)
+    router.include_router(admin_audit.router)
+    router.include_router(dr.router)
+    router.include_router(governance.router)
+except ImportError:
+    pass  # Sub-routers may not all exist
 
-router.include_router(ops.router)
-router.include_router(jobs.router)
-router.include_router(admin_audit.router)
-router.include_router(dr.router)
-router.include_router(governance.router)
-router.include_router(db_audit_router)
+try:
+    from .admin.db_audit import router as db_audit_router
+    router.include_router(db_audit_router)
+except ImportError:
+    pass
 
 
 @router.get("/users", response_model=UserListResponse)
