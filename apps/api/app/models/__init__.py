@@ -15,6 +15,8 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+from .bank_workflow import BankTenant as _new_bank_tenant
+
 _LEGACY_MODULE_NAME = "app._legacy_models"
 _LEGACY_MODULE_PATH = Path(__file__).resolve().parent.parent / "models.py"
 
@@ -52,7 +54,7 @@ Invoice = _legacy.Invoice  # type: ignore[attr-defined]
 InvoiceStatus = _legacy.InvoiceStatus  # type: ignore[attr-defined]
 Currency = _legacy.Currency  # type: ignore[attr-defined]
 UsageRecord = _legacy.UsageRecord  # type: ignore[attr-defined]
-BankTenant = _legacy.BankTenant  # type: ignore[attr-defined]
+BankTenant = getattr(_legacy, "BankTenant", _new_bank_tenant)  # type: ignore[attr-defined]
 BankReport = _legacy.BankReport  # type: ignore[attr-defined]
 BankAuditLog = _legacy.BankAuditLog  # type: ignore[attr-defined]
 UserRoleAssignment = _legacy.UserRoleAssignment  # type: ignore[attr-defined]

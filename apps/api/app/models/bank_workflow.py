@@ -5,9 +5,11 @@ Bank workflow models for Approvals and Discrepancy Workflow.
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Optional
+
 from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, Boolean, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from sqlalchemy.sql import func
 
 from ..database import Base
@@ -34,6 +36,31 @@ class DiscrepancyWorkflowStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
     CLOSED = "closed"
+
+
+class BankTenant(Base):
+    """Mapping between a bank (company) and its managed SME tenants."""
+
+    __tablename__ = "bank_tenants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bank_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    bank = relationship("Company", foreign_keys=[bank_id])
+    tenant = relationship("Company", foreign_keys=[tenant_id])
+
+    # Backwards compatibility aliases used by legacy code paths
+    company_id = synonym("bank_id")
+
+    @property
+    def bank_alias(self) -> Optional[str]:
+        """Return a human-friendly alias for the bank."""
+
+        return getattr(self.bank, "name", None)
 
 
 class BankApproval(Base):
