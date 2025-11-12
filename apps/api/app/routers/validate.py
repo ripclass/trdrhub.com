@@ -294,6 +294,7 @@ async def validate_doc(
             results = validate_document(payload, doc_type)
 
         # Record usage - link to session if created (skip for demo user)
+        quota = None
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
             quota = entitlements.record_usage(
@@ -383,7 +384,7 @@ async def validate_doc(
             "results": results,
             "job_id": str(job_id),
             "jobId": str(job_id),
-            "quota": quota.to_dict(),
+            "quota": quota.to_dict() if quota else None,
         }
     except HTTPException:
         raise

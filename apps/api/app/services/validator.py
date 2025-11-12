@@ -721,11 +721,21 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         except ValueError as e:
             # No active ruleset found - fall back to legacy system
             logger.warning(f"JSON ruleset not available ({e}), falling back to legacy validation")
-            return validate_document(document_data, document_type)
+            try:
+                return validate_document(document_data, document_type)
+            except Exception as legacy_error:
+                logger.error(f"Legacy validation also failed: {legacy_error}", exc_info=True)
+                # Return empty results instead of crashing
+                return []
         except Exception as e:
             logger.error(f"Error in JSON ruleset validation: {e}", exc_info=True)
             # Fall back to legacy system on error
-            return validate_document(document_data, document_type)
+            try:
+                return validate_document(document_data, document_type)
+            except Exception as legacy_error:
+                logger.error(f"Legacy validation also failed: {legacy_error}", exc_info=True)
+                # Return empty results instead of crashing
+                return []
     else:
         # Use legacy validation system
         return validate_document(document_data, document_type)
