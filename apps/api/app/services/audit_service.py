@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AuditLog, AuditAction, AuditResult, BankAuditLog
 from .. import models
+from app.database import get_db
 
 
 class AuditService:
@@ -636,3 +637,43 @@ class AuditService:
             .all()
         )
         return entries, total
+
+
+class AuditServiceSingleton:
+    """
+    Singleton wrapper for AuditService that provides convenience methods.
+    Methods accept db as a parameter instead of requiring instance creation.
+    """
+    
+    async def log_event(
+        self,
+        tenant_id: str,
+        event_type: str,
+        actor_id: Optional[UUID] = None,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        db: Optional[Session] = None
+    ):
+        """
+        Convenience method for logging audit events.
+        Creates AuditService instance with db and calls log_action.
+        """
+        if not db:
+            # Try to get db from context if available
+            from app.database import get_db
+            db_gen = get_db()
+            db = next(db_gen)
+        
+        service = AuditService(db)
+        return service.log_action(
+            action=event_type,
+            user_id=actor_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            audit_metadata=details or {}
+        )
+
+
+# Global singleton instance
+audit_service = AuditServiceSingleton()
