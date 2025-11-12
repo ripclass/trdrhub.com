@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 try:
-    from mangum import Mangum  # AWS Lambda adapter (optional)
+    from mangum import Mangum  # AWS Lambda adapter (optional)  # type: ignore
     MANGUM_AVAILABLE = True
 except ImportError:
     MANGUM_AVAILABLE = False
@@ -489,7 +489,7 @@ async def get_performance_metrics(request: Request):
     logger = get_request_logger(request, "metrics")
 
     try:
-        import psutil
+        import psutil  # type: ignore
 
         process = psutil.Process()
         memory_info = process.memory_info()
