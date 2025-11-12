@@ -21,7 +21,7 @@ from app.models.bulk_jobs import (
     BulkJob, BulkItem, BulkFailure, JobEvent, BulkTemplate,
     JobStatus, ItemStatus, JobEventType
 )
-from app.core.config import settings
+from app.config import settings
 from app.core.queue import get_queue, Queue
 from app.services.notification_service import notification_service
 from app.services.audit_service import audit_service

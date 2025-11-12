@@ -9,26 +9,21 @@ import { Download, FileText, RefreshCw } from "lucide-react";
 
 import { getAdminService } from "@/lib/admin/services";
 import type { ActiveRulesetResult, RulesetRecord } from "@/lib/admin/types";
+import {
+  PRIMARY_DOMAIN_OPTIONS,
+  RULEBOOK_OPTIONS_BY_DOMAIN,
+  ALL_RULEBOOK_OPTIONS,
+  RulebookOption,
+} from "./constants";
 
 const service = getAdminService();
 
 const DOMAIN_OPTIONS = [
   { label: "All domains", value: "all" },
-  { label: "ICC · UCP 600", value: "icc.ucp600" },
-  { label: "ICC · eUCP v2.1", value: "icc.eucp2.1" },
-  { label: "ICC · ISP98", value: "icc.isp98" },
-  { label: "ICC · URDG 758", value: "icc.urdg758" },
-  { label: "ICC · URC 522", value: "icc.urc522" },
-  { label: "ICC · eURC 1.0", value: "icc.eurc1.0" },
-  { label: "ICC · URR 725", value: "icc.urr725" },
-  { label: "ICC (Legacy/General)", value: "icc" },
-  { label: "Regulations", value: "regulations" },
-  { label: "Incoterms", value: "incoterms" },
-  { label: "VAT", value: "vat" },
-  { label: "Sanctions", value: "sanctions" },
-  { label: "AML", value: "aml" },
-  { label: "Customs", value: "customs" },
-  { label: "Shipping", value: "shipping" },
+  ...PRIMARY_DOMAIN_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
 ];
 
 const JURISDICTION_OPTIONS = [
@@ -40,8 +35,13 @@ const JURISDICTION_OPTIONS = [
   { label: "India", value: "in" },
 ];
 
+const PRIMARY_DOMAIN_LABEL_MAP = new Map(PRIMARY_DOMAIN_OPTIONS.map((option) => [option.value, option.label]));
+const RULEBOOK_LOOKUP = new Map<string, RulebookOption>(ALL_RULEBOOK_OPTIONS.map((option) => [option.value, option]));
+const DEFAULT_JURISDICTIONS = ["global", "eu", "us", "bd", "in"];
+
 interface ActiveRulesetDisplay extends RulesetRecord {
   signedUrl?: string;
+  rulebookMeta?: RulebookOption;
 }
 
 export function RulesActive() {
@@ -49,6 +49,7 @@ export function RulesActive() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [domainFilter, setDomainFilter] = React.useState<string>(searchParams.get("activeDomain") ?? "all");
+  const [rulebookFilter, setRulebookFilter] = React.useState<string>(searchParams.get("activeRulebook") ?? "all");
   const [jurisdictionFilter, setJurisdictionFilter] = React.useState<string>(
     searchParams.get("activeJurisdiction") ?? "all"
   );
@@ -58,14 +59,70 @@ export function RulesActive() {
   const [error, setError] = React.useState<string | null>(null);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
 
-  // Common domain/jurisdiction combinations to check
-  const combinations = React.useMemo(() => {
-    const allDomains = DOMAIN_OPTIONS.filter((option) => option.value !== "all").map((option) => option.value);
-    const domains = domainFilter === "all" ? allDomains : [domainFilter];
-    const jurisdictions = jurisdictionFilter === "all" ? ["global", "eu", "us", "bd", "in"] : [jurisdictionFilter];
+  const changeDomainFilter = (nextValue: string, resetRulebook = true) => {
+    setDomainFilter(nextValue);
+    if (resetRulebook) {
+      setRulebookFilter("all");
+    }
+  };
 
-    return domains.flatMap((domain) => jurisdictions.map((jurisdiction) => ({ domain, jurisdiction })));
-  }, [domainFilter, jurisdictionFilter]);
+  const changeRulebookFilter = (nextValue: string) => {
+    setRulebookFilter(nextValue);
+    if (nextValue !== "all") {
+      const meta = RULEBOOK_LOOKUP.get(nextValue);
+      if (meta) {
+        setDomainFilter(meta.domain);
+      }
+    }
+  };
+
+  const getRulebookDisplay = (ruleset: ActiveRulesetDisplay) => {
+    const meta = ruleset.rulebookMeta ?? RULEBOOK_LOOKUP.get(ruleset.domain);
+    if (!meta) {
+      const primaryLabel = PRIMARY_DOMAIN_LABEL_MAP.get(ruleset.domain) ?? ruleset.domain.toUpperCase();
+      return {
+        primaryLabel,
+        rulebookLabel: ruleset.domain,
+        typeLabel: undefined as string | undefined,
+      };
+    }
+
+    const primaryLabel =
+      PRIMARY_DOMAIN_LABEL_MAP.get(meta.domain) ?? meta.domain.toUpperCase();
+    const typeLabel =
+      meta.type === "base" ? "Base" : meta.type === "supplement" ? "Supplement" : undefined;
+
+    return {
+      primaryLabel,
+      rulebookLabel: meta.label,
+      typeLabel,
+    };
+  };
+
+  const rulebookFilterOptions = React.useMemo(() => {
+    const source =
+      domainFilter === "all"
+        ? ALL_RULEBOOK_OPTIONS
+        : RULEBOOK_OPTIONS_BY_DOMAIN[domainFilter] ?? [];
+
+    const options = source.map((option) => {
+      const domainLabel = PRIMARY_DOMAIN_LABEL_MAP.get(option.domain) ?? option.domain.toUpperCase();
+      const domainLabelShort = domainLabel.split(" (")[0];
+      const typeLabel =
+        option.type === "base"
+          ? "Base"
+          : option.type === "supplement"
+          ? "Supplement"
+          : "General";
+
+      return {
+        label: `${domainLabelShort} · ${option.label}${option.type !== "general" ? ` (${typeLabel})` : ""}`,
+        value: option.value,
+      };
+    });
+
+    return [{ label: "All rulebooks", value: "all" }, ...options];
+  }, [domainFilter]);
 
   const loadActiveRulesets = React.useCallback(async () => {
     setLoading(true);
@@ -73,52 +130,95 @@ export function RulesActive() {
     const results: ActiveRulesetDisplay[] = [];
 
     try {
-      for (const { domain, jurisdiction } of combinations) {
-        try {
-          const result = await service.getActiveRuleset(domain, jurisdiction, false);
-          if (result.ruleset) {
-            results.push({
-              ...result.ruleset,
-              signedUrl: result.signedUrl,
-            });
+      const rulebooksToCheck =
+        rulebookFilter !== "all"
+          ? ALL_RULEBOOK_OPTIONS.filter((option) => option.value === rulebookFilter)
+          : domainFilter === "all"
+          ? ALL_RULEBOOK_OPTIONS
+          : RULEBOOK_OPTIONS_BY_DOMAIN[domainFilter] ?? [];
+
+      const jurisdictionsToCheck =
+        jurisdictionFilter === "all" ? DEFAULT_JURISDICTIONS : [jurisdictionFilter];
+
+      const combinations = rulebooksToCheck.flatMap((rulebook) =>
+        jurisdictionsToCheck.map((jurisdiction) => ({ rulebook, jurisdiction }))
+      );
+
+      const responses = await Promise.all(
+        combinations.map(async ({ rulebook, jurisdiction }) => {
+          try {
+            const result = await service.getActiveRuleset(rulebook.value, jurisdiction, false);
+            if (result.ruleset) {
+              return {
+                ...result.ruleset,
+                signedUrl: result.signedUrl,
+                rulebookMeta: rulebook,
+              } as ActiveRulesetDisplay;
+            }
+          } catch (err) {
+            if (err instanceof Error && err.message.includes("404")) {
+              return null;
+            }
+            console.warn(`Failed to load active ruleset for ${rulebook.value}/${jurisdiction}:`, err);
+            return null;
           }
-        } catch (err) {
-          // Skip if no active ruleset found for this combination
-          if (err instanceof Error && err.message.includes("404")) {
-            continue;
-          }
-          console.warn(`Failed to load active ruleset for ${domain}/${jurisdiction}:`, err);
-        }
-      }
-      setActiveRulesets(results);
+          return null;
+        })
+      );
+
+      const filteredResults = responses.filter(Boolean) as ActiveRulesetDisplay[];
+
+      filteredResults.sort((a, b) => {
+        const aDate = new Date(a.publishedAt ?? a.createdAt ?? 0).getTime();
+        const bDate = new Date(b.publishedAt ?? b.createdAt ?? 0).getTime();
+        return bDate - aDate;
+      });
+
+      setActiveRulesets(filteredResults);
     } catch (err) {
       console.error("Failed to load active rulesets:", err);
       setError("Unable to load active rulesets. Retry shortly or check monitoring services.");
+    setActiveRulesets([]);
     } finally {
       setLoading(false);
     }
-  }, [combinations]);
+  }, [domainFilter, rulebookFilter, jurisdictionFilter]);
 
   React.useEffect(() => {
     loadActiveRulesets();
   }, [loadActiveRulesets]);
 
   React.useEffect(() => {
+    if (rulebookFilter !== "all") {
+      const meta = RULEBOOK_LOOKUP.get(rulebookFilter);
+      if (meta && domainFilter !== meta.domain) {
+        setDomainFilter(meta.domain);
+      }
+    }
+  }, [rulebookFilter]);
+
+  React.useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (domainFilter !== "all") next.set("activeDomain", domainFilter);
     else next.delete("activeDomain");
+    if (rulebookFilter !== "all") next.set("activeRulebook", rulebookFilter);
+    else next.delete("activeRulebook");
     if (jurisdictionFilter !== "all") next.set("activeJurisdiction", jurisdictionFilter);
     else next.delete("activeJurisdiction");
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [domainFilter, jurisdictionFilter, searchParams, setSearchParams]);
+  }, [domainFilter, rulebookFilter, jurisdictionFilter, searchParams, setSearchParams]);
 
   const handleDownload = async (ruleset: ActiveRulesetDisplay) => {
     setDownloadingId(ruleset.id);
     try {
       // Fetch with content to get signed URL or content
-      const result = await service.getActiveRuleset(ruleset.domain, ruleset.jurisdiction, true);
+      const result = await service.getActiveRuleset(
+        ruleset.domain,
+        ruleset.jurisdiction ?? "global",
+        true
+      );
       
       if (result.signedUrl) {
         // Open signed URL in new tab for download
@@ -169,14 +269,23 @@ export function RulesActive() {
         }
       >
         <AdminFilters
-          searchPlaceholder="Filter by domain or jurisdiction"
+          searchPlaceholder="Filter by domain, rulebook, or jurisdiction"
           filterGroups={[
             {
               label: "Domain",
               value: domainFilter,
               options: DOMAIN_OPTIONS,
               onChange: (value) => {
-                setDomainFilter(String(value || "all"));
+                changeDomainFilter(String(value || "all"), true);
+              },
+              allowClear: true,
+            },
+            {
+              label: "Rulebook",
+              value: rulebookFilter,
+              options: rulebookFilterOptions,
+              onChange: (value) => {
+                changeRulebookFilter(String(value || "all"));
               },
               allowClear: true,
             },
@@ -214,14 +323,21 @@ export function RulesActive() {
           {
             key: "domain",
             header: "Domain",
-            render: (ruleset: ActiveRulesetDisplay) => (
-              <div className="flex flex-col gap-1">
-                <Badge variant="outline" className="w-fit">
-                  {ruleset.domain.toUpperCase()}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{ruleset.jurisdiction}</span>
-              </div>
-            ),
+            render: (ruleset: ActiveRulesetDisplay) => {
+              const { primaryLabel, rulebookLabel, typeLabel } = getRulebookDisplay(ruleset);
+              return (
+                <div className="flex flex-col gap-1">
+                  <Badge variant="outline" className="w-fit">
+                    {primaryLabel}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {rulebookLabel}
+                    {typeLabel ? ` · ${typeLabel}` : ""}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{ruleset.jurisdiction}</span>
+                </div>
+              );
+            },
           },
           {
             key: "ruleCount",

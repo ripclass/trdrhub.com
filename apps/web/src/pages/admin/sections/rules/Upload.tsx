@@ -14,26 +14,9 @@ import { ArrowLeft, CheckCircle2, FileText, Upload, XCircle } from "lucide-react
 
 import { getAdminService } from "@/lib/admin/services";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
+import { PRIMARY_DOMAIN_OPTIONS, RULEBOOK_OPTIONS_BY_DOMAIN } from "./constants";
 
 const service = getAdminService();
-
-const DOMAIN_OPTIONS = [
-  { value: "icc.ucp600", label: "ICC · UCP 600" },
-  { value: "icc.eucp2.1", label: "ICC · eUCP v2.1" },
-  { value: "icc.isp98", label: "ICC · ISP98" },
-  { value: "icc.urdg758", label: "ICC · URDG 758" },
-  { value: "icc.urc522", label: "ICC · URC 522" },
-  { value: "icc.eurc1.0", label: "ICC · eURC 1.0" },
-  { value: "icc.urr725", label: "ICC · URR 725" },
-  { value: "icc", label: "ICC (Legacy/General)" },
-  { value: "incoterms", label: "Incoterms" },
-  { value: "vat", label: "VAT" },
-  { value: "sanctions", label: "Sanctions" },
-  { value: "aml", label: "AML (Anti-Money Laundering)" },
-  { value: "customs", label: "Customs" },
-  { value: "shipping", label: "Shipping" },
-  { value: "regulations", label: "Regulations" },
-];
 
 const JURISDICTION_OPTIONS = [
   { value: "global", label: "Global" },
@@ -51,7 +34,8 @@ export function RulesUpload() {
   const audit = useAdminAudit("rules-upload");
 
   const [file, setFile] = React.useState<File | null>(null);
-  const [domain, setDomain] = React.useState<string>("");
+const [domain, setDomain] = React.useState<string>("");
+const [rulebook, setRulebook] = React.useState<string>("");
   const [jurisdiction, setJurisdiction] = React.useState<string>("global");
   const [rulesetVersion, setRulesetVersion] = React.useState<string>("1.0.0");
   const [rulebookVersion, setRulebookVersion] = React.useState<string>("");
@@ -67,7 +51,17 @@ export function RulesUpload() {
     warnings: string[];
   } | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+const rulebookOptionsForDomain = React.useMemo(() => {
+  if (!domain) return [];
+  return RULEBOOK_OPTIONS_BY_DOMAIN[domain] ?? [];
+}, [domain]);
+
+const handleDomainChange = (value: string) => {
+  setDomain(value);
+  setRulebook("");
+};
+
+const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       if (!selectedFile.name.endsWith(".json")) {
@@ -196,11 +190,31 @@ export function RulesUpload() {
       return;
     }
 
+    if (!rulebook) {
+      toast({
+        title: "Rulebook required",
+        description: "Please select a rulebook.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const rulebookOptions = RULEBOOK_OPTIONS_BY_DOMAIN[domain] ?? [];
+    const selectedRulebook = rulebookOptions.find((option) => option.value === rulebook);
+    if (!selectedRulebook) {
+      toast({
+        title: "Invalid rulebook selection",
+        description: "Selected rulebook is not valid for the chosen domain.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploading(true);
     try {
       const result = await service.uploadRuleset(
         file,
-        domain,
+        rulebook,
         jurisdiction,
         rulesetVersion,
         rulebookVersion,
@@ -213,7 +227,7 @@ export function RulesUpload() {
         await audit("upload_ruleset", {
           entityId: result.data.ruleset.id,
           metadata: {
-            domain,
+            domain: rulebook,
             jurisdiction,
             ruleCount: result.data.validation.ruleCount,
           },
@@ -230,6 +244,7 @@ export function RulesUpload() {
         setJurisdiction("global");
         setRulesetVersion("1.0.0");
         setRulebookVersion("");
+        setRulebook("");
         setEffectiveFrom("");
         setEffectiveTo("");
         setNotes("");
@@ -344,14 +359,39 @@ export function RulesUpload() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="domain">Domain *</Label>
-              <Select value={domain} onValueChange={setDomain} disabled={uploading}>
+              <Select value={domain} onValueChange={handleDomainChange} disabled={uploading}>
                 <SelectTrigger id="domain">
                   <SelectValue placeholder="Select domain" />
                 </SelectTrigger>
                 <SelectContent>
-                  {DOMAIN_OPTIONS.map((opt) => (
+                  {PRIMARY_DOMAIN_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rulebook">Rulebook *</Label>
+              <Select
+                value={rulebook}
+                onValueChange={setRulebook}
+                disabled={uploading || !domain}
+              >
+                <SelectTrigger id="rulebook">
+                  <SelectValue placeholder={domain ? "Select rulebook" : "Select domain first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {rulebookOptionsForDomain.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                      {opt.type === "base"
+                        ? " (Base)"
+                        : opt.type === "supplement"
+                        ? " (Supplement)"
+                        : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -431,7 +471,11 @@ export function RulesUpload() {
               />
             </div>
 
-            <Button onClick={handleUpload} disabled={uploading || !file || !domain || !rulebookVersion} className="w-full">
+            <Button
+              onClick={handleUpload}
+              disabled={uploading || !file || !domain || !rulebook || !rulebookVersion}
+              className="w-full"
+            >
               {uploading ? (
                 <>
                   <Upload className="mr-2 h-4 w-4 animate-spin" /> Uploading...

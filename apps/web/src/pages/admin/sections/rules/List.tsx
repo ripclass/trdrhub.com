@@ -33,6 +33,12 @@ import { Archive, CheckCircle2, Clock, FileText, MoreVertical, RefreshCw, Upload
 import { getAdminService } from "@/lib/admin/services";
 import type { RulesetRecord, RulesetStatus } from "@/lib/admin/types";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
+import {
+  PRIMARY_DOMAIN_OPTIONS,
+  RULEBOOK_OPTIONS_BY_DOMAIN,
+  ALL_RULEBOOK_OPTIONS,
+  RulebookOption,
+} from "./constants";
 
 const service = getAdminService();
 const PAGE_SIZE = 10;
@@ -47,23 +53,12 @@ const STATUS_OPTIONS = [
   { label: "Scheduled", value: "scheduled" },
 ];
 
-const DOMAIN_OPTIONS = [
+const DOMAIN_FILTER_OPTIONS = [
   { label: "All domains", value: "all" },
-  { label: "ICC · UCP 600", value: "icc.ucp600" },
-  { label: "ICC · eUCP v2.1", value: "icc.eucp2.1" },
-  { label: "ICC · ISP98", value: "icc.isp98" },
-  { label: "ICC · URDG 758", value: "icc.urdg758" },
-  { label: "ICC · URC 522", value: "icc.urc522" },
-  { label: "ICC · eURC 1.0", value: "icc.eurc1.0" },
-  { label: "ICC · URR 725", value: "icc.urr725" },
-  { label: "ICC (Legacy/General)", value: "icc" },
-  { label: "Regulations", value: "regulations" },
-  { label: "Incoterms", value: "incoterms" },
-  { label: "VAT", value: "vat" },
-  { label: "Sanctions", value: "sanctions" },
-  { label: "AML", value: "aml" },
-  { label: "Customs", value: "customs" },
-  { label: "Shipping", value: "shipping" },
+  ...PRIMARY_DOMAIN_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
 ];
 
 const JURISDICTION_OPTIONS = [
@@ -74,6 +69,9 @@ const JURISDICTION_OPTIONS = [
   { label: "Bangladesh", value: "bd" },
   { label: "India", value: "in" },
 ];
+
+const PRIMARY_DOMAIN_LABEL_MAP = new Map(PRIMARY_DOMAIN_OPTIONS.map((option) => [option.value, option.label]));
+const RULEBOOK_LOOKUP = new Map<string, RulebookOption>(ALL_RULEBOOK_OPTIONS.map((option) => [option.value, option]));
 
 function formatRelativeTime(iso: string | undefined): string {
   if (!iso) return "Never";
@@ -119,17 +117,15 @@ export function RulesList() {
   const [jurisdictionFilter, setJurisdictionFilter] = React.useState<string>(
     searchParams.get("rulesJurisdiction") ?? "all"
   );
+  const [rulebookFilter, setRulebookFilter] = React.useState<string>(searchParams.get("rulesRulebook") ?? "all");
 
-  const [rulesets, setRulesets] = React.useState<RulesetRecord[]>([]);
-  const [total, setTotal] = React.useState(0);
+  const [allRulesets, setAllRulesets] = React.useState<RulesetRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [actionRulesetId, setActionRulesetId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [publishDialogOpen, setPublishDialogOpen] = React.useState(false);
   const [rollbackDialogOpen, setRollbackDialogOpen] = React.useState(false);
   const [selectedRuleset, setSelectedRuleset] = React.useState<RulesetRecord | null>(null);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const updateQuery = React.useCallback(
     (updates: Record<string, string | null>) => {
@@ -150,27 +146,113 @@ export function RulesList() {
     setError(null);
     try {
       const result = await service.listRulesets({
-        page,
-        pageSize: PAGE_SIZE,
-        domain: domainFilter !== "all" ? domainFilter : undefined,
-        jurisdiction: jurisdictionFilter !== "all" ? jurisdictionFilter : undefined,
-        status: statusFilter !== "all" ? (statusFilter as RulesetStatus) : undefined,
+        page: 1,
+        pageSize: 500,
       });
-      setRulesets(result.items);
-      setTotal(result.total);
+      setAllRulesets(result.items);
+      setPage(1);
     } catch (err) {
       console.error("Failed to load rulesets:", err);
       setError("Unable to load rulesets. Retry shortly or check monitoring services.");
-      setRulesets(FALLBACK_RULESETS);
-      setTotal(FALLBACK_RULESETS.length);
+      setAllRulesets(FALLBACK_RULESETS);
     } finally {
       setLoading(false);
     }
-  }, [page, domainFilter, jurisdictionFilter, statusFilter]);
+  }, []);
 
   React.useEffect(() => {
     loadRulesets();
   }, [loadRulesets]);
+
+React.useEffect(() => {
+  if (rulebookFilter !== "all") {
+    const meta = RULEBOOK_LOOKUP.get(rulebookFilter);
+    if (meta && domainFilter !== meta.domain) {
+      setDomainFilter(meta.domain);
+    }
+  }
+}, [rulebookFilter]);
+
+  const rulebookFilterOptions = React.useMemo(() => {
+    const source =
+      domainFilter === "all"
+        ? ALL_RULEBOOK_OPTIONS
+        : RULEBOOK_OPTIONS_BY_DOMAIN[domainFilter] ?? [];
+
+    const options = source.map((option) => {
+      const domainLabel = PRIMARY_DOMAIN_LABEL_MAP.get(option.domain) ?? option.domain.toUpperCase();
+      const domainLabelShort = domainLabel.split(" (")[0];
+      const typeLabel =
+        option.type === "base" ? "Base" : option.type === "supplement" ? "Supplement" : "General";
+
+      return {
+        label: `${domainLabelShort} · ${option.label}${option.type !== "general" ? ` (${typeLabel})` : ""}`,
+        value: option.value,
+      };
+    });
+
+    return [{ label: "All rulebooks", value: "all" }, ...options];
+  }, [domainFilter]);
+
+  const filteredRulesets = React.useMemo(() => {
+    let items = [...allRulesets];
+
+    if (statusFilter !== "all") {
+      items = items.filter((ruleset) => ruleset.status === statusFilter);
+    }
+
+    if (jurisdictionFilter !== "all") {
+      items = items.filter((ruleset) => ruleset.jurisdiction === jurisdictionFilter);
+    }
+
+    if (rulebookFilter !== "all") {
+      items = items.filter((ruleset) => ruleset.domain === rulebookFilter);
+    } else if (domainFilter !== "all") {
+      const allowed = RULEBOOK_OPTIONS_BY_DOMAIN[domainFilter]?.map((option) => option.value) ?? [];
+      items = items.filter((ruleset) => allowed.includes(ruleset.domain) || ruleset.domain === domainFilter);
+    }
+
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      items = items.filter((ruleset) => {
+        const rulebookMeta = RULEBOOK_LOOKUP.get(ruleset.domain);
+        const primaryLabel =
+          PRIMARY_DOMAIN_LABEL_MAP.get(rulebookMeta?.domain ?? ruleset.domain) ??
+          ruleset.domain.toUpperCase();
+
+        return (
+          ruleset.rulebookVersion?.toLowerCase().includes(search) ||
+          ruleset.rulesetVersion?.toLowerCase().includes(search) ||
+          ruleset.domain?.toLowerCase().includes(search) ||
+          ruleset.jurisdiction?.toLowerCase().includes(search) ||
+          (rulebookMeta?.label.toLowerCase().includes(search) ?? false) ||
+          primaryLabel.toLowerCase().includes(search)
+        );
+      });
+    }
+
+    items.sort((a, b) => {
+      const aDate = new Date(a.publishedAt ?? a.createdAt ?? 0).getTime();
+      const bDate = new Date(b.publishedAt ?? b.createdAt ?? 0).getTime();
+      return bDate - aDate;
+    });
+
+    return items;
+  }, [allRulesets, statusFilter, jurisdictionFilter, rulebookFilter, domainFilter, searchTerm]);
+
+  const totalFiltered = filteredRulesets.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const paginatedRulesets = React.useMemo(
+    () => filteredRulesets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredRulesets, page]
+  );
+
+  React.useEffect(() => {
+    const maxPages = Math.max(1, Math.ceil(filteredRulesets.length / PAGE_SIZE));
+    if (page > maxPages) {
+      setPage(maxPages);
+    }
+  }, [filteredRulesets.length, page]);
 
   React.useEffect(() => {
     updateQuery({
@@ -178,9 +260,10 @@ export function RulesList() {
       rulesSearch: searchTerm || null,
       rulesStatus: statusFilter !== "all" ? statusFilter : null,
       rulesDomain: domainFilter !== "all" ? domainFilter : null,
+      rulesRulebook: rulebookFilter !== "all" ? rulebookFilter : null,
       rulesJurisdiction: jurisdictionFilter !== "all" ? jurisdictionFilter : null,
     });
-  }, [page, searchTerm, statusFilter, domainFilter, jurisdictionFilter, updateQuery]);
+  }, [page, searchTerm, statusFilter, domainFilter, rulebookFilter, jurisdictionFilter, updateQuery]);
 
   const handlePublish = async (ruleset: RulesetRecord) => {
     setActionRulesetId(ruleset.id);
@@ -227,6 +310,52 @@ export function RulesList() {
     });
   };
 
+  const changeDomainFilter = (nextValue: string, resetRulebook = true) => {
+    setDomainFilter(nextValue);
+    if (resetRulebook) {
+      setRulebookFilter("all");
+    }
+    setPage(1);
+  };
+
+  const changeRulebookFilter = (nextValue: string) => {
+    setRulebookFilter(nextValue);
+    if (nextValue !== "all") {
+      const meta = RULEBOOK_LOOKUP.get(nextValue);
+      if (meta) {
+        setDomainFilter(meta.domain);
+      }
+    }
+    setPage(1);
+  };
+
+  const getRulebookDisplay = (domain: string) => {
+    const rulebookMeta = RULEBOOK_LOOKUP.get(domain);
+    if (!rulebookMeta) {
+      const primaryLabel = PRIMARY_DOMAIN_LABEL_MAP.get(domain) ?? domain.toUpperCase();
+      return {
+        primaryLabel,
+        rulebookLabel: domain,
+        typeLabel: undefined as string | undefined,
+      };
+    }
+
+    const primaryLabel =
+      PRIMARY_DOMAIN_LABEL_MAP.get(rulebookMeta.domain) ?? rulebookMeta.domain.toUpperCase();
+    const typeLabel =
+      rulebookMeta.type === "base"
+        ? "Base"
+        : rulebookMeta.type === "supplement"
+        ? "Supplement"
+        : undefined;
+
+    return {
+      primaryLabel,
+      rulebookLabel: rulebookMeta.label,
+      typeLabel,
+    };
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <AdminToolbar
@@ -244,7 +373,7 @@ export function RulesList() {
         }
       >
         <AdminFilters
-          searchPlaceholder="Search by rulebook version, domain, or jurisdiction"
+          searchPlaceholder="Search by rulebook, version, domain, or jurisdiction"
           searchValue={searchTerm}
           onSearchChange={(value) => {
             setSearchTerm(value);
@@ -264,10 +393,18 @@ export function RulesList() {
             {
               label: "Domain",
               value: domainFilter,
-              options: DOMAIN_OPTIONS,
+              options: DOMAIN_FILTER_OPTIONS,
               onChange: (value) => {
-                setDomainFilter(String(value || "all"));
-                setPage(1);
+                changeDomainFilter(String(value || "all"), true);
+              },
+              allowClear: true,
+            },
+            {
+              label: "Rulebook",
+              value: rulebookFilter,
+              options: rulebookFilterOptions,
+              onChange: (value) => {
+                changeRulebookFilter(String(value || "all"));
               },
               allowClear: true,
             },
@@ -306,14 +443,21 @@ export function RulesList() {
           {
             key: "domain",
             header: "Domain",
-            render: (ruleset: RulesetRecord) => (
-              <div className="flex flex-col gap-1">
-                <Badge variant="outline" className="w-fit">
-                  {ruleset.domain.toUpperCase()}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{ruleset.jurisdiction}</span>
-              </div>
-            ),
+            render: (ruleset: RulesetRecord) => {
+              const { primaryLabel, rulebookLabel, typeLabel } = getRulebookDisplay(ruleset.domain);
+              return (
+                <div className="flex flex-col gap-1">
+                  <Badge variant="outline" className="w-fit">
+                    {primaryLabel}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {rulebookLabel}
+                    {typeLabel ? ` · ${typeLabel}` : ""}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{ruleset.jurisdiction}</span>
+                </div>
+              );
+            },
           },
           {
             key: "status",
@@ -407,7 +551,7 @@ export function RulesList() {
             ),
           },
         ]}
-        data={rulesets}
+        data={paginatedRulesets}
         loading={loading}
         emptyState={
           <AdminEmptyState

@@ -15,7 +15,7 @@ from app.models.workflows import (
     BankWorkflow, RuleOverride, PolicyVersion, EscalationRule, WorkflowExecution,
     WorkflowStatus, RuleComparator, EscalationPriority
 )
-from app.core.config import settings
+from app.config import settings
 from app.services.notification_service import notification_service
 from app.services.audit_service import audit_service
 from app.core.exceptions import ValidationError, ConfigurationError
