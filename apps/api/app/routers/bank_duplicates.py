@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.database import get_db
 from app.routers.bank import require_bank_or_admin
 from app.models import User, ValidationSession, SessionStatus
 from app.models.duplicate_detection import LCFingerprint, LCMergeHistory, MergeType
