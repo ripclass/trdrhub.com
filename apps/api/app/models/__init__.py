@@ -56,6 +56,7 @@ BankTenant = _legacy.BankTenant  # type: ignore[attr-defined]
 BankReport = _legacy.BankReport  # type: ignore[attr-defined]
 BankAuditLog = _legacy.BankAuditLog  # type: ignore[attr-defined]
 UserRoleAssignment = _legacy.UserRoleAssignment  # type: ignore[attr-defined]
+SavedView = _legacy.SavedView  # type: ignore[attr-defined]
 
 __all__ = [
     "User",
@@ -83,4 +84,5 @@ __all__ = [
     "BankReport",
     "BankAuditLog",
     "UserRoleAssignment",
+    "SavedView",
 ]
