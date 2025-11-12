@@ -224,8 +224,22 @@ async def upload_ruleset(
         )
         db.add(validate_audit)
     
-    db.commit()
-    db.refresh(ruleset)
+    try:
+        db.commit()
+        db.refresh(ruleset)
+        logger.info(f"Successfully uploaded ruleset {ruleset.id} (domain={domain}, jurisdiction={jurisdiction}, status={ruleset.status})")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to commit ruleset upload: {e}", exc_info=True)
+        # Clean up storage file if database commit failed
+        try:
+            storage_service.delete_ruleset_file(upload_result["file_path"])
+        except:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save ruleset: {str(e)}"
+        )
     
     return RulesetUploadResponse(
         ruleset=RulesetResponse.model_validate(ruleset),
@@ -294,8 +308,19 @@ async def publish_ruleset(
     )
     db.add(publish_audit)
     
-    db.commit()
-    db.refresh(ruleset)
+    try:
+        db.commit()
+        db.refresh(ruleset)
+        logger.info(f"Successfully published ruleset {ruleset.id} (domain={ruleset.domain}, jurisdiction={ruleset.jurisdiction})")
+        if existing_active:
+            logger.info(f"Archived previous active ruleset {existing_active.id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to commit ruleset publish: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to publish ruleset: {str(e)}"
+        )
     
     # Invalidate cache for this domain/jurisdiction
     try:
