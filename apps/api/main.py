@@ -296,6 +296,9 @@ app.add_middleware(
         "/health",
         "/metrics",
         "/warm",
+        "/auth/login",
+        "/auth/register",
+        "/auth/csrf-token",  # Temporarily exempt to avoid audit logging issues
     ],
 )
 
