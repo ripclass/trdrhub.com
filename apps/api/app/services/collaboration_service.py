@@ -18,6 +18,7 @@ from app.models.collaboration import (
     ThreadStatus, CommentVisibility, ResolutionStatus
 )
 from app.core.security import get_password_hash
+from app.core.events import EventSeverity
 from app.config import settings
 from app.services.notification_service import notification_service
 from app.services.audit_service import audit_service
