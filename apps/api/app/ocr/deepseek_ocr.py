@@ -32,7 +32,7 @@ class DeepSeekOCRAdapter(OCRAdapter):
             model_name: Hugging Face model identifier (default: deepseek-ai/deepseek-ocr)
             device: Device to run on ('cuda', 'cpu', or None for auto-detect)
         """
-        if torch is None or AutoTokenizer is None or Image is None:
+        if torch is None or pipeline is None or Image is None:
             raise ImportError(
                 "DeepSeek OCR dependencies not installed. "
                 "Install with: pip install torch transformers pillow"
