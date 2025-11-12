@@ -14,9 +14,8 @@ from pydantic import BaseModel, Field
 
 from ..database import get_db
 from ..core.security import get_current_user, require_bank_or_admin, require_bank_admin
-from ..models import User
+from ..models import User, BankTenant
 from ..models.bulk_jobs import BulkJob, BulkTemplate, BulkItem, JobStatus, JobEventType
-from ..models.bank_workflow import BankTenant
 from ..services.bulk_processor import BulkProcessor
 from ..services.audit_service import AuditService
 from ..middleware.audit_middleware import create_audit_context
