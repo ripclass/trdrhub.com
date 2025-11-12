@@ -12,6 +12,8 @@ pydantic-settings>=2.0.3
 supabase>=2.3.0
 httpx>=0.24.0,<0.25.0
 aiohttp>=3.9.0  # For async HTTP requests in notification service
+markdown>=3.5.0  # For markdown processing in collaboration service
+bleach>=6.0.0  # For HTML sanitization in collaboration service
 requests>=2.31.0
 redis==5.0.1
 celery==5.3.4
