@@ -12,6 +12,37 @@ from app.services.rulhub_client import fetch_rules_from_rulhub
 logger = logging.getLogger(__name__)
 
 
+ICC_TEXT_KEYS = [
+    "applicable_rules",
+    "applicable_rules_text",
+    "lc_text",
+    "raw_text",
+    "mt700_40e",
+    "mt700_field_40e",
+    "narrative",
+    "notes",
+    "clauses",
+    "terms",
+    "instructions",
+    "reimbursement_text",
+]
+
+ICC_META_KEYS = [
+    "lc_type",
+    "instrument_type",
+    "product",
+    "product_type",
+    "product_category",
+    "transaction_type",
+    "facility_type",
+]
+
+ICC_RULE_PATTERN = re.compile(
+    r"(isp\s*98|isp98|ucp\s*600|ucp600|e[-\s]?ucp\s*(?:v?\s*2\.1|latest)|urr\s*725|urr725|urdg\s*758|urdg758|urc\s*522|urc522)",
+    re.IGNORECASE,
+)
+
+
 def get_active_overlay(bank_id: str, db_session) -> Optional[Dict[str, Any]]:
     """
     Get the active policy overlay for a bank.
@@ -379,6 +410,121 @@ async def apply_bank_policy(
         return validation_results
 
 
+def _gather_text_blob(document_data: Dict[str, Any]) -> str:
+    """
+    Collect relevant text fragments from the document for rule detection.
+    """
+
+    def _append_value(value: Any, parts: List[str]) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                parts.append(stripped)
+        elif isinstance(value, dict):
+            for nested in value.values():
+                _append_value(nested, parts)
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                _append_value(item, parts)
+        else:
+            parts.append(str(value))
+
+    fragments: List[str] = []
+    for key in ICC_TEXT_KEYS:
+        _append_value(document_data.get(key), fragments)
+
+    return " ".join(fragments)
+
+
+def _gather_meta_blob(document_data: Dict[str, Any]) -> str:
+    """
+    Collect meta descriptors (product/instrument types) for rule inference.
+    """
+    fragments: List[str] = []
+    for key in ICC_META_KEYS:
+        value = document_data.get(key)
+        if isinstance(value, str) and value.strip():
+            fragments.append(value.strip())
+    if document_data.get("is_standby"):
+        fragments.append("standby")
+    if document_data.get("is_guarantee"):
+        fragments.append("guarantee")
+    if document_data.get("is_collection"):
+        fragments.append("collection")
+    return " ".join(fragments)
+
+
+def _unique_preserve(items: List[str]) -> List[str]:
+    seen = set()
+    ordered: List[str] = []
+    for item in items:
+        if not item:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def _detect_icc_ruleset_domains(document_data: Dict[str, Any]) -> Tuple[str, List[str]]:
+    """
+    Detect the base ICC ruleset domain and any supplement domains from document content.
+    """
+    text_blob = _gather_text_blob(document_data).lower()
+    meta_blob = _gather_meta_blob(document_data).lower()
+
+    hits = {
+        match.group(0).lower().replace(" ", "").replace("-", "")
+        for match in ICC_RULE_PATTERN.finditer(text_blob)
+    }
+
+    has_isp = any("isp98" in token for token in hits)
+    has_ucp = any("ucp600" in token for token in hits) or "ucp 600" in text_blob
+    has_eucp = ("eucp" in text_blob and ("2.1" in text_blob or "latest" in text_blob)) or any("eucp" in token for token in hits)
+    has_urr = any("urr725" in token for token in hits)
+    has_urdg = any("urdg758" in token for token in hits)
+    has_urc = any("urc522" in token for token in hits)
+
+    is_standby = bool(document_data.get("is_standby")) or "standby" in meta_blob or "sblc" in meta_blob
+    is_guarantee = bool(document_data.get("is_guarantee")) or "guarantee" in meta_blob
+    is_collection = bool(document_data.get("is_collection")) or "collection" in meta_blob or has_urc
+
+    supplements: List[str] = []
+
+    if has_isp and has_ucp:
+        logger.warning("Detected both ISP98 and UCP600 references; prioritising ISP98.")
+
+    if has_urdg and has_isp:
+        logger.warning("Detected URDG text alongside ISP98; using URDG for guarantee context.")
+
+    if has_isp:
+        base_domain = "icc.isp98"
+    elif has_urdg or is_guarantee:
+        base_domain = "icc.urdg758"
+    elif has_ucp:
+        base_domain = "icc.ucp600"
+    elif is_collection:
+        base_domain = "icc.urc522"
+    elif is_standby:
+        base_domain = "icc.isp98"
+    else:
+        base_domain = "icc.ucp600"
+
+    if base_domain == "icc.ucp600" and has_eucp:
+        supplements.append("icc.eucp2.1")
+
+    if has_urr:
+        supplements.append("icc.urr725")
+
+    if is_collection and base_domain != "icc.urc522":
+        base_domain = "icc.urc522"
+
+    return base_domain, _unique_preserve(supplements)
+
+
 async def enrich_validation_results_with_ai(
     validation_results: List[Dict[str, Any]],
     document_data: Dict[str, Any],
@@ -480,46 +626,96 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             
             rules_service = get_rules_service()
             
-            # Determine domain and jurisdiction from document or use defaults
-            # For LC documents, typically use ICC domain
-            domain = document_data.get("domain", "icc")
+            requested_domain = document_data.get("domain")
             jurisdiction = document_data.get("jurisdiction", "global")
-            
-            # Fetch active ruleset
-            ruleset_data = await rules_service.get_active_ruleset(domain, jurisdiction)
-            rules = ruleset_data.get("rules", [])
-            
-            # Filter rules by document_type
-            filtered_rules = [
-                rule for rule in rules
-                if rule.get("document_type") == document_type or rule.get("document_type") == "lc"
-            ]
-            
-            if not filtered_rules:
-                logger.warning(f"No rules found for document_type={document_type}, domain={domain}, jurisdiction={jurisdiction}")
+            extra_supplements = document_data.get("supplement_domains", []) or []
+
+            if requested_domain and requested_domain != "icc":
+                domain_sequence = _unique_preserve(
+                    [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
+                )
+            else:
+                base_domain, detected_supplements = _detect_icc_ruleset_domains(document_data)
+                domain_sequence = _unique_preserve(
+                    [base_domain, *detected_supplements, *[d for d in extra_supplements if isinstance(d, str)]]
+                )
+
+            domain_sequence = [d for d in domain_sequence if isinstance(d, str) and d.strip()]
+            if not domain_sequence:
+                domain_sequence = ["icc.ucp600"]
+
+            aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+            base_metadata: Optional[Dict[str, Any]] = None
+
+            for idx, domain_key in enumerate(domain_sequence):
+                try:
+                    ruleset_data = await rules_service.get_active_ruleset(domain_key, jurisdiction)
+                except ValueError:
+                    if idx == 0:
+                        raise
+                    logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")
+                    continue
+
+                meta = {
+                    "domain": domain_key,
+                    "ruleset_version": ruleset_data.get("ruleset_version"),
+                    "rulebook_version": ruleset_data.get("rulebook_version"),
+                }
+                if idx == 0:
+                    base_metadata = meta
+
+                for rule in ruleset_data.get("rules", []) or []:
+                    aggregated_rules.append((rule, meta))
+
+            if not aggregated_rules:
+                logger.warning(
+                    f"No rules retrieved for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
+                )
                 return []
-            
-            # Evaluate rules
+
+            filtered_rules_with_meta = [
+                (rule, meta)
+                for rule, meta in aggregated_rules
+                if rule.get("document_type") in (None, "", document_type, "lc")
+            ]
+
+            if not filtered_rules_with_meta:
+                logger.warning(
+                    f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
+                )
+                return []
+
             evaluator = RuleEvaluator()
-            evaluation_result = await evaluator.evaluate_rules(filtered_rules, document_data)
-            
-            # Convert to legacy format for compatibility
-            results = []
-            for outcome in evaluation_result.get("outcomes", []):
+            prepared_rules = [rule for rule, _ in filtered_rules_with_meta]
+            rule_metadata = [meta for _, meta in filtered_rules_with_meta]
+
+            evaluation_result = await evaluator.evaluate_rules(prepared_rules, document_data)
+
+            results: List[Dict[str, Any]] = []
+            outcomes = evaluation_result.get("outcomes", [])
+
+            for idx, outcome in enumerate(outcomes):
                 if outcome.get("not_applicable", False):
-                    continue  # Skip not applicable rules
-                
+                    continue
+
+                meta = rule_metadata[idx] if idx < len(rule_metadata) else base_metadata
                 results.append({
                     "rule": outcome.get("rule_id", "unknown"),
                     "title": outcome.get("title", outcome.get("rule_id", "unknown")),
                     "passed": outcome.get("passed", False),
                     "severity": outcome.get("severity", "warning"),
                     "message": outcome.get("message", ""),
-                    "ruleset_version": ruleset_data.get("ruleset_version"),
-                    "rulebook_version": ruleset_data.get("rulebook_version"),
+                    "ruleset_version": (meta or {}).get("ruleset_version"),
+                    "rulebook_version": (meta or {}).get("rulebook_version"),
+                    "ruleset_domain": (meta or {}).get("domain"),
                 })
-            
-            logger.info(f"Evaluated {len(filtered_rules)} rules using JSON ruleset system (version: {ruleset_data.get('ruleset_version')})")
+
+            logger.info(
+                "Evaluated %d rules using JSON ruleset system (domains=%s, jurisdiction=%s)",
+                len(prepared_rules),
+                domain_sequence,
+                jurisdiction,
+            )
             return results
             
         except ValueError as e:
