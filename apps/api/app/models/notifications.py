@@ -343,3 +343,8 @@ class DigestEntry(Base):
         Index('ix_digest_entries_subscription', 'subscription_id'),
         Index('ix_digest_entries_status', 'included_in_digest'),
     )
+
+
+# Aliases for backward compatibility
+NotificationSubscription = Subscription
+NotificationDigest = DigestEntry
