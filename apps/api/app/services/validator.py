@@ -649,8 +649,11 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
 
             for idx, domain_key in enumerate(domain_sequence):
                 try:
+                    logger.info(f"Fetching ruleset: domain={domain_key}, jurisdiction={jurisdiction}, index={idx}")
                     ruleset_data = await rules_service.get_active_ruleset(domain_key, jurisdiction)
-                except ValueError:
+                    logger.info(f"Successfully fetched ruleset: domain={domain_key}, rule_count={len(ruleset_data.get('rules', []))}")
+                except ValueError as e:
+                    logger.error(f"Failed to fetch ruleset: domain={domain_key}, jurisdiction={jurisdiction}, error={e}")
                     if idx == 0:
                         raise
                     logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")

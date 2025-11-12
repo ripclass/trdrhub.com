@@ -130,6 +130,21 @@ class LocalAdapter(RulesService):
             
             db = SessionLocal()
             try:
+                # Log database connection info for debugging
+                from app.config import settings
+                db_url_redacted = settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else 'unknown'
+                logger.info(f"Querying ruleset: domain={domain}, jurisdiction={jurisdiction}, db={db_url_redacted}")
+                
+                # First, check if ANY rulesets exist
+                total_count = db.query(Ruleset).count()
+                active_count = db.query(Ruleset).filter(Ruleset.status == RulesetStatus.ACTIVE.value).count()
+                logger.info(f"Database stats: total_rulesets={total_count}, active_rulesets={active_count}")
+                
+                # List all domains/jurisdictions for debugging
+                if total_count > 0:
+                    all_rulesets = db.query(Ruleset.domain, Ruleset.jurisdiction, Ruleset.status).all()
+                    logger.info(f"Existing rulesets: {[(r.domain, r.jurisdiction, r.status) for r in all_rulesets]}")
+                
                 ruleset = db.query(Ruleset).filter(
                     and_(
                         Ruleset.domain == domain,
@@ -139,7 +154,10 @@ class LocalAdapter(RulesService):
                 ).first()
                 
                 if not ruleset:
+                    logger.error(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
                     raise ValueError(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
+                
+                logger.info(f"Found active ruleset: id={ruleset.id}, domain={ruleset.domain}, jurisdiction={ruleset.jurisdiction}, rule_count={ruleset.rule_count}")
                 
                 # Fetch content from storage (synchronous call)
                 storage_service = RulesStorageService()
