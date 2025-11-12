@@ -6,7 +6,7 @@ Uses similarity checking and rephrasing to ensure AI outputs are paraphrased.
 
 import re
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
