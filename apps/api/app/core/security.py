@@ -194,7 +194,16 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify((plain_password or "")[:512], hashed_password)
+    try:
+        return pwd_context.verify((plain_password or "")[:512], hashed_password)
+    except Exception:
+        # If verification fails, try standard bcrypt as fallback (for users created via SQL)
+        try:
+            from passlib.context import CryptContext
+            standard_bcrypt = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            return standard_bcrypt.verify((plain_password or "")[:512], hashed_password)
+        except Exception:
+            return False
 
 
 def create_access_token(user: User) -> dict:
