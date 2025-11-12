@@ -122,7 +122,7 @@ async def get_csrf_token(
         key=cookie_settings["key"],
         value=cookie_settings["value"],
         httponly=False,  # Must be readable by JavaScript
-        samesite="lax",
+        samesite="none",
         secure=settings.is_production(),  # HTTPS only in production
         max_age=cookie_settings["max_age"],
     )

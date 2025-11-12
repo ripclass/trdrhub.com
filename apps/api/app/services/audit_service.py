@@ -134,6 +134,7 @@ class AuditService:
         file_count: Optional[int] = None,
         request_data: Optional[Dict[str, Any]] = None,
         response_data: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[Dict[str, Any]] = None,
         duration_ms: Optional[int] = None,
         retention_days: int = 2555  # 7 years default
@@ -165,7 +166,8 @@ class AuditService:
             file_count: Number of files
             request_data: Request payload (will be sanitized)
             response_data: Response data (will be sanitized)
-            metadata: Additional metadata
+            metadata: Additional metadata (legacy alias)
+            audit_metadata: Additional metadata for audit records
             duration_ms: Action duration in milliseconds
             retention_days: How long to retain this log (default 7 years)
 
@@ -203,6 +205,15 @@ class AuditService:
         sanitized_response_data = None
         if response_data:
             sanitized_response_data = self.sanitize_request_data(response_data)
+
+        # Merge legacy metadata alias
+        if metadata:
+            if audit_metadata:
+                merged = metadata.copy()
+                merged.update(audit_metadata)
+                audit_metadata = merged
+            else:
+                audit_metadata = metadata
 
         # Calculate retention deadline
         retention_until = datetime.utcnow() + timedelta(days=retention_days)
