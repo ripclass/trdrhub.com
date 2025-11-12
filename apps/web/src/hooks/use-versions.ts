@@ -1,29 +1,5 @@
 import { useState, useCallback } from 'react';
-import axios from 'axios';
-import { supabase } from '@/lib/supabase';
-
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-});
-
-// Add request interceptor to automatically include auth token
-api.interceptors.request.use(async (config) => {
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${session.access_token}`;
-    }
-  } catch (error) {
-    console.error('Failed to get auth token:', error);
-  }
-  return config;
-});
+import { api } from '@/api/client';
 
 export interface LCVersion {
   id: string;
@@ -146,14 +122,8 @@ export const useVersions = () => {
 
     try {
       // Try real API first, fall back to mock
-      try {
-        const response = await api.get(`/api/lc/${lcNumber}/versions`);
-        return response.data;
-      } catch (apiError) {
-        console.log('API unavailable, using mock versions');
-        // Return mock data
-        return mockVersions[lcNumber] || [];
-      }
+      const response = await api.get(`/api/lc/${lcNumber}/versions`);
+      return response.data;
     } catch (err: any) {
       const versionError: VersionError = {
         type: 'unknown',
@@ -171,19 +141,8 @@ export const useVersions = () => {
     setError(null);
 
     try {
-      try {
-        const response = await api.get(`/api/lc/${lcNumber}/check`);
-        return response.data;
-      } catch (apiError) {
-        console.log('API unavailable, using mock check');
-        // Mock check
-        const versions = mockVersions[lcNumber] || [];
-        return {
-          exists: versions.length > 0,
-          nextVersion: `V${versions.length + 1}`,
-          currentVersions: versions.length
-        };
-      }
+      const response = await api.get(`/api/lc/${lcNumber}/check`);
+      return response.data;
     } catch (err: any) {
       const versionError: VersionError = {
         type: 'unknown',
@@ -201,21 +160,8 @@ export const useVersions = () => {
     setError(null);
 
     try {
-      try {
-        const response = await api.get('/api/lc/amended');
-        return response.data;
-      } catch (apiError) {
-        console.log('API unavailable, using mock amended LCs');
-        // Mock data for amended LCs
-        return Object.entries(mockVersions)
-          .filter(([, versions]) => versions.length > 1)
-          .map(([lcNumber, versions]) => ({
-            lc_number: lcNumber,
-            versions: versions.length,
-            latest_version: versions[versions.length - 1].version,
-            last_updated: versions[versions.length - 1].created_at
-          }));
-      }
+      const response = await api.get('/api/lc/amended');
+      return response.data;
     } catch (err: any) {
       const versionError: VersionError = {
         type: 'unknown',
@@ -252,57 +198,10 @@ export const useCompare = () => {
     setError(null);
 
     try {
-      try {
-        const response = await api.get(`/api/lc/${lcNumber}/compare`, {
-          params: { from: fromVersion, to: toVersion }
-        });
-        return response.data;
-      } catch (apiError) {
-        console.log('API unavailable, using mock comparison');
-
-        // Mock comparison logic
-        const versions = mockVersions[lcNumber] || [];
-        const fromV = versions.find(v => v.version === fromVersion);
-        const toV = versions.find(v => v.version === toVersion);
-
-        if (!fromV || !toV) {
-          throw new Error('Version not found');
-        }
-
-        const fromDiscrepancies = fromV.discrepancies || [];
-        const toDiscrepancies = toV.discrepancies || [];
-
-        const addedDiscrepancies = toDiscrepancies.filter(
-          to => !fromDiscrepancies.find(from => from.id === to.id)
-        );
-
-        const removedDiscrepancies = fromDiscrepancies.filter(
-          from => !toDiscrepancies.find(to => to.id === from.id)
-        );
-
-        const modifiedDiscrepancies = toDiscrepancies.filter(to => {
-          const corresponding = fromDiscrepancies.find(from => from.id === to.id);
-          return corresponding && JSON.stringify(corresponding) !== JSON.stringify(to);
-        });
-
-        const totalChanges = addedDiscrepancies.length + removedDiscrepancies.length + modifiedDiscrepancies.length;
-        const improvementScore = removedDiscrepancies.length > addedDiscrepancies.length ? 0.5 : -0.2;
-
-        return {
-          lc_number: lcNumber,
-          from_version: fromVersion,
-          to_version: toVersion,
-          changes: {
-            added_discrepancies: addedDiscrepancies,
-            removed_discrepancies: removedDiscrepancies,
-            modified_discrepancies: modifiedDiscrepancies,
-          },
-          summary: {
-            total_changes: totalChanges,
-            improvement_score: improvementScore
-          }
-        };
-      }
+      const response = await api.get(`/api/lc/${lcNumber}/compare`, {
+        params: { from: fromVersion, to: toVersion }
+      });
+      return response.data;
     } catch (err: any) {
       const versionError: VersionError = {
         type: 'unknown',

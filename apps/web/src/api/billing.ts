@@ -135,96 +135,44 @@ const getMockAllocations = (filters: { page?: number; per_page?: number } = {}):
   };
 };
 
-// Helper to catch errors and return mock data
-const withMockFallback = <T>(apiCall: () => Promise<T>, mockData: T): Promise<T> => {
-  return apiCall().catch(() => {
-    console.warn('Billing API unavailable, using mock data');
-    return Promise.resolve(mockData);
-  });
-};
+// Removed mock fallback - API calls should fail properly
 
 // Company billing endpoints
 export const billingApi = {
   // Get company billing information
   getBillingInfo: async (): Promise<CompanyBillingInfo> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/company');
-        return response.data;
-      },
-      getMockBillingInfo()
-    );
+    const response = await api.get('/billing/company');
+    return response.data;
   },
 
   // Update company billing settings
   updateBillingInfo: async (data: CompanyBillingUpdate): Promise<CompanyBillingInfo> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.put('/billing/company', data);
-        return response.data;
-      },
-      getMockBillingInfo()
-    );
+    const response = await api.put('/billing/company', data);
+    return response.data;
   },
 
   // Get usage statistics
   getUsageStats: async (): Promise<UsageStats> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/usage');
-        return response.data;
-      },
-      getMockUsageStats()
-    );
+    const response = await api.get('/billing/usage');
+    return response.data;
   },
 
   // Get usage records with filtering
   getUsageRecords: async (filters: UsageRecordsFilters = {}): Promise<UsageRecordList> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/usage/records', { params: filters });
-        return response.data;
-      },
-      getMockUsageRecords(filters)
-    );
+    const response = await api.get('/billing/usage/records', { params: filters });
+    return response.data;
   },
 
   // Get invoices with filtering
   getInvoices: async (filters: InvoicesFilters = {}): Promise<InvoiceList> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/invoices', { params: filters });
-        return response.data;
-      },
-      getMockInvoices(filters)
-    );
+    const response = await api.get('/billing/invoices', { params: filters });
+    return response.data;
   },
 
   // Get specific invoice
   getInvoice: async (invoiceId: string): Promise<Invoice> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get(`/billing/invoices/${invoiceId}`);
-        return response.data;
-      },
-      {
-        id: invoiceId,
-        company_id: 'mock-company-1',
-        invoice_number: `INV-${invoiceId.slice(0, 8).toUpperCase()}`,
-        amount: 0,
-        currency: Currency.USD,
-        status: InvoiceStatus.PAID,
-        issued_date: new Date().toISOString(),
-        due_date: new Date().toISOString(),
-        paid_date: new Date().toISOString(),
-        payment_intent_id: null,
-        payment_method: null,
-        description: null,
-        line_items: [],
-        created_at: new Date().toISOString(),
-        updated_at: null,
-      } as Invoice
-    );
+    const response = await api.get(`/billing/invoices/${invoiceId}`);
+    return response.data;
   },
 
   // Generate invoice for period
@@ -344,54 +292,20 @@ export const billingApi = {
   // Bank-specific endpoints
   // Get bank contract
   getBankContract: async (): Promise<BankContract> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/bank/contract');
-        return response.data;
-      },
-      getMockBankContract()
-    );
+    const response = await api.get('/billing/bank/contract');
+    return response.data;
   },
 
   // Get allocations
   getAllocations: async (filters: { page?: number; per_page?: number } = {}): Promise<AllocationList> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.get('/billing/bank/allocations', { params: filters });
-        return response.data;
-      },
-      getMockAllocations(filters)
-    );
+    const response = await api.get('/billing/bank/allocations', { params: filters });
+    return response.data;
   },
 
   // Update allocation
   updateAllocation: async (allocationId: string, data: AllocationUpdate): Promise<Allocation> => {
-    return withMockFallback(
-      async () => {
-        const response = await api.put(`/billing/bank/allocations/${allocationId}`, data);
-        return response.data;
-      },
-      {
-        id: allocationId,
-        bank_id: 'mock-bank-1',
-        client_id: 'client-1',
-        client_name: 'ABC Exports Ltd',
-        branch_id: null,
-        branch_name: null,
-        product: 'LC_VALIDATION',
-        budget_limit: data.budget_limit ?? 100000,
-        quota_limit: data.quota_limit ?? 1000,
-        usage_current_period: 450,
-        usage_cost_current_period: 22500,
-        remaining_budget: data.budget_limit ? data.budget_limit - 22500 : null,
-        alerts_enabled: data.alerts_enabled ?? true,
-        alert_threshold_percent: data.alert_threshold_percent ?? 80,
-        period_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
-        period_end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as Allocation
-    );
+    const response = await api.put(`/billing/bank/allocations/${allocationId}`, data);
+    return response.data;
   },
 };
 

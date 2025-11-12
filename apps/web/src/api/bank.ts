@@ -312,92 +312,7 @@ export const bankApi = {
       });
       return response.data;
     } catch (error: any) {
-      // If API fails, return mock data for development/demo
-      console.warn('Bank API unavailable, returning mock client stats:', error?.message);
-      
-      // Generate mock client stats based on common client names
-      const mockClients: ClientStats[] = [
-        {
-          client_name: 'Global Exports Inc.',
-          total_validations: 145,
-          compliant_count: 132,
-          discrepancies_count: 11,
-          failed_count: 2,
-          total_discrepancies: 18,
-          average_compliance_score: 94.2,
-          compliance_rate: 91.0,
-          last_validation_date: new Date().toISOString(),
-          first_validation_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          client_name: 'Dhaka Trading Co.',
-          total_validations: 98,
-          compliant_count: 85,
-          discrepancies_count: 12,
-          failed_count: 1,
-          total_discrepancies: 22,
-          average_compliance_score: 88.5,
-          compliance_rate: 86.7,
-          last_validation_date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          first_validation_date: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          client_name: 'Chittagong Imports',
-          total_validations: 67,
-          compliant_count: 62,
-          discrepancies_count: 4,
-          failed_count: 1,
-          total_discrepancies: 7,
-          average_compliance_score: 96.8,
-          compliance_rate: 92.5,
-          last_validation_date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          first_validation_date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          client_name: 'Bengal Trade Co.',
-          total_validations: 112,
-          compliant_count: 98,
-          discrepancies_count: 13,
-          failed_count: 1,
-          total_discrepancies: 19,
-          average_compliance_score: 91.3,
-          compliance_rate: 87.5,
-          last_validation_date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          first_validation_date: new Date(Date.now() - 150 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          client_name: 'Bangladesh Exports Ltd',
-          total_validations: 203,
-          compliant_count: 192,
-          discrepancies_count: 9,
-          failed_count: 2,
-          total_discrepancies: 14,
-          average_compliance_score: 97.1,
-          compliance_rate: 94.6,
-          last_validation_date: new Date().toISOString(),
-          first_validation_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ];
-
-      // Apply filters if provided
-      let filteredClients = mockClients;
-      if (filters?.query) {
-        const queryLower = filters.query.toLowerCase();
-        filteredClients = mockClients.filter(c => 
-          c.client_name.toLowerCase().includes(queryLower)
-        );
-      }
-
-      // Apply pagination
-      const offset = filters?.offset || 0;
-      const limit = filters?.limit || 20;
-      const paginatedClients = filteredClients.slice(offset, offset + limit);
-
-      return {
-        total: filteredClients.length,
-        count: paginatedClients.length,
-        clients: paginatedClients,
-      };
+      throw error;
     }
   },
 
@@ -433,167 +348,8 @@ export const bankApi = {
       );
       return response.data;
     } catch (error: any) {
-      // If API fails, return mock data for development/demo
-      console.warn('Bank API unavailable, returning mock client dashboard:', error?.message);
-      
-      // Decode client name from URL encoding
-      const decodedClientName = decodeURIComponent(clientName);
-      
-      // Generate mock dashboard data based on client name
-      const now = new Date();
-      const startDate = filters?.start_date ? new Date(filters.start_date) : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-      const endDate = filters?.end_date ? new Date(filters.end_date) : now;
-      
-      // Mock statistics based on client name (match the mock client stats)
-      let mockStats: ClientDashboardResponse['statistics'];
-      if (decodedClientName === 'Global Exports Inc.') {
-        mockStats = {
-          total_validations: 145,
-          compliant_count: 132,
-          discrepancies_count: 11,
-          failed_count: 2,
-          total_discrepancies: 18,
-          average_compliance_score: 94.2,
-          compliance_rate: 91.0,
-          average_processing_time_seconds: 138,
-          first_validation_date: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-          last_validation_date: now.toISOString(),
-        };
-      } else if (decodedClientName === 'Dhaka Trading Co.') {
-        mockStats = {
-          total_validations: 98,
-          compliant_count: 85,
-          discrepancies_count: 12,
-          failed_count: 1,
-          total_discrepancies: 22,
-          average_compliance_score: 88.5,
-          compliance_rate: 86.7,
-          average_processing_time_seconds: 152,
-          first_validation_date: new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-          last_validation_date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-      } else if (decodedClientName === 'Chittagong Imports') {
-        mockStats = {
-          total_validations: 67,
-          compliant_count: 62,
-          discrepancies_count: 4,
-          failed_count: 1,
-          total_discrepancies: 7,
-          average_compliance_score: 96.8,
-          compliance_rate: 92.5,
-          average_processing_time_seconds: 125,
-          first_validation_date: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-          last_validation_date: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-      } else if (decodedClientName === 'Bengal Trade Co.') {
-        mockStats = {
-          total_validations: 112,
-          compliant_count: 98,
-          discrepancies_count: 13,
-          failed_count: 1,
-          total_discrepancies: 19,
-          average_compliance_score: 91.3,
-          compliance_rate: 87.5,
-          average_processing_time_seconds: 145,
-          first_validation_date: new Date(now.getTime() - 150 * 24 * 60 * 60 * 1000).toISOString(),
-          last_validation_date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-      } else if (decodedClientName === 'Bangladesh Exports Ltd') {
-        mockStats = {
-          total_validations: 203,
-          compliant_count: 192,
-          discrepancies_count: 9,
-          failed_count: 2,
-          total_discrepancies: 14,
-          average_compliance_score: 97.1,
-          compliance_rate: 94.6,
-          average_processing_time_seconds: 118,
-          first_validation_date: new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-          last_validation_date: now.toISOString(),
-        };
-      } else {
-        // Default mock stats for unknown clients
-        mockStats = {
-          total_validations: 50,
-          compliant_count: 45,
-          discrepancies_count: 4,
-          failed_count: 1,
-          total_discrepancies: 8,
-          average_compliance_score: 92.5,
-          compliance_rate: 90.0,
-          average_processing_time_seconds: 140,
-          first_validation_date: startDate.toISOString(),
-          last_validation_date: endDate.toISOString(),
-        };
-      }
-      
-      // Generate mock trend data (last 30 days)
-      const trendData: ClientDashboardResponse['trend_data'] = [];
-      for (let i = 29; i >= 0; i--) {
-        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-        const validations = Math.floor(Math.random() * 5) + 1;
-        const compliant = Math.floor(validations * (mockStats.compliance_rate / 100));
-        const discrepancies = validations - compliant - Math.floor(Math.random() * 2);
-        const failed = validations - compliant - discrepancies;
-        
-        trendData.push({
-          date: date.toISOString().split('T')[0],
-          validations,
-          compliant: Math.max(0, compliant),
-          discrepancies: Math.max(0, discrepancies),
-          failed: Math.max(0, failed),
-          avg_compliance_score: mockStats.average_compliance_score + (Math.random() * 10 - 5),
-        });
-      }
-      
-      // Generate mock LC results
-      const mockLCResults: BankResult[] = [];
-      const lcPrefixes = ['LC-BNK-2024', 'LC-BNK-2023'];
-      for (let i = 0; i < Math.min(10, mockStats.total_validations); i++) {
-        const daysAgo = Math.floor(Math.random() * 90);
-        const completedAt = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-        const isCompliant = Math.random() > 0.2; // 80% compliant
-        const status: 'compliant' | 'discrepancies' | 'failed' = isCompliant 
-          ? 'compliant' 
-          : Math.random() > 0.8 
-            ? 'failed' 
-            : 'discrepancies';
-        
-        mockLCResults.push({
-          id: `result-${i}`,
-          job_id: `job_${Date.now()}_${i}`,
-          jobId: `job_${Date.now()}_${i}`,
-          client_name: decodedClientName,
-          lc_number: `${lcPrefixes[Math.floor(Math.random() * lcPrefixes.length)]}-${String(i + 1).padStart(3, '0')}`,
-          date_received: completedAt.toISOString(),
-          submitted_at: completedAt.toISOString(),
-          processing_started_at: completedAt.toISOString(),
-          completed_at: completedAt.toISOString(),
-          processing_time_seconds: mockStats.average_processing_time_seconds! + (Math.random() * 30 - 15),
-          status,
-          compliance_score: status === 'compliant' 
-            ? 90 + Math.random() * 10 
-            : status === 'discrepancies'
-            ? 70 + Math.random() * 20
-            : 30 + Math.random() * 30,
-          discrepancy_count: status === 'discrepancies' ? Math.floor(Math.random() * 5) + 1 : 0,
-          document_count: Math.floor(Math.random() * 5) + 3,
-        });
-      }
-      
-      // Sort by completed_at descending
-      mockLCResults.sort((a, b) => {
-        const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-        const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-        return dateB - dateA;
-      });
-      
-      return {
-        client_name: decodedClientName,
-        statistics: mockStats,
-        trend_data: trendData,
-        lc_results: mockLCResults,
-      };
+      // Re-throw error instead of returning mock data
+      throw error;
     }
   },
 
@@ -786,17 +542,10 @@ export const bankUsersApi = {
       if (query?.sort_order) params.append('sort_order', query.sort_order);
       
       const response = await api.get<BankUserListResponse>(`/bank/users?${params.toString()}`);
-      
-      // If API returns empty, use mock data
-      if (response.data.users.length === 0) {
-        return getMockUsersResponse(query);
-      }
-      
       return response.data;
     } catch (error) {
-      // On error, return mock data as fallback
-      console.warn("Failed to load bank users from API, using mock data", error);
-      return getMockUsersResponse(query);
+      // Re-throw error instead of returning mock data
+      throw error;
     }
   },
 
@@ -1325,15 +1074,7 @@ export const bankQueueApi = {
       const response = await api.get<BankQueueStats>(`/bank/queue/stats?time_range=${timeRange}`);
       return response.data;
     } catch (error: any) {
-      console.warn('Bank queue stats API unavailable, returning mock stats:', error?.message);
-      return {
-        time_range: timeRange,
-        total_jobs: 0,
-        status_breakdown: {},
-        type_breakdown: {},
-        avg_processing_time_ms: 0,
-        queue_depth: 0
-      };
+      throw error;
     }
   },
 
@@ -1386,63 +1127,7 @@ export const bankQueueApi = {
       });
       return response.data;
     } catch (error: any) {
-      console.warn('SLA API unavailable, using mock data:', error?.message);
-      // Return mock data as fallback
-      return {
-        metrics: [
-          {
-            name: 'Average Processing Time',
-            target: 5,
-            current: 4.2,
-            unit: 'minutes',
-            status: 'met',
-            trend: 'down',
-            trend_percentage: -12.5,
-          },
-          {
-            name: 'Time to First Review',
-            target: 15,
-            current: 18.5,
-            unit: 'minutes',
-            status: 'at_risk',
-            trend: 'up',
-            trend_percentage: 8.2,
-          },
-          {
-            name: 'Throughput (LCs/hour)',
-            target: 20,
-            current: 22,
-            unit: 'LCs/hour',
-            status: 'met',
-            trend: 'up',
-            trend_percentage: 10.0,
-          },
-          {
-            name: 'Aging (Average Queue Time)',
-            target: 30,
-            current: 35,
-            unit: 'minutes',
-            status: 'at_risk',
-            trend: 'up',
-            trend_percentage: 16.7,
-          },
-        ],
-        overall_compliance: 50,
-        throughput_data: [
-          { hour: '00:00', lcs: 12 },
-          { hour: '04:00', lcs: 8 },
-          { hour: '08:00', lcs: 25 },
-          { hour: '12:00', lcs: 32 },
-          { hour: '16:00', lcs: 28 },
-          { hour: '20:00', lcs: 18 },
-        ],
-        aging_data: [
-          { time_range: '0-15 min', count: 45, percentage: 60 },
-          { time_range: '15-30 min', count: 20, percentage: 27 },
-          { time_range: '30-45 min', count: 7, percentage: 9 },
-          { time_range: '45+ min', count: 3, percentage: 4 },
-        ],
-      };
+      throw error;
     }
   },
 
@@ -1456,11 +1141,7 @@ export const bankQueueApi = {
       });
       return response.data;
     } catch (error: any) {
-      console.warn('SLA Breaches API unavailable, using mock data:', error?.message);
-      return {
-        breaches: [],
-        total: 0,
-      };
+      throw error;
     }
   },
 
@@ -1493,8 +1174,7 @@ export const bankQueueApi = {
       });
       return response.data;
     } catch (error: any) {
-      console.warn('Evidence Packs API unavailable, using mock data:', error?.message);
-      return [];
+      throw error;
     }
   },
 
@@ -1565,13 +1245,7 @@ export const bankAiApi = {
       });
       return response.data;
     } catch (error: any) {
-      console.warn('AI Quota API unavailable, using mock data:', error?.message);
-      return {
-        feature,
-        used: 0,
-        limit: 1000,
-        remaining: 1000,
-      };
+      throw error;
     }
   },
 
@@ -1583,7 +1257,6 @@ export const bankAiApi = {
       const response = await api.post<AIResponse>('/bank/ai/discrepancy-explain', request);
       return response.data;
     } catch (error: any) {
-      console.warn('Discrepancy Explain API unavailable, using mock:', error?.message);
       throw error;
     }
   },
@@ -1596,7 +1269,6 @@ export const bankAiApi = {
       const response = await api.post<AIResponse>('/bank/ai/generate-letter', request);
       return response.data;
     } catch (error: any) {
-      console.warn('Letter Generation API unavailable, using mock:', error?.message);
       throw error;
     }
   },
@@ -1609,7 +1281,6 @@ export const bankAiApi = {
       const response = await api.post<AIResponse>('/bank/ai/summarize', request);
       return response.data;
     } catch (error: any) {
-      console.warn('Document Summarization API unavailable, using mock:', error?.message);
       throw error;
     }
   },
@@ -1622,7 +1293,6 @@ export const bankAiApi = {
       const response = await api.post<AIResponse>('/bank/ai/translate', request);
       return response.data;
     } catch (error: any) {
-      console.warn('Translation API unavailable, using mock:', error?.message);
       throw error;
     }
   },
