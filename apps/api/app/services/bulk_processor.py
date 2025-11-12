@@ -237,7 +237,7 @@ class BulkProcessor:
             db.commit()
 
             # Send completion notification
-            await notification_service.emit_event(
+            await notification_service.emit_event_simple(
                 tenant_id=job.tenant_id,
                 event_key="bulk.job.completed",
                 event_data={
@@ -247,7 +247,8 @@ class BulkProcessor:
                     "processed_items": processed_count,
                     "failed_items": failed_count,
                     "duration_seconds": duration
-                }
+                },
+                db=db
             )
 
             # Update metrics

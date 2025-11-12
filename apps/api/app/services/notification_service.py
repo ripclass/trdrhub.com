@@ -252,7 +252,7 @@ class SMSProvider(NotificationProvider):
 class NotificationService:
     """Main notification service"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Optional[Session] = None):
         self.db = db
         self.providers = {
             ChannelType.EMAIL: EmailProvider,
@@ -268,19 +268,55 @@ class NotificationService:
             raise ValueError(f"Unsupported channel type: {channel.channel_type}")
         return provider_class(channel)
 
-    async def emit_event(self, event: BaseEvent):
+    async def emit_event(self, event: BaseEvent, db: Optional[Session] = None):
         """Emit event and trigger notifications"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         logger.info(f"Emitting event {event.event_type} for tenant {event.tenant_alias}")
 
         # Find matching subscriptions
-        subscriptions = await self.find_matching_subscriptions(event)
+        subscriptions = await self.find_matching_subscriptions(event, db)
 
         # Process each subscription
         for subscription in subscriptions:
-            await self.process_subscription(event, subscription)
+            await self.process_subscription(event, subscription, db)
+    
+    async def emit_event_simple(
+        self,
+        tenant_id: str,
+        event_key: str,
+        event_data: Dict[str, Any],
+        db: Optional[Session] = None,
+        bank_alias: Optional[str] = None,
+        severity: EventSeverity = EventSeverity.INFO
+    ):
+        """Simplified emit_event that creates BaseEvent from parameters"""
+        # Map event_key to EventType (fallback to a generic type if not found)
+        try:
+            event_type = EventType(event_key)
+        except ValueError:
+            # Create a dynamic event type for unknown keys
+            logger.warning(f"Unknown event type: {event_key}, using generic")
+            event_type = EventType.LC_CREATED  # Fallback
+        
+        event = BaseEvent(
+            event_type=event_type,
+            tenant_alias=tenant_id,
+            bank_alias=bank_alias,
+            severity=severity,
+            metadata=event_data
+        )
+        
+        await self.emit_event(event, db)
 
-    async def find_matching_subscriptions(self, event: BaseEvent) -> List[NotificationSubscription]:
+    async def find_matching_subscriptions(self, event: BaseEvent, db: Optional[Session] = None) -> List[NotificationSubscription]:
         """Find subscriptions matching the event"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         query = select(NotificationSubscription).where(
             and_(
                 NotificationSubscription.tenant_alias == event.tenant_alias,
@@ -292,7 +328,7 @@ class NotificationService:
             )
         )
 
-        result = self.db.execute(query)
+        result = db.execute(query)
         subscriptions = result.scalars().all()
 
         # Filter by event filters
@@ -304,17 +340,21 @@ class NotificationService:
 
         return matching_subscriptions
 
-    async def process_subscription(self, event: BaseEvent, subscription: NotificationSubscription):
+    async def process_subscription(self, event: BaseEvent, subscription: NotificationSubscription, db: Optional[Session] = None):
         """Process a single subscription for an event"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         try:
             # Get channel
-            channel = self.db.get(NotificationChannel, subscription.channel_id)
+            channel = db.get(NotificationChannel, subscription.channel_id)
             if not channel or not channel.active:
                 logger.warning(f"Channel {subscription.channel_id} not found or inactive")
                 return
 
             # Get template
-            template = await self.get_template(event.event_type, subscription.tenant_alias)
+            template = await self.get_template(event.event_type, subscription.tenant_alias, db)
             if not template:
                 logger.warning(f"No template found for {event.event_type}")
                 return
@@ -330,7 +370,7 @@ class NotificationService:
 
             # Check for duplicate delivery (idempotency)
             delivery_id = self.generate_delivery_id(event.event_id, subscription.id)
-            existing_delivery = self.db.query(NotificationDelivery).filter(
+            existing_delivery = db.query(NotificationDelivery).filter(
                 NotificationDelivery.delivery_id == delivery_id
             ).first()
 
@@ -354,23 +394,27 @@ class NotificationService:
                 created_at=datetime.utcnow()
             )
 
-            self.db.add(delivery)
-            self.db.commit()
+            db.add(delivery)
+            db.commit()
 
             # Send with retries
-            await self.send_with_retries(delivery)
+            await self.send_with_retries(delivery, db)
 
         except Exception as e:
             logger.error(f"Error processing subscription {subscription.id}: {str(e)}")
 
-    async def send_with_retries(self, delivery: NotificationDelivery, max_attempts: int = 3):
+    async def send_with_retries(self, delivery: NotificationDelivery, db: Optional[Session] = None, max_attempts: int = 3):
         """Send notification with exponential backoff retries"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         provider = None
 
         for attempt in range(max_attempts):
             try:
                 # Get channel and provider
-                channel = self.db.get(NotificationChannel, delivery.channel_id)
+                channel = db.get(NotificationChannel, delivery.channel_id)
                 if not channel:
                     delivery.status = DeliveryStatus.FAILED
                     delivery.last_error = "Channel not found"
@@ -419,10 +463,14 @@ class NotificationService:
         if delivery.status == DeliveryStatus.PENDING:
             delivery.status = DeliveryStatus.FAILED
 
-        self.db.commit()
+        db.commit()
 
-    async def get_template(self, event_type: EventType, tenant_alias: str) -> Optional[NotificationTemplate]:
+    async def get_template(self, event_type: EventType, tenant_alias: str, db: Optional[Session] = None) -> Optional[NotificationTemplate]:
         """Get notification template for event type"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         # Try tenant-specific template first
         query = select(NotificationTemplate).where(
             and_(
@@ -432,7 +480,7 @@ class NotificationService:
             )
         )
 
-        result = self.db.execute(query)
+        result = db.execute(query)
         template = result.scalars().first()
 
         if template:
@@ -447,7 +495,7 @@ class NotificationService:
             )
         )
 
-        result = self.db.execute(query)
+        result = db.execute(query)
         return result.scalars().first()
 
     async def render_template(self, template: NotificationTemplate, event: BaseEvent) -> tuple[str, str]:
@@ -476,8 +524,12 @@ class NotificationService:
         content = f"{event_id}:{subscription_id}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
-    async def build_digest(self, tenant_alias: str, period: str = "daily") -> Optional[NotificationDigest]:
+    async def build_digest(self, tenant_alias: str, period: str = "daily", db: Optional[Session] = None) -> Optional[NotificationDigest]:
         """Build notification digest for period"""
+        db = db or self.db
+        if not db:
+            raise ValueError("Database session required")
+        
         logger.info(f"Building {period} digest for tenant {tenant_alias}")
 
         # Calculate time range
@@ -490,7 +542,8 @@ class NotificationService:
             raise ValueError(f"Unsupported digest period: {period}")
 
         # Check if digest already exists
-        existing_digest = self.db.query(NotificationDigest).filter(
+        
+        existing_digest = db.query(NotificationDigest).filter(
             and_(
                 NotificationDigest.tenant_alias == tenant_alias,
                 NotificationDigest.period == period,
@@ -513,7 +566,7 @@ class NotificationService:
                 Thread.created_at >= start_time
             )
         )
-        threads = self.db.execute(threads_query).scalars().all()
+        threads = db.execute(threads_query).scalars().all()
 
         comments_query = select(Comment).where(
             and_(
@@ -521,7 +574,7 @@ class NotificationService:
                 Comment.created_at >= start_time
             )
         )
-        comments = self.db.execute(comments_query).scalars().all()
+        comments = db.execute(comments_query).scalars().all()
 
         # Get bulk job activity
         jobs_query = select(BulkJob).where(
@@ -530,7 +583,7 @@ class NotificationService:
                 BulkJob.created_at >= start_time
             )
         )
-        jobs = self.db.execute(jobs_query).scalars().all()
+        jobs = db.execute(jobs_query).scalars().all()
 
         # Build summary
         summary = {
@@ -625,11 +678,11 @@ class NotificationService:
                 created_at=datetime.utcnow()
             )
 
-            self.db.add(delivery)
-            self.db.commit()
+            db.add(delivery)
+            db.commit()
 
             # Send with retries
-            await self.send_with_retries(delivery)
+            await self.send_with_retries(delivery, db)
 
         except Exception as e:
             logger.error(f"Error sending digest to subscription {subscription.id}: {str(e)}")
@@ -659,3 +712,7 @@ visit the LCopilot notification settings page.
         """.strip()
 
         return body
+
+
+# Global service instance
+notification_service = NotificationService()
