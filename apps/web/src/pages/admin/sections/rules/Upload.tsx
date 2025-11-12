@@ -227,7 +227,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         await audit("upload_ruleset", {
           entityId: result.data.ruleset.id,
           metadata: {
-            domain,
+            domain: rulebook,
             jurisdiction,
             ruleCount: result.data.validation.ruleCount,
           },
