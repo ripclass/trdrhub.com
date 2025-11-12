@@ -243,6 +243,7 @@ class AIUsageTracker:
         if session:
             # Check last request time for this LC (simplified - in production use Redis)
             # For now, rely on rate limiter
+            pass
         
         return True, None, remaining
     
