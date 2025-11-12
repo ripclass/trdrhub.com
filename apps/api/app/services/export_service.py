@@ -17,7 +17,7 @@ import boto3
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, or_, func, desc
 
-from app.core.config import settings
+from app.config import settings
 from app.models.collaboration import Thread, Comment
 from app.models.bulk_jobs import BulkJob, BulkJobItem
 from app.models.workflows import WorkflowRule, PolicyOverride
