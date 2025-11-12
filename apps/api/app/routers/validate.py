@@ -43,7 +43,8 @@ async def validate_doc(
             form = await request.form()
             payload = {}
             for key, value in form.multi_items():
-                if hasattr(value, "filename"):
+                # Check if this is a file upload (UploadFile instance)
+                if hasattr(value, "filename") and hasattr(value, "read"):
                     # This is a file upload - validate it
                     file_obj = value
                     header_bytes = await file_obj.read(8)
@@ -67,18 +68,42 @@ async def validate_doc(
                 
                 # Safely handle form field values - ensure they're strings
                 # Handle potential encoding issues by converting to string safely
+                # Skip if this looks like binary data (might be misidentified file)
                 if isinstance(value, bytes):
+                    # Check if this looks like binary data (PDF, image, etc.)
+                    # PDFs start with %PDF, images have magic bytes
+                    if len(value) > 4 and (
+                        value.startswith(b'%PDF') or 
+                        value.startswith(b'\x89PNG') or 
+                        value.startswith(b'\xff\xd8\xff') or
+                        value.startswith(b'GIF8') or
+                        value.startswith(b'PK\x03\x04')  # ZIP
+                    ):
+                        # This is likely a file that wasn't properly identified
+                        # Skip it or log a warning, but don't try to decode as text
+                        continue
+                    
                     # If value is bytes, try to decode as UTF-8, fallback to latin-1
                     try:
                         payload[key] = value.decode('utf-8')
                     except UnicodeDecodeError:
                         # Fallback to latin-1 which can decode any byte sequence
-                        payload[key] = value.decode('latin-1')
+                        try:
+                            payload[key] = value.decode('latin-1')
+                        except Exception:
+                            # If all decoding fails, skip this field
+                            continue
                 elif isinstance(value, str):
                     payload[key] = value
                 else:
-                    # Convert other types to string
-                    payload[key] = str(value)
+                    # Convert other types to string, but skip if it's a file-like object
+                    if hasattr(value, 'read') or hasattr(value, 'filename'):
+                        continue
+                    try:
+                        payload[key] = str(value)
+                    except Exception:
+                        # Skip if conversion fails
+                        continue
         else:
             payload = await request.json()
 
@@ -288,6 +313,14 @@ async def validate_doc(
         }
     except HTTPException:
         raise
+    except UnicodeDecodeError as e:
+        # Handle encoding errors specifically
+        import logging
+        logging.getLogger(__name__).error(f"Encoding error during file upload: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File encoding error: Unable to process uploaded file. Please ensure files are valid PDFs or images. Error: {str(e)}"
+        )
     except Exception as e:
         # Log failed validation if bank operation
         user_type = payload.get("userType") or payload.get("user_type") if 'payload' in locals() else None
