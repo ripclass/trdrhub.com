@@ -5,7 +5,7 @@ DeepSeek OCR adapter implementation using Hugging Face transformers.
 import os
 import time
 import io
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
 try:
@@ -17,6 +17,12 @@ except ImportError:
     torch = None
     pipeline = None
     Image = None
+
+# For type hints when Image might not be available
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
+else:
+    PILImage = Any
 
 from .base import OCRAdapter, OCRResult, OCRTextElement, BoundingBox
 
@@ -103,7 +109,7 @@ class DeepSeekOCRAdapter(OCRAdapter):
         response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
         return response['Body'].read()
     
-    def _convert_pdf_to_image(self, pdf_content: bytes) -> List[Image.Image]:
+    def _convert_pdf_to_image(self, pdf_content: bytes) -> List[Any]:
         """
         Convert PDF to images for OCR processing.
         
