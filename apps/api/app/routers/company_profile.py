@@ -293,16 +293,16 @@ async def get_compliance_info(
         )
     ).first()
 
-        if not compliance:
-            # Return empty compliance info if none exists
-            return CompanyComplianceInfoRead(
-                id=UUID('00000000-0000-0000-0000-000000000000'),
-                company_id=current_user.company_id,
-                compliance_status=ComplianceStatus.PENDING,
-                compliance_documents=[],
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc)
-            )
+    if not compliance:
+        # Return empty compliance info if none exists
+        return CompanyComplianceInfoRead(
+            id=UUID('00000000-0000-0000-0000-000000000000'),
+            company_id=current_user.company_id,
+            compliance_status=ComplianceStatus.PENDING,
+            compliance_documents=[],
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
 
     return CompanyComplianceInfoRead.model_validate(compliance)
 
