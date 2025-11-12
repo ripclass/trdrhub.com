@@ -26,6 +26,7 @@ PyJWT>=2.8.0
 weasyprint>=61.0
 openpyxl>=3.1.5
 stripe>=7.0.0
+google-cloud-documentai>=2.20.0  # For Google Cloud Document AI OCR
 
 # DeepSeek OCR dependencies (optional - only needed if USE_DEEPSEEK_OCR=true)
 # Commented out to reduce build size (~3.5GB). Uncomment if enabling DeepSeek OCR.

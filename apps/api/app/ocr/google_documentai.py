@@ -30,6 +30,22 @@ class GoogleDocumentAIAdapter(OCRAdapter):
         if not all([self.project_id, self.processor_id]):
             raise ValueError("Google Document AI credentials not configured")
         
+        # Handle credentials from environment variable (for Render)
+        # Option 1: JSON content in GOOGLE_APPLICATION_CREDENTIALS_JSON env var
+        credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        if credentials_json:
+            import json
+            import tempfile
+            # Write JSON to temp file
+            creds_data = json.loads(credentials_json)
+            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
+            json.dump(creds_data, temp_file)
+            temp_file.close()
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
+        
+        # Option 2: File path in GOOGLE_APPLICATION_CREDENTIALS (default)
+        # Google Cloud SDK will automatically use this
+        
         self.client = documentai.DocumentProcessorServiceClient()
         self.processor_name = self.client.processor_path(
             self.project_id, self.location, self.processor_id
