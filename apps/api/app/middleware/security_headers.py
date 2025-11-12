@@ -39,7 +39,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "  # Allow inline scripts for React/Vite
             "style-src 'self' 'unsafe-inline'; "  # Allow inline styles
-            "img-src 'self' data: https: https://*.vercel.sh https://via.placeholder.com; "  # Allow images from same origin, data URIs, HTTPS, Vercel domains, and placeholder images
+            "img-src 'self' data: https: https://avatar.vercel.sh https://via.placeholder.com; "  # Allow images from same origin, data URIs, HTTPS, avatar service, and placeholder images
             "font-src 'self' data:; "  # Allow fonts from same origin and data URIs
             "connect-src 'self' https://api.openai.com https://api.anthropic.com; "  # Allow API calls to AI providers
             "frame-ancestors 'none'; "  # Prevent embedding in frames (clickjacking protection)
