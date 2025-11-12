@@ -48,68 +48,7 @@ export interface VersionError {
   statusCode?: number;
 }
 
-// Mock data for development
-const mockVersions: Record<string, LCVersion[]> = {
-  'BD-2024-001': [
-    {
-      id: 'version-1',
-      lc_number: 'BD-2024-001',
-      version: 'V1',
-      uploaded_by: 'user@example.com',
-      created_at: '2024-01-15T10:00:00Z',
-      status: 'completed',
-      job_id: 'job-v1-123',
-      file_metadata: {
-        files: [
-          { name: 'LC_Original.pdf', size: 1024000, type: 'application/pdf', document_type: 'lc' },
-          { name: 'Invoice_V1.pdf', size: 512000, type: 'application/pdf', document_type: 'invoice' }
-        ],
-        total_files: 2,
-        total_size: 1536000
-      },
-      discrepancies: [
-        {
-          id: '1',
-          severity: 'high',
-          title: 'Amount Mismatch',
-          description: 'Invoice amount exceeds LC amount'
-        },
-        {
-          id: '2',
-          severity: 'medium',
-          title: 'Date Discrepancy',
-          description: 'Shipment date is after LC expiry'
-        }
-      ]
-    },
-    {
-      id: 'version-2',
-      lc_number: 'BD-2024-001',
-      version: 'V2',
-      uploaded_by: 'user@example.com',
-      created_at: '2024-01-16T14:30:00Z',
-      status: 'completed',
-      job_id: 'job-v2-456',
-      file_metadata: {
-        files: [
-          { name: 'LC_Amended.pdf', size: 1024000, type: 'application/pdf', document_type: 'lc' },
-          { name: 'Invoice_V2.pdf', size: 512000, type: 'application/pdf', document_type: 'invoice' },
-          { name: 'Additional_Docs.pdf', size: 256000, type: 'application/pdf', document_type: 'other' }
-        ],
-        total_files: 3,
-        total_size: 1792000
-      },
-      discrepancies: [
-        {
-          id: '2',
-          severity: 'medium',
-          title: 'Date Discrepancy',
-          description: 'Shipment date is after LC expiry'
-        }
-      ]
-    }
-  ]
-};
+// Removed mock data - API calls should fail properly instead of using mock data
 
 // Hook for managing LC versions
 export const useVersions = () => {

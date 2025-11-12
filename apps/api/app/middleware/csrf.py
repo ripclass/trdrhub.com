@@ -1,6 +1,7 @@
 """CSRF protection middleware for FastAPI."""
 
 import asyncio
+import logging
 import secrets
 import time
 from typing import Optional, Set, Dict
@@ -153,8 +154,10 @@ async def _store_nonce(nonce: str, expiry_seconds: int) -> None:
     try:
         redis = await get_redis()
     except RuntimeError as exc:
-        if not settings.USE_STUBS:
-            raise
+        # If Redis is not configured, fall back to in-memory store
+        # This allows the app to work without Redis in production
+        logger = logging.getLogger(__name__)
+        logger.warning("Redis not available for CSRF nonce storage, using in-memory store: %s", exc)
         redis = None
 
     if redis:
@@ -180,8 +183,10 @@ async def _nonce_is_valid(nonce: str, expiry_seconds: int) -> bool:
     try:
         redis = await get_redis()
     except RuntimeError as exc:
-        if not settings.USE_STUBS:
-            raise
+        # If Redis is not configured, fall back to in-memory store
+        # This allows the app to work without Redis in production
+        logger = logging.getLogger(__name__)
+        logger.warning("Redis not available for CSRF nonce validation, using in-memory store: %s", exc)
         redis = None
 
     if redis:
