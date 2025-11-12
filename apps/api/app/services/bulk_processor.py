@@ -111,7 +111,8 @@ class BulkProcessor:
                 "job_type": job_type,
                 "total_items": job.total_items,
                 "priority": priority
-            }
+            },
+            db=db
         )
 
         # Queue job for processing

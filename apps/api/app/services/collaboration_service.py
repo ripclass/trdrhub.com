@@ -101,7 +101,8 @@ class CollaborationService:
                 "job_id": str(job_id) if job_id else None,
                 "discrepancy_id": str(discrepancy_id) if discrepancy_id else None,
                 "priority": priority
-            }
+            },
+            db=db
         )
 
         # Send notifications
@@ -186,7 +187,8 @@ class CollaborationService:
                 "visibility": visibility,
                 "mentions_count": len(mentions),
                 "parent_id": str(parent_id) if parent_id else None
-            }
+            },
+            db=db
         )
 
         # Send notifications to watchers
@@ -249,7 +251,8 @@ class CollaborationService:
                     "filename": filename,
                     "file_size": file_size,
                     "mime_type": mime_type
-                }
+                },
+                db=db
             )
 
         return attachment
@@ -307,7 +310,8 @@ class CollaborationService:
                 "status": status,
                 "requires_approval": requires_approval,
                 "reason": reason
-            }
+            },
+            db=db
         )
 
         # Send notifications
@@ -370,7 +374,8 @@ class CollaborationService:
                 "thread_id": str(thread.id),
                 "original_requester": str(resolution.resolved_by),
                 "status": resolution.status
-            }
+            },
+            db=db
         )
 
         # Send notifications

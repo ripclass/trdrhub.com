@@ -85,7 +85,8 @@ class WorkflowService:
                 "bank_id": bank_id,
                 "name": name,
                 "workflow_type": workflow_type
-            }
+            },
+            db=db
         )
 
         return workflow
@@ -168,7 +169,8 @@ class WorkflowService:
                 "rule_key": rule_key,
                 "comparator": comparator,
                 "requires_approval": requires_approval
-            }
+            },
+            db=db
         )
 
         return override
@@ -243,7 +245,8 @@ class WorkflowService:
                 "version": version,
                 "name": name,
                 "config_hash": config_hash
-            }
+            },
+            db=db
         )
 
         return policy_version
@@ -310,7 +313,8 @@ class WorkflowService:
                 "workflow_id": str(workflow.id),
                 "version": policy_version.version,
                 "set_as_default": set_as_default
-            }
+            },
+            db=db
         )
 
         return policy_version
