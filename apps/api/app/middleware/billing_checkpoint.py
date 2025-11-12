@@ -53,7 +53,7 @@ class BillingCheckpointMiddleware:
             BillingEventType.LOGISTICS_TRACKING: {
                 'standard': Decimal('3.00'),
                 'premium': Decimal('5.00'),
-                'enterprise': Decimal('8.00'
+                'enterprise': Decimal('8.00')
             },
             BillingEventType.FX_QUOTE: {
                 'standard': Decimal('2.00'),
