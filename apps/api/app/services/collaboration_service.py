@@ -104,7 +104,7 @@ class CollaborationService:
         )
 
         # Send notifications
-        await notification_service.emit_event(
+        await notification_service.emit_event_simple(
             tenant_id=tenant_id,
             event_key="collab.thread.created",
             event_data={
@@ -113,7 +113,8 @@ class CollaborationService:
                 "created_by": str(created_by),
                 "job_id": str(job_id) if job_id else None,
                 "discrepancy_id": str(discrepancy_id) if discrepancy_id else None
-            }
+            },
+            db=db
         )
 
         return thread
@@ -310,7 +311,7 @@ class CollaborationService:
 
         # Send notifications
         event_key = "collab.thread.resolution_requested" if requires_approval else "collab.thread.resolved"
-        await notification_service.emit_event(
+        await notification_service.emit_event_simple(
             tenant_id=thread.tenant_id,
             event_key=event_key,
             event_data={
@@ -319,7 +320,8 @@ class CollaborationService:
                 "status": status,
                 "resolved_by": str(resolved_by),
                 "requires_approval": requires_approval
-            }
+            },
+            db=db
         )
 
         return resolution
@@ -371,7 +373,7 @@ class CollaborationService:
         )
 
         # Send notifications
-        await notification_service.emit_event(
+        await notification_service.emit_event_simple(
             tenant_id=thread.tenant_id,
             event_key="collab.thread.resolution_approved",
             event_data={
@@ -379,7 +381,8 @@ class CollaborationService:
                 "resolution_id": str(resolution_id),
                 "approved_by": str(approved_by),
                 "status": resolution.status
-            }
+            },
+            db=db
         )
 
         return resolution
@@ -504,7 +507,7 @@ class CollaborationService:
         # Notify watchers
         for watch in watchers:
             if watch.user_id != comment.author_id and watch.notify_comments:
-                await notification_service.emit_event(
+                await notification_service.emit_event_simple(
                     tenant_id=thread.tenant_id,
                     event_key="collab.comment.created",
                     event_data={
@@ -513,12 +516,13 @@ class CollaborationService:
                         "author_id": str(comment.author_id),
                         "recipient_id": str(watch.user_id),
                         "thread_title": thread.title
-                    }
+                    },
+                    db=db
                 )
 
         # Notify mentioned users (higher priority)
         for user_id in mentions:
-            await notification_service.emit_event(
+            await notification_service.emit_event_simple(
                 tenant_id=thread.tenant_id,
                 event_key="collab.mention.created",
                 event_data={

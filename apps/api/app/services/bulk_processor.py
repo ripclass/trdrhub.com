@@ -23,6 +23,7 @@ from app.models.bulk_jobs import (
 )
 from app.config import settings
 from app.core.queue import get_queue, Queue
+from app.core.events import EventSeverity
 from app.services.notification_service import notification_service
 from app.services.audit_service import audit_service
 from app.core.exceptions import ValidationError, ProcessingError
@@ -288,7 +289,7 @@ class BulkProcessor:
             db.commit()
 
             # Send failure notification
-            await notification_service.emit_event(
+            await notification_service.emit_event_simple(
                 tenant_id=job.tenant_id,
                 event_key="bulk.job.failed",
                 event_data={
@@ -296,7 +297,8 @@ class BulkProcessor:
                     "name": job.name,
                     "error": str(e)
                 },
-                priority="high"
+                db=db,
+                severity=EventSeverity.ERROR
             )
 
     async def _process_single_item(
