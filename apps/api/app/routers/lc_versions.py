@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models
 from ..auth import get_current_user
+from .validate import get_user_optional
 from ..crud.lc_versions import LCVersionCRUD
 from ..schemas.lc_versions import (
     LCVersionCreate, LCVersionRead, LCVersionUpdate, LCVersionsList,
@@ -109,20 +110,21 @@ async def compare_lc_versions(
 @router.get("/{lc_number}/check", response_model=LCExistsResponse)
 async def check_lc_exists(
     lc_number: str,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_user_optional),
     db: Session = Depends(get_db)
 ):
     """
     Check if an LC exists and get version information.
 
     Used by frontend to show amendment warnings and determine next version number.
+    Supports demo mode (optional authentication).
     """
     return LCVersionCRUD.check_lc_exists(db=db, lc_number=lc_number)
 
 
 @router.get("/amended", response_model=List[AmendedLCInfo])
 async def get_amended_lcs(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_user_optional),
     db: Session = Depends(get_db)
 ):
     """
@@ -130,6 +132,7 @@ async def get_amended_lcs(
 
     Returns LCs with version counts and latest version info.
     Used by the amendments tab in the dashboard.
+    Supports demo mode (optional authentication).
     """
     return LCVersionCRUD.get_all_amended_lcs(db=db)
 
