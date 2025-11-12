@@ -293,15 +293,17 @@ async def validate_doc(
         else:
             results = validate_document(payload, doc_type)
 
-        # Record usage - link to session if created
-        quota = entitlements.record_usage(
-            current_user.company,
-            UsageAction.VALIDATE,
-            user_id=current_user.id,
-            cost=Decimal("0.00"),
-            description=f"Validation request for document type {doc_type}",
-            session_id=validation_session.id if validation_session else None,
-        )
+        # Record usage - link to session if created (skip for demo user)
+        if current_user.email != "demo@trdrhub.com":
+            entitlements = EntitlementService(db)
+            quota = entitlements.record_usage(
+                current_user.company,
+                UsageAction.VALIDATE,
+                user_id=current_user.id,
+                cost=Decimal("0.00"),
+                description=f"Validation request for document type {doc_type}",
+                session_id=validation_session.id if validation_session else None,
+            )
 
         # Update session status if created
         if validation_session:
