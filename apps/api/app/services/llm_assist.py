@@ -85,7 +85,7 @@ class AIAssistEvent(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     # Relationships
-    session = relationship("ValidationSession")
+    session = relationship("ValidationSession", foreign_keys=[session_id])
     user = relationship("User")
     company = relationship("Company")
 
