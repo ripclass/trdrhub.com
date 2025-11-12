@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from app.core.database import get_db
+from app.database import get_db
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)

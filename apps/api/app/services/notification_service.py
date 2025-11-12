@@ -21,7 +21,7 @@ from app.models.notifications import (
     NotificationChannel, NotificationTemplate, NotificationSubscription,
     NotificationDelivery, NotificationDigest, ChannelType, DeliveryStatus
 )
-from app.core.database import get_db
+from app.database import get_db
 from app.core.security import get_current_user
 
 logger = logging.getLogger(__name__)

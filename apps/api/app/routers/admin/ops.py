@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import logging
 
-from app.core.database import get_db
+from app.database import get_db
 from app.core.auth import get_current_admin_user, require_permissions
 from app.models.user import User
 from app.schemas.admin import (

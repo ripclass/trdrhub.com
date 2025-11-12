@@ -11,7 +11,7 @@ from typing import List, Optional
 import logging
 from datetime import datetime, timedelta
 
-from app.core.database import get_db
+from app.database import get_db
 from app.core.auth import get_current_admin_user, require_permissions
 from app.models.user import User
 from app.models.admin import JobQueue, JobDLQ, JobHistory, JobStatus

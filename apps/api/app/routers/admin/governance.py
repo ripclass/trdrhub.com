@@ -9,7 +9,7 @@ from datetime import datetime
 from uuid import UUID
 import logging
 
-from app.core.database import get_db
+from app.database import get_db
 from app.services.governance_service import GovernanceService
 from app.models.audit import GovernanceApproval
 from pydantic import BaseModel

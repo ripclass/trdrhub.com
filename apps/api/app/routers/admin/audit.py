@@ -13,7 +13,7 @@ import json
 import io
 import csv
 
-from app.core.database import get_db
+from app.database import get_db
 from app.services.audit_service import AuditService
 from app.models.audit import AuditLogEntry
 from pydantic import BaseModel

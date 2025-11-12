@@ -14,7 +14,7 @@ import json
 
 from app.models.audit import GovernanceApproval, AuditLogEntry, AuditAction, AuditSeverity
 from app.services.audit_service import AuditService
-from app.core.database import get_db
+from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
