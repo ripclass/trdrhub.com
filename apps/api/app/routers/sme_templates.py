@@ -2,6 +2,7 @@
 SME Templates API endpoints for LC and document templates with pre-fill.
 """
 
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
