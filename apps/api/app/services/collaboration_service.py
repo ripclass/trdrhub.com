@@ -532,7 +532,8 @@ class CollaborationService:
                     "mentioned_user_id": str(user_id),
                     "thread_title": thread.title
                 },
-                priority="high"
+                db=db,
+                severity=EventSeverity.WARNING
             )
 
     def _is_allowed_file_type(self, mime_type: str) -> bool:
