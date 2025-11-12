@@ -28,7 +28,8 @@ openpyxl>=3.1.5
 stripe>=7.0.0
 
 # DeepSeek OCR dependencies (optional - only needed if USE_DEEPSEEK_OCR=true)
-torch>=2.0.0
-transformers>=4.35.0
-pillow>=10.0.0
-pdf2image>=1.16.0
+# Commented out to reduce build size (~3.5GB). Uncomment if enabling DeepSeek OCR.
+# torch>=2.0.0
+# transformers>=4.35.0
+pillow>=10.0.0  # Used by other parts of the app
+pdf2image>=1.16.0  # Used by other parts of the app
