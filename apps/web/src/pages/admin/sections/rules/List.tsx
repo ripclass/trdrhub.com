@@ -37,22 +37,7 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 10;
 
-const FALLBACK_RULESETS: RulesetRecord[] = [
-  {
-    id: "ruleset-fallback-1",
-    domain: "icc",
-    jurisdiction: "global",
-    rulesetVersion: "1.0.0",
-    rulebookVersion: "UCP600:2007",
-    filePath: "rules/icc/fallback.json",
-    status: "active",
-    checksumMd5: "fallback-checksum",
-    ruleCount: 39,
-    createdAt: new Date().toISOString(),
-    publishedAt: new Date().toISOString(),
-    publishedBy: "system",
-  },
-];
+const FALLBACK_RULESETS: RulesetRecord[] = [];
 
 const STATUS_OPTIONS = [
   { label: "All statuses", value: "all" },
