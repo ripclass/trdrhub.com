@@ -128,7 +128,7 @@ class DeepSeekOCRAdapter(OCRAdapter):
         except Exception as e:
             raise RuntimeError(f"Failed to convert PDF to images: {e}")
     
-    def _process_image(self, image: Image.Image) -> Dict[str, Any]:
+    def _process_image(self, image: Any) -> Dict[str, Any]:
         """
         Process a single image through DeepSeek OCR.
         
