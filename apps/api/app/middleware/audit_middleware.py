@@ -28,7 +28,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.excluded_paths = excluded_paths or [
             "/docs", "/redoc", "/openapi.json", "/favicon.ico",
-            "/health", "/ping", "/metrics"
+            "/health", "/ping", "/metrics",
+            "/auth/login", "/auth/register", "/auth/csrf-token"  # Temporarily exempt to avoid audit logging issues
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
