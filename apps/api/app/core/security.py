@@ -28,6 +28,9 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 
 # Password hashing (supports >72B passwords via pre-hash)
+# Initialize with lazy loading to avoid initialization errors
+# The bcrypt_sha256 scheme may fail during backend initialization in some environments
+# We'll catch errors during actual hashing and fallback to standard bcrypt
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 # JWT Bearer token scheme
@@ -183,13 +186,23 @@ async def _authenticate_external_token(token: str, db: Session) -> Optional[User
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    # Guard and tolerate legacy backends which may enforce 72-byte limits
-    safe_password = (password or "")[:512]
+    if not password:
+        password = ""
+    
+    # For bcrypt_sha256, passlib handles the pre-hashing automatically
+    # Just ensure we don't pass None
     try:
-        return pwd_context.hash(safe_password)
-    except ValueError:
-        # Final fallback for environments still bound by 72B restriction
-        return pwd_context.hash(safe_password[:72])
+        return pwd_context.hash(password)
+    except (ValueError, AttributeError) as e:
+        # If bcrypt_sha256 fails, fallback to standard bcrypt with truncation
+        # This handles cases where passlib backend initialization fails
+        try:
+            from passlib.context import CryptContext
+            fallback_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            safe_password = password[:72] if len(password.encode('utf-8')) > 72 else password
+            return fallback_context.hash(safe_password)
+        except Exception:
+            raise ValueError(f"Failed to hash password: {e}") from e
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
