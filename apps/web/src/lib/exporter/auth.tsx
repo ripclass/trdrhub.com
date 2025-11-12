@@ -122,23 +122,61 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = localStorage.getItem('exporter_token');
+        // Check for API token (preferred) or exporter token (fallback)
+        const apiToken = localStorage.getItem('trdrhub_api_token');
+        const exporterToken = localStorage.getItem('exporter_token');
+        const token = apiToken || exporterToken;
+        
         if (!token) {
           setIsLoading(false);
           return;
         }
 
-        // Use mock auth check instead of API call
+        // Try to get user info from API
         try {
-          const userData = await mockExporterAuthCheck(token);
-          setUser(userData);
+          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            setUser({
+              id: userData.id || userData.email,
+              name: userData.full_name || userData.name || userData.email.split('@')[0],
+              email: userData.email,
+              role: userData.role === 'tenant_admin' ? 'tenant_admin' : 'exporter',
+              company_id: userData.company_id,
+            });
+          } else {
+            // Token invalid, clear it
+            localStorage.removeItem('exporter_token');
+            localStorage.removeItem('trdrhub_api_token');
+          }
         } catch (error) {
-          // Invalid token
-          localStorage.removeItem('exporter_token');
+          // If API call fails, try to extract user info from email in token storage
+          // This is a fallback for when API is not available
+          const storedEmail = localStorage.getItem('exporter_email');
+          if (storedEmail) {
+            const userData: ExporterUser = {
+              id: storedEmail,
+              name: storedEmail.split('@')[0].replace(/[0-9]/g, '').replace(/([A-Z])/g, ' $1').trim() || 'Exporter',
+              email: storedEmail,
+              role: storedEmail.includes('admin') || storedEmail.includes('manager') ? 'tenant_admin' : 'exporter',
+            };
+            setUser(userData);
+          } else {
+            localStorage.removeItem('exporter_token');
+            localStorage.removeItem('trdrhub_api_token');
+          }
         }
       } catch (error) {
         console.error('Auth check failed:', error);
         localStorage.removeItem('exporter_token');
+        localStorage.removeItem('trdrhub_api_token');
       } finally {
         setIsLoading(false);
       }
@@ -149,11 +187,44 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
 
   const login = async (email: string, password: string) => {
     try {
-      // Use mock login function instead of API call
-      const { user: userData, token } = await mockExporterLogin(email, password);
+      // Call real API for authentication
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
 
-      // Store token
-      localStorage.setItem('exporter_token', token);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Login failed' }));
+        throw new Error(errorData.detail || 'Login failed');
+      }
+
+      const data = await response.json();
+      const apiToken = data.access_token;
+
+      if (!apiToken) {
+        throw new Error('No access token received');
+      }
+
+      // Store token in the format the API client expects
+      localStorage.setItem('trdrhub_api_token', apiToken);
+      localStorage.setItem('exporter_token', apiToken); // Keep for backward compatibility
+
+      // Get user info from token or create user object
+      // The API client will use the token for subsequent requests
+      const userData: ExporterUser = {
+        id: email, // Use email as ID for now
+        name: email.split('@')[0].replace(/[0-9]/g, '').replace(/([A-Z])/g, ' $1').trim() || 'Exporter',
+        email: email,
+        role: email.includes('admin') || email.includes('manager') ? 'tenant_admin' : 'exporter',
+      };
+
+      // Store email for fallback auth check
+      localStorage.setItem('exporter_email', email);
 
       // Set user
       setUser(userData);
@@ -168,6 +239,8 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
 
   const logout = () => {
     localStorage.removeItem('exporter_token');
+    localStorage.removeItem('trdrhub_api_token');
+    localStorage.removeItem('exporter_email');
     setUser(null);
     navigate('/lcopilot/exporter-dashboard/login');
   };
