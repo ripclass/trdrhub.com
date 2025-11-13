@@ -195,49 +195,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       console.log('Attempting Supabase sign-in...')
-      // Login to Supabase first - don't wrap in timeout, let it complete naturally
+      // Login to Supabase - let it complete naturally, then check session
       const signInPromise = supabase.auth.signInWithPassword({ email, password })
       console.log('Sign-in promise created, waiting...')
       
-      let signInResult
-      try {
-        signInResult = await Promise.race([
-          signInPromise,
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Signing in timed out. Please try again.')), SIGNIN_TIMEOUT_MS)
-          )
-        ])
-        console.log('Supabase signInWithPassword completed:', signInResult)
-      } catch (timeoutError: any) {
-        console.error('Sign-in timeout or error:', timeoutError)
-        // Check if session exists despite timeout
-        const { data: checkSession } = await supabase.auth.getSession()
-        console.log('Checking session after timeout:', !!checkSession.session)
-        if (checkSession.session) {
-          console.log('Session exists despite timeout, continuing...')
-          signInResult = { error: null }
-        } else {
-          console.error('No session found, throwing error')
-          throw timeoutError
-        }
-      }
+      // Start sign-in but don't wait for it - check session in parallel
+      signInPromise.catch(err => console.warn('Sign-in promise error (non-fatal):', err))
       
-      const { error } = signInResult || { error: null }
-      // If Supabase returns an error, we still attempt to see if session became available
-      if (error) {
-        // Fall through to session wait; if no session, throw
-        console.warn('Supabase sign-in returned error; checking session anyway:', error)
-      }
-      
-      console.log('Waiting for Supabase session...')
-      // Wait for session to materialize (handles cases where signIn resolves slowly)
+      // Wait for session to appear (Supabase may resolve signIn slowly but session appears quickly)
+      console.log('Waiting for Supabase session to appear...')
       const token = await waitForSupabaseSession(20000)
+      
       if (!token) {
-        console.error('No token after waiting 20s')
-        // No session after waiting — treat as real failure
-        if (error) throw error
+        console.error('No token after waiting 20s, checking sign-in result...')
+        // Check if sign-in promise resolved with error
+        try {
+          const signInResult = await Promise.race([
+            signInPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+          ])
+          const { error } = signInResult as any
+          if (error) {
+            console.error('Sign-in returned error:', error)
+            throw error
+          }
+        } catch (checkError: any) {
+          if (checkError.message !== 'Timeout') {
+            throw checkError
+          }
+        }
         throw new Error('Signing in timed out. Please try again.')
       }
+      
+      console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
       
       console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
       
