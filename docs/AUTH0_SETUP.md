@@ -1,33 +1,44 @@
-# Auth0 Setup Guide via Supabase Third Party Auth
+# Auth0 Setup Guide - Direct Integration
 
-This guide explains how to configure Auth0 using Supabase's Third Party Auth feature.
+This guide explains how to configure Auth0 for direct integration (bypassing Supabase OAuth).
 
 ## Overview
 
-**Supabase Third Party Auth**: Supabase supports Auth0 as a third-party authentication provider. You only need to provide your Auth0 domain name, and Supabase handles the OAuth flow. This is simpler than direct Auth0 integration.
+**Direct Auth0 Integration**: We use Auth0 directly via `@auth0/auth0-spa-js` SDK. Auth0 handles authentication, and our backend validates Auth0 tokens. This gives us full control over the Auth0 flow.
 
-## Step 1: Configure Auth0 in Supabase Dashboard
+## Step 1: Configure Auth0 Application
 
-1. **Go to Supabase Dashboard** → Your Project → Authentication → Sign In / Providers
-2. **Click "Third Party Auth" tab**
-3. **Click "Add provider"** → Select "Auth0"
-4. **Enter your Auth0 Domain**: `dev-2zhljb8cf2kc2h5t.us` (without `.auth0.com`)
-5. **Enable the integration** (toggle should be green/enabled)
-
-That's it! Supabase handles the OAuth flow automatically. No Client ID/Secret needed.
-
-## Step 2: Configure Auth0 Application (Optional - for custom callback URLs)
-
-If you want to customize callback URLs in Auth0:
-
-1. **Go to Auth0 Dashboard** → Applications → Your Application
+1. **Go to Auth0 Dashboard** → Applications → Your Application (or create a new one)
 2. **Settings tab:**
+   - **Application Type**: Single Page Application
    - **Allowed Callback URLs**: Add:
-     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback` (Supabase handles this)
-     - `https://trdrhub.com/auth/callback` (your app callback)
+     - `https://trdrhub.com/auth/callback`
      - `http://localhost:5173/auth/callback` (development)
+   - **Allowed Logout URLs**: Add:
+     - `https://trdrhub.com`
+     - `http://localhost:5173` (development)
+   - **Allowed Web Origins**: Add:
+     - `https://trdrhub.com`
+     - `http://localhost:5173` (development)
 
-**Note**: Supabase automatically configures the callback URL, so this step is optional.
+3. **Copy these values:**
+   - **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com` (or your Auth0 domain)
+   - **Client ID**: Copy from the Settings tab
+
+## Step 2: Configure Frontend Environment Variables
+
+Add these to your frontend `.env` file (or Vercel environment variables):
+
+```bash
+VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your-client-id-here
+VITE_AUTH0_AUDIENCE=https://your-api-identifier  # Optional: API identifier if using Auth0 API
+```
+
+**Important**: 
+- `VITE_AUTH0_DOMAIN`: Your Auth0 domain (e.g., `dev-2zhljb8cf2kc2h5t.us.auth0.com`)
+- `VITE_AUTH0_CLIENT_ID`: Copy from Auth0 Dashboard → Applications → Your App → Settings
+- `VITE_AUTH0_AUDIENCE`: Optional - Only needed if you're using Auth0 API. Get from Auth0 Dashboard → APIs → Your API → Identifier
 
 ## Step 3: Configure Backend Environment Variables
 
@@ -47,85 +58,75 @@ AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
   - Copy the "Identifier" value (e.g., `https://api.trdrhub.com` or `https://trdrhub-api`)
   - If you don't have an API, create one: APIs → Create API → Set Identifier
 
-**Note**: These are optional if you're using Auth0 via Supabase. The backend will validate Supabase tokens, which contain Auth0 user info. However, it's recommended to set them for direct Auth0 token validation support.
+**Important**: These are REQUIRED for direct Auth0 integration. The backend validates Auth0 tokens directly.
 
 ## Step 4: Frontend is Ready!
 
-The frontend already supports Auth0 login via Supabase. Just add a button to your login page:
-
-```tsx
-import { useAuth } from '@/hooks/use-auth'
-
-function LoginPage() {
-  const { loginWithAuth0 } = useAuth()
-  
-  return (
-    <button onClick={loginWithAuth0}>
-      Login with Auth0
-    </button>
-  )
-}
-```
+The frontend already supports Auth0 login. The registration page has a "Sign up with Auth0" button that triggers the Auth0 flow.
 
 ## Step 5: Test the Flow
 
-1. **Click "Login with Auth0"** on your login page
-2. **Supabase redirects to Auth0** login page (handled automatically)
-3. **After login**, Auth0 redirects back to Supabase
-4. **Supabase creates/updates user** with Auth0 user info
-5. **Frontend receives Supabase session** token
-6. **Backend validates Supabase token** (which contains Auth0 user info)
+1. **Click "Sign up with Auth0"** on the registration page (`/register`)
+2. **Auth0 redirects to login/signup** page
+3. **After login/signup**, Auth0 redirects back to `/auth/callback`
+4. **Frontend gets Auth0 token** and sends it to backend
+5. **Backend validates Auth0 token** and creates/updates user
+6. **Backend returns JWT token** for API calls
+7. **User is redirected** to onboarding wizard (if incomplete) or dashboard
 
 ## Troubleshooting
 
-### Issue: "Provider not enabled"
-- **Solution**: Make sure Auth0 is enabled in Supabase Dashboard → Authentication → Providers
+### Issue: "Unsupported provider: Provider auth0 could not be found"
+- **Solution**: This error occurs if you try to use Supabase's OAuth. We're using Auth0 directly, so this shouldn't happen. Make sure you're using `loginWithAuth0()` from `use-auth` hook, not Supabase's `signInWithOAuth`.
 
 ### Issue: "Redirect URI mismatch"
-- **Solution**: Check that callback URLs in Auth0 match exactly what's configured in Supabase
+- **Solution**: Check that callback URLs in Auth0 Dashboard match exactly:
+  - Production: `https://trdrhub.com/auth/callback`
+  - Development: `http://localhost:5173/auth/callback`
 
 ### Issue: "Backend authentication fails"
-- **Solution**: Ensure backend has Auth0 environment variables configured (even if using via Supabase, backend needs them for token validation)
+- **Solution**: 
+  - Ensure backend has Auth0 environment variables configured (`AUTH0_ISSUER`, `AUTH0_AUDIENCE`, `AUTH0_JWKS_URL`)
+  - Check that Auth0 API is created and identifier matches `AUTH0_AUDIENCE`
+  - Verify backend `/auth/auth0` endpoint is working
+
+### Issue: "No Auth0 token available"
+- **Solution**: 
+  - Check that `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` are set in frontend environment variables
+  - Verify Auth0 application is configured as "Single Page Application"
+  - Check browser console for Auth0 SDK errors
 
 ### Issue: "User not created in backend"
-- **Solution**: Backend automatically creates users from Auth0 tokens. Check backend logs for errors.
-
-## Alternative: Direct Auth0 (Without Supabase)
-
-If you want to bypass Supabase entirely:
-
-1. **Remove Supabase auth** from frontend
-2. **Use Auth0 SDK directly** (`@auth0/auth0-react`)
-3. **Configure backend** with Auth0 environment variables
-4. **Backend validates Auth0 tokens** directly
-
-This requires more code changes but gives you full control over Auth0.
+- **Solution**: Backend automatically creates users from Auth0 tokens. Check backend logs for errors. Ensure backend `/auth/auth0` endpoint is properly configured.
 
 ## Environment Variables Summary
 
 ### Frontend (Vercel)
 ```bash
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+# Auth0 Configuration (REQUIRED)
+VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your-client-id-from-auth0-dashboard
+VITE_AUTH0_AUDIENCE=https://your-api-identifier  # Optional: Only if using Auth0 API
+
+# API Configuration
+VITE_API_URL=https://trdrhub-api.onrender.com
 ```
 
 ### Backend (Render)
 ```bash
-# Supabase (still needed for database)
-SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1
-SUPABASE_AUDIENCE=authenticated
-SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
-
-# Auth0 (for direct token validation)
+# Auth0 Configuration (REQUIRED for token validation)
 AUTH0_ISSUER=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/
 AUTH0_AUDIENCE=https://your-api-identifier  # Get this from Auth0 Dashboard → APIs → Your API → Identifier
 AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
+
+# Database (Supabase - still needed)
+DATABASE_URL=your-postgres-connection-string
 ```
 
 **Quick Reference - Your Values:**
-- Supabase Project: `nnmmhgnriisfsncphipd`
 - Auth0 Domain: `dev-2zhljb8cf2kc2h5t.us.auth0.com`
-- Auth0 Audience: **You need to get this from Auth0 Dashboard → APIs**
+- Auth0 Client ID: **Get from Auth0 Dashboard → Applications → Your App → Settings**
+- Auth0 Audience: **Get from Auth0 Dashboard → APIs → Your API → Identifier** (create API if needed)
 
 ## Next Steps
 

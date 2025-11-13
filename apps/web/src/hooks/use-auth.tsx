@@ -201,11 +201,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const loginWithAuth0 = async () => {
-    // Use Supabase's Third Party Auth (Auth0) - Supabase handles the OAuth flow
-    await supabase.auth.signInWithOAuth({
-      provider: 'auth0',
-      options: {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+    // Use Auth0 directly (not through Supabase)
+    const { getAuth0Client } = await import('@/lib/auth0')
+    const auth0 = await getAuth0Client()
+    await auth0.loginWithRedirect({
+      authorizationParams: {
+        screen_hint: 'signup', // Show signup option
       },
     })
   }
