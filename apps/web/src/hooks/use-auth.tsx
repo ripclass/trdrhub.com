@@ -151,11 +151,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true)
     try {
+      // Login to Supabase first
       const { error } = await withTimeout(
         supabase.auth.signInWithPassword({ email, password }),
         'Signing in'
       )
       if (error) throw error
+      
+      // Also login to backend API to get JWT token for admin endpoints
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+        const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        })
+        
+        if (loginResponse.ok) {
+          const tokenData = await loginResponse.json()
+          if (tokenData.access_token) {
+            // Store backend JWT token for admin API calls
+            localStorage.setItem('trdrhub_api_token', tokenData.access_token)
+          }
+        }
+      } catch (backendLoginError) {
+        // Non-critical - Supabase login succeeded, backend login is optional
+        console.warn('Backend login failed (non-critical):', backendLoginError)
+      }
+      
       const profile = await fetchUserProfile()
       return profile
     } finally {

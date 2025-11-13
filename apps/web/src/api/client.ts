@@ -118,8 +118,15 @@ api.interceptors.response.use(
         } catch (csrfError) {
           console.error('Failed to refresh CSRF token:', csrfError)
         }
+      } else if (errorDetail.includes('Not authenticated') || errorDetail.includes('Authentication failed')) {
+        // Authentication error - redirect to login if not already there
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          console.error('403 Forbidden: Not authenticated. Please log in.')
+          // Don't auto-redirect for admin pages - let the component handle it
+          // window.location.href = '/login'
+        }
       } else {
-        // Auth error - log for debugging
+        // Other 403 error - log for debugging
         console.error('403 Forbidden:', errorDetail || errorCode)
       }
     }
