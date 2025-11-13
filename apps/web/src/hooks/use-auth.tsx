@@ -257,15 +257,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const init = async () => {
       setIsLoading(true)
-      const { data } = await supabase.auth.getSession()
-      if (!mounted) return
-      if (data.session) {
-        try {
-          await fetchUserProfile()
-        } finally {
-          if (mounted) setIsLoading(false)
+      try {
+        // Add timeout to getSession to prevent hanging on refresh
+        const { data } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+          )
+        ]) as { data: { session: any } }
+        
+        if (!mounted) return
+        if (data.session) {
+          try {
+            await fetchUserProfile()
+          } finally {
+            if (mounted) setIsLoading(false)
+          }
+        } else {
+          if (GUEST_MODE) setGuest()
+          setIsLoading(false)
         }
-      } else {
+      } catch (error: any) {
+        console.warn('Auth init: Failed to get session:', error?.message || error)
+        if (!mounted) return
         if (GUEST_MODE) setGuest()
         setIsLoading(false)
       }
