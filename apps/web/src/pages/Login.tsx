@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, Eye, EyeOff, Mail, Lock, Chrome } from "lucide-react";
+import { FileText, Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { getOnboardingStatus } from "@/api/onboarding";
 
@@ -17,7 +16,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { loginWithEmail, loginWithGoogle } = useAuth();
+  const { loginWithEmail } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,21 +56,6 @@ export default function Login() {
       toast({
         title: "Login Failed",
         description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      await loginWithGoogle();
-    } catch (error: any) {
-      toast({
-        title: "Google sign-in failed",
-        description: error?.message || "Unable to sign in with Google right now.",
         variant: "destructive",
       });
     } finally {
@@ -162,25 +146,11 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-6 space-y-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={isLoading}
-                onClick={handleGoogleLogin}
-              >
-                <Chrome className="w-4 h-4 mr-2" />
-                Sign in with Google
-              </Button>
-
-              <Separator className="my-4" />
-              <div className="text-center text-sm text-muted-foreground">
-                Don't have an account?{" "}
-                <Link to="/register" className="text-primary hover:underline font-medium">
-                  Create account
-                </Link>
-              </div>
+            <div className="mt-6 text-center text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <Link to="/register" className="text-primary hover:underline font-medium">
+                Create account
+              </Link>
             </div>
           </CardContent>
         </Card>
