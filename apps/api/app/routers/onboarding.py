@@ -108,6 +108,9 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
     import logging
     logger = logging.getLogger(__name__)
     
+    logger.info(f"🔍 GET /onboarding/status called for user {current_user.id} ({current_user.email})")
+    logger.info(f"📊 Current user state: company_id={current_user.company_id}, onboarding_data={current_user.onboarding_data}, onboarding_completed={current_user.onboarding_completed}")
+    
     # Fast path: If user already has onboarding_data, skip restoration
     needs_restoration = not current_user.onboarding_data or current_user.onboarding_data == {}
     

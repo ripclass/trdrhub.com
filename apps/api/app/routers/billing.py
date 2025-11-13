@@ -13,7 +13,8 @@ import uuid
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -39,7 +40,7 @@ def _resolve_bank_tenants(request: Request) -> List[uuid.UUID]:
     tenant_scope = getattr(request.state, "tenant_ids", None)
     if tenant_scope is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="Bank context unavailable for this request",
         )
     resolved: List[uuid.UUID] = []
@@ -85,7 +86,7 @@ def get_payment_provider(provider_name: str = "sslcommerz"):
         return PaymentProviderFactory.create_provider(provider_name, config)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize payment provider: {str(e)}"
         )
 
@@ -101,7 +102,7 @@ async def get_company_billing_info(
         return billing_service.get_company_billing_info(current_user.company_id)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get billing info: {str(e)}"
         )
 
@@ -117,7 +118,7 @@ async def update_company_billing(
         return billing_service.update_company_billing(current_user.company_id, update_data.dict(exclude_unset=True))
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update billing settings: {str(e)}"
         )
 
@@ -132,7 +133,7 @@ async def get_usage_stats(
         return billing_service.get_usage_stats(current_user.company_id)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get usage stats: {str(e)}"
         )
 
@@ -159,7 +160,7 @@ async def get_usage_records(
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get usage records: {str(e)}"
         )
 
@@ -183,7 +184,7 @@ async def get_invoices(
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get invoices: {str(e)}"
         )
 
@@ -199,7 +200,7 @@ async def get_invoice(
         invoice = billing_service.get_invoice(invoice_id, current_user.company_id)
         if not invoice:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Invoice not found"
             )
         return invoice
@@ -207,7 +208,7 @@ async def get_invoice(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get invoice: {str(e)}"
         )
 
@@ -223,14 +224,14 @@ async def generate_invoice(
     try:
         if period_end <= period_start:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="End date must be after start date"
             )
 
         invoice = billing_service.generate_invoice(current_user.company_id, period_start, period_end)
         if not invoice:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="No usage found for the specified period"
             )
 
@@ -239,7 +240,7 @@ async def generate_invoice(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate invoice: {str(e)}"
         )
 
@@ -259,7 +260,7 @@ async def create_payment_intent(
         provider_name = provider_name.lower()
         if provider_name not in {"sslcommerz", "stripe"}:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported payment provider"
             )
 
@@ -274,7 +275,7 @@ async def create_payment_intent(
 
             if not invoice:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
+                    status_code=http_status.HTTP_404_NOT_FOUND,
                     detail="Invoice not found"
                 )
 
@@ -349,12 +350,12 @@ async def create_payment_intent(
         raise
     except PaymentProviderError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Payment provider error: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create payment intent: {str(e)}"
         )
 
@@ -383,12 +384,12 @@ async def get_payment_status(
 
     except PaymentProviderError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Payment provider error: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get payment status: {str(e)}"
         )
 
@@ -420,12 +421,12 @@ async def refund_payment(
 
     except PaymentProviderError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Payment provider error: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to refund payment: {str(e)}"
         )
 
@@ -442,7 +443,7 @@ async def create_billing_portal(
         customer_id = company.get("payment_customer_id")
         if not customer_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="No Stripe customer associated with this company yet",
             )
 
@@ -457,12 +458,12 @@ async def create_billing_portal(
         raise
     except PaymentProviderError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Payment provider error: {str(e)}",
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create billing portal session: {str(e)}",
         )
 
@@ -503,7 +504,7 @@ async def check_quota(
 
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to check quota: {str(e)}"
         )
 
@@ -522,7 +523,7 @@ async def stripe_webhook(
 
         if not signature:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Missing Stripe signature"
             )
 
@@ -533,7 +534,7 @@ async def stripe_webhook(
             payload, signature, settings.STRIPE_WEBHOOK_SECRET
         ):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid webhook signature"
             )
 
@@ -551,7 +552,7 @@ async def stripe_webhook(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Webhook processing failed: {str(e)}"
         )
 
@@ -578,7 +579,7 @@ async def sslcommerz_webhook(
         # Verify webhook (SSLCommerz uses different verification)
         if not payment_provider.verify_webhook_signature(payload, "", ""):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid webhook data"
             )
 
@@ -594,7 +595,7 @@ async def sslcommerz_webhook(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Webhook processing failed: {str(e)}"
         )
 
@@ -612,7 +613,7 @@ async def get_admin_company_stats(
         return billing_service.get_admin_company_stats(page, per_page)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get company stats: {str(e)}"
         )
 
@@ -628,7 +629,7 @@ async def get_admin_usage_report(
     try:
         if end_date <= start_date:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="End date must be after start date"
             )
 
@@ -637,7 +638,7 @@ async def get_admin_usage_report(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get usage report: {str(e)}"
         )
 
@@ -652,7 +653,7 @@ def get_bank_billing_summary(
     tenant_ids = _resolve_bank_tenants(request)
     if not tenant_ids:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="No tenant mappings found for this bank",
         )
 
