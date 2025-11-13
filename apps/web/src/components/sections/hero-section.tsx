@@ -34,7 +34,7 @@ export function HeroSection() {
                 <Link to="/lcopilot/importer-dashboard" className="!text-foreground hover:!text-white font-semibold">I'm an Importer</Link>
               </Button>
               <Button asChild size="lg" className="bg-gradient-primary hover:opacity-90 shadow-medium">
-                <Link to="/lcopilot/bank-dashboard" className="!text-foreground hover:!text-white font-semibold">I'm a Bank / FI</Link>
+                <Link to="/lcopilot/bank-dashboard" className="!text-foreground hover:!text-white font-semibold">I'm a Bank</Link>
               </Button>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">

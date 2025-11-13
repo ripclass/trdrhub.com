@@ -31,6 +31,7 @@ const mapBackendRole = (backendRole: string): Role => {
   const roleMap: Record<string, Role> = {
     'exporter': 'exporter',
     'importer': 'importer',
+    'tenant_admin': 'exporter',
     'bank_officer': 'bank',
     'bank_admin': 'bank',
     'system_admin': 'admin',

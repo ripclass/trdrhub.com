@@ -10,6 +10,7 @@ class CompanyPayload(BaseModel):
 
     name: str
     type: Optional[str] = Field(None, description="Primary business type or segment")
+    size: Optional[str] = Field(None, description="Company size tier (sme, medium, large)")
     legal_name: Optional[str] = None
     registration_number: Optional[str] = None
     regulator_id: Optional[str] = None

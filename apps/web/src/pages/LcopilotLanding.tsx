@@ -21,7 +21,7 @@ const roles = [
   },
   {
     id: "bank",
-    title: "I'm a Bank / FI",
+    title: "I'm a Bank",
     description:
       "Monitor system-wide LC quality, automate compliance review, and collaborate with clients in real time.",
     to: "/lcopilot/analytics/bank",
@@ -63,7 +63,7 @@ export default function LcopilotLanding() {
               LC Validation Copilot
             </Badge>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">
-              Bank-ready LC checks for Exporters, Importers, and Financial Institutions.
+              Bank-ready LC checks for Exporters, Importers, and Partner Banks.
             </h1>
             <p className="text-lg text-muted-foreground mb-10 leading-relaxed">
               LCopilot combines AI-driven document analysis with compliance workflows built with Bangladeshi banks.

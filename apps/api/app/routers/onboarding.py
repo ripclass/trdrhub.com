@@ -44,6 +44,7 @@ def _requirements_for_user(user: User) -> OnboardingRequirements:
     if not user.company_id:
         req.basic.extend(["company_name", "company_type"])
     data = user.onboarding_data or {}
+    company_data = data.get("company", {})
     if user.role in {"bank_officer", "bank_admin"}:
         req.legal.extend(["legal_name", "registration_number", "regulator_id", "country"])
         req.docs.append("kyc_package")
@@ -53,6 +54,8 @@ def _requirements_for_user(user: User) -> OnboardingRequirements:
             user.kyc_status = "pending"
     if not data.get("business_types"):
         req.basic.append("business_types")
+    if user.role == "tenant_admin" and not company_data.get("size"):
+        req.basic.append("company_size")
     return req
 
 
@@ -72,9 +75,12 @@ def _ensure_company(db: Session, user: User, payload: CompanyPayload) -> Company
         user.company_id = company.id
 
     company.name = payload.name
+    event_meta = company.event_metadata or {}
     if payload.type:
-        event_meta = company.event_metadata or {}
         event_meta["business_type"] = payload.type
+    if payload.size:
+        event_meta["company_size"] = payload.size
+    if event_meta:
         company.event_metadata = event_meta
     if payload.legal_name:
         company.legal_name = payload.legal_name
@@ -137,6 +143,7 @@ async def update_progress(
                 "company": {
                     "name": company.name,
                     "type": payload.company.type,
+                    "size": payload.company.size,
                     "legal_name": company.legal_name,
                     "registration_number": company.registration_number,
                     "regulator_id": company.regulator_id,

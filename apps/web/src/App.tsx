@@ -47,6 +47,8 @@ import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminShell from './pages/admin/AdminShell'
 import AuthCallback from './pages/auth/Callback'
+import CombinedDashboard from './pages/CombinedDashboard'
+import EnterpriseDashboard from './pages/EnterpriseDashboard'
 import { BankAuthProvider } from './lib/bank/auth'
 import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
@@ -92,6 +94,11 @@ function App() {
             <ExporterDashboardV2 />
           </ExporterAuthProvider>
         } />
+        <Route path="/lcopilot/combined-dashboard" element={
+          <ExporterAuthProvider>
+            <CombinedDashboard />
+          </ExporterAuthProvider>
+        } />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
         <Route path="/lcopilot/exporter-dashboard/v2" element={
           <ExporterAuthProvider>
@@ -109,6 +116,11 @@ function App() {
           </ImporterAuthProvider>
         } />
         <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
+        <Route path="/lcopilot/enterprise-dashboard" element={
+          <ExporterAuthProvider>
+            <EnterpriseDashboard />
+          </ExporterAuthProvider>
+        } />
         <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
         <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />
         <Route path="/lcopilot/importer-analytics" element={<ImporterAnalytics />} />

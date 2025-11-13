@@ -19,6 +19,7 @@ export interface OnboardingStatus {
 export interface CompanyPayload {
   name: string
   type?: string
+  size?: string
   legal_name?: string
   registration_number?: string
   regulator_id?: string

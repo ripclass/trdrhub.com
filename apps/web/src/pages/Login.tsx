@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Eye, EyeOff, Mail, Lock, Chrome } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import type { Role } from "@/types/analytics";
+import { getOnboardingStatus } from "@/api/onboarding";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -18,19 +18,6 @@ export default function Login() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { loginWithEmail, loginWithGoogle } = useAuth();
-
-  const routeForRole = (role: Role): string => {
-    switch (role) {
-      case "admin":
-        return "/admin";
-      case "bank":
-      case "exporter":
-      case "importer":
-        return "/dashboard";
-      default:
-        return "/dashboard";
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +30,28 @@ export default function Login() {
         description: "Welcome back to LCopilot!",
       });
 
-      navigate(routeForRole(profile.role));
+      let destination = "/lcopilot/exporter-dashboard";
+      try {
+        const status = await getOnboardingStatus();
+        const backendRole = status.role;
+        const details = status.details as Record<string, any> | undefined;
+        const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
+        const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
+
+        if (backendRole === "bank_officer" || backendRole === "bank_admin" || profile.role === "bank") {
+          destination = "/lcopilot/bank-dashboard";
+        } else if (backendRole === "tenant_admin") {
+          destination = "/lcopilot/enterprise-dashboard";
+        } else if (hasBoth) {
+          destination = "/lcopilot/combined-dashboard";
+        } else if (profile.role === "importer") {
+          destination = "/lcopilot/importer-dashboard";
+        }
+      } catch (statusError) {
+        console.warn("Failed to load onboarding status for routing", statusError);
+      }
+
+      navigate(destination);
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({

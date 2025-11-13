@@ -11,14 +11,18 @@ import { useToast } from "@/hooks/use-toast";
 import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
-import type { Role } from "@/types/analytics";
 
 const COMPANY_TYPES = [
   { value: "exporter", label: "Exporter" },
   { value: "importer", label: "Importer" },
   { value: "both", label: "Both Exporter & Importer" },
-  { value: "bank", label: "Bank / FI" },
-  { value: "consultant", label: "Trade Consultant" },
+  { value: "bank", label: "Bank" },
+];
+
+const COMPANY_SIZE_OPTIONS = [
+  { value: "sme", label: "SME (1-20 employees)" },
+  { value: "medium", label: "Medium Enterprise (21-50 employees)" },
+  { value: "large", label: "Large Enterprise (50+ employees)" },
 ];
 
 export default function Register() {
@@ -31,6 +35,7 @@ export default function Register() {
     companyType: "",
     agreedToTerms: false,
   });
+  const [companySize, setCompanySize] = useState<string>("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -39,21 +44,31 @@ export default function Register() {
   const { registerWithEmail } = useAuth();
   const { updateProgress } = useOnboarding();
 
-  const routeForRole = (role: Role): string => {
-    switch (role) {
-      case "admin":
-        return "/admin";
-      case "bank":
-      case "exporter":
-      case "importer":
-        return "/dashboard";
-      default:
-        return "/dashboard";
+  const getBackendRole = (companyType: string, size?: string): string => {
+    if (companyType === "both") {
+      if (size === "medium" || size === "large") {
+        return "tenant_admin";
+      }
+      return "exporter";
     }
+
+    const roleMap: Record<string, string> = {
+      exporter: "exporter",
+      importer: "importer",
+      bank: "bank_officer",
+    };
+
+    return roleMap[companyType] || "exporter";
   };
+
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+
+    if (field === "companyType") {
+      // Reset company size when switching away from "both"
+      setCompanySize(value === "both" ? companySize : "");
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -80,17 +95,20 @@ export default function Register() {
       return;
     }
 
-    try {
-      const roleMap: Record<string, string> = {
-        exporter: "exporter",
-        importer: "importer",
-        both: "exporter",
-        bank: "bank_officer",
-        consultant: "exporter",
-      };
-      const backendRole = roleMap[formData.companyType] || "exporter";
+    if (formData.companyType === "both" && !companySize) {
+      toast({
+        title: "Company size required",
+        description: "Please select your company size to continue.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
 
-      const profile = await registerWithEmail(
+    try {
+      const backendRole = getBackendRole(formData.companyType, companySize);
+
+      await registerWithEmail(
         formData.email,
         formData.password,
         formData.contactPerson,
@@ -99,21 +117,29 @@ export default function Register() {
 
       try {
         const businessTypes =
-          formData.companyType === 'both'
-            ? ['exporter', 'importer']
+          formData.companyType === "both"
+            ? ["exporter", "importer"]
             : formData.companyType
             ? [formData.companyType]
-            : []
+            : [];
 
-        const isBank = backendRole === 'bank_officer'
+        const normalizedCompanySize =
+          formData.companyType === "both" ? companySize || undefined : undefined;
+
+        const isBank = backendRole === "bank_officer";
+        const requiresTeamSetup = backendRole === "tenant_admin";
 
         await updateProgress({
           role: backendRole,
-          company: { name: formData.companyName, type: formData.companyType },
+          company: {
+            name: formData.companyName,
+            type: formData.companyType,
+            size: normalizedCompanySize,
+          },
           business_types: businessTypes,
-          complete: !isBank,
-          onboarding_step: isBank ? 'kyc' : null,
-        })
+          complete: !(isBank || requiresTeamSetup),
+          onboarding_step: isBank ? "kyc" : requiresTeamSetup ? "team_setup" : null,
+        });
       } catch (error) {
         console.warn("Failed to sync onboarding role/company", error);
       }
@@ -122,7 +148,25 @@ export default function Register() {
         title: "Welcome to LCopilot",
         description: "Your account is ready. We’re tailoring the workspace for you…",
       });
-      navigate(routeForRole(profile.role));
+
+      const destination = (() => {
+        if (backendRole === "bank_officer" || backendRole === "bank_admin") {
+          return "/lcopilot/bank-dashboard";
+        }
+        if (backendRole === "tenant_admin") {
+          return "/lcopilot/enterprise-dashboard";
+        }
+        if (formData.companyType === "both") {
+          return "/lcopilot/combined-dashboard";
+        }
+        if (backendRole === "importer") {
+          return "/lcopilot/importer-dashboard";
+        }
+        return "/lcopilot/exporter-dashboard";
+      })();
+
+      navigate(destination);
+
     } catch (error: any) {
       const message =
         error?.response?.data?.detail ||
@@ -289,6 +333,30 @@ export default function Register() {
                     </Select>
                   </div>
                 </div>
+
+                {formData.companyType === "both" && (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companySize">Company size</Label>
+                    <Select
+                      value={companySize}
+                      onValueChange={(value) => setCompanySize(value)}
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Select company size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMPANY_SIZE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      We use company size to tailor features, quotas, and onboarding.
+                    </p>
+                  </div>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
