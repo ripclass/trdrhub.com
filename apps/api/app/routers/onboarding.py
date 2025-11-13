@@ -104,6 +104,30 @@ def _persist_onboarding_data(user: User, data: Dict[str, Any]) -> None:
 
 @router.get("/status", response_model=OnboardingStatus)
 async def get_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> OnboardingStatus:
+    # Auto-complete onboarding if user already has company info from registration
+    # This prevents showing the wizard unnecessarily for users who registered with company info
+    if not current_user.onboarding_completed and current_user.company_id:
+        company = db.query(Company).filter(Company.id == current_user.company_id).first()
+        if company:
+            # Check if we have enough info to consider onboarding complete
+            onboarding_data = current_user.onboarding_data or {}
+            company_info = onboarding_data.get('company', {})
+            
+            # Check for company type in multiple places (registration stores it as 'business_type' in event_metadata)
+            company_type = (
+                company_info.get('type') or 
+                company.event_metadata.get('company_type') or 
+                company.event_metadata.get('business_type')
+            )
+            
+            # If user has company name and type, and is not a bank (banks need KYC), auto-complete
+            if company.name and company_type:
+                # Banks need explicit approval, so don't auto-complete for them
+                if current_user.role not in {'bank_officer', 'bank_admin'}:
+                    current_user.onboarding_completed = True
+                    current_user.status = 'active'
+                    db.commit()
+    
     requirements = _requirements_for_user(current_user)
     db.commit()
     return OnboardingStatus(
