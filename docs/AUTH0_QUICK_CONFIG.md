@@ -1,17 +1,17 @@
 # Auth0 Quick Configuration Reference
 
-## Your Current Values
+## Direct Auth0 Integration (No Supabase Auth Needed)
 
-### Supabase
-- **Project URL**: `https://nnmmhgnriisfsncphipd.supabase.co`
-- **Auth Endpoint**: `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1`
-- **Callback URL**: `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
+Since Supabase doesn't have Auth0 as a built-in provider, we're using **direct Auth0 integration**. Users log in directly with Auth0, and the backend validates Auth0 tokens.
+
+## Your Current Values
 
 ### Auth0
 - **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com`
 - **Issuer**: `https://dev-2zhljb8cf2kc2h5t.us.auth0.com/`
 - **JWKS URL**: `https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json`
-- **Audience**: ⚠️ **You need to get this from Auth0 Dashboard**
+- **Client ID**: ⚠️ **Get from Auth0 Dashboard → Applications → Your App**
+- **Audience**: ⚠️ **Get from Auth0 Dashboard → APIs → Your API → Identifier**
 
 ## How to Get AUTH0_AUDIENCE
 
@@ -32,37 +32,36 @@
 - `https://trdrhub-api`
 - `https://trdrhub.com/api`
 
-## Render Environment Variables (Copy-Paste Ready)
+## Vercel Environment Variables (Frontend)
 
 ```bash
-# Supabase Authentication
-SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1
-SUPABASE_AUDIENCE=authenticated
-SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
+# Auth0 Configuration
+VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your-auth0-client-id-here
+VITE_AUTH0_AUDIENCE=https://your-api-identifier-here
+```
 
-# Auth0 Authentication
+**⚠️ Get these from Auth0 Dashboard:**
+- **VITE_AUTH0_CLIENT_ID**: Applications → Your App → Client ID
+- **VITE_AUTH0_AUDIENCE**: APIs → Your API → Identifier
+
+## Render Environment Variables (Backend)
+
+```bash
+# Auth0 Authentication (for token validation)
 AUTH0_ISSUER=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/
-AUTH0_AUDIENCE=https://api.trdrhub.com
+AUTH0_AUDIENCE=https://your-api-identifier-here
 AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
 ```
 
-**⚠️ Remember**: Replace `https://api.trdrhub.com` in `AUTH0_AUDIENCE` with your actual Auth0 API Identifier!
-
-## Supabase Dashboard Configuration
-
-### Auth0 Provider Settings
-- **Enabled**: ✅ Yes
-- **Client ID**: (from Auth0 Dashboard → Applications → Your App)
-- **Client Secret**: (from Auth0 Dashboard → Applications → Your App)
-- **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com`
-- **Redirect URL**: `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
+**⚠️ Remember**: Replace `https://your-api-identifier-here` with your actual Auth0 API Identifier!
 
 ## Auth0 Dashboard Configuration
 
 ### Application Settings
 - **Allowed Callback URLs**: 
   ```
-  https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback,https://trdrhub.com/auth/callback,http://localhost:5173/auth/callback
+  https://trdrhub.com/auth/callback,http://localhost:5173/auth/callback
   ```
 - **Allowed Web Origins**: 
   ```
@@ -72,6 +71,8 @@ AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
   ```
   https://trdrhub.com,http://localhost:5173
   ```
+
+**Note**: No Supabase callback URL needed - we're using direct Auth0 integration!
 
 ## Testing Checklist
 
