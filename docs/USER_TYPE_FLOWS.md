@@ -8,7 +8,7 @@
 ## User Type Categories
 
 ### 1. SME Exporters
-- **Profile**: Small to medium exporters (20-200 employees)
+- **Profile**: Small to medium exporters (1-20 employees)
 - **Role**: `exporter`
 - **Company Type**: `exporter`
 - **Business Types**: `['exporter']`
@@ -16,7 +16,7 @@
 - **KYC**: Not required
 
 ### 2. SME Importers
-- **Profile**: Small to medium importers (20-200 employees)
+- **Profile**: Small to medium importers (1-20 employees)
 - **Role**: `importer`
 - **Company Type**: `importer`
 - **Business Types**: `['importer']`
@@ -28,9 +28,13 @@
 - **Role**: `tenant_admin` ⚠️ **CURRENTLY MISSING**
 - **Company Type**: `both`
 - **Business Types**: `['exporter', 'importer']`
+- **Company Size**: Medium (21-50 employees) or Large (50+ employees)
 - **Onboarding**: Enhanced with team management
 - **KYC**: May be required for large enterprises
-- **Features**: Team management, workspace sharing, multi-user access
+- **Features**: 
+  - **Combined Dashboard**: Can validate both export and import LCs
+  - Team management, workspace sharing, multi-user access
+  - Switch between exporter/importer views or unified view
 
 ### 4. Banks
 - **Profile**: Commercial banks, trade finance departments
@@ -42,13 +46,20 @@
 - **Features**: Compliance monitoring, audit trails, client management
 
 ### 5. Financial Institutes (Non-Bank FIs)
-- **Profile**: Non-bank financial institutions (factoring companies, trade finance companies, etc.)
-- **Role**: ⚠️ **CURRENTLY MISSING** - Should be `fi_officer` or `fi_admin`
-- **Company Type**: ⚠️ **CURRENTLY MISSING** - Should be `financial_institute`
-- **Business Types**: N/A
-- **Onboarding**: Requires KYC approval (similar to banks)
-- **KYC**: **REQUIRED**
-- **Features**: Similar to banks but may have different compliance requirements
+
+**⚠️ QUESTION**: Are there non-bank FIs that need LC validation?
+
+**Analysis**:
+- **Trade Finance Consulting Companies**: ❌ Don't need LC validation (they advise, don't process)
+- **Factoring Companies**: ⚠️ May need LC validation if they accept LCs as collateral
+- **Trade Finance Companies**: ⚠️ May need LC validation if they finance against LCs
+- **Export Credit Agencies**: ⚠️ May need LC validation for guarantee purposes
+
+**✅ RECOMMENDATION**: 
+- **Option 1**: Remove FI option, only keep "Bank" (simplest)
+- **Option 2**: Keep FI but use same `bank_officer` role with `company_type: 'financial_institute'` (if any FIs actually need the app)
+
+**Current Decision**: ⏳ **PENDING USER CLARIFICATION** - Remove FI or keep with bank roles?
 
 ### 6. Trade Consultants
 - **Status**: ❌ **REMOVED** - Not supported in current version
@@ -351,7 +362,7 @@ const roleMap: Record<string, string> = {
 ### Phase 1: Add Company Size Field (CRITICAL)
 
 **New Field in Registration:**
-- Add company size dropdown: **SME (20-200)**, **Medium (200-1000)**, **Large (1000+)**
+- Add company size dropdown: **SME (1-20 employees)**, **Medium (21-50 employees)**, **Large (50+ employees)**
 - **Required** when company type is "both"
 - Store in `onboarding_data.company_size`
 - Use to determine:
@@ -384,9 +395,16 @@ const getRoleForCompanyType = (companyType: string, companySize?: string): strin
 };
 ```
 
-### Phase 3: Add Financial Institute Distinction
+### Phase 3: Financial Institute Decision
 
-**New Field in Registration (for Bank/FI):**
+**⚠️ PENDING USER DECISION**: Remove FI option or keep it?
+
+**Option A: Remove FI (Simplest)**
+- Remove "Financial Institute" option from registration
+- Only keep "Bank" option
+- Update registration form to only show "Bank"
+
+**Option B: Keep FI (If needed)**
 - Add institution type dropdown: **Bank** or **Financial Institute**
 - Store in `onboarding_data.institution_type`
 - Store in `company.type` as `bank` or `financial_institute`
@@ -404,9 +422,9 @@ const getRoleForCompanyType = (companyType: string, companySize?: string): strin
 ### Phase 5: Implement Company Size-Based Features
 
 **Feature Limits by Company Size:**
-- **SME**: Basic features, limited quotas (e.g., 50 validations/month)
-- **Medium**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
-- **Large**: All features, unlimited quotas, advanced team management, dedicated support
+- **SME (1-20)**: Basic features, limited quotas (e.g., 50 validations/month)
+- **Medium (21-50)**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
+- **Large (50+)**: All features, unlimited quotas, advanced team management, dedicated support
 
 ---
 
@@ -433,9 +451,9 @@ What best describes your business?
 ```
 How many employees does your company have?
 
-[ ] SME (20-200 employees)
-[ ] Medium Enterprise (200-1000 employees)
-[ ] Large Enterprise (1000+ employees)
+[ ] SME (1-20 employees)
+[ ] Medium Enterprise (21-50 employees)
+[ ] Large Enterprise (50+ employees)
 ```
 
 **Note**: Company size is **required** for "Both Exporter & Importer" to determine role assignment.
@@ -453,13 +471,13 @@ How many employees does your company have?
 
 | User Type | Role | Company Size | Onboarding Required | KYC Required | Approval Required | Dashboard |
 |-----------|------|--------------|---------------------|--------------|-------------------|-----------|
-| SME Exporter | `exporter` | SME | No | No | No | ExporterDashboardV2 |
-| SME Importer | `importer` | SME | No | No | No | ImporterDashboardV2 |
-| SME (Both) | `exporter` | SME | No | No | No | ExporterDashboardV2 |
-| Medium Enterprise (Both) | `tenant_admin` | Medium | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ |
-| Large Enterprise (Both) | `tenant_admin` | Large | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ |
+| SME Exporter | `exporter` | SME (1-20) | No | No | No | ExporterDashboardV2 |
+| SME Importer | `importer` | SME (1-20) | No | No | No | ImporterDashboardV2 |
+| SME (Both) | `exporter` | SME (1-20) | No | No | No | Combined Dashboard ⚠️ (needs unified view) |
+| Medium Enterprise (Both) | `tenant_admin` | Medium (21-50) | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ (combined export/import) |
+| Large Enterprise (Both) | `tenant_admin` | Large (50+) | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ (combined export/import) |
 | Bank | `bank_officer` | N/A | Yes (KYC) | Yes | Yes | BankDashboardV2 |
-| Financial Institute | `bank_officer` | N/A | Yes (KYC) | Yes | Yes | BankDashboardV2 |
+| Financial Institute | ⏳ **PENDING** | N/A | ⏳ **PENDING** | ⏳ **PENDING** | ⏳ **PENDING** | ⏳ **PENDING** |
 
 ---
 
@@ -500,18 +518,25 @@ How many employees does your company have?
 
 1. **Enterprise Users**: ✅ **DECIDED** - Only Medium & Large Enterprises get `tenant_admin` role. SMEs selecting "both" remain as `exporter` with `business_types: ['exporter', 'importer']`.
 
-2. **Financial Institutes**: ✅ **RECOMMENDED** - Use `bank_officer` / `bank_admin` roles with `company_type: 'financial_institute'` field to distinguish. Keeps it simple, allows future differentiation.
+2. **Financial Institutes**: ⏳ **PENDING DECISION** - User questioning if non-bank FIs actually need LC validation. Trade finance consulting companies don't need it. Options:
+   - **Option A**: Remove FI option entirely, only keep "Bank"
+   - **Option B**: Keep FI option if any non-bank FIs (factoring companies, trade finance companies) actually need LC validation
 
 3. **Consultants**: ✅ **DECIDED** - Removed from supported user types.
 
 4. **Company Size**: ✅ **DECIDED** - Should affect features/limits:
-   - **SME**: Basic features, limited quotas (e.g., 50 validations/month)
-   - **Medium**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
-   - **Large**: All features, unlimited quotas, advanced team management, dedicated support
+   - **SME (1-20)**: Basic features, limited quotas (e.g., 50 validations/month)
+   - **Medium (21-50)**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
+   - **Large (50+)**: All features, unlimited quotas, advanced team management, dedicated support
    - Also used for analytics and business intelligence
 
 5. **SME vs Enterprise**: ✅ **RECOMMENDED** - Different onboarding flows:
    - **SME**: Simple, quick onboarding (skip wizard, immediate access)
    - **Medium/Large Enterprise**: Enhanced onboarding with team setup wizard
    - Different post-onboarding features based on company size
+
+6. **Combined Dashboard**: ✅ **REQUIRED** - Need unified dashboard for users who do both exporting and importing:
+   - Can validate both export and import LCs
+   - Switch between exporter view, importer view, or unified combined view
+   - Critical for "both" users (SME, Medium, Large)
 

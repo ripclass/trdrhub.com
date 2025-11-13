@@ -9,10 +9,14 @@
 ## Decisions Summary
 
 ✅ **Enterprise Users**: Only Medium & Large Enterprises get `tenant_admin` role  
-✅ **Financial Institutes**: Use `bank_officer` role with `company_type: 'financial_institute'`  
+⏳ **Financial Institutes**: **PENDING DECISION** - Remove FI option or keep with bank roles?  
 ✅ **Consultants**: Removed from supported types  
 ✅ **Company Size**: Affects features, limits, and onboarding flow  
-✅ **SME vs Enterprise**: Different onboarding flows
+   - **SME**: 1-20 employees
+   - **Medium**: 21-50 employees  
+   - **Large**: 50+ employees
+✅ **SME vs Enterprise**: Different onboarding flows  
+✅ **Combined Dashboard**: Required for users who do both exporting and importing
 
 ---
 
@@ -42,9 +46,9 @@ const [companySize, setCompanySize] = useState<string>("");
         <SelectValue placeholder="Select company size" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="sme">SME (20-200 employees)</SelectItem>
-        <SelectItem value="medium">Medium Enterprise (200-1000 employees)</SelectItem>
-        <SelectItem value="large">Large Enterprise (1000+ employees)</SelectItem>
+        <SelectItem value="sme">SME (1-20 employees)</SelectItem>
+        <SelectItem value="medium">Medium Enterprise (21-50 employees)</SelectItem>
+        <SelectItem value="large">Large Enterprise (50+ employees)</SelectItem>
       </SelectContent>
     </Select>
     <p className="text-xs text-muted-foreground">
@@ -215,12 +219,18 @@ const determineInitialStep = (): WizardStep => {
 
 ---
 
-### Step 5: Create Enterprise Dashboard
+### Step 5: Create Combined/Enterprise Dashboard
 
-**File**: `apps/web/src/pages/EnterpriseDashboard.tsx` (new)
+**File**: `apps/web/src/pages/CombinedDashboard.tsx` (new) - For SME "both" users  
+**File**: `apps/web/src/pages/EnterpriseDashboard.tsx` (new) - For Medium/Large Enterprise
 
-**Features:**
-- Combined exporter/importer views
+**Features (Both Dashboards):**
+- **CRITICAL**: Unified LC validation for both export and import LCs
+- Switch between exporter view, importer view, or unified combined view
+- Single interface for all LC validation needs
+- Filter by LC type (export/import/both)
+
+**Enterprise Dashboard Additional Features:**
 - Team management section
 - Workspace sharing
 - Multi-user access controls
@@ -243,9 +253,9 @@ case "tenant_admin":
 def get_quota_limit(company_size: str) -> Optional[int]:
     """Get validation quota limit based on company size."""
     limits = {
-        "sme": 50,      # 50 validations per month
-        "medium": 500,  # 500 validations per month
-        "large": None,  # Unlimited
+        "sme": 50,      # 50 validations per month (1-20 employees)
+        "medium": 500,  # 500 validations per month (21-50 employees)
+        "large": None,  # Unlimited (50+ employees)
     }
     return limits.get(company_size, 50)
 
@@ -309,10 +319,17 @@ const COMPANY_TYPES = [
 - [ ] FIs → BankDashboardV2
 
 ### Feature Limit Tests
-- [ ] SME users limited to 50 validations/month
-- [ ] Medium Enterprise limited to 500 validations/month
-- [ ] Large Enterprise unlimited
+- [ ] SME users (1-20 employees) limited to 50 validations/month
+- [ ] Medium Enterprise (21-50 employees) limited to 500 validations/month
+- [ ] Large Enterprise (50+ employees) unlimited
 - [ ] Quota exceeded shows appropriate message
+
+### Combined Dashboard Tests
+- [ ] SME "both" users see Combined Dashboard
+- [ ] Can validate export LCs in combined dashboard
+- [ ] Can validate import LCs in combined dashboard
+- [ ] Can switch between exporter view, importer view, unified view
+- [ ] Medium/Large Enterprise users see Enterprise Dashboard with team features
 
 ---
 
