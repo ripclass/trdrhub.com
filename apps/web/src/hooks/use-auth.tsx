@@ -229,7 +229,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }),
         'Sign up'
       )
-      if (error) throw error
+      if (error) {
+        // Handle specific Supabase error codes
+        if (error.message?.includes('signup_disabled') || error.message?.includes('Signup is disabled')) {
+          throw new Error('User registration is currently disabled. Please contact support or enable signup in Supabase settings.')
+        }
+        throw error
+      }
 
       // Ensure we have a session (if confirm email is off this should exist; else sign in)
       let session = (await supabase.auth.getSession()).data.session
