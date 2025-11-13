@@ -113,19 +113,29 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
     
     if needs_restoration:
         company = None
+        needs_commit = False
         try:
             # Try to get company - first by ID, then by email
             if current_user.company_id:
                 company = db.query(Company).filter(Company.id == current_user.company_id).first()
-            elif current_user.email:
+                if company:
+                    logger.info(f"📋 Found company {company.id} for user {current_user.id} by company_id")
+                else:
+                    logger.warning(f"⚠️ User {current_user.id} has company_id {current_user.company_id} but company not found")
+            
+            if not company and current_user.email:
                 # Only query by email if no company_id (to avoid unnecessary queries)
                 company = db.query(Company).filter(Company.contact_email == current_user.email).first()
                 if company:
-                    # Link company to user in a single commit
+                    # Link company to user
                     current_user.company_id = company.id
+                    needs_commit = True
+                    logger.info(f"🔗 Found and linking company {company.id} to user {current_user.id} by email {current_user.email}")
+                else:
+                    logger.warning(f"⚠️ No company found for user {current_user.id} with email {current_user.email}")
             
             if company:
-                # Build restored data without committing yet
+                # Build restored data
                 event_metadata = company.event_metadata or {}
                 company_type = event_metadata.get('company_type') or event_metadata.get('business_type')
                 company_size = event_metadata.get('company_size')
@@ -148,21 +158,27 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
                 elif company_type:
                     restored_data['business_types'] = [company_type]
                 
-                # Single commit for both company linking and data restoration
+                # Set restored data
                 if restored_data:
                     current_user.onboarding_data = restored_data
+                    needs_commit = True
+                    logger.info(f"📦 Restored onboarding data for user {current_user.id}: {restored_data}")
                 
                 # Auto-complete if we have company info and user is not a bank
                 if company.name and company_type and current_user.role not in {'bank_officer', 'bank_admin'}:
-                    current_user.onboarding_completed = True
-                    current_user.status = 'active'
+                    if not current_user.onboarding_completed:
+                        current_user.onboarding_completed = True
+                        current_user.status = 'active'
+                        needs_commit = True
+                        logger.info(f"✅ Auto-completed onboarding for user {current_user.id}")
                 
-                # Single commit for all changes
-                if current_user.company_id != company.id or restored_data or current_user.onboarding_completed:
+                # Commit all changes at once
+                if needs_commit:
                     db.commit()
-                    logger.info(f"✅ Restored and linked company for user {current_user.id}")
+                    db.refresh(current_user)  # Refresh to get updated data
+                    logger.info(f"✅ Successfully restored and linked company for user {current_user.id}")
         except Exception as restore_error:
-            logger.error(f"Error restoring onboarding data: {str(restore_error)}")
+            logger.error(f"❌ Error restoring onboarding data for user {current_user.id}: {str(restore_error)}")
             logger.error(traceback.format_exc())
             db.rollback()
             # Continue - return status with whatever data we have
