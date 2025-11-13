@@ -254,53 +254,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     let mounted = true
+    let initTimeout: NodeJS.Timeout | null = null
 
+    // Use onAuthStateChange as primary method (more reliable than getSession on refresh)
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return
+      if (session) {
+        setIsLoading(true)
+        try {
+          await fetchUserProfile(session.access_token)
+        } finally {
+          if (mounted) setIsLoading(false)
+        }
+      } else {
+        setUser(null)
+        if (mounted) {
+          if (GUEST_MODE) setGuest()
+          setIsLoading(false)
+        }
+      }
+    })
+
+    // Also try getSession immediately (but with timeout) as fallback
+    // This handles cases where onAuthStateChange hasn't fired yet
     const init = async () => {
       setIsLoading(true)
       try {
-        // Add timeout to getSession to prevent hanging on refresh
         const { data } = await Promise.race([
           supabase.auth.getSession(),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+            setTimeout(() => reject(new Error('Session check timeout')), 3000)
           )
         ]) as { data: { session: any } }
         
         if (!mounted) return
         if (data.session) {
           try {
-            await fetchUserProfile()
+            await fetchUserProfile(data.session.access_token)
           } finally {
             if (mounted) setIsLoading(false)
           }
         } else {
-          if (GUEST_MODE) setGuest()
-          setIsLoading(false)
+          // No session found - wait a bit for onAuthStateChange to fire
+          // If it doesn't fire within 2 seconds, assume no session
+          initTimeout = setTimeout(() => {
+            if (mounted) {
+              if (GUEST_MODE) setGuest()
+              setIsLoading(false)
+            }
+          }, 2000)
         }
       } catch (error: any) {
         console.warn('Auth init: Failed to get session:', error?.message || error)
         if (!mounted) return
-        if (GUEST_MODE) setGuest()
-        setIsLoading(false)
+        // Wait a bit for onAuthStateChange to fire before giving up
+        initTimeout = setTimeout(() => {
+          if (mounted) {
+            if (GUEST_MODE) setGuest()
+            setIsLoading(false)
+          }
+        }, 2000)
       }
     }
 
     init()
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return
-      if (session) {
-        setIsLoading(true)
-        try {
-          await fetchUserProfile()
-        } finally {
-          if (mounted) setIsLoading(false)
-        }
-      } else {
-        setUser(null)
-        setIsLoading(false)
-      }
-    })
 
     return () => {
       mounted = false
