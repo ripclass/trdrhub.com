@@ -1,16 +1,19 @@
 # Auth0 Quick Configuration Reference
 
-## Direct Auth0 Integration (No Supabase Auth Needed)
+## Supabase Third Party Auth (Simplified!)
 
-Since Supabase doesn't have Auth0 as a built-in provider, we're using **direct Auth0 integration**. Users log in directly with Auth0, and the backend validates Auth0 tokens.
+Supabase supports Auth0 as a **Third Party Auth** provider. You only need to provide your Auth0 domain - Supabase handles everything else!
 
 ## Your Current Values
 
-### Auth0
+### Supabase Configuration
+- **Auth0 Domain**: `dev-2zhljb8cf2kc2h5t.us` ✅ **Already configured in Supabase Dashboard**
+- **Status**: ✅ **Enabled**
+
+### Auth0 (for backend token validation)
 - **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com`
 - **Issuer**: `https://dev-2zhljb8cf2kc2h5t.us.auth0.com/`
 - **JWKS URL**: `https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json`
-- **Client ID**: ⚠️ **Get from Auth0 Dashboard → Applications → Your App**
 - **Audience**: ⚠️ **Get from Auth0 Dashboard → APIs → Your API → Identifier**
 
 ## How to Get AUTH0_AUDIENCE
@@ -34,16 +37,14 @@ Since Supabase doesn't have Auth0 as a built-in provider, we're using **direct A
 
 ## Vercel Environment Variables (Frontend)
 
+**No Auth0 environment variables needed!** Supabase handles Auth0 OAuth automatically. Just make sure you have:
+
 ```bash
-# Auth0 Configuration
-VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
-VITE_AUTH0_CLIENT_ID=your-auth0-client-id-here
-VITE_AUTH0_AUDIENCE=https://your-api-identifier-here
+VITE_SUPABASE_URL=https://nnmmhgnriisfsncphipd.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-**⚠️ Get these from Auth0 Dashboard:**
-- **VITE_AUTH0_CLIENT_ID**: Applications → Your App → Client ID
-- **VITE_AUTH0_AUDIENCE**: APIs → Your API → Identifier
+That's it! Supabase Third Party Auth handles the rest.
 
 ## Render Environment Variables (Backend)
 
@@ -58,28 +59,24 @@ AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
 
 ## Auth0 Dashboard Configuration
 
-### Application Settings
+### Application Settings (Optional)
+
+Supabase automatically configures Auth0 callbacks. If you want to customize:
+
 - **Allowed Callback URLs**: 
   ```
-  https://trdrhub.com/auth/callback,http://localhost:5173/auth/callback
-  ```
-- **Allowed Web Origins**: 
-  ```
-  https://trdrhub.com,http://localhost:5173
-  ```
-- **Allowed Logout URLs**: 
-  ```
-  https://trdrhub.com,http://localhost:5173
+  https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback,https://trdrhub.com/auth/callback,http://localhost:5173/auth/callback
   ```
 
-**Note**: No Supabase callback URL needed - we're using direct Auth0 integration!
+**Note**: Supabase handles the callback URL automatically - this is optional!
 
 ## Testing Checklist
 
-- [ ] Auth0 provider enabled in Supabase
-- [ ] Auth0 Application configured with correct callback URLs
-- [ ] Auth0 API created and Identifier copied
-- [ ] Backend environment variables set in Render
+- [x] Auth0 provider enabled in Supabase ✅ (Already done!)
+- [x] Auth0 Domain configured: `dev-2zhljb8cf2kc2h5t.us` ✅
+- [ ] Backend environment variables set in Render (AUTH0_ISSUER, AUTH0_AUDIENCE, AUTH0_JWKS_URL)
 - [ ] Frontend has `loginWithAuth0` button
 - [ ] Test login flow end-to-end
+
+**That's it!** Supabase Third Party Auth is much simpler - no Client ID/Secret needed!
 

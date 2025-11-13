@@ -1,41 +1,33 @@
-# Auth0 Setup Guide - Direct Integration
+# Auth0 Setup Guide via Supabase Third Party Auth
 
-This guide explains how to configure Auth0 as a direct authentication provider (bypassing Supabase auth).
+This guide explains how to configure Auth0 using Supabase's Third Party Auth feature.
 
 ## Overview
 
-**Direct Auth0 Integration**: Users log in directly with Auth0, and the backend validates Auth0 tokens. This is simpler and more reliable than trying to use Supabase as a proxy (since Supabase doesn't have Auth0 as a built-in provider).
+**Supabase Third Party Auth**: Supabase supports Auth0 as a third-party authentication provider. You only need to provide your Auth0 domain name, and Supabase handles the OAuth flow. This is simpler than direct Auth0 integration.
 
-## Step 1: Configure Auth0 Application
+## Step 1: Configure Auth0 in Supabase Dashboard
+
+1. **Go to Supabase Dashboard** → Your Project → Authentication → Sign In / Providers
+2. **Click "Third Party Auth" tab**
+3. **Click "Add provider"** → Select "Auth0"
+4. **Enter your Auth0 Domain**: `dev-2zhljb8cf2kc2h5t.us` (without `.auth0.com`)
+5. **Enable the integration** (toggle should be green/enabled)
+
+That's it! Supabase handles the OAuth flow automatically. No Client ID/Secret needed.
+
+## Step 2: Configure Auth0 Application (Optional - for custom callback URLs)
+
+If you want to customize callback URLs in Auth0:
 
 1. **Go to Auth0 Dashboard** → Applications → Your Application
 2. **Settings tab:**
    - **Allowed Callback URLs**: Add:
-     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
-     - `https://trdrhub.com/auth/callback`
-     - `http://localhost:5173/auth/callback`
-   - **Allowed Web Origins**: Add:
-     - `https://trdrhub.com`
-     - `http://localhost:5173`
-   - **Allowed Logout URLs**: Add:
-     - `https://trdrhub.com`
-     - `http://localhost:5173`
+     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback` (Supabase handles this)
+     - `https://trdrhub.com/auth/callback` (your app callback)
+     - `http://localhost:5173/auth/callback` (development)
 
-## Step 2: Configure Frontend Environment Variables
-
-Add these to your frontend `.env` file (or Vercel environment variables):
-
-```bash
-# Auth0 Configuration
-VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
-VITE_AUTH0_CLIENT_ID=your-auth0-client-id
-VITE_AUTH0_AUDIENCE=https://your-api-identifier
-```
-
-**Where to get these:**
-- **VITE_AUTH0_DOMAIN**: Your Auth0 domain (`dev-2zhljb8cf2kc2h5t.us.auth0.com`)
-- **VITE_AUTH0_CLIENT_ID**: Auth0 Dashboard → Applications → Your App → Client ID
-- **VITE_AUTH0_AUDIENCE**: Auth0 Dashboard → APIs → Your API → Identifier
+**Note**: Supabase automatically configures the callback URL, so this step is optional.
 
 ## Step 3: Configure Backend Environment Variables
 
@@ -57,9 +49,9 @@ AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
 
 **Note**: These are optional if you're using Auth0 via Supabase. The backend will validate Supabase tokens, which contain Auth0 user info. However, it's recommended to set them for direct Auth0 token validation support.
 
-## Step 4: Update Frontend Login
+## Step 4: Frontend is Ready!
 
-The frontend now supports Auth0 login. Update your login page to include an Auth0 button:
+The frontend already supports Auth0 login via Supabase. Just add a button to your login page:
 
 ```tsx
 import { useAuth } from '@/hooks/use-auth'
@@ -78,8 +70,8 @@ function LoginPage() {
 ## Step 5: Test the Flow
 
 1. **Click "Login with Auth0"** on your login page
-2. **Redirected to Auth0** login page
-3. **After login**, redirected back to Supabase callback
+2. **Supabase redirects to Auth0** login page (handled automatically)
+3. **After login**, Auth0 redirects back to Supabase
 4. **Supabase creates/updates user** with Auth0 user info
 5. **Frontend receives Supabase session** token
 6. **Backend validates Supabase token** (which contains Auth0 user info)

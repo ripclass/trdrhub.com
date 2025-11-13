@@ -200,27 +200,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const loginWithAuth0 = async () => {
-    // Direct Auth0 login - bypass Supabase
-    const AUTH0_DOMAIN = import.meta.env.VITE_AUTH0_DOMAIN || 'dev-2zhljb8cf2kc2h5t.us.auth0.com'
-    const AUTH0_CLIENT_ID = import.meta.env.VITE_AUTH0_CLIENT_ID
-    const AUTH0_AUDIENCE = import.meta.env.VITE_AUTH0_AUDIENCE
-    
-    if (!AUTH0_CLIENT_ID) {
-      throw new Error('Auth0 Client ID not configured. Please set VITE_AUTH0_CLIENT_ID environment variable.')
-    }
-    
-    // Redirect to Auth0 login
-    const redirectUri = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined
-    const auth0LoginUrl = `https://${AUTH0_DOMAIN}/authorize?` +
-      `client_id=${AUTH0_CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri || '')}` +
-      `&response_type=code` +
-      `&scope=openid profile email` +
-      (AUTH0_AUDIENCE ? `&audience=${encodeURIComponent(AUTH0_AUDIENCE)}` : '')
-    
-    if (typeof window !== 'undefined') {
-      window.location.href = auth0LoginUrl
-    }
+    // Use Supabase's Third Party Auth (Auth0) - Supabase handles the OAuth flow
+    await supabase.auth.signInWithOAuth({
+      provider: 'auth0',
+      options: {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+      },
+    })
   }
 
   const registerWithEmail = async (

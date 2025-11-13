@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { handleAuth0Callback, getAuth0Token } from '@/lib/auth0'
-import { api } from '@/api/client'
+import { supabase } from '@/lib/supabase'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
@@ -11,49 +10,56 @@ export default function AuthCallback() {
   useEffect(() => {
     const processCallback = async () => {
       try {
-        setStatus('Exchanging authorization code...')
+        setStatus('Completing authentication...')
         
-        // Handle Auth0 callback and get token
-        const auth0Token = await handleAuth0Callback()
+        // Supabase handles the OAuth callback automatically
+        // Check if we have a session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        if (!auth0Token) {
-          // Check if this is a Supabase callback (Google OAuth)
-          const urlParams = new URLSearchParams(window.location.search)
-          const code = urlParams.get('code')
+        if (sessionError) {
+          throw sessionError
+        }
+        
+        if (!session) {
+          // Wait a bit for Supabase to process the callback
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const { data: { session: retrySession } } = await supabase.auth.getSession()
           
-          if (code) {
-            // This might be a Supabase callback - let Supabase handle it
-            setStatus('Redirecting...')
-            navigate('/dashboard')
-            return
+          if (!retrySession) {
+            throw new Error('No session found after callback')
           }
-          
-          throw new Error('No authorization code found')
         }
 
         setStatus('Authenticating with backend...')
         
-        // Send Auth0 token to backend for validation and user creation
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/auth/auth0`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ token: auth0Token }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: 'Authentication failed' }))
-          throw new Error(errorData.detail || 'Authentication failed')
+        // Get Supabase token and send to backend for JWT token
+        const currentSession = session || (await supabase.auth.getSession()).data.session
+        if (!currentSession?.access_token) {
+          throw new Error('No access token available')
         }
 
-        const data = await response.json()
-        
-        // Store backend JWT token
-        if (data.access_token) {
-          localStorage.setItem('trdrhub_api_token', data.access_token)
+        // Also login to backend API to get JWT token for admin endpoints
+        try {
+          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+          const loginResponse = await fetch(`${API_BASE_URL}/auth/auth0`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ token: currentSession.access_token }),
+          })
+          
+          if (loginResponse.ok) {
+            const tokenData = await loginResponse.json()
+            if (tokenData.access_token) {
+              // Store backend JWT token for admin API calls
+              localStorage.setItem('trdrhub_api_token', tokenData.access_token)
+            }
+          }
+        } catch (backendLoginError) {
+          // Non-critical - Supabase login succeeded, backend login is optional
+          console.warn('Backend login failed (non-critical):', backendLoginError)
         }
 
         setStatus('Success! Redirecting...')
