@@ -8,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
-import { useExporterAuth } from "@/lib/exporter/auth";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/hooks/use-onboarding";
@@ -175,8 +174,7 @@ const getQuickActions = (viewMode: "export" | "import" | "all") => {
 
 export default function CombinedDashboard() {
   const { toast } = useToast();
-  const { user: mainUser } = useAuth();
-  const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
+  const { user: mainUser, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   
   const currentUser = mainUser ? {
@@ -184,7 +182,7 @@ export default function CombinedDashboard() {
     name: mainUser.full_name || mainUser.username || mainUser.email.split('@')[0],
     email: mainUser.email,
     role: 'exporter' as const,
-  } : exporterUser;
+  } : null;
 
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const { viewMode } = useCombined();
@@ -213,12 +211,10 @@ export default function CombinedDashboard() {
     const demoMode = localStorage.getItem('demo_mode') === 'true' || 
                     new URLSearchParams(window.location.search).get('demo') === 'true';
     
-    const hasAuth = mainUser || (isAuthenticated && !authLoading);
-    
-    if (!authLoading && !hasAuth && !demoMode) {
+    if (!authLoading && !mainUser && !demoMode) {
       navigate("/login");
     }
-  }, [isAuthenticated, authLoading, mainUser, navigate]);
+  }, [authLoading, mainUser, navigate]);
 
   useEffect(() => {
     if (!isLoadingOnboarding && needsOnboarding) {
@@ -238,8 +234,8 @@ export default function CombinedDashboard() {
     setSearchParams({ section });
   };
 
-  if (authLoading && !mainUser) return <div className="flex items-center justify-center h-screen">Loading...</div>;
-  if (!mainUser && (!isAuthenticated || authLoading)) return null;
+  if (authLoading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (!mainUser) return null;
 
   const handleKpiClick = (kpi: string, mode?: typeof viewMode) => {
     // Telemetry: Log KPI click
