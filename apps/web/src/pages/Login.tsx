@@ -101,14 +101,13 @@ export default function Login() {
               destination = "/lcopilot/combined-dashboard";
               console.log("✅ Routing to CombinedDashboard (both user, unknown size - defaulting to SME)");
             }
-          } else if (profile.role === "importer") {
+          } else if (backendRole === "importer") {
+            // CRITICAL FIX: Use backendRole, not profile.role
             destination = "/lcopilot/importer-dashboard";
-            console.log("✅ Routing to ImporterDashboard");
-          } else if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
-            destination = "/lcopilot/bank-dashboard";
-            console.log("✅ Routing to BankDashboard (profile role)");
+            console.log("✅ Routing to ImporterDashboard (backendRole)");
           } else {
-            console.log("⚠️ No match found, defaulting to exporter-dashboard");
+            // Default to exporter dashboard
+            console.log("⚠️ No specific match, defaulting to exporter-dashboard");
           }
           
           console.log("📍 Final destination:", destination);
@@ -136,14 +135,52 @@ export default function Login() {
           console.warn("Could not check profile for company info:", profileErr);
         }
         
-        // Final fallback to role-based routing if onboarding status unavailable
+        // Final fallback: Try to get onboarding status one more time with longer timeout
+        // This handles cases where backend is slow to respond
         if (destination === "/lcopilot/exporter-dashboard") {
-          if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
-            destination = "/lcopilot/bank-dashboard";
-          } else if (profile.role === "tenant_admin") {
-            destination = "/lcopilot/enterprise-dashboard";
-          } else if (profile.role === "importer") {
-            destination = "/lcopilot/importer-dashboard";
+          console.log("⚠️ Onboarding status unavailable, attempting one more fetch...");
+          try {
+            const fallbackStatus = await Promise.race([
+              getOnboardingStatus(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+            ]) as any;
+            
+            if (fallbackStatus) {
+              const fallbackRole = fallbackStatus.role;
+              const fallbackDetails = fallbackStatus.details as Record<string, any> | undefined;
+              const fallbackBusinessTypes = Array.isArray(fallbackDetails?.business_types) ? fallbackDetails.business_types : [];
+              const fallbackCompanyType = fallbackDetails?.company?.type;
+              const fallbackCompanySize = fallbackDetails?.company?.size;
+              const fallbackHasBoth = fallbackBusinessTypes.includes("exporter") && fallbackBusinessTypes.includes("importer");
+              const fallbackIsCompanyTypeBoth = fallbackCompanyType === "both" || fallbackCompanyType === "Both Exporter & Importer";
+              const fallbackIsCombinedUser = fallbackHasBoth || fallbackIsCompanyTypeBoth;
+              
+              if (fallbackRole === "bank_officer" || fallbackRole === "bank_admin") {
+                destination = "/lcopilot/bank-dashboard";
+                console.log("✅ Fallback: Routing to BankDashboard");
+              } else if (fallbackRole === "tenant_admin") {
+                destination = "/lcopilot/enterprise-dashboard";
+                console.log("✅ Fallback: Routing to EnterpriseDashboard");
+              } else if (fallbackIsCombinedUser) {
+                if (fallbackCompanySize === "sme" || !fallbackCompanySize) {
+                  destination = "/lcopilot/combined-dashboard";
+                  console.log("✅ Fallback: Routing to CombinedDashboard");
+                } else if (fallbackCompanySize === "medium" || fallbackCompanySize === "large") {
+                  destination = "/lcopilot/enterprise-dashboard";
+                  console.log("✅ Fallback: Routing to EnterpriseDashboard (Medium/Large both)");
+                }
+              } else if (fallbackRole === "importer") {
+                destination = "/lcopilot/importer-dashboard";
+                console.log("✅ Fallback: Routing to ImporterDashboard");
+              }
+            }
+          } catch (fallbackErr) {
+            console.warn("Fallback onboarding status check also failed:", fallbackErr);
+            // Last resort: check profile.role (but this is unreliable)
+            if (profile.role === "importer") {
+              destination = "/lcopilot/importer-dashboard";
+              console.log("⚠️ Last resort: Routing to ImporterDashboard (from profile.role - may be incorrect)");
+            }
           }
         }
       }
@@ -154,14 +191,15 @@ export default function Login() {
         console.log("⚠️ Onboarding data is empty, retrying status check after delay...");
         try {
           // Wait a bit for backend to potentially restore data
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
           const retryStatus = await Promise.race([
             getOnboardingStatus(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
           ]) as any;
-          
+
           if (retryStatus && (retryStatus.details && Object.keys(retryStatus.details).length > 0 || retryStatus.company_id)) {
             console.log("✅ Retry successful, re-evaluating routing...");
+            const retryBackendRole = retryStatus.role;
             const retryDetails = retryStatus.details as Record<string, any> | undefined;
             const retryBusinessTypes = Array.isArray(retryDetails?.business_types) ? retryDetails.business_types : [];
             const retryCompanyType = retryDetails?.company?.type;
@@ -170,14 +208,24 @@ export default function Login() {
             const retryIsCompanyTypeBoth = retryCompanyType === "both" || retryCompanyType === "Both Exporter & Importer";
             const retryIsCombinedUser = retryHasBoth || retryIsCompanyTypeBoth;
             
-            if (retryIsCombinedUser) {
+            // Re-evaluate routing with retry data
+            if (retryBackendRole === "bank_officer" || retryBackendRole === "bank_admin") {
+              destination = "/lcopilot/bank-dashboard";
+              console.log("✅ Retry: Routing to BankDashboard");
+            } else if (retryBackendRole === "tenant_admin") {
+              destination = "/lcopilot/enterprise-dashboard";
+              console.log("✅ Retry: Routing to EnterpriseDashboard (tenant_admin)");
+            } else if (retryIsCombinedUser) {
               if (retryCompanySize === "sme" || !retryCompanySize) {
                 destination = "/lcopilot/combined-dashboard";
                 console.log("✅ Retry: Routing to CombinedDashboard");
               } else if (retryCompanySize === "medium" || retryCompanySize === "large") {
                 destination = "/lcopilot/enterprise-dashboard";
-                console.log("✅ Retry: Routing to EnterpriseDashboard");
+                console.log("✅ Retry: Routing to EnterpriseDashboard (Medium/Large both)");
               }
+            } else if (retryBackendRole === "importer") {
+              destination = "/lcopilot/importer-dashboard";
+              console.log("✅ Retry: Routing to ImporterDashboard");
             }
           }
         } catch (retryErr) {

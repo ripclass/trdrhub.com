@@ -530,9 +530,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
+    console.log('🔴 Logging out - clearing all authentication state...')
+    
+    // Clear Supabase session
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Error signing out from Supabase:', error)
+    }
+    
+    // Clear user state
     setUser(null)
+    
+    // Clear ALL localStorage tokens and auth data
     if (typeof window !== 'undefined') {
+      // Clear all possible auth tokens
+      localStorage.removeItem('bank_token')
+      localStorage.removeItem('trdrhub_api_token')
+      localStorage.removeItem('exporter_token')
+      localStorage.removeItem('importer_token')
+      localStorage.removeItem('csrf_token')
+      
+      // Clear any other auth-related data
+      localStorage.removeItem('demo_mode')
+      localStorage.removeItem('onboarding_completed')
+      
+      // Clear sessionStorage as well
+      sessionStorage.clear()
+      
+      // Force full page reload to ensure clean state
+      // This prevents any cached state or React state from persisting
       window.location.href = '/login'
     }
   }

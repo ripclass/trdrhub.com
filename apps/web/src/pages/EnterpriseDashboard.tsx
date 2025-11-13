@@ -1,9 +1,11 @@
-import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { useAuth } from '@/hooks/use-auth'
 import {
   Users,
   Building,
@@ -85,6 +87,33 @@ const strategicInsights = [
 ]
 
 export default function EnterpriseDashboard() {
+  const { user, isLoading: authLoading } = useAuth()
+  const navigate = useNavigate()
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login')
+    }
+  }, [authLoading, user, navigate])
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Don't render dashboard if not authenticated
+  if (!user) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/10 p-6">
       <div className="mx-auto w-full max-w-7xl space-y-10">
