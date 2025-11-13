@@ -244,6 +244,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!session) throw new Error('Authentication session not established after sign up')
 
+      // Create user in backend database
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+        const registerResponse = await fetch(`${API_BASE_URL}/auth/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            email,
+            password,
+            full_name: fullName,
+            role,
+          }),
+        })
+
+        if (!registerResponse.ok) {
+          const errorData = await registerResponse.json().catch(() => ({ detail: 'Backend registration failed' }))
+          // If user already exists, that's okay - continue
+          if (registerResponse.status !== 400 || !errorData.detail?.includes('already registered')) {
+            console.warn('Backend registration failed (non-critical):', errorData.detail || 'Unknown error')
+            // Continue anyway - user might have been created via webhook or already exists
+          }
+        }
+      } catch (backendError) {
+        // Non-critical - Supabase user is created, backend user might exist or be created later
+        console.warn('Backend registration error (non-critical):', backendError)
+      }
+
       const profile = await fetchUserProfile()
       return profile
     } finally {
