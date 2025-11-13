@@ -61,14 +61,19 @@ export default function Login() {
           const details = status.details as Record<string, any> | undefined;
           const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
           const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
+          const companySize = details?.company?.size;
           
           let newDestination = destination;
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
             newDestination = "/lcopilot/bank-dashboard";
           } else if (backendRole === "tenant_admin") {
             newDestination = "/lcopilot/enterprise-dashboard";
-          } else if (hasBoth) {
+          } else if (hasBoth && companySize === "sme") {
+            // SME "both" users → CombinedDashboard (unified view)
             newDestination = "/lcopilot/combined-dashboard";
+          } else if (hasBoth && (companySize === "medium" || companySize === "large")) {
+            // Medium/Large "both" users → EnterpriseDashboard (they should be tenant_admin, but check anyway)
+            newDestination = "/lcopilot/enterprise-dashboard";
           }
           
           // Only navigate if destination changed
