@@ -201,18 +201,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const loginWithAuth0 = async () => {
-    // Use Auth0 directly (not through Supabase)
-    const { getAuth0Client } = await import('@/lib/auth0')
-    const auth0 = await getAuth0Client()
-    await auth0.loginWithRedirect({
-      authorizationParams: {
-        screen_hint: 'signup', // Show signup option
-        // Explicitly skip organization requirement
-        organization: undefined,
-        // Add prompt to allow signup without organization
-        prompt: 'login',
-      },
-    })
+    try {
+      // Verify environment variables are set
+      const domain = import.meta.env.VITE_AUTH0_DOMAIN
+      const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID
+      
+      if (!domain || !clientId) {
+        throw new Error(
+          'Auth0 is not configured. Please set VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID environment variables.'
+        )
+      }
+
+      // Use Auth0 directly (not through Supabase)
+      const { getAuth0Client } = await import('@/lib/auth0')
+      const auth0 = await getAuth0Client()
+      await auth0.loginWithRedirect({
+        authorizationParams: {
+          screen_hint: 'signup', // Show signup option on Auth0 login page
+        },
+      })
+    } catch (error: any) {
+      console.error('Auth0 login error:', error)
+      throw error
+    }
   }
 
   const registerWithEmail = async (
