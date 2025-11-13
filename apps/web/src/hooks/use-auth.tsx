@@ -65,7 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  // Default timeouts
   const AUTH_TIMEOUT_MS = 10000
+  const SIGNIN_TIMEOUT_MS = 45000
+  const PROFILE_TIMEOUT_MS = 20000
 
   const withTimeout = async <T,>(promise: Promise<T>, label: string, ms = AUTH_TIMEOUT_MS): Promise<T> => {
     let timer: any
@@ -89,7 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const { data: userData } = await withTimeout(
         api.get('/auth/me', { headers }),
-        'Loading profile'
+        'Loading profile',
+        PROFILE_TIMEOUT_MS
       )
       const mapped: User = {
         id: userData.id,
@@ -173,7 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Login to Supabase first
       const { error } = await withTimeout(
         supabase.auth.signInWithPassword({ email, password }),
-        'Signing in'
+        'Signing in',
+        SIGNIN_TIMEOUT_MS
       )
       if (error) throw error
       
