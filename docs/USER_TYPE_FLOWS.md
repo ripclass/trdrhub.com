@@ -47,19 +47,7 @@
 
 ### 5. Financial Institutes (Non-Bank FIs)
 
-**⚠️ QUESTION**: Are there non-bank FIs that need LC validation?
-
-**Analysis**:
-- **Trade Finance Consulting Companies**: ❌ Don't need LC validation (they advise, don't process)
-- **Factoring Companies**: ⚠️ May need LC validation if they accept LCs as collateral
-- **Trade Finance Companies**: ⚠️ May need LC validation if they finance against LCs
-- **Export Credit Agencies**: ⚠️ May need LC validation for guarantee purposes
-
-**✅ RECOMMENDATION**: 
-- **Option 1**: Remove FI option, only keep "Bank" (simplest)
-- **Option 2**: Keep FI but use same `bank_officer` role with `company_type: 'financial_institute'` (if any FIs actually need the app)
-
-**Current Decision**: ⏳ **PENDING USER CLARIFICATION** - Remove FI or keep with bank roles?
+**✅ DECISION**: ❌ **REMOVED** - Financial Institutes act as consultants and don't check LCs themselves. They advise clients but don't process or validate LCs directly. Therefore, FI option is removed from registration.
 
 ### 6. Trade Consultants
 - **Status**: ❌ **REMOVED** - Not supported in current version
@@ -395,20 +383,15 @@ const getRoleForCompanyType = (companyType: string, companySize?: string): strin
 };
 ```
 
-### Phase 3: Financial Institute Decision
+### Phase 3: Remove Financial Institute Option
 
-**⚠️ PENDING USER DECISION**: Remove FI option or keep it?
+**✅ DECISION**: Remove FI option - FIs act as consultants and don't check LCs themselves.
 
-**Option A: Remove FI (Simplest)**
-- Remove "Financial Institute" option from registration
-- Only keep "Bank" option
-- Update registration form to only show "Bank"
-
-**Option B: Keep FI (If needed)**
-- Add institution type dropdown: **Bank** or **Financial Institute**
-- Store in `onboarding_data.institution_type`
-- Store in `company.type` as `bank` or `financial_institute`
-- Use same roles (`bank_officer` / `bank_admin`) but allow future feature differentiation
+**Changes Required:**
+- Remove "Financial Institute" option from registration form
+- Update registration form to only show "Bank" (not "Bank / Financial Institute")
+- Remove FI-related code and documentation
+- Simplify registration flow
 
 ### Phase 4: Add Enterprise Features
 
@@ -444,7 +427,7 @@ What best describes your business?
 [ ] Exporter only
 [ ] Importer only  
 [ ] Both Exporter & Importer
-[ ] Bank / Financial Institute
+[ ] Bank
 ```
 
 ### Step 3: Company Size (REQUIRED if "Both Exporter & Importer")
@@ -458,9 +441,8 @@ How many employees does your company have?
 
 **Note**: Company size is **required** for "Both Exporter & Importer" to determine role assignment.
 
-### Step 4: Additional Information (if Bank/FI)
-- Institution type: **Bank** or **Financial Institute** (dropdown)
-- Regulator ID (required for banks, optional for FIs)
+### Step 4: Additional Information (if Bank)
+- Regulator ID (required for banks)
 
 ### Step 5: Terms & Conditions
 - Terms agreement checkbox
@@ -477,7 +459,6 @@ How many employees does your company have?
 | Medium Enterprise (Both) | `tenant_admin` | Medium (21-50) | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ (combined export/import) |
 | Large Enterprise (Both) | `tenant_admin` | Large (50+) | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ (combined export/import) |
 | Bank | `bank_officer` | N/A | Yes (KYC) | Yes | Yes | BankDashboardV2 |
-| Financial Institute | ⏳ **PENDING** | N/A | ⏳ **PENDING** | ⏳ **PENDING** | ⏳ **PENDING** | ⏳ **PENDING** |
 
 ---
 
@@ -518,9 +499,7 @@ How many employees does your company have?
 
 1. **Enterprise Users**: ✅ **DECIDED** - Only Medium & Large Enterprises get `tenant_admin` role. SMEs selecting "both" remain as `exporter` with `business_types: ['exporter', 'importer']`.
 
-2. **Financial Institutes**: ⏳ **PENDING DECISION** - User questioning if non-bank FIs actually need LC validation. Trade finance consulting companies don't need it. Options:
-   - **Option A**: Remove FI option entirely, only keep "Bank"
-   - **Option B**: Keep FI option if any non-bank FIs (factoring companies, trade finance companies) actually need LC validation
+2. **Financial Institutes**: ✅ **DECIDED** - Removed FI option. FIs act as consultants and don't check LCs themselves, so they don't need LC validation functionality.
 
 3. **Consultants**: ✅ **DECIDED** - Removed from supported user types.
 
@@ -536,7 +515,9 @@ How many employees does your company have?
    - Different post-onboarding features based on company size
 
 6. **Combined Dashboard**: ✅ **REQUIRED** - Need unified dashboard for users who do both exporting and importing:
-   - Can validate both export and import LCs
-   - Switch between exporter view, importer view, or unified combined view
+   - **SME "both" users**: Unified combined view (export + import together) - simpler, less cognitive load
+   - **Medium/Large Enterprise**: Enhanced combined dashboard with advanced filtering and team features
+   - Can validate both export and import LCs from same interface
+   - Filter by type if needed, but default is unified view for SMEs
    - Critical for "both" users (SME, Medium, Large)
 

@@ -9,7 +9,7 @@
 ## Decisions Summary
 
 ✅ **Enterprise Users**: Only Medium & Large Enterprises get `tenant_admin` role  
-⏳ **Financial Institutes**: **PENDING DECISION** - Remove FI option or keep with bank roles?  
+✅ **Financial Institutes**: Removed - FIs act as consultants and don't check LCs themselves  
 ✅ **Consultants**: Removed from supported types  
 ✅ **Company Size**: Affects features, limits, and onboarding flow  
    - **SME**: 1-20 employees
@@ -17,6 +17,8 @@
    - **Large**: 50+ employees
 ✅ **SME vs Enterprise**: Different onboarding flows  
 ✅ **Combined Dashboard**: Required for users who do both exporting and importing
+   - **SME "both"**: Unified combined view (export + import together)
+   - **Medium/Large Enterprise**: Enhanced dashboard with advanced filtering and team features
 
 ---
 
@@ -58,26 +60,10 @@ const [companySize, setCompanySize] = useState<string>("");
 )}
 ```
 
-3. Add institution type field (shown when companyType === "bank"):
+3. Remove institution type field (FI option removed):
 ```tsx
-{formData.companyType === "bank" && (
-  <div className="space-y-2 sm:col-span-2">
-    <Label htmlFor="institutionType">Institution type</Label>
-    <Select
-      value={institutionType}
-      onValueChange={(value) => setInstitutionType(value)}
-      required
-    >
-      <SelectTrigger className="h-11">
-        <SelectValue placeholder="Select institution type" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="bank">Bank</SelectItem>
-        <SelectItem value="financial_institute">Financial Institute (Non-Bank)</SelectItem>
-      </SelectContent>
-    </Select>
-  </div>
-)}
+// REMOVED - No longer needed since FI option is removed
+// Only banks register, no need to distinguish Bank vs FI
 ```
 
 4. Update validation:
@@ -224,20 +210,41 @@ const determineInitialStep = (): WizardStep => {
 **File**: `apps/web/src/pages/CombinedDashboard.tsx` (new) - For SME "both" users  
 **File**: `apps/web/src/pages/EnterpriseDashboard.tsx` (new) - For Medium/Large Enterprise
 
-**Features (Both Dashboards):**
-- **CRITICAL**: Unified LC validation for both export and import LCs
-- Switch between exporter view, importer view, or unified combined view
-- Single interface for all LC validation needs
-- Filter by LC type (export/import/both)
+**Combined Dashboard (SME "both" users):**
+- **Unified View**: Export and import LCs shown together in one interface
+- **Why Unified?**
+  - SMEs (1-20 employees) typically have one person managing both
+  - Lower volume doesn't require separate views
+  - Reduces context switching and cognitive load
+  - Simpler mental model - "all my LCs in one place"
+- **Features**:
+  - Single interface showing both export and import LCs
+  - Filter by LC type (export/import/both) if needed
+  - Can validate both types from same dashboard
+  - Basic analytics across all LCs
 
-**Enterprise Dashboard Additional Features:**
-- Team management section
-- Workspace sharing
-- Multi-user access controls
-- Enhanced analytics (company-wide)
+**Enterprise Dashboard (Medium/Large Enterprise):**
+- **Enhanced Combined View**: Advanced filtering and team features
+- **Why Advanced?**
+  - Medium/Large enterprises have teams managing different aspects
+  - Higher volume requires better organization
+  - Need workspace separation for departments/projects
+  - Team collaboration essential
+- **Features**:
+  - Unified dashboard with advanced filtering (all/export/import/by workspace/by team)
+  - Team management section
+  - Workspace sharing (multiple workspaces for departments/projects)
+  - Multi-user access controls (role-based permissions)
+  - Enhanced analytics (company-wide insights)
 
 **Routing:**
 ```typescript
+// SME "both" users (exporter role with business_types: ['exporter', 'importer'])
+if (user.role === "exporter" && user.business_types?.includes("importer")) {
+  return "/combined-dashboard";
+}
+
+// Medium/Large Enterprise (tenant_admin role)
 case "tenant_admin":
   return "/enterprise-dashboard";
 ```
@@ -278,14 +285,15 @@ def check_quota(user: User, db: Session) -> bool:
 
 **File**: `apps/web/src/pages/Register.tsx`
 
-**Remove consultant option:**
+**Remove consultant and FI options:**
 ```typescript
 const COMPANY_TYPES = [
   { value: "exporter", label: "Exporter" },
   { value: "importer", label: "Importer" },
   { value: "both", label: "Both Exporter & Importer" },
-  { value: "bank", label: "Bank / Financial Institute" },
+  { value: "bank", label: "Bank" },
   // REMOVED: { value: "consultant", label: "Trade Consultant" },
+  // REMOVED: { value: "financial_institute", label: "Financial Institute" },
 ];
 ```
 
@@ -300,9 +308,8 @@ const COMPANY_TYPES = [
 - [ ] Medium "both" registration → `tenant_admin` role
 - [ ] Large "both" registration → `tenant_admin` role
 - [ ] Bank registration → `bank_officer` role
-- [ ] FI registration → `bank_officer` role with `financial_institute` type
 - [ ] Company size field required for "both"
-- [ ] Institution type field shown for bank/FI
+- [ ] FI option removed from registration form
 
 ### Onboarding Tests
 - [ ] SME users skip onboarding wizard
@@ -325,11 +332,13 @@ const COMPANY_TYPES = [
 - [ ] Quota exceeded shows appropriate message
 
 ### Combined Dashboard Tests
-- [ ] SME "both" users see Combined Dashboard
+- [ ] SME "both" users see Combined Dashboard (unified view)
+- [ ] Export and import LCs shown together in unified interface
 - [ ] Can validate export LCs in combined dashboard
 - [ ] Can validate import LCs in combined dashboard
-- [ ] Can switch between exporter view, importer view, unified view
-- [ ] Medium/Large Enterprise users see Enterprise Dashboard with team features
+- [ ] Filter by LC type (export/import/both) works correctly
+- [ ] Default view shows all LCs together (unified)
+- [ ] Medium/Large Enterprise users see Enterprise Dashboard with advanced filtering and team features
 
 ---
 
