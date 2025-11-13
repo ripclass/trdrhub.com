@@ -313,7 +313,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       console.log('Calling fetchUserProfile() with Supabase token...')
       console.log('Token available:', token ? 'YES' : 'NO')
-      const profile = await fetchUserProfile()
+      // Pass token directly to avoid calling getSession() again
+      const profile = await fetchUserProfile(token)
       console.log('fetchUserProfile completed, profile:', profile?.email || 'NO PROFILE')
       return profile
     } catch (error: any) {
