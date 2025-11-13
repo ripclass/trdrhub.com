@@ -104,9 +104,23 @@ def _persist_onboarding_data(user: User, data: Dict[str, Any]) -> None:
 
 @router.get("/status", response_model=OnboardingStatus)
 async def get_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> OnboardingStatus:
-    # If onboarding_data is empty but user has a company, restore data from company record
-    if (not current_user.onboarding_data or current_user.onboarding_data == {}) and current_user.company_id:
-        company = db.query(Company).filter(Company.id == current_user.company_id).first()
+    # If onboarding_data is empty, try to restore from company record
+    if not current_user.onboarding_data or current_user.onboarding_data == {}:
+        company = None
+        
+        # First, try to get company by company_id if it exists
+        if current_user.company_id:
+            company = db.query(Company).filter(Company.id == current_user.company_id).first()
+        
+        # If no company found by ID, try to find by email (for users registered before company linking was fixed)
+        if not company and current_user.email:
+            company = db.query(Company).filter(Company.contact_email == current_user.email).first()
+            # If found by email, link it to the user
+            if company:
+                current_user.company_id = company.id
+                db.commit()
+                print(f"✅ Linked company {company.id} to user {current_user.id} by email")
+        
         if company:
             # Restore onboarding data from company record and registration metadata
             restored_data = {}

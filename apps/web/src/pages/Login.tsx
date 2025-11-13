@@ -32,9 +32,10 @@ export default function Login() {
       // Get onboarding status FIRST to determine correct dashboard
       // This is critical for "both" exporter/importer users who have role "exporter"
       let destination = "/lcopilot/exporter-dashboard";
+      let status: any = null;
       
       try {
-        const status = await Promise.race([
+        status = await Promise.race([
           getOnboardingStatus(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
         ]) as any;
@@ -144,6 +145,43 @@ export default function Login() {
           } else if (profile.role === "importer") {
             destination = "/lcopilot/importer-dashboard";
           }
+        }
+      }
+      
+      // CRITICAL: If onboarding status returned empty details, retry once after a short delay
+      // This gives the backend time to restore data from company record
+      if (status && (!status.details || Object.keys(status.details).length === 0) && !status.company_id) {
+        console.log("⚠️ Onboarding data is empty, retrying status check after delay...");
+        try {
+          // Wait a bit for backend to potentially restore data
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const retryStatus = await Promise.race([
+            getOnboardingStatus(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+          ]) as any;
+          
+          if (retryStatus && (retryStatus.details && Object.keys(retryStatus.details).length > 0 || retryStatus.company_id)) {
+            console.log("✅ Retry successful, re-evaluating routing...");
+            const retryDetails = retryStatus.details as Record<string, any> | undefined;
+            const retryBusinessTypes = Array.isArray(retryDetails?.business_types) ? retryDetails.business_types : [];
+            const retryCompanyType = retryDetails?.company?.type;
+            const retryCompanySize = retryDetails?.company?.size;
+            const retryHasBoth = retryBusinessTypes.includes("exporter") && retryBusinessTypes.includes("importer");
+            const retryIsCompanyTypeBoth = retryCompanyType === "both" || retryCompanyType === "Both Exporter & Importer";
+            const retryIsCombinedUser = retryHasBoth || retryIsCompanyTypeBoth;
+            
+            if (retryIsCombinedUser) {
+              if (retryCompanySize === "sme" || !retryCompanySize) {
+                destination = "/lcopilot/combined-dashboard";
+                console.log("✅ Retry: Routing to CombinedDashboard");
+              } else if (retryCompanySize === "medium" || retryCompanySize === "large") {
+                destination = "/lcopilot/enterprise-dashboard";
+                console.log("✅ Retry: Routing to EnterpriseDashboard");
+              }
+            }
+          }
+        } catch (retryErr) {
+          console.warn("Retry failed:", retryErr);
         }
       }
       
