@@ -37,7 +37,7 @@ export default function Login() {
       try {
         status = await Promise.race([
           getOnboardingStatus(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
         ]) as any;
         
         if (status) {
@@ -157,7 +157,7 @@ export default function Login() {
           await new Promise(resolve => setTimeout(resolve, 1000));
           const retryStatus = await Promise.race([
             getOnboardingStatus(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
           ]) as any;
           
           if (retryStatus && (retryStatus.details && Object.keys(retryStatus.details).length > 0 || retryStatus.company_id)) {

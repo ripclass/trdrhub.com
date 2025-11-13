@@ -58,6 +58,20 @@ S3_BUCKET_NAME=lcopilot-documents
 **Why:** Required for file uploads/downloads. `S3Service` initializes boto3 client which needs credentials.  
 **Impact:** File operations will fail. `TextractFallback` raises `ConfigError` if AWS credentials missing.
 
+### 7. Redis/Key Value Store (Caching & Background Tasks) - Required for production
+```bash
+REDIS_URL=redis://red-xxxxx:6379  # Internal Redis URL from Render Key Value Store
+# OR use individual variables:
+REDIS_HOST=red-xxxxx.render.com
+REDIS_PASSWORD=your-redis-password
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_SSL=true
+```
+**Why:** Required for caching, rate limiting, job status tracking, and distributed security features.  
+**Impact:** App will fall back to in-memory store if `USE_STUBS=true`, but will raise `RuntimeError` if `USE_STUBS=false` and Redis is not configured.  
+**Note:** Render calls this service "Key Value Store" (Redis-compatible). Render provides the `REDIS_URL` automatically when you link the Key Value service to your web service in the dashboard. For production, use the **Internal Redis URL** (starts with `redis://red-`) for better performance and security.
+
 ## Production Environment Settings
 
 ```bash
@@ -165,6 +179,27 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 ## Render-Specific Setup Steps
 
+### 0. Create Key Value Store (Redis) Instance
+
+**Option A: Via Render Dashboard**
+1. Go to Render Dashboard → Click **New +** → **Key Value** (Render's Redis-compatible service)
+2. Configure:
+   - **Name**: `trdrhub-redis`
+   - **Plan**: `Free` (dev) or `Starter`/`Standard` (production)
+   - **Region**: `Oregon` (match your API service)
+   - **Maxmemory Policy**: `allkeys-lru` (optional, for eviction policy)
+3. Click **Create Key Value**
+4. After creation, copy the **Internal Redis URL** (starts with `redis://red-`)
+
+**Option B: Via render.yaml (Blueprint)**
+The `render.yaml` file includes a Key Value service definition. When you deploy with `render blueprint deploy`, the Key Value store will be created automatically.
+
+**Link Key Value Store to Your API Service:**
+1. Go to your `trdrhub-api` service → **Environment** tab
+2. Scroll to **Service Connections** section
+3. Click **Connect** next to your Key Value instance
+4. Render will automatically add `REDIS_URL` environment variable
+
 ### 1. Add Environment Variables in Render Dashboard
 
 1. Go to your Render service → **Environment** tab
@@ -244,6 +279,20 @@ AWS_SECRET_ACCESS_KEY=your-secret-access-key
 S3_BUCKET_NAME=lcopilot-documents
 
 # ============================================
+# Redis/Key Value Store (Caching & Background Tasks)
+# ============================================
+# REDIS_URL is automatically set when Key Value service is linked in Render dashboard
+# Render calls this "Key Value Store" but it's Redis-compatible
+# If not linked, manually set:
+# REDIS_URL=redis://red-xxxxx:6379  # Internal Redis URL from Render Key Value Store
+# OR use individual variables:
+# REDIS_HOST=red-xxxxx.render.com
+# REDIS_PASSWORD=your-redis-password
+# REDIS_PORT=6379
+# REDIS_DB=0
+# REDIS_SSL=true
+
+# ============================================
 # CORS
 # ============================================
 CORS_ALLOW_ORIGINS=https://trdrhub.com,https://www.trdrhub.com,https://trdrhub.vercel.app
@@ -274,6 +323,8 @@ AI_ENRICHMENT=true
 | Missing `SUPABASE_JWKS_URL` | Authentication fails |
 | Missing `GOOGLE_CLOUD_PROJECT` | `DocumentAIService` raises `ValueError` |
 | Missing `AWS_ACCESS_KEY_ID` | `TextractFallback` raises `ConfigError` |
+| Missing `REDIS_URL` + `USE_STUBS=false` | `RuntimeError("Redis configuration is required")` |
+| Missing `REDIS_URL` + `USE_STUBS=true` | Falls back to in-memory store (not recommended for production) |
 
 ## Post-Deployment Verification
 

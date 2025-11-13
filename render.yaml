@@ -1,4 +1,10 @@
 services:
+  - type: kv
+    name: trdrhub-redis
+    plan: free  # Use 'starter' or 'standard' for production
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+
   - type: web
     name: trdrhub-api
     env: python
@@ -13,6 +19,10 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
+      # Redis connection will be automatically set when you link the Redis service
+      # in Render Dashboard → Service Connections, or manually set REDIS_URL here:
+      # - key: REDIS_URL
+      #   sync: false  # Set manually after Redis instance is created
       # Map secrets via Render Environment Groups or manual entries:
       # - fromGroup: trdrhub-api-secrets
 
