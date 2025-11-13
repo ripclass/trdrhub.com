@@ -51,6 +51,7 @@ export default function Login() {
       });
       
       // Navigate immediately (don't wait for onboarding status)
+      setIsLoading(false); // Clear loading state before navigation
       navigate(destination);
       
       // Optionally refine destination after onboarding status loads
@@ -83,7 +84,6 @@ export default function Login() {
         description: message,
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };

@@ -122,17 +122,16 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // First, try to get Supabase session token
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        
+        // First, try to get Supabase session token (use shared client instance)
         let token: string | null = null;
         
-        if (supabaseUrl && supabaseKey) {
-          const supabase = createClient(supabaseUrl, supabaseKey);
+        try {
+          // Import the shared Supabase client instead of creating a new one
+          const { supabase } = await import('@/lib/supabase');
           const { data: sessionData } = await supabase.auth.getSession();
           token = sessionData.session?.access_token || null;
+        } catch (supabaseError) {
+          console.warn('Failed to get Supabase session:', supabaseError);
         }
         
         // Fallback: Check for API token (preferred) or exporter token
