@@ -29,28 +29,53 @@ export default function Login() {
         description: "Welcome back to LCopilot!",
       });
 
+      // Determine destination based on profile (fast path)
       let destination = "/lcopilot/exporter-dashboard";
-      try {
-        const status = await getOnboardingStatus();
-        const backendRole = status.role;
-        const details = status.details as Record<string, any> | undefined;
-        const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
-        const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
-
-        if (backendRole === "bank_officer" || backendRole === "bank_admin" || profile.role === "bank") {
-          destination = "/lcopilot/bank-dashboard";
-        } else if (backendRole === "tenant_admin") {
-          destination = "/lcopilot/enterprise-dashboard";
-        } else if (hasBoth) {
-          destination = "/lcopilot/combined-dashboard";
-        } else if (profile.role === "importer") {
-          destination = "/lcopilot/importer-dashboard";
-        }
-      } catch (statusError) {
-        console.warn("Failed to load onboarding status for routing", statusError);
+      
+      // Quick role-based routing (don't wait for onboarding status)
+      if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
+        destination = "/lcopilot/bank-dashboard";
+      } else if (profile.role === "tenant_admin") {
+        destination = "/lcopilot/enterprise-dashboard";
+      } else if (profile.role === "importer") {
+        destination = "/lcopilot/importer-dashboard";
       }
-
+      
+      // Try to get onboarding status with timeout (non-blocking)
+      const statusPromise = Promise.race([
+        getOnboardingStatus(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]).catch(err => {
+        console.warn("Onboarding status check failed or timed out:", err);
+        return null;
+      });
+      
+      // Navigate immediately (don't wait for onboarding status)
       navigate(destination);
+      
+      // Optionally refine destination after onboarding status loads
+      statusPromise.then((status: any) => {
+        if (status) {
+          const backendRole = status.role;
+          const details = status.details as Record<string, any> | undefined;
+          const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
+          const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
+          
+          let newDestination = destination;
+          if (backendRole === "bank_officer" || backendRole === "bank_admin") {
+            newDestination = "/lcopilot/bank-dashboard";
+          } else if (backendRole === "tenant_admin") {
+            newDestination = "/lcopilot/enterprise-dashboard";
+          } else if (hasBoth) {
+            newDestination = "/lcopilot/combined-dashboard";
+          }
+          
+          // Only navigate if destination changed
+          if (newDestination !== destination) {
+            navigate(newDestination);
+          }
+        }
+      });
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({
