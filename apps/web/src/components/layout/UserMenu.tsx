@@ -17,6 +17,7 @@ import { AdminAuthContext } from "@/lib/admin/auth"
 import { BankAuthContext } from "@/lib/bank/auth"
 import { ExporterAuthContext } from "@/lib/exporter/auth"
 import { ImporterAuthContext } from "@/lib/importer/auth"
+import { useAuth } from "@/hooks/use-auth"
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.split("@")[0] || "User"
@@ -45,15 +46,27 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
   const location = useLocation()
   
+  // Get main auth first (Supabase-based)
+  const mainAuth = useAuth();
+  
   // Call all contexts unconditionally (required by React)
   const adminAuth = useSafeContext(AdminAuthContext);
   const bankAuth = useSafeContext(BankAuthContext);
   const exporterAuth = useSafeContext(ExporterAuthContext);
   const importerAuth = useSafeContext(ImporterAuthContext);
 
-  // Determine which auth context to use based on localStorage and which one has a user
+  // Determine which auth context to use - prioritize main auth (Supabase)
   const activeAuth = useMemo(() => {
-    // Check localStorage to determine priority
+    // Priority 1: Main auth (Supabase) - always check first
+    if (mainAuth?.user) {
+      return {
+        user: mainAuth.user,
+        logout: mainAuth.logout,
+        isLoading: mainAuth.isLoading,
+      };
+    }
+    
+    // Priority 2: Check localStorage to determine which specific auth context
     if (typeof window !== 'undefined') {
       if (localStorage.getItem('admin_token') && adminAuth?.user) return adminAuth;
       if (localStorage.getItem('bank_token') && bankAuth?.user) return bankAuth;
@@ -61,14 +74,14 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
       if (localStorage.getItem('importer_token') && importerAuth?.user) return importerAuth;
     }
     
-    // Fallback: use first available auth context with a user
+    // Priority 3: Fallback to first available auth context with a user
     if (adminAuth?.user) return adminAuth;
     if (bankAuth?.user) return bankAuth;
     if (exporterAuth?.user) return exporterAuth;
     if (importerAuth?.user) return importerAuth;
     
     return null;
-  }, [adminAuth, bankAuth, exporterAuth, importerAuth]);
+  }, [mainAuth, adminAuth, bankAuth, exporterAuth, importerAuth]);
 
   const user = activeAuth?.user || null;
   const logout = activeAuth?.logout || null;

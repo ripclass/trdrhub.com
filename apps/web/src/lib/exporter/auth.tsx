@@ -153,8 +153,21 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
           token = localStorage.getItem('trdrhub_api_token') || localStorage.getItem('exporter_token');
         }
         
-        // DEMO MODE: If no token, use demo user for meeting/demo purposes
+        // DEMO MODE: If no token, check main auth first before falling back to demo
         if (!token) {
+          // Check if main auth (Supabase) has a session - if so, don't use demo user
+          try {
+            const { supabase } = await import('@/lib/supabase');
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              // Main auth has session, wait for it to load user instead of using demo
+              setIsLoading(false);
+              return;
+            }
+          } catch (supabaseError) {
+            // Continue to demo check
+          }
+          
           const demoMode = localStorage.getItem('demo_mode') === 'true' || 
                           new URLSearchParams(window.location.search).get('demo') === 'true';
           
