@@ -51,13 +51,7 @@
 - **Features**: Similar to banks but may have different compliance requirements
 
 ### 6. Trade Consultants
-- **Profile**: Independent trade finance consultants
-- **Role**: ⚠️ **CURRENTLY MISSING** - Should be `consultant`
-- **Company Type**: `consultant`
-- **Business Types**: N/A
-- **Onboarding**: Simple, self-service
-- **KYC**: Not required (or simplified)
-- **Features**: May need to manage multiple client workspaces
+- **Status**: ❌ **REMOVED** - Not supported in current version
 
 ---
 
@@ -316,41 +310,7 @@ const roleMap: Record<string, string> = {
 
 ### Flow 6: Trade Consultant
 
-#### Registration Flow
-1. **Registration Form**
-   - Consultant name / Company name
-   - Contact person (full name)
-   - Business email
-   - Password
-   - Company type: **Trade Consultant**
-   - Terms agreement
-
-2. **Backend Processing**
-   - Role: ⚠️ **NEEDS NEW ROLE** `consultant`
-   - Company type: `consultant`
-   - Business types: N/A
-   - Onboarding: `complete: true` (or simplified)
-   - Status: `approved`
-
-3. **Post-Registration**
-   - Redirect to: `/dashboard` (Consultant Dashboard - needs to be created)
-   - Onboarding wizard: **Skip** or **Simplified**
-   - Welcome message: "Welcome! Set up your consultant profile"
-
-#### Onboarding Checklist
-- ✅ Account created
-- ✅ Email verified
-- ✅ Profile created
-- ⏳ **Client workspace setup** (optional)
-- ✅ Ready to use
-
-#### Post-Onboarding Experience
-- **Dashboard**: Consultant Dashboard (needs to be created)
-- **Features**: 
-  - May need to manage multiple client workspaces
-  - View client validation sessions (with permission)
-  - Provide consulting services
-- **Limitations**: Depends on client permissions
+**✅ DECISION**: Removed from supported user types. Not needed in current version.
 
 ---
 
@@ -359,77 +319,94 @@ const roleMap: Record<string, string> = {
 ### Critical Gaps
 
 #### 1. Missing Roles
-- ❌ `tenant_admin` - Not properly assigned for "both" users
-- ❌ `consultant` - Not implemented
-- ❌ `fi_officer` / `fi_admin` - Not implemented
+- ⚠️ `tenant_admin` - Not properly assigned for "both" Medium/Large Enterprise users
+- ✅ `consultant` - **REMOVED** (not supported)
 
 #### 2. Missing Company Types
-- ❌ `financial_institute` - Grouped with banks
-- ⚠️ `both` - Exists but incorrectly mapped
+- ⚠️ `financial_institute` - Needs to be distinguished from `bank` (use company_type field)
+- ⚠️ `both` - Exists but incorrectly mapped (only Medium/Large should be tenant_admin)
 
 #### 3. Missing Company Size Field
-- ❌ No distinction between SME and Enterprise
-- ❌ Can't differentiate Medium vs Large Enterprise
+- ❌ **CRITICAL**: No company size field to distinguish SME vs Medium vs Large
+- ❌ Can't determine if "both" user should be `exporter` or `tenant_admin`
+- ❌ Can't apply appropriate feature limits
 
 #### 4. Missing Onboarding Flows
-- ❌ Enterprise onboarding (team setup)
-- ❌ Consultant onboarding
-- ❌ Financial Institute onboarding (separate from bank)
+- ❌ Enterprise onboarding (team setup for Medium/Large)
+- ✅ Consultant onboarding - **REMOVED**
+- ⚠️ Financial Institute onboarding - Uses same as Bank (acceptable)
 
 #### 5. Missing Dashboards
 - ❌ Enterprise Dashboard (for tenant_admin users)
-- ❌ Consultant Dashboard
+- ✅ Consultant Dashboard - **REMOVED**
 
 #### 6. Role Mapping Issues
-- ❌ "both" → "exporter" (should be "tenant_admin")
-- ❌ "consultant" → "exporter" (should be "consultant")
+- ❌ "both" → "exporter" (should be "tenant_admin" for Medium/Large only)
+- ✅ "consultant" → "exporter" - **REMOVED** (consultant option removed)
 
 ---
 
 ## Required Changes
 
-### Phase 1: Fix Role Mapping
+### Phase 1: Add Company Size Field (CRITICAL)
+
+**New Field in Registration:**
+- Add company size dropdown: **SME (20-200)**, **Medium (200-1000)**, **Large (1000+)**
+- **Required** when company type is "both"
+- Store in `onboarding_data.company_size`
+- Use to determine:
+  - **Role assignment**: SME "both" → `exporter`, Medium/Large "both" → `tenant_admin`
+  - **Feature limits**: SME (basic), Medium (enhanced), Large (unlimited)
+  - **Onboarding flow**: SME (simple), Medium/Large (team setup)
+
+### Phase 2: Fix Role Mapping
 
 **File**: `apps/web/src/pages/Register.tsx`
 
 ```typescript
-const roleMap: Record<string, string> = {
-  exporter: "exporter",
-  importer: "importer",
-  both: "tenant_admin",        // ✅ FIX: Map to tenant_admin
-  bank: "bank_officer",
-  consultant: "consultant",     // ✅ FIX: Map to consultant (needs backend support)
+// Conditional role mapping based on company size
+const getRoleForCompanyType = (companyType: string, companySize?: string): string => {
+  if (companyType === "both") {
+    // Only Medium/Large enterprises get tenant_admin
+    if (companySize === "medium" || companySize === "large") {
+      return "tenant_admin";
+    }
+    // SME "both" users remain as exporter with both business types
+    return "exporter";
+  }
+  
+  const roleMap: Record<string, string> = {
+    exporter: "exporter",
+    importer: "importer",
+    bank: "bank_officer",
+  };
+  return roleMap[companyType] || "exporter";
 };
 ```
 
-### Phase 2: Add Company Size Field
+### Phase 3: Add Financial Institute Distinction
 
-**New Field in Registration:**
-- Add company size dropdown: SME (20-200), Medium (200-1000), Large (1000+)
-- Store in `onboarding_data.company_size`
-- Use to determine features/limits
-
-### Phase 3: Separate Financial Institute
-
-**New Company Type:**
-- Add `financial_institute` to COMPANY_TYPES
-- Create `fi_officer` and `fi_admin` roles in backend
-- Separate onboarding flow if needed
+**New Field in Registration (for Bank/FI):**
+- Add institution type dropdown: **Bank** or **Financial Institute**
+- Store in `onboarding_data.institution_type`
+- Store in `company.type` as `bank` or `financial_institute`
+- Use same roles (`bank_officer` / `bank_admin`) but allow future feature differentiation
 
 ### Phase 4: Add Enterprise Features
 
-**For `tenant_admin` role:**
+**For `tenant_admin` role (Medium/Large Enterprise):**
 - Team management UI
 - Workspace sharing
 - Multi-user permissions
 - Enterprise dashboard
+- Enhanced onboarding flow
 
-### Phase 5: Add Consultant Role
+### Phase 5: Implement Company Size-Based Features
 
-**Backend:**
-- Add `consultant` role to UserRole enum
-- Add permissions for consultant role
-- Create consultant dashboard
+**Feature Limits by Company Size:**
+- **SME**: Basic features, limited quotas (e.g., 50 validations/month)
+- **Medium**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
+- **Large**: All features, unlimited quotas, advanced team management, dedicated support
 
 ---
 
@@ -449,12 +426,10 @@ What best describes your business?
 [ ] Exporter only
 [ ] Importer only  
 [ ] Both Exporter & Importer
-[ ] Bank
-[ ] Financial Institute (Non-Bank)
-[ ] Trade Consultant
+[ ] Bank / Financial Institute
 ```
 
-### Step 3: Company Size (if SME/Enterprise)
+### Step 3: Company Size (REQUIRED if "Both Exporter & Importer")
 ```
 How many employees does your company have?
 
@@ -463,9 +438,11 @@ How many employees does your company have?
 [ ] Large Enterprise (1000+ employees)
 ```
 
+**Note**: Company size is **required** for "Both Exporter & Importer" to determine role assignment.
+
 ### Step 4: Additional Information (if Bank/FI)
-- Regulator ID (required)
-- Institution type (Bank vs Financial Institute)
+- Institution type: **Bank** or **Financial Institute** (dropdown)
+- Regulator ID (required for banks, optional for FIs)
 
 ### Step 5: Terms & Conditions
 - Terms agreement checkbox
@@ -474,34 +451,35 @@ How many employees does your company have?
 
 ## Onboarding Flow Matrix
 
-| User Type | Role | Onboarding Required | KYC Required | Approval Required | Dashboard |
-|-----------|------|---------------------|--------------|-------------------|-----------|
-| SME Exporter | `exporter` | No | No | No | ExporterDashboardV2 |
-| SME Importer | `importer` | No | No | No | ImporterDashboardV2 |
-| Enterprise (Both) | `tenant_admin` | Yes (team setup) | Maybe | No | Enterprise Dashboard ⚠️ |
-| Bank | `bank_officer` | Yes (KYC) | Yes | Yes | BankDashboardV2 |
-| Financial Institute | `fi_officer` ⚠️ | Yes (KYC) | Yes | Yes | FI Dashboard ⚠️ |
-| Consultant | `consultant` ⚠️ | Simplified | No | No | Consultant Dashboard ⚠️ |
+| User Type | Role | Company Size | Onboarding Required | KYC Required | Approval Required | Dashboard |
+|-----------|------|--------------|---------------------|--------------|-------------------|-----------|
+| SME Exporter | `exporter` | SME | No | No | No | ExporterDashboardV2 |
+| SME Importer | `importer` | SME | No | No | No | ImporterDashboardV2 |
+| SME (Both) | `exporter` | SME | No | No | No | ExporterDashboardV2 |
+| Medium Enterprise (Both) | `tenant_admin` | Medium | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ |
+| Large Enterprise (Both) | `tenant_admin` | Large | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ |
+| Bank | `bank_officer` | N/A | Yes (KYC) | Yes | Yes | BankDashboardV2 |
+| Financial Institute | `bank_officer` | N/A | Yes (KYC) | Yes | Yes | BankDashboardV2 |
 
 ---
 
 ## Implementation Priority
 
-### Priority 1: Critical Fixes
-1. ✅ Fix "both" → `tenant_admin` mapping
-2. ✅ Add company size field
-3. ✅ Create Enterprise Dashboard
-4. ✅ Update onboarding wizard for enterprise users
+### Priority 1: Critical Fixes (Must Do First)
+1. ✅ **Add company size field** - Required to determine role assignment
+2. ✅ **Fix "both" → `tenant_admin` mapping** - Only for Medium/Large, conditional on company size
+3. ✅ **Add institution type field** - For Bank/FI distinction
+4. ✅ **Update registration form** - Add company size dropdown, make conditional
 
-### Priority 2: New Roles
-5. ⏳ Add `consultant` role
-6. ⏳ Add `fi_officer` / `fi_admin` roles
-7. ⏳ Separate Financial Institute from Bank
+### Priority 2: Enterprise Features
+5. ⏳ **Create Enterprise Dashboard** - For `tenant_admin` users
+6. ⏳ **Update onboarding wizard** - Different flow for Medium/Large Enterprise
+7. ⏳ **Enterprise team management UI** - Workspace sharing, multi-user access
 
-### Priority 3: Enhanced Features
-8. ⏳ Enterprise team management UI
-9. ⏳ Consultant dashboard
-10. ⏳ FI-specific features (if different from banks)
+### Priority 3: Feature Limits by Company Size
+8. ⏳ **Implement quota system** - Based on company size
+9. ⏳ **Feature gating** - SME (basic), Medium (enhanced), Large (unlimited)
+10. ⏳ **Analytics by company size** - Track usage patterns
 
 ---
 
@@ -518,11 +496,22 @@ How many employees does your company have?
 
 ---
 
-## Questions to Answer
+## Decisions Made ✅
 
-1. **Enterprise Users**: Should "both exporter & importer" always be `tenant_admin`, or only for Medium/Large enterprises?
-2. **Financial Institutes**: Are FIs different enough from banks to warrant separate role, or can they use `bank_officer`?
-3. **Consultants**: Do consultants need their own dashboard, or can they use exporter/importer dashboards with different permissions?
-4. **Company Size**: Should company size affect features/limits, or just for analytics?
-5. **SME vs Enterprise**: Should there be different onboarding flows, or just different post-onboarding features?
+1. **Enterprise Users**: ✅ **DECIDED** - Only Medium & Large Enterprises get `tenant_admin` role. SMEs selecting "both" remain as `exporter` with `business_types: ['exporter', 'importer']`.
+
+2. **Financial Institutes**: ✅ **RECOMMENDED** - Use `bank_officer` / `bank_admin` roles with `company_type: 'financial_institute'` field to distinguish. Keeps it simple, allows future differentiation.
+
+3. **Consultants**: ✅ **DECIDED** - Removed from supported user types.
+
+4. **Company Size**: ✅ **DECIDED** - Should affect features/limits:
+   - **SME**: Basic features, limited quotas (e.g., 50 validations/month)
+   - **Medium**: Enhanced features, higher quotas (e.g., 500 validations/month), team management
+   - **Large**: All features, unlimited quotas, advanced team management, dedicated support
+   - Also used for analytics and business intelligence
+
+5. **SME vs Enterprise**: ✅ **RECOMMENDED** - Different onboarding flows:
+   - **SME**: Simple, quick onboarding (skip wizard, immediate access)
+   - **Medium/Large Enterprise**: Enhanced onboarding with team setup wizard
+   - Different post-onboarding features based on company size
 
