@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from app.models import User
+from app.models import User, Company
 from ..schemas import UserRegistration, UserLogin, Token, UserProfile
 from ..schemas.user import UserCreate
 from ..core.security import (
@@ -48,12 +48,49 @@ async def register_user(
     except Exception:
         # Fallback: last-resort truncate and hash
         hashed_password = hash_password((user_data.password or '')[:72])
+    
+    # Create Company record if company info is provided
+    company_id = None
+    if user_data.company_name:
+        company = Company(
+            name=user_data.company_name,
+            contact_email=user_data.email,
+        )
+        
+        # Store company type and size in event_metadata
+        event_metadata = {}
+        if user_data.company_type:
+            event_metadata["business_type"] = user_data.company_type
+        if user_data.company_size:
+            event_metadata["company_size"] = user_data.company_size
+        if event_metadata:
+            company.event_metadata = event_metadata
+        
+        db.add(company)
+        db.flush()  # Flush to get company.id
+        company_id = company.id
+    
+    # Prepare onboarding data
+    onboarding_data = {}
+    if user_data.business_types:
+        onboarding_data["business_types"] = user_data.business_types
+    if user_data.company_name:
+        onboarding_data["company"] = {
+            "name": user_data.company_name,
+            "type": user_data.company_type,
+            "size": user_data.company_size,
+        }
+    if user_data.full_name:
+        onboarding_data["contact_person"] = user_data.full_name
+    
     db_user = User(
         email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
         role=user_data.role,
-        is_active=True
+        is_active=True,
+        company_id=company_id,
+        onboarding_data=onboarding_data if onboarding_data else None,
     )
     
     try:

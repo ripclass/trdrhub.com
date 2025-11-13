@@ -107,24 +107,32 @@ export default function Register() {
     try {
       const backendRole = getBackendRole(formData.companyType, companySize);
 
+      const businessTypes =
+        formData.companyType === "both"
+          ? ["exporter", "importer"]
+          : formData.companyType
+          ? [formData.companyType]
+          : [];
+
+      const normalizedCompanySize =
+        formData.companyType === "both" ? companySize || undefined : undefined;
+
+      // Register with company info - this will create Company record in backend
       await registerWithEmail(
         formData.email,
         formData.password,
         formData.contactPerson,
-        backendRole
+        backendRole,
+        {
+          companyName: formData.companyName,
+          companyType: formData.companyType,
+          companySize: normalizedCompanySize,
+          businessTypes: businessTypes,
+        }
       );
 
+      // Update onboarding progress (for additional steps if needed)
       try {
-        const businessTypes =
-          formData.companyType === "both"
-            ? ["exporter", "importer"]
-            : formData.companyType
-            ? [formData.companyType]
-            : [];
-
-        const normalizedCompanySize =
-          formData.companyType === "both" ? companySize || undefined : undefined;
-
         const isBank = backendRole === "bank_officer";
         const requiresTeamSetup = backendRole === "tenant_admin";
 
@@ -140,7 +148,7 @@ export default function Register() {
           onboarding_step: isBank ? "kyc" : requiresTeamSetup ? "team_setup" : null,
         });
       } catch (error) {
-        console.warn("Failed to sync onboarding role/company", error);
+        console.warn("Failed to sync onboarding progress (non-critical):", error);
       }
 
       toast({

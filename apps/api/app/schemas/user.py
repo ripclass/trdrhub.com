@@ -52,6 +52,11 @@ class UserCreate(UserBase):
     """Schema for user registration."""
     password: str = Field(..., min_length=8, max_length=128)
     role: Optional[Role] = "exporter"  # Default role, can only be overridden by admin
+    # Optional company info (collected during registration)
+    company_name: Optional[str] = Field(None, description="Company name")
+    company_type: Optional[str] = Field(None, description="Company type: exporter, importer, both, bank")
+    company_size: Optional[str] = Field(None, description="Company size: sme, medium, large")
+    business_types: Optional[List[str]] = Field(None, description="Business types array")
 
     _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
 

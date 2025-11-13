@@ -16,7 +16,18 @@ interface AuthContextType {
   user: User | null
   isLoading: boolean
   loginWithEmail: (email: string, password: string) => Promise<User>
-  registerWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<User>
+  registerWithEmail: (
+    email: string,
+    password: string,
+    fullName: string,
+    role: string,
+    companyInfo?: {
+      companyName?: string
+      companyType?: string
+      companySize?: string
+      businessTypes?: string[]
+    }
+  ) => Promise<User>
   logout: () => Promise<void>
   hasRole: (role: Role | Role[]) => boolean
   refreshUser: () => Promise<void>
@@ -193,7 +204,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
     fullName: string,
-    role: string
+    role: string,
+    companyInfo?: {
+      companyName?: string
+      companyType?: string
+      companySize?: string
+      businessTypes?: string[]
+    }
   ): Promise<User> => {
     setIsLoading(true)
     try {
@@ -229,21 +246,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!session) throw new Error('Authentication session not established after sign up')
 
-      // Create user in backend database
+      // Create user in backend database with company info
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+        const registerPayload: any = {
+          email,
+          password,
+          full_name: fullName,
+          role,
+        }
+        
+        // Add company info if provided
+        if (companyInfo?.companyName) {
+          registerPayload.company_name = companyInfo.companyName
+          registerPayload.company_type = companyInfo.companyType
+          registerPayload.company_size = companyInfo.companySize
+          registerPayload.business_types = companyInfo.businessTypes
+        }
+        
         const registerResponse = await fetch(`${API_BASE_URL}/auth/register`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           credentials: 'include',
-          body: JSON.stringify({
-            email,
-            password,
-            full_name: fullName,
-            role,
-          }),
+          body: JSON.stringify(registerPayload),
         })
 
         if (!registerResponse.ok) {
