@@ -160,23 +160,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = React.useCallback(async () => {
     try {
+      console.log('fetchUserProfile: Starting...')
       // Prefer passing Authorization explicitly to avoid interceptor awaiting Supabase init
-      const { data: sessionData } = await supabase.auth.getSession()
+      console.log('fetchUserProfile: Getting Supabase session...')
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        console.error('fetchUserProfile: getSession error:', sessionError)
+        throw new Error(`Failed to get session: ${sessionError.message}`)
+      }
+      
+      console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
       const supabaseToken = sessionData.session?.access_token
       
       if (!supabaseToken) {
-        console.error('No Supabase token available for /auth/me')
+        console.error('fetchUserProfile: No Supabase token available for /auth/me')
         throw new Error('No authentication token available')
       }
       
-      console.log('Calling /auth/me with token:', supabaseToken.substring(0, 20) + '...')
+      console.log('fetchUserProfile: Calling /auth/me with token:', supabaseToken.substring(0, 20) + '...')
       const headers = { Authorization: `Bearer ${supabaseToken}` }
       
+      console.log('fetchUserProfile: Making API request...')
       const { data: userData } = await withTimeout(
         api.get('/auth/me', { headers }),
         'Loading profile',
         PROFILE_TIMEOUT_MS
       )
+      console.log('fetchUserProfile: API response received:', userData)
       console.log('Successfully fetched user profile:', userData.email)
       const mapped: User = {
         id: userData.id,
@@ -301,8 +312,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Supabase users authenticate directly via /auth/me with their Supabase token
       
       console.log('Calling fetchUserProfile() with Supabase token...')
+      console.log('Token available:', token ? 'YES' : 'NO')
       const profile = await fetchUserProfile()
-      console.log('fetchUserProfile completed, profile:', profile.email)
+      console.log('fetchUserProfile completed, profile:', profile?.email || 'NO PROFILE')
       return profile
     } catch (error: any) {
       console.error('=== LOGIN ERROR ===', error)
