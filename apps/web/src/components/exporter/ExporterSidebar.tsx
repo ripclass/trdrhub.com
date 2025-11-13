@@ -51,14 +51,24 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
     return location.pathname === url || location.pathname + location.search === url;
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    
     // Logout from both auth systems
     try {
       await mainLogout();
     } catch (error) {
       console.warn('Main auth logout failed:', error);
     }
-    exporterLogout(); // This will navigate to /login
+    
+    try {
+      exporterLogout(); // This will navigate to /login
+    } catch (error) {
+      console.warn('Exporter auth logout failed:', error);
+      // Fallback: navigate directly if logout fails
+      window.location.href = '/login';
+    }
   };
 
   return (
