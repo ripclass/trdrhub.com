@@ -29,59 +29,61 @@ export default function Login() {
         description: "Welcome back to LCopilot!",
       });
 
-      // Determine destination based on profile (fast path)
+      // Get onboarding status FIRST to determine correct dashboard
+      // This is critical for "both" exporter/importer users who have role "exporter"
       let destination = "/lcopilot/exporter-dashboard";
       
-      // Quick role-based routing (don't wait for onboarding status)
-      if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
-        destination = "/lcopilot/bank-dashboard";
-      } else if (profile.role === "tenant_admin") {
-        destination = "/lcopilot/enterprise-dashboard";
-      } else if (profile.role === "importer") {
-        destination = "/lcopilot/importer-dashboard";
-      }
-      
-      // Try to get onboarding status with timeout (non-blocking)
-      const statusPromise = Promise.race([
-        getOnboardingStatus(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-      ]).catch(err => {
-        console.warn("Onboarding status check failed or timed out:", err);
-        return null;
-      });
-      
-      // Navigate immediately (don't wait for onboarding status)
-      setIsLoading(false); // Clear loading state before navigation
-      navigate(destination);
-      
-      // Optionally refine destination after onboarding status loads
-      statusPromise.then((status: any) => {
+      try {
+        const status = await Promise.race([
+          getOnboardingStatus(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]) as any;
+        
         if (status) {
           const backendRole = status.role;
           const details = status.details as Record<string, any> | undefined;
           const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
           const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
           const companySize = details?.company?.size;
+          const companyType = details?.company?.type;
           
-          let newDestination = destination;
+          // Determine destination based on onboarding data
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
-            newDestination = "/lcopilot/bank-dashboard";
+            destination = "/lcopilot/bank-dashboard";
           } else if (backendRole === "tenant_admin") {
-            newDestination = "/lcopilot/enterprise-dashboard";
+            destination = "/lcopilot/enterprise-dashboard";
           } else if (hasBoth && companySize === "sme") {
             // SME "both" users → CombinedDashboard (unified view)
-            newDestination = "/lcopilot/combined-dashboard";
+            destination = "/lcopilot/combined-dashboard";
           } else if (hasBoth && (companySize === "medium" || companySize === "large")) {
-            // Medium/Large "both" users → EnterpriseDashboard (they should be tenant_admin, but check anyway)
-            newDestination = "/lcopilot/enterprise-dashboard";
-          }
-          
-          // Only navigate if destination changed
-          if (newDestination !== destination) {
-            navigate(newDestination);
+            // Medium/Large "both" users → EnterpriseDashboard
+            destination = "/lcopilot/enterprise-dashboard";
+          } else if (companyType === "both" && companySize === "sme") {
+            // Fallback: Check company.type directly if business_types not set
+            destination = "/lcopilot/combined-dashboard";
+          } else if (companyType === "both" && (companySize === "medium" || companySize === "large")) {
+            // Fallback: Check company.type directly if business_types not set
+            destination = "/lcopilot/enterprise-dashboard";
+          } else if (profile.role === "importer") {
+            destination = "/lcopilot/importer-dashboard";
+          } else if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
+            destination = "/lcopilot/bank-dashboard";
           }
         }
-      });
+      } catch (err) {
+        console.warn("Onboarding status check failed or timed out:", err);
+        // Fallback to role-based routing if onboarding status unavailable
+        if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
+          destination = "/lcopilot/bank-dashboard";
+        } else if (profile.role === "tenant_admin") {
+          destination = "/lcopilot/enterprise-dashboard";
+        } else if (profile.role === "importer") {
+          destination = "/lcopilot/importer-dashboard";
+        }
+      }
+      
+      setIsLoading(false); // Clear loading state before navigation
+      navigate(destination);
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({
