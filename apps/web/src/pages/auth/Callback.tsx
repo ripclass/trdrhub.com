@@ -62,9 +62,61 @@ export default function AuthCallback() {
           console.warn('Backend login failed (non-critical):', backendLoginError)
         }
 
-        setStatus('Success! Redirecting...')
+        setStatus('Checking onboarding status...')
         
-        // Redirect to dashboard
+        // Check onboarding status and redirect accordingly
+        try {
+          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+          const onboardingResponse = await fetch(`${API_BASE_URL}/onboarding/status`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('trdrhub_api_token') || ''}`,
+            },
+            credentials: 'include',
+          })
+          
+          if (onboardingResponse.ok) {
+            const onboardingStatus = await onboardingResponse.json()
+            
+            // If onboarding is not complete, redirect to onboarding page
+            if (!onboardingStatus.completed) {
+              setStatus('Redirecting to onboarding...')
+              setTimeout(() => {
+                navigate('/onboarding')
+              }, 500)
+              return
+            }
+            
+            // Otherwise redirect to appropriate dashboard based on role
+            const role = onboardingStatus.role
+            const details = onboardingStatus.details || {}
+            const businessTypes = Array.isArray(details.business_types) ? details.business_types : []
+            const hasBoth = businessTypes.includes('exporter') && businessTypes.includes('importer')
+            const companySize = details?.company?.size
+            
+            let destination = '/lcopilot/exporter-dashboard'
+            if (role === 'bank_officer' || role === 'bank_admin') {
+              destination = '/lcopilot/bank-dashboard'
+            } else if (role === 'tenant_admin') {
+              destination = '/lcopilot/enterprise-dashboard'
+            } else if (hasBoth && companySize === 'sme') {
+              destination = '/lcopilot/combined-dashboard'
+            } else if (role === 'importer') {
+              destination = '/lcopilot/importer-dashboard'
+            }
+            
+            setStatus('Success! Redirecting...')
+            setTimeout(() => {
+              navigate(destination)
+            }, 500)
+            return
+          }
+        } catch (onboardingError) {
+          console.warn('Failed to check onboarding status:', onboardingError)
+        }
+        
+        // Fallback: redirect to dashboard
+        setStatus('Success! Redirecting...')
         setTimeout(() => {
           navigate('/dashboard')
         }, 500)

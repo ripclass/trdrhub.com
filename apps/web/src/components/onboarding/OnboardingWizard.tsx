@@ -16,6 +16,19 @@ interface OnboardingWizardProps {
   onComplete: () => void
 }
 
+const COMPANY_TYPES = [
+  { value: 'exporter', label: 'Exporter' },
+  { value: 'importer', label: 'Importer' },
+  { value: 'both', label: 'Both Exporter & Importer' },
+  { value: 'bank', label: 'Bank' },
+]
+
+const COMPANY_SIZE_OPTIONS = [
+  { value: 'sme', label: 'SME (1-20 employees)' },
+  { value: 'medium', label: 'Medium Enterprise (21-50 employees)' },
+  { value: 'large', label: 'Large Enterprise (50+ employees)' },
+]
+
 const businessTypeOptions = [
   'Commodities',
   'Manufacturing',
@@ -24,30 +37,51 @@ const businessTypeOptions = [
   'Logistics',
 ]
 
-const roleOptions = [
-  { value: 'exporter', label: 'Exporter' },
-  { value: 'importer', label: 'Importer' },
-  { value: 'bank_officer', label: 'Bank Officer' },
-  { value: 'bank_admin', label: 'Bank Admin' },
-]
-
 const isBankRole = (role?: string | null) =>
   role === 'bank_officer' || role === 'bank_admin'
 
-type WizardStep = 'role' | 'company' | 'business' | 'review' | 'complete'
+const getBackendRole = (companyType: string, size?: string): string => {
+  if (companyType === 'both') {
+    if (size === 'medium' || size === 'large') {
+      return 'tenant_admin'
+    }
+    return 'exporter'
+  }
+
+  const roleMap: Record<string, string> = {
+    exporter: 'exporter',
+    importer: 'importer',
+    bank: 'bank_officer',
+  }
+
+  return roleMap[companyType] || 'exporter'
+}
+
+type WizardStep = 'company_type' | 'company_size' | 'company' | 'business' | 'review' | 'complete'
 
 export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizardProps) {
   const { status, updateProgress, isLoading } = useOnboarding()
-  const [step, setStep] = useState<WizardStep>('role')
-  const [selectedRole, setSelectedRole] = useState<string>('exporter')
+  const [step, setStep] = useState<WizardStep>('company_type')
+  const [companyType, setCompanyType] = useState<string>('')
+  const [companySize, setCompanySize] = useState<string>('')
+  const [contactPerson, setContactPerson] = useState<string>('')
   const [companyForm, setCompanyForm] = useState<CompanyPayload>({ name: '', type: '' })
   const [businessTypes, setBusinessTypes] = useState<string[]>([])
   const waitingForApproval = status?.status === 'under_review'
 
   const determineInitialStep = (): WizardStep => {
-    if (!status || !status.role) return 'role'
-    if (!status.company_id) return 'company'
-    if (isBankRole(status.role)) {
+    if (!status) return 'company_type'
+    const details = status.details as Record<string, any> | undefined
+    const hasCompanyType = details?.company?.type
+    const hasCompanySize = details?.company?.size
+    const hasCompanyName = status.company_id || details?.company?.name
+    
+    if (!hasCompanyType) return 'company_type'
+    if (hasCompanyType === 'both' && !hasCompanySize) return 'company_size'
+    if (!hasCompanyName) return 'company'
+    
+    const backendRole = status.role || getBackendRole(hasCompanyType, hasCompanySize)
+    if (isBankRole(backendRole)) {
       return status.completed ? 'complete' : waitingForApproval ? 'review' : 'company'
     }
     return status.completed ? 'complete' : 'business'
@@ -57,15 +91,13 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
     if (!open) return
     const initialStep = determineInitialStep()
     setStep(initialStep)
-    if (status?.role) {
-      setSelectedRole(status.role)
-    }
+    
     if (status?.details) {
       const details = status.details as Record<string, any>
-      if (Array.isArray(details.business_types)) {
-        setBusinessTypes(details.business_types as string[])
-      }
       if (details.company) {
+        setCompanyType(details.company.type ?? '')
+        setCompanySize(details.company.size ?? '')
+        setContactPerson(details.contact_person ?? '')
         setCompanyForm({
           name: details.company.name ?? '',
           type: details.company.type ?? '',
@@ -74,6 +106,9 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
           regulator_id: details.company.regulator_id ?? '',
           country: details.company.country ?? '',
         })
+      }
+      if (Array.isArray(details.business_types)) {
+        setBusinessTypes(details.business_types as string[])
       }
     }
   }, [open, status])
@@ -85,29 +120,71 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
     }
   }, [status?.completed, onClose, onComplete])
 
-  const handleRoleSubmit = async (event: React.FormEvent) => {
+  const handleCompanyTypeSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    await updateProgress({ role: selectedRole, onboarding_step: 'role' })
+    if (!companyType) return
+    
+    const backendRole = getBackendRole(companyType, companySize)
+    const businessTypes = companyType === 'both' ? ['exporter', 'importer'] : [companyType]
+    
+    await updateProgress({
+      role: backendRole,
+      company: { type: companyType, size: companySize },
+      business_types: businessTypes,
+      onboarding_step: companyType === 'both' && !companySize ? 'company_size' : 'company',
+    })
+    
+    if (companyType === 'both' && !companySize) {
+      setStep('company_size')
+    } else {
+      setStep('company')
+    }
+  }
+
+  const handleCompanySizeSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!companySize) return
+    
+    const backendRole = getBackendRole(companyType, companySize)
+    const businessTypes = ['exporter', 'importer']
+    
+    await updateProgress({
+      role: backendRole,
+      company: { type: companyType, size: companySize },
+      business_types: businessTypes,
+      onboarding_step: 'company',
+    })
+    
     setStep('company')
   }
 
   const handleCompanySubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!companyForm.name) return
+    
+    const backendRole = getBackendRole(companyType, companySize)
+    const isBank = isBankRole(backendRole)
+    const requiresTeamSetup = backendRole === 'tenant_admin'
+    
     const payload: CompanyPayload = {
       name: companyForm.name,
-      type: companyForm.type,
+      type: companyType,
+      size: companySize || undefined,
       legal_name: companyForm.legal_name,
       registration_number: companyForm.registration_number,
       regulator_id: companyForm.regulator_id,
       country: companyForm.country,
     }
-    const isBank = isBankRole(selectedRole)
+    
     await updateProgress({
-      onboarding_step: isBank ? 'kyc' : 'company',
+      role: backendRole,
+      onboarding_step: isBank ? 'kyc' : requiresTeamSetup ? 'team_setup' : 'company',
       company: payload,
+      contact_person: contactPerson,
       submit_for_review: isBank,
+      complete: !(isBank || requiresTeamSetup),
     })
+    
     setStep(isBank ? 'review' : 'business')
   }
 
@@ -141,34 +218,61 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
       return null
     }
 
-    if (step === 'role') {
+    if (step === 'company_type') {
       return (
-        <form onSubmit={handleRoleSubmit} className="space-y-6">
+        <form onSubmit={handleCompanyTypeSubmit} className="space-y-6">
           <div>
-            <h2 className="text-xl font-semibold mb-2">Select your role</h2>
+            <h2 className="text-xl font-semibold mb-2">What type of company are you?</h2>
             <p className="text-sm text-muted-foreground">
-              We will tailor the experience based on your responsibilities.
+              Select the option that best describes your business. This helps us tailor your workspace.
             </p>
           </div>
-          <RadioGroup value={selectedRole} onValueChange={setSelectedRole} className="space-y-3">
-            {roleOptions.map((option) => (
+          <RadioGroup value={companyType} onValueChange={setCompanyType} className="space-y-3">
+            {COMPANY_TYPES.map((option) => (
               <div key={option.value} className="flex items-center space-x-3 rounded-md border p-3">
-                <RadioGroupItem value={option.value} id={`role-${option.value}`} />
-                <Label htmlFor={`role-${option.value}`} className="cursor-pointer">
+                <RadioGroupItem value={option.value} id={`company-type-${option.value}`} />
+                <Label htmlFor={`company-type-${option.value}`} className="cursor-pointer">
                   {option.label}
                 </Label>
               </div>
             ))}
           </RadioGroup>
           <div className="flex justify-end">
-            <Button type="submit">Continue</Button>
+            <Button type="submit" disabled={!companyType}>Continue</Button>
+          </div>
+        </form>
+      )
+    }
+
+    if (step === 'company_size') {
+      return (
+        <form onSubmit={handleCompanySizeSubmit} className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">What's your company size?</h2>
+            <p className="text-sm text-muted-foreground">
+              We use this to tailor features, quotas, and onboarding for your organization.
+            </p>
+          </div>
+          <RadioGroup value={companySize} onValueChange={setCompanySize} className="space-y-3">
+            {COMPANY_SIZE_OPTIONS.map((option) => (
+              <div key={option.value} className="flex items-center space-x-3 rounded-md border p-3">
+                <RadioGroupItem value={option.value} id={`company-size-${option.value}`} />
+                <Label htmlFor={`company-size-${option.value}`} className="cursor-pointer">
+                  {option.label}
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={!companySize}>Continue</Button>
           </div>
         </form>
       )
     }
 
     if (step === 'company') {
-      const bank = isBankRole(selectedRole)
+      const backendRole = getBackendRole(companyType, companySize)
+      const bank = isBankRole(backendRole)
       return (
         <form onSubmit={handleCompanySubmit} className="space-y-6">
           <div>
@@ -188,22 +292,14 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
               />
             </div>
             <div>
-              <Label htmlFor="company-type">Business type</Label>
-              <Select
-                value={companyForm.type ?? ''}
-                onValueChange={(value) => setCompanyForm((prev) => ({ ...prev, type: value }))}
-              >
-                <SelectTrigger id="company-type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {businessTypeOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="contact-person">Contact person</Label>
+              <Input
+                id="contact-person"
+                value={contactPerson}
+                onChange={(e) => setContactPerson(e.target.value)}
+                placeholder="Your full name"
+                required
+              />
             </div>
             {bank && (
               <div className="grid gap-4 sm:grid-cols-2">
