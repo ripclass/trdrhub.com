@@ -230,34 +230,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       console.log('Attempting Supabase sign-in...')
-      // Login to Supabase - let it complete naturally, then check session
+      // Login to Supabase
       const signInPromise = supabase.auth.signInWithPassword({ email, password })
       console.log('Sign-in promise created, waiting...')
       
-      // Start sign-in but don't wait for it - check session in parallel
-      signInPromise.catch(err => console.warn('Sign-in promise error (non-fatal):', err))
+      // Wait for sign-in to complete (with timeout)
+      let signInError = null
+      try {
+        const result = await Promise.race([
+          signInPromise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Sign-in timeout')), 10000)
+          )
+        ])
+        console.log('Sign-in promise resolved:', result)
+        signInError = (result as any)?.error || null
+      } catch (err: any) {
+        console.warn('Sign-in promise error or timeout:', err)
+        signInError = err
+      }
       
-      // Wait for session to appear (Supabase may resolve signIn slowly but session appears quickly)
-      console.log('Waiting for Supabase session to appear...')
-      const token = await waitForSupabaseSession(20000)
+      // Check session immediately after sign-in (even if promise errored)
+      console.log('Checking for session after sign-in...')
+      const { data: immediateSession } = await supabase.auth.getSession()
+      let token = immediateSession.session?.access_token || null
+      
+      if (token) {
+        console.log('Session found immediately after sign-in!')
+      } else {
+        // Wait for session to appear (Supabase may resolve signIn slowly but session appears quickly)
+        console.log('No immediate session, waiting for Supabase session to appear...')
+        token = await waitForSupabaseSession(15000)
+      }
       
       if (!token) {
-        console.error('No token after waiting 20s, checking sign-in result...')
-        // Check if sign-in promise resolved with error
-        try {
-          const signInResult = await Promise.race([
-            signInPromise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-          ])
-          const { error } = signInResult as any
-          if (error) {
-            console.error('Sign-in returned error:', error)
-            throw error
-          }
-        } catch (checkError: any) {
-          if (checkError.message !== 'Timeout') {
-            throw checkError
-          }
+        console.error('No token after waiting, checking sign-in error...')
+        if (signInError) {
+          throw signInError
         }
         throw new Error('Signing in timed out. Please try again.')
       }
