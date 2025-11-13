@@ -259,6 +259,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Use onAuthStateChange as primary method (more reliable than getSession on refresh)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!mounted) return
+      // Clear any pending timeout since we got auth state change
+      if (initTimeout) {
+        clearTimeout(initTimeout)
+        initTimeout = null
+      }
+      
       if (session) {
         setIsLoading(true)
         try {
@@ -321,6 +327,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
+      if (initTimeout) {
+        clearTimeout(initTimeout)
+        initTimeout = null
+      }
       authListener?.subscription.unsubscribe()
     }
   }, [fetchUserProfile])
