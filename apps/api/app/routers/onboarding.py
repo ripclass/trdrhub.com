@@ -104,16 +104,52 @@ def _persist_onboarding_data(user: User, data: Dict[str, Any]) -> None:
 
 @router.get("/status", response_model=OnboardingStatus)
 async def get_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> OnboardingStatus:
-    # Auto-complete onboarding if user already has company info from registration
-    # This prevents showing the wizard unnecessarily for users who registered with company info
+    # If onboarding_data is empty but user has a company, restore data from company record
+    if (not current_user.onboarding_data or current_user.onboarding_data == {}) and current_user.company_id:
+        company = db.query(Company).filter(Company.id == current_user.company_id).first()
+        if company:
+            # Restore onboarding data from company record and registration metadata
+            restored_data = {}
+            
+            # Get company type from event_metadata (registration stores it as 'business_type')
+            company_type = (
+                company.event_metadata.get('company_type') or 
+                company.event_metadata.get('business_type')
+            )
+            company_size = company.event_metadata.get('company_size')
+            
+            # Restore company info
+            if company.name:
+                restored_data['company'] = {
+                    'name': company.name,
+                    'type': company_type,
+                    'size': company_size,
+                    'legal_name': company.legal_name,
+                    'registration_number': company.registration_number,
+                    'regulator_id': company.regulator_id,
+                    'country': company.country,
+                }
+            
+            # Restore business_types based on company type
+            if company_type == 'both':
+                restored_data['business_types'] = ['exporter', 'importer']
+            elif company_type:
+                restored_data['business_types'] = [company_type]
+            
+            # Save restored data
+            if restored_data:
+                current_user.onboarding_data = restored_data
+                db.commit()
+                print(f"✅ Restored onboarding data for user {current_user.id} from company record")
+    
+    # Auto-complete onboarding if user already has company info
     if not current_user.onboarding_completed and current_user.company_id:
         company = db.query(Company).filter(Company.id == current_user.company_id).first()
         if company:
-            # Check if we have enough info to consider onboarding complete
             onboarding_data = current_user.onboarding_data or {}
             company_info = onboarding_data.get('company', {})
             
-            # Check for company type in multiple places (registration stores it as 'business_type' in event_metadata)
+            # Check for company type in multiple places
             company_type = (
                 company_info.get('type') or 
                 company.event_metadata.get('company_type') or 
