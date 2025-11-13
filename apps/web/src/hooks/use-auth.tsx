@@ -165,17 +165,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let supabaseToken = providedToken
       
       if (!supabaseToken) {
-        // Fallback: get token from session if not provided
+        // Fallback: get token from session if not provided (with timeout)
         console.log('fetchUserProfile: Getting Supabase session...')
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-        
-        if (sessionError) {
-          console.error('fetchUserProfile: getSession error:', sessionError)
-          throw new Error(`Failed to get session: ${sessionError.message}`)
+        try {
+          const { data: sessionData, error: sessionError } = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Session check timeout')), 5000)
+            )
+          ]) as { data: { session: any }, error: any }
+          
+          if (sessionError) {
+            console.error('fetchUserProfile: getSession error:', sessionError)
+            throw new Error(`Failed to get session: ${sessionError.message}`)
+          }
+          
+          console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
+          supabaseToken = sessionData.session?.access_token || null
+        } catch (error: any) {
+          console.warn('fetchUserProfile: Failed to get Supabase session:', error?.message || error)
+          // If getSession times out, check if we can get token from localStorage as fallback
+          // This can happen on page refresh if Supabase client hasn't initialized yet
+          const storedToken = localStorage.getItem('sb-' + import.meta.env.VITE_SUPABASE_PROJECT_REF + '-auth-token')
+          if (storedToken) {
+            try {
+              const parsed = JSON.parse(storedToken)
+              supabaseToken = parsed?.access_token || null
+              console.log('fetchUserProfile: Using token from localStorage fallback')
+            } catch {
+              // Ignore parse errors
+            }
+          }
+          if (!supabaseToken) {
+            throw new Error('Session check timeout - please try logging in again')
+          }
         }
-        
-        console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
-        supabaseToken = sessionData.session?.access_token || null
       }
       
       if (!supabaseToken) {
