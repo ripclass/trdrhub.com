@@ -450,6 +450,7 @@ interface DashboardOverviewProps {
   recentHistory: typeof mockHistory;
   workspaceTab: string;
   onWorkspaceTabChange: (value: string) => void;
+  userName?: string;
 }
 
 function DashboardOverview({
