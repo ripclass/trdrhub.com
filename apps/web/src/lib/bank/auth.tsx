@@ -205,24 +205,73 @@ export function BankAuthProvider({ children }: BankAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = localStorage.getItem('bank_token');
-        if (!token) {
-          setIsLoading(false);
-          return;
+        // First, check for bank_token (legacy bank auth)
+        const bankToken = localStorage.getItem('bank_token');
+        if (bankToken) {
+          try {
+            const userData = await mockBankAuthCheck(bankToken);
+            setUser(userData);
+            setIsLoading(false);
+            return;
+          } catch (error) {
+            // Invalid bank token, try Supabase auth
+            localStorage.removeItem('bank_token');
+          }
         }
 
-        // Use mock auth check instead of API call
+        // If no bank_token, check Supabase auth for bank users
         try {
-          const userData = await mockBankAuthCheck(token);
-          setUser(userData);
-        } catch (error) {
-          // Invalid token
-          localStorage.removeItem('bank_token');
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          
+          if (supabaseUrl && supabaseAnonKey) {
+            const supabase = createClient(supabaseUrl, supabaseAnonKey);
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (session?.access_token) {
+              // Check if user is a bank user via backend API
+              const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+              try {
+                const profileResponse = await fetch(`${API_BASE_URL}/auth/me`, {
+                  headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                  },
+                  credentials: 'include',
+                });
+
+                if (profileResponse.ok) {
+                  const profile = await profileResponse.json();
+                  
+                  // Check if user is a bank user
+                  if (profile.role === 'bank_officer' || profile.role === 'bank_admin') {
+                    // Convert Supabase user to BankUser format
+                    const bankUser: BankUser = {
+                      id: profile.id,
+                      name: profile.full_name || profile.email?.split('@')[0] || 'Bank User',
+                      email: profile.email,
+                      role: profile.role === 'bank_admin' ? 'bank_admin' : 'bank_officer',
+                      company_id: profile.company_id,
+                    };
+                    
+                    setUser(bankUser);
+                    setIsLoading(false);
+                    return;
+                  }
+                }
+              } catch (apiError) {
+                console.warn('Failed to fetch user profile from backend:', apiError);
+              }
+            }
+          }
+        } catch (supabaseError) {
+          console.warn('Supabase auth check failed:', supabaseError);
         }
+
+        // No authentication found
+        setIsLoading(false);
       } catch (error) {
         console.error('Auth check failed:', error);
-        localStorage.removeItem('bank_token');
-      } finally {
         setIsLoading(false);
       }
     };

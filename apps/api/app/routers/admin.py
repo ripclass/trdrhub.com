@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from ..database import get_db
-from app.models import User, UserRole
+from app.models import User, UserRole, Company
 from ..core.security import get_current_user, require_admin
 from ..core.rbac import RBACPolicyEngine, Permission, get_role_capabilities
 from ..schemas.user import (
@@ -451,6 +451,117 @@ async def check_permission(
         reason="Permission granted" if allowed else "Permission denied",
         user_role=current_user.role
     )
+
+
+@router.get("/users/{user_id}/verify-data")
+async def verify_user_data(
+    user_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify all registration data for a user (admin only).
+    
+    Checks:
+    - User record exists
+    - Company record exists (by company_id or contact_email)
+    - Company data is complete
+    - onboarding_data JSONB contains all expected fields
+    
+    Requires admin privileges.
+    """
+    from typing import Dict, Any, List
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    result: Dict[str, Any] = {
+        "user_id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "checks": {
+            "user_exists": True,
+            "has_company_id": user.company_id is not None,
+            "company_exists": False,
+            "company_found_by_id": False,
+            "company_found_by_email": False,
+            "has_onboarding_data": user.onboarding_data is not None and user.onboarding_data != {},
+            "onboarding_data_complete": False,
+        },
+        "company": None,
+        "onboarding_data": user.onboarding_data or {},
+        "issues": [],
+        "recommendations": []
+    }
+    
+    # Check company
+    company = None
+    if user.company_id:
+        company = db.query(Company).filter(Company.id == user.company_id).first()
+        if company:
+            result["checks"]["company_exists"] = True
+            result["checks"]["company_found_by_id"] = True
+        else:
+            result["issues"].append("company_id exists but company record not found")
+    
+    # Try to find company by email
+    if not company:
+        company = db.query(Company).filter(Company.contact_email == user.email).first()
+        if company:
+            result["checks"]["company_exists"] = True
+            result["checks"]["company_found_by_email"] = True
+            result["issues"].append(f"Company found by email but user.company_id is NULL (should be {company.id})")
+            result["recommendations"].append(f"UPDATE users SET company_id = '{company.id}' WHERE id = '{user.id}';")
+    
+    # Company details
+    if company:
+        result["company"] = {
+            "id": str(company.id),
+            "name": company.name,
+            "contact_email": company.contact_email,
+            "legal_name": company.legal_name,
+            "registration_number": company.registration_number,
+            "country": company.country,
+            "regulator_id": company.regulator_id,
+            "event_metadata": company.event_metadata or {}
+        }
+    
+    # Check onboarding_data completeness
+    onboarding_data = user.onboarding_data or {}
+    if onboarding_data:
+        has_company = bool(onboarding_data.get("company"))
+        has_business_types = bool(onboarding_data.get("business_types"))
+        has_contact_person = bool(onboarding_data.get("contact_person"))
+        
+        if has_company and has_business_types:
+            result["checks"]["onboarding_data_complete"] = True
+        else:
+            missing = []
+            if not has_company:
+                missing.append("company")
+            if not has_business_types:
+                missing.append("business_types")
+            result["issues"].append(f"onboarding_data missing: {', '.join(missing)}")
+    
+    # Overall status
+    all_good = (
+        result["checks"]["company_exists"] and
+        result["checks"]["has_company_id"] and
+        result["checks"]["has_onboarding_data"] and
+        result["checks"]["onboarding_data_complete"]
+    )
+    
+    result["status"] = "complete" if all_good else "incomplete"
+    result["status_message"] = "All data present and correct" if all_good else "Some data is missing or incomplete"
+    
+    return result
 
 
 def _get_role_description(role: str) -> str:
