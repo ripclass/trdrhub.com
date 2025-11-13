@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     SUPABASE_ISSUER: Optional[str] = None
     SUPABASE_AUDIENCE: Optional[str] = None
     SUPABASE_JWKS_URL: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None  # JWT secret for validating Supabase tokens
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None  # Service role key (can be used as JWT secret)
     AUTH0_ISSUER: Optional[str] = None
     AUTH0_AUDIENCE: Optional[str] = None
     AUTH0_JWKS_URL: Optional[str] = None

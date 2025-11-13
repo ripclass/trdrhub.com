@@ -224,6 +224,7 @@ async def get_user_profile(
 ):
     """Get current user profile."""
     import logging
+    import traceback
     logger = logging.getLogger(__name__)
     
     try:
@@ -231,17 +232,25 @@ async def get_user_profile(
         try:
             current_user = await get_current_user(credentials, db)
         except HTTPException as auth_error:
+            # Re-raise HTTP exceptions as-is (401, 403, etc.)
             logger.error(f"Authentication failed in /auth/me: {auth_error.detail}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error during authentication: {str(e)}", exc_info=True)
+            # Log full traceback for debugging
+            error_trace = traceback.format_exc()
+            logger.error(f"Unexpected error during authentication: {str(e)}\n{error_trace}")
+            # Return 500 with detailed error message for debugging
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Authentication error: {str(e)}"
+                detail=f"Authentication error: {str(e)}. Check backend logs for details."
             )
         
         # Ensure user is refreshed from database
-        db.refresh(current_user)
+        try:
+            db.refresh(current_user)
+        except Exception as e:
+            logger.warning(f"Failed to refresh user from database: {str(e)}")
+            # Continue anyway - user object should be valid
         
         # Normalize role before validation (handle legacy roles)
         role = current_user.role.lower() if current_user.role else "exporter"
@@ -274,28 +283,32 @@ async def get_user_profile(
         
         return UserProfile.model_validate(profile_data)
             
+    except HTTPException:
+        # Re-raise HTTP exceptions (401, 403, 500 from auth, etc.)
+        raise
     except Exception as e:
         # Log the error for debugging
-        import traceback
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error in /auth/me for user {current_user.id if current_user else 'unknown'}: {str(e)}")
-        logger.error(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in /auth/me: {str(e)}\n{error_trace}")
         
-        # Return a basic profile even if validation fails
-        try:
-            from datetime import datetime, timezone
-            return UserProfile(
-                id=current_user.id,
-                email=current_user.email or "unknown@example.com",
-                full_name=current_user.full_name or "Unknown User",
-                role="exporter",  # Safe default
-                is_active=current_user.is_active if current_user.is_active is not None else True,
-                created_at=current_user.created_at or datetime.now(timezone.utc),
-                updated_at=current_user.updated_at or datetime.now(timezone.utc),
-            )
-        except Exception as fallback_error:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to load user profile: {str(e)}. Fallback also failed: {str(fallback_error)}"
-            )
+        # Try to return a basic profile if we have a user object
+        if 'current_user' in locals() and current_user:
+            try:
+                from datetime import datetime, timezone
+                return UserProfile(
+                    id=current_user.id,
+                    email=current_user.email or "unknown@example.com",
+                    full_name=current_user.full_name or "Unknown User",
+                    role="exporter",  # Safe default
+                    is_active=current_user.is_active if current_user.is_active is not None else True,
+                    created_at=current_user.created_at or datetime.now(timezone.utc),
+                    updated_at=current_user.updated_at or datetime.now(timezone.utc),
+                )
+            except Exception as fallback_error:
+                logger.error(f"Fallback profile creation also failed: {str(fallback_error)}")
+        
+        # If we can't create a profile, return detailed error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load user profile: {str(e)}. See backend logs for full traceback."
+        )
