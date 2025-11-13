@@ -74,8 +74,14 @@ async def register_user(
     
     # Prepare onboarding data
     onboarding_data = {}
+    
+    # Set business_types: use provided value, or infer from company_type
     if user_data.business_types:
         onboarding_data["business_types"] = user_data.business_types
+    elif user_data.company_type == "both":
+        # If company_type is "both" but business_types not provided, set it
+        onboarding_data["business_types"] = ["exporter", "importer"]
+    
     if user_data.company_name:
         onboarding_data["company"] = {
             "name": user_data.company_name,

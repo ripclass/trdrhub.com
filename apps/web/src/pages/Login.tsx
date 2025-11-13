@@ -42,48 +42,70 @@ export default function Login() {
         if (status) {
           const backendRole = status.role;
           const details = status.details as Record<string, any> | undefined;
-          const businessTypes = Array.isArray(details?.business_types) ? details?.business_types : [];
-          const hasBoth = businessTypes.includes("exporter") && businessTypes.includes("importer");
-          const companySize = details?.company?.size;
+          
+          // Check multiple sources for business types
+          const businessTypes = Array.isArray(details?.business_types) ? details.business_types : [];
           const companyType = details?.company?.type;
+          const companySize = details?.company?.size;
+          
+          // Check if user is "both" exporter/importer from multiple sources
+          const hasBothBusinessTypes = businessTypes.includes("exporter") && businessTypes.includes("importer");
+          const isCompanyTypeBoth = companyType === "both" || 
+                                    companyType === "Both Exporter & Importer" ||
+                                    companyType === "both_exporter_importer";
+          
+          // More robust check: if company type is "both" but business_types not set, infer it
+          const isCombinedUser = hasBothBusinessTypes || isCompanyTypeBoth;
+          
+          // If company type is "both" but business_types not set, set it for routing
+          if (isCompanyTypeBoth && !hasBothBusinessTypes) {
+            console.log("ℹ️ Detected company_type='both' but business_types not set, inferring combined user");
+          }
           
           // Debug logging
           console.log("🔍 Login routing check:", {
             backendRole,
             businessTypes,
-            hasBoth,
+            hasBothBusinessTypes,
+            isCompanyTypeBoth,
+            isCombinedUser,
             companySize,
             companyType,
             company_id: status.company_id,
             completed: status.completed,
+            profileRole: profile.role,
             details: details
           });
           
           // Determine destination based on onboarding data
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
+            console.log("✅ Routing to BankDashboard");
           } else if (backendRole === "tenant_admin") {
             destination = "/lcopilot/enterprise-dashboard";
-          } else if (hasBoth && companySize === "sme") {
-            // SME "both" users → CombinedDashboard (unified view)
-            destination = "/lcopilot/combined-dashboard";
-            console.log("✅ Routing to CombinedDashboard (SME both)");
-          } else if (hasBoth && (companySize === "medium" || companySize === "large")) {
-            // Medium/Large "both" users → EnterpriseDashboard
-            destination = "/lcopilot/enterprise-dashboard";
-            console.log("✅ Routing to EnterpriseDashboard (Medium/Large both)");
-          } else if (companyType === "both" && companySize === "sme") {
-            // Fallback: Check company.type directly if business_types not set
-            destination = "/lcopilot/combined-dashboard";
-            console.log("✅ Routing to CombinedDashboard (fallback: company.type='both', SME)");
-          } else if (companyType === "both" && (companySize === "medium" || companySize === "large")) {
-            // Fallback: Check company.type directly if business_types not set
-            destination = "/lcopilot/enterprise-dashboard";
-            console.log("✅ Routing to EnterpriseDashboard (fallback: company.type='both', Medium/Large)");
+            console.log("✅ Routing to EnterpriseDashboard (tenant_admin)");
+          } else if (isCombinedUser) {
+            // Combined users routing based on company size
+            if (companySize === "sme" || !companySize) {
+              // SME "both" users OR no size specified → CombinedDashboard (unified view)
+              // Default to SME/CombinedDashboard if size is missing
+              destination = "/lcopilot/combined-dashboard";
+              console.log(`✅ Routing to CombinedDashboard (${companySize || 'default SME'} both user)`);
+            } else if (companySize === "medium" || companySize === "large") {
+              // Medium/Large "both" users → EnterpriseDashboard
+              destination = "/lcopilot/enterprise-dashboard";
+              console.log("✅ Routing to EnterpriseDashboard (Medium/Large both)");
+            } else {
+              // Unknown size, default to CombinedDashboard for SME
+              destination = "/lcopilot/combined-dashboard";
+              console.log("✅ Routing to CombinedDashboard (both user, unknown size - defaulting to SME)");
+            }
           } else if (profile.role === "importer") {
             destination = "/lcopilot/importer-dashboard";
+            console.log("✅ Routing to ImporterDashboard");
           } else if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
+            console.log("✅ Routing to BankDashboard (profile role)");
           } else {
             console.log("⚠️ No match found, defaulting to exporter-dashboard");
           }
@@ -92,13 +114,36 @@ export default function Login() {
         }
       } catch (err) {
         console.warn("Onboarding status check failed or timed out:", err);
-        // Fallback to role-based routing if onboarding status unavailable
-        if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
-          destination = "/lcopilot/bank-dashboard";
-        } else if (profile.role === "tenant_admin") {
-          destination = "/lcopilot/enterprise-dashboard";
-        } else if (profile.role === "importer") {
-          destination = "/lcopilot/importer-dashboard";
+        console.warn("Error details:", err);
+        
+        // Fallback: Try to check user profile for company info
+        // Sometimes onboarding status might fail but we can still check profile
+        try {
+          const profileCompanyType = (profile as any).company_type || (profile as any).companyType;
+          const profileBusinessTypes = (profile as any).business_types || (profile as any).businessTypes;
+          
+          if (profileCompanyType === "both" || profileCompanyType === "Both Exporter & Importer") {
+            destination = "/lcopilot/combined-dashboard";
+            console.log("✅ Fallback: Routing to CombinedDashboard (from profile company_type)");
+          } else if (Array.isArray(profileBusinessTypes) && 
+                     profileBusinessTypes.includes("exporter") && 
+                     profileBusinessTypes.includes("importer")) {
+            destination = "/lcopilot/combined-dashboard";
+            console.log("✅ Fallback: Routing to CombinedDashboard (from profile business_types)");
+          }
+        } catch (profileErr) {
+          console.warn("Could not check profile for company info:", profileErr);
+        }
+        
+        // Final fallback to role-based routing if onboarding status unavailable
+        if (destination === "/lcopilot/exporter-dashboard") {
+          if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
+            destination = "/lcopilot/bank-dashboard";
+          } else if (profile.role === "tenant_admin") {
+            destination = "/lcopilot/enterprise-dashboard";
+          } else if (profile.role === "importer") {
+            destination = "/lcopilot/importer-dashboard";
+          }
         }
       }
       

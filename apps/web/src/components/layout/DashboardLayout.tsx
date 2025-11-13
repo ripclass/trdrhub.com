@@ -28,6 +28,7 @@ interface DashboardLayoutProps {
   title?: string;
   breadcrumbs?: { label: string; href?: string }[];
   actions?: ReactNode;
+  topbar?: ReactNode; // Slot for topbar content (mode toggle, search, etc.)
   children: ReactNode;
 }
 
@@ -36,6 +37,7 @@ export function DashboardLayout({
   title,
   breadcrumbs,
   actions,
+  topbar,
   children,
 }: DashboardLayoutProps) {
   return (
@@ -79,6 +81,13 @@ export function DashboardLayout({
             {/* Title (if no breadcrumbs) */}
             {!breadcrumbs && title && (
               <h1 className="text-base font-medium">{title}</h1>
+            )}
+            
+            {/* Topbar content (mode toggle, search, etc.) */}
+            {topbar && (
+              <div className="flex-1 flex items-center justify-center">
+                {topbar}
+              </div>
             )}
             
             {/* Actions */}

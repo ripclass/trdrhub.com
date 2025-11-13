@@ -12,7 +12,12 @@ import { useExporterAuth } from "@/lib/exporter/auth";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import { useCombined } from "@/hooks/use-combined";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import { ViewModeToggle } from "@/components/combined/ViewModeToggle";
+import { CombinedKPIs, type KPIData } from "@/components/combined/CombinedKPIs";
+import { CombinedSessions, type Session } from "@/components/combined/CombinedSessions";
+import { CombinedTasks, type Task } from "@/components/combined/CombinedTasks";
 import {
   Upload,
   FileText,
@@ -39,36 +44,34 @@ type Section =
   | "settings"
   | "help";
 
-const dashboardStats = [
-  {
-    label: 'Active LCs',
-    value: '12',
-    helper: 'Export 7 • Import 5',
-    icon: <FileText className="h-5 w-5 text-primary" />,
+// Mock data - will be replaced with API calls in Phase 2
+const mockKPIData: KPIData = {
+  activeLCs: {
+    total: 12,
+    export: 7,
+    import: 5,
   },
-  {
-    label: 'Approval Rate',
-    value: '94%',
-    helper: 'Last 30 days',
-    icon: <ShieldCheck className="h-5 w-5 text-success" />,
+  approvalRate: {
+    total: 94,
+    export: 96,
+    import: 92,
   },
-  {
-    label: 'Pending Actions',
-    value: '4',
-    helper: 'Needs review today',
-    icon: <AlertTriangle className="h-5 w-5 text-amber-500" />,
+  pendingActions: {
+    total: 4,
+    export: 2,
+    import: 2,
   },
-  {
-    label: 'Average Turnaround',
-    value: '2.1 days',
-    helper: 'Across all banks',
-    icon: <Navigation className="h-5 w-5 text-info" />,
+  avgTurnaround: {
+    total: '2.1 days',
+    export: '1.8 days',
+    import: '2.5 days',
   },
-];
+};
 
-const exportSessions = [
+const mockExportSessions: Session[] = [
   {
     id: 'EXP-2391',
+    type: 'export',
     counterparty: 'BRAC Bank',
     amount: 'USD 125K',
     status: 'Ready to submit',
@@ -76,6 +79,7 @@ const exportSessions = [
   },
   {
     id: 'EXP-2384',
+    type: 'export',
     counterparty: 'Sonali Bank',
     amount: 'USD 210K',
     status: 'Discrepancy noted',
@@ -83,9 +87,10 @@ const exportSessions = [
   },
 ];
 
-const importSessions = [
+const mockImportSessions: Session[] = [
   {
     id: 'IMP-1178',
+    type: 'import',
     counterparty: 'HSBC Dhaka',
     amount: 'USD 90K',
     status: 'Awaiting supplier docs',
@@ -93,6 +98,7 @@ const importSessions = [
   },
   {
     id: 'IMP-1169',
+    type: 'import',
     counterparty: 'UCBL',
     amount: 'USD 140K',
     status: 'Under review',
@@ -100,26 +106,72 @@ const importSessions = [
   },
 ];
 
-const quickActions = [
+const mockTasks: Task[] = [
   {
-    title: 'Validate Export LC',
-    description: 'Upload LC draft or MT700 and run ICC checks.',
-    to: '/lcopilot/exporter-dashboard?section=upload',
-    variant: 'bg-gradient-exporter',
+    id: 'task-1',
+    type: 'export',
+    title: 'Shipment packing list upload',
+    description: 'XYZ Trading Co.',
+    lcNumber: 'EXP-2384',
+    dueDate: new Date().toISOString().split('T')[0], // Today
+    priority: 'high',
+    status: 'pending',
   },
   {
-    title: 'Validate Import LC',
-    description: 'Pre-screen supplier documents before shipment.',
-    to: '/lcopilot/importer-dashboard?section=upload',
-    variant: 'bg-gradient-importer',
+    id: 'task-2',
+    type: 'export',
+    title: 'Bank discrepancy resolution call',
+    description: 'Sonali Bank',
+    lcNumber: 'EXP-2384',
+    dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Tomorrow
+    priority: 'medium',
+    status: 'pending',
   },
   {
-    title: 'Request Bank Profile',
-    description: 'Preview enforcement profile for partner banks.',
-    to: '/lcopilot/exporter-dashboard?section=analytics',
-    variant: 'bg-gradient-primary',
+    id: 'task-3',
+    type: 'import',
+    title: 'Supplier invoice verification',
+    description: 'UCBL',
+    lcNumber: 'IMP-1169',
+    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // In 3 days
+    priority: 'medium',
+    status: 'pending',
   },
 ];
+
+const getQuickActions = (viewMode: "export" | "import" | "all") => {
+  const baseActions = [
+    {
+      title: 'Validate Export LC',
+      description: 'Upload LC draft or MT700 and run ICC checks.',
+      to: '/lcopilot/exporter-dashboard?section=upload',
+      variant: 'bg-gradient-exporter',
+      type: 'export' as const,
+    },
+    {
+      title: 'Validate Import LC',
+      description: 'Pre-screen supplier documents before shipment.',
+      to: '/lcopilot/importer-dashboard?section=upload',
+      variant: 'bg-gradient-importer',
+      type: 'import' as const,
+    },
+    {
+      title: 'Request Bank Profile',
+      description: 'Preview enforcement profile for partner banks.',
+      to: '/lcopilot/exporter-dashboard?section=analytics',
+      variant: 'bg-gradient-primary',
+      type: 'both' as const,
+    },
+  ];
+
+  if (viewMode === "export") {
+    return baseActions.filter(a => a.type === "export" || a.type === "both");
+  } else if (viewMode === "import") {
+    return baseActions.filter(a => a.type === "import" || a.type === "both");
+  }
+
+  return baseActions;
+};
 
 export default function CombinedDashboard() {
   const { toast } = useToast();
@@ -135,6 +187,7 @@ export default function CombinedDashboard() {
   } : exporterUser;
 
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
+  const { viewMode } = useCombined();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -188,8 +241,29 @@ export default function CombinedDashboard() {
   if (authLoading && !mainUser) return <div className="flex items-center justify-center h-screen">Loading...</div>;
   if (!mainUser && (!isAuthenticated || authLoading)) return null;
 
+  const handleKpiClick = (kpi: string, mode?: typeof viewMode) => {
+    // Telemetry: Log KPI click
+    console.log("📊 KPI clicked:", { kpi, mode, viewMode });
+    // Could apply filters based on KPI clicked
+    // For now, just log for telemetry
+  };
+
+  const handleSessionClick = (session: Session) => {
+    // Telemetry: Log session click
+    console.log("📋 Session clicked:", { sessionId: session.id, type: session.type });
+  };
+
+  const handleQuickActionClick = (action: { title: string; to: string; type: string }) => {
+    // Telemetry: Log quick action click
+    console.log("⚡ Quick action clicked:", { action: action.title, destination: action.to });
+  };
+
   const renderContent = () => {
     if (activeSection === "dashboard") {
+      const quickActions = getQuickActions(viewMode);
+      const exportTasks = mockTasks.filter(t => t.type === "export");
+      const importTasks = mockTasks.filter(t => t.type === "import");
+
       return (
         <div className="space-y-8">
           <header className="space-y-2">
@@ -206,25 +280,16 @@ export default function CombinedDashboard() {
             </p>
           </header>
 
+          {/* KPI Section */}
           <section>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {dashboardStats.map((stat) => (
-                <Card key={stat.label} className="border-border/40 shadow-soft">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {stat.label}
-                    </CardDescription>
-                    {stat.icon}
-                  </CardHeader>
-                  <CardContent className="space-y-1">
-                    <div className="text-2xl font-semibold text-foreground">{stat.value}</div>
-                    <p className="text-xs text-muted-foreground">{stat.helper}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <CombinedKPIs
+              data={mockKPIData}
+              isLoading={false}
+              onKpiClick={handleKpiClick}
+            />
           </section>
 
+          {/* Quick Actions Section */}
           <section className="grid gap-4 md:grid-cols-3">
             {quickActions.map((action) => (
               <Card key={action.title} className="border-border/40 shadow-sm">
@@ -235,7 +300,12 @@ export default function CombinedDashboard() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Button asChild variant="secondary" className={`${action.variant} hover:opacity-90 w-full text-foreground`}>
+                  <Button
+                    asChild
+                    variant="secondary"
+                    className={`${action.variant} hover:opacity-90 w-full text-foreground`}
+                    onClick={() => handleQuickActionClick(action)}
+                  >
                     <Link to={action.to} className="flex items-center justify-center gap-2 text-sm font-medium">
                       Continue <ArrowRight className="h-4 w-4" />
                     </Link>
@@ -245,121 +315,26 @@ export default function CombinedDashboard() {
             ))}
           </section>
 
-          <section className="rounded-2xl border border-border/40 bg-card/50 shadow-strong backdrop-blur">
-            <Tabs defaultValue="exports" className="w-full">
-              <div className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-foreground">Validation Sessions</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Export and import LC progress in one place. Filter by tab to focus faster.
-                  </p>
-                </div>
-                <TabsList className="grid w-full grid-cols-2 md:w-auto">
-                  <TabsTrigger value="exports">Export LCs</TabsTrigger>
-                  <TabsTrigger value="imports">Import LCs</TabsTrigger>
-                </TabsList>
-              </div>
-
-              <TabsContent value="exports" className="p-6 pt-0">
-                <div className="grid gap-4 md:grid-cols-2">
-                  {exportSessions.map((session) => (
-                    <Card key={session.id} className="border-border/40 shadow-sm transition-colors hover:border-primary/30">
-                      <CardHeader className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-base font-semibold text-foreground">{session.id}</CardTitle>
-                          <Badge variant="outline" className="text-xs text-primary">
-                            Export
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-sm text-muted-foreground">
-                          {session.counterparty} • {session.amount}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm text-muted-foreground">
-                        <p className="flex items-center gap-2 text-foreground">
-                          <CheckCircle className="h-4 w-4 text-success" /> {session.status}
-                        </p>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Updated {session.updatedAt}</span>
-                          <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-primary">
-                            <Link to={`/lcopilot/exporter-dashboard?session=${session.id}`}>Open workspace</Link>
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="imports" className="p-6 pt-0">
-                <div className="grid gap-4 md:grid-cols-2">
-                  {importSessions.map((session) => (
-                    <Card key={session.id} className="border-border/40 shadow-sm transition-colors hover:border-primary/30">
-                      <CardHeader className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-base font-semibold text-foreground">{session.id}</CardTitle>
-                          <Badge variant="outline" className="text-xs text-info">
-                            Import
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-sm text-muted-foreground">
-                          {session.counterparty} • {session.amount}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm text-muted-foreground">
-                        <p className="flex items-center gap-2 text-foreground">
-                          <Truck className="h-4 w-4 text-info" /> {session.status}
-                        </p>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Updated {session.updatedAt}</span>
-                          <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-primary">
-                            <Link to={`/lcopilot/importer-dashboard?session=${session.id}`}>Open workspace</Link>
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-            </Tabs>
+          {/* Sessions Section */}
+          <section>
+            <CombinedSessions
+              exportSessions={mockExportSessions}
+              importSessions={mockImportSessions}
+              isLoading={false}
+              onSessionClick={handleSessionClick}
+            />
           </section>
 
           <Separator className="opacity-20" />
 
+          {/* Tasks and Performance Section */}
           <section className="grid gap-4 md:grid-cols-3">
-            <Card className="md:col-span-2 border-border/40 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-base text-foreground">Upcoming Deliverables</CardTitle>
-                <CardDescription className="text-sm text-muted-foreground">
-                  Keep suppliers and banks aligned with a unified schedule.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm text-muted-foreground">
-                <div className="flex items-start justify-between rounded-lg border border-border/40 bg-muted/40 p-4">
-                  <div>
-                    <p className="text-foreground font-medium">Shipment packing list upload</p>
-                    <p>XYZ Trading Co. • LC EXP-2384</p>
-                  </div>
-                  <Badge variant="secondary" className="text-amber-500">
-                    Due today
-                  </Badge>
-                </div>
-                <div className="flex items-start justify-between rounded-lg border border-border/40 bg-muted/20 p-4">
-                  <div>
-                    <p className="text-foreground font-medium">Bank discrepancy resolution call</p>
-                    <p>Sonali Bank • LC EXP-2384</p>
-                  </div>
-                  <Badge variant="outline">Tomorrow</Badge>
-                </div>
-                <div className="flex items-start justify-between rounded-lg border border-border/40 bg-muted/20 p-4">
-                  <div>
-                    <p className="text-foreground font-medium">Supplier invoice verification</p>
-                    <p>UCBL • LC IMP-1169</p>
-                  </div>
-                  <Badge variant="outline">In 3 days</Badge>
-                </div>
-              </CardContent>
-            </Card>
+            <CombinedTasks
+              exportTasks={exportTasks}
+              importTasks={importTasks}
+              isLoading={false}
+              maxItems={5}
+            />
 
             <Card className="border-border/40 shadow-sm">
               <CardHeader>
@@ -372,14 +347,14 @@ export default function CombinedDashboard() {
                 <div className="rounded-lg border border-border/40 bg-muted/30 p-4 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between text-foreground">
                     <span>Export approval</span>
-                    <span className="font-semibold">96%</span>
+                    <span className="font-semibold">{mockKPIData.approvalRate.export}%</span>
                   </div>
                   <p className="mt-1 text-xs">+4.2% vs previous quarter</p>
                 </div>
                 <div className="rounded-lg border border-border/40 bg-muted/20 p-4 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between text-foreground">
                     <span>Import approval</span>
-                    <span className="font-semibold">92%</span>
+                    <span className="font-semibold">{mockKPIData.approvalRate.import}%</span>
                   </div>
                   <p className="mt-1 text-xs">+2.5% vs previous quarter</p>
                 </div>
@@ -432,6 +407,11 @@ export default function CombinedDashboard() {
             onSectionChange={handleSectionChange}
             user={currentUser}
           />
+        }
+        topbar={
+          activeSection === "dashboard" ? (
+            <ViewModeToggle showAll={true} />
+          ) : undefined
         }
       >
         <div className="p-6">
