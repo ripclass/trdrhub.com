@@ -153,6 +153,14 @@ export default function ExporterDashboardV2() {
   const { user: mainUser } = useAuth(); // Get user from main auth hook (already authenticated)
   const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
   const navigate = useNavigate();
+  
+  // Use mainUser if available (from Supabase login), otherwise fall back to exporterUser
+  const currentUser = mainUser ? {
+    id: mainUser.id,
+    name: mainUser.full_name || mainUser.username || mainUser.email.split('@')[0],
+    email: mainUser.email,
+    role: mainUser.role === 'exporter' ? 'exporter' as const : 'tenant_admin' as const,
+  } : exporterUser;
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
