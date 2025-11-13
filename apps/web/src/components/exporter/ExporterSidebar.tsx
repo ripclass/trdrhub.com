@@ -34,11 +34,15 @@ type ExporterSection =
 interface ExporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeSection: ExporterSection;
   onSectionChange: (section: ExporterSection) => void;
+  user?: { name?: string; email?: string; id?: string; role?: string };
 }
 
-export function ExporterSidebar({ activeSection, onSectionChange, ...props }: ExporterSidebarProps) {
+export function ExporterSidebar({ activeSection, onSectionChange, user: propUser, ...props }: ExporterSidebarProps) {
   const location = useLocation();
-  const { user, logout } = useExporterAuth();
+  const { user: exporterAuthUser, logout } = useExporterAuth();
+  
+  // Use propUser if provided (from main auth), otherwise fall back to exporterAuthUser
+  const user = propUser || exporterAuthUser;
   
   const isActive = (url: string) => {
     if (url === "#") return false;

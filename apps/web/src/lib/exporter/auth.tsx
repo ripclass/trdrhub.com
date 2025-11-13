@@ -292,7 +292,7 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
     localStorage.removeItem('trdrhub_api_token');
     localStorage.removeItem('exporter_email');
     setUser(null);
-    navigate('/lcopilot/exporter-dashboard/login');
+    navigate('/login'); // Redirect to main login page
   };
 
   const value: ExporterAuthContext = {

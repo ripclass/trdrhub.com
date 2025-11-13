@@ -353,7 +353,7 @@ export default function ExporterDashboardV2() {
   return (
     <>
       <DashboardLayout
-        sidebar={<ExporterSidebar activeSection={activeSection} onSectionChange={handleSectionChange} />}
+        sidebar={<ExporterSidebar activeSection={activeSection} onSectionChange={handleSectionChange} user={currentUser} />}
         breadcrumbs={[
           { label: "LCopilot", href: "/lcopilot" },
           { label: "Exporter Dashboard" },
