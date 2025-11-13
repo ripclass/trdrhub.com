@@ -113,7 +113,9 @@ async def login_user(
     db: Session = Depends(get_db)
 ):
     """Authenticate user and return access token."""
-
+    
+    # For email/password users, verify password
+    # For Supabase users (hashed_password=None), they should authenticate via Supabase token, not this endpoint
     user = authenticate_user(user_data.email, user_data.password, db)
     if not user:
         raise HTTPException(
@@ -215,7 +217,67 @@ async def fix_password_endpoint(
 
 @router.get("/me", response_model=UserProfile)
 async def get_user_profile(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """Get current user profile."""
-    return UserProfile.model_validate(current_user)
+    try:
+        # Ensure user is refreshed from database
+        db.refresh(current_user)
+        
+        # Normalize role before validation (handle legacy roles)
+        role = current_user.role.lower() if current_user.role else "exporter"
+        legacy_role_map = {
+            "bank": "bank_officer",
+            "admin": "system_admin",
+        }
+        normalized_role = legacy_role_map.get(role, role)
+        
+        # Ensure role is valid
+        valid_roles = ["exporter", "importer", "tenant_admin", "bank_officer", "bank_admin", "system_admin"]
+        if normalized_role not in valid_roles:
+            normalized_role = "exporter"  # Fallback to exporter
+        
+        # Ensure required fields exist
+        from datetime import datetime, timezone
+        created_at = current_user.created_at or datetime.now(timezone.utc)
+        updated_at = current_user.updated_at or created_at
+        
+        # Create profile data dict (don't modify user object)
+        profile_data = {
+            "id": current_user.id,
+            "email": current_user.email or "unknown@example.com",
+            "full_name": current_user.full_name or "Unknown User",
+            "role": normalized_role,
+            "is_active": current_user.is_active if current_user.is_active is not None else True,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        }
+        
+        return UserProfile.model_validate(profile_data)
+            
+    except Exception as e:
+        # Log the error for debugging
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in /auth/me for user {current_user.id if current_user else 'unknown'}: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Return a basic profile even if validation fails
+        try:
+            from datetime import datetime, timezone
+            return UserProfile(
+                id=current_user.id,
+                email=current_user.email or "unknown@example.com",
+                full_name=current_user.full_name or "Unknown User",
+                role="exporter",  # Safe default
+                is_active=current_user.is_active if current_user.is_active is not None else True,
+                created_at=current_user.created_at or datetime.now(timezone.utc),
+                updated_at=current_user.updated_at or datetime.now(timezone.utc),
+            )
+        except Exception as fallback_error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to load user profile: {str(e)}. Fallback also failed: {str(fallback_error)}"
+            )

@@ -733,6 +733,10 @@ def authenticate_user(email: str, password: str, db: Session) -> Optional[User]:
     if not user.is_active:
         return None
 
+    # If user has no password (Supabase user), cannot authenticate via email/password
+    if not user.hashed_password:
+        return None
+
     if not verify_password(password, user.hashed_password):
         return None
 
