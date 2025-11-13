@@ -459,23 +459,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!session) throw new Error('Authentication session not established after sign up')
 
       // Create user in backend database with company info
+      // CRITICAL: This must succeed for onboarding data to be saved
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+      const registerPayload: any = {
+        email,
+        password,
+        full_name: fullName,
+        role,
+      }
+      
+      // Add company info if provided
+      if (companyInfo?.companyName) {
+        registerPayload.company_name = companyInfo.companyName
+        registerPayload.company_type = companyInfo.companyType
+        registerPayload.company_size = companyInfo.companySize
+        registerPayload.business_types = companyInfo.businessTypes
+        console.log('📝 Registering with company info:', {
+          company_name: companyInfo.companyName,
+          company_type: companyInfo.companyType,
+          company_size: companyInfo.companySize,
+          business_types: companyInfo.businessTypes
+        })
+      }
+      
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-        const registerPayload: any = {
-          email,
-          password,
-          full_name: fullName,
-          role,
-        }
-        
-        // Add company info if provided
-        if (companyInfo?.companyName) {
-          registerPayload.company_name = companyInfo.companyName
-          registerPayload.company_type = companyInfo.companyType
-          registerPayload.company_size = companyInfo.companySize
-          registerPayload.business_types = companyInfo.businessTypes
-        }
-        
         const registerResponse = await fetch(`${API_BASE_URL}/auth/register`, {
           method: 'POST',
           headers: {
@@ -487,15 +494,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!registerResponse.ok) {
           const errorData = await registerResponse.json().catch(() => ({ detail: 'Backend registration failed' }))
+          const errorMessage = errorData.detail || `HTTP ${registerResponse.status}: Backend registration failed`
+          
           // If user already exists, that's okay - continue
-          if (registerResponse.status !== 400 || !errorData.detail?.includes('already registered')) {
-            console.warn('Backend registration failed (non-critical):', errorData.detail || 'Unknown error')
-            // Continue anyway - user might have been created via webhook or already exists
+          if (registerResponse.status === 400 && errorData.detail?.includes('already registered')) {
+            console.log('ℹ️ User already exists in backend, continuing...')
+          } else {
+            // This is CRITICAL - backend registration failed
+            console.error('❌ Backend registration FAILED:', errorMessage)
+            console.error('📋 Payload was:', registerPayload)
+            // Still continue - user exists in Supabase, but onboarding data might be missing
+            // User will need to complete onboarding wizard
           }
+        } else {
+          const userData = await registerResponse.json().catch(() => null)
+          console.log('✅ Backend registration successful:', {
+            user_id: userData?.id,
+            company_id: userData?.company_id,
+            onboarding_data: userData?.onboarding_data
+          })
         }
-      } catch (backendError) {
-        // Non-critical - Supabase user is created, backend user might exist or be created later
-        console.warn('Backend registration error (non-critical):', backendError)
+      } catch (backendError: any) {
+        // This is CRITICAL - backend registration error
+        console.error('❌ Backend registration ERROR:', backendError)
+        console.error('📋 Payload was:', registerPayload)
+        // Still continue - user exists in Supabase, but onboarding data might be missing
+        // User will need to complete onboarding wizard
       }
 
       const profile = await fetchUserProfile()

@@ -191,29 +191,54 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
   const handleBusinessSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     
-    // Ensure we include company data when completing onboarding
-    // This is critical because company data might have been saved in earlier steps
-    const backendRole = getBackendRole(companyType, companySize)
-    const companyPayload: CompanyPayload | undefined = companyForm.name ? {
-      name: companyForm.name,
-      type: companyType,
-      size: companySize || undefined,
-      legal_name: companyForm.legal_name,
-      registration_number: companyForm.registration_number,
-      regulator_id: companyForm.regulator_id,
-      country: companyForm.country,
-    } : undefined
-    
-    await updateProgress({
-      role: backendRole,
-      onboarding_step: 'business',
-      business_types: businessTypes.length > 0 ? businessTypes : (companyType === 'both' ? ['exporter', 'importer'] : companyType ? [companyType] : []),
-      company: companyPayload,
-      contact_person: contactPerson,
-      complete: true,
-    })
-    onComplete()
-    onClose()
+    try {
+      // Ensure we include company data when completing onboarding
+      // This is critical because company data might have been saved in earlier steps
+      const backendRole = getBackendRole(companyType, companySize)
+      const companyPayload: CompanyPayload | undefined = companyForm.name ? {
+        name: companyForm.name,
+        type: companyType,
+        size: companySize || undefined,
+        legal_name: companyForm.legal_name,
+        registration_number: companyForm.registration_number,
+        regulator_id: companyForm.regulator_id,
+        country: companyForm.country,
+      } : undefined
+      
+      const finalBusinessTypes = businessTypes.length > 0 
+        ? businessTypes 
+        : (companyType === 'both' ? ['exporter', 'importer'] : companyType ? [companyType] : [])
+      
+      console.log('💾 Saving onboarding data:', {
+        role: backendRole,
+        company: companyPayload,
+        business_types: finalBusinessTypes,
+        companyType,
+        companySize
+      })
+      
+      const result = await updateProgress({
+        role: backendRole,
+        onboarding_step: 'business',
+        business_types: finalBusinessTypes,
+        company: companyPayload,
+        contact_person: contactPerson,
+        complete: true,
+      })
+      
+      console.log('✅ Onboarding saved successfully:', {
+        completed: result.completed,
+        company_id: result.company_id,
+        details: result.details
+      })
+      
+      onComplete()
+      onClose()
+    } catch (error: any) {
+      console.error('❌ Failed to save onboarding:', error)
+      alert(`Failed to save onboarding: ${error?.message || 'Unknown error'}. Please try again.`)
+      // Don't close modal on error - let user retry
+    }
   }
 
   const toggleBusinessType = (value: string) => {
