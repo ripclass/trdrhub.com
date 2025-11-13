@@ -16,11 +16,11 @@ This guide covers **Option 1: Auth0 via Supabase**.
 1. **Go to Supabase Dashboard** → Your Project → Authentication → Providers
 2. **Enable Auth0 provider**
 3. **Configure Auth0 settings:**
-   - **Client ID**: Your Auth0 Application Client ID
-   - **Client Secret**: Your Auth0 Application Client Secret
-   - **Domain**: Your Auth0 domain (e.g., `your-tenant.auth0.com`)
+   - **Client ID**: Your Auth0 Application Client ID (from Auth0 Dashboard)
+   - **Client Secret**: Your Auth0 Application Client Secret (from Auth0 Dashboard)
+   - **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com` (your Auth0 domain)
    - **Authorized Redirect URLs**: Add your callback URLs:
-     - `https://your-project.supabase.co/auth/v1/callback`
+     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
      - `https://trdrhub.com/auth/callback` (production)
      - `http://localhost:5173/auth/callback` (development)
 
@@ -29,7 +29,7 @@ This guide covers **Option 1: Auth0 via Supabase**.
 1. **Go to Auth0 Dashboard** → Applications → Your Application
 2. **Settings tab:**
    - **Allowed Callback URLs**: Add:
-     - `https://your-project.supabase.co/auth/v1/callback`
+     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
      - `https://trdrhub.com/auth/callback`
      - `http://localhost:5173/auth/callback`
    - **Allowed Web Origins**: Add:
@@ -45,12 +45,19 @@ Add these to your backend `.env` file (or Render environment variables):
 
 ```bash
 # Auth0 Configuration (for direct Auth0 token validation)
-AUTH0_ISSUER=https://your-tenant.auth0.com/
+AUTH0_ISSUER=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/
 AUTH0_AUDIENCE=https://your-api-identifier
-AUTH0_JWKS_URL=https://your-tenant.auth0.com/.well-known/jwks.json
+AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
 ```
 
-**Note**: These are optional if you're using Auth0 via Supabase. The backend will validate Supabase tokens, which contain Auth0 user info.
+**Important**: 
+- `AUTH0_ISSUER` and `AUTH0_JWKS_URL` are set above with your actual Auth0 domain
+- `AUTH0_AUDIENCE` needs to be your Auth0 API Identifier:
+  - Go to Auth0 Dashboard → APIs → Your API (or create one)
+  - Copy the "Identifier" value (e.g., `https://api.trdrhub.com` or `https://trdrhub-api`)
+  - If you don't have an API, create one: APIs → Create API → Set Identifier
+
+**Note**: These are optional if you're using Auth0 via Supabase. The backend will validate Supabase tokens, which contain Auth0 user info. However, it's recommended to set them for direct Auth0 token validation support.
 
 ## Step 4: Update Frontend Login
 
@@ -115,15 +122,20 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ### Backend (Render)
 ```bash
 # Supabase (still needed for database)
-SUPABASE_ISSUER=https://your-project.supabase.co/auth/v1
+SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1
 SUPABASE_AUDIENCE=authenticated
-SUPABASE_JWKS_URL=https://your-project.supabase.co/auth/v1/.well-known/jwks.json
+SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
 
 # Auth0 (for direct token validation)
-AUTH0_ISSUER=https://your-tenant.auth0.com/
-AUTH0_AUDIENCE=https://your-api-identifier
-AUTH0_JWKS_URL=https://your-tenant.auth0.com/.well-known/jwks.json
+AUTH0_ISSUER=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/
+AUTH0_AUDIENCE=https://your-api-identifier  # Get this from Auth0 Dashboard → APIs → Your API → Identifier
+AUTH0_JWKS_URL=https://dev-2zhljb8cf2kc2h5t.us.auth0.com/.well-known/jwks.json
 ```
+
+**Quick Reference - Your Values:**
+- Supabase Project: `nnmmhgnriisfsncphipd`
+- Auth0 Domain: `dev-2zhljb8cf2kc2h5t.us.auth0.com`
+- Auth0 Audience: **You need to get this from Auth0 Dashboard → APIs**
 
 ## Next Steps
 
