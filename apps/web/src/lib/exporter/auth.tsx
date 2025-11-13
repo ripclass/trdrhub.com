@@ -122,10 +122,23 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Check for API token (preferred) or exporter token (fallback)
-        const apiToken = localStorage.getItem('trdrhub_api_token');
-        const exporterToken = localStorage.getItem('exporter_token');
-        const token = apiToken || exporterToken;
+        // First, try to get Supabase session token
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        let token: string | null = null;
+        
+        if (supabaseUrl && supabaseKey) {
+          const supabase = createClient(supabaseUrl, supabaseKey);
+          const { data: sessionData } = await supabase.auth.getSession();
+          token = sessionData.session?.access_token || null;
+        }
+        
+        // Fallback: Check for API token (preferred) or exporter token
+        if (!token) {
+          token = localStorage.getItem('trdrhub_api_token') || localStorage.getItem('exporter_token');
+        }
         
         // DEMO MODE: If no token, use demo user for meeting/demo purposes
         if (!token) {
