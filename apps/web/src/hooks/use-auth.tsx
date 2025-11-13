@@ -17,7 +17,6 @@ interface AuthContextType {
   isLoading: boolean
   loginWithEmail: (email: string, password: string) => Promise<User>
   loginWithGoogle: () => Promise<void>
-  loginWithAuth0: () => Promise<void>
   registerWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<User>
   logout: () => Promise<void>
   hasRole: (role: Role | Role[]) => boolean
@@ -200,32 +199,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  const loginWithAuth0 = async () => {
-    try {
-      // Verify environment variables are set
-      const domain = import.meta.env.VITE_AUTH0_DOMAIN
-      const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID
-      
-      if (!domain || !clientId) {
-        throw new Error(
-          'Auth0 is not configured. Please set VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID environment variables.'
-        )
-      }
-
-      // Use Auth0 directly (not through Supabase)
-      const { getAuth0Client } = await import('@/lib/auth0')
-      const auth0 = await getAuth0Client()
-      await auth0.loginWithRedirect({
-        authorizationParams: {
-          screen_hint: 'signup', // Show signup option on Auth0 login page
-        },
-      })
-    } catch (error: any) {
-      console.error('Auth0 login error:', error)
-      throw error
-    }
-  }
-
   const registerWithEmail = async (
     email: string,
     password: string,
@@ -328,7 +301,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === role
   }
 
-  const value = { user, isLoading, loginWithEmail, loginWithGoogle, loginWithAuth0, registerWithEmail, logout, hasRole, refreshUser }
+  const value = { user, isLoading, loginWithEmail, loginWithGoogle, registerWithEmail, logout, hasRole, refreshUser }
 
   return (
     <AuthContext.Provider value={value}>

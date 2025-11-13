@@ -1,20 +1,183 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { FileText, ShieldCheck, Timer, Sparkles, ArrowRight, CheckCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useOnboarding } from "@/hooks/use-onboarding";
+
+const COMPANY_TYPES = [
+  { value: "exporter", label: "Exporter" },
+  { value: "importer", label: "Importer" },
+  { value: "both", label: "Both Exporter & Importer" },
+  { value: "bank", label: "Bank" },
+];
+
+const COMPANY_SIZE_OPTIONS = [
+  { value: "sme", label: "SME (1-20 employees)" },
+  { value: "medium", label: "Medium Enterprise (21-50 employees)" },
+  { value: "large", label: "Large Enterprise (50+ employees)" },
+];
 
 export default function Register() {
-  const { loginWithAuth0 } = useAuth();
+  const [formData, setFormData] = useState({
+    companyName: "",
+    contactPerson: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    companyType: "",
+    agreedToTerms: false,
+  });
+  const [companySize, setCompanySize] = useState<string>("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const { registerWithEmail } = useAuth();
+  const { updateProgress } = useOnboarding();
 
-  const handleAuth0Signup = async () => {
+  const getBackendRole = (companyType: string, size?: string): string => {
+    if (companyType === "both") {
+      if (size === "medium" || size === "large") {
+        return "tenant_admin";
+      }
+      return "exporter";
+    }
+
+    const roleMap: Record<string, string> = {
+      exporter: "exporter",
+      importer: "importer",
+      bank: "bank_officer",
+    };
+
+    return roleMap[companyType] || "exporter";
+  };
+
+  const handleInputChange = (field: string, value: string | boolean) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+
+    if (field === "companyType") {
+      // Reset company size when switching away from "both"
+      setCompanySize(value === "both" ? companySize : "");
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Password mismatch",
+        description: "Passwords do not match. Please double-check.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (!formData.agreedToTerms) {
+      toast({
+        title: "Almost there!",
+        description: "Please agree to the terms before creating an account.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.companyType === "both" && !companySize) {
+      toast({
+        title: "Company size required",
+        description: "Please select your company size to continue.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      // Auth0 signup/login uses the same OAuth flow
-      // Auth0 will show signup option if user doesn't exist
-      await loginWithAuth0();
-    } catch (error) {
-      console.error('Auth0 signup error:', error);
+      const backendRole = getBackendRole(formData.companyType, companySize);
+
+      await registerWithEmail(
+        formData.email,
+        formData.password,
+        formData.contactPerson,
+        backendRole
+      );
+
+      try {
+        const businessTypes =
+          formData.companyType === "both"
+            ? ["exporter", "importer"]
+            : formData.companyType
+            ? [formData.companyType]
+            : [];
+
+        const normalizedCompanySize =
+          formData.companyType === "both" ? companySize || undefined : undefined;
+
+        const isBank = backendRole === "bank_officer";
+        const requiresTeamSetup = backendRole === "tenant_admin";
+
+        await updateProgress({
+          role: backendRole,
+          company: {
+            name: formData.companyName,
+            type: formData.companyType,
+            size: normalizedCompanySize,
+          },
+          business_types: businessTypes,
+          complete: !(isBank || requiresTeamSetup),
+          onboarding_step: isBank ? "kyc" : requiresTeamSetup ? "team_setup" : null,
+        });
+      } catch (error) {
+        console.warn("Failed to sync onboarding role/company", error);
+      }
+
+      toast({
+        title: "Welcome to LCopilot",
+        description: "Your account is ready. We're tailoring the workspace for you…",
+      });
+
+      const destination = (() => {
+        if (backendRole === "bank_officer" || backendRole === "bank_admin") {
+          return "/lcopilot/bank-dashboard";
+        }
+        if (backendRole === "tenant_admin") {
+          return "/lcopilot/enterprise-dashboard";
+        }
+        if (formData.companyType === "both") {
+          return "/lcopilot/combined-dashboard";
+        }
+        if (backendRole === "importer") {
+          return "/lcopilot/importer-dashboard";
+        }
+        return "/lcopilot/exporter-dashboard";
+      })();
+
+      navigate(destination);
+
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.detail ||
+        error?.message ||
+        "We couldn't complete your registration. Please try again.";
+      toast({
+        title: "Registration failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -97,56 +260,195 @@ export default function Register() {
             <CardHeader className="space-y-1">
               <CardTitle className="text-xl">Create your account</CardTitle>
               <CardDescription>
-                Sign up with Auth0 to get started. After authentication, we'll guide you through a quick onboarding process to set up your workspace.
+                Tell us a little about your company so we can personalise onboarding and document validation flows.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="rounded-xl bg-muted/50 p-6 space-y-4">
-                <h4 className="font-medium text-foreground">What happens next?</h4>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                    <span>You'll be redirected to Auth0 to create your account</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                    <span>After signup, you'll complete a quick onboarding wizard</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                    <span>We'll collect your company type, size, and business details</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                    <span>Your workspace will be tailored based on your role and needs</span>
-                  </li>
-                </ul>
-              </div>
+            <CardContent>
+              <form onSubmit={handleRegister} className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companyName">Company name</Label>
+                    <div className="relative">
+                      <Building className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="companyName"
+                        placeholder="Your Export Company Ltd."
+                        value={formData.companyName}
+                        onChange={(e) => handleInputChange("companyName", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
 
-              <Button
-                onClick={handleAuth0Signup}
-                className="w-full bg-gradient-primary hover:opacity-90 h-12 text-base font-semibold"
-                size="lg"
-              >
-                Sign up with Auth0
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="contactPerson">Contact person</Label>
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="contactPerson"
+                        placeholder="Your full name"
+                        value={formData.contactPerson}
+                        onChange={(e) => handleInputChange("contactPerson", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
 
-              <div className="text-center text-sm text-muted-foreground">
-                Already have an account?{" "}
-                <Link to="/login" className="font-medium text-primary hover:underline">
-                  Sign in
-                </Link>
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Business email</Label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="contact@yourcompany.com"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange("email", e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
 
-              <Separator />
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companyType">Company type</Label>
+                    <Select
+                      value={formData.companyType}
+                      onValueChange={(value) => handleInputChange("companyType", value)}
+                      required
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Select your business type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMPANY_TYPES.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="rounded-lg border border-border/40 bg-muted/30 p-4 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground mb-1">Secure authentication</p>
-                <p>
-                  We use Auth0 for enterprise-grade authentication. Your credentials are managed securely, and you can use single sign-on (SSO) if your organization supports it.
+                {formData.companyType === "both" && (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="companySize">Company size</Label>
+                    <Select
+                      value={companySize}
+                      onValueChange={(value) => setCompanySize(value)}
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Select company size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMPANY_SIZE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      We use company size to tailor features, quotas, and onboarding.
+                    </p>
+                  </div>
+                )}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Create a strong password"
+                        value={formData.password}
+                        onChange={(e) => handleInputChange("password", e.target.value)}
+                        className="pl-10 pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Use 12+ characters with a mix of letters, numbers, and symbols.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirm password</Label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirm your password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                        className="pl-10 pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-muted/50 p-4 text-sm">
+                  <h4 className="font-medium text-foreground">What happens next?</h4>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    <li>• We'll send a verification email through Supabase Auth.</li>
+                    <li>• Complete your role-specific onboarding checklist.</li>
+                    <li>• Invite teammates and connect to Document AI / analytics modules.</li>
+                  </ul>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="terms"
+                    checked={formData.agreedToTerms}
+                    onCheckedChange={(checked) => handleInputChange("agreedToTerms", Boolean(checked))}
+                  />
+                  <Label htmlFor="terms" className="text-sm text-muted-foreground">
+                    I agree to the {""}
+                    <a href="/legal/terms" target="_blank" rel="noopener" className="text-primary underline">
+                      Terms of Service
+                    </a>{" "}and {""}
+                    <a href="/legal/privacy" target="_blank" rel="noopener" className="text-primary underline">
+                      Privacy Policy
+                    </a>
+                  </Label>
+                </div>
+
+                <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90" disabled={isLoading}>
+                  {isLoading ? "Creating workspace..." : "Create your workspace"}
+                </Button>
+
+                <p className="text-center text-sm text-muted-foreground lg:hidden">
+                  Already have an account? {""}
+                  <Link to="/login" className="font-medium text-primary hover:underline">
+                    Sign in
+                  </Link>
                 </p>
-              </div>
+              </form>
             </CardContent>
           </Card>
         </div>

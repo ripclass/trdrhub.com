@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAuth0Client } from '@/lib/auth0'
+import { supabase } from '@/lib/supabase'
+import { getOnboardingStatus } from '@/api/onboarding'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
@@ -12,63 +13,57 @@ export default function AuthCallback() {
       try {
         setStatus('Completing authentication...')
         
-        // Auth0 handles the callback - get the token
-        const auth0 = await getAuth0Client()
-        let token: string | null = null
+        // Supabase handles the OAuth callback automatically
+        // Check if we have a session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        try {
-          const isAuthenticated = await auth0.isAuthenticated()
-          
-          if (!isAuthenticated) {
-            // Handle the callback
-            await auth0.handleRedirectCallback()
-          }
-
-          // Get Auth0 access token
-          token = await auth0.getTokenSilently()
-          if (!token) {
-            throw new Error('No Auth0 token available')
-          }
-        } catch (auth0Error: any) {
-          // Check for organization requirement error
-          if (auth0Error?.error === 'organization_required' || 
-              auth0Error?.message?.includes('organization') ||
-              auth0Error?.error_description?.includes('organization')) {
-            throw new Error(
-              'Your Auth0 application requires organization membership. ' +
-              'Please disable organization requirement in Auth0 Dashboard → Applications → Your App → Settings → ' +
-              'or contact your administrator to add you to an organization.'
-            )
-          }
-          throw auth0Error
+        if (sessionError) {
+          throw sessionError
         }
         
-        if (!token) {
-          throw new Error('No Auth0 token available')
+        if (!session) {
+          // Wait a bit for Supabase to process the callback
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const { data: { session: retrySession } } = await supabase.auth.getSession()
+          
+          if (!retrySession) {
+            throw new Error('No session found after callback')
+          }
         }
 
         setStatus('Authenticating with backend...')
         
-        // Login to backend API with Auth0 token
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-        const loginResponse = await fetch(`${API_BASE_URL}/auth/auth0`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ token }),
-        })
-        
-        if (!loginResponse.ok) {
-          const errorData = await loginResponse.json().catch(() => ({ detail: 'Backend authentication failed' }))
-          throw new Error(errorData.detail || 'Backend authentication failed')
+        // Get Supabase token and send to backend for JWT token
+        const currentSession = session || (await supabase.auth.getSession()).data.session
+        if (!currentSession?.access_token) {
+          throw new Error('No access token available')
         }
-        
-        const tokenData = await loginResponse.json()
-        if (tokenData.access_token) {
-          // Store backend JWT token for admin API calls
-          localStorage.setItem('trdrhub_api_token', tokenData.access_token)
+
+        // Login to backend API to get JWT token for admin endpoints
+        try {
+          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+          const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              email: currentSession.user.email,
+              password: '', // Not needed for Supabase token auth
+            }),
+          })
+          
+          if (loginResponse.ok) {
+            const tokenData = await loginResponse.json()
+            if (tokenData.access_token) {
+              // Store backend JWT token for admin API calls
+              localStorage.setItem('trdrhub_api_token', tokenData.access_token)
+            }
+          }
+        } catch (backendLoginError) {
+          // Non-critical - Supabase login succeeded, backend login is optional
+          console.warn('Backend login failed (non-critical):', backendLoginError)
         }
 
         setStatus('Checking onboarding status...')
@@ -162,4 +157,3 @@ export default function AuthCallback() {
     </div>
   )
 }
-
