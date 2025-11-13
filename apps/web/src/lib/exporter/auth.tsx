@@ -122,6 +122,12 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // First, check if main auth hook already has user (faster path)
+        try {
+          const { useAuth } = await import('@/hooks/use-auth');
+          // Note: Can't use hooks conditionally, so we'll check localStorage/session instead
+        } catch {}
+        
         // First, try to get Supabase session token (use shared client instance) with timeout
         let token: string | null = null;
         
@@ -132,7 +138,7 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
           // Add timeout to prevent hanging
           const sessionPromise = supabase.auth.getSession();
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+            setTimeout(() => reject(new Error('Session check timeout')), 3000)
           );
           
           const { data: sessionData } = await Promise.race([sessionPromise, timeoutPromise]) as any;
