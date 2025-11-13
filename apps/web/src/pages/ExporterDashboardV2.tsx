@@ -171,10 +171,13 @@ export default function ExporterDashboardV2() {
     const demoMode = localStorage.getItem('demo_mode') === 'true' || 
                     new URLSearchParams(window.location.search).get('demo') === 'true';
     
-    if (!authLoading && !isAuthenticated && !demoMode) {
-      navigate("/lcopilot/exporter-dashboard/login");
+    // Check both auth systems - if main auth has user, we're good
+    const hasAuth = mainUser || (isAuthenticated && !authLoading);
+    
+    if (!authLoading && !hasAuth && !demoMode) {
+      navigate("/login"); // Redirect to main login page, not exporter-specific one
     }
-  }, [isAuthenticated, authLoading, navigate]);
+  }, [isAuthenticated, authLoading, mainUser, navigate]);
 
   const [drafts, setDrafts] = useState<DraftData[]>([]);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
@@ -460,11 +463,12 @@ function DashboardOverview({
   recentHistory,
   workspaceTab,
   onWorkspaceTabChange,
+  userName = "User",
 }: DashboardOverviewProps) {
   return (
     <>
       <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back, Global Exports Inc.</h2>
+        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back, {userName}!</h2>
         <p className="text-muted-foreground">
           Here's what's happening with your LC validations today.
         </p>
