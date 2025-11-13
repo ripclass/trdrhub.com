@@ -73,46 +73,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const waitForSupabaseSession = async (maxMs = 20000): Promise<string | null> => {
     return new Promise((resolve) => {
       const started = Date.now()
+      let resolved = false
+      let subscription: any = null
+      let pollInterval: any = null
+      
+      const cleanup = () => {
+        if (subscription) {
+          try {
+            subscription.unsubscribe()
+          } catch (e) {
+            // Ignore unsubscribe errors
+          }
+        }
+        if (pollInterval) {
+          clearInterval(pollInterval)
+        }
+      }
+      
+      const doResolve = (token: string, source: string) => {
+        if (resolved) return
+        resolved = true
+        console.log(`✓ Session found via ${source}`)
+        cleanup()
+        resolve(token)
+      }
       
       // First, check immediately
       supabase.auth.getSession().then(({ data }) => {
         const token = data.session?.access_token || null
         if (token) {
-          console.log('Session found immediately')
-          resolve(token)
-          return
+          doResolve(token, 'immediate check')
+        } else {
+          console.log('No session in immediate check')
         }
-      })
+      }).catch(err => console.warn('getSession error:', err))
       
-      // Also listen for auth state changes (more reliable than polling)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        const token = session?.access_token || null
-        if (token) {
-          console.log('Session detected via auth state change')
-          subscription.unsubscribe()
-          resolve(token)
-        }
-      })
+      // Also listen for auth state changes (most reliable)
+      try {
+        const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('Auth state change event:', event, 'hasSession:', !!session)
+          const token = session?.access_token || null
+          if (token) {
+            doResolve(token, `auth state change (${event})`)
+          }
+        })
+        subscription = sub
+      } catch (err) {
+        console.warn('onAuthStateChange setup error:', err)
+      }
       
-      // Fallback: poll every 100ms (faster than before)
-      const pollInterval = setInterval(async () => {
-        if (Date.now() - started > maxMs) {
-          clearInterval(pollInterval)
-          subscription.unsubscribe()
-          console.error('Session wait timed out after', maxMs, 'ms')
-          resolve(null)
+      // Aggressive polling every 50ms
+      pollInterval = setInterval(async () => {
+        const elapsed = Date.now() - started
+        if (elapsed > maxMs) {
+          console.error(`✗ Session wait timed out after ${maxMs}ms`)
+          cleanup()
+          if (!resolved) resolve(null)
           return
         }
         
-        const { data } = await supabase.auth.getSession()
-        const token = data.session?.access_token || null
-        if (token) {
-          console.log('Session found via polling')
-          clearInterval(pollInterval)
-          subscription.unsubscribe()
-          resolve(token)
+        try {
+          const { data } = await supabase.auth.getSession()
+          const token = data.session?.access_token || null
+          if (token) {
+            doResolve(token, `polling (${elapsed}ms)`)
+          }
+        } catch (err) {
+          console.warn('Polling getSession error:', err)
         }
-      }, 100)
+      }, 50)
     })
   }
 
