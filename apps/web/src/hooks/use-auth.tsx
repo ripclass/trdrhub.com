@@ -191,23 +191,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUserProfile])
 
   const loginWithEmail = async (email: string, password: string) => {
+    console.log('=== LOGIN START ===', { email })
     setIsLoading(true)
     try {
-      // Login to Supabase first
-      const { error } = await withTimeout(
-        supabase.auth.signInWithPassword({ email, password }),
-        'Signing in',
-        SIGNIN_TIMEOUT_MS
-      )
+      console.log('Attempting Supabase sign-in...')
+      // Login to Supabase first - don't wrap in timeout, let it complete naturally
+      const signInPromise = supabase.auth.signInWithPassword({ email, password })
+      console.log('Sign-in promise created, waiting...')
+      
+      let signInResult
+      try {
+        signInResult = await Promise.race([
+          signInPromise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Signing in timed out. Please try again.')), SIGNIN_TIMEOUT_MS)
+          )
+        ])
+        console.log('Supabase signInWithPassword completed:', signInResult)
+      } catch (timeoutError: any) {
+        console.error('Sign-in timeout or error:', timeoutError)
+        // Check if session exists despite timeout
+        const { data: checkSession } = await supabase.auth.getSession()
+        console.log('Checking session after timeout:', !!checkSession.session)
+        if (checkSession.session) {
+          console.log('Session exists despite timeout, continuing...')
+          signInResult = { error: null }
+        } else {
+          console.error('No session found, throwing error')
+          throw timeoutError
+        }
+      }
+      
+      const { error } = signInResult || { error: null }
       // If Supabase returns an error, we still attempt to see if session became available
       if (error) {
         // Fall through to session wait; if no session, throw
         console.warn('Supabase sign-in returned error; checking session anyway:', error)
       }
       
+      console.log('Waiting for Supabase session...')
       // Wait for session to materialize (handles cases where signIn resolves slowly)
       const token = await waitForSupabaseSession(20000)
       if (!token) {
+        console.error('No token after waiting 20s')
         // No session after waiting — treat as real failure
         if (error) throw error
         throw new Error('Signing in timed out. Please try again.')
@@ -218,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Also login to backend API to get JWT token for admin endpoints
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+        console.log('Attempting backend login to:', API_BASE_URL)
         const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
           method: 'POST',
           headers: {
@@ -227,11 +254,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ email, password }),
         })
         
+        console.log('Backend login response status:', loginResponse.status)
         if (loginResponse.ok) {
           const tokenData = await loginResponse.json()
           if (tokenData.access_token) {
             // Store backend JWT token for admin API calls
             localStorage.setItem('trdrhub_api_token', tokenData.access_token)
+            console.log('Backend token stored')
           }
         }
       } catch (backendLoginError) {
@@ -243,7 +272,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profile = await fetchUserProfile()
       console.log('fetchUserProfile completed, profile:', profile.email)
       return profile
+    } catch (error: any) {
+      console.error('=== LOGIN ERROR ===', error)
+      console.error('Error message:', error?.message)
+      console.error('Error stack:', error?.stack)
+      throw error
     } finally {
+      console.log('=== LOGIN FINALLY ===')
       setIsLoading(false)
     }
   }
