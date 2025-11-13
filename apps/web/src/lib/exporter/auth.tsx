@@ -122,16 +122,24 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // First, try to get Supabase session token (use shared client instance)
+        // First, try to get Supabase session token (use shared client instance) with timeout
         let token: string | null = null;
         
         try {
           // Import the shared Supabase client instead of creating a new one
           const { supabase } = await import('@/lib/supabase');
-          const { data: sessionData } = await supabase.auth.getSession();
-          token = sessionData.session?.access_token || null;
-        } catch (supabaseError) {
-          console.warn('Failed to get Supabase session:', supabaseError);
+          
+          // Add timeout to prevent hanging
+          const sessionPromise = supabase.auth.getSession();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+          );
+          
+          const { data: sessionData } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+          token = sessionData?.session?.access_token || null;
+        } catch (supabaseError: any) {
+          console.warn('Failed to get Supabase session:', supabaseError?.message || supabaseError);
+          // Continue to fallback
         }
         
         // Fallback: Check for API token (preferred) or exporter token
@@ -160,15 +168,22 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
           return;
         }
 
-        // Try to get user info from API
+        // Try to get user info from API with timeout
         try {
           const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-          const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          
+          const fetchPromise = fetch(`${API_BASE_URL}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },
             credentials: 'include',
           });
+          
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('API timeout')), 10000)
+          );
+          
+          const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
 
           if (response.ok) {
             const userData = await response.json();
@@ -184,7 +199,8 @@ export function ExporterAuthProvider({ children }: ExporterAuthProviderProps) {
             localStorage.removeItem('exporter_token');
             localStorage.removeItem('trdrhub_api_token');
           }
-        } catch (error) {
+        } catch (error: any) {
+          console.warn('API call failed or timed out:', error?.message || error);
           // If API call fails, try to extract user info from email in token storage
           // This is a fallback for when API is not available
           const storedEmail = localStorage.getItem('exporter_email');
