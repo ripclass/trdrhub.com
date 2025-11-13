@@ -60,6 +60,12 @@ In Auth0 Dashboard → Applications → Your Application → Settings:
 **Error: "Unsupported provider: Provider auth0 could not be found"**
 - ✅ Fixed: We're now using Auth0 directly, not through Supabase
 
+**Error: "client requires organization membership, but user does not belong to any organization"**
+- **Fix**: Disable organization requirement in Auth0 Dashboard
+  - Applications → Your App → Settings → Advanced Settings → OAuth
+  - Set "Require Organization" to OFF
+  - See `docs/AUTH0_ORGANIZATION_FIX.md` for detailed instructions
+
 **Error: "No Auth0 token available"**
 - Check `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` are set
 - Verify Auth0 application type is "Single Page Application"

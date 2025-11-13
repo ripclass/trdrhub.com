@@ -21,7 +21,12 @@ export async function getAuth0Client(): Promise<Auth0Client> {
     authorizationParams: {
       redirect_uri: redirectUri,
       audience: import.meta.env.VITE_AUTH0_AUDIENCE, // Optional: API identifier
+      // Skip organization requirement - allow users without organizations
+      organization: undefined,
     },
+    // Disable organization requirement
+    useRefreshTokens: true,
+    cacheLocation: 'localstorage',
   })
 
   return auth0Client

@@ -14,15 +14,35 @@ export default function AuthCallback() {
         
         // Auth0 handles the callback - get the token
         const auth0 = await getAuth0Client()
-        const isAuthenticated = await auth0.isAuthenticated()
+        let token: string | null = null
         
-        if (!isAuthenticated) {
-          // Handle the callback
-          await auth0.handleRedirectCallback()
-        }
+        try {
+          const isAuthenticated = await auth0.isAuthenticated()
+          
+          if (!isAuthenticated) {
+            // Handle the callback
+            await auth0.handleRedirectCallback()
+          }
 
-        // Get Auth0 access token
-        const token = await auth0.getTokenSilently()
+          // Get Auth0 access token
+          token = await auth0.getTokenSilently()
+          if (!token) {
+            throw new Error('No Auth0 token available')
+          }
+        } catch (auth0Error: any) {
+          // Check for organization requirement error
+          if (auth0Error?.error === 'organization_required' || 
+              auth0Error?.message?.includes('organization') ||
+              auth0Error?.error_description?.includes('organization')) {
+            throw new Error(
+              'Your Auth0 application requires organization membership. ' +
+              'Please disable organization requirement in Auth0 Dashboard → Applications → Your App → Settings → ' +
+              'or contact your administrator to add you to an organization.'
+            )
+          }
+          throw auth0Error
+        }
+        
         if (!token) {
           throw new Error('No Auth0 token available')
         }

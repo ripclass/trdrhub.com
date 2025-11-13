@@ -207,6 +207,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await auth0.loginWithRedirect({
       authorizationParams: {
         screen_hint: 'signup', // Show signup option
+        // Explicitly skip organization requirement
+        organization: undefined,
+        // Add prompt to allow signup without organization
+        prompt: 'login',
       },
     })
   }
