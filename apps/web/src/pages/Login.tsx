@@ -47,6 +47,18 @@ export default function Login() {
           const companySize = details?.company?.size;
           const companyType = details?.company?.type;
           
+          // Debug logging
+          console.log("🔍 Login routing check:", {
+            backendRole,
+            businessTypes,
+            hasBoth,
+            companySize,
+            companyType,
+            company_id: status.company_id,
+            completed: status.completed,
+            details: details
+          });
+          
           // Determine destination based on onboarding data
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
@@ -55,20 +67,28 @@ export default function Login() {
           } else if (hasBoth && companySize === "sme") {
             // SME "both" users → CombinedDashboard (unified view)
             destination = "/lcopilot/combined-dashboard";
+            console.log("✅ Routing to CombinedDashboard (SME both)");
           } else if (hasBoth && (companySize === "medium" || companySize === "large")) {
             // Medium/Large "both" users → EnterpriseDashboard
             destination = "/lcopilot/enterprise-dashboard";
+            console.log("✅ Routing to EnterpriseDashboard (Medium/Large both)");
           } else if (companyType === "both" && companySize === "sme") {
             // Fallback: Check company.type directly if business_types not set
             destination = "/lcopilot/combined-dashboard";
+            console.log("✅ Routing to CombinedDashboard (fallback: company.type='both', SME)");
           } else if (companyType === "both" && (companySize === "medium" || companySize === "large")) {
             // Fallback: Check company.type directly if business_types not set
             destination = "/lcopilot/enterprise-dashboard";
+            console.log("✅ Routing to EnterpriseDashboard (fallback: company.type='both', Medium/Large)");
           } else if (profile.role === "importer") {
             destination = "/lcopilot/importer-dashboard";
           } else if (profile.role === "bank" || profile.role === "bank_officer" || profile.role === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
+          } else {
+            console.log("⚠️ No match found, defaulting to exporter-dashboard");
           }
+          
+          console.log("📍 Final destination:", destination);
         }
       } catch (err) {
         console.warn("Onboarding status check failed or timed out:", err);

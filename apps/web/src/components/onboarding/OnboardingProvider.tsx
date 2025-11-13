@@ -103,21 +103,37 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   }
 
   const needsOnboarding = React.useMemo(() => {
-    if (!status) return false
+    if (!status) {
+      console.log("🚫 needsOnboarding: false (no status)");
+      return false;
+    }
     
     // If already marked as completed, no onboarding needed
-    if (status.completed) return false
+    if (status.completed) {
+      console.log("✅ needsOnboarding: false (already completed)");
+      return false;
+    }
     
     // If user has company info (from registration or previous onboarding), don't show wizard
     // Check if company_id exists or if company info exists in details
-    const hasCompanyInfo = status.company_id || (status.details?.company?.name && status.details?.company?.type)
+    const hasCompanyInfo = status.company_id || (status.details?.company?.name && status.details?.company?.type);
     if (hasCompanyInfo) {
       // User already provided company info - don't show wizard
-      return false
+      console.log("✅ needsOnboarding: false (has company info)", {
+        company_id: status.company_id,
+        company_name: status.details?.company?.name,
+        company_type: status.details?.company?.type
+      });
+      return false;
     }
     
     // Only show wizard if truly incomplete (no company info at all)
-    return !status.completed
+    console.log("⚠️ needsOnboarding: true (no company info)", {
+      completed: status.completed,
+      company_id: status.company_id,
+      details: status.details
+    });
+    return !status.completed;
   }, [status])
 
   const value: OnboardingContextType = {
