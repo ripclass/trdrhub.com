@@ -71,14 +71,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const PROFILE_TIMEOUT_MS = 20000
 
   const waitForSupabaseSession = async (maxMs = 20000): Promise<string | null> => {
-    const started = Date.now()
-    while (Date.now() - started < maxMs) {
-      const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token || null
-      if (token) return token
-      await new Promise((r) => setTimeout(r, 300))
-    }
-    return null
+    return new Promise((resolve) => {
+      const started = Date.now()
+      
+      // First, check immediately
+      supabase.auth.getSession().then(({ data }) => {
+        const token = data.session?.access_token || null
+        if (token) {
+          console.log('Session found immediately')
+          resolve(token)
+          return
+        }
+      })
+      
+      // Also listen for auth state changes (more reliable than polling)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const token = session?.access_token || null
+        if (token) {
+          console.log('Session detected via auth state change')
+          subscription.unsubscribe()
+          resolve(token)
+        }
+      })
+      
+      // Fallback: poll every 100ms (faster than before)
+      const pollInterval = setInterval(async () => {
+        if (Date.now() - started > maxMs) {
+          clearInterval(pollInterval)
+          subscription.unsubscribe()
+          console.error('Session wait timed out after', maxMs, 'ms')
+          resolve(null)
+          return
+        }
+        
+        const { data } = await supabase.auth.getSession()
+        const token = data.session?.access_token || null
+        if (token) {
+          console.log('Session found via polling')
+          clearInterval(pollInterval)
+          subscription.unsubscribe()
+          resolve(token)
+        }
+      }, 100)
+    })
   }
 
   const withTimeout = async <T,>(promise: Promise<T>, label: string, ms = AUTH_TIMEOUT_MS): Promise<T> => {
