@@ -17,6 +17,7 @@ interface AuthContextType {
   isLoading: boolean
   loginWithEmail: (email: string, password: string) => Promise<User>
   loginWithGoogle: () => Promise<void>
+  loginWithAuth0: () => Promise<void>
   registerWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<User>
   logout: () => Promise<void>
   hasRole: (role: Role | Role[]) => boolean
@@ -198,6 +199,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  const loginWithAuth0 = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'auth0',
+      options: {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+      },
+    })
+  }
+
   const registerWithEmail = async (
     email: string,
     password: string,
@@ -264,7 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === role
   }
 
-  const value = { user, isLoading, loginWithEmail, loginWithGoogle, registerWithEmail, logout, hasRole, refreshUser }
+  const value = { user, isLoading, loginWithEmail, loginWithGoogle, loginWithAuth0, registerWithEmail, logout, hasRole, refreshUser }
 
   return (
     <AuthContext.Provider value={value}>
