@@ -158,20 +158,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const fetchUserProfile = React.useCallback(async () => {
+  const fetchUserProfile = React.useCallback(async (providedToken?: string) => {
     try {
-      console.log('fetchUserProfile: Starting...')
-      // Prefer passing Authorization explicitly to avoid interceptor awaiting Supabase init
-      console.log('fetchUserProfile: Getting Supabase session...')
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      console.log('fetchUserProfile: Starting...', providedToken ? 'with provided token' : 'will get token')
       
-      if (sessionError) {
-        console.error('fetchUserProfile: getSession error:', sessionError)
-        throw new Error(`Failed to get session: ${sessionError.message}`)
+      let supabaseToken = providedToken
+      
+      if (!supabaseToken) {
+        // Fallback: get token from session if not provided
+        console.log('fetchUserProfile: Getting Supabase session...')
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error('fetchUserProfile: getSession error:', sessionError)
+          throw new Error(`Failed to get session: ${sessionError.message}`)
+        }
+        
+        console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
+        supabaseToken = sessionData.session?.access_token || null
       }
-      
-      console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
-      const supabaseToken = sessionData.session?.access_token
       
       if (!supabaseToken) {
         console.error('fetchUserProfile: No Supabase token available for /auth/me')
@@ -181,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('fetchUserProfile: Calling /auth/me with token:', supabaseToken.substring(0, 20) + '...')
       const headers = { Authorization: `Bearer ${supabaseToken}` }
       
-      console.log('fetchUserProfile: Making API request...')
+      console.log('fetchUserProfile: Making API request to /auth/me...')
       const { data: userData } = await withTimeout(
         api.get('/auth/me', { headers }),
         'Loading profile',
