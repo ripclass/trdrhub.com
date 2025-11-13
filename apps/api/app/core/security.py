@@ -111,16 +111,45 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        user = User(
-            id=user_id,
-            email=email,
-            full_name=full_name,
-            role=role_value,
-            hashed_password=None,  # external users don't require local password
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
+        # Try to create user with NULL password (for Supabase users)
+        # If database constraint prevents this, use a dummy password hash as fallback
+        try:
+            user = User(
+                id=user_id,
+                email=email,
+                full_name=full_name,
+                role=role_value,
+                hashed_password=None,  # external users don't require local password
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
+        except Exception as e:
+            # If database constraint prevents NULL password, use dummy hash as fallback
+            # This is a temporary workaround until migration is run
+            import logging
+            logger = logging.getLogger(__name__)
+            error_msg = str(e)
+            if "NOT NULL" in error_msg.upper() or "null value" in error_msg.lower():
+                logger.warning(f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback.")
+            else:
+                logger.error(f"Failed to create external user {email}: {error_msg}")
+                raise  # Re-raise if it's not a NULL constraint issue
+            
+            db.rollback()
+            # Use a dummy bcrypt hash that will never match any password
+            # Format: $2b$12$ followed by 53 characters (bcrypt hash format)
+            dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
+            user = User(
+                id=user_id,
+                email=email,
+                full_name=full_name,
+                role=role_value,
+                hashed_password=dummy_hash,  # Dummy hash until migration allows NULL
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
     else:
         user.email = email
         if full_name:
