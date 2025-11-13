@@ -104,6 +104,19 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   const needsOnboarding = React.useMemo(() => {
     if (!status) return false
+    
+    // If already marked as completed, no onboarding needed
+    if (status.completed) return false
+    
+    // If user has company info (from registration or previous onboarding), don't show wizard
+    // Check if company_id exists or if company info exists in details
+    const hasCompanyInfo = status.company_id || (status.details?.company?.name && status.details?.company?.type)
+    if (hasCompanyInfo) {
+      // User already provided company info - don't show wizard
+      return false
+    }
+    
+    // Only show wizard if truly incomplete (no company info at all)
     return !status.completed
   }, [status])
 
