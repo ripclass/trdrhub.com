@@ -217,14 +217,11 @@ async def fix_password_endpoint(
 
 @router.get("/me", response_model=UserProfile)
 async def get_user_profile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get current user profile."""
     try:
-        # Get current user (this will authenticate via token)
-        current_user = await get_current_user(credentials, db)
-        
         # Ensure user is refreshed from database
         db.refresh(current_user)
         
