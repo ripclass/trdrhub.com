@@ -46,6 +46,7 @@ import StubModeIndicator from './components/StubModeIndicator'
 import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminShell from './pages/admin/AdminShell'
+import AuthCallback from './pages/auth/Callback'
 import { BankAuthProvider } from './lib/bank/auth'
 import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
@@ -136,6 +137,7 @@ function App() {
         <Route path="/lcopilot/supplier-results" element={<SupplierDocumentResults />} />
         <Route path="/test-import" element={<ImportResultsSimple />} />
         <Route path="/lcopilot/support" element={<Support />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<AdminShell />} />
         <Route path="*" element={<NotFound />} />

@@ -1,30 +1,12 @@
-# Auth0 Setup Guide via Supabase
+# Auth0 Setup Guide - Direct Integration
 
-This guide explains how to configure Auth0 as an authentication provider through Supabase.
+This guide explains how to configure Auth0 as a direct authentication provider (bypassing Supabase auth).
 
 ## Overview
 
-There are two ways to use Auth0:
+**Direct Auth0 Integration**: Users log in directly with Auth0, and the backend validates Auth0 tokens. This is simpler and more reliable than trying to use Supabase as a proxy (since Supabase doesn't have Auth0 as a built-in provider).
 
-1. **Auth0 via Supabase** (Recommended): Configure Auth0 as an external provider in Supabase. Users log in through Supabase, which proxies to Auth0.
-2. **Direct Auth0**: Use Auth0 directly and configure the backend to accept Auth0 tokens.
-
-This guide covers **Option 1: Auth0 via Supabase**.
-
-## Step 1: Configure Auth0 in Supabase Dashboard
-
-1. **Go to Supabase Dashboard** → Your Project → Authentication → Providers
-2. **Enable Auth0 provider**
-3. **Configure Auth0 settings:**
-   - **Client ID**: Your Auth0 Application Client ID (from Auth0 Dashboard)
-   - **Client Secret**: Your Auth0 Application Client Secret (from Auth0 Dashboard)
-   - **Domain**: `dev-2zhljb8cf2kc2h5t.us.auth0.com` (your Auth0 domain)
-   - **Authorized Redirect URLs**: Add your callback URLs:
-     - `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/callback`
-     - `https://trdrhub.com/auth/callback` (production)
-     - `http://localhost:5173/auth/callback` (development)
-
-## Step 2: Configure Auth0 Application
+## Step 1: Configure Auth0 Application
 
 1. **Go to Auth0 Dashboard** → Applications → Your Application
 2. **Settings tab:**
@@ -38,6 +20,22 @@ This guide covers **Option 1: Auth0 via Supabase**.
    - **Allowed Logout URLs**: Add:
      - `https://trdrhub.com`
      - `http://localhost:5173`
+
+## Step 2: Configure Frontend Environment Variables
+
+Add these to your frontend `.env` file (or Vercel environment variables):
+
+```bash
+# Auth0 Configuration
+VITE_AUTH0_DOMAIN=dev-2zhljb8cf2kc2h5t.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your-auth0-client-id
+VITE_AUTH0_AUDIENCE=https://your-api-identifier
+```
+
+**Where to get these:**
+- **VITE_AUTH0_DOMAIN**: Your Auth0 domain (`dev-2zhljb8cf2kc2h5t.us.auth0.com`)
+- **VITE_AUTH0_CLIENT_ID**: Auth0 Dashboard → Applications → Your App → Client ID
+- **VITE_AUTH0_AUDIENCE**: Auth0 Dashboard → APIs → Your API → Identifier
 
 ## Step 3: Configure Backend Environment Variables
 

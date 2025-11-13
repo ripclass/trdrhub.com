@@ -16,7 +16,8 @@ from ..core.security import (
     create_access_token,
     hash_password,
     get_current_user,
-    JWT_EXPIRATION_HOURS
+    JWT_EXPIRATION_HOURS,
+    _authenticate_external_token
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -174,6 +175,50 @@ async def fix_password_endpoint(
     else:
         db.rollback()
         raise HTTPException(status_code=500, detail="Password hash verification failed")
+
+
+@router.post("/auth0", response_model=Token)
+async def login_with_auth0(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Authenticate user with Auth0 token and return backend access token."""
+    try:
+        body = await request.json()
+        auth0_token = body.get("token")
+        
+        if not auth0_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Auth0 token is required"
+            )
+        
+        # Validate Auth0 token and get/create user
+        user = await _authenticate_external_token(auth0_token, db)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Auth0 token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Create backend JWT token
+        token_data = create_access_token(user)
+        
+        return Token(
+            access_token=token_data["access_token"],
+            token_type=token_data["token_type"],
+            expires_in=token_data["expires_in"],
+            role=token_data["role"]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Authentication failed: {str(e)}"
+        )
 
 
 @router.get("/me", response_model=UserProfile)
