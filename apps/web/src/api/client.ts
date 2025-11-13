@@ -3,7 +3,37 @@ import { supabase } from '@/lib/supabase'
 import { clearSupabaseSession } from './auth'
 import { getCsrfToken, requiresCsrfToken } from '@/lib/csrf'
 
-const API_BASE_URL_VALUE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const resolveApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (envUrl && envUrl.trim().length > 0) {
+    return envUrl
+  }
+
+  if (typeof window !== 'undefined') {
+    const { hostname, protocol } = window.location
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1'
+
+    if (isLocalhost) {
+      // Local development fallback
+      return 'http://localhost:8000'
+    }
+
+    // Production/previews fallback
+    if (hostname.endsWith('trdrhub.com') || hostname.endsWith('.vercel.app')) {
+      return 'https://trdrhub-api.onrender.com'
+    }
+
+    // Generic HTTPS fallback to avoid mixed-content issues
+    if (protocol === 'https:') {
+      return 'https://trdrhub-api.onrender.com'
+    }
+  }
+
+  // Default fallback (node/server contexts)
+  return 'https://trdrhub-api.onrender.com'
+}
+
+const API_BASE_URL_VALUE = resolveApiBaseUrl()
 const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
