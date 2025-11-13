@@ -229,8 +229,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
       
-      console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
-      
       // Also login to backend API to get JWT token for admin endpoints
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
