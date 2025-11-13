@@ -70,7 +70,7 @@ REDIS_SSL=true
 ```
 **Why:** Required for caching, rate limiting, job status tracking, and distributed security features.  
 **Impact:** App will fall back to in-memory store if `USE_STUBS=true`, but will raise `RuntimeError` if `USE_STUBS=false` and Redis is not configured.  
-**Note:** Render calls this service "Key Value Store" (Redis-compatible). Render provides the `REDIS_URL` automatically when you link the Key Value service to your web service in the dashboard. For production, use the **Internal Redis URL** (starts with `redis://red-`) for better performance and security.
+**Note:** Render calls this service "Key Value Store" (Redis-compatible). You need to manually copy the `REDIS_URL` from your Key Value Store service and add it as an environment variable to your web service. For production, use the **Internal Redis URL** (starts with `redis://red-`) for better performance and security. See setup steps below for detailed instructions.
 
 ## Production Environment Settings
 
@@ -194,11 +194,21 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 **Option B: Via render.yaml (Blueprint)**
 The `render.yaml` file includes a Key Value service definition. When you deploy with `render blueprint deploy`, the Key Value store will be created automatically.
 
-**Link Key Value Store to Your API Service:**
-1. Go to your `trdrhub-api` service → **Environment** tab
-2. Scroll to **Service Connections** section
-3. Click **Connect** next to your Key Value instance
-4. Render will automatically add `REDIS_URL` environment variable
+**Connect Key Value Store to Your API Service:**
+1. Go to your **Key Value Store** service (`trdrhub-redis`)
+2. Find the connection string. It may be displayed in:
+   - The **Info** tab (look for "Internal Redis URL" or "Connection String")
+   - The **Environment** tab (as `REDIS_URL` environment variable)
+   - The main service overview page
+3. Copy the entire connection string (it will look like `redis://red-xxxxx:6379` or `redis://:password@red-xxxxx:6379`)
+4. Go to your `trdrhub-api` web service → **Environment** tab
+5. Click **Add Environment Variable**
+6. Add:
+   - **Key**: `REDIS_URL`
+   - **Value**: Paste the connection string you copied
+   - **Secret**: Toggle this ON (since it contains credentials)
+7. Click **Save Changes**
+8. Redeploy your API service for the changes to take effect
 
 ### 1. Add Environment Variables in Render Dashboard
 

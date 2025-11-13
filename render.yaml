@@ -19,10 +19,12 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
-      # Redis connection will be automatically set when you link the Redis service
-      # in Render Dashboard → Service Connections, or manually set REDIS_URL here:
+      # Redis connection: After creating Key Value Store, copy REDIS_URL from the
+      # Key Value Store service and add it manually to this web service's environment variables
+      # Example:
       # - key: REDIS_URL
-      #   sync: false  # Set manually after Redis instance is created
+      #   value: redis://red-xxxxx:6379  # Copy from Key Value Store service
+      #   sync: false
       # Map secrets via Render Environment Groups or manual entries:
       # - fromGroup: trdrhub-api-secrets
 
