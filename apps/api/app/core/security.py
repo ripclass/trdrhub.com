@@ -132,7 +132,7 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
     return user
 
 
-async def _authenticate_external_token(token: str, db: Session) -> Optional[User]:
+async def authenticate_external_token(token: str, db: Session) -> Optional[User]:
     providers = _build_provider_configs()
     if not providers:
         return None

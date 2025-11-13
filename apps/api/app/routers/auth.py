@@ -17,7 +17,7 @@ from ..core.security import (
     hash_password,
     get_current_user,
     JWT_EXPIRATION_HOURS,
-    _authenticate_external_token
+    authenticate_external_token
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -194,7 +194,7 @@ async def login_with_auth0(
             )
         
         # Validate Auth0 token and get/create user
-        user = await _authenticate_external_token(auth0_token, db)
+        user = await authenticate_external_token(auth0_token, db)
         
         if not user:
             raise HTTPException(
