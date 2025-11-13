@@ -2,25 +2,23 @@
 
 ## Required Environment Variables
 
-For Supabase authentication to work, you need to set these environment variables in your Render dashboard:
+**IMPORTANT**: Supabase uses **ES256 (ECC P-256)** via JWKS, **NOT HS256**. You do **NOT** need `SUPABASE_JWT_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` for authentication.
 
-### 1. Supabase JWT Secret (CRITICAL)
+### 1. Supabase JWKS URL (REQUIRED)
 
-**Variable**: `SUPABASE_JWT_SECRET`
+**Variable**: `SUPABASE_JWKS_URL`
+
+**Format**: `https://{your-project-ref}.supabase.co/auth/v1/.well-known/jwks.json`
+
+**Example**: `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json`
 
 **How to find it**:
-1. Go to your Supabase project dashboard
-2. Navigate to **Settings** → **API**
-3. Look for **JWT Secret** (under "Project API keys")
-4. Copy the JWT Secret value
+- Your Supabase project URL + `/auth/v1/.well-known/jwks.json`
+- Or check: https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
 
-**OR** use your Service Role Key (they're often the same):
-- **Variable**: `SUPABASE_SERVICE_ROLE_KEY`
-- Found in the same Settings → API page
+**Note**: This is used to fetch the public key (ES256 ECC key) for token verification.
 
-**Note**: The code will try `SUPABASE_JWT_SECRET` first, then fall back to `SUPABASE_SERVICE_ROLE_KEY` if JWT secret is not set.
-
-### 2. Supabase Issuer (Optional but Recommended)
+### 2. Supabase Issuer (REQUIRED - or auto-detected)
 
 **Variable**: `SUPABASE_ISSUER`
 
@@ -32,7 +30,7 @@ For Supabase authentication to work, you need to set these environment variables
 - Your Supabase project URL + `/auth/v1`
 - Or check your Supabase project settings
 
-**Note**: If not set, the code will auto-detect from the token issuer.
+**Note**: If not set, the code will **auto-detect from the token issuer** when `SUPABASE_JWKS_URL` is configured.
 
 ### 3. Supabase Audience (Optional)
 
@@ -42,37 +40,41 @@ For Supabase authentication to work, you need to set these environment variables
 
 **Note**: Usually doesn't need to be changed unless you have custom audience settings.
 
-### 4. Supabase JWKS URL (Optional - for JWKS validation fallback)
+### 4. Supabase JWT Secret (NOT NEEDED for ES256/JWKS)
 
-**Variable**: `SUPABASE_JWKS_URL`
+**Variable**: `SUPABASE_JWT_SECRET` or `SUPABASE_SERVICE_ROLE_KEY`
 
-**Format**: `https://{your-project-ref}.supabase.co/auth/v1/.well-known/jwks.json`
+**Status**: ❌ **NOT REQUIRED** for Supabase authentication
 
-**Example**: `https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json`
+**Why**: Supabase uses **ES256 (ECC)** via JWKS, not HS256. The JWT secret is only needed for HS256 validation, which Supabase doesn't use.
 
-**Note**: Only needed if HS256 validation fails. The code prefers HS256 (simpler, faster).
+**When you might need it**: Only if you're using legacy HS256 tokens (not standard for Supabase).
 
 ## Minimum Required Configuration
 
-**For basic Supabase authentication to work, you MUST set:**
+**For Supabase authentication to work, you MUST set:**
 
 ```bash
-SUPABASE_JWT_SECRET=your-jwt-secret-here
+SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
 ```
 
-**OR**
+**Issuer is auto-detected** from the token if not set, but recommended to set explicitly:
 
 ```bash
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1
 ```
 
 ## Recommended Configuration
 
 ```bash
-SUPABASE_JWT_SECRET=your-jwt-secret-here
+SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
 SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1
 SUPABASE_AUDIENCE=authenticated
 ```
+
+**You do NOT need**:
+- ❌ `SUPABASE_JWT_SECRET` (not used for ES256/JWKS)
+- ❌ `SUPABASE_SERVICE_ROLE_KEY` (not needed for token validation)
 
 ## How to Set in Render
 
@@ -100,20 +102,22 @@ After setting environment variables:
 
 ## Troubleshooting
 
-### Error: "Supabase JWT secret not configured"
+### Error: "No external providers configured"
 
-**Solution**: Set `SUPABASE_JWT_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` in Render environment variables.
+**Solution**: Set `SUPABASE_JWKS_URL` and optionally `SUPABASE_ISSUER` in Render environment variables.
 
 ### Error: "No external provider could authenticate the token"
 
 **Possible causes**:
-1. JWT secret is incorrect
+1. JWKS URL is incorrect or unreachable
 2. Token issuer doesn't match configured issuer
 3. Token is expired
+4. ES256 key verification failed
 
 **Solution**: 
-- Verify JWT secret matches your Supabase project
+- Verify JWKS URL is correct and accessible: https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json
 - Check token expiration (Supabase tokens expire after 1 hour by default)
+- Verify SUPABASE_ISSUER matches token issuer (or let it auto-detect)
 - Check backend logs for detailed error messages
 
 ### Error: 500 Internal Server Error
