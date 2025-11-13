@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
 import { useExporterAuth } from "@/lib/exporter/auth";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
@@ -149,6 +150,7 @@ const notifications: Notification[] = [
 
 export default function ExporterDashboardV2() {
   const { toast } = useToast();
+  const { user: mainUser } = useAuth(); // Get user from main auth hook (already authenticated)
   const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
   const navigate = useNavigate();
   const { getAllDrafts, removeDraft } = useDrafts();
@@ -318,8 +320,9 @@ export default function ExporterDashboardV2() {
     return date.toLocaleDateString();
   };
 
-  // Show loading state while checking authentication
-  if (authLoading) {
+  // Show loading state while checking authentication (but only if main auth doesn't have user)
+  // If main auth already has user, we can proceed even if exporter auth is still loading
+  if (authLoading && !mainUser) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -331,7 +334,8 @@ export default function ExporterDashboardV2() {
   }
 
   // Redirect if not authenticated (handled by useEffect, but show nothing while redirecting)
-  if (!isAuthenticated) {
+  // Check both auth systems
+  if (!isAuthenticated && !mainUser) {
     return null;
   }
 
