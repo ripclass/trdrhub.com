@@ -46,6 +46,15 @@ const api = axios.create({
 api.interceptors.request.use(
   async (config) => {
     const urlPath = (config.url || '').toLowerCase()
+    
+    // If Authorization header is already provided by the caller, skip token resolution
+    const existingAuth =
+      (config.headers as any)?.Authorization ||
+      (config.headers as any)?.authorization
+    if (existingAuth) {
+      return config
+    }
+    
     if (AUTH_FREE_PATHS.some((path) => urlPath.startsWith(path))) {
       return config
     }

@@ -82,7 +82,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = React.useCallback(async () => {
     try {
-      const { data: userData } = await withTimeout(api.get('/auth/me'), 'Loading profile')
+      // Prefer passing Authorization explicitly to avoid interceptor awaiting Supabase init
+      const { data: sessionData } = await supabase.auth.getSession()
+      const supabaseToken = sessionData.session?.access_token
+      const headers = supabaseToken ? { Authorization: `Bearer ${supabaseToken}` } : undefined
+      
+      const { data: userData } = await withTimeout(
+        api.get('/auth/me', { headers }),
+        'Loading profile'
+      )
       const mapped: User = {
         id: userData.id,
         email: userData.email,
