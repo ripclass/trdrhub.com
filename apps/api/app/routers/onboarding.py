@@ -104,93 +104,130 @@ def _persist_onboarding_data(user: User, data: Dict[str, Any]) -> None:
 
 @router.get("/status", response_model=OnboardingStatus)
 async def get_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> OnboardingStatus:
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # If onboarding_data is empty, try to restore from company record
     if not current_user.onboarding_data or current_user.onboarding_data == {}:
         company = None
         
-        # First, try to get company by company_id if it exists
-        if current_user.company_id:
-            company = db.query(Company).filter(Company.id == current_user.company_id).first()
-        
-        # If no company found by ID, try to find by email (for users registered before company linking was fixed)
-        if not company and current_user.email:
-            company = db.query(Company).filter(Company.contact_email == current_user.email).first()
-            # If found by email, link it to the user
-            if company:
-                current_user.company_id = company.id
-                db.commit()
-                print(f"✅ Linked company {company.id} to user {current_user.id} by email")
-        
-        if company:
-            # Restore onboarding data from company record and registration metadata
-            restored_data = {}
+        try:
+            # First, try to get company by company_id if it exists
+            if current_user.company_id:
+                company = db.query(Company).filter(Company.id == current_user.company_id).first()
             
-            # Get company type from event_metadata (registration stores it as 'business_type')
-            company_type = (
-                company.event_metadata.get('company_type') or 
-                company.event_metadata.get('business_type')
-            )
-            company_size = company.event_metadata.get('company_size')
-            
-            # Restore company info
-            if company.name:
-                restored_data['company'] = {
-                    'name': company.name,
-                    'type': company_type,
-                    'size': company_size,
-                    'legal_name': company.legal_name,
-                    'registration_number': company.registration_number,
-                    'regulator_id': company.regulator_id,
-                    'country': company.country,
-                }
-            
-            # Restore business_types based on company type
-            if company_type == 'both':
-                restored_data['business_types'] = ['exporter', 'importer']
-            elif company_type:
-                restored_data['business_types'] = [company_type]
-            
-            # Save restored data
-            if restored_data:
-                current_user.onboarding_data = restored_data
-                db.commit()
-                print(f"✅ Restored onboarding data for user {current_user.id} from company record")
-    
-    # Auto-complete onboarding if user already has company info
-    if not current_user.onboarding_completed and current_user.company_id:
-        company = db.query(Company).filter(Company.id == current_user.company_id).first()
-        if company:
-            onboarding_data = current_user.onboarding_data or {}
-            company_info = onboarding_data.get('company', {})
-            
-            # Check for company type in multiple places
-            company_type = (
-                company_info.get('type') or 
-                company.event_metadata.get('company_type') or 
-                company.event_metadata.get('business_type')
-            )
-            
-            # If user has company name and type, and is not a bank (banks need KYC), auto-complete
-            if company.name and company_type:
-                # Banks need explicit approval, so don't auto-complete for them
-                if current_user.role not in {'bank_officer', 'bank_admin'}:
-                    current_user.onboarding_completed = True
-                    current_user.status = 'active'
+            # If no company found by ID, try to find by email (for users registered before company linking was fixed)
+            if not company and current_user.email:
+                company = db.query(Company).filter(Company.contact_email == current_user.email).first()
+                # If found by email, link it to the user
+                if company:
+                    current_user.company_id = company.id
                     db.commit()
+                    logger.info(f"✅ Linked company {company.id} to user {current_user.id} by email")
+            
+            if company:
+                # Restore onboarding data from company record and registration metadata
+                restored_data = {}
+                
+                # Get company type from event_metadata (registration stores it as 'business_type')
+                # Handle case where event_metadata might be None
+                event_metadata = company.event_metadata or {}
+                company_type = (
+                    event_metadata.get('company_type') or 
+                    event_metadata.get('business_type')
+                )
+                company_size = event_metadata.get('company_size')
+                
+                # Restore company info
+                if company.name:
+                    restored_data['company'] = {
+                        'name': company.name,
+                        'type': company_type,
+                        'size': company_size,
+                        'legal_name': company.legal_name,
+                        'registration_number': company.registration_number,
+                        'regulator_id': company.regulator_id,
+                        'country': company.country,
+                    }
+                
+                # Restore business_types based on company type
+                if company_type == 'both':
+                    restored_data['business_types'] = ['exporter', 'importer']
+                elif company_type:
+                    restored_data['business_types'] = [company_type]
+                
+                # Save restored data
+                if restored_data:
+                    current_user.onboarding_data = restored_data
+                    db.commit()
+                    logger.info(f"✅ Restored onboarding data for user {current_user.id} from company record")
+        except Exception as restore_error:
+            logger.error(f"Error restoring onboarding data for user {current_user.id}: {str(restore_error)}")
+            logger.error(traceback.format_exc())
+            # Continue anyway - don't fail the whole endpoint
+            db.rollback()
     
-    requirements = _requirements_for_user(current_user)
-    db.commit()
-    return OnboardingStatus(
-        user_id=str(current_user.id),
-        role=current_user.role,
-        company_id=str(current_user.company_id) if current_user.company_id else None,
-        completed=current_user.onboarding_completed,
-        step=current_user.onboarding_step,
-        status=current_user.status,
-        kyc_status=current_user.kyc_status,
-        required=requirements,
-        details=current_user.onboarding_data or {},
-    )
+    try:
+        # Auto-complete onboarding if user already has company info
+        if not current_user.onboarding_completed and current_user.company_id:
+            company = db.query(Company).filter(Company.id == current_user.company_id).first()
+            if company:
+                onboarding_data = current_user.onboarding_data or {}
+                company_info = onboarding_data.get('company', {})
+                
+                # Check for company type in multiple places
+                # Handle case where event_metadata might be None
+                event_metadata = company.event_metadata or {}
+                company_type = (
+                    company_info.get('type') or 
+                    event_metadata.get('company_type') or 
+                    event_metadata.get('business_type')
+                )
+                
+                # If user has company name and type, and is not a bank (banks need KYC), auto-complete
+                if company.name and company_type:
+                    # Banks need explicit approval, so don't auto-complete for them
+                    if current_user.role not in {'bank_officer', 'bank_admin'}:
+                        current_user.onboarding_completed = True
+                        current_user.status = 'active'
+                        db.commit()
+    except Exception as auto_complete_error:
+        logger.error(f"Error auto-completing onboarding for user {current_user.id}: {str(auto_complete_error)}")
+        logger.error(traceback.format_exc())
+        # Continue anyway - don't fail the whole endpoint
+        db.rollback()
+    
+    try:
+        requirements = _requirements_for_user(current_user)
+        db.commit()
+        return OnboardingStatus(
+            user_id=str(current_user.id),
+            role=current_user.role,
+            company_id=str(current_user.company_id) if current_user.company_id else None,
+            completed=current_user.onboarding_completed,
+            step=current_user.onboarding_step,
+            status=current_user.status,
+            kyc_status=current_user.kyc_status,
+            required=requirements,
+            details=current_user.onboarding_data or {},
+        )
+    except Exception as final_error:
+        logger.error(f"Error building OnboardingStatus for user {current_user.id}: {str(final_error)}")
+        logger.error(traceback.format_exc())
+        # Return a basic status even if there's an error
+        db.rollback()
+        return OnboardingStatus(
+            user_id=str(current_user.id),
+            role=current_user.role,
+            company_id=str(current_user.company_id) if current_user.company_id else None,
+            completed=current_user.onboarding_completed or False,
+            step=current_user.onboarding_step,
+            status=current_user.status or "active",
+            kyc_status=current_user.kyc_status,
+            required=OnboardingRequirements(),
+            details=current_user.onboarding_data or {},
+        )
 
 
 @router.put("/progress", response_model=OnboardingStatus)
