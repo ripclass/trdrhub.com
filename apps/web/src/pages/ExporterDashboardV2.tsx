@@ -345,8 +345,8 @@ export default function ExporterDashboardV2() {
   }
 
   // Redirect if not authenticated (handled by useEffect, but show nothing while redirecting)
-  // Check both auth systems
-  if (!isAuthenticated && !mainUser) {
+  // Check both auth systems - if main auth has user, we're good
+  if (!mainUser && (!isAuthenticated || authLoading)) {
     return null;
   }
 
@@ -373,6 +373,7 @@ export default function ExporterDashboardV2() {
               recentHistory={mockHistory}
               workspaceTab={workspaceTab}
               onWorkspaceTabChange={setWorkspaceTab}
+              userName={currentUser?.name || "User"}
             />
           )}
 
