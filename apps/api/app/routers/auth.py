@@ -11,11 +11,13 @@ from ..database import get_db
 from app.models import User, Company
 from ..schemas import UserRegistration, UserLogin, Token, UserProfile
 from ..schemas.user import UserCreate
+from fastapi.security import HTTPAuthorizationCredentials
 from ..core.security import (
     authenticate_user,
     create_access_token,
     hash_password,
     get_current_user,
+    security,
     JWT_EXPIRATION_HOURS,
 )
 
@@ -217,11 +219,27 @@ async def fix_password_endpoint(
 
 @router.get("/me", response_model=UserProfile)
 async def get_user_profile(
-    current_user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """Get current user profile."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
+        # Get current user (this handles both backend JWT and Supabase tokens)
+        try:
+            current_user = await get_current_user(credentials, db)
+        except HTTPException as auth_error:
+            logger.error(f"Authentication failed in /auth/me: {auth_error.detail}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during authentication: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Authentication error: {str(e)}"
+            )
+        
         # Ensure user is refreshed from database
         db.refresh(current_user)
         

@@ -162,18 +162,26 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
 
 
 async def authenticate_external_token(token: str, db: Session) -> Optional[User]:
+    """Authenticate user via external provider token (Supabase, Auth0, etc.)."""
+    logger = logging.getLogger(__name__)
+    
     providers = _build_provider_configs()
     if not providers:
+        logger.debug("No external providers configured")
         return None
 
     # Fast-path: Supabase projects often issue HS256 tokens (no JWKS). Try HS256 if issuer matches.
     try:
         unverified = jwt.decode(token, options={"verify_signature": False})
         iss = (unverified or {}).get("iss", "").rstrip("/")
-    except Exception:  # pragma: no cover
+        logger.debug(f"Token issuer: {iss}")
+    except Exception as e:
+        logger.debug(f"Failed to decode token (unverified): {str(e)}")
         iss = ""
 
     supabase_issuer = (settings.SUPABASE_ISSUER or "").rstrip("/")
+    logger.debug(f"Supabase issuer configured: {supabase_issuer}")
+    
     if iss and supabase_issuer and iss == supabase_issuer:
         hs_secret = (
             os.getenv("SUPABASE_JWT_SECRET")
@@ -189,27 +197,42 @@ async def authenticate_external_token(token: str, db: Session) -> Optional[User]
                     audience=getattr(settings, "SUPABASE_AUDIENCE", None),
                     options={"verify_aud": bool(getattr(settings, "SUPABASE_AUDIENCE", None))},
                 )
+                logger.info(f"Successfully decoded Supabase token for user: {claims.get('email', 'unknown')}")
                 user = _upsert_external_user(db, claims)
                 db.commit()
                 db.refresh(user)
+                logger.info(f"Created/updated external user: {user.email} (ID: {user.id})")
                 return user
-            except (InvalidTokenError, ExpiredSignatureError):
+            except (InvalidTokenError, ExpiredSignatureError) as e:
+                logger.warning(f"Supabase token validation failed: {str(e)}")
                 # Fall through to JWKS providers below
                 pass
+            except Exception as e:
+                logger.error(f"Error creating Supabase user: {str(e)}", exc_info=True)
+                db.rollback()
+                # Don't raise - try other providers
+                pass
+        else:
+            logger.warning("Supabase JWT secret not configured")
 
+    # Try JWKS providers
     for provider in providers:
         try:
             result = await verify_jwt(token, [provider])
-        except Exception:  # pragma: no cover - rely on other providers
+            claims = result.get("claims", {})
+            if not claims.get("sub"):
+                continue
+            logger.info(f"Successfully verified token via provider: {provider.issuer}")
+            user = _upsert_external_user(db, claims)
+            db.commit()
+            db.refresh(user)
+            logger.info(f"Created/updated external user: {user.email} (ID: {user.id})")
+            return user
+        except Exception as e:
+            logger.debug(f"Provider {provider.issuer} failed: {str(e)}")
             continue
-        claims = result.get("claims", {})
-        if not claims.get("sub"):
-            continue
-        user = _upsert_external_user(db, claims)
-        db.commit()
-        db.refresh(user)
-        return user
 
+    logger.warning("No external provider could authenticate the token")
     return None
 
 
@@ -394,7 +417,7 @@ async def get_current_user(
         return user
 
     # External providers (Supabase/Auth0...)
-    external_user = await _authenticate_external_token(token, db)
+    external_user = await authenticate_external_token(token, db)
     if external_user:
         if not external_user.is_active:
             raise HTTPException(
