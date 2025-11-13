@@ -182,7 +182,6 @@ async def authenticate_external_token(token: str, db: Session) -> Optional[User]
         logger.info(f"Auto-detected Supabase issuer from token: {supabase_issuer}")
         # Build provider config with auto-detected issuer
         if settings.SUPABASE_JWKS_URL:
-            from .jwt_verifier import ProviderConfig
             providers = [
                 ProviderConfig(
                     name="supabase",

@@ -97,8 +97,8 @@ After setting environment variables:
    - `"Created/updated external user: ..."`
    
 2. If you see warnings:
-   - `"Supabase JWT secret not configured"` → Set `SUPABASE_JWT_SECRET`
-   - `"No external providers configured"` → Set `SUPABASE_ISSUER` and `SUPABASE_JWKS_URL`
+   - `"No external providers configured"` → Set `SUPABASE_JWKS_URL` (and optionally `SUPABASE_ISSUER`)
+   - `"Supabase token detected but SUPABASE_ISSUER and SUPABASE_JWKS_URL not configured"` → Set both variables
 
 ## Troubleshooting
 
