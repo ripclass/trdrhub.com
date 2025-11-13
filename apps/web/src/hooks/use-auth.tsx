@@ -99,13 +99,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Prefer passing Authorization explicitly to avoid interceptor awaiting Supabase init
       const { data: sessionData } = await supabase.auth.getSession()
       const supabaseToken = sessionData.session?.access_token
-      const headers = supabaseToken ? { Authorization: `Bearer ${supabaseToken}` } : undefined
+      
+      if (!supabaseToken) {
+        console.error('No Supabase token available for /auth/me')
+        throw new Error('No authentication token available')
+      }
+      
+      console.log('Calling /auth/me with token:', supabaseToken.substring(0, 20) + '...')
+      const headers = { Authorization: `Bearer ${supabaseToken}` }
       
       const { data: userData } = await withTimeout(
         api.get('/auth/me', { headers }),
         'Loading profile',
         PROFILE_TIMEOUT_MS
       )
+      console.log('Successfully fetched user profile:', userData.email)
       const mapped: User = {
         id: userData.id,
         email: userData.email,
@@ -205,6 +213,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Signing in timed out. Please try again.')
       }
       
+      console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
+      
       // Also login to backend API to get JWT token for admin endpoints
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -229,7 +239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('Backend login failed (non-critical):', backendLoginError)
       }
       
+      console.log('Calling fetchUserProfile()...')
       const profile = await fetchUserProfile()
+      console.log('fetchUserProfile completed, profile:', profile.email)
       return profile
     } finally {
       setIsLoading(false)
