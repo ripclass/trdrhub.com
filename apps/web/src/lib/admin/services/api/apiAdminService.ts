@@ -362,10 +362,34 @@ export class ApiAdminService implements AdminService {
     throw new Error("Not implemented");
   }
   async getSettings(): Promise<any> {
-    throw new Error("Not implemented");
+    // Return default settings for now (backend endpoint not implemented yet)
+    return {
+      branding: {
+        primaryColor: "#3b82f6",
+        supportEmail: "support@trdrhub.com",
+      },
+      authentication: {
+        passwordPolicy: "Minimum 8 characters",
+        mfaEnforced: false,
+        ssoEnabled: false,
+        sessionTimeoutMinutes: 60,
+      },
+      notifications: {
+        dailySummary: true,
+        weeklyInsights: true,
+        criticalAlerts: true,
+        digestEmail: "admin@trdrhub.com",
+      },
+    };
   }
-  async updateSettings(): Promise<any> {
-    throw new Error("Not implemented");
+  
+  async updateSettings(settings: Partial<any>): Promise<MutationResult<any>> {
+    // Stub implementation (backend endpoint not implemented yet)
+    return {
+      success: true,
+      data: settings,
+      message: "Settings updated (stub - backend not implemented)",
+    };
   }
   async recordAdminAudit(): Promise<any> {
     throw new Error("Not implemented");

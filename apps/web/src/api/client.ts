@@ -20,15 +20,35 @@ api.interceptors.request.use(
       return config
     }
 
-    // Try Supabase session first
-    const session = await supabase.auth.getSession()
-    let token = session.data.session?.access_token
-
-    // Fallback to API token from localStorage (for testing/direct API auth)
-    if (!token && typeof window !== 'undefined') {
-      const apiToken = localStorage.getItem('trdrhub_api_token')
-      if (apiToken) {
-        token = apiToken
+    // For admin endpoints, prefer backend JWT token over Supabase token
+    // Admin endpoints require backend JWT tokens, not Supabase tokens
+    let token: string | null = null
+    
+    if (typeof window !== 'undefined') {
+      // Check if this is an admin endpoint
+      const isAdminEndpoint = urlPath.startsWith('/admin')
+      
+      if (isAdminEndpoint) {
+        // For admin endpoints, prioritize backend JWT token
+        const apiToken = localStorage.getItem('trdrhub_api_token')
+        if (apiToken) {
+          token = apiToken
+        } else {
+          // Fallback to Supabase token if backend token not available
+          const session = await supabase.auth.getSession()
+          token = session.data.session?.access_token || null
+        }
+      } else {
+        // For non-admin endpoints, try Supabase first, then backend token
+        const session = await supabase.auth.getSession()
+        token = session.data.session?.access_token || null
+        
+        if (!token) {
+          const apiToken = localStorage.getItem('trdrhub_api_token')
+          if (apiToken) {
+            token = apiToken
+          }
+        }
       }
     }
 
@@ -36,6 +56,10 @@ api.interceptors.request.use(
       const headers = (config.headers ?? {}) as Record<string, string>
       headers.Authorization = `Bearer ${token}`
       config.headers = headers as any
+    } else if (urlPath.startsWith('/admin')) {
+      // Log warning for admin endpoints without token
+      console.warn('Admin endpoint called without authentication token:', config.url)
+      console.warn('Please log in via /login page to get backend JWT token')
     }
 
     // Add org param for bank endpoints
