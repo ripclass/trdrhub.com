@@ -70,6 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const SIGNIN_TIMEOUT_MS = 45000
   const PROFILE_TIMEOUT_MS = 20000
 
+  const waitForSupabaseSession = async (maxMs = 20000): Promise<string | null> => {
+    const started = Date.now()
+    while (Date.now() - started < maxMs) {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token || null
+      if (token) return token
+      await new Promise((r) => setTimeout(r, 300))
+    }
+    return null
+  }
+
   const withTimeout = async <T,>(promise: Promise<T>, label: string, ms = AUTH_TIMEOUT_MS): Promise<T> => {
     let timer: any
     const timeout = new Promise<never>((_, reject) => {
@@ -180,7 +191,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'Signing in',
         SIGNIN_TIMEOUT_MS
       )
-      if (error) throw error
+      // If Supabase returns an error, we still attempt to see if session became available
+      if (error) {
+        // Fall through to session wait; if no session, throw
+        console.warn('Supabase sign-in returned error; checking session anyway:', error)
+      }
+      
+      // Wait for session to materialize (handles cases where signIn resolves slowly)
+      const token = await waitForSupabaseSession(20000)
+      if (!token) {
+        // No session after waiting — treat as real failure
+        if (error) throw error
+        throw new Error('Signing in timed out. Please try again.')
+      }
       
       // Also login to backend API to get JWT token for admin endpoints
       try {
