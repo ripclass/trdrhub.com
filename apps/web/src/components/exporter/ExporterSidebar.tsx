@@ -14,6 +14,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useExporterAuth } from "@/lib/exporter/auth";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 
 type ExporterSection =
@@ -39,7 +40,8 @@ interface ExporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function ExporterSidebar({ activeSection, onSectionChange, user: propUser, ...props }: ExporterSidebarProps) {
   const location = useLocation();
-  const { user: exporterAuthUser, logout } = useExporterAuth();
+  const { user: exporterAuthUser, logout: exporterLogout } = useExporterAuth();
+  const { logout: mainLogout } = useAuth();
   
   // Use propUser if provided (from main auth), otherwise fall back to exporterAuthUser
   const user = propUser || exporterAuthUser;
@@ -49,8 +51,14 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
     return location.pathname === url || location.pathname + location.search === url;
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    // Logout from both auth systems
+    try {
+      await mainLogout();
+    } catch (error) {
+      console.warn('Main auth logout failed:', error);
+    }
+    exporterLogout(); // This will navigate to /login
   };
 
   return (
