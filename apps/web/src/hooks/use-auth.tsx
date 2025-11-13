@@ -255,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let mounted = true
     let initTimeout: NodeJS.Timeout | null = null
+    let profileFetched = false // Prevent double fetchUserProfile calls
 
     // Use onAuthStateChange as primary method (more reliable than getSession on refresh)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -266,6 +267,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (session) {
+        // Prevent double fetch if already fetched by getSession()
+        if (profileFetched) {
+          if (mounted) setIsLoading(false)
+          return
+        }
+        profileFetched = true
+        
         setIsLoading(true)
         try {
           await fetchUserProfile(session.access_token)
@@ -295,16 +303,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         if (!mounted) return
         if (data.session) {
-          try {
-            await fetchUserProfile(data.session.access_token)
-          } finally {
+          // Prevent double fetch if onAuthStateChange already fired
+          if (!profileFetched) {
+            profileFetched = true
+            try {
+              await fetchUserProfile(data.session.access_token)
+            } finally {
+              if (mounted) setIsLoading(false)
+            }
+          } else {
             if (mounted) setIsLoading(false)
           }
         } else {
           // No session found - wait a bit for onAuthStateChange to fire
           // If it doesn't fire within 2 seconds, assume no session
           initTimeout = setTimeout(() => {
-            if (mounted) {
+            if (mounted && !profileFetched) {
               if (GUEST_MODE) setGuest()
               setIsLoading(false)
             }
@@ -315,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return
         // Wait a bit for onAuthStateChange to fire before giving up
         initTimeout = setTimeout(() => {
-          if (mounted) {
+          if (mounted && !profileFetched) {
             if (GUEST_MODE) setGuest()
             setIsLoading(false)
           }
