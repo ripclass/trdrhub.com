@@ -127,9 +127,12 @@ export function RulesActive() {
   const loadActiveRulesets = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-    const results: ActiveRulesetDisplay[] = [];
 
     try {
+      // Use the new bulk endpoint to fetch all active rulesets at once (much faster)
+      const allActiveRulesets = await service.getAllActiveRulesets(false);
+
+      // Filter by domain, rulebook, and jurisdiction
       const rulebooksToCheck =
         rulebookFilter !== "all"
           ? ALL_RULEBOOK_OPTIONS.filter((option) => option.value === rulebookFilter)
@@ -140,34 +143,34 @@ export function RulesActive() {
       const jurisdictionsToCheck =
         jurisdictionFilter === "all" ? DEFAULT_JURISDICTIONS : [jurisdictionFilter];
 
-      const combinations = rulebooksToCheck.flatMap((rulebook) =>
-        jurisdictionsToCheck.map((jurisdiction) => ({ rulebook, jurisdiction }))
-      );
+      const rulebookValues = new Set(rulebooksToCheck.map((r) => r.value));
+      const jurisdictionSet = new Set(jurisdictionsToCheck);
 
-      const responses = await Promise.all(
-        combinations.map(async ({ rulebook, jurisdiction }) => {
-          try {
-            const result = await service.getActiveRuleset(rulebook.value, jurisdiction, false);
-            if (result.ruleset) {
-              return {
-                ...result.ruleset,
-                signedUrl: result.signedUrl,
-                rulebookMeta: rulebook,
-              } as ActiveRulesetDisplay;
-            }
-          } catch (err) {
-            if (err instanceof Error && err.message.includes("404")) {
-              return null;
-            }
-            console.warn(`Failed to load active ruleset for ${rulebook.value}/${jurisdiction}:`, err);
-            return null;
-          }
-          return null;
+      // Filter and map results
+      const filteredResults: ActiveRulesetDisplay[] = allActiveRulesets
+        .filter((result) => {
+          const ruleset = result.ruleset;
+          const matchesDomain =
+            domainFilter === "all" ||
+            rulebookValues.has(ruleset.domain) ||
+            (domainFilter && ruleset.domain.startsWith(domainFilter));
+          const matchesRulebook = rulebookFilter === "all" || rulebookValues.has(ruleset.domain);
+          const matchesJurisdiction =
+            jurisdictionFilter === "all" || jurisdictionSet.has(ruleset.jurisdiction || "global");
+
+          return matchesDomain && matchesRulebook && matchesJurisdiction;
         })
-      );
+        .map((result) => {
+          const ruleset = result.ruleset;
+          const rulebookMeta = RULEBOOK_LOOKUP.get(ruleset.domain);
+          return {
+            ...ruleset,
+            signedUrl: result.signedUrl,
+            rulebookMeta: rulebookMeta,
+          } as ActiveRulesetDisplay;
+        });
 
-      const filteredResults = responses.filter(Boolean) as ActiveRulesetDisplay[];
-
+      // Sort by published date (most recent first)
       filteredResults.sort((a, b) => {
         const aDate = new Date(a.publishedAt ?? a.createdAt ?? 0).getTime();
         const bDate = new Date(b.publishedAt ?? b.createdAt ?? 0).getTime();
@@ -178,7 +181,7 @@ export function RulesActive() {
     } catch (err) {
       console.error("Failed to load active rulesets:", err);
       setError("Unable to load active rulesets. Retry shortly or check monitoring services.");
-    setActiveRulesets([]);
+      setActiveRulesets([]);
     } finally {
       setLoading(false);
     }

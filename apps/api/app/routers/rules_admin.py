@@ -472,6 +472,77 @@ async def list_rulesets(
     )
 
 
+@router.get("/active/all", response_model=List[ActiveRulesetResponse])
+async def get_all_active_rulesets(
+    include_content: bool = Query(default=False, description="Include full JSON content"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all active rulesets at once.
+    
+    This is more efficient than querying individual domain/jurisdiction combinations.
+    Public endpoint (no admin required).
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Query all active rulesets (should be fast with index)
+        rulesets = db.query(Ruleset).filter(
+            Ruleset.status == RulesetStatus.ACTIVE.value
+        ).all()
+        
+        query_time = time.time() - start_time
+        if query_time > 1.0:
+            logger.warning(f"Slow database query for all active rulesets: {query_time:.2f}s")
+        
+        results = []
+        storage_service = None
+        
+        # Only initialize storage service once if needed
+        if include_content or any(r.file_path for r in rulesets):
+            try:
+                storage_service = RulesStorageService()
+            except Exception as e:
+                logger.warning(f"Failed to initialize RulesStorageService: {e}")
+        
+        for ruleset in rulesets:
+            signed_url = None
+            content = None
+            
+            if storage_service and ruleset.file_path:
+                try:
+                    signed_url = storage_service.get_signed_url(ruleset.file_path, expires_in=3600)
+                except Exception as e:
+                    logger.warning(f"Failed to generate signed URL for {ruleset.file_path}: {e}")
+                
+                if include_content:
+                    try:
+                        file_data = storage_service.get_ruleset_file(ruleset.file_path)
+                        content = file_data["content"]
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch content for {ruleset.file_path}: {e}")
+            
+            results.append(ActiveRulesetResponse(
+                ruleset=RulesetResponse.model_validate(ruleset),
+                signed_url=signed_url,
+                content=content
+            ))
+        
+        total_time = time.time() - start_time
+        if total_time > 2.0:
+            logger.warning(f"Slow /admin/rulesets/active/all response: {total_time:.2f}s")
+        
+        return results
+    except Exception as e:
+        logger.exception(f"Unexpected error in get_all_active_rulesets: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
 @router.get("/active", response_model=ActiveRulesetResponse)
 async def get_active_ruleset(
     domain: str = Query(..., description="Rule domain"),
@@ -489,7 +560,8 @@ async def get_active_ruleset(
     start_time = time.time()
     
     try:
-        # Query for active ruleset (should be fast)
+        # Query for active ruleset (should be fast with index)
+        # Use the partial unique index for optimal performance
         ruleset = db.query(Ruleset).filter(
             and_(
                 Ruleset.domain == domain,
@@ -503,7 +575,8 @@ async def get_active_ruleset(
             logger.warning(f"Slow database query for active ruleset: {query_time:.2f}s (domain={domain}, jurisdiction={jurisdiction})")
         
         if not ruleset:
-            logger.info(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
+            # Return 404 immediately without any storage initialization
+            logger.debug(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}"

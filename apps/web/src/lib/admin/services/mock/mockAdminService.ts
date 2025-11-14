@@ -1566,19 +1566,28 @@ export class MockAdminService implements AdminService {
   }
 
   async getActiveRuleset(domain: string, jurisdiction: string, includeContent?: boolean): Promise<ActiveRulesetResult> {
+    // Mock implementation - returns first matching active ruleset
     const ruleset = this.rulesets.find(
       (r) => r.domain === domain && r.jurisdiction === jurisdiction && r.status === "active"
     );
-
     if (!ruleset) {
-      throw new Error(`No active ruleset found for domain=${domain}, jurisdiction=${jurisdiction}`);
+      throw new Error(`No active ruleset found for ${domain}/${jurisdiction}`);
     }
-
     return {
-      ruleset: clone(ruleset),
-      signedUrl: includeContent ? `https://storage.example.com/signed-url/${ruleset.filePath}` : undefined,
-      content: includeContent ? [] : undefined, // Mock empty array for content
+      ruleset: this.transformRuleset(ruleset),
+      signedUrl: `https://example.com/rulesets/${ruleset.id}/download`,
+      content: includeContent ? [{ id: "mock-rule", text: "Mock rule content" }] : undefined,
     };
+  }
+
+  async getAllActiveRulesets(includeContent?: boolean): Promise<ActiveRulesetResult[]> {
+    // Mock implementation - returns all active rulesets
+    const activeRulesets = this.rulesets.filter((r) => r.status === "active");
+    return activeRulesets.map((ruleset) => ({
+      ruleset: this.transformRuleset(ruleset),
+      signedUrl: `https://example.com/rulesets/${ruleset.id}/download`,
+      content: includeContent ? [{ id: "mock-rule", text: "Mock rule content" }] : undefined,
+    }));
   }
 
   async getRulesetAudit(id: string): Promise<RulesetAuditLog[]> {

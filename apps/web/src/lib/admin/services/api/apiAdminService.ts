@@ -171,6 +171,26 @@ export class ApiAdminService implements AdminService {
     }
   }
 
+  async getAllActiveRulesets(includeContent = false): Promise<ActiveRulesetResult[]> {
+    try {
+      const queryParams = new URLSearchParams({
+        include_content: includeContent.toString(),
+      });
+
+      const response = await api.get(`/admin/rulesets/active/all?${queryParams.toString()}`);
+      const data = response.data;
+
+      return data.map((item: any) => ({
+        ruleset: this.transformRuleset(item.ruleset),
+        signedUrl: item.signed_url,
+        content: item.content,
+      }));
+    } catch (error: any) {
+      console.error("Failed to get all active rulesets:", error);
+      throw new Error(error?.response?.data?.detail || "Failed to get all active rulesets");
+    }
+  }
+
   async getRulesetAudit(id: string): Promise<RulesetAuditLog[]> {
     try {
       const response = await api.get(`/admin/rulesets/${id}/audit`);

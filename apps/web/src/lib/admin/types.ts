@@ -562,6 +562,7 @@ export interface AdminService {
   publishRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
   rollbackRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
   getActiveRuleset(domain: string, jurisdiction: string, includeContent?: boolean): Promise<ActiveRulesetResult>;
+  getAllActiveRulesets(includeContent?: boolean): Promise<ActiveRulesetResult[]>;
   getRulesetAudit(id: string): Promise<RulesetAuditLog[]>;
 
   recordAdminAudit(event: Omit<AdminAuditEvent, "id" | "createdAt">): Promise<MutationResult>;
