@@ -119,10 +119,10 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     auth_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("auth.users.id", name="fk_users_auth_user_id", ondelete="SET NULL"),
         unique=True,
         nullable=True,
         index=True,
+        comment="Supabase auth user id (FK enforced via DB migration)",
     )
     hashed_password = Column(String(255), nullable=True)  # Nullable for Supabase/external auth users
     full_name = Column(String(255), nullable=False)

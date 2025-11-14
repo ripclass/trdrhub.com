@@ -125,79 +125,37 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        # Use raw SQL to insert user to completely bypass SQLAlchemy FK validation
-        # SQLAlchemy tries to validate FK constraints even when auth_user_id=None
-        from sqlalchemy import text
-        from datetime import datetime, timezone
-        
         try:
-            # Insert user using raw SQL to bypass SQLAlchemy FK validation
-            insert_sql = text("""
-                INSERT INTO users (id, email, full_name, role, hashed_password, is_active, auth_user_id, created_at, updated_at, onboarding_completed, status, kyc_required)
-                VALUES (:id, :email, :full_name, :role, :hashed_password, :is_active, :auth_user_id, :created_at, :updated_at, :onboarding_completed, :status, :kyc_required)
-            """)
-            now = datetime.now(timezone.utc)
-            db.execute(
-                insert_sql,
-                {
-                    "id": str(user_id),
-                    "email": email,
-                    "full_name": full_name,
-                    "role": role_value,
-                    "hashed_password": None,
-                    "is_active": True,
-                    "auth_user_id": str(auth_user_id) if auth_user_id else None,
-                    "created_at": now,
-                    "updated_at": now,
-                    "onboarding_completed": False,
-                    "status": "active",
-                    "kyc_required": False,
-                }
+            user = User(
+                id=user_id,
+                email=email,
+                full_name=full_name,
+                role=role_value,
+                hashed_password=None,  # external users don't require local password
+                is_active=True,
+                auth_user_id=auth_user_id,
             )
-            db.commit()
-            # Query the user back to get the ORM object
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                raise Exception(f"Failed to retrieve created user {email} after insert")
+            db.add(user)
+            db.flush()
         except Exception as e:
             error_msg = str(e)
-            # Check if it's a NOT NULL constraint on password
             if "NOT NULL" in error_msg.upper() and "hashed_password" in error_msg.upper():
-                logger.warning(f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback.")
+                logger.warning(
+                    f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback."
+                )
                 db.rollback()
-                # Retry with dummy hash
-                try:
-                    dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
-                    insert_sql = text("""
-                        INSERT INTO users (id, email, full_name, role, hashed_password, is_active, auth_user_id, created_at, updated_at, onboarding_completed, status, kyc_required)
-                        VALUES (:id, :email, :full_name, :role, :hashed_password, :is_active, :auth_user_id, :created_at, :updated_at, :onboarding_completed, :status, :kyc_required)
-                    """)
-                    now = datetime.now(timezone.utc)
-                    db.execute(
-                        insert_sql,
-                        {
-                            "id": str(user_id),
-                            "email": email,
-                            "full_name": full_name,
-                            "role": role_value,
-                            "hashed_password": dummy_hash,
-                            "is_active": True,
-                            "auth_user_id": str(auth_user_id) if auth_user_id else None,
-                            "created_at": now,
-                            "updated_at": now,
-                            "onboarding_completed": False,
-                            "status": "active",
-                            "kyc_required": False,
-                        }
-                    )
-                    db.commit()
-                    user = db.query(User).filter(User.id == user_id).first()
-                    if not user:
-                        raise Exception(f"Failed to retrieve created user {email} after insert with dummy hash")
-                except Exception as e2:
-                    logger.error(f"Failed to create external user {email} with dummy hash: {str(e2)}")
-                    db.rollback()
-                    raise
+                dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
+                user = User(
+                    id=user_id,
+                    email=email,
+                    full_name=full_name,
+                    role=role_value,
+                    hashed_password=dummy_hash,
+                    is_active=True,
+                    auth_user_id=auth_user_id,
+                )
+                db.add(user)
+                db.flush()
             else:
                 logger.error(f"Failed to create external user {email}: {error_msg}")
                 db.rollback()
@@ -209,20 +167,8 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         if role_value:
             user.role = role_value
         user.is_active = True
-        # Update auth_user_id using raw SQL to bypass SQLAlchemy FK validation
         if auth_user_id and user.auth_user_id != auth_user_id:
-            from sqlalchemy import text
-            try:
-                db.execute(
-                    text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
-                    {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
-                )
-                db.flush()
-                # Refresh to get updated auth_user_id
-                db.refresh(user)
-            except Exception as e:
-                logger.warning(f"Failed to update auth_user_id for user {email}: {str(e)}")
-                # Continue anyway - auth_user_id update is not critical
+            user.auth_user_id = auth_user_id
 
     return user
 
