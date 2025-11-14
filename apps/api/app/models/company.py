@@ -63,6 +63,8 @@ class Company(Base):
     plan = Column(_enum_column(PlanType, "plan_type"), nullable=False, default=PlanType.FREE)
     quota_limit = Column(Integer, nullable=True)  # null = unlimited for enterprise
     billing_cycle_start = Column(Date, nullable=True)
+    billing_email = Column(String(255), nullable=True)
+    payment_customer_id = Column(String(255), nullable=True)
 
     # External payment provider reference
     payment_provider_id = Column(String(255), nullable=True, index=True)  # Stripe customer_id or SSLCommerz ref

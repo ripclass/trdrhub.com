@@ -110,6 +110,8 @@ def upgrade() -> None:
         ("event_metadata", postgresql.JSONB(), True, None),
         ("business_address", sa.Text(), True, None),
         ("tax_id", sa.String(length=100), True, None),
+        ("billing_email", sa.String(length=255), True, None),
+        ("payment_customer_id", sa.String(length=255), True, None),
     ]
 
     for name, column_type, nullable, default in columns_to_add:
@@ -153,6 +155,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     columns = [
+        "payment_customer_id",
+        "billing_email",
         "tax_id",
         "business_address",
         "event_metadata",

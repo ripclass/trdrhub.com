@@ -162,6 +162,10 @@ class User(Base):
         """Check if the user is a bank administrator."""
         return self.role == UserRole.BANK_ADMIN
 
+    def is_bank_user(self) -> bool:
+        """Check if the user belongs to any bank role."""
+        return self.is_bank_officer() or self.is_bank_admin()
+
     def is_tenant_admin(self) -> bool:
         """Check if the user is a tenant administrator."""
         return self.role == UserRole.TENANT_ADMIN
