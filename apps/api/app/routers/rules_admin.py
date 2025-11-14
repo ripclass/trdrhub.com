@@ -120,13 +120,25 @@ async def upload_ruleset(
     and creates a draft ruleset record.
     """
     # Read and parse JSON file
+    # Use utf-8-sig to automatically handle UTF-8 BOM if present
     try:
         content = await file.read()
-        rules_json = json.loads(content.decode('utf-8'))
+        # Try utf-8-sig first (handles BOM), fallback to utf-8
+        try:
+            text_content = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            # Fallback to regular utf-8 if utf-8-sig fails
+            text_content = content.decode('utf-8')
+        rules_json = json.loads(text_content)
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON: {str(e)}"
+        )
+    except UnicodeDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file encoding: {str(e)}. File must be UTF-8 encoded."
         )
     except Exception as e:
         raise HTTPException(
