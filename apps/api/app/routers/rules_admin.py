@@ -473,44 +473,87 @@ async def get_active_ruleset(
     
     Public endpoint (no admin required) for validation engine to fetch active rules.
     """
-    ruleset = db.query(Ruleset).filter(
-        and_(
-            Ruleset.domain == domain,
-            Ruleset.jurisdiction == jurisdiction,
-            Ruleset.status == RulesetStatus.ACTIVE.value
-        )
-    ).first()
+    import time
+    start_time = time.time()
     
-    if not ruleset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}"
-        )
-    
-    signed_url = None
-    content = None
-    
-    if include_content:
-        storage_service = RulesStorageService()
-        try:
-            file_data = storage_service.get_ruleset_file(ruleset.file_path)
-            content = file_data["content"]
-        except Exception as e:
-            # If file fetch fails, still return metadata but log error
-            pass
-    
-    # Generate signed URL for download (1 hour expiry)
     try:
-        storage_service = RulesStorageService()
-        signed_url = storage_service.get_signed_url(ruleset.file_path, expires_in=3600)
-    except Exception:
-        pass  # Signed URL generation is optional
-    
-    return ActiveRulesetResponse(
-        ruleset=RulesetResponse.model_validate(ruleset),
-        signed_url=signed_url,
-        content=content
-    )
+        # Query for active ruleset (should be fast)
+        ruleset = db.query(Ruleset).filter(
+            and_(
+                Ruleset.domain == domain,
+                Ruleset.jurisdiction == jurisdiction,
+                Ruleset.status == RulesetStatus.ACTIVE.value
+            )
+        ).first()
+        
+        query_time = time.time() - start_time
+        if query_time > 1.0:
+            logger.warning(f"Slow database query for active ruleset: {query_time:.2f}s (domain={domain}, jurisdiction={jurisdiction})")
+        
+        if not ruleset:
+            logger.info(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}"
+            )
+        
+        signed_url = None
+        content = None
+        
+        # Only initialize storage service if we actually need it (for signed URL or content)
+        # This avoids slow Supabase client initialization when not needed
+        if include_content or ruleset.file_path:
+            storage_init_start = time.time()
+            try:
+                storage_service = RulesStorageService()
+                storage_init_time = time.time() - storage_init_start
+                if storage_init_time > 2.0:
+                    logger.warning(f"Slow Supabase Storage initialization: {storage_init_time:.2f}s")
+                
+                # Generate signed URL for download (1 hour expiry) - only if file_path exists
+                if ruleset.file_path:
+                    try:
+                        signed_url_start = time.time()
+                        signed_url = storage_service.get_signed_url(ruleset.file_path, expires_in=3600)
+                        signed_url_time = time.time() - signed_url_start
+                        if signed_url_time > 1.0:
+                            logger.warning(f"Slow signed URL generation: {signed_url_time:.2f}s")
+                    except Exception as e:
+                        logger.warning(f"Failed to generate signed URL for {ruleset.file_path}: {e}")
+                
+                # Only fetch content if explicitly requested (this can be slow for large files)
+                if include_content and ruleset.file_path:
+                    try:
+                        content_start = time.time()
+                        file_data = storage_service.get_ruleset_file(ruleset.file_path)
+                        content = file_data["content"]
+                        content_time = time.time() - content_start
+                        if content_time > 2.0:
+                            logger.warning(f"Slow content fetch: {content_time:.2f}s")
+                    except Exception as e:
+                        logger.error(f"Failed to fetch ruleset file content: {e}", exc_info=True)
+                        # Continue without content
+            except Exception as e:
+                logger.error(f"Failed to initialize RulesStorageService: {e}", exc_info=True)
+                # Continue without storage features - endpoint still works with just metadata
+        
+        total_time = time.time() - start_time
+        if total_time > 2.0:
+            logger.warning(f"Slow /admin/rulesets/active response: {total_time:.2f}s")
+        
+        return ActiveRulesetResponse(
+            ruleset=RulesetResponse.model_validate(ruleset),
+            signed_url=signed_url,
+            content=content
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in get_active_ruleset: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @router.get("/{ruleset_id}/audit", response_model=List[RulesetAuditResponse])
