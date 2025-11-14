@@ -25,6 +25,9 @@ interface ImporterAuthContext {
 
 const ImporterAuthContext = createContext<ImporterAuthContext | undefined>(undefined)
 
+// Export context for direct useContext usage
+export { ImporterAuthContext }
+
 interface ImporterAuthProviderProps {
   children: ReactNode
 }

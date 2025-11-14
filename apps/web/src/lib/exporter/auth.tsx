@@ -26,6 +26,9 @@ interface ExporterAuthContext {
 
 const ExporterAuthContext = createContext<ExporterAuthContext | undefined>(undefined)
 
+// Export context for direct useContext usage
+export { ExporterAuthContext }
+
 interface ExporterAuthProviderProps {
   children: ReactNode
 }
