@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
+  const profileFetchedRef = React.useRef(false)
 
   const setGuest = () => {
     setUser({
@@ -255,7 +256,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let mounted = true
     let initTimeout: NodeJS.Timeout | null = null
-    let profileFetched = false // Prevent double fetchUserProfile calls
 
     // Use onAuthStateChange as primary method (more reliable than getSession on refresh)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -267,12 +267,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (session) {
-        // Prevent double fetch if already fetched by getSession()
-        if (profileFetched) {
+        if (profileFetchedRef.current) {
           if (mounted) setIsLoading(false)
           return
         }
-        profileFetched = true
+        profileFetchedRef.current = true
         
         setIsLoading(true)
         try {
@@ -281,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) setIsLoading(false)
         }
       } else {
+        profileFetchedRef.current = false
         setUser(null)
         if (mounted) {
           if (GUEST_MODE) setGuest()
@@ -303,9 +303,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         if (!mounted) return
         if (data.session) {
-          // Prevent double fetch if onAuthStateChange already fired
-          if (!profileFetched) {
-            profileFetched = true
+          if (!profileFetchedRef.current) {
+            profileFetchedRef.current = true
             try {
               await fetchUserProfile(data.session.access_token)
             } finally {
@@ -318,7 +317,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // No session found - wait a bit for onAuthStateChange to fire
           // If it doesn't fire within 2 seconds, assume no session
           initTimeout = setTimeout(() => {
-            if (mounted && !profileFetched) {
+            if (mounted && !profileFetchedRef.current) {
               if (GUEST_MODE) setGuest()
               setIsLoading(false)
             }
@@ -327,9 +326,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error: any) {
         console.warn('Auth init: Failed to get session:', error?.message || error)
         if (!mounted) return
-        // Wait a bit for onAuthStateChange to fire before giving up
         initTimeout = setTimeout(() => {
-          if (mounted && !profileFetched) {
+          if (mounted && !profileFetchedRef.current) {
             if (GUEST_MODE) setGuest()
             setIsLoading(false)
           }
@@ -346,6 +344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         initTimeout = null
       }
       authListener?.subscription.unsubscribe()
+      profileFetchedRef.current = false
     }
   }, [fetchUserProfile])
 
@@ -540,6 +539,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Clear user state
+    profileFetchedRef.current = false
     setUser(null)
     
     // Clear ALL localStorage tokens and auth data

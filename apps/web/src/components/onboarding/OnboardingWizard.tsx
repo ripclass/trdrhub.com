@@ -114,11 +114,12 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
   }, [open, status])
 
   useEffect(() => {
+    if (!open) return
     if (status?.completed) {
       onComplete()
       onClose()
     }
-  }, [status?.completed, onClose, onComplete])
+  }, [status?.completed, onClose, onComplete, open])
 
   const handleCompanyTypeSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
