@@ -100,6 +100,7 @@ def _normalise_role_claim(claims: Dict[str, Any]) -> str:
 
 
 def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
+    logger = logging.getLogger(__name__)
     user_id = _resolve_external_user_id(str(claims.get("sub")))
     email = claims.get("email") or claims.get("preferred_username") or f"user-{user_id}@external"
     metadata = claims.get("user_metadata") or {}
@@ -124,100 +125,83 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        # Try to create user with NULL password (for Supabase users)
-        # If database constraint prevents this, use a dummy password hash as fallback
-        logger = logging.getLogger(__name__)
+        # Use raw SQL to insert user to completely bypass SQLAlchemy FK validation
+        # SQLAlchemy tries to validate FK constraints even when auth_user_id=None
+        from sqlalchemy import text
+        from datetime import datetime, timezone
+        
         try:
-            # First, create user without auth_user_id to avoid SQLAlchemy FK validation
-            user = User(
-                id=user_id,
-                email=email,
-                full_name=full_name,
-                role=role_value,
-                hashed_password=None,  # external users don't require local password
-                is_active=True,
-                auth_user_id=None,  # Set to None initially to avoid FK validation
+            # Insert user using raw SQL to bypass SQLAlchemy FK validation
+            insert_sql = text("""
+                INSERT INTO users (id, email, full_name, role, hashed_password, is_active, auth_user_id, created_at, updated_at, onboarding_completed, status, kyc_required)
+                VALUES (:id, :email, :full_name, :role, :hashed_password, :is_active, :auth_user_id, :created_at, :updated_at, :onboarding_completed, :status, :kyc_required)
+            """)
+            now = datetime.now(timezone.utc)
+            db.execute(
+                insert_sql,
+                {
+                    "id": str(user_id),
+                    "email": email,
+                    "full_name": full_name,
+                    "role": role_value,
+                    "hashed_password": None,
+                    "is_active": True,
+                    "auth_user_id": str(auth_user_id) if auth_user_id else None,
+                    "created_at": now,
+                    "updated_at": now,
+                    "onboarding_completed": False,
+                    "status": "active",
+                    "kyc_required": False,
+                }
             )
-            db.add(user)
-            db.flush()
-            # Now update auth_user_id using raw SQL to bypass SQLAlchemy FK validation
-            if auth_user_id:
-                from sqlalchemy import text
-                db.execute(
-                    text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
-                    {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
-                )
-                db.flush()
-                # Refresh user object to get updated auth_user_id
-                db.refresh(user)
+            db.commit()
+            # Query the user back to get the ORM object
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                raise Exception(f"Failed to retrieve created user {email} after insert")
         except Exception as e:
-            # If database constraint prevents NULL password, use dummy hash as fallback
-            # This is a temporary workaround until migration is run
             error_msg = str(e)
-            if "NOT NULL" in error_msg.upper() or "null value" in error_msg.lower():
+            # Check if it's a NOT NULL constraint on password
+            if "NOT NULL" in error_msg.upper() and "hashed_password" in error_msg.upper():
                 logger.warning(f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback.")
                 db.rollback()
-                # Use a dummy bcrypt hash that will never match any password
-                # Format: $2b$12$ followed by 53 characters (bcrypt hash format)
-                dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
+                # Retry with dummy hash
                 try:
-                    user = User(
-                        id=user_id,
-                        email=email,
-                        full_name=full_name,
-                        role=role_value,
-                        hashed_password=dummy_hash,  # Dummy hash until migration allows NULL
-                        is_active=True,
-                        auth_user_id=None,  # Set to None initially
+                    dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
+                    insert_sql = text("""
+                        INSERT INTO users (id, email, full_name, role, hashed_password, is_active, auth_user_id, created_at, updated_at, onboarding_completed, status, kyc_required)
+                        VALUES (:id, :email, :full_name, :role, :hashed_password, :is_active, :auth_user_id, :created_at, :updated_at, :onboarding_completed, :status, :kyc_required)
+                    """)
+                    now = datetime.now(timezone.utc)
+                    db.execute(
+                        insert_sql,
+                        {
+                            "id": str(user_id),
+                            "email": email,
+                            "full_name": full_name,
+                            "role": role_value,
+                            "hashed_password": dummy_hash,
+                            "is_active": True,
+                            "auth_user_id": str(auth_user_id) if auth_user_id else None,
+                            "created_at": now,
+                            "updated_at": now,
+                            "onboarding_completed": False,
+                            "status": "active",
+                            "kyc_required": False,
+                        }
                     )
-                    db.add(user)
-                    db.flush()
-                    # Update auth_user_id using raw SQL
-                    if auth_user_id:
-                        from sqlalchemy import text
-                        db.execute(
-                            text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
-                            {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
-                        )
-                        db.flush()
-                        db.refresh(user)
+                    db.commit()
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if not user:
+                        raise Exception(f"Failed to retrieve created user {email} after insert with dummy hash")
                 except Exception as e2:
                     logger.error(f"Failed to create external user {email} with dummy hash: {str(e2)}")
-                    db.rollback()
-                    raise
-            elif "could not find table 'auth.users'" in error_msg.lower() or "foreign key" in error_msg.lower():
-                # SQLAlchemy FK validation error - ignore it, FK is enforced at DB level
-                logger.debug(f"SQLAlchemy FK validation warning (ignored): {error_msg}")
-                db.rollback()
-                # Retry without auth_user_id, then update via raw SQL
-                try:
-                    user = User(
-                        id=user_id,
-                        email=email,
-                        full_name=full_name,
-                        role=role_value,
-                        hashed_password=None,
-                        is_active=True,
-                        auth_user_id=None,
-                    )
-                    db.add(user)
-                    db.flush()
-                    if auth_user_id:
-                        from sqlalchemy import text
-                        db.execute(
-                            text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
-                            {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
-                        )
-                        db.flush()
-                        db.refresh(user)
-                except Exception as e3:
-                    logger.error(f"Failed to create user after FK validation error: {str(e3)}")
                     db.rollback()
                     raise
             else:
                 logger.error(f"Failed to create external user {email}: {error_msg}")
                 db.rollback()
-                raise  # Re-raise if it's not a known constraint issue
+                raise
     else:
         user.email = email
         if full_name:
@@ -225,9 +209,20 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         if role_value:
             user.role = role_value
         user.is_active = True
-        # Update auth_user_id if it's not set or has changed
+        # Update auth_user_id using raw SQL to bypass SQLAlchemy FK validation
         if auth_user_id and user.auth_user_id != auth_user_id:
-            user.auth_user_id = auth_user_id
+            from sqlalchemy import text
+            try:
+                db.execute(
+                    text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
+                    {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
+                )
+                db.flush()
+                # Refresh to get updated auth_user_id
+                db.refresh(user)
+            except Exception as e:
+                logger.warning(f"Failed to update auth_user_id for user {email}: {str(e)}")
+                # Continue anyway - auth_user_id update is not critical
 
     return user
 
