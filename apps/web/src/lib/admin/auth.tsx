@@ -4,16 +4,15 @@
  * Provides authentication state management for admin users with RBAC.
  */
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/api/client';
 
 interface AdminUser {
   id: string;
-  name: string;
+  name: string | null;
   email: string;
   role: string;
-  avatar?: string;
-  organization_id?: string;
 }
 
 interface AdminAuthContext {
@@ -32,42 +31,25 @@ const AdminAuthContext = createContext<AdminAuthContext | undefined>(undefined);
 // Export context for direct useContext usage
 export { AdminAuthContext };
 
-// Admin role permissions mapping
-const ADMIN_PERMISSIONS = {
-  super_admin: ['*'], // All permissions
-  ops_admin: [
-    'ops:read', 'ops:write',
-    'jobs:read', 'jobs:write',
+const ADMIN_ALLOWED_ROLES = new Set(['system_admin', 'tenant_admin']);
+
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  system_admin: ['*'],
+  tenant_admin: [
+    'ops:read',
+    'ops:write',
+    'jobs:read',
+    'jobs:write',
     'monitoring:read',
-    'feature_flags:read', 'feature_flags:write',
-    'users:read'
+    'feature_flags:read',
+    'feature_flags:write',
+    'billing:read',
+    'billing:write',
+    'users:read',
   ],
-  security_admin: [
-    'audit:read', 'audit:export',
-    'users:read', 'users:write',
-    'api_keys:read', 'api_keys:write',
-    'sessions:read', 'sessions:write',
-    'approvals:read', 'approvals:write',
-    'break_glass:read'
-  ],
-  finance_admin: [
-    'billing:read', 'billing:write',
-    'credits:read', 'credits:write',
-    'disputes:read', 'disputes:write',
-    'approvals:read', 'approvals:write'
-  ],
-  partner_admin: [
-    'partners:read', 'partners:write',
-    'webhooks:read', 'webhooks:write',
-    'integrations:read', 'integrations:write'
-  ],
-  compliance_admin: [
-    'audit:read', 'audit:export',
-    'data_residency:read', 'data_residency:write',
-    'retention:read', 'retention:write',
-    'legal_holds:read', 'legal_holds:write'
-  ]
 };
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://trdrhub-api.onrender.com';
 
 interface AdminAuthProviderProps {
   children: React.ReactNode;
@@ -79,62 +61,102 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Check if user is authenticated and load user data
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem('admin_token');
-        if (!token) {
-          setIsLoading(false);
-          return;
-        }
-
-        // Use mock auth check instead of API call
-        try {
-          const userData = await mockAdminAuthCheck(token);
-          setUser(userData);
-
-          // Set permissions based on role
-          const userPermissions = ADMIN_PERMISSIONS[userData.role as keyof typeof ADMIN_PERMISSIONS] || [];
-          setPermissions(userPermissions);
-        } catch (error) {
-          // Invalid token
-          localStorage.removeItem('admin_token');
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        localStorage.removeItem('admin_token');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
+  const buildPermissions = useCallback((role: string | undefined | null) => {
+    if (!role) return [];
+    if (ROLE_PERMISSIONS[role]) {
+      return ROLE_PERMISSIONS[role];
+    }
+    if (role === 'system_admin') return ['*'];
+    return [];
   }, []);
+
+  const fetchAdminProfile = useCallback(async (): Promise<AdminUser | null> => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('trdrhub_api_token');
+      if (!token) {
+        setUser(null);
+        setPermissions([]);
+        return null;
+      }
+
+      const response = await api.get('/auth/me', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const profile = response.data;
+      if (!ADMIN_ALLOWED_ROLES.has(profile.role)) {
+        localStorage.removeItem('trdrhub_api_token');
+        setUser(null);
+        setPermissions([]);
+        throw new Error('This account does not have admin permissions.');
+      }
+
+      const adminUser: AdminUser = {
+        id: profile.id,
+        name: profile.full_name,
+        email: profile.email,
+        role: profile.role,
+      };
+
+      setUser(adminUser);
+      setPermissions(buildPermissions(profile.role));
+      return adminUser;
+    } catch (error) {
+      console.error('Admin auth check failed:', error);
+      localStorage.removeItem('trdrhub_api_token');
+      setUser(null);
+      setPermissions([]);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildPermissions]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('trdrhub_api_token');
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    fetchAdminProfile().catch(() => {
+      // handled in fetchAdminProfile
+    });
+  }, [fetchAdminProfile]);
 
   const login = async (email: string, password: string) => {
     try {
-      // Use mock login function instead of API call
-      const { user: userData, token } = await mockAdminLogin(email, password);
+      setIsLoading(true);
+      const response = await api.post(
+        '/auth/login',
+        { email, password },
+        {
+          baseURL: API_BASE_URL,
+        },
+      );
 
-      // Store token
-      localStorage.setItem('admin_token', token);
+      const { access_token: accessToken } = response.data || {};
+      if (!accessToken) {
+        throw new Error('Authentication failed. No access token returned.');
+      }
 
-      // Set user and permissions
-      setUser(userData);
-      const userPermissions = ADMIN_PERMISSIONS[userData.role as keyof typeof ADMIN_PERMISSIONS] || [];
-      setPermissions(userPermissions);
-
-      // Redirect to dashboard
+      localStorage.setItem('trdrhub_api_token', accessToken);
+      await fetchAdminProfile();
       navigate('/admin');
     } catch (error) {
       console.error('Login failed:', error);
+      localStorage.removeItem('trdrhub_api_token');
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('admin_token');
+    localStorage.removeItem('trdrhub_api_token');
     setUser(null);
     setPermissions([]);
     navigate('/admin/login');
@@ -203,75 +225,3 @@ export function withAdminPermissions<P extends object>(
     return <Component {...props} />;
   };
 }
-
-// Mock admin users for development
-export const MOCK_ADMIN_USERS = [
-  {
-    id: 'admin_1',
-    name: 'John Smith',
-    email: 'admin@lcopilot.com',
-    role: 'super_admin',
-    avatar: undefined,
-    password: 'admin123' // Only for demo
-  },
-  {
-    id: 'admin_2',
-    name: 'Sarah Johnson',
-    email: 'ops@lcopilot.com',
-    role: 'ops_admin',
-    avatar: undefined,
-    password: 'ops123'
-  },
-  {
-    id: 'admin_3',
-    name: 'Mike Chen',
-    email: 'security@lcopilot.com',
-    role: 'security_admin',
-    avatar: undefined,
-    password: 'security123'
-  },
-  {
-    id: 'admin_4',
-    name: 'Lisa Rodriguez',
-    email: 'finance@lcopilot.com',
-    role: 'finance_admin',
-    avatar: undefined,
-    password: 'finance123'
-  }
-];
-
-// Mock login for development
-export const mockAdminLogin = async (email: string, password: string) => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-
-  const user = MOCK_ADMIN_USERS.find(u => u.email === email && u.password === password);
-  if (!user) {
-    throw new Error('Invalid credentials');
-  }
-
-  const { password: _, ...userWithoutPassword } = user;
-  const token = `mock_token_${user.id}_${Date.now()}`;
-
-  return {
-    user: userWithoutPassword,
-    token
-  };
-};
-
-// Mock auth check for development
-export const mockAdminAuthCheck = async (token: string) => {
-  if (!token.startsWith('mock_token_')) {
-    throw new Error('Invalid token');
-  }
-
-  const userId = token.split('_')[2];
-  const user = MOCK_ADMIN_USERS.find(u => u.id === userId);
-
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  const { password: _, ...userWithoutPassword } = user;
-  return userWithoutPassword;
-};

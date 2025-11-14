@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shield, Eye, EyeOff } from 'lucide-react';
+import { Shield, Eye, EyeOff, Info } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
 
 export default function AdminLogin() {
@@ -28,18 +28,6 @@ export default function AdminLogin() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const demoCredentials = [
-    { role: 'Super Admin', email: 'admin@lcopilot.com', password: 'admin123' },
-    { role: 'Operations Admin', email: 'ops@lcopilot.com', password: 'ops123' },
-    { role: 'Security Admin', email: 'security@lcopilot.com', password: 'security123' },
-    { role: 'Finance Admin', email: 'finance@lcopilot.com', password: 'finance123' },
-  ];
-
-  const fillCredentials = (email: string, password: string) => {
-    setEmail(email);
-    setPassword(password);
   };
 
   return (
@@ -124,28 +112,22 @@ export default function AdminLogin() {
           </CardContent>
         </Card>
 
-        {/* Demo Credentials */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Demo Credentials</CardTitle>
-            <CardDescription>
-              Click any credential set to auto-fill the form
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Info className="h-5 w-5 text-blue-600" />
+            <div>
+              <CardTitle className="text-lg">Production Access</CardTitle>
+              <CardDescription>
+                Use a real <strong>system_admin</strong> or <strong>tenant_admin</strong> account created in Supabase/LCopilot.
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {demoCredentials.map((cred, index) => (
-                <button
-                  key={index}
-                  onClick={() => fillCredentials(cred.email, cred.password)}
-                  className="w-full text-left p-3 rounded-lg border hover:bg-gray-50 transition-colors"
-                >
-                  <div className="font-medium text-gray-900">{cred.role}</div>
-                  <div className="text-sm text-gray-600">{cred.email}</div>
-                  <div className="text-xs text-gray-500">Password: {cred.password}</div>
-                </button>
-              ))}
-            </div>
+            <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
+              <li>The legacy demo credentials have been removed for production safety.</li>
+              <li>Ensure the account exists in the <code>users</code> table with <code>role = 'system_admin'</code>.</li>
+              <li>If you need access, create an admin user via backend or Supabase and use that password here.</li>
+            </ul>
           </CardContent>
         </Card>
 
