@@ -110,12 +110,25 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         or email
     )
     role_value = _normalise_role_claim(claims)
+    
+    # Extract auth_user_id from token sub claim (Supabase auth user UUID)
+    auth_user_id = None
+    try:
+        sub_claim = claims.get("sub")
+        if sub_claim:
+            from uuid import UUID
+            auth_user_id = UUID(str(sub_claim))
+    except (ValueError, TypeError):
+        # If sub is not a valid UUID, leave auth_user_id as None
+        pass
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         # Try to create user with NULL password (for Supabase users)
         # If database constraint prevents this, use a dummy password hash as fallback
+        logger = logging.getLogger(__name__)
         try:
+            # First, create user without auth_user_id to avoid SQLAlchemy FK validation
             user = User(
                 id=user_id,
                 email=email,
@@ -123,13 +136,23 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
                 role=role_value,
                 hashed_password=None,  # external users don't require local password
                 is_active=True,
+                auth_user_id=None,  # Set to None initially to avoid FK validation
             )
             db.add(user)
             db.flush()
+            # Now update auth_user_id using raw SQL to bypass SQLAlchemy FK validation
+            if auth_user_id:
+                from sqlalchemy import text
+                db.execute(
+                    text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
+                    {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
+                )
+                db.flush()
+                # Refresh user object to get updated auth_user_id
+                db.refresh(user)
         except Exception as e:
             # If database constraint prevents NULL password, use dummy hash as fallback
             # This is a temporary workaround until migration is run
-            logger = logging.getLogger(__name__)
             error_msg = str(e)
             if "NOT NULL" in error_msg.upper() or "null value" in error_msg.lower():
                 logger.warning(f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback.")
@@ -137,20 +160,64 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
                 # Use a dummy bcrypt hash that will never match any password
                 # Format: $2b$12$ followed by 53 characters (bcrypt hash format)
                 dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
-                user = User(
-                    id=user_id,
-                    email=email,
-                    full_name=full_name,
-                    role=role_value,
-                    hashed_password=dummy_hash,  # Dummy hash until migration allows NULL
-                    is_active=True,
-                )
-                db.add(user)
-                db.flush()
+                try:
+                    user = User(
+                        id=user_id,
+                        email=email,
+                        full_name=full_name,
+                        role=role_value,
+                        hashed_password=dummy_hash,  # Dummy hash until migration allows NULL
+                        is_active=True,
+                        auth_user_id=None,  # Set to None initially
+                    )
+                    db.add(user)
+                    db.flush()
+                    # Update auth_user_id using raw SQL
+                    if auth_user_id:
+                        from sqlalchemy import text
+                        db.execute(
+                            text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
+                            {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
+                        )
+                        db.flush()
+                        db.refresh(user)
+                except Exception as e2:
+                    logger.error(f"Failed to create external user {email} with dummy hash: {str(e2)}")
+                    db.rollback()
+                    raise
+            elif "could not find table 'auth.users'" in error_msg.lower() or "foreign key" in error_msg.lower():
+                # SQLAlchemy FK validation error - ignore it, FK is enforced at DB level
+                logger.debug(f"SQLAlchemy FK validation warning (ignored): {error_msg}")
+                db.rollback()
+                # Retry without auth_user_id, then update via raw SQL
+                try:
+                    user = User(
+                        id=user_id,
+                        email=email,
+                        full_name=full_name,
+                        role=role_value,
+                        hashed_password=None,
+                        is_active=True,
+                        auth_user_id=None,
+                    )
+                    db.add(user)
+                    db.flush()
+                    if auth_user_id:
+                        from sqlalchemy import text
+                        db.execute(
+                            text("UPDATE users SET auth_user_id = :auth_user_id WHERE id = :user_id"),
+                            {"auth_user_id": str(auth_user_id), "user_id": str(user_id)}
+                        )
+                        db.flush()
+                        db.refresh(user)
+                except Exception as e3:
+                    logger.error(f"Failed to create user after FK validation error: {str(e3)}")
+                    db.rollback()
+                    raise
             else:
                 logger.error(f"Failed to create external user {email}: {error_msg}")
                 db.rollback()
-                raise  # Re-raise if it's not a NULL constraint issue
+                raise  # Re-raise if it's not a known constraint issue
     else:
         user.email = email
         if full_name:
@@ -158,6 +225,9 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         if role_value:
             user.role = role_value
         user.is_active = True
+        # Update auth_user_id if it's not set or has changed
+        if auth_user_id and user.auth_user_id != auth_user_id:
+            user.auth_user_id = auth_user_id
 
     return user
 
