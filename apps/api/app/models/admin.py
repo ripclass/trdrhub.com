@@ -337,7 +337,7 @@ class SystemAlert(Base):
     status = Column(SQLEnum(SystemAlertStatus), nullable=False, default=SystemAlertStatus.ACTIVE)
     resource_type = Column(String(100), nullable=True)
     resource_id = Column(String(255), nullable=True)
-    metadata = Column(JSONB, nullable=False, default=dict)
+    alert_metadata = Column(JSONB, nullable=False, default=dict)
     auto_generated = Column(Boolean, nullable=False, default=False)
     snoozed_until = Column(DateTime(timezone=True), nullable=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)

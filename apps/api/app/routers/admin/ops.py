@@ -377,8 +377,8 @@ def _serialize_system_alert(alert) -> dict:
         "acknowledgedAt": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
         "resolvedAt": alert.resolved_at.isoformat() if alert.resolved_at else None,
         "acknowledgedBy": str(alert.acknowledged_by) if alert.acknowledged_by else None,
-        "tags": list(alert.metadata.get("tags", [])) if alert.metadata else [],
-        "metadata": alert.metadata or {},
+        "tags": list(alert.alert_metadata.get("tags", [])) if alert.alert_metadata else [],
+        "metadata": alert.alert_metadata or {},
     }
 
 

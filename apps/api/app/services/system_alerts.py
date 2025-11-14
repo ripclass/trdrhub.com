@@ -109,7 +109,7 @@ class SystemAlertService:
                 status=SystemAlertStatus.ACTIVE,
                 resource_type="validation_session",
                 resource_id=str(session.id),
-                metadata={
+                alert_metadata={
                     "session_id": str(session.id),
                     "status": session.status,
                     "created_at": session.created_at.isoformat() if session.created_at else None,

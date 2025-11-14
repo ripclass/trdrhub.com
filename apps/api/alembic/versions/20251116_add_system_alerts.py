@@ -40,7 +40,7 @@ def upgrade():
         sa.Column("status", status_enum, nullable=False, server_default="active"),
         sa.Column("resource_type", sa.String(length=100), nullable=True),
         sa.Column("resource_id", sa.String(length=255), nullable=True),
-        sa.Column("metadata", postgresql.JSONB, server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column("alert_metadata", postgresql.JSONB, server_default=sa.text("'{}'::jsonb"), nullable=False),
         sa.Column("auto_generated", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("snoozed_until", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("acknowledged_at", sa.TIMESTAMP(timezone=True), nullable=True),
