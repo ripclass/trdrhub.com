@@ -30,9 +30,10 @@ JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 
 # Password hashing (supports >72B passwords via pre-hash)
 # Initialize with lazy loading to avoid initialization errors
+# Support both bcrypt_sha256 (new) and bcrypt (legacy) for backward compatibility
 # The bcrypt_sha256 scheme may fail during backend initialization in some environments
 # We'll catch errors during actual hashing and fallback to standard bcrypt
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 # JWT Bearer token scheme
 security = HTTPBearer(auto_error=True)
@@ -335,16 +336,33 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
+    if not plain_password or not hashed_password:
+        return False
+    
+    # Truncate password to prevent issues with long passwords
+    safe_password = (plain_password or "")[:512]
+    
     try:
-        return pwd_context.verify((plain_password or "")[:512], hashed_password)
-    except Exception:
-        # If verification fails, try standard bcrypt as fallback (for users created via SQL)
+        # Try with the main context (supports both bcrypt_sha256 and bcrypt)
+        return pwd_context.verify(safe_password, hashed_password)
+    except Exception as e:
+        # If verification fails due to bcrypt version issues, try direct bcrypt verification
+        # This handles cases where passlib can't identify the hash format
         try:
-            from passlib.context import CryptContext
-            standard_bcrypt = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            return standard_bcrypt.verify((plain_password or "")[:512], hashed_password)
+            import bcrypt
+            # Direct bcrypt verification for $2a$, $2b$, $2y$ hashes
+            if hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+                # Extract the salt and hash from the bcrypt hash
+                return bcrypt.checkpw(
+                    safe_password.encode('utf-8'),
+                    hashed_password.encode('utf-8')
+                )
         except Exception:
-            return False
+            pass
+        
+        # Log the error for debugging but don't expose it
+        logging.warning(f"Password verification failed: {type(e).__name__}")
+        return False
 
 
 def create_access_token(user: User) -> dict:
