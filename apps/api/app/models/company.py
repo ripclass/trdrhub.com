@@ -8,6 +8,15 @@ import enum
 from .base import Base
 
 
+def _enum_column(enum_cls: enum.EnumMeta, name: str) -> Enum:
+    """Create a SQLAlchemy Enum that stores enum values (lowercase strings)."""
+    return Enum(
+        enum_cls,
+        name=name,
+        values_callable=lambda obj: [item.value for item in obj],
+    )
+
+
 class PlanType(str, enum.Enum):
     FREE = "free"
     PAY_PER_CHECK = "pay_per_check"
@@ -51,7 +60,7 @@ class Company(Base):
     country = Column(String(128), nullable=True)
 
     # Billing configuration
-    plan = Column(Enum(PlanType), nullable=False, default=PlanType.FREE)
+    plan = Column(_enum_column(PlanType, "plan_type"), nullable=False, default=PlanType.FREE)
     quota_limit = Column(Integer, nullable=True)  # null = unlimited for enterprise
     billing_cycle_start = Column(Date, nullable=True)
 
@@ -59,8 +68,12 @@ class Company(Base):
     payment_provider_id = Column(String(255), nullable=True, index=True)  # Stripe customer_id or SSLCommerz ref
 
     # Status and metadata
-    status = Column(Enum(CompanyStatus), nullable=False, default=CompanyStatus.ACTIVE)
-    preferred_language = Column(Enum(LanguageType), nullable=False, default=LanguageType.ENGLISH)
+    status = Column(_enum_column(CompanyStatus, "company_status"), nullable=False, default=CompanyStatus.ACTIVE)
+    preferred_language = Column(
+        _enum_column(LanguageType, "language_type"),
+        nullable=False,
+        default=LanguageType.ENGLISH,
+    )
     event_metadata = Column(JSONB, nullable=True)  # Additional company settings, preferences
 
     # Business information for invoicing
