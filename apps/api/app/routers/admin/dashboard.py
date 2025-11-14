@@ -1,6 +1,7 @@
 """
 Admin dashboard endpoints for KPIs and recent activity.
 """
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List
 
@@ -15,6 +16,8 @@ from app.models.company import CompanyStatus
 from app.models.ruleset import Ruleset, RulesetStatus
 from app.models.admin import SystemAlert, SystemAlertStatus
 from app.services.audit_service import AuditService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard", tags=["admin-dashboard"])
 
@@ -139,13 +142,18 @@ async def get_dashboard_kpis(
         or 0
     )
 
-    # Alerts
-    open_alerts = (
-        db.query(func.count(SystemAlert.id))
-        .filter(SystemAlert.status.in_([SystemAlertStatus.ACTIVE, SystemAlertStatus.ACKNOWLEDGED, SystemAlertStatus.SNOOZED]))
-        .scalar()
-        or 0
-    )
+    # Alerts (handle case where table doesn't exist yet)
+    try:
+        open_alerts = (
+            db.query(func.count(SystemAlert.id))
+            .filter(SystemAlert.status.in_([SystemAlertStatus.ACTIVE, SystemAlertStatus.ACKNOWLEDGED, SystemAlertStatus.SNOOZED]))
+            .scalar()
+            or 0
+        )
+    except Exception:
+        # Table might not exist if migration hasn't run yet
+        logger.warning("SystemAlert table not available, defaulting to 0")
+        open_alerts = 0
 
     stats = [
         _build_stat(

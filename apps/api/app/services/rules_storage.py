@@ -10,7 +10,6 @@ from typing import Dict, Any
 from supabase import create_client, Client
 
 from app.config import settings
-from supabase_config import SUPABASE_URL as LEGACY_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY as LEGACY_SERVICE_ROLE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +21,9 @@ class RulesStorageService:
     
     def __init__(self):
         """Initialize Supabase client with service role key for admin operations."""
-        supabase_url = LEGACY_SUPABASE_URL or getattr(settings, "SUPABASE_URL", None) or os.getenv("SUPABASE_URL")
-        service_role_key = LEGACY_SERVICE_ROLE_KEY or getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None) or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        # Read from settings (which loads from environment variables)
+        supabase_url = settings.SUPABASE_URL or os.getenv("SUPABASE_URL")
+        service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         
         if not supabase_url or not service_role_key:
             raise ValueError(

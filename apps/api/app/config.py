@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SUPABASE_URL: Optional[str] = None  # Supabase project URL (e.g., https://xxx.supabase.co)
     SUPABASE_ISSUER: Optional[str] = None
     SUPABASE_AUDIENCE: Optional[str] = None
     SUPABASE_JWKS_URL: Optional[str] = None
