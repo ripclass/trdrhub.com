@@ -63,6 +63,12 @@ export default function Login() {
             console.log("ℹ️ Detected company_type='both' but business_types not set, inferring combined user");
           }
           
+          // CRITICAL: Check isCombinedUser FIRST before checking backendRole
+          // This is because SME "both" users have backendRole="exporter" but should go to combined dashboard
+          // Also check if business_types or company.type indicates combined user
+          const isActuallyCombined = isCombinedUser || 
+            (backendRole === "exporter" && (hasBothBusinessTypes || isCompanyTypeBoth));
+          
           // Debug logging
           console.log("🔍 Login routing check:", {
             backendRole,
@@ -70,6 +76,7 @@ export default function Login() {
             hasBothBusinessTypes,
             isCompanyTypeBoth,
             isCombinedUser,
+            isActuallyCombined, // New check
             companySize,
             companyType,
             company_id: status.company_id,
@@ -79,14 +86,17 @@ export default function Login() {
           });
           
           // Determine destination based on onboarding data
+          // Priority order: Bank > Tenant Admin > Combined (check FIRST) > Importer > Exporter
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
             console.log("✅ Routing to BankDashboard");
           } else if (backendRole === "tenant_admin") {
             destination = "/lcopilot/enterprise-dashboard";
             console.log("✅ Routing to EnterpriseDashboard (tenant_admin)");
-          } else if (isCombinedUser) {
+          } else if (isActuallyCombined) {
             // Combined users routing based on company size
+            // CRITICAL: Check this BEFORE checking backendRole === "importer"
+            // because SME "both" users have backendRole="exporter"
             if (companySize === "sme" || !companySize) {
               // SME "both" users OR no size specified → CombinedDashboard (unified view)
               // Default to SME/CombinedDashboard if size is missing
@@ -154,14 +164,18 @@ export default function Login() {
               const fallbackHasBoth = fallbackBusinessTypes.includes("exporter") && fallbackBusinessTypes.includes("importer");
               const fallbackIsCompanyTypeBoth = fallbackCompanyType === "both" || fallbackCompanyType === "Both Exporter & Importer";
               const fallbackIsCombinedUser = fallbackHasBoth || fallbackIsCompanyTypeBoth;
+              const fallbackIsActuallyCombined = fallbackIsCombinedUser || 
+                (fallbackRole === "exporter" && (fallbackHasBoth || fallbackIsCompanyTypeBoth));
               
+              // Same priority order as main logic: Bank > Tenant Admin > Combined > Importer
               if (fallbackRole === "bank_officer" || fallbackRole === "bank_admin") {
                 destination = "/lcopilot/bank-dashboard";
                 console.log("✅ Fallback: Routing to BankDashboard");
               } else if (fallbackRole === "tenant_admin") {
                 destination = "/lcopilot/enterprise-dashboard";
                 console.log("✅ Fallback: Routing to EnterpriseDashboard");
-              } else if (fallbackIsCombinedUser) {
+              } else if (fallbackIsActuallyCombined) {
+                // Check combined FIRST before importer
                 if (fallbackCompanySize === "sme" || !fallbackCompanySize) {
                   destination = "/lcopilot/combined-dashboard";
                   console.log("✅ Fallback: Routing to CombinedDashboard");
