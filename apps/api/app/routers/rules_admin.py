@@ -208,7 +208,7 @@ async def upload_ruleset(
         action=RulesetAuditAction.UPLOAD.value,
         actor_id=current_user.id,
         detail={
-            "validation": validation.dict(),
+            "validation": validation.model_dump() if hasattr(validation, 'model_dump') else validation.dict(),
             "file_size": upload_result.get("file_size")
         }
     )
@@ -220,7 +220,7 @@ async def upload_ruleset(
             ruleset_id=ruleset.id,
             action=RulesetAuditAction.VALIDATE.value,
             actor_id=current_user.id,
-            detail={"validation": validation.dict()}
+            detail={"validation": validation.model_dump() if hasattr(validation, 'model_dump') else validation.dict()}
         )
         db.add(validate_audit)
     
@@ -426,8 +426,18 @@ async def list_rulesets(
     offset = (page - 1) * page_size
     rulesets = query.order_by(Ruleset.created_at.desc()).offset(offset).limit(page_size).all()
     
+    # Convert to response models with error handling
+    items = []
+    for r in rulesets:
+        try:
+            items.append(RulesetResponse.model_validate(r))
+        except Exception as e:
+            logger.error(f"Failed to validate ruleset {r.id}: {e}", exc_info=True)
+            # Skip invalid rulesets rather than failing the entire request
+            continue
+    
     return RulesetListResponse(
-        items=[RulesetResponse.model_validate(r) for r in rulesets],
+        items=items,
         total=total,
         page=page,
         page_size=page_size
