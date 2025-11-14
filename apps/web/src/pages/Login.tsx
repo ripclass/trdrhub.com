@@ -221,21 +221,24 @@ export default function Login() {
             const retryHasBoth = retryBusinessTypes.includes("exporter") && retryBusinessTypes.includes("importer");
             const retryIsCompanyTypeBoth = retryCompanyType === "both" || retryCompanyType === "Both Exporter & Importer";
             const retryIsCombinedUser = retryHasBoth || retryIsCompanyTypeBoth;
+            const retryIsActuallyCombined = retryIsCombinedUser || 
+              (retryBackendRole === "exporter" && (retryHasBoth || retryIsCompanyTypeBoth));
             
-            // Re-evaluate routing with retry data
+            // Re-evaluate routing with retry data - same priority order as main logic
             if (retryBackendRole === "bank_officer" || retryBackendRole === "bank_admin") {
               destination = "/lcopilot/bank-dashboard";
               console.log("✅ Retry: Routing to BankDashboard");
             } else if (retryBackendRole === "tenant_admin") {
               destination = "/lcopilot/enterprise-dashboard";
               console.log("✅ Retry: Routing to EnterpriseDashboard (tenant_admin)");
-            } else if (retryIsCombinedUser) {
+            } else if (retryIsActuallyCombined) {
+              // Check combined FIRST before importer
               if (retryCompanySize === "sme" || !retryCompanySize) {
                 destination = "/lcopilot/combined-dashboard";
                 console.log("✅ Retry: Routing to CombinedDashboard");
               } else if (retryCompanySize === "medium" || retryCompanySize === "large") {
                 destination = "/lcopilot/enterprise-dashboard";
-                console.log("✅ Retry: Routing to EnterpriseDashboard (Medium/Large both)");
+                console.log("✅ Retry: Routing to EnterpriseDashboard");
               }
             } else if (retryBackendRole === "importer") {
               destination = "/lcopilot/importer-dashboard";
