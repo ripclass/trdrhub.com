@@ -90,7 +90,7 @@ def get_mime_type_from_extension(filename: str) -> Optional[str]:
     return None
 
 
-async def validate_file_content(
+def validate_file_content(
     file_content: bytes,
     filename: Optional[str] = None,
     declared_content_type: Optional[str] = None
