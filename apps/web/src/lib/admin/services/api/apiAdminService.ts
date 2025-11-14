@@ -1,5 +1,7 @@
 import { api } from "@/api/client";
-import type { AdminService } from "../../types";
+import type { AdminService, KPIStat, OpsMetric, OpsAlert, PaginatedResult, OpsJob, TimeRange, AdminAuditEvent } from "../../types";
+import type { LucideIcon } from "lucide-react";
+import { Activity, Bell, ShieldCheck, Users, FileText, Layers } from "lucide-react";
 import type {
   RulesetRecord,
   RulesetStatus,
@@ -7,8 +9,15 @@ import type {
   ActiveRulesetResult,
   RulesetAuditLog,
   MutationResult,
-  PaginatedResult,
 } from "../../types";
+
+const KPI_ICON_MAP: Record<string, LucideIcon> = {
+  "lc-volume": FileText,
+  "lc-success": ShieldCheck,
+  "active-companies": Users,
+  "active-rulesets": Layers,
+  "open-alerts": Bell,
+};
 
 /**
  * Real API implementation of AdminService that calls the backend.
@@ -203,31 +212,160 @@ export class ApiAdminService implements AdminService {
     };
   }
 
-  // Stub implementations for other AdminService methods
-  // These can be implemented later as needed
-  async getDashboardStats(): Promise<any[]> {
-    throw new Error("Not implemented");
+  async getDashboardStats(range: TimeRange): Promise<KPIStat[]> {
+    try {
+      const response = await api.get(`/admin/dashboard/kpis`, {
+        params: { range },
+      });
+      const stats = response.data?.stats ?? [];
+      return stats.map((stat: any) => {
+        const Icon = KPI_ICON_MAP[stat.id] ?? Activity;
+        return {
+          id: stat.id,
+          label: stat.label,
+          value: stat.value,
+          change: stat.change ?? 0,
+          changeLabel: stat.changeLabel ?? "",
+          changeDirection: stat.changeDirection ?? "flat",
+          icon: Icon,
+          href: stat.href,
+          emphasis: Boolean(stat.emphasis),
+        };
+      });
+    } catch (error) {
+      console.error("Failed to fetch dashboard stats", error);
+      throw new Error("Unable to load dashboard metrics");
+    }
   }
-  async getOpsMetrics(): Promise<any[]> {
-    throw new Error("Not implemented");
+
+  async getOpsMetrics(range: TimeRange): Promise<OpsMetric[]> {
+    try {
+      const timeRange = range === "24h" ? "24h" : "7d";
+      const response = await api.get("/admin/jobs/queue/stats", {
+        params: { time_range: timeRange },
+      });
+      const data = response.data ?? {};
+      const metrics: OpsMetric[] = [
+        {
+          id: "total-jobs",
+          name: "Jobs processed",
+          value: data.total_jobs ?? 0,
+          change: 0,
+          trend: "stable",
+        },
+        {
+          id: "queue-depth",
+          name: "Queue depth",
+          value: data.queue_depth ?? 0,
+          change: 0,
+          trend: "stable",
+        },
+        {
+          id: "avg-duration",
+          name: "Avg. processing time (ms)",
+          value: data.avg_processing_time_ms ?? 0,
+          change: 0,
+          trend: "stable",
+        },
+      ];
+      return metrics;
+    } catch (error) {
+      console.error("Failed to fetch ops metrics", error);
+      throw new Error("Unable to load ops metrics");
+    }
   }
-  async listJobs(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async listJobs(params: { page: number; pageSize: number; status?: string[]; search?: string }): Promise<PaginatedResult<OpsJob>> {
+    const offset = (params.page - 1) * params.pageSize;
+    try {
+      const response = await api.get("/admin/jobs/queue", {
+        params: {
+          limit: params.pageSize,
+          offset,
+          status: params.status?.[0],
+          search: params.search,
+        },
+      });
+      const data = response.data;
+      return {
+        items: data.items ?? [],
+        total: data.total ?? 0,
+        page: data.page ?? params.page,
+        pageSize: data.size ?? params.pageSize,
+      };
+    } catch (error) {
+      console.error("Failed to list jobs", error);
+      throw new Error("Unable to load jobs");
+    }
   }
-  async retryJob(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async retryJob(id: string): Promise<MutationResult> {
+    try {
+      await api.post(`/admin/jobs/queue/${id}/retry`, null, {
+        params: { reason: "Retry via admin console" },
+      });
+      return { success: true, message: "Job re-queued" };
+    } catch (error: any) {
+      console.error("Failed to retry job", error);
+      return { success: false, message: error?.response?.data?.detail ?? "Failed to retry job" };
+    }
   }
-  async cancelJob(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async cancelJob(id: string): Promise<MutationResult> {
+    try {
+      await api.post(`/admin/jobs/queue/${id}/cancel`, null, {
+        params: { reason: "Cancelled via admin console" },
+      });
+      return { success: true, message: "Job cancelled" };
+    } catch (error: any) {
+      console.error("Failed to cancel job", error);
+      return { success: false, message: error?.response?.data?.detail ?? "Failed to cancel job" };
+    }
   }
-  async listAlerts(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async listAlerts(params: { page: number; pageSize: number; severity?: OpsAlert["severity"][]; status?: "active" | "acknowledged" | "resolved" }): Promise<PaginatedResult<OpsAlert>> {
+    try {
+      const response = await api.get("/admin/ops/system-alerts", {
+        params: {
+          page: params.page,
+          page_size: params.pageSize,
+          severity: params.severity?.[0],
+          status: params.status,
+        },
+      });
+      const data = response.data;
+      return {
+        items: (data.items ?? []) as OpsAlert[],
+        total: data.total ?? 0,
+        page: data.page ?? params.page,
+        pageSize: data.page_size ?? params.pageSize,
+      };
+    } catch (error) {
+      console.error("Failed to fetch alerts", error);
+      throw new Error("Unable to load alerts");
+    }
   }
-  async acknowledgeAlert(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async acknowledgeAlert(id: string): Promise<MutationResult> {
+    try {
+      await api.post(`/admin/ops/system-alerts/${id}/acknowledge`);
+      return { success: true, message: "Alert acknowledged" };
+    } catch (error: any) {
+      console.error("Failed to acknowledge alert", error);
+      return { success: false, message: error?.response?.data?.detail ?? "Unable to acknowledge alert" };
+    }
   }
-  async snoozeAlert(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async snoozeAlert(id: string, minutes: number): Promise<MutationResult> {
+    try {
+      await api.post(`/admin/ops/system-alerts/${id}/snooze`, null, {
+        params: { minutes },
+      });
+      return { success: true, message: `Alert snoozed for ${minutes} minutes` };
+    } catch (error: any) {
+      console.error("Failed to snooze alert", error);
+      return { success: false, message: error?.response?.data?.detail ?? "Unable to snooze alert" };
+    }
   }
   async listAuditLogs(): Promise<any> {
     throw new Error("Not implemented");
@@ -391,11 +529,52 @@ export class ApiAdminService implements AdminService {
       message: "Settings updated (stub - backend not implemented)",
     };
   }
-  async recordAdminAudit(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async recordAdminAudit(event: Omit<AdminAuditEvent, "id" | "createdAt">): Promise<MutationResult> {
+    try {
+      await api.post("/admin/audit/log-action", {
+        section: event.section,
+        action: event.action,
+        actor: event.actor,
+        actorRole: event.actorRole,
+        entityId: event.entityId,
+        metadata: event.metadata,
+      });
+      return { success: true, message: "Recorded" };
+    } catch (error) {
+      console.error("Failed to record admin audit", error);
+      return { success: false, message: "Unable to record audit entry" };
+    }
   }
-  async listAdminAuditLog(): Promise<any> {
-    throw new Error("Not implemented");
+
+  async listAdminAuditLog(params: { page: number; pageSize: number }): Promise<PaginatedResult<AdminAuditEvent>> {
+    try {
+      const response = await api.get("/admin/dashboard/activity", {
+        params: { limit: params.pageSize },
+      });
+      const items: AdminAuditEvent[] = (response.data?.items ?? []).map((item: any) => ({
+        id: item.id,
+        actor: item.actor,
+        actorRole: "admin",
+        action: item.action,
+        section: "overview",
+        createdAt: item.createdAt,
+      }));
+      return {
+        items,
+        total: items.length,
+        page: params.page,
+        pageSize: params.pageSize,
+      };
+    } catch (error) {
+      console.error("Failed to load admin audit log", error);
+      return {
+        items: [],
+        total: 0,
+        page: params.page,
+        pageSize: params.pageSize,
+      };
+    }
   }
 }
 

@@ -12,10 +12,12 @@ import logging
 from app.database import get_db
 from app.core.auth import get_current_admin_user, require_permissions
 from app.models.user import User
+from app.models.admin import SystemAlertSeverity, SystemAlertStatus
 from app.schemas.admin import (
     KPIResponse, MetricsQuery, LogQuery, LogExportRequest,
     AlertRule, SilenceRequest, HealthCheck
 )
+from app.services.system_alerts import SystemAlertService
 
 router = APIRouter(prefix="/ops", tags=["Operations"])
 logger = logging.getLogger(__name__)
@@ -362,6 +364,101 @@ async def silence_alert(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to silence alert"
         )
+
+
+def _serialize_system_alert(alert) -> dict:
+    return {
+        "id": str(alert.id),
+        "title": alert.title,
+        "severity": alert.severity.value,
+        "source": alert.source,
+        "description": alert.description,
+        "createdAt": alert.created_at.isoformat() if alert.created_at else None,
+        "acknowledgedAt": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+        "resolvedAt": alert.resolved_at.isoformat() if alert.resolved_at else None,
+        "acknowledgedBy": str(alert.acknowledged_by) if alert.acknowledged_by else None,
+        "tags": list(alert.metadata.get("tags", [])) if alert.metadata else [],
+        "metadata": alert.metadata or {},
+    }
+
+
+@router.get("/system-alerts")
+async def list_system_alerts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    severity: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+    _: None = Depends(require_permissions(["ops:read", "alerts:read"]))
+):
+    """Return persisted operational alerts for the admin dashboard."""
+    service = SystemAlertService(db)
+    service.sync_validation_failures()
+    service.resolve_obsolete_alerts()
+
+    severities = None
+    if severity:
+        try:
+            severities = [SystemAlertSeverity(severity)]
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid severity filter")
+
+    alert_status = None
+    if status_filter:
+        try:
+            alert_status = SystemAlertStatus(status_filter)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status filter")
+
+    alerts, total = service.list_alerts(
+        page=page,
+        page_size=page_size,
+        severities=severities,
+        status=alert_status,
+    )
+
+    return {
+        "items": [_serialize_system_alert(alert) for alert in alerts],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/system-alerts/{alert_id}/acknowledge")
+async def acknowledge_system_alert(
+    alert_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+    _: None = Depends(require_permissions(["ops:write", "alerts:write"]))
+):
+    service = SystemAlertService(db)
+    try:
+        alert = service.acknowledge(alert_id, current_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    logger.info("System alert %s acknowledged by %s", alert_id, current_user.id)
+    return {"message": "Alert acknowledged", "alert": _serialize_system_alert(alert)}
+
+
+@router.post("/system-alerts/{alert_id}/snooze")
+async def snooze_system_alert(
+    alert_id: str,
+    minutes: int = Query(30, ge=5, le=720),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+    _: None = Depends(require_permissions(["ops:write", "alerts:silence"]))
+):
+    service = SystemAlertService(db)
+    try:
+        alert = service.snooze(alert_id, minutes, current_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    logger.info("System alert %s snoozed for %s minutes by %s", alert_id, minutes, current_user.id)
+    return {"message": f"Alert snoozed for {minutes} minutes", "alert": _serialize_system_alert(alert)}
 
 
 @router.get("/health", response_model=HealthCheck)

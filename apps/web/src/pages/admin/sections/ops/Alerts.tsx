@@ -22,36 +22,6 @@ import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 const service = getAdminService();
 const PAGE_SIZE = 8;
 
-const FALLBACK_ALERTS: OpsAlert[] = [
-  {
-    id: "alert-fallback-1",
-    title: "Payment latency spike",
-    severity: "high",
-    source: "payments",
-    description: "Auto-detected latency increase in payment settlement tier.",
-    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-    tags: ["ops", "sla"],
-  },
-  {
-    id: "alert-fallback-2",
-    title: "Queue depth warning",
-    severity: "medium",
-    source: "ingest",
-    description: "Monitoring detected backlog approaching limit.",
-    createdAt: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-    acknowledgedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    acknowledgedBy: "ops.oncall@trdrhub.com",
-  },
-  {
-    id: "alert-fallback-3",
-    title: "Partner API degradation",
-    severity: "critical",
-    source: "partners",
-    description: "Partner TradeBridge returned elevated error rate.",
-    createdAt: new Date(Date.now() - 1000 * 60 * 55).toISOString(),
-  },
-];
-
 const SEVERITY_OPTIONS = [
   { label: "Critical", value: "critical" },
   { label: "High", value: "high" },
@@ -132,9 +102,9 @@ export function OpsAlerts() {
       })
       .catch((error) => {
         console.error("Failed to load alerts", error);
-        setError("Unable to load alerts. Showing cached mock data.");
-        setAlerts(FALLBACK_ALERTS);
-        setTotal(FALLBACK_ALERTS.length);
+        setError("Unable to load alerts. Please retry.");
+        setAlerts([]);
+        setTotal(0);
       })
       .finally(() => setLoading(false));
   }, [page, severityFilter, statusFilter]);

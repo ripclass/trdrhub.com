@@ -18,7 +18,7 @@ import {
 
 import { useAdminAuth } from "@/lib/admin/auth";
 import { getAdminService } from "@/lib/admin/services";
-import type { AdminSection, KPIStat, TimeRange } from "@/lib/admin/types";
+import type { AdminSection, KPIStat, TimeRange, AdminAuditEvent } from "@/lib/admin/types";
 import { cn } from "@/lib/utils";
 
 const RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
@@ -72,6 +72,8 @@ export function AdminOverview() {
   const [stats, setStats] = React.useState<KPIStat[]>([]);
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [activity, setActivity] = React.useState<AdminAuditEvent[]>([]);
+  const [activityError, setActivityError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let active = true;
@@ -96,6 +98,19 @@ export function AdminOverview() {
       active = false;
     };
   }, [range]);
+
+  React.useEffect(() => {
+    service
+      .listAdminAuditLog({ page: 1, pageSize: 5 })
+      .then((result) => {
+        setActivity(result.items);
+        setActivityError(null);
+      })
+      .catch(() => {
+        setActivity([]);
+        setActivityError("Unable to load recent administrative activity");
+      });
+  }, []);
 
   const handleRangeChange = (value: TimeRange) => {
     const next = new URLSearchParams(searchParams);
@@ -217,20 +232,35 @@ export function AdminOverview() {
           <CardDescription>Full trail available in Audit Logs</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">
-          {[0, 1, 2].map((index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-4 py-3"
-            >
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">
-                  Admin action #{index + 1}
-                </p>
-                <p className="text-xs text-muted-foreground">Sample activity from mock data service</p>
-              </div>
-              <span className="text-xs text-muted-foreground">Moments ago</span>
+          {activityError && (
+            <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+              {activityError}
             </div>
-          ))}
+          )}
+          {!activityError && activity.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+              No recent admin activity recorded.
+            </div>
+          )}
+          {!activityError &&
+            activity.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-4 py-3"
+              >
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">
+                    {entry.action}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {entry.actor}
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ""}
+                </span>
+              </div>
+            ))}
         </CardContent>
       </Card>
     </div>

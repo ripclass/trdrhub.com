@@ -404,7 +404,7 @@ async def list_rulesets(
     jurisdiction: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):

@@ -1,14 +1,18 @@
 """
 Supabase Storage service for rules file management.
 """
-import os
 import hashlib
 import json
-from typing import Optional, Dict, Any
-from pathlib import Path
+import logging
+import os
+from typing import Dict, Any
 
 from supabase import create_client, Client
-from supabase_config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+from app.config import settings
+from supabase_config import SUPABASE_URL as LEGACY_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY as LEGACY_SERVICE_ROLE_KEY
+
+logger = logging.getLogger(__name__)
 
 
 class RulesStorageService:
@@ -18,9 +22,20 @@ class RulesStorageService:
     
     def __init__(self):
         """Initialize Supabase client with service role key for admin operations."""
-        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-            raise ValueError("Supabase URL and service role key must be configured")
-        self.client: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        supabase_url = LEGACY_SUPABASE_URL or getattr(settings, "SUPABASE_URL", None) or os.getenv("SUPABASE_URL")
+        service_role_key = LEGACY_SERVICE_ROLE_KEY or getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None) or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_role_key:
+            raise ValueError(
+                "Supabase Storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY "
+                "in the backend environment variables."
+            )
+        
+        try:
+            self.client: Client = create_client(supabase_url, service_role_key)
+        except Exception as exc:
+            logger.exception("Failed to initialize Supabase client")
+            raise ValueError("Unable to initialize Supabase client. Verify SUPABASE_URL and service role key.") from exc
     
     def upload_ruleset(
         self,

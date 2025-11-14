@@ -16,6 +16,8 @@ import csv
 from app.database import get_db
 from app.services.audit_service import AuditService
 from app.models.audit import AuditLogEntry
+from app.models import User
+from app.core.security import require_admin
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,15 @@ class ChainVerificationResponse(BaseModel):
     total_entries: int
     violations: List[dict]
     verified_at: datetime
+
+
+class AdminAuditEventIn(BaseModel):
+    section: str
+    action: str
+    actor: str
+    actorRole: str
+    entityId: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 @router.get("/audit/entries", response_model=List[AuditEntryResponse])
@@ -106,6 +117,28 @@ async def search_audit_entries(
     except Exception as e:
         logger.error(f"Failed to search audit entries: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/audit/log-action")
+async def log_admin_action(
+    event: AdminAuditEventIn,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Record a lightweight admin action for UI interactions."""
+    audit_service = AuditService(db)
+    audit_service.log_action(
+        action=f"admin.{event.section}.{event.action}",
+        user=current_user,
+        resource_type=event.section,
+        resource_id=event.entityId,
+        audit_metadata={
+            "actor": event.actor,
+            "actor_role": event.actorRole,
+            **(event.metadata or {}),
+        },
+    )
+    return {"success": True}
 
 
 @router.get("/audit/entries/{entry_id}", response_model=AuditEntryResponse)

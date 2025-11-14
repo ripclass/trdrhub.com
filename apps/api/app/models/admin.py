@@ -309,6 +309,48 @@ class JobHistory(Base):
     created_at = Column(DateTime(timezone=True), default=func.now())
 
 
+class SystemAlertSeverity(str, enum.Enum):
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class SystemAlertStatus(str, enum.Enum):
+    ACTIVE = "active"
+    ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
+    SNOOZED = "snoozed"
+
+
+class SystemAlert(Base):
+    """Operational/system alert surfaced in admin dashboard."""
+    __tablename__ = "system_alerts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    source = Column(String(100), nullable=False, default="system")
+    category = Column(String(50), nullable=True)
+    severity = Column(SQLEnum(SystemAlertSeverity), nullable=False, default=SystemAlertSeverity.MEDIUM)
+    status = Column(SQLEnum(SystemAlertStatus), nullable=False, default=SystemAlertStatus.ACTIVE)
+    resource_type = Column(String(100), nullable=True)
+    resource_id = Column(String(255), nullable=True)
+    metadata = Column(JSONB, nullable=False, default=dict)
+    auto_generated = Column(Boolean, nullable=False, default=False)
+    snoozed_until = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False)
+
+    acknowledged_user = relationship("User", foreign_keys=[acknowledged_by])
+    resolved_user = relationship("User", foreign_keys=[resolved_by])
+
+
 # Billing & Finance Models
 class BillingAdjustment(Base):
     """Billing adjustments, credits, and write-offs"""
