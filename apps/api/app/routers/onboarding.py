@@ -15,7 +15,7 @@ from ..schemas.onboarding import (
     OnboardingRequirements,
     OnboardingStatus,
 )
-from ..core.security import get_current_user, require_admin
+from ..core.security import get_current_user, require_admin, infer_effective_role
 
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -216,39 +216,7 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
     # Build and return status (no additional commits needed)
     try:
         requirements = _requirements_for_user(current_user)
-        
-        # CRITICAL: Compute role from onboarding_data if available, not just user.role
-        # This is because user.role might be "exporter" for SME "both" users or importers
-        # but onboarding_data contains the correct business type information
-        computed_role = current_user.role  # Default to database role
-        onboarding_data = current_user.onboarding_data or {}
-        
-        # Check if we can infer a more accurate role from onboarding_data
-        if onboarding_data:
-            details_company = onboarding_data.get('company', {})
-            company_type = details_company.get('type')
-            company_size = details_company.get('size')
-            business_types = onboarding_data.get('business_types', []) or []
-            
-            # Bank users first - respect existing bank_admin but default to bank_officer
-            if company_type == 'bank' or ('bank' in business_types):
-                if current_user.role not in ('bank_officer', 'bank_admin'):
-                    computed_role = 'bank_officer'
-                else:
-                    computed_role = current_user.role
-            else:
-                # Combined users: SME stays exporter, medium/large becomes tenant_admin
-                if company_type == 'both':
-                    if company_size in ('medium', 'large'):
-                        computed_role = 'tenant_admin'
-                # Importer-only
-                importer_only = (
-                    isinstance(business_types, list)
-                    and 'importer' in business_types
-                    and 'exporter' not in business_types
-                )
-                if importer_only or company_type == 'importer':
-                    computed_role = 'importer'
+        computed_role = infer_effective_role(current_user)
         
         logger.info(f"📊 Role computation: user.role={current_user.role}, computed_role={computed_role}, company_type={onboarding_data.get('company', {}).get('type')}, business_types={onboarding_data.get('business_types')}")
         
@@ -268,29 +236,7 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
         logger.error(traceback.format_exc())
         # Return basic status on error - still try to compute role from onboarding_data
         error_onboarding_data = current_user.onboarding_data or {}
-        error_computed_role = current_user.role or "exporter"
-        
-        if error_onboarding_data:
-            error_company = error_onboarding_data.get('company', {}) or {}
-            error_company_type = error_company.get('type')
-            error_company_size = error_company.get('size')
-            error_business_types = error_onboarding_data.get('business_types', []) or []
-            
-            if error_company_type == 'bank' or ('bank' in error_business_types):
-                if current_user.role not in ('bank_officer', 'bank_admin'):
-                    error_computed_role = 'bank_officer'
-                else:
-                    error_computed_role = current_user.role
-            else:
-                importer_only = (
-                    isinstance(error_business_types, list)
-                    and 'importer' in error_business_types
-                    and 'exporter' not in error_business_types
-                )
-                if importer_only or error_company_type == 'importer':
-                    error_computed_role = 'importer'
-                elif error_company_type == 'both' and error_company_size in ('medium', 'large'):
-                    error_computed_role = 'tenant_admin'
+        error_computed_role = infer_effective_role(current_user)
         
         return OnboardingStatus(
             user_id=str(current_user.id),

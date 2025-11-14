@@ -258,18 +258,8 @@ async def get_user_profile(
             logger.warning(f"Failed to refresh user from database: {str(e)}")
             # Continue anyway - user object should be valid
         
-        # Normalize role before validation (handle legacy roles)
-        role = current_user.role.lower() if current_user.role else "exporter"
-        legacy_role_map = {
-            "bank": "bank_officer",
-            "admin": "system_admin",
-        }
-        normalized_role = legacy_role_map.get(role, role)
-        
-        # Ensure role is valid
-        valid_roles = ["exporter", "importer", "tenant_admin", "bank_officer", "bank_admin", "system_admin"]
-        if normalized_role not in valid_roles:
-            normalized_role = "exporter"  # Fallback to exporter
+        from app.core.security import infer_effective_role
+        normalized_role = infer_effective_role(current_user)
         
         # Ensure required fields exist
         from datetime import datetime, timezone

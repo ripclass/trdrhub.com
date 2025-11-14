@@ -19,6 +19,7 @@ from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
 from fastapi import Header
 from typing import Optional
+from app.config import settings
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -297,9 +298,8 @@ async def validate_doc(
 
         # Use async validation if JSON rules are enabled
         from app.services.validator import validate_document_async, validate_document
-        import os
         
-        use_json_rules = os.getenv("USE_JSON_RULES", "false").lower() == "true"
+        use_json_rules = settings.USE_JSON_RULES
         if use_json_rules:
             # Use async validation (router is already async)
             results = await validate_document_async(payload, doc_type)

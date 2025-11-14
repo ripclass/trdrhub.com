@@ -161,6 +161,86 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
     return user
 
 
+def infer_effective_role(user: User) -> str:
+    """
+    Determine the most accurate role for a user based on onboarding metadata,
+    company metadata, and naming signals.
+    """
+    role = (user.role or UserRole.EXPORTER.value).lower()
+    onboarding_data = user.onboarding_data or {}
+    company_data = onboarding_data.get("company") or {}
+    business_types = onboarding_data.get("business_types") or []
+    business_types_normalized = [
+        str(bt).strip().lower() for bt in business_types if isinstance(bt, str)
+    ]
+
+    company_type = str(company_data.get("type") or "").strip().lower()
+    company_size = str(company_data.get("size") or "").strip().lower()
+    company_name = str(company_data.get("name") or "").strip().lower()
+
+    event_meta = {}
+    if getattr(user, "company", None):
+        company = user.company
+        company_name = (company.name or company_name).strip().lower()
+        if isinstance(company.event_metadata, dict):
+            event_meta = {
+                str(k).strip().lower(): v for k, v in company.event_metadata.items()
+            }
+            meta_business_type = str(
+                event_meta.get("business_type")
+                or event_meta.get("company_type")
+                or ""
+            ).strip().lower()
+            meta_company_size = str(
+                event_meta.get("company_size") or ""
+            ).strip().lower()
+            tenant_type = str(event_meta.get("tenant_type") or "").strip().lower()
+            if not company_type and meta_business_type:
+                company_type = meta_business_type
+            if not company_size and meta_company_size:
+                company_size = meta_company_size
+            if tenant_type == "bank" and company_type != "bank":
+                company_type = "bank"
+
+    def _contains_bank(text: str) -> bool:
+        return isinstance(text, str) and "bank" in text.lower()
+
+    is_bank = (
+        role in {"bank_officer", "bank_admin"}
+        or company_type == "bank"
+        or "bank" in business_types_normalized
+        or _contains_bank(company_name)
+        or _contains_bank(user.email or "")
+    )
+
+    if is_bank:
+        return "bank_admin" if role == "bank_admin" else "bank_officer"
+
+    importer_only = (
+        "importer" in business_types_normalized
+        and "exporter" not in business_types_normalized
+    )
+    if importer_only or company_type == "importer":
+        return "importer"
+
+    if company_type == "both":
+        if company_size in {"medium", "large"}:
+            return "tenant_admin"
+        return "exporter"
+
+    valid_roles = {
+        "exporter",
+        "importer",
+        "tenant_admin",
+        "bank_officer",
+        "bank_admin",
+        "system_admin",
+    }
+    if role not in valid_roles:
+        return "exporter"
+    return role
+
+
 async def authenticate_external_token(token: str, db: Session) -> Optional[User]:
     """Authenticate user via external provider token (Supabase uses ES256/JWKS, Auth0, etc.)."""
     logger = logging.getLogger(__name__)

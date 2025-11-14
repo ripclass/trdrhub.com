@@ -8,6 +8,7 @@ from uuid import UUID
 from app.models.rules import Rule
 from app.database import SessionLocal
 from app.services.rulhub_client import fetch_rules_from_rulhub
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -616,7 +617,8 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     
     Checks feature flag USE_JSON_RULES to determine which validation system to use.
     """
-    use_json_rules = os.getenv("USE_JSON_RULES", "false").lower() == "true"
+    use_json_rules = settings.USE_JSON_RULES
+    use_json_rules = settings.USE_JSON_RULES
     
     if use_json_rules:
         # Use new JSON ruleset system
