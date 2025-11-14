@@ -148,7 +148,21 @@ async def upload_ruleset(
         )
     
     # Upload to Supabase Storage
-    storage_service = RulesStorageService()
+    try:
+        storage_service = RulesStorageService()
+    except ValueError as e:
+        logger.error(f"Failed to initialize RulesStorageService: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Storage service initialization failed: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception("Unexpected error initializing RulesStorageService")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Storage service initialization failed: {str(e)}"
+        )
+    
     try:
         upload_result = storage_service.upload_ruleset(
             rules_json=rules_json,
@@ -158,11 +172,13 @@ async def upload_ruleset(
             rulebook_version=rulebook_version
         )
     except ValueError as e:
+        logger.error(f"Ruleset upload failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
     except Exception as e:
+        logger.exception("Unexpected error during ruleset upload")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Storage upload failed: {str(e)}"

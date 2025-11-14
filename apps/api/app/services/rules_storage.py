@@ -25,17 +25,31 @@ class RulesStorageService:
         supabase_url = settings.SUPABASE_URL or os.getenv("SUPABASE_URL")
         service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         
-        if not supabase_url or not service_role_key:
+        if not supabase_url:
+            logger.error("SUPABASE_URL is not set in environment variables")
             raise ValueError(
-                "Supabase Storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY "
+                "Supabase Storage is not configured. Set SUPABASE_URL "
                 "in the backend environment variables."
             )
         
+        if not service_role_key:
+            logger.error("SUPABASE_SERVICE_ROLE_KEY is not set in environment variables")
+            raise ValueError(
+                "Supabase Storage is not configured. Set SUPABASE_SERVICE_ROLE_KEY "
+                "in the backend environment variables."
+            )
+        
+        logger.info(f"Initializing Supabase client with URL: {supabase_url[:30]}...")
+        
         try:
             self.client: Client = create_client(supabase_url, service_role_key)
+            logger.info("Supabase client initialized successfully")
         except Exception as exc:
-            logger.exception("Failed to initialize Supabase client")
-            raise ValueError("Unable to initialize Supabase client. Verify SUPABASE_URL and service role key.") from exc
+            logger.exception(f"Failed to initialize Supabase client. URL: {supabase_url[:30]}..., Error: {exc}")
+            raise ValueError(
+                f"Unable to initialize Supabase client: {str(exc)}. "
+                f"Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are correct."
+            ) from exc
     
     def upload_ruleset(
         self,
@@ -90,13 +104,28 @@ class RulesStorageService:
                 "file_size": len(normalized_json.encode('utf-8'))
             }
         except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Failed to upload ruleset to Supabase Storage: {error_msg}", exc_info=True)
+            
             # If bucket doesn't exist, provide helpful error
-            if "Bucket not found" in str(e) or "does not exist" in str(e):
+            if "Bucket not found" in error_msg or "does not exist" in error_msg:
                 raise ValueError(
                     f"Supabase Storage bucket '{self.BUCKET_NAME}' does not exist. "
                     f"Please create it in the Supabase dashboard or via API."
                 ) from e
-            raise
+            
+            # If permission denied
+            if "permission" in error_msg.lower() or "forbidden" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                raise ValueError(
+                    f"Permission denied accessing Supabase Storage bucket '{self.BUCKET_NAME}'. "
+                    f"Verify that SUPABASE_SERVICE_ROLE_KEY has storage access permissions."
+                ) from e
+            
+            # Generic error with more context
+            raise ValueError(
+                f"Failed to upload to Supabase Storage: {error_msg}. "
+                f"Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are correct."
+            ) from e
     
     def get_ruleset_file(self, file_path: str) -> Dict[str, Any]:
         """
