@@ -242,18 +242,45 @@ export function BankAuthProvider({ children }: BankAuthProviderProps) {
 
                 if (profileResponse.ok) {
                   const profile = await profileResponse.json();
-                  
-                  // Check if user is a bank user
-                  if (profile.role === 'bank_officer' || profile.role === 'bank_admin') {
-                    // Convert Supabase user to BankUser format
+
+                  let resolvedRole: 'bank_admin' | 'bank_officer' | null = null;
+
+                  if (profile.role === 'bank_admin') {
+                    resolvedRole = 'bank_admin';
+                  } else if (profile.role === 'bank_officer') {
+                    resolvedRole = 'bank_officer';
+                  }
+
+                  // For legacy users whose role is still exporter/importer, try onboarding status
+                  if (!resolvedRole) {
+                    try {
+                      const statusResponse = await fetch(`${API_BASE_URL}/onboarding/status`, {
+                        headers: {
+                          'Authorization': `Bearer ${session.access_token}`,
+                        },
+                        credentials: 'include',
+                      });
+
+                      if (statusResponse.ok) {
+                        const status = await statusResponse.json();
+                        if (status?.role === 'bank_admin' || status?.role === 'bank_officer') {
+                          resolvedRole = status.role;
+                        }
+                      }
+                    } catch (statusError) {
+                      console.warn('Failed to fetch onboarding status for bank role:', statusError);
+                    }
+                  }
+
+                  if (resolvedRole) {
                     const bankUser: BankUser = {
                       id: profile.id,
                       name: profile.full_name || profile.email?.split('@')[0] || 'Bank User',
                       email: profile.email,
-                      role: profile.role === 'bank_admin' ? 'bank_admin' : 'bank_officer',
+                      role: resolvedRole,
                       company_id: profile.company_id,
                     };
-                    
+
                     setUser(bankUser);
                     setIsLoading(false);
                     return;
