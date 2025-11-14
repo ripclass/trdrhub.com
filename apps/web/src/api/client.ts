@@ -151,12 +151,28 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const urlPath = (error?.config?.url || '').toLowerCase()
+    const isAdminEndpoint = urlPath.startsWith('/admin')
+
     if (error?.response?.status === 401) {
       // In guest mode, do not redirect on 401; allow pages to continue.
       if (!GUEST_MODE) {
-        clearSupabaseSession()
-        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login'
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+        const onAdminRoute = currentPath.startsWith('/admin')
+
+        if (isAdminEndpoint || onAdminRoute) {
+          // Admin endpoints use backend JWT, so clear that token specifically
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('trdrhub_api_token')
+            if (!currentPath.startsWith('/admin/login')) {
+              window.location.href = '/admin/login'
+            }
+          }
+        } else {
+          clearSupabaseSession()
+          if (typeof window !== 'undefined' && !currentPath.startsWith('/login')) {
+            window.location.href = '/login'
+          }
         }
       }
     } else if (error?.response?.status === 403) {
