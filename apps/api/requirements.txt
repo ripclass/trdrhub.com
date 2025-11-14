@@ -10,8 +10,8 @@ bcrypt>=4.1.2  # Required for passlib bcrypt_sha256 support (must have __about__
 python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings>=2.0.3
-supabase>=2.3.0
-httpx>=0.24.0,<0.25.0
+supabase>=2.9.0  # Updated to fix proxy parameter issue
+httpx>=0.27.0,<0.28.0  # Compatible with supabase-py 2.9.0+
 aiohttp>=3.9.0  # For async HTTP requests in notification service
 markdown>=3.5.0  # For markdown processing in collaboration service
 bleach>=6.0.0  # For HTML sanitization in collaboration service
