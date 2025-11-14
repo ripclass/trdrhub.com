@@ -57,6 +57,10 @@ class UserCreate(UserBase):
     company_type: Optional[str] = Field(None, description="Company type: exporter, importer, both, bank")
     company_size: Optional[str] = Field(None, description="Company size: sme, medium, large")
     business_types: Optional[List[str]] = Field(None, description="Business types array")
+    auth_user_id: Optional[UUID] = Field(
+        None,
+        description="Foreign key to auth.users for Supabase-managed identities",
+    )
 
     _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
 
@@ -65,6 +69,10 @@ class UserCreateAdmin(UserBase):
     """Schema for admin user creation (allows setting any role)."""
     password: str = Field(..., min_length=8, max_length=128)
     role: Role = "exporter"  # Admin can set any role
+    auth_user_id: Optional[UUID] = Field(
+        None,
+        description="Foreign key to auth.users for Supabase-managed identities",
+    )
 
     _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
 

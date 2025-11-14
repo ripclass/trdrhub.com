@@ -99,6 +99,7 @@ async def register_user(
         is_active=True,
         company_id=company_id,
         onboarding_data=onboarding_data if onboarding_data else None,
+        auth_user_id=user_data.auth_user_id,
     )
     
     try:
