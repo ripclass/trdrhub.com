@@ -151,45 +151,46 @@ export default function EnterpriseDashboard() {
         />
       }
     >
-      <div className="space-y-6">
-        <header className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-primary/10 text-primary">
-              Enterprise Tenant Admin
-            </Badge>
-            <span className="text-sm text-muted-foreground">Medium & Large Enterprises</span>
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Enterprise Command Center</h1>
-            <p className="text-muted-foreground mt-1">
-              Monitor LC validation across export, import, and finance teams. Configure workspaces, assign roles, and stay
-              ahead of bank escalations.
-            </p>
-          </div>
-        </header>
+      <div className="p-6 lg:p-8">
+        <div className="space-y-8">
+          <header className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-primary/10 text-primary">
+                Enterprise Tenant Admin
+              </Badge>
+              <span className="text-sm text-muted-foreground">Medium & Large Enterprises</span>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Enterprise Command Center</h1>
+              <p className="text-muted-foreground mt-1">
+                Monitor LC validation across export, import, and finance teams. Configure workspaces, assign roles, and stay
+                ahead of bank escalations.
+              </p>
+            </div>
+          </header>
 
-        {/* KPI Metrics */}
-        <section>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {workspaceMetrics.map((metric) => (
-              <Card key={metric.label}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {metric.label}
-                  </CardTitle>
-                  {metric.icon}
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{metric.value}</div>
-                  <p className="text-xs text-muted-foreground mt-1">{metric.helper}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
+          {/* KPI Metrics */}
+          <section>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {workspaceMetrics.map((metric) => (
+                <Card key={metric.label}>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      {metric.label}
+                    </CardTitle>
+                    {metric.icon}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{metric.value}</div>
+                    <p className="text-xs text-muted-foreground mt-1">{metric.helper}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
 
-        {/* Workspaces & Bank Relationships */}
-        <section className="grid gap-6 lg:grid-cols-3">
+          {/* Workspaces & Bank Relationships */}
+          <section className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -269,10 +270,12 @@ export default function EnterpriseDashboard() {
               </Button>
             </CardContent>
           </Card>
-        </section>
+          </section>
 
-        {/* Activity & Governance */}
-        <section className="grid gap-6 lg:grid-cols-3">
+          <Separator className="opacity-20" />
+
+          {/* Activity & Governance */}
+          <section className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Cross-Team Activity</CardTitle>
@@ -340,7 +343,8 @@ export default function EnterpriseDashboard() {
               </Button>
             </CardContent>
           </Card>
-        </section>
+          </section>
+        </div>
       </div>
     </DashboardLayout>
   )
