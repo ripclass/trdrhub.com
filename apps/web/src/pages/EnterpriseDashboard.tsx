@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { EnterpriseSidebar } from '@/components/enterprise/EnterpriseSidebar'
 import { useAuth } from '@/hooks/use-auth'
 import {
   Users,
@@ -17,13 +19,28 @@ import {
   Clock,
   TrendingUp,
   FolderGit2,
+  FileText,
+  CheckCircle,
+  AlertTriangle,
 } from 'lucide-react'
 
+type Section =
+  | "dashboard"
+  | "workspaces"
+  | "teams"
+  | "analytics"
+  | "governance"
+  | "notifications"
+  | "settings"
+  | "help"
+
 const workspaceMetrics = [
-  { label: 'Active team members', value: '28', helper: 'Across 3 workspaces', icon: <Users className="h-5 w-5 text-primary" /> },
-  { label: 'Workspaces', value: '3', helper: 'Export • Import • Finance', icon: <Layers className="h-5 w-5 text-info" /> },
-  { label: 'Strict bank profiles', value: '8', helper: 'Auto applied to sessions', icon: <ShieldCheck className="h-5 w-5 text-success" /> },
-  { label: 'Average processing time', value: '1.8 days', helper: 'Last 30 days', icon: <Clock className="h-5 w-5 text-muted-foreground" /> },
+  { label: 'Open Export LCs', value: '7', helper: '+2 from last week', icon: <FileText className="h-5 w-5 text-blue-500" />, trend: 'up' },
+  { label: 'Open Import LCs', value: '5', helper: '1 pending review', icon: <FileText className="h-5 w-5 text-purple-500" />, trend: 'neutral' },
+  { label: 'Pending Reviews', value: '3', helper: 'Requires attention', icon: <AlertTriangle className="h-5 w-5 text-amber-500" />, trend: 'down' },
+  { label: 'Critical Discrepancies', value: '2', helper: 'SLA approaching', icon: <ShieldCheck className="h-5 w-5 text-red-500" />, trend: 'neutral' },
+  { label: 'Team Members', value: '28', helper: 'Across 3 workspaces', icon: <Users className="h-5 w-5 text-primary" />, trend: 'up' },
+  { label: 'Avg Processing Time', value: '1.8 days', helper: 'Last 30 days', icon: <Clock className="h-5 w-5 text-muted-foreground" />, trend: 'down' },
 ]
 
 const workspaces = [
@@ -89,6 +106,7 @@ const strategicInsights = [
 export default function EnterpriseDashboard() {
   const { user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const [activeSection, setActiveSection] = useState<Section>("dashboard")
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -114,72 +132,100 @@ export default function EnterpriseDashboard() {
     return null
   }
 
+  const currentUser = user
+    ? {
+        id: user.id,
+        name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+        email: user.email || "",
+        role: user.user_metadata?.role || "tenant_admin",
+      }
+    : null
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/10 p-6">
-      <div className="mx-auto w-full max-w-7xl space-y-10">
-        <header className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-primary">
+    <DashboardLayout
+      sidebar={
+        <EnterpriseSidebar
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          user={currentUser}
+        />
+      }
+    >
+      <div className="space-y-6">
+        <header className="space-y-3">
+          <div className="flex items-center gap-2">
             <Badge variant="secondary" className="bg-primary/10 text-primary">
               Enterprise Tenant Admin
             </Badge>
-            <span className="text-muted-foreground">Medium & Large Enterprises</span>
+            <span className="text-sm text-muted-foreground">Medium & Large Enterprises</span>
           </div>
-          <h1 className="text-3xl font-semibold text-foreground">Enterprise Trade Operations</h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor LC validation across export, import, and finance teams. Configure workspaces, assign roles, and stay
-            ahead of bank escalations from a single command center.
-          </p>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Enterprise Command Center</h1>
+            <p className="text-muted-foreground mt-1">
+              Monitor LC validation across export, import, and finance teams. Configure workspaces, assign roles, and stay
+              ahead of bank escalations.
+            </p>
+          </div>
         </header>
 
+        {/* KPI Metrics */}
         <section>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {workspaceMetrics.map((metric) => (
-              <Card key={metric.label} className="border-border/40 shadow-soft">
+              <Card key={metric.label}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
                     {metric.label}
-                  </CardDescription>
+                  </CardTitle>
                   {metric.icon}
                 </CardHeader>
-                <CardContent className="space-y-1">
-                  <div className="text-2xl font-semibold text-foreground">{metric.value}</div>
-                  <p className="text-xs text-muted-foreground">{metric.helper}</p>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metric.value}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{metric.helper}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </section>
 
+        {/* Workspaces & Bank Relationships */}
         <section className="grid gap-6 lg:grid-cols-3">
-          <Card className="lg:col-span-2 border-border/40 shadow-strong backdrop-blur">
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="text-xl text-foreground">Team Workspaces</CardTitle>
-                <CardDescription className="text-sm text-muted-foreground">
-                  Assign roles, monitor activity, and open workspace dashboards.
-                </CardDescription>
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Team Workspaces</CardTitle>
+                  <CardDescription className="mt-1">
+                    Assign roles, monitor activity, and open workspace dashboards.
+                  </CardDescription>
+                </div>
+                <Button variant="outline" size="sm">
+                  <Users className="mr-2 h-4 w-4" />
+                  Manage teams
+                </Button>
               </div>
-              <Button variant="outline" size="sm" className="text-sm">
-                Manage teams <Users className="ml-2 h-4 w-4" />
-              </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               {workspaces.map((workspace) => (
                 <div
                   key={workspace.name}
-                  className="flex flex-col gap-4 rounded-xl border border-border/40 bg-card/60 p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-3 rounded-lg border bg-card p-4 md:flex-row md:items-center md:justify-between"
                 >
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    <p className="text-base font-semibold text-foreground">{workspace.name}</p>
-                    <p>{workspace.description}</p>
+                  <div className="space-y-1">
+                    <p className="font-semibold">{workspace.name}</p>
+                    <p className="text-sm text-muted-foreground">{workspace.description}</p>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1 text-primary"><Users className="h-3.5 w-3.5" /> {workspace.members} members</span>
-                      <span className="inline-flex items-center gap-1 text-amber-500"><GitBranch className="h-3.5 w-3.5" /> {workspace.openTasks} open tasks</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5" /> {workspace.members} members
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-amber-500">
+                        <GitBranch className="h-3.5 w-3.5" /> {workspace.openTasks} open tasks
+                      </span>
                     </div>
                   </div>
-                  <Button asChild variant="secondary" className="w-full text-sm md:w-auto">
-                    <Link to={workspace.link} className="flex items-center justify-center gap-2">
-                      Open workspace <ArrowRight className="h-4 w-4" />
+                  <Button asChild variant="secondary" size="sm" className="md:w-auto">
+                    <Link to={workspace.link}>
+                      Open workspace <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
                 </div>
@@ -187,119 +233,115 @@ export default function EnterpriseDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/40 shadow-sm">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base text-foreground">Bank Relationship Snapshot</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
+              <CardTitle>Bank Relationships</CardTitle>
+              <CardDescription className="mt-1">
                 Track LC distribution and risk across partner banks.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <div className="rounded-lg border border-border/40 bg-muted/30 p-4">
-                <div className="flex items-center justify-between text-foreground">
-                  <span>Sonali Bank</span>
-                  <span className="font-semibold">6 active LCs</span>
+            <CardContent className="space-y-3">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Sonali Bank</span>
+                  <span className="text-sm font-semibold">6 active LCs</span>
                 </div>
                 <p className="mt-1 text-xs text-amber-500">2 escalations approaching SLA</p>
               </div>
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
-                <div className="flex items-center justify-between text-foreground">
-                  <span>BRAC Bank</span>
-                  <span className="font-semibold">4 active LCs</span>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">BRAC Bank</span>
+                  <span className="text-sm font-semibold">4 active LCs</span>
                 </div>
-                <p className="mt-1 text-xs text-success">All compliant</p>
+                <p className="mt-1 text-xs text-emerald-600">All compliant</p>
               </div>
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
-                <div className="flex items-center justify-between text-foreground">
-                  <span>Standard Chartered</span>
-                  <span className="font-semibold">3 active LCs</span>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Standard Chartered</span>
+                  <span className="text-sm font-semibold">3 active LCs</span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Awaiting document review</p>
               </div>
-              <Button asChild variant="outline" className="w-full text-sm">
-                <Link to="/lcopilot/analytics/bank">Open bank analytics <TrendingUp className="ml-2 h-4 w-4" /></Link>
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link to="/lcopilot/analytics/bank">
+                  Open bank analytics <TrendingUp className="ml-2 h-4 w-4" />
+                </Link>
               </Button>
             </CardContent>
           </Card>
         </section>
 
-        <Separator className="opacity-20" />
-
+        {/* Activity & Governance */}
         <section className="grid gap-6 lg:grid-cols-3">
-          <Card className="border-border/40 shadow-sm lg:col-span-2">
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="text-base text-foreground">Cross-Team Activity</CardTitle>
-                <CardDescription className="text-sm text-muted-foreground">
-                  Most recent updates across export, import, and finance teams.
-                </CardDescription>
-              </div>
-              <Tabs defaultValue="activity" className="md:w-auto">
-                <TabsList>
-                  <TabsTrigger value="activity">Activity</TabsTrigger>
-                  <TabsTrigger value="strategic">Insights</TabsTrigger>
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Cross-Team Activity</CardTitle>
+              <CardDescription className="mt-1">
+                Most recent updates across export, import, and finance teams.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="activity" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="activity">Activity Feed</TabsTrigger>
+                  <TabsTrigger value="strategic">Strategic Insights</TabsTrigger>
                 </TabsList>
-                <TabsContent value="activity" className="pt-4">
-                  <div className="space-y-3 text-sm text-muted-foreground">
-                    {teamActivity.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 p-4">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{item.description}</p>
-                          <p className="text-xs text-muted-foreground">{item.role}</p>
-                        </div>
-                        <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+                <TabsContent value="activity" className="space-y-3 mt-4">
+                  {teamActivity.map((item) => (
+                    <div key={item.id} className="flex items-start justify-between rounded-lg border bg-card p-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{item.description}</p>
+                        <p className="text-xs text-muted-foreground">{item.role}</p>
                       </div>
-                    ))}
-                  </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{item.timestamp}</span>
+                    </div>
+                  ))}
                 </TabsContent>
-                <TabsContent value="strategic" className="pt-4">
-                  <div className="space-y-3 text-sm text-muted-foreground">
-                    {strategicInsights.map((insight) => (
-                      <div key={insight.title} className="rounded-lg border border-border/40 bg-muted/30 p-4">
-                        <p className="text-sm font-medium text-foreground">{insight.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{insight.detail}</p>
-                      </div>
-                    ))}
-                  </div>
+                <TabsContent value="strategic" className="space-y-3 mt-4">
+                  {strategicInsights.map((insight) => (
+                    <div key={insight.title} className="rounded-lg border bg-card p-3">
+                      <p className="text-sm font-medium">{insight.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{insight.detail}</p>
+                    </div>
+                  ))}
                 </TabsContent>
               </Tabs>
-            </CardHeader>
-            <CardContent className="pt-0" />
+            </CardContent>
           </Card>
 
-          <Card className="border-border/40 shadow-sm">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base text-foreground">Governance & Controls</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
+              <CardTitle>Governance & Controls</CardTitle>
+              <CardDescription className="mt-1">
                 Configure approval layers, retention rules, and evidence archives.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <div className="rounded-lg border border-border/40 bg-muted/30 p-4">
-                <div className="flex items-center gap-2 text-foreground">
+            <CardContent className="space-y-3">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-center gap-2 font-medium">
                   <Building className="h-4 w-4" /> Approval chains
                 </div>
-                <p className="mt-1 text-xs">Finance approval required above USD 200K.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Finance approval required above USD 200K.</p>
               </div>
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
-                <div className="flex items-center gap-2 text-foreground">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-center gap-2 font-medium">
                   <FolderGit2 className="h-4 w-4" /> Retention policies
                 </div>
-                <p className="mt-1 text-xs">LC evidence stored for 7 years (URC 522 compliance).</p>
+                <p className="mt-1 text-xs text-muted-foreground">LC evidence stored for 7 years (URC 522 compliance).</p>
               </div>
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
-                <div className="flex items-center gap-2 text-foreground">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-center gap-2 font-medium">
                   <Activity className="h-4 w-4" /> Audit log
                 </div>
-                <p className="mt-1 text-xs">14 key events recorded this week.</p>
+                <p className="mt-1 text-xs text-muted-foreground">14 key events recorded this week.</p>
               </div>
-              <Button asChild variant="secondary" className="w-full text-sm">
+              <Button asChild variant="secondary" size="sm" className="w-full">
                 <Link to="/lcopilot/exporter-analytics">Review governance settings</Link>
               </Button>
             </CardContent>
           </Card>
         </section>
       </div>
-    </div>
+    </DashboardLayout>
   )
 }
