@@ -6,6 +6,7 @@ psycopg2-binary==2.9.9
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt>=4.1.2  # Required for passlib bcrypt_sha256 support (must have __about__ attribute)
 python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings>=2.0.3
