@@ -27,6 +27,7 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
     { value: "icc.urc522", label: "URC 522 (Collections)", type: "base", domain: "icc" },
     { value: "icc.eurc1.0", label: "eURC 1.0 (Electronic Supplement to URC)", type: "supplement", domain: "icc" },
     { value: "icc.urr725", label: "URR 725 (Reimbursement Undertakings)", type: "supplement", domain: "icc" },
+    { value: "icc.lcopilot.crossdoc", label: "LCOPILOT Cross-Document Rules", type: "general", domain: "icc" },
     { value: "icc", label: "ICC (General / Legacy)", type: "general", domain: "icc" },
   ],
   incoterms: [
