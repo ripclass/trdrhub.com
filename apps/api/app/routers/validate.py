@@ -385,7 +385,11 @@ async def validate_doc(
                 import logging
                 logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
             
-            document_summaries = _build_document_summaries(files_list, results)
+            document_summaries = _build_document_summaries(
+                files_list,
+                results,
+                payload.get("documents"),
+            )
             
             # Extract extracted_data from payload for storage
             stored_extracted_data = {}
@@ -444,7 +448,11 @@ async def validate_doc(
                 )
 
         if not document_summaries:
-            document_summaries = _build_document_summaries(files_list, results)
+            document_summaries = _build_document_summaries(
+                files_list,
+                results,
+                payload.get("documents"),
+            )
 
         # Extract extracted data from payload for frontend display
         extracted_data = {}
@@ -499,27 +507,46 @@ async def validate_doc(
         raise
 
 
-def _build_document_summaries(files_list: List[Any], results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_document_summaries(
+    files_list: List[Any],
+    results: List[Dict[str, Any]],
+    document_details: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """Create lightweight document summaries for downstream consumers."""
     if not files_list:
         return []
 
     has_failures = any(not r.get("passed", False) for r in results)
-    status = "warning" if has_failures else "success"
     discrepancy_count = len([r for r in results if not r.get("passed", False)])
+
+    detail_lookup: Dict[str, Dict[str, Any]] = {}
+    if document_details:
+        for detail in document_details:
+            filename = detail.get("filename")
+            if filename:
+                detail_lookup[filename] = detail
 
     summaries: List[Dict[str, Any]] = []
     for index, file_obj in enumerate(files_list):
         filename = getattr(file_obj, "filename", None)
+        detail = detail_lookup.get(filename or "")
+        inferred_type = _infer_document_type_from_name(filename, index)
+        doc_type = (detail.get("document_type") if detail else None) or inferred_type
+        extracted_fields = (detail.get("extracted_fields") if detail else None) or {}
+
+        doc_has_failures = doc_type == "letter_of_credit" and has_failures
+        status = "warning" if doc_has_failures else "success"
+
         summaries.append(
             {
                 "id": str(uuid4()),
                 "name": filename or f"Document {index + 1}",
-                "type": _infer_document_type_from_name(filename, index),
+                "type": doc_type,
                 "status": status,
-                "discrepancyCount": discrepancy_count,
-                "extractedFields": {},
-                "ocrConfidence": None,
+                "discrepancyCount": discrepancy_count if doc_has_failures else 0,
+                "extractedFields": extracted_fields,
+                "ocrConfidence": detail.get("ocr_confidence") if detail else None,
+                "extractionStatus": detail.get("extraction_status") if detail else None,
             }
         )
 
@@ -574,12 +601,19 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
 
     extractor = DocumentFieldExtractor()
     context: Dict[str, Any] = {}
+    document_details: List[Dict[str, Any]] = []
     has_structured_data = False
 
     for idx, upload_file in enumerate(files_list):
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
         content_type = getattr(upload_file, "content_type", "unknown")
         document_type = _infer_document_type(filename, idx)
+        doc_info: Dict[str, Any] = {
+            "filename": filename,
+            "document_type": document_type,
+            "extracted_fields": {},
+            "extraction_status": "empty",
+        }
         
         logger.info(f"Processing file {idx+1}/{len(files_list)}: {filename} (type: {document_type}, content-type: {content_type})")
         
@@ -595,9 +629,8 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                 # Store raw text for LC documents
                 if "lc" not in context:
                     context["lc"] = {}
-                context["lc"]["raw_text"] = extracted_text
-                # Also store at top level for rule auto-detection
-                context["lc_text"] = extracted_text
+                    context["lc"]["raw_text"] = extracted_text
+                    context["lc_text"] = extracted_text
                 
                 lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
                 logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
@@ -609,6 +642,8 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                     logger.info(f"LC context keys: {list(context['lc'].keys())}")
                     if not context.get("lc_number") and lc_context.get("number"):
                         context["lc_number"] = lc_context["number"]
+                    doc_info["extracted_fields"] = lc_context
+                    doc_info["extraction_status"] = "success"
                 else:
                     logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
             elif document_type == "commercial_invoice":
@@ -621,6 +656,8 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                     context["invoice"]["raw_text"] = extracted_text
                     context["invoice"].update(invoice_context)
                     has_structured_data = True
+                    doc_info["extracted_fields"] = invoice_context
+                    doc_info["extraction_status"] = "success"
                     logger.info(f"Invoice context keys: {list(context['invoice'].keys())}")
             elif document_type == "bill_of_lading":
                 bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
@@ -632,10 +669,14 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                     context["bill_of_lading"]["raw_text"] = extracted_text
                     context["bill_of_lading"].update(bl_context)
                     has_structured_data = True
+                    doc_info["extracted_fields"] = bl_context
+                    doc_info["extraction_status"] = "success"
                     logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
         except Exception as e:
             logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
             continue
+
+        document_details.append(doc_info)
 
     # Set extraction status
     if has_structured_data:
@@ -648,6 +689,9 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     else:
         context["extraction_status"] = "empty"
         logger.warning("No context extracted from any files")
+    
+    if document_details:
+        context["documents"] = document_details
     
     return context
 
@@ -829,12 +873,22 @@ def _infer_document_type(filename: Optional[str], index: int) -> str:
     """Guess document type using filename hints or position."""
     if filename:
         lower = filename.lower()
-        if any(token in lower for token in ("lc", "letter", "credit")):
-            return "letter_of_credit"
         if any(token in lower for token in ("invoice", "inv")):
             return "commercial_invoice"
-        if any(token in lower for token in ("bill", "lading", "bl", "shipping")):
+        if any(token in lower for token in ("bill of lading", "bill_of_lading", "bill-of-lading", "bill", "lading", "bl", "shipping", "bol")):
             return "bill_of_lading"
+        if any(token in lower for token in ("packing", "packlist")):
+            return "packing_list"
+        if any(token in lower for token in ("insurance", "policy")):
+            return "insurance_certificate"
+        if any(token in lower for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
+            return "certificate_of_origin"
+        if any(token in lower for token in ("inspection", "analysis", "quality")):
+            return "inspection_certificate"
+        if any(token in lower for token in ("lc_", "letter_of_credit", "mt700")) or lower.endswith("_lc.pdf"):
+            return "letter_of_credit"
+        if " credit " in lower:
+            return "letter_of_credit"
 
     mapping = {
         0: "letter_of_credit",
