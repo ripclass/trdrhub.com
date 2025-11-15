@@ -268,11 +268,6 @@ export default function ExporterDashboardV2() {
       next.delete("draftId");
     }
 
-    if (section !== "reviews") {
-      next.delete("jobId");
-      next.delete("lc");
-    }
-
     Object.entries(extras).forEach(([key, value]) => {
       if (!value) {
         next.delete(key);
