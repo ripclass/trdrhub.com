@@ -8,7 +8,7 @@ from uuid import UUID
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
@@ -102,6 +102,10 @@ def get_job_status(
 ):
     session = (
         db.query(ValidationSession)
+        .options(
+            selectinload(ValidationSession.documents),
+            selectinload(ValidationSession.discrepancies),
+        )
         .filter(ValidationSession.id == job_id, ValidationSession.deleted_at.is_(None))
         .first()
     )
@@ -132,6 +136,10 @@ def get_job_results(
 ):
     session = (
         db.query(ValidationSession)
+        .options(
+            selectinload(ValidationSession.documents),
+            selectinload(ValidationSession.discrepancies),
+        )
         .filter(ValidationSession.id == job_id, ValidationSession.deleted_at.is_(None))
         .first()
     )
