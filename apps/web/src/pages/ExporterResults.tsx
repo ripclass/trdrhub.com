@@ -182,32 +182,69 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
   const { getResults, isLoading: resultsLoading, error: resultsError } = useResults();
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
-  const [resultsFetched, setResultsFetched] = useState(false);
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
   const lcNumberParam = searchParams.get('lc') || undefined;
+
+  const formatExtractedValue = (value: any): string => {
+    if (value === null || value === undefined) {
+      return "N/A";
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => formatExtractedValue(item)).join(", ");
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  };
   
   useEffect(() => {
     setLiveResults(null);
-    setResultsFetched(false);
+    setResultsErrorState(null);
   }, [validationSessionId]);
 
   useEffect(() => {
     if (!validationSessionId) return;
-    if (resultsFetched) return;
-    if (jobStatus?.status === "completed") {
-      getResults(validationSessionId)
-        .then((data) => {
-          setLiveResults(data);
-          setResultsErrorState(null);
-          setResultsFetched(true);
-        })
-        .catch((err: any) => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const pollResults = async (attempt = 0) => {
+      try {
+        const data = await getResults(validationSessionId);
+        if (cancelled) {
+          return;
+        }
+        setLiveResults(data);
+        setResultsErrorState(null);
+      } catch (err: any) {
+        if (cancelled) {
+          return;
+        }
+        const statusCode = err?.statusCode;
+        const retriable = statusCode === 404 || statusCode === 409;
+        if (retriable && attempt < 15) {
+          const delay = Math.min(2000 + attempt * 500, 8000);
+          retryTimer = setTimeout(() => pollResults(attempt + 1), delay);
+        } else {
           setResultsErrorState(err?.message || "Failed to load validation results.");
-          setResultsFetched(true);
-        });
-    }
-  }, [validationSessionId, jobStatus?.status, getResults, resultsFetched]);
+        }
+      }
+    };
+
+    pollResults();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [validationSessionId, getResults]);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
@@ -464,6 +501,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   }
 
   const documents = resolvedResults.documents ?? [];
+  const extractedDocuments =
+    Array.isArray(resolvedResults.extracted_data?.documents)
+      ? (resolvedResults.extracted_data?.documents as Array<Record<string, any>>)
+      : [];
   // Filter out not_applicable rules (backend already filters, but add safety filter here)
   const discrepanciesList = (resolvedResults.discrepancies ?? []).filter(
     (d: any) => !d.not_applicable
@@ -878,27 +919,15 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 <CardContent>
                   <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {Object.entries(document.extractedFields || {}).map(([key, value]) => {
-                      // Handle objects, arrays, and null/undefined values
-                      let displayValue: string;
-                      if (value === null || value === undefined) {
-                        displayValue = "N/A";
-                      } else if (typeof value === "object") {
-                        // If it's an object, stringify it nicely
-                        displayValue = JSON.stringify(value, null, 2);
-                      } else if (Array.isArray(value)) {
-                        // If it's an array, join it
-                        displayValue = value.join(", ");
-                      } else {
-                        // Primitive value (string, number, boolean)
-                        displayValue = String(value);
-                      }
-                      
+                      const displayValue = formatExtractedValue(value);
                       return (
                         <div key={key} className="space-y-1">
                           <p className="text-xs text-muted-foreground font-medium capitalize">
                             {key.replace(/([A-Z])/g, ' $1').trim()}
                           </p>
-                          <p className="text-sm font-medium text-foreground">{displayValue}</p>
+                          <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
+                            {displayValue}
+                          </p>
                         </div>
                       );
                     })}
@@ -1054,6 +1083,65 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                           </div>
                         </div>
                       )}
+
+                    {/* Per-document OCR summary */}
+                    {extractedDocuments.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-lg">Document OCR Overview</h3>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {extractedDocuments.map((doc, index) => {
+                            const cardTitle = doc.filename || doc.name || `Document ${index + 1}`;
+                            const docType = (doc.document_type || doc.type || "supporting_document")
+                              .toString()
+                              .replace(/_/g, " ");
+                            const extractionStatus = doc.extraction_status || doc.extractionStatus || "unknown";
+                            const fieldEntries = Object.entries(doc.extracted_fields || doc.extractedFields || {});
+
+                            return (
+                              <div key={`${cardTitle}-${index}`} className="border rounded-lg p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="font-semibold">{cardTitle}</p>
+                                    <p className="text-xs text-muted-foreground capitalize">{docType}</p>
+                                  </div>
+                                  <Badge
+                                    variant={
+                                      extractionStatus === "success"
+                                        ? "default"
+                                        : extractionStatus === "empty"
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {extractionStatus}
+                                  </Badge>
+                                </div>
+
+                                {fieldEntries.length > 0 ? (
+                                  <div className="space-y-2 text-sm">
+                                    {fieldEntries.map(([key, value]) => (
+                                      <div key={key} className="flex flex-col">
+                                        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                                          {key.replace(/([A-Z])/g, " $1").trim()}
+                                        </span>
+                                        <span className="font-medium whitespace-pre-wrap break-words">
+                                          {formatExtractedValue(value)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">
+                                    No structured fields extracted for this document. OCR text is still available for
+                                    AI-assisted explanations.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8">

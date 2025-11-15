@@ -211,8 +211,9 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
-        # Extract structured data from uploaded files
-        extracted_context = await _build_document_context(files_list)
+        # Extract structured data from uploaded files (respecting any document tags)
+        document_tags = payload.get("document_tags")
+        extracted_context = await _build_document_context(files_list, document_tags)
         if extracted_context:
             logger.info(f"Extracted context from {len(files_list)} files: {list(extracted_context.keys())}")
             payload.update(extracted_context)
@@ -479,6 +480,10 @@ async def validate_doc(
             extracted_data["invoice"] = payload["invoice"]
         if "bill_of_lading" in payload:
             extracted_data["bill_of_lading"] = payload["bill_of_lading"]
+        if payload.get("documents"):
+            extracted_data["documents"] = payload["documents"]
+        if payload.get("documents_presence"):
+            extracted_data["documents_presence"] = payload["documents_presence"]
         extraction_status = payload.get("extraction_status", "unknown")
 
         return {
@@ -606,7 +611,95 @@ def _fallback_doc_type(index: int) -> str:
     return mapping.get(index, "supporting_document")
 
 
-async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
+DOCUMENT_TYPE_ALIASES: Dict[str, List[str]] = {
+    "letter_of_credit": [
+        "letter of credit",
+        "lc",
+        "l/c",
+        "mt700",
+        "lc document",
+        "lc_document",
+    ],
+    "commercial_invoice": [
+        "invoice",
+        "commercial invoice",
+        "ci",
+        "inv",
+    ],
+    "bill_of_lading": [
+        "bill of lading",
+        "bill_of_lading",
+        "bill-of-lading",
+        "bill",
+        "bol",
+        "bl",
+        "shipping document",
+        "awb",
+    ],
+    "packing_list": [
+        "packing list",
+        "packlist",
+        "packing",
+    ],
+    "insurance_certificate": [
+        "insurance",
+        "insurance certificate",
+        "policy",
+    ],
+    "certificate_of_origin": [
+        "certificate of origin",
+        "coo",
+        "gsp",
+    ],
+    "inspection_certificate": [
+        "inspection",
+        "analysis",
+        "quality certificate",
+    ],
+    "supporting_document": [
+        "supporting",
+        "misc",
+        "other",
+    ],
+}
+
+
+def _canonical_document_tag(raw_value: Any) -> Optional[str]:
+    if raw_value is None:
+        return None
+    normalized = str(raw_value).strip().lower()
+    if not normalized:
+        return None
+    normalized = normalized.replace("-", " ").replace("_", " ")
+    for canonical, aliases in DOCUMENT_TYPE_ALIASES.items():
+        if normalized == canonical.replace("_", " "):
+            return canonical
+        if normalized in aliases:
+            return canonical
+    for canonical, aliases in DOCUMENT_TYPE_ALIASES.items():
+        if any(alias in normalized for alias in aliases):
+            return canonical
+    return normalized.replace(" ", "_")
+
+
+def _resolve_document_type(
+    filename: Optional[str],
+    index: int,
+    document_tags: Optional[Dict[str, str]] = None,
+) -> str:
+    if filename and document_tags:
+        lower_name = filename.lower()
+        base_name = lower_name.rsplit(".", 1)[0]
+        tag_value = document_tags.get(lower_name) or document_tags.get(base_name)
+        if tag_value:
+            return tag_value
+    return _infer_document_type(filename, index)
+
+
+async def _build_document_context(
+    files_list: List[Any],
+    document_tags: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Attempt to extract basic structured fields from uploaded documents.
 
@@ -625,6 +718,18 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
         return {"extraction_status": "error", "extraction_error": str(e)}
 
     extractor = DocumentFieldExtractor()
+    normalized_tags: Dict[str, str] = {}
+    if isinstance(document_tags, dict):
+        for raw_name, raw_value in document_tags.items():
+            if not raw_name:
+                continue
+            canonical = _canonical_document_tag(str(raw_value)) if raw_value else None
+            if canonical:
+                normalized_tags[raw_name.lower()] = canonical
+                # Also index by filename without extension for convenience
+                base_name = raw_name.rsplit(".", 1)[0].lower()
+                normalized_tags.setdefault(base_name, canonical)
+
     context: Dict[str, Any] = {}
     document_details: List[Dict[str, Any]] = []
     has_structured_data = False
@@ -643,13 +748,16 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     for idx, upload_file in enumerate(files_list):
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
         content_type = getattr(upload_file, "content_type", "unknown")
-        document_type = _infer_document_type(filename, idx)
+        document_type = _resolve_document_type(filename, idx, normalized_tags)
         doc_info: Dict[str, Any] = {
             "filename": filename,
             "document_type": document_type,
             "extracted_fields": {},
             "extraction_status": "empty",
         }
+        if normalized_tags and filename:
+            lower_name = filename.lower()
+            doc_info["tag"] = normalized_tags.get(lower_name) or normalized_tags.get(lower_name.rsplit(".", 1)[0])
         
         logger.info(f"Processing file {idx+1}/{len(files_list)}: {filename} (type: {document_type}, content-type: {content_type})")
         
