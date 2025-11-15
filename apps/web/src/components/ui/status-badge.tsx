@@ -19,7 +19,7 @@ function cn(...classes: (string | undefined | null | boolean | Record<string, bo
 import { CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 
 export interface StatusBadgeProps {
-  status: "success" | "error" | "warning" | "pending";
+  status: "success" | "error" | "warning" | "pending" | string;
   children: React.ReactNode;
   className?: string;
 }
@@ -43,8 +43,31 @@ const statusConfig = {
   },
 };
 
+function normalizeStatus(status: StatusBadgeProps["status"]): keyof typeof statusConfig {
+  switch (status) {
+    case "success":
+    case "error":
+    case "warning":
+    case "pending":
+      return status;
+    case "completed":
+    case "verified":
+      return "success";
+    case "failed":
+    case "error_state":
+    case "critical":
+      return "error";
+    case "processing":
+    case "in_progress":
+      return "pending";
+    default:
+      return "warning";
+  }
+}
+
 export function StatusBadge({ status, children, className }: StatusBadgeProps) {
-  const config = statusConfig[status];
+  const normalizedStatus = normalizeStatus(status);
+  const config = statusConfig[normalizedStatus];
   const Icon = config.icon;
 
   return (
