@@ -18,7 +18,7 @@ from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
 from fastapi import Header
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from app.config import settings
 
 
@@ -107,6 +107,8 @@ async def validate_doc(
     audit_service = AuditService(db)
     audit_context = create_audit_context(request)
     
+    document_summaries: List[Dict[str, Any]] = []
+
     try:
         content_type = request.headers.get("content-type", "")
         payload: dict
@@ -306,6 +308,8 @@ async def validate_doc(
         else:
             results = validate_document(payload, doc_type)
 
+        failed_results = [r for r in results if not r.get("passed", False)]
+
         # Record usage - link to session if created (skip for demo user)
         quota = None
         if current_user.email != "demo@trdrhub.com":
@@ -352,9 +356,16 @@ async def validate_doc(
                 import logging
                 logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
             
+            document_summaries = _build_document_summaries(files_list, results)
+
             validation_session.validation_results = {
-                "discrepancies": [r for r in results if not r.get("passed", False)],
+                "discrepancies": failed_results,
                 "results": results,
+                "documents": document_summaries,
+                "summary": {
+                    "document_count": len(document_summaries),
+                    "failed_rules": len(failed_results),
+                },
                 **ai_enrichment  # Merge AI enrichment if present
             }
             validation_session.status = SessionStatus.COMPLETED.value
@@ -387,14 +398,18 @@ async def validate_doc(
                     audit_metadata={
                         "client_name": metadata_dict.get("clientName") or metadata_dict.get("client_name"),
                         "date_received": metadata_dict.get("dateReceived") or metadata_dict.get("date_received"),
-                        "discrepancy_count": len([r for r in results if not r.get("passed", False)]),
+                        "discrepancy_count": len(failed_results),
                         "document_count": len(payload.get("files", [])) if isinstance(payload.get("files"), list) else 0,
                     }
                 )
 
+        if not document_summaries:
+            document_summaries = _build_document_summaries(files_list, results)
+
         return {
             "status": "ok",
             "results": results,
+            "documents": document_summaries,
             "job_id": str(job_id),
             "jobId": str(job_id),
             "quota": quota.to_dict() if quota else None,
@@ -429,3 +444,58 @@ async def validate_doc(
                 error_message=str(e),
             )
         raise
+
+
+def _build_document_summaries(files_list: List[Any], results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Create lightweight document summaries for downstream consumers."""
+    if not files_list:
+        return []
+
+    has_failures = any(not r.get("passed", False) for r in results)
+    status = "warning" if has_failures else "success"
+    discrepancy_count = len([r for r in results if not r.get("passed", False)])
+
+    summaries: List[Dict[str, Any]] = []
+    for index, file_obj in enumerate(files_list):
+        filename = getattr(file_obj, "filename", None)
+        summaries.append(
+            {
+                "id": str(uuid4()),
+                "name": filename or f"Document {index + 1}",
+                "type": _infer_document_type_from_name(filename, index),
+                "status": status,
+                "discrepancyCount": discrepancy_count,
+                "extractedFields": {},
+                "ocrConfidence": None,
+            }
+        )
+
+    return summaries
+
+
+def _infer_document_type_from_name(filename: Optional[str], index: int) -> str:
+    """Infer the document type using filename patterns."""
+    if filename:
+        name = filename.lower()
+        if any(token in name for token in ("lc", "letter", "credit", "mt700")):
+            return "letter_of_credit"
+        if any(token in name for token in ("invoice", "inv")):
+            return "commercial_invoice"
+        if any(token in name for token in ("bill", "lading", "bl", "shipping")):
+            return "bill_of_lading"
+        if any(token in name for token in ("packing", "packlist")):
+            return "packing_list"
+        if any(token in name for token in ("certificate_of_origin", "coo", "certificate", "gsp")):
+            return "certificate"
+
+    return _fallback_doc_type(index)
+
+
+def _fallback_doc_type(index: int) -> str:
+    """Fallback ordering for document types when hints are unavailable."""
+    mapping = {
+        0: "letter_of_credit",
+        1: "commercial_invoice",
+        2: "bill_of_lading",
+    }
+    return mapping.get(index, "supporting_document")

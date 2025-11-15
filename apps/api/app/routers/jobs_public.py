@@ -4,7 +4,7 @@ Public validation job status and results endpoints for exporter/importer flows.
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -81,25 +81,47 @@ def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[st
             discrepancy_map.setdefault(str(doc_ids), []).append(entry)
 
     documents_payload: List[Dict[str, Any]] = []
-    for document in session.documents:
-        doc_id = str(document.id)
-        doc_discrepancies = discrepancy_map.get(doc_id, [])
-        status_hint = "success"
-        if any(d.get("severity") in {"critical", "major"} for d in doc_discrepancies):
-            status_hint = "error"
-        elif doc_discrepancies:
-            status_hint = "warning"
+    if session.documents:
+        for document in session.documents:
+            doc_id = str(document.id)
+            doc_discrepancies = discrepancy_map.get(doc_id, [])
+            status_hint = "success"
+            if any(d.get("severity") in {"critical", "major"} for d in doc_discrepancies):
+                status_hint = "error"
+            elif doc_discrepancies:
+                status_hint = "warning"
 
+            documents_payload.append(
+                {
+                    "id": doc_id,
+                    "name": document.original_filename,
+                    "type": document.document_type,
+                    "status": status_hint,
+                    "discrepancyCount": len(doc_discrepancies),
+                    "discrepancies": doc_discrepancies,
+                    "extractedFields": document.extracted_fields or {},
+                    "ocrConfidence": document.ocr_confidence,
+                }
+            )
+
+    if documents_payload:
+        return documents_payload
+
+    # Fallback to summaries stored in validation_results when no DB-backed docs
+    fallback_docs = (session.validation_results or {}).get("documents") or []
+    for doc in fallback_docs:
+        doc_id = str(doc.get("id") or uuid4())
+        status_hint = doc.get("status") or "warning"
         documents_payload.append(
             {
                 "id": doc_id,
-                "name": document.original_filename,
-                "type": document.document_type,
+                "name": doc.get("name") or doc.get("original_filename") or "Uploaded Document",
+                "type": doc.get("type") or "supporting_document",
                 "status": status_hint,
-                "discrepancyCount": len(doc_discrepancies),
-                "discrepancies": doc_discrepancies,
-                "extractedFields": document.extracted_fields or {},
-                "ocrConfidence": document.ocr_confidence,
+                "discrepancyCount": doc.get("discrepancyCount", 0),
+                "discrepancies": doc.get("discrepancies") or [],
+                "extractedFields": doc.get("extractedFields") or {},
+                "ocrConfidence": doc.get("ocrConfidence"),
             }
         )
 
@@ -135,8 +157,8 @@ def get_job_status(
         "createdAt": session.created_at,
         "completedAt": session.processing_completed_at,
         "updatedAt": session.updated_at,
-        "documentCount": len(session.documents),
-        "discrepancyCount": len(session.discrepancies),
+        "documentCount": len(session.documents) or len((session.validation_results or {}).get("documents") or []),
+        "discrepancyCount": len(session.discrepancies) or len((session.validation_results or {}).get("discrepancies") or []),
     }
 
 
