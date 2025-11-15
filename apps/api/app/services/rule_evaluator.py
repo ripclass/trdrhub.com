@@ -307,13 +307,11 @@ class RuleEvaluator:
         
         if not field_path or not operator:
             logger.warning(
-                "Invalid condition: missing field or operator",
-                extra={
-                    "rule_id": rule_id or "unknown",
-                    "condition_index": condition_index,
-                    "condition_type": condition_type,
-                    "condition": condition,
-                },
+                "Invalid condition (rule=%s, idx=%s, type=%s, payload=%s): missing field or operator",
+                rule_id or "unknown",
+                condition_index,
+                condition_type,
+                condition,
             )
             return False
         

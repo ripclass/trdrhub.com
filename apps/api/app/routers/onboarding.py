@@ -217,6 +217,7 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
     try:
         requirements = _requirements_for_user(current_user)
         computed_role = infer_effective_role(current_user)
+        onboarding_data = current_user.onboarding_data or {}
         
         logger.info(f"📊 Role computation: user.role={current_user.role}, computed_role={computed_role}, company_type={onboarding_data.get('company', {}).get('type')}, business_types={onboarding_data.get('business_types')}")
         
@@ -229,7 +230,7 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
             status=current_user.status,
             kyc_status=current_user.kyc_status,
             required=requirements,
-            details=current_user.onboarding_data or {},
+            details=onboarding_data,
         )
     except Exception as final_error:
         logger.error(f"Error building OnboardingStatus: {str(final_error)}")

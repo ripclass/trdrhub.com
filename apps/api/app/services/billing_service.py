@@ -860,7 +860,11 @@ class BillingService:
         query = self.db.query(Invoice).filter(Invoice.company_id == company_id)
 
         if status:
-            query = query.filter(Invoice.status == InvoiceStatus(status))
+            try:
+                status_enum = InvoiceStatus(status.lower())
+            except ValueError:
+                raise BillingServiceError(f"Unsupported invoice status: {status}")
+            query = query.filter(Invoice.status == status_enum)
 
         total = query.count()
         invoices = query.order_by(desc(Invoice.created_at)).offset((page - 1) * per_page).limit(per_page).all()
