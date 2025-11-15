@@ -40,3 +40,5 @@ google-cloud-documentai>=2.20.0  # For Google Cloud Document AI OCR
 # transformers>=4.35.0
 pillow>=10.0.0  # Used by other parts of the app
 pdf2image>=1.16.0  # Used by other parts of the app
+pdfminer.six>=20231228
+PyPDF2>=3.0.1

@@ -2,6 +2,9 @@ from decimal import Decimal
 from uuid import uuid4
 import json
 
+import logging
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,11 +21,12 @@ from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
 from fastapi import Header
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from app.config import settings
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
+logger = logging.getLogger(__name__)
 
 
 def get_or_create_demo_user(db: Session) -> User:
@@ -206,6 +210,13 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
+        extracted_context = await _build_document_context(files_list)
+        if extracted_context:
+            payload.update(extracted_context)
+        context_contains_structured_data = any(
+            key in payload for key in ("lc", "invoice", "bill_of_lading", "documents")
+        )
+
         # Ensure user has a company (demo user will have one)
         if not current_user.company:
             # Try to get or create company for user
@@ -302,9 +313,12 @@ async def validate_doc(
         from app.services.validator import validate_document_async, validate_document
         
         use_json_rules = settings.USE_JSON_RULES
-        if use_json_rules:
+        if use_json_rules and context_contains_structured_data:
             # Use async validation (router is already async)
             results = await validate_document_async(payload, doc_type)
+        elif use_json_rules:
+            logger.info("Structured data unavailable, skipping JSON rules evaluation.")
+            results = []
         else:
             results = validate_document(payload, doc_type)
 
@@ -499,3 +513,158 @@ def _fallback_doc_type(index: int) -> str:
         2: "bill_of_lading",
     }
     return mapping.get(index, "supporting_document")
+
+
+async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
+    """
+    Attempt to extract basic structured fields from uploaded documents.
+
+    Returns a dictionary that can be merged into the validation payload (e.g. {"lc": {...}}).
+    """
+    if not files_list:
+        return {}
+
+    try:
+        from app.rules.extractors import DocumentFieldExtractor
+        from app.rules.models import DocumentType
+    except ImportError:
+        logger.debug("DocumentFieldExtractor not available; skipping text extraction.")
+        return {}
+
+    extractor = DocumentFieldExtractor()
+    context: Dict[str, Any] = {}
+
+    for idx, upload_file in enumerate(files_list):
+        document_type = _infer_document_type(upload_file.filename, idx)
+        extracted_text = await _extract_text_from_upload(upload_file)
+        if not extracted_text:
+            continue
+
+        if document_type == "letter_of_credit":
+            lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
+            lc_context = _fields_to_lc_context(lc_fields)
+            if lc_context:
+                context["lc"] = lc_context
+                if not context.get("lc_number") and lc_context.get("number"):
+                    context["lc_number"] = lc_context["number"]
+        elif document_type == "commercial_invoice":
+            invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
+            invoice_context = _fields_to_flat_context(invoice_fields)
+            if invoice_context:
+                context.setdefault("invoice", {}).update(invoice_context)
+        elif document_type == "bill_of_lading":
+            bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
+            bl_context = _fields_to_flat_context(bl_fields)
+            if bl_context:
+                context.setdefault("bill_of_lading", {}).update(bl_context)
+
+    return context
+
+
+async def _extract_text_from_upload(upload_file: Any) -> str:
+    """Extract textual content from an uploaded PDF/image using pdfminer/ PyPDF2."""
+    try:
+        file_bytes = await upload_file.read()
+        await upload_file.seek(0)
+    except Exception:
+        return ""
+
+    if not file_bytes:
+        return ""
+
+    text_output = ""
+
+    try:
+        from pdfminer.high_level import extract_text  # type: ignore
+
+        text_output = extract_text(BytesIO(file_bytes))
+    except Exception as pdfminer_error:
+        logger.debug(f"pdfminer extraction failed: {pdfminer_error}")
+
+    if text_output.strip():
+        return text_output
+
+    try:
+        from PyPDF2 import PdfReader  # type: ignore
+
+        reader = PdfReader(BytesIO(file_bytes))
+        pieces = []
+        for page in reader.pages:
+            try:
+                pieces.append(page.extract_text() or "")
+            except Exception:
+                continue
+        text_output = "\n".join(pieces)
+    except Exception as pypdf_error:
+        logger.debug(f"PyPDF2 extraction failed: {pypdf_error}")
+
+    return text_output
+
+
+def _infer_document_type(filename: Optional[str], index: int) -> str:
+    """Guess document type using filename hints or position."""
+    if filename:
+        lower = filename.lower()
+        if any(token in lower for token in ("lc", "letter", "credit")):
+            return "letter_of_credit"
+        if any(token in lower for token in ("invoice", "inv")):
+            return "commercial_invoice"
+        if any(token in lower for token in ("bill", "lading", "bl", "shipping")):
+            return "bill_of_lading"
+
+    mapping = {
+        0: "letter_of_credit",
+        1: "commercial_invoice",
+        2: "bill_of_lading",
+    }
+    return mapping.get(index, "letter_of_credit")
+
+
+def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
+    """Convert extracted LC fields into nested context for rule evaluation."""
+    lc_context: Dict[str, Any] = {}
+
+    for field in fields:
+        value = (field.value or "").strip()
+        if not value:
+            continue
+
+        name = field.field_name
+        if name == "lc_number":
+            lc_context["number"] = value
+        elif name == "issue_date":
+            _set_nested_value(lc_context, ("dates", "issue"), value)
+        elif name == "expiry_date":
+            _set_nested_value(lc_context, ("dates", "expiry"), value)
+        elif name == "lc_amount":
+            _set_nested_value(lc_context, ("amount", "value"), value)
+        elif name == "applicant":
+            _set_nested_value(lc_context, ("applicant", "name"), value)
+        elif name == "beneficiary":
+            _set_nested_value(lc_context, ("beneficiary", "name"), value)
+        elif name == "port_of_loading":
+            _set_nested_value(lc_context, ("ports", "loading"), value)
+        elif name == "port_of_discharge":
+            _set_nested_value(lc_context, ("ports", "discharge"), value)
+        else:
+            lc_context[name] = value
+
+    return lc_context
+
+
+def _fields_to_flat_context(fields: List[Any]) -> Dict[str, Any]:
+    """Convert generic extracted fields to a flat dictionary."""
+    context: Dict[str, Any] = {}
+    for field in fields:
+        value = (field.value or "").strip()
+        if not value:
+            continue
+        context[field.field_name] = value
+    return context
+
+
+def _set_nested_value(container: Dict[str, Any], path: Tuple[str, ...], value: Any) -> None:
+    current = container
+    for segment in path[:-1]:
+        current = current.setdefault(segment, {})
+    current[path[-1]] = value
