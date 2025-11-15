@@ -27,13 +27,27 @@ export interface JobStatus {
 
 export interface ValidationResults {
   jobId: string;
-  results: any;
+  results: any[];
   discrepancies: any[];
   summary: {
     totalChecks: number;
     passed: number;
     failed: number;
   };
+  documents?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    status?: string;
+    discrepancyCount?: number;
+    discrepancies?: any[];
+    extractedFields?: Record<string, any>;
+    ocrConfidence?: number;
+  }>;
+  lcNumber?: string;
+  completedAt?: string;
+  status?: string;
+  aiEnrichment?: Record<string, any>;
 }
 
 export interface PackageResponse {

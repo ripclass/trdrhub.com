@@ -68,6 +68,7 @@ company_profile = _load_router_module("company_profile")
 support = _load_router_module("support")
 importer = _load_router_module("importer")
 exporter = _load_router_module("exporter")
+jobs_public = _load_router_module("jobs_public")
 
 __all__ = [
     "auth",
@@ -105,4 +106,5 @@ __all__ = [
     "support",
     "importer",
     "exporter",
+    "jobs_public",
 ]

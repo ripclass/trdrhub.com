@@ -54,7 +54,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -231,6 +231,7 @@ app.include_router(company_profile.router)  # Company profile endpoints (address
 app.include_router(support.router)  # Support ticket endpoints (with context pre-filling)
 app.include_router(importer.router)  # Importer-specific endpoints (supplier fix pack, bank precheck)
 app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack, bank submissions)
+app.include_router(jobs_public.router)  # Public validation job status/results endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
 
 # Development-only routes

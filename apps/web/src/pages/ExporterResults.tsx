@@ -41,6 +41,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
+import { useJob, useResults, type ValidationResults } from "@/hooks/use-lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 
 // Mock exporter results
@@ -160,10 +161,39 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  // Get validation session ID from URL or mock
-  const validationSessionId = searchParams.get('session') || "00000000-0000-0000-0000-000000000000";
-  const lcNumber = searchParams.get('lc') || mockExporterResults.lcNumber;
+  const jobIdParam = searchParams.get('jobId');
+  const sessionParam = searchParams.get('session');
+  const validationSessionId = jobIdParam || sessionParam || null;
+  const isDemoMode = searchParams.get('demo') === 'true';
   
+  const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
+  const { getResults, isLoading: resultsLoading, error: resultsError } = useResults();
+  const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
+  const [resultsFetched, setResultsFetched] = useState(false);
+  const lcNumberSource = liveResults?.lcNumber || lcNumberParam || undefined;
+  
+  const lcNumberParam = searchParams.get('lc') || undefined;
+  
+  useEffect(() => {
+    setLiveResults(null);
+    setResultsFetched(false);
+  }, [validationSessionId]);
+
+  useEffect(() => {
+    if (!validationSessionId) return;
+    if (resultsFetched) return;
+    if (jobStatus?.status === "completed") {
+      getResults(validationSessionId)
+        .then((data) => {
+          setLiveResults(data);
+          setResultsFetched(true);
+        })
+        .catch(() => {
+          setResultsFetched(true);
+        });
+    }
+  }, [validationSessionId, jobStatus?.status, getResults, resultsFetched]);
+
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [showManifestPreview, setShowManifestPreview] = useState(false);
@@ -173,26 +203,29 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [manifestConfirmed, setManifestConfirmed] = useState(false);
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
   
+  const effectiveResults = liveResults ?? (isDemoMode ? mockExporterResults : null);
+  const resultData = effectiveResults;
+
   // Feature flags
   const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
   const enableCustomsPackPDF = isExporterFeatureEnabled("exporter_customs_pack_pdf");
   
   // Guardrails check
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
-    queryKey: ['exporter-guardrails', validationSessionId],
-    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: lcNumber }),
-    enabled: !!validationSessionId && enableBankSubmission,
+    queryKey: ['exporter-guardrails', validationSessionId, lcNumberSource],
+    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: lcNumberSource }),
+    enabled: !!validationSessionId && !!lcNumberSource && enableBankSubmission,
     refetchInterval: 30000, // Check every 30 seconds
   });
   
   // Submission history
   const { data: submissionsData, isLoading: submissionsLoading } = useQuery({
-    queryKey: ['exporter-submissions', lcNumber, validationSessionId],
+    queryKey: ['exporter-submissions', lcNumberSource, validationSessionId],
     queryFn: () => exporterApi.listBankSubmissions({ 
-      lc_number: lcNumber, 
+      lc_number: lcNumberSource, 
       validation_session_id: validationSessionId 
     }),
-    enabled: !!lcNumber && enableBankSubmission,
+    enabled: !!lcNumberSource && enableBankSubmission,
   });
   
   // Poll submission status (Phase 7)
@@ -221,18 +254,13 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   }, [submissionsData, queryClient, enableBankSubmission]);
   
   // Check if result has invoiceId (future enhancement)
-  const invoiceId = (mockExporterResults as any).invoiceId;
-
-  const successCount = mockExporterResults.documents.filter(d => d.status === "success").length;
-  const warningCount = mockExporterResults.documents.filter(d => d.status === "warning").length;
-  const errorCount = 0; // No error status in current mock data
-  const successRate = Math.round((successCount / mockExporterResults.totalDocuments) * 100);
+  const invoiceId = (resolvedResults as any)?.invoiceId;
   
   // Check if ready to submit (Phase 5: Guardrails)
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
-    if (!guardrails) return mockExporterResults.totalDiscrepancies === 0;
+    if (!guardrails) return totalDiscrepancies === 0;
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
   }, [guardrails, guardrailsLoading, enableBankSubmission]);
   
@@ -240,6 +268,97 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const generateIdempotencyKey = () => {
     return `${validationSessionId}-${Date.now()}`;
   };
+
+  if (!resultData && !isDemoMode) {
+    if (!validationSessionId) {
+      return (
+        <div className="flex items-center justify-center min-h-[60vh] p-6">
+          <Card className="max-w-xl mx-auto text-center">
+            <CardHeader>
+              <CardTitle>Upload Required</CardTitle>
+              <CardDescription>
+                Upload an LC package from the Exporter Dashboard to see validation results.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => navigate("/lcopilot/exporter-dashboard?section=upload")}>
+                Go to Upload
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (jobError || resultsError) {
+      const errorMessage = jobError?.message || resultsError?.message || "Failed to load validation results.";
+      return (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Card className="max-w-lg mx-auto">
+            <CardHeader>
+              <CardTitle>Unable to load validation results</CardTitle>
+              <CardDescription>{errorMessage}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button variant="outline" onClick={() => window.location.reload()}>
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    const statusLabel = jobStatus?.status
+      ? jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+      : "Processing";
+
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
+          <div>
+            <p className="text-lg font-semibold">Validation in progress</p>
+            <p className="text-sm text-muted-foreground">
+              Current status: {statusLabel}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const resolvedResults = resultData ?? (isDemoMode ? mockExporterResults : null);
+  if (!resolvedResults) {
+    return null;
+  }
+
+  const documents = resolvedResults.documents ?? [];
+  const discrepanciesList = resolvedResults.discrepancies ?? [];
+  const totalDocuments = documents.length || 0;
+  const totalDiscrepancies = discrepanciesList.length || 0;
+  const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
+  const warningCount = documents?.filter((d) => d.status === "warning").length ?? 0;
+  const errorCount = documents?.filter((d) => d.status === "error").length ?? 0;
+  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
+  const overallStatus =
+    resolvedResults.overallStatus ||
+    resolvedResults.status ||
+    (totalDiscrepancies > 0 ? "warning" : "success");
+  const packGenerated = resolvedResults.packGenerated ?? false;
+  const processingTime =
+    resolvedResults.processingTime ||
+    resolvedResults.processing_time ||
+    resolvedResults.processingTimeMinutes ||
+    "—";
+  const processedAt =
+    resolvedResults.processedAt ||
+    resolvedResults.completedAt ||
+    resolvedResults.processingCompletedAt ||
+    resolvedResults.processedAt ||
+    resolvedResults.processed_at ||
+    mockExporterResults.processedAt;
+  const lcNumber = lcNumberSource || resolvedResults.lcNumber || mockExporterResults.lcNumber;
   
   // Mock banks list (in production, fetch from API)
   const banks = [
@@ -452,19 +571,19 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
             <div className="grid md:grid-cols-4 gap-6">
               <div className="text-center">
                 <div className={`w-16 h-16 mx-auto mb-3 rounded-full flex items-center justify-center ${
-                  mockExporterResults.overallStatus === "success" ? "bg-success/10" :
-                  mockExporterResults.overallStatus === "error" ? "bg-destructive/10" : "bg-warning/10"
+                  overallStatus === "success" ? "bg-success/10" :
+                  overallStatus === "error" ? "bg-destructive/10" : "bg-warning/10"
                 }`}>
-                  {mockExporterResults.overallStatus === "success" ? (
+                  {overallStatus === "success" ? (
                     <CheckCircle className="w-8 h-8 text-success" />
-                  ) : mockExporterResults.overallStatus === "error" ? (
+                  ) : overallStatus === "error" ? (
                     <XCircle className="w-8 h-8 text-destructive" />
                   ) : (
                     <AlertTriangle className="w-8 h-8 text-warning" />
                   )}
                 </div>
-                <StatusBadge status={mockExporterResults.overallStatus} className="text-sm font-medium">
-                  {mockExporterResults.packGenerated ? "Customs Pack Ready" : "Processing Required"}
+                <StatusBadge status={overallStatus} className="text-sm font-medium">
+                  {packGenerated ? "Customs Pack Ready" : "Processing Required"}
                 </StatusBadge>
                 {/* Ready to Submit Badge */}
                 {isReadyToSubmit && (
@@ -480,15 +599,17 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Documents:</span>
-                    <span className="font-medium">{mockExporterResults.totalDocuments}</span>
+                    <span className="font-medium">{totalDocuments}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Compliance Rate:</span>
-                    <span className="font-medium text-success">{Math.round(((mockExporterResults.totalDocuments - mockExporterResults.totalDiscrepancies) / mockExporterResults.totalDocuments) * 100)}%</span>
+                    <span className="font-medium text-success">
+                      {totalDocuments ? Math.round(((totalDocuments - totalDiscrepancies) / totalDocuments) * 100) : 0}%
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Processing Time:</span>
-                    <span className="font-medium">{mockExporterResults.processingTime}</span>
+                    <span className="font-medium">{processingTime}</span>
                   </div>
                 </div>
               </div>
@@ -519,7 +640,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
               <div className="space-y-2">
                 <h3 className="font-semibold text-foreground">Next Steps</h3>
                 <div className="space-y-2">
-                  {mockExporterResults.totalDiscrepancies > 0 ? (
+                  {totalDiscrepancies > 0 ? (
                     <>
                       <Link to="/lcopilot/exporter-dashboard?section=upload">
                         <Button variant="outline" size="sm" className="w-full">
@@ -592,10 +713,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="documents">Documents ({mockExporterResults.totalDocuments})</TabsTrigger>
+            <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
             <TabsTrigger value="discrepancies" className="relative">
-              Issues ({mockExporterResults.totalDiscrepancies})
-              {mockExporterResults.totalDiscrepancies > 0 && (
+              Issues ({totalDiscrepancies})
+              {totalDiscrepancies > 0 && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
               )}
             </TabsTrigger>
@@ -657,7 +778,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       <div className="text-sm text-muted-foreground">Verified</div>
                     </div>
                     <div className="text-center p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                      <div className="text-2xl font-bold text-warning">{mockExporterResults.totalDiscrepancies}</div>
+                      <div className="text-2xl font-bold text-warning">{totalDiscrepancies}</div>
                       <div className="text-sm text-muted-foreground">Warnings</div>
                     </div>
                   </div>
@@ -675,7 +796,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       <span className="font-medium text-warning">Review needed</span>
                     </div>
                   </div>
-                  {mockExporterResults.packGenerated && (
+                  {packGenerated && (
                     <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
                       <p className="text-sm font-medium text-primary">✓ Customs-Ready Pack Generated</p>
                       <p className="text-xs text-muted-foreground mt-1">All documents bundled for smooth customs clearance</p>
@@ -687,7 +808,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
-            {mockExporterResults.documents.map((document) => (
+            {documents.map((document) => (
               <Card key={document.id} className="shadow-soft border-0">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -735,7 +856,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            {mockExporterResults.discrepancies.length === 0 ? (
+            {discrepanciesList.length === 0 ? (
               <Card className="shadow-soft border-0">
                 <CardContent className="p-8 text-center">
                   <div className="bg-success/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -746,7 +867,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 </CardContent>
               </Card>
             ) : (
-              mockExporterResults.discrepancies.map((discrepancy) => (
+              discrepanciesList.map((discrepancy) => (
                 <DiscrepancyGuidance
                   key={discrepancy.id}
                   discrepancy={{
@@ -866,7 +987,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         <div className="w-3 h-3 bg-success rounded-full"></div>
                         <span className="text-sm">Verified Documents</span>
                       </div>
-                      <span className="text-sm font-medium">{successCount} ({Math.round((successCount/mockExporterResults.totalDocuments)*100)}%)</span>
+                      <span className="text-sm font-medium">{successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)</span>
                     </div>
                     
                     <div className="flex items-center justify-between">
@@ -874,7 +995,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
                         <span className="text-sm">Minor Issues</span>
                       </div>
-                      <span className="text-sm font-medium">{warningCount} ({Math.round((warningCount/mockExporterResults.totalDocuments)*100)}%)</span>
+                      <span className="text-sm font-medium">{warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)</span>
                     </div>
                     
                     <div className="flex items-center justify-between">
@@ -919,7 +1040,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       </tr>
                     </thead>
                     <tbody className="space-y-2">
-                      {mockExporterResults.documents.map((doc, index) => (
+                      {documents.map((doc, index) => (
                         <tr key={doc.id} className="border-b border-gray-200/50">
                           <td className="py-3 font-medium">{doc.type}</td>
                           <td className="py-3 text-muted-foreground">{(0.2 + index * 0.1).toFixed(1)}s</td>
