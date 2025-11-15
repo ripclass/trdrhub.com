@@ -285,6 +285,104 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     return `${validationSessionId}-${Date.now()}`;
   };
 
+  // Generate customs pack mutation (Phase 2)
+  const generateCustomsPackMutation = useMutation({
+    mutationFn: () => exporterApi.generateCustomsPack({
+      validation_session_id: validationSessionId,
+      lc_number: lcNumber,
+    }),
+    onSuccess: (data) => {
+      setManifestData(data.manifest);
+      toast({
+        title: "Customs Pack Generated",
+        description: "Your customs pack has been prepared successfully.",
+      });
+      // Track telemetry (Phase 6)
+      console.log("Telemetry: customs_pack_generated", {
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        sha256: data.sha256,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Generation Failed",
+        description: error?.response?.data?.detail || "Failed to generate customs pack. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Download customs pack (Phase 2)
+  const downloadCustomsPackMutation = useMutation({
+    mutationFn: () => exporterApi.downloadCustomsPack(validationSessionId),
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Customs_Pack_${lcNumber}_${format(new Date(), 'yyyyMMdd_HHmmss')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({
+        title: "Download Started",
+        description: "Your customs pack is downloading.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Download Failed",
+        description: error?.response?.data?.detail || "Failed to download customs pack. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Create bank submission mutation (Phase 2, 7)
+  const createSubmissionMutation = useMutation({
+    mutationFn: (data: { bank_id?: string; bank_name?: string; note?: string }) => {
+      return exporterApi.createBankSubmission({
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        bank_id: data.bank_id,
+        bank_name: data.bank_name,
+        note: data.note,
+        idempotency_key: generateIdempotencyKey(), // Phase 7: Idempotency
+      });
+    },
+    onSuccess: (submission) => {
+      toast({
+        title: "Submitted to Bank",
+        description: `LC ${lcNumber} has been successfully submitted to ${submission.bank_name || 'the bank'} for review.`,
+      });
+      setShowBankSelector(false);
+      setShowManifestPreview(false);
+      setSelectedBankId("");
+      setSelectedBankName("");
+      setSubmissionNote("");
+      setManifestConfirmed(false);
+      
+      // Invalidate and refetch submissions
+      queryClient.invalidateQueries({ queryKey: ['exporter-submissions'] });
+      
+      // Track telemetry (Phase 6)
+      console.log("Telemetry: bank_submit_requested", {
+        validation_session_id: validationSessionId,
+        lc_number: lcNumber,
+        submission_id: submission.id,
+        bank_name: submission.bank_name,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Submission Failed",
+        description: error?.response?.data?.detail || "Failed to submit to bank. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   if (!resultData && !isDemoMode) {
     if (!validationSessionId) {
       return (
@@ -386,103 +484,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     { id: "bank-4", name: "Deutsche Bank" },
   ];
 
-  // Generate customs pack mutation (Phase 2)
-  const generateCustomsPackMutation = useMutation({
-    mutationFn: () => exporterApi.generateCustomsPack({
-      validation_session_id: validationSessionId,
-      lc_number: lcNumber,
-    }),
-    onSuccess: (data) => {
-      setManifestData(data.manifest);
-      toast({
-        title: "Customs Pack Generated",
-        description: "Your customs pack has been prepared successfully.",
-      });
-      // Track telemetry (Phase 6)
-      console.log("Telemetry: customs_pack_generated", {
-        validation_session_id: validationSessionId,
-        lc_number: lcNumber,
-        sha256: data.sha256,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Generation Failed",
-        description: error?.response?.data?.detail || "Failed to generate customs pack. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-  
-  // Download customs pack (Phase 2)
-  const downloadCustomsPackMutation = useMutation({
-    mutationFn: () => exporterApi.downloadCustomsPack(validationSessionId),
-    onSuccess: (blob) => {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Customs_Pack_${lcNumber}_${format(new Date(), 'yyyyMMdd_HHmmss')}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      toast({
-        title: "Download Started",
-        description: "Your customs pack is downloading.",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Download Failed",
-        description: error?.response?.data?.detail || "Failed to download customs pack. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-  
-  // Create bank submission mutation (Phase 2, 7)
-  const createSubmissionMutation = useMutation({
-    mutationFn: (data: { bank_id?: string; bank_name?: string; note?: string }) => {
-      return exporterApi.createBankSubmission({
-        validation_session_id: validationSessionId,
-        lc_number: lcNumber,
-        bank_id: data.bank_id,
-        bank_name: data.bank_name,
-        note: data.note,
-        idempotency_key: generateIdempotencyKey(), // Phase 7: Idempotency
-      });
-    },
-    onSuccess: (submission) => {
-      toast({
-        title: "Submitted to Bank",
-        description: `LC ${lcNumber} has been successfully submitted to ${submission.bank_name || 'the bank'} for review.`,
-      });
-      setShowBankSelector(false);
-      setShowManifestPreview(false);
-      setSelectedBankId("");
-      setSelectedBankName("");
-      setSubmissionNote("");
-      setManifestConfirmed(false);
-      
-      // Invalidate and refetch submissions
-      queryClient.invalidateQueries({ queryKey: ['exporter-submissions'] });
-      
-      // Track telemetry (Phase 6)
-      console.log("Telemetry: bank_submit_requested", {
-        validation_session_id: validationSessionId,
-        lc_number: lcNumber,
-        submission_id: submission.id,
-        bank_name: submission.bank_name,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Submission Failed",
-        description: error?.response?.data?.detail || "Failed to submit to bank. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
   
   const handleDownloadCustomsPack = async () => {
     try {
