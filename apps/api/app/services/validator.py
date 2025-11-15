@@ -633,10 +633,12 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             extra_supplements = document_data.get("supplement_domains", []) or []
 
             if requested_domain and requested_domain != "icc":
+                # Caller explicitly requested a non-ICC domain (e.g. customs, sanctions)
                 domain_sequence = _unique_preserve(
                     [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
                 )
             else:
+                # ICC flow: detect UCP/ISP/URDG/URC base + supplements (eUCP, URR, etc.)
                 base_domain, detected_supplements = _detect_icc_ruleset_domains(document_data)
                 domain_sequence = _unique_preserve(
                     [base_domain, *detected_supplements, *[d for d in extra_supplements if isinstance(d, str)]]
@@ -645,6 +647,14 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             domain_sequence = [d for d in domain_sequence if isinstance(d, str) and d.strip()]
             if not domain_sequence:
                 domain_sequence = ["icc.ucp600"]
+
+            # Always try to load LCOPILOT cross-document rules alongside UCP600-based flows.
+            # These are our proprietary LC cross-checks (LC vs invoice/B/L) and live in a
+            # separate ruleset: domain='icc.lcopilot.crossdoc', jurisdiction='global'.
+            if any(d.startswith("icc.") for d in domain_sequence):
+                crossdoc_domain = "icc.lcopilot.crossdoc"
+                if crossdoc_domain not in domain_sequence:
+                    domain_sequence.append(crossdoc_domain)
 
             aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
             base_metadata: Optional[Dict[str, Any]] = None
