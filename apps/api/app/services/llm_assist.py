@@ -274,8 +274,18 @@ class LLMAssistService:
                 processing_time_ms=processing_time
             )
 
-            self.db.add(event)
-            self.db.commit()
+            try:
+                self.db.add(event)
+                self.db.commit()
+            except Exception as db_error:
+                self.db.rollback()
+                logger.error(
+                    "Failed to persist AI assist event (session_id=%s user_id=%s): %s",
+                    session.id,
+                    user.id,
+                    db_error,
+                    exc_info=True,
+                )
 
             return AIResponse(
                 output=ai_output,
