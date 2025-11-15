@@ -327,9 +327,22 @@ class AIUsageTracker:
             session_id = str(session.id)
             self._per_lc_counters[session_id][feature.value] += 1
         
+        # Resolve tenant/company for usage record
+        tenant_id = getattr(user, "company_id", None)
+        if not tenant_id and session and getattr(session, "company_id", None):
+            tenant_id = session.company_id
+        if not tenant_id:
+            logger.warning(
+                "AI usage logging skipped: tenant_id missing (user_id=%s session_id=%s feature=%s)",
+                getattr(user, "id", None),
+                getattr(session, "id", None) if session else None,
+                feature.value,
+            )
+            return
+        
         # Create usage record
         record = AIUsageRecord(
-            tenant_id=user.company_id,
+            tenant_id=tenant_id,
             user_id=user.id,
             validation_session_id=session.id if session else None,
             feature=feature.value,
@@ -338,8 +351,19 @@ class AIUsageTracker:
             estimated_cost_usd=str(estimated_cost) if estimated_cost else None
         )
         
-        self.db.add(record)
-        self.db.commit()
+        try:
+            self.db.add(record)
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            logger.error(
+                "Failed to record AI usage (tenant_id=%s user_id=%s session_id=%s feature=%s): %s",
+                tenant_id,
+                getattr(user, "id", None),
+                getattr(session, "id", None) if session else None,
+                feature.value,
+                e,
+            )
     
     def get_usage_stats(
         self,
