@@ -5,10 +5,12 @@ Public validation job status and results endpoints for exporter/importer flows.
 from __future__ import annotations
 
 from uuid import UUID, uuid4
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import desc
 
 from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
@@ -211,5 +213,53 @@ def get_job_results(
         "summary": summary,
         "documents": documents,
         "aiEnrichment": results_payload.get("ai_enrichment"),
+    }
+
+
+@router.get("/api/jobs")
+def list_user_jobs(
+    limit: int = Query(default=10, ge=1, le=100, description="Maximum number of jobs to return"),
+    status_filter: Optional[str] = Query(default=None, description="Filter by status (completed, processing, failed)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List recent validation sessions for the current user.
+    
+    Returns a paginated list of validation jobs with basic metadata.
+    """
+    query = (
+        db.query(ValidationSession)
+        .filter(
+            ValidationSession.user_id == current_user.id,
+            ValidationSession.deleted_at.is_(None)
+        )
+    )
+    
+    # Filter by status if provided
+    if status_filter:
+        query = query.filter(ValidationSession.status == status_filter)
+    
+    # Order by most recent first
+    query = query.order_by(desc(ValidationSession.created_at))
+    
+    # Limit results
+    sessions = query.limit(limit).all()
+    
+    return {
+        "jobs": [
+            {
+                "jobId": str(session.id),
+                "status": session.status,
+                "progress": _status_to_progress(session.status),
+                "lcNumber": _extract_lc_number(session),
+                "createdAt": session.created_at.isoformat() if session.created_at else None,
+                "completedAt": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
+                "documentCount": len(session.documents) if session.documents else len((session.validation_results or {}).get("documents") or []),
+                "discrepancyCount": len(session.discrepancies) if session.discrepancies else len((session.validation_results or {}).get("discrepancies") or []),
+            }
+            for session in sessions
+        ],
+        "total": len(sessions),
     }
 

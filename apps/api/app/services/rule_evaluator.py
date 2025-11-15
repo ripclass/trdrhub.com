@@ -98,7 +98,8 @@ class RuleEvaluator:
         condition_value: Any,
         value_ref: Optional[str],
         context: Dict[str, Any],
-        day_type: Optional[str] = None
+        day_type: Optional[str] = None,
+        field_path: Optional[str] = None
     ) -> bool:
         """
         Evaluate a single operator condition.
@@ -110,6 +111,7 @@ class RuleEvaluator:
             value_ref: Reference to another field path (if not literal)
             context: Full document context for resolving references
             day_type: "banking" or "calendar" for time operators
+            field_path: Field path being evaluated (for error messages)
         """
         # Resolve value_ref if present
         if value_ref:
@@ -121,7 +123,11 @@ class RuleEvaluator:
             # Field doesn't exist for this rule
             if operator in ["exists", "not_exists", "is_empty"]:
                 return operator == "not_exists" or operator == "is_empty"
-            raise MissingFieldError(field_path, operator)
+            # Only raise MissingFieldError if field_path is provided and operator requires the field
+            if field_path:
+                raise MissingFieldError(field_path, operator)
+            # Otherwise, return False (field doesn't exist, so condition fails)
+            return False
         
         # Type coercion for comparisons
         try:
@@ -411,7 +417,8 @@ class RuleEvaluator:
             condition_value=value,
             value_ref=value_ref,
             context=context,
-            day_type=day_type
+            day_type=day_type,
+            field_path=field_path
         )
     
     def _normalize_condition(self, condition: Dict[str, Any]) -> Optional[Dict[str, Any]]:

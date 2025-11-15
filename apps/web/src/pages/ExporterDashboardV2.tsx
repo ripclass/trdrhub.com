@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import { useValidationHistory } from "@/hooks/use-lcopilot";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import ExportLCUpload from "./ExportLCUpload";
@@ -107,7 +108,15 @@ export default function ExporterDashboardV2() {
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const [searchParams, setSearchParams] = useSearchParams();
   const dashboardStats: DashboardStats | null = null;
-  const recentHistory = EMPTY_HISTORY;
+  const { history: validationHistory, isLoading: isLoadingHistory } = useValidationHistory(10, 'completed');
+  const recentHistory: ValidationHistoryItem[] = validationHistory.map((job) => ({
+    id: job.jobId,
+    lcNumber: job.lcNumber || 'N/A',
+    date: job.completedAt || job.createdAt || new Date().toISOString(),
+    supplier: 'N/A', // Not available in current API response
+    status: job.discrepancyCount && job.discrepancyCount > 0 ? 'flagged' as const : 'approved' as const,
+    risks: job.discrepancyCount || 0,
+  }));
   const dashboardNotifications = EMPTY_NOTIFICATIONS;
 
   // Redirect to login if not authenticated (unless in demo mode)

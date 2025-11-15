@@ -210,12 +210,22 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
+        # Extract structured data from uploaded files
         extracted_context = await _build_document_context(files_list)
         if extracted_context:
+            logger.info(f"Extracted context from {len(files_list)} files: {list(extracted_context.keys())}")
             payload.update(extracted_context)
+        else:
+            logger.warning(f"No structured data extracted from {len(files_list)} uploaded files")
+        
         context_contains_structured_data = any(
             key in payload for key in ("lc", "invoice", "bill_of_lading", "documents")
         )
+        
+        if context_contains_structured_data:
+            logger.info(f"Payload contains structured data: {list(payload.keys())}")
+        else:
+            logger.warning("Payload does not contain structured data - JSON rules will be skipped")
 
         # Ensure user has a company (demo user will have one)
         if not current_user.company:
@@ -522,82 +532,120 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     Returns a dictionary that can be merged into the validation payload (e.g. {"lc": {...}}).
     """
     if not files_list:
+        logger.debug("No files provided for extraction")
         return {}
 
     try:
         from app.rules.extractors import DocumentFieldExtractor
         from app.rules.models import DocumentType
-    except ImportError:
-        logger.debug("DocumentFieldExtractor not available; skipping text extraction.")
+    except ImportError as e:
+        logger.warning(f"DocumentFieldExtractor not available; skipping text extraction: {e}")
         return {}
 
     extractor = DocumentFieldExtractor()
     context: Dict[str, Any] = {}
 
     for idx, upload_file in enumerate(files_list):
-        document_type = _infer_document_type(upload_file.filename, idx)
+        filename = getattr(upload_file, "filename", f"document_{idx+1}")
+        content_type = getattr(upload_file, "content_type", "unknown")
+        document_type = _infer_document_type(filename, idx)
+        
+        logger.info(f"Processing file {idx+1}/{len(files_list)}: {filename} (type: {document_type}, content-type: {content_type})")
+        
         extracted_text = await _extract_text_from_upload(upload_file)
         if not extracted_text:
+            logger.warning(f"No text extracted from {filename} - skipping field extraction")
+            continue
+        
+        logger.debug(f"Extracted {len(extracted_text)} characters from {filename}")
+
+        try:
+            if document_type == "letter_of_credit":
+                lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
+                logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
+                lc_context = _fields_to_lc_context(lc_fields)
+                if lc_context:
+                    context["lc"] = lc_context
+                    logger.info(f"LC context keys: {list(lc_context.keys())}")
+                    if not context.get("lc_number") and lc_context.get("number"):
+                        context["lc_number"] = lc_context["number"]
+                else:
+                    logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
+            elif document_type == "commercial_invoice":
+                invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
+                logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
+                invoice_context = _fields_to_flat_context(invoice_fields)
+                if invoice_context:
+                    context.setdefault("invoice", {}).update(invoice_context)
+                    logger.info(f"Invoice context keys: {list(invoice_context.keys())}")
+            elif document_type == "bill_of_lading":
+                bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
+                logger.info(f"Extracted {len(bl_fields)} fields from B/L {filename}")
+                bl_context = _fields_to_flat_context(bl_fields)
+                if bl_context:
+                    context.setdefault("bill_of_lading", {}).update(bl_context)
+                    logger.info(f"B/L context keys: {list(bl_context.keys())}")
+        except Exception as e:
+            logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
             continue
 
-        if document_type == "letter_of_credit":
-            lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
-            lc_context = _fields_to_lc_context(lc_fields)
-            if lc_context:
-                context["lc"] = lc_context
-                if not context.get("lc_number") and lc_context.get("number"):
-                    context["lc_number"] = lc_context["number"]
-        elif document_type == "commercial_invoice":
-            invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
-            invoice_context = _fields_to_flat_context(invoice_fields)
-            if invoice_context:
-                context.setdefault("invoice", {}).update(invoice_context)
-        elif document_type == "bill_of_lading":
-            bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
-            bl_context = _fields_to_flat_context(bl_fields)
-            if bl_context:
-                context.setdefault("bill_of_lading", {}).update(bl_context)
-
+    if context:
+        logger.info(f"Final extracted context structure: {list(context.keys())}")
+    else:
+        logger.warning("No context extracted from any files")
+    
     return context
 
 
 async def _extract_text_from_upload(upload_file: Any) -> str:
     """Extract textual content from an uploaded PDF/image using pdfminer/ PyPDF2."""
+    filename = getattr(upload_file, "filename", "unknown")
+    content_type = getattr(upload_file, "content_type", "unknown")
+    
     try:
         file_bytes = await upload_file.read()
         await upload_file.seek(0)
-    except Exception:
+        logger.debug(f"Read {len(file_bytes)} bytes from {filename}")
+    except Exception as e:
+        logger.error(f"Failed to read file {filename}: {e}")
         return ""
 
     if not file_bytes:
+        logger.warning(f"Empty file content for {filename}")
         return ""
 
     text_output = ""
 
+    # Try pdfminer first (better for complex layouts)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
-
         text_output = extract_text(BytesIO(file_bytes))
+        if text_output.strip():
+            logger.debug(f"pdfminer extracted {len(text_output)} characters from {filename}")
+            return text_output
     except Exception as pdfminer_error:
-        logger.debug(f"pdfminer extraction failed: {pdfminer_error}")
+        logger.debug(f"pdfminer extraction failed for {filename}: {pdfminer_error}")
 
-    if text_output.strip():
-        return text_output
-
+    # Fallback to PyPDF2
     try:
         from PyPDF2 import PdfReader  # type: ignore
-
         reader = PdfReader(BytesIO(file_bytes))
         pieces = []
-        for page in reader.pages:
+        for page_num, page in enumerate(reader.pages):
             try:
-                pieces.append(page.extract_text() or "")
-            except Exception:
+                page_text = page.extract_text() or ""
+                pieces.append(page_text)
+            except Exception as e:
+                logger.debug(f"Failed to extract text from page {page_num+1} of {filename}: {e}")
                 continue
         text_output = "\n".join(pieces)
+        if text_output.strip():
+            logger.debug(f"PyPDF2 extracted {len(text_output)} characters from {filename} ({len(reader.pages)} pages)")
+            return text_output
     except Exception as pypdf_error:
-        logger.debug(f"PyPDF2 extraction failed: {pypdf_error}")
+        logger.warning(f"PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
+    logger.warning(f"No text extracted from {filename} (content-type: {content_type}, size: {len(file_bytes)} bytes)")
     return text_output
 
 

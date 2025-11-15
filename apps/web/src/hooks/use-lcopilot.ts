@@ -387,3 +387,80 @@ export const usePackage = () => {
     clearError: () => setError(null),
   };
 };
+
+export interface ValidationHistoryItem {
+  jobId: string;
+  status: string;
+  progress?: number;
+  lcNumber?: string;
+  createdAt?: string;
+  completedAt?: string;
+  documentCount?: number;
+  discrepancyCount?: number;
+}
+
+export interface ValidationHistoryResponse {
+  jobs: ValidationHistoryItem[];
+  total: number;
+}
+
+// Hook for fetching validation history
+export const useValidationHistory = (limit: number = 10, statusFilter?: string) => {
+  const [history, setHistory] = useState<ValidationHistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<ValidationError | null>(null);
+
+  const fetchHistory = useCallback(async (): Promise<ValidationHistoryItem[]> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', limit.toString());
+      if (statusFilter) {
+        params.append('status_filter', statusFilter);
+      }
+
+      const response = await api.get<ValidationHistoryResponse>(`/api/jobs?${params.toString()}`);
+      const historyItems = response.data.jobs || [];
+
+      setHistory(historyItems);
+      return historyItems;
+    } catch (err: any) {
+      let validationError: ValidationError;
+
+      if (err.response) {
+        const { status, data } = err.response;
+        validationError = {
+          type: 'server',
+          message: data.message || 'Failed to fetch validation history.',
+          statusCode: status,
+        };
+      } else {
+        validationError = {
+          type: 'network',
+          message: 'Network error while fetching validation history.',
+        };
+      }
+
+      setError(validationError);
+      throw validationError;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [limit, statusFilter]);
+
+  useEffect(() => {
+    fetchHistory().catch(() => {
+      // Error already handled in fetchHistory
+    });
+  }, [fetchHistory]);
+
+  return {
+    history,
+    isLoading,
+    error,
+    refetch: fetchHistory,
+    clearError: () => setError(null),
+  };
+};
