@@ -166,6 +166,81 @@ class RuleEvaluator:
                 return field_value not in compare_value
             return True
         
+        elif operator == "greater_than_or_equal":
+            try:
+                return float(field_value) >= float(compare_value)
+            except (ValueError, TypeError):
+                return False
+        
+        elif operator == "less_than_or_equal":
+            try:
+                return float(field_value) <= float(compare_value)
+            except (ValueError, TypeError):
+                return False
+        
+        elif operator == "between":
+            if not isinstance(condition_value, dict):
+                return False
+            try:
+                field_numeric = float(field_value)
+            except (ValueError, TypeError):
+                return False
+            
+            minimum = condition_value.get("min")
+            maximum = condition_value.get("max")
+            tolerance = condition_value.get("tolerance", 0)
+            allow_exceed = condition_value.get("allow_exceed_credit")
+            allow_under = condition_value.get("allow_under_credit")
+            min_percent = condition_value.get("min_percent")
+            max_percent = condition_value.get("max_percent")
+            
+            if minimum is not None:
+                try:
+                    min_value = float(minimum)
+                    if not allow_under:
+                        min_value -= float(tolerance or 0)
+                    if field_numeric < min_value:
+                        return False
+                except (ValueError, TypeError):
+                    return False
+            
+            if maximum is not None:
+                try:
+                    max_value = float(maximum)
+                    if not allow_exceed:
+                        max_value += float(tolerance or 0)
+                    if field_numeric > max_value:
+                        return False
+                except (ValueError, TypeError):
+                    return False
+            
+            if min_percent is not None:
+                try:
+                    if field_numeric < float(min_percent):
+                        return False
+                except (ValueError, TypeError):
+                    return False
+            
+            if max_percent is not None:
+                try:
+                    if field_numeric > float(max_percent):
+                        return False
+                except (ValueError, TypeError):
+                    return False
+            
+            return True
+        
+        elif operator == "not_contains_any":
+            if not compare_value:
+                return True
+            terms = compare_value if isinstance(compare_value, list) else [compare_value]
+            if isinstance(field_value, str):
+                lower_value = field_value.lower()
+                return all(term.lower() not in lower_value for term in terms if isinstance(term, str))
+            if isinstance(field_value, list):
+                return not any(term in field_value for term in terms)
+            return True
+        
         elif operator == "greater_than":
             try:
                 return float(field_value) > float(compare_value)
@@ -299,13 +374,8 @@ class RuleEvaluator:
             condition: Condition dict with field, operator, value/value_ref, etc.
             context: Document context for field resolution
         """
-        field_path = condition.get("field")
-        operator = condition.get("operator")
-        value = condition.get("value")
-        value_ref = condition.get("value_ref")
-        day_type = condition.get("day_type")
-        
-        if not field_path or not operator:
+        normalized = self._normalize_condition(condition)
+        if not normalized:
             logger.warning(
                 "Invalid condition (rule=%s, idx=%s, type=%s, payload=%s): missing field or operator",
                 rule_id or "unknown",
@@ -314,6 +384,12 @@ class RuleEvaluator:
                 condition,
             )
             return False
+        
+        field_path = normalized["field"]
+        operator = normalized["operator"]
+        value = normalized.get("value")
+        value_ref = normalized.get("value_ref")
+        day_type = normalized.get("day_type")
         
         # Resolve field value
         field_value = self.resolve_field_path(context, field_path)
@@ -327,6 +403,110 @@ class RuleEvaluator:
             context=context,
             day_type=day_type
         )
+    
+    def _normalize_condition(self, condition: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Normalize various condition schemas into the core evaluator schema.
+        """
+        cond = dict(condition)
+        field_path = cond.get("field") or cond.get("path") or cond.get("left_path")
+        operator = cond.get("operator")
+        value = cond.get("value")
+        value_ref = cond.get("value_ref")
+        cond_type = cond.get("type")
+        day_type = cond.get("day_type")
+        
+        def is_field_path(candidate: Any) -> bool:
+            return isinstance(candidate, str) and "." in candidate and " " not in candidate
+        
+        if cond_type == "enum_value":
+            field_path = field_path or cond.get("path")
+            operator = operator or ("not_in" if cond.get("disallowed_values") else "in")
+            if operator == "in":
+                value = cond.get("allowed_values") or []
+            else:
+                value = cond.get("disallowed_values") or []
+        
+        elif cond_type == "field_presence":
+            field_path = field_path or cond.get("path")
+            operator = operator or ("not_exists" if cond.get("required") is False else "exists")
+        
+        elif cond_type == "doc_required":
+            field_path = field_path or cond.get("path")
+            disallowed_terms = cond.get("disallowed_terms")
+            if disallowed_terms:
+                operator = "not_contains_any"
+                value = disallowed_terms
+            else:
+                operator = operator or "exists"
+        
+        elif cond_type == "equality_match":
+            field_path = field_path or cond.get("left_path")
+            operator = operator or "equals"
+            right_path = cond.get("right_path")
+            if value is None:
+                if is_field_path(right_path):
+                    value_ref = right_path
+                else:
+                    value = right_path
+        
+        elif cond_type == "consistency_check":
+            field_path = field_path or cond.get("left_path")
+            operator = operator or "equals"
+            right_path = cond.get("right_path")
+            if value is None:
+                if is_field_path(right_path):
+                    value_ref = right_path
+                else:
+                    value = right_path
+        
+        elif cond_type == "date_order":
+            field_path = field_path or cond.get("left_path")
+            right_path = cond.get("right_path")
+            if operator is None:
+                operator = "before"
+            if value is None and right_path is not None:
+                if is_field_path(right_path):
+                    value_ref = right_path
+                else:
+                    value = right_path
+        
+        elif cond_type == "numeric_range":
+            field_path = field_path or cond.get("path")
+            operator = "between"
+            value = {
+                "min": cond.get("min"),
+                "max": cond.get("max"),
+                "tolerance": cond.get("tolerance"),
+                "allow_exceed_credit": cond.get("allow_exceed_credit"),
+                "allow_under_credit": cond.get("allow_under_credit"),
+                "min_percent": cond.get("min_percent"),
+                "max_percent": cond.get("max_percent"),
+            }
+        
+        elif cond_type == "time_constraint":
+            field_path = field_path or cond.get("path")
+            raw_operator = operator or cond.get("operator")
+            if raw_operator in {"within", "within_days", "max_days_after"}:
+                operator = "within_days"
+            elif raw_operator == "max_days":
+                operator = "less_than_or_equal"
+            else:
+                operator = raw_operator or "less_than_or_equal"
+            if value is None:
+                value = cond.get("value")
+            if value is None and cond.get("days") is not None:
+                value = cond.get("days")
+        
+        if field_path and operator:
+            return {
+                "field": field_path,
+                "operator": operator,
+                "value": value,
+                "value_ref": value_ref,
+                "day_type": day_type,
+            }
+        return None
     
     def evaluate_rule(
         self,
