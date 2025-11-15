@@ -1170,14 +1170,28 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                         <div className="bg-muted p-3 rounded">
                           <h5 className="font-medium mb-2">Extracted Data:</h5>
                           <div className="grid md:grid-cols-2 gap-2 text-sm">
-                            {Object.entries(doc.extractedFields).map(([key, value]) => (
-                              <div key={key} className="flex justify-between">
-                                <span className="text-muted-foreground capitalize">
-                                  {key.replace(/([A-Z])/g, ' $1').trim()}:
-                                </span>
-                                <span>{value}</span>
-                              </div>
-                            ))}
+                            {Object.entries(doc.extractedFields || {}).map(([key, value]) => {
+                              // Handle objects, arrays, and null/undefined values
+                              let displayValue: string;
+                              if (value === null || value === undefined) {
+                                displayValue = "N/A";
+                              } else if (typeof value === "object" && !Array.isArray(value)) {
+                                displayValue = JSON.stringify(value, null, 2);
+                              } else if (Array.isArray(value)) {
+                                displayValue = value.join(", ");
+                              } else {
+                                displayValue = String(value);
+                              }
+                              
+                              return (
+                                <div key={key} className="flex justify-between">
+                                  <span className="text-muted-foreground capitalize">
+                                    {key.replace(/([A-Z])/g, ' $1').trim()}:
+                                  </span>
+                                  <span>{displayValue}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>

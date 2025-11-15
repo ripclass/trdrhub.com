@@ -877,14 +877,31 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 </CardHeader>
                 <CardContent>
                   <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {Object.entries(document.extractedFields).map(([key, value]) => (
-                      <div key={key} className="space-y-1">
-                        <p className="text-xs text-muted-foreground font-medium capitalize">
-                          {key.replace(/([A-Z])/g, ' $1').trim()}
-                        </p>
-                        <p className="text-sm font-medium text-foreground">{value}</p>
-                      </div>
-                    ))}
+                    {Object.entries(document.extractedFields || {}).map(([key, value]) => {
+                      // Handle objects, arrays, and null/undefined values
+                      let displayValue: string;
+                      if (value === null || value === undefined) {
+                        displayValue = "N/A";
+                      } else if (typeof value === "object") {
+                        // If it's an object, stringify it nicely
+                        displayValue = JSON.stringify(value, null, 2);
+                      } else if (Array.isArray(value)) {
+                        // If it's an array, join it
+                        displayValue = value.join(", ");
+                      } else {
+                        // Primitive value (string, number, boolean)
+                        displayValue = String(value);
+                      }
+                      
+                      return (
+                        <div key={key} className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium capitalize">
+                            {key.replace(/([A-Z])/g, ' $1').trim()}
+                          </p>
+                          <p className="text-sm font-medium text-foreground">{displayValue}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
