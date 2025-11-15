@@ -155,6 +155,19 @@ type ExporterResultsProps = {
   embedded?: boolean;
 };
 
+const normalizeDiscrepancySeverity = (
+  severity?: string | null
+): "critical" | "major" | "minor" => {
+  const value = (severity ?? "").toLowerCase();
+  if (["critical", "fail", "error", "high"].includes(value)) {
+    return "critical";
+  }
+  if (["warning", "warn", "major", "medium"].includes(value)) {
+    return "major";
+  }
+  return "minor";
+};
+
 export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -886,24 +899,43 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 </CardContent>
               </Card>
             ) : (
-              discrepanciesList.map((discrepancy) => (
-                <DiscrepancyGuidance
-                  key={discrepancy.id}
-                  discrepancy={{
-                    ...discrepancy,
-                    documentType: discrepancy.documentName,
-                    severity: discrepancy.severity === "medium" ? "major" : discrepancy.severity as "critical" | "major" | "minor",
-                  }}
-                  onRevalidate={async (id) => {
-                    // In a real app, call API to re-validate
-                    console.log("Re-validating discrepancy:", id);
-                  }}
-                  onUploadFixed={async (id, file) => {
-                    // In a real app, upload fixed document
-                    console.log("Uploading fixed document for discrepancy:", id, file.name);
-                  }}
-                />
-              ))
+              discrepanciesList.map((discrepancy) => {
+                const normalizedSeverity = normalizeDiscrepancySeverity(
+                  (discrepancy as any)?.severity
+                );
+                const fallbackId =
+                  discrepancy.id ||
+                  `${discrepancy.rule ?? "rule"}-${discrepancy.title ?? "issue"}`;
+                const documentLabel =
+                  discrepancy.documentName ||
+                  (discrepancy as any)?.document ||
+                  "Supporting Document";
+
+                return (
+                  <DiscrepancyGuidance
+                    key={fallbackId}
+                    discrepancy={{
+                      ...discrepancy,
+                      id: fallbackId,
+                      documentName: documentLabel,
+                      documentType: documentLabel,
+                      description: discrepancy.description ?? (discrepancy as any)?.message ?? "",
+                      expected: discrepancy.expected ?? discrepancy.title ?? discrepancy.rule ?? "",
+                      actual: discrepancy.actual ?? (discrepancy as any)?.message ?? "",
+                      suggestion: discrepancy.suggestion ?? "",
+                      severity: normalizedSeverity,
+                    }}
+                    onRevalidate={async (id) => {
+                      // In a real app, call API to re-validate
+                      console.log("Re-validating discrepancy:", id);
+                    }}
+                    onUploadFixed={async (id, file) => {
+                      // In a real app, upload fixed document
+                      console.log("Uploading fixed document for discrepancy:", id, file.name);
+                    }}
+                  />
+                );
+              })
             )}
           </TabsContent>
 
