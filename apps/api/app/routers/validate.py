@@ -763,11 +763,12 @@ async def _build_document_context(
         
         extracted_text = await _extract_text_from_upload(upload_file)
         if not extracted_text:
-            logger.warning(f"No text extracted from {filename} - skipping field extraction")
+            logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
+            doc_info["extraction_status"] = "empty"
             document_details.append(doc_info)
             continue
         
-        logger.debug(f"Extracted {len(extracted_text)} characters from {filename}")
+        logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
 
         try:
             if document_type == "letter_of_credit":
@@ -1030,16 +1031,18 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
     
+    logger.info(f"🔍 Starting text extraction for: {filename} (type: {content_type})")
+    
     try:
         file_bytes = await upload_file.read()
         await upload_file.seek(0)
-        logger.debug(f"Read {len(file_bytes)} bytes from {filename}")
+        logger.info(f"✓ Read {len(file_bytes)} bytes from {filename}")
     except Exception as e:
-        logger.error(f"Failed to read file {filename}: {e}")
+        logger.error(f"✗ Failed to read file {filename}: {e}", exc_info=True)
         return ""
 
     if not file_bytes:
-        logger.warning(f"Empty file content for {filename}")
+        logger.warning(f"⚠ Empty file content for {filename}")
         return ""
     
     # Check file size limit for OCR
@@ -1052,16 +1055,20 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     text_output = ""
 
     # Try pdfminer first (better for complex layouts)
+    logger.info(f"  → Trying pdfminer extraction...")
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
         if text_output.strip():
-            logger.debug(f"pdfminer extracted {len(text_output)} characters from {filename}")
+            logger.info(f"  ✓ pdfminer extracted {len(text_output)} characters from {filename}")
             return text_output
+        else:
+            logger.info(f"  ⚠ pdfminer returned empty text for {filename}")
     except Exception as pdfminer_error:
-        logger.debug(f"pdfminer extraction failed for {filename}: {pdfminer_error}")
+        logger.info(f"  ✗ pdfminer extraction failed for {filename}: {pdfminer_error}")
 
     # Fallback to PyPDF2
+    logger.info(f"  → Trying PyPDF2 extraction...")
     try:
         from PyPDF2 import PdfReader  # type: ignore
         reader = PdfReader(BytesIO(file_bytes))
@@ -1075,26 +1082,34 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 continue
         text_output = "\n".join(pieces)
         if text_output.strip():
-            logger.debug(f"PyPDF2 extracted {len(text_output)} characters from {filename} ({len(reader.pages)} pages)")
+            logger.info(f"  ✓ PyPDF2 extracted {len(text_output)} characters from {filename} ({len(reader.pages)} pages)")
             return text_output
+        else:
+            logger.info(f"  ⚠ PyPDF2 returned empty text for {filename} ({len(reader.pages)} pages)")
     except Exception as pypdf_error:
-        logger.warning(f"PyPDF2 extraction failed for {filename}: {pypdf_error}")
+        logger.warning(f"  ✗ PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
     # If pdfminer/PyPDF2 returned empty and OCR is enabled, try OCR providers
     if not text_output.strip() and settings.OCR_ENABLED:
+        logger.info(f"  → Text extraction returned empty, attempting OCR fallback...")
+        logger.info(f"     OCR_ENABLED: {settings.OCR_ENABLED}")
+        logger.info(f"     OCR_PROVIDER_ORDER: {settings.OCR_PROVIDER_ORDER}")
+        
         # Check file size and page count before attempting OCR
         page_count = 0
         try:
             from PyPDF2 import PdfReader
             reader = PdfReader(BytesIO(file_bytes))
             page_count = len(reader.pages)
+            logger.info(f"     Page count: {page_count}")
         except:
             # If we can't count pages, assume it's a single-page image
             page_count = 1 if content_type.startswith('image/') else 0
+            logger.info(f"     Could not determine page count, assuming: {page_count}")
         
         if page_count > settings.OCR_MAX_PAGES:
             logger.warning(
-                f"File {filename} exceeds OCR page limit ({page_count} > {settings.OCR_MAX_PAGES} pages). "
+                f"  ⚠ File {filename} exceeds OCR page limit ({page_count} > {settings.OCR_MAX_PAGES} pages). "
                 f"Skipping OCR."
             )
         elif len(file_bytes) > settings.OCR_MAX_BYTES:
@@ -1104,13 +1119,22 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
             )
         else:
             # Try OCR providers in configured order
+            logger.info(f"  → Attempting OCR with providers: {settings.OCR_PROVIDER_ORDER}")
             text_output = await _try_ocr_providers(file_bytes, filename, content_type)
             if text_output.strip():
-                logger.info(f"OCR extracted {len(text_output)} characters from {filename}")
+                logger.info(f"  ✓ OCR extraction successful: {len(text_output)} characters")
                 return text_output
+            else:
+                logger.warning(f"  ✗ OCR extraction returned empty")
+    elif not settings.OCR_ENABLED:
+        logger.info(f"  ⚠ OCR is DISABLED (OCR_ENABLED={settings.OCR_ENABLED})")
 
     if not text_output.strip():
-        logger.warning(f"No text extracted from {filename} (content-type: {content_type}, size: {len(file_bytes)} bytes)")
+        logger.error(f"❌ ALL extraction methods failed for {filename}")
+        logger.error(f"   Summary: pdfminer=empty, PyPDF2=empty, OCR={'attempted' if settings.OCR_ENABLED else 'disabled'}")
+        logger.error(f"   File details: content-type={content_type}, size={len(file_bytes)} bytes")
+    else:
+        logger.info(f"✅ Extraction complete for {filename}: {len(text_output)} characters")
     
     return text_output
 
