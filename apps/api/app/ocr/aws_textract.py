@@ -11,15 +11,27 @@ import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 
 from .base import OCRAdapter, OCRResult, OCRTextElement, BoundingBox
+from ..config import settings
 
 
 class AWSTextractAdapter(OCRAdapter):
     """AWS Textract OCR adapter."""
     
     def __init__(self):
-        self.region = os.getenv("AWS_REGION", "us-east-1")
-        self.textract_client = boto3.client('textract', region_name=self.region)
-        self.s3_client = boto3.client('s3', region_name=self.region)
+        # Use settings from config, fallback to os.getenv
+        self.region = settings.AWS_REGION or os.getenv("AWS_REGION", "us-east-1")
+        
+        # Initialize clients with credentials from settings or environment
+        aws_access_key = settings.AWS_ACCESS_KEY_ID or os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_key = settings.AWS_SECRET_ACCESS_KEY or os.getenv("AWS_SECRET_ACCESS_KEY")
+        
+        client_kwargs = {"region_name": self.region}
+        if aws_access_key and aws_secret_key:
+            client_kwargs["aws_access_key_id"] = aws_access_key
+            client_kwargs["aws_secret_access_key"] = aws_secret_key
+        
+        self.textract_client = boto3.client('textract', **client_kwargs)
+        self.s3_client = boto3.client('s3', **client_kwargs)
     
     @property
     def provider_name(self) -> str:
@@ -132,6 +144,121 @@ class AWSTextractAdapter(OCRAdapter):
                 overall_confidence=0.0,
                 elements=[],
                 metadata={"error_type": type(e).__name__},
+                processing_time_ms=processing_time,
+                provider=self.provider_name,
+                error=str(e)
+            )
+    
+    async def process_file_bytes(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+        document_id: UUID
+    ) -> OCRResult:
+        """Process file bytes directly using AWS Textract."""
+        start_time = time.time()
+        
+        try:
+            # Use detect_document_text for direct bytes processing
+            # Note: Textract has a 5MB limit for synchronous operations
+            # For larger files, we'd need to use async StartDocumentTextDetection
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.textract_client.detect_document_text(
+                    Document={'Bytes': file_bytes}
+                )
+            )
+            
+            # Extract text and build elements
+            full_text = ""
+            elements = []
+            confidence_sum = 0.0
+            confidence_count = 0
+            
+            # Process blocks from Textract response
+            for block in response.get('Blocks', []):
+                if block['BlockType'] in ['LINE', 'WORD']:
+                    text = block.get('Text', '')
+                    confidence = block.get('Confidence', 0.0) / 100.0  # Convert to 0-1 scale
+                    
+                    if text and confidence > 0:
+                        confidence_sum += confidence
+                        confidence_count += 1
+                        
+                        # Extract bounding box
+                        bbox = None
+                        if 'Geometry' in block and 'BoundingBox' in block['Geometry']:
+                            bbox_data = block['Geometry']['BoundingBox']
+                            page = block.get('Page', 1)
+                            
+                            bbox = BoundingBox(
+                                x1=bbox_data['Left'],
+                                y1=bbox_data['Top'],
+                                x2=bbox_data['Left'] + bbox_data['Width'],
+                                y2=bbox_data['Top'] + bbox_data['Height'],
+                                page=page
+                            )
+                        
+                        elements.append(OCRTextElement(
+                            text=text,
+                            confidence=confidence,
+                            bounding_box=bbox,
+                            element_type=block['BlockType'].lower()
+                        ))
+                        
+                        # Add to full text (only for lines to avoid duplication)
+                        if block['BlockType'] == 'LINE':
+                            full_text += text + "\n"
+            
+            # Calculate overall confidence
+            overall_confidence = confidence_sum / confidence_count if confidence_count > 0 else 0.0
+            
+            processing_time = int((time.time() - start_time) * 1000)
+            
+            # Get document metadata
+            metadata = {
+                "block_count": len(response.get('Blocks', [])),
+                "document_metadata": response.get('DocumentMetadata', {}),
+                "job_status": "SUCCEEDED",
+                "filename": filename
+            }
+            
+            return OCRResult(
+                document_id=document_id,
+                full_text=full_text.strip(),
+                overall_confidence=overall_confidence,
+                elements=elements,
+                metadata=metadata,
+                processing_time_ms=processing_time,
+                provider=self.provider_name
+            )
+            
+        except ClientError as e:
+            processing_time = int((time.time() - start_time) * 1000)
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            
+            return OCRResult(
+                document_id=document_id,
+                full_text="",
+                overall_confidence=0.0,
+                elements=[],
+                metadata={"error_code": error_code, "filename": filename},
+                processing_time_ms=processing_time,
+                provider=self.provider_name,
+                error=f"AWS Textract error: {str(e)}"
+            )
+        except Exception as e:
+            processing_time = int((time.time() - start_time) * 1000)
+            return OCRResult(
+                document_id=document_id,
+                full_text="",
+                overall_confidence=0.0,
+                elements=[],
+                metadata={"error_type": type(e).__name__, "filename": filename},
                 processing_time_ms=processing_time,
                 provider=self.provider_name,
                 error=str(e)

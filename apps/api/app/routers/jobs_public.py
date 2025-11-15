@@ -194,14 +194,30 @@ def get_job_results(
     results_payload = session.validation_results or {}
     raw_results = results_payload.get("results") or []
     raw_discrepancies = results_payload.get("discrepancies") or []
+    
+    # Filter out not_applicable rules from discrepancies (they shouldn't appear in Issues tab)
+    filtered_discrepancies = [
+        d for d in raw_discrepancies
+        if not d.get("not_applicable", False)
+    ]
 
     summary = {
         "totalChecks": len(raw_results),
         "passed": sum(1 for item in raw_results if item.get("passed")),
-        "failed": sum(1 for item in raw_results if not item.get("passed")),
+        "failed": sum(1 for item in raw_results if not item.get("passed") and not item.get("not_applicable", False)),
     }
 
-    documents = _serialize_documents(session, raw_discrepancies)
+    documents = _serialize_documents(session, filtered_discrepancies)
+    
+    # Extract extracted_data from validation_results or session.extracted_data
+    extracted_data = {}
+    if "extracted_data" in results_payload:
+        extracted_data = results_payload["extracted_data"]
+    elif session.extracted_data:
+        # Try to reconstruct from session.extracted_data if available
+        extracted_data = session.extracted_data
+    
+    extraction_status = results_payload.get("extraction_status") or "unknown"
 
     return {
         "jobId": str(session.id),
@@ -209,9 +225,11 @@ def get_job_results(
         "status": session.status,
         "completedAt": session.processing_completed_at,
         "results": raw_results,
-        "discrepancies": raw_discrepancies,
+        "discrepancies": filtered_discrepancies,  # Only failed, non-not_applicable rules
         "summary": summary,
         "documents": documents,
+        "extracted_data": extracted_data,  # Include extracted LC fields for frontend
+        "extraction_status": extraction_status,  # success, partial, empty, error
         "aiEnrichment": results_payload.get("ai_enrichment"),
     }
 

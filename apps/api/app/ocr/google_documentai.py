@@ -4,6 +4,8 @@ Google Document AI OCR adapter implementation.
 
 import os
 import time
+import json
+import tempfile
 from typing import Dict, List, Any
 from uuid import UUID
 
@@ -17,25 +19,25 @@ except ImportError:
     documentai = None
 
 from .base import OCRAdapter, OCRResult, OCRTextElement, BoundingBox
+from ..config import settings
 
 
 class GoogleDocumentAIAdapter(OCRAdapter):
     """Google Document AI OCR adapter."""
     
     def __init__(self):
-        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.location = os.getenv("GOOGLE_DOCUMENTAI_LOCATION", "us")
-        self.processor_id = os.getenv("GOOGLE_DOCUMENTAI_PROCESSOR_ID")
+        # Use settings from config instead of os.getenv
+        self.project_id = settings.GOOGLE_CLOUD_PROJECT
+        self.location = settings.GOOGLE_DOCUMENTAI_LOCATION or "us"
+        self.processor_id = settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID
         
         if not all([self.project_id, self.processor_id]):
             raise ValueError("Google Document AI credentials not configured")
         
         # Handle credentials from environment variable (for Render)
-        # Option 1: JSON content in GOOGLE_APPLICATION_CREDENTIALS_JSON env var
-        credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        # Option 1: JSON content in GOOGLE_APPLICATION_CREDENTIALS_JSON env var or settings
+        credentials_json = settings.GOOGLE_APPLICATION_CREDENTIALS_JSON or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
         if credentials_json:
-            import json
-            import tempfile
             # Write JSON to temp file
             creds_data = json.loads(credentials_json)
             temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
@@ -45,6 +47,9 @@ class GoogleDocumentAIAdapter(OCRAdapter):
         
         # Option 2: File path in GOOGLE_APPLICATION_CREDENTIALS (default)
         # Google Cloud SDK will automatically use this
+        
+        if documentai is None:
+            raise ImportError("google-cloud-documentai package not installed")
         
         self.client = documentai.DocumentProcessorServiceClient()
         self.processor_name = self.client.processor_path(
@@ -205,6 +210,122 @@ class GoogleDocumentAIAdapter(OCRAdapter):
             y2=max(y_coords),
             page=page
         )
+    
+    async def process_file_bytes(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+        document_id: UUID
+    ) -> OCRResult:
+        """Process file bytes directly using Google Document AI."""
+        start_time = time.time()
+        
+        try:
+            # Determine MIME type
+            if content_type.startswith('image/'):
+                mime_type = content_type
+            else:
+                mime_type = 'application/pdf'
+            
+            # Create Document AI request
+            raw_document = documentai.RawDocument(
+                content=file_bytes,
+                mime_type=mime_type
+            )
+            
+            request = documentai.ProcessRequest(
+                name=self.processor_name,
+                raw_document=raw_document
+            )
+            
+            # Process the document (synchronous call wrapped in executor for async)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.client.process_document(request=request)
+            )
+            document = result.document
+            
+            # Extract text and elements
+            full_text = document.text
+            elements = []
+            overall_confidence = 0.0
+            confidence_sum = 0.0
+            confidence_count = 0
+            
+            # Process pages and extract text elements
+            for page_idx, page in enumerate(document.pages):
+                # Process paragraphs
+                for paragraph in page.paragraphs:
+                    para_text = self._extract_text(document.text, paragraph.layout.text_anchor)
+                    confidence = paragraph.layout.confidence
+                    
+                    if confidence > 0:
+                        confidence_sum += confidence
+                        confidence_count += 1
+                    
+                    # Get bounding box
+                    bbox = None
+                    if paragraph.layout.bounding_poly:
+                        bbox = self._extract_bounding_box(
+                            paragraph.layout.bounding_poly, 
+                            page_idx + 1
+                        )
+                    
+                    elements.append(OCRTextElement(
+                        text=para_text,
+                        confidence=confidence,
+                        bounding_box=bbox,
+                        element_type="paragraph"
+                    ))
+            
+            # Calculate overall confidence
+            if confidence_count > 0:
+                overall_confidence = confidence_sum / confidence_count
+            
+            processing_time = int((time.time() - start_time) * 1000)
+            
+            return OCRResult(
+                document_id=document_id,
+                full_text=full_text,
+                overall_confidence=overall_confidence,
+                elements=elements,
+                metadata={
+                    "page_count": len(document.pages),
+                    "mime_type": mime_type,
+                    "processor_version": result.processor_version,
+                    "filename": filename
+                },
+                processing_time_ms=processing_time,
+                provider=self.provider_name
+            )
+            
+        except GoogleCloudError as e:
+            processing_time = int((time.time() - start_time) * 1000)
+            return OCRResult(
+                document_id=document_id,
+                full_text="",
+                overall_confidence=0.0,
+                elements=[],
+                metadata={"error_type": "GoogleCloudError", "filename": filename},
+                processing_time_ms=processing_time,
+                provider=self.provider_name,
+                error=str(e)
+            )
+        except Exception as e:
+            processing_time = int((time.time() - start_time) * 1000)
+            return OCRResult(
+                document_id=document_id,
+                full_text="",
+                overall_confidence=0.0,
+                elements=[],
+                metadata={"error_type": type(e).__name__, "filename": filename},
+                processing_time_ms=processing_time,
+                provider=self.provider_name,
+                error=str(e)
+            )
     
     async def health_check(self) -> bool:
         """Check Google Document AI service health."""

@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     GOOGLE_CLOUD_PROJECT: Optional[str] = None
     GOOGLE_DOCUMENTAI_LOCATION: str = "us"
     GOOGLE_DOCUMENTAI_PROCESSOR_ID: Optional[str] = None
+    GOOGLE_APPLICATION_CREDENTIALS_JSON: Optional[str] = None  # JSON string for Render deployment
+    
+    # OCR Configuration
+    OCR_ENABLED: bool = True  # Enable OCR fallback when pdfminer/PyPDF2 return empty
+    OCR_PROVIDER_ORDER: List[str] = ["gdocai", "textract"]  # Order to try providers
+    OCR_MAX_PAGES: int = 50  # Maximum pages for OCR processing
+    OCR_TIMEOUT_SEC: int = 60  # Timeout for OCR operations
+    OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     
     # DeepSeek OCR Configuration
     USE_DEEPSEEK_OCR: bool = False  # Enable DeepSeek OCR as primary provider

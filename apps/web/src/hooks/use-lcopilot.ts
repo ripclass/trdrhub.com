@@ -48,6 +48,8 @@ export interface ValidationResults {
   completedAt?: string;
   status?: string;
   aiEnrichment?: Record<string, any>;
+  extracted_data?: Record<string, any>;
+  extraction_status?: 'success' | 'partial' | 'empty' | 'error' | 'unknown';
 }
 
 export interface PackageResponse {

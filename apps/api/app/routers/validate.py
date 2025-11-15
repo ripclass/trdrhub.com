@@ -332,7 +332,12 @@ async def validate_doc(
         else:
             results = validate_document(payload, doc_type)
 
-        failed_results = [r for r in results if not r.get("passed", False)]
+        # Filter out not_applicable rules from discrepancies (they shouldn't appear in Issues tab)
+        # Only include rules that actually failed (passed=False AND not_applicable != True)
+        failed_results = [
+            r for r in results 
+            if not r.get("passed", False) and not r.get("not_applicable", False)
+        ]
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
@@ -381,11 +386,22 @@ async def validate_doc(
                 logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
             
             document_summaries = _build_document_summaries(files_list, results)
+            
+            # Extract extracted_data from payload for storage
+            stored_extracted_data = {}
+            if "lc" in payload:
+                stored_extracted_data["lc"] = payload["lc"]
+            if "invoice" in payload:
+                stored_extracted_data["invoice"] = payload["invoice"]
+            if "bill_of_lading" in payload:
+                stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
 
             validation_session.validation_results = {
                 "discrepancies": failed_results,
                 "results": results,
                 "documents": document_summaries,
+                "extracted_data": stored_extracted_data,  # Store for later retrieval
+                "extraction_status": payload.get("extraction_status", "unknown"),  # Store status
                 "summary": {
                     "document_count": len(document_summaries),
                     "failed_rules": len(failed_results),
@@ -430,10 +446,23 @@ async def validate_doc(
         if not document_summaries:
             document_summaries = _build_document_summaries(files_list, results)
 
+        # Extract extracted data from payload for frontend display
+        extracted_data = {}
+        if "lc" in payload:
+            extracted_data["lc"] = payload["lc"]
+        if "invoice" in payload:
+            extracted_data["invoice"] = payload["invoice"]
+        if "bill_of_lading" in payload:
+            extracted_data["bill_of_lading"] = payload["bill_of_lading"]
+        extraction_status = payload.get("extraction_status", "unknown")
+
         return {
             "status": "ok",
             "results": results,
+            "discrepancies": failed_results,  # Only failed, non-not_applicable rules
             "documents": document_summaries,
+            "extracted_data": extracted_data,  # Include extracted LC fields for frontend
+            "extraction_status": extraction_status,  # success, partial, empty, error
             "job_id": str(job_id),
             "jobId": str(job_id),
             "quota": quota.to_dict() if quota else None,
@@ -530,20 +559,22 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     Attempt to extract basic structured fields from uploaded documents.
 
     Returns a dictionary that can be merged into the validation payload (e.g. {"lc": {...}}).
+    Also stores raw_text and sets extraction_status.
     """
     if not files_list:
         logger.debug("No files provided for extraction")
-        return {}
+        return {"extraction_status": "empty"}
 
     try:
         from app.rules.extractors import DocumentFieldExtractor
         from app.rules.models import DocumentType
     except ImportError as e:
         logger.warning(f"DocumentFieldExtractor not available; skipping text extraction: {e}")
-        return {}
+        return {"extraction_status": "error", "extraction_error": str(e)}
 
     extractor = DocumentFieldExtractor()
     context: Dict[str, Any] = {}
+    has_structured_data = False
 
     for idx, upload_file in enumerate(files_list):
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
@@ -561,12 +592,21 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
 
         try:
             if document_type == "letter_of_credit":
+                # Store raw text for LC documents
+                if "lc" not in context:
+                    context["lc"] = {}
+                context["lc"]["raw_text"] = extracted_text
+                # Also store at top level for rule auto-detection
+                context["lc_text"] = extracted_text
+                
                 lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
                 logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
                 lc_context = _fields_to_lc_context(lc_fields)
                 if lc_context:
-                    context["lc"] = lc_context
-                    logger.info(f"LC context keys: {list(lc_context.keys())}")
+                    # Merge structured fields into lc context
+                    context["lc"].update(lc_context)
+                    has_structured_data = True
+                    logger.info(f"LC context keys: {list(context['lc'].keys())}")
                     if not context.get("lc_number") and lc_context.get("number"):
                         context["lc_number"] = lc_context["number"]
                 else:
@@ -576,29 +616,49 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                 logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
                 invoice_context = _fields_to_flat_context(invoice_fields)
                 if invoice_context:
-                    context.setdefault("invoice", {}).update(invoice_context)
-                    logger.info(f"Invoice context keys: {list(invoice_context.keys())}")
+                    if "invoice" not in context:
+                        context["invoice"] = {}
+                    context["invoice"]["raw_text"] = extracted_text
+                    context["invoice"].update(invoice_context)
+                    has_structured_data = True
+                    logger.info(f"Invoice context keys: {list(context['invoice'].keys())}")
             elif document_type == "bill_of_lading":
                 bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
                 logger.info(f"Extracted {len(bl_fields)} fields from B/L {filename}")
                 bl_context = _fields_to_flat_context(bl_fields)
                 if bl_context:
-                    context.setdefault("bill_of_lading", {}).update(bl_context)
-                    logger.info(f"B/L context keys: {list(bl_context.keys())}")
+                    if "bill_of_lading" not in context:
+                        context["bill_of_lading"] = {}
+                    context["bill_of_lading"]["raw_text"] = extracted_text
+                    context["bill_of_lading"].update(bl_context)
+                    has_structured_data = True
+                    logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
         except Exception as e:
             logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
             continue
 
-    if context:
+    # Set extraction status
+    if has_structured_data:
+        context["extraction_status"] = "success"
         logger.info(f"Final extracted context structure: {list(context.keys())}")
+    elif any(key in context for key in ("lc", "invoice", "bill_of_lading")):
+        # We have raw_text but no structured fields
+        context["extraction_status"] = "partial"
+        logger.warning("Extracted raw text but no structured fields could be parsed")
     else:
+        context["extraction_status"] = "empty"
         logger.warning("No context extracted from any files")
     
     return context
 
 
 async def _extract_text_from_upload(upload_file: Any) -> str:
-    """Extract textual content from an uploaded PDF/image using pdfminer/ PyPDF2."""
+    """
+    Extract textual content from an uploaded PDF/image.
+    
+    Tries pdfminer/PyPDF2 first, then falls back to OCR (Google Document AI/AWS Textract)
+    if enabled and text extraction returns empty.
+    """
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
     
@@ -613,6 +673,13 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     if not file_bytes:
         logger.warning(f"Empty file content for {filename}")
         return ""
+    
+    # Check file size limit for OCR
+    if len(file_bytes) > settings.OCR_MAX_BYTES:
+        logger.warning(
+            f"File {filename} exceeds OCR size limit ({len(file_bytes)} > {settings.OCR_MAX_BYTES} bytes). "
+            f"Skipping OCR fallback."
+        )
 
     text_output = ""
 
@@ -645,8 +712,117 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     except Exception as pypdf_error:
         logger.warning(f"PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
-    logger.warning(f"No text extracted from {filename} (content-type: {content_type}, size: {len(file_bytes)} bytes)")
+    # If pdfminer/PyPDF2 returned empty and OCR is enabled, try OCR providers
+    if not text_output.strip() and settings.OCR_ENABLED:
+        # Check file size and page count before attempting OCR
+        page_count = 0
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(BytesIO(file_bytes))
+            page_count = len(reader.pages)
+        except:
+            # If we can't count pages, assume it's a single-page image
+            page_count = 1 if content_type.startswith('image/') else 0
+        
+        if page_count > settings.OCR_MAX_PAGES:
+            logger.warning(
+                f"File {filename} exceeds OCR page limit ({page_count} > {settings.OCR_MAX_PAGES} pages). "
+                f"Skipping OCR."
+            )
+        elif len(file_bytes) > settings.OCR_MAX_BYTES:
+            logger.warning(
+                f"File {filename} exceeds OCR size limit ({len(file_bytes)} > {settings.OCR_MAX_BYTES} bytes). "
+                f"Skipping OCR."
+            )
+        else:
+            # Try OCR providers in configured order
+            text_output = await _try_ocr_providers(file_bytes, filename, content_type)
+            if text_output.strip():
+                logger.info(f"OCR extracted {len(text_output)} characters from {filename}")
+                return text_output
+
+    if not text_output.strip():
+        logger.warning(f"No text extracted from {filename} (content-type: {content_type}, size: {len(file_bytes)} bytes)")
+    
     return text_output
+
+
+async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> str:
+    """
+    Try OCR providers in configured order until one succeeds.
+    
+    Returns extracted text or empty string if all providers fail.
+    """
+    from uuid import uuid4
+    from app.ocr.factory import get_ocr_factory
+    
+    # Map provider order names to adapter classes
+    provider_map = {
+        "gdocai": "google_documentai",
+        "textract": "aws_textract",
+    }
+    
+    # Get configured provider order
+    provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
+    
+    try:
+        factory = get_ocr_factory()
+        all_adapters = factory.get_all_adapters()
+        
+        # Create a map of provider names to adapters
+        adapter_map = {adapter.provider_name: adapter for adapter in all_adapters}
+        
+        # Try providers in configured order
+        for provider_name in provider_order:
+            # Map short name to full provider name
+            full_provider_name = provider_map.get(provider_name, provider_name)
+            
+            if full_provider_name not in adapter_map:
+                logger.debug(f"OCR provider {provider_name} ({full_provider_name}) not available")
+                continue
+            
+            adapter = adapter_map[full_provider_name]
+            
+            try:
+                # Check health before attempting
+                if not await adapter.health_check():
+                    logger.debug(f"OCR provider {full_provider_name} health check failed")
+                    continue
+                
+                # Try OCR with timeout
+                import asyncio
+                doc_id = uuid4()
+                
+                result = await asyncio.wait_for(
+                    adapter.process_file_bytes(file_bytes, filename, content_type, doc_id),
+                    timeout=settings.OCR_TIMEOUT_SEC
+                )
+                
+                if result and result.full_text and not result.error:
+                    logger.info(
+                        f"OCR provider {full_provider_name} extracted {len(result.full_text)} characters "
+                        f"from {filename} (confidence: {result.overall_confidence:.2f}, "
+                        f"time: {result.processing_time_ms}ms)"
+                    )
+                    return result.full_text
+                elif result and result.error:
+                    logger.warning(f"OCR provider {full_provider_name} returned error: {result.error}")
+                else:
+                    logger.debug(f"OCR provider {full_provider_name} returned empty result")
+                    
+            except asyncio.TimeoutError:
+                logger.warning(f"OCR provider {full_provider_name} timed out after {settings.OCR_TIMEOUT_SEC}s")
+                continue
+            except Exception as e:
+                logger.warning(f"OCR provider {full_provider_name} failed: {e}", exc_info=True)
+                continue
+        
+        logger.warning(f"All OCR providers failed for {filename}")
+        return ""
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize OCR factory: {e}", exc_info=True)
+        return ""
 
 
 def _infer_document_type(filename: Optional[str], index: int) -> str:

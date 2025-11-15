@@ -464,7 +464,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   }
 
   const documents = resolvedResults.documents ?? [];
-  const discrepanciesList = resolvedResults.discrepancies ?? [];
+  // Filter out not_applicable rules (backend already filters, but add safety filter here)
+  const discrepanciesList = (resolvedResults.discrepancies ?? []).filter(
+    (d: any) => !d.not_applicable
+  );
   const totalDocuments = documents.length || 0;
   // totalDiscrepancies already computed above for use in isReadyToSubmit
   const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
@@ -743,7 +746,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
 
         {/* Detailed Results */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
             <TabsTrigger value="discrepancies" className="relative">
@@ -752,6 +755,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
               )}
             </TabsTrigger>
+            <TabsTrigger value="extracted-data">Extracted Data</TabsTrigger>
             <TabsTrigger value="history">Submission History</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
@@ -937,6 +941,116 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 );
               })
             )}
+          </TabsContent>
+
+          <TabsContent value="extracted-data" className="space-y-4">
+            <Card className="shadow-soft border-0">
+              <CardHeader>
+                <CardTitle>Extracted Document Data</CardTitle>
+                <CardDescription>
+                  Structured data extracted from your uploaded documents using OCR and text extraction.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Extraction Status */}
+                <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+                  <div className="font-semibold">Extraction Status:</div>
+                  <Badge
+                    variant={
+                      resolvedResults.extraction_status === "success"
+                        ? "default"
+                        : resolvedResults.extraction_status === "partial"
+                        ? "outline"
+                        : resolvedResults.extraction_status === "empty"
+                        ? "destructive"
+                        : "secondary"
+                    }
+                  >
+                    {resolvedResults.extraction_status || "unknown"}
+                  </Badge>
+                  {resolvedResults.extraction_status === "empty" && (
+                    <p className="text-sm text-muted-foreground ml-2">
+                      No text could be extracted from the documents. This may indicate scanned images that require OCR.
+                    </p>
+                  )}
+                  {resolvedResults.extraction_status === "partial" && (
+                    <p className="text-sm text-muted-foreground ml-2">
+                      Some text was extracted, but structured fields could not be fully parsed.
+                    </p>
+                  )}
+                  {resolvedResults.extraction_status === "error" && (
+                    <p className="text-sm text-muted-foreground ml-2">
+                      An error occurred during extraction. Please try uploading the documents again.
+                    </p>
+                  )}
+                </div>
+
+                {/* Extracted Data Display */}
+                {resolvedResults.extracted_data ? (
+                  <div className="space-y-4">
+                    {/* LC Data */}
+                    {resolvedResults.extracted_data.lc && (
+                      <div className="space-y-2">
+                        <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
+                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                            {JSON.stringify(resolvedResults.extracted_data.lc, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Invoice Data */}
+                    {resolvedResults.extracted_data.invoice && (
+                      <div className="space-y-2">
+                        <h3 className="font-semibold text-lg">Commercial Invoice Data</h3>
+                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                            {JSON.stringify(resolvedResults.extracted_data.invoice, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bill of Lading Data */}
+                    {resolvedResults.extracted_data.bill_of_lading && (
+                      <div className="space-y-2">
+                        <h3 className="font-semibold text-lg">Bill of Lading Data</h3>
+                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                            {JSON.stringify(resolvedResults.extracted_data.bill_of_lading, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Raw Extracted Data (if no structured sections) */}
+                    {!resolvedResults.extracted_data.lc &&
+                      !resolvedResults.extracted_data.invoice &&
+                      !resolvedResults.extracted_data.bill_of_lading && (
+                        <div className="space-y-2">
+                          <h3 className="font-semibold text-lg">Raw Extracted Data</h3>
+                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                              {JSON.stringify(resolvedResults.extracted_data, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground mb-2">No extracted data available</p>
+                    <p className="text-sm text-muted-foreground">
+                      {resolvedResults.extraction_status === "empty"
+                        ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
+                        : "Data extraction may still be in progress or failed. Please check the extraction status above."}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
