@@ -99,7 +99,8 @@ class RuleEvaluator:
         value_ref: Optional[str],
         context: Dict[str, Any],
         day_type: Optional[str] = None,
-        field_path: Optional[str] = None
+        field_path: Optional[str] = None,
+        case_insensitive: bool = False,
     ) -> bool:
         """
         Evaluate a single operator condition.
@@ -142,31 +143,51 @@ class RuleEvaluator:
         except (ValueError, TypeError):
             pass
         
+        def _ci(value):
+            return value.casefold() if isinstance(value, str) else value
+
+        field_cmp = field_value
+        compare_cmp = compare_value
+        if case_insensitive:
+            field_cmp = _ci(field_cmp)
+            if isinstance(compare_cmp, list):
+                compare_cmp = [_ci(item) for item in compare_cmp]
+            else:
+                compare_cmp = _ci(compare_cmp)
+
         # Evaluate operator
         if operator == "equals":
-            return field_value == compare_value
+            return field_cmp == compare_cmp
         
         elif operator == "not_equals":
-            return field_value != compare_value
+            return field_cmp != compare_cmp
         
         elif operator == "contains":
-            if isinstance(field_value, str) and isinstance(compare_value, str):
-                return compare_value.lower() in field_value.lower()
+            if isinstance(field_cmp, str) and isinstance(compare_cmp, str):
+                return compare_cmp in field_cmp
             elif isinstance(field_value, list):
+                target = compare_cmp if not isinstance(compare_cmp, list) else compare_cmp
+                if isinstance(target, list):
+                    return any(item in field_value for item in target)
                 return compare_value in field_value
             return False
         
         elif operator == "not_contains":
-            if isinstance(field_value, str) and isinstance(compare_value, str):
-                return compare_value.lower() not in field_value.lower()
+            if isinstance(field_cmp, str) and isinstance(compare_cmp, str):
+                return compare_cmp not in field_cmp
             elif isinstance(field_value, list):
+                target = compare_cmp if not isinstance(compare_cmp, list) else compare_cmp
+                if isinstance(target, list):
+                    return all(item not in field_value for item in target)
                 return compare_value not in field_value
             return True
         
         elif operator == "matches":
             if isinstance(field_value, str) and isinstance(compare_value, str):
                 try:
-                    return bool(re.match(compare_value, field_value))
+                    pattern = compare_value
+                    flags = re.IGNORECASE if case_insensitive else 0
+                    return bool(re.match(pattern, field_value, flags))
                 except re.error:
                     logger.warning(f"Invalid regex pattern: {compare_value}")
                     return False
@@ -174,11 +195,17 @@ class RuleEvaluator:
         
         elif operator == "in":
             if isinstance(compare_value, list):
+                if case_insensitive and isinstance(field_value, str):
+                    comparison = [_ci(item) for item in compare_value]
+                    return field_cmp in comparison
                 return field_value in compare_value
             return False
         
         elif operator == "not_in":
             if isinstance(compare_value, list):
+                if case_insensitive and isinstance(field_value, str):
+                    comparison = [_ci(item) for item in compare_value]
+                    return field_cmp not in comparison
                 return field_value not in compare_value
             return True
         
@@ -205,6 +232,15 @@ class RuleEvaluator:
             minimum = condition_value.get("min")
             maximum = condition_value.get("max")
             tolerance = condition_value.get("tolerance", 0)
+            min_ref = condition_value.get("min_ref")
+            max_ref = condition_value.get("max_ref")
+            tolerance_ref = condition_value.get("tolerance_ref")
+            if minimum is None and min_ref:
+                minimum = self.resolve_field_path(context, min_ref)
+            if maximum is None and max_ref:
+                maximum = self.resolve_field_path(context, max_ref)
+            if (tolerance is None or tolerance == 0) and tolerance_ref:
+                tolerance = self.resolve_field_path(context, tolerance_ref) or 0
             allow_exceed = condition_value.get("allow_exceed_credit")
             allow_under = condition_value.get("allow_under_credit")
             min_percent = condition_value.get("min_percent")
@@ -251,8 +287,12 @@ class RuleEvaluator:
                 return True
             terms = compare_value if isinstance(compare_value, list) else [compare_value]
             if isinstance(field_value, str):
-                lower_value = field_value.lower()
-                return all(term.lower() not in lower_value for term in terms if isinstance(term, str))
+                base_value = field_value.casefold() if case_insensitive else field_value.lower()
+                return all(
+                    (term.casefold() if isinstance(term, str) else term) not in base_value
+                    for term in terms
+                    if isinstance(term, str)
+                )
             if isinstance(field_value, list):
                 return not any(term in field_value for term in terms)
             return True
@@ -418,7 +458,8 @@ class RuleEvaluator:
             value_ref=value_ref,
             context=context,
             day_type=day_type,
-            field_path=field_path
+            field_path=field_path,
+            case_insensitive=normalized.get("case_insensitive", False)
         )
     
     def _normalize_condition(self, condition: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -432,6 +473,7 @@ class RuleEvaluator:
         value_ref = cond.get("value_ref")
         cond_type = cond.get("type")
         day_type = cond.get("day_type")
+        case_insensitive = bool(cond.get("case_insensitive"))
         
         def is_field_path(candidate: Any) -> bool:
             return isinstance(candidate, str) and "." in candidate and " " not in candidate
@@ -495,6 +537,9 @@ class RuleEvaluator:
                 "min": cond.get("min"),
                 "max": cond.get("max"),
                 "tolerance": cond.get("tolerance"),
+                "min_ref": cond.get("min_ref"),
+                "max_ref": cond.get("max_ref"),
+                "tolerance_ref": cond.get("tolerance_ref"),
                 "allow_exceed_credit": cond.get("allow_exceed_credit"),
                 "allow_under_credit": cond.get("allow_under_credit"),
                 "min_percent": cond.get("min_percent"),
@@ -522,6 +567,7 @@ class RuleEvaluator:
                 "value": value,
                 "value_ref": value_ref,
                 "day_type": day_type,
+                "case_insensitive": case_insensitive,
             }
         return None
     

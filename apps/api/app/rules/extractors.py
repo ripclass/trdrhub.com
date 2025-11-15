@@ -33,6 +33,8 @@ class DocumentFieldExtractor:
         r'(?:DESTINATION|DEST\.?)[:\s]*([A-Z][A-Za-z\s,]+)',
     ]
     
+    LABEL_BREAK_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9\s/()\-]{2,}[:：]")
+
     def extract_fields(
         self, 
         ocr_text: str, 
@@ -66,7 +68,7 @@ class DocumentFieldExtractor:
         fields = []
         
         # LC Number
-        lc_number = self._extract_pattern(text, r'(?:L/C|LC)\s*(?:NO\.?|NUMBER)[:\s]*([A-Z0-9-]+)', 1)
+        lc_number = self._extract_pattern(text, r'(?:L/C|LC)\s*(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-\/]+)', 1)
         if lc_number:
             fields.append(ExtractedField(
                 field_name="lc_number",
@@ -111,7 +113,7 @@ class DocumentFieldExtractor:
             ))
         
         # Applicant (Buyer)
-        applicant = self._extract_pattern(text, r'(?:APPLICANT|BUYER)[:\s]*([^\n]+)', 1)
+        applicant = self._extract_pattern(text, r'(?:APPLICANT|BUYER|IMPORTER)[:\s]*([^\n]+)', 1)
         if applicant:
             fields.append(ExtractedField(
                 field_name="applicant",
@@ -122,12 +124,29 @@ class DocumentFieldExtractor:
             ))
         
         # Beneficiary (Seller)
-        beneficiary = self._extract_pattern(text, r'(?:BENEFICIARY|SELLER)[:\s]*([^\n]+)', 1)
+        beneficiary = self._extract_pattern(text, r'(?:BENEFICIARY|SELLER|EXPORTER)[:\s]*([^\n]+)', 1)
         if beneficiary:
             fields.append(ExtractedField(
                 field_name="beneficiary",
                 field_type=FieldType.PARTY,
                 value=beneficiary.strip(),
+                confidence=confidence,
+                document_type=DocumentType.LETTER_OF_CREDIT
+            ))
+        
+        # Goods description
+        goods_description = self._extract_label_block(
+            text,
+            [
+                r'(?:DESCRIPTION OF GOODS|GOODS DESCRIPTION|MERCHANDISE)[:\s]*(.+)',
+                r'(?:GOODS|PRODUCTS)[:\s]*(.+)'
+            ]
+        )
+        if goods_description:
+            fields.append(ExtractedField(
+                field_name="goods_description",
+                field_type=FieldType.TEXT,
+                value=goods_description,
                 confidence=confidence,
                 document_type=DocumentType.LETTER_OF_CREDIT
             ))
@@ -200,6 +219,34 @@ class DocumentFieldExtractor:
                 field_name="consignee",
                 field_type=FieldType.PARTY,
                 value=consignee.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+        
+        # Buyer
+        buyer = self._extract_pattern(text, r'(?:BUYER|IMPORTER|APPLICANT)[:\s]*([^\n]+)', 1)
+        if buyer:
+            fields.append(ExtractedField(
+                field_name="buyer",
+                field_type=FieldType.PARTY,
+                value=buyer.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+        
+        # Product description
+        product_description = self._extract_label_block(
+            text,
+            [
+                r'(?:DESCRIPTION|GOODS DESCRIPTION|PRODUCT DESCRIPTION)[:\s]*(.+)',
+                r'(?:ITEMS)[:\s]*(.+)'
+            ]
+        )
+        if product_description:
+            fields.append(ExtractedField(
+                field_name="product_description",
+                field_type=FieldType.TEXT,
+                value=product_description,
                 confidence=confidence,
                 document_type=DocumentType.COMMERCIAL_INVOICE
             ))
@@ -283,6 +330,37 @@ class DocumentFieldExtractor:
         match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
         if match:
             return match.group(group).strip()
+        return None
+    
+    def _extract_label_block(self, text: str, patterns: List[str]) -> Optional[str]:
+        """Extract multi-line block following a label."""
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                captured = match.group(1).strip()
+                if captured:
+                    # If captured contains another label, trim
+                    lines = captured.splitlines()
+                    cleaned_lines = []
+                    for line in lines:
+                        stripped = line.strip()
+                        if not stripped:
+                            break
+                        if self.LABEL_BREAK_PATTERN.match(stripped):
+                            break
+                        cleaned_lines.append(stripped)
+                    if cleaned_lines:
+                        return " ".join(cleaned_lines)
+                # Fallback to next line
+                end = match.end()
+                remainder = text[end:].splitlines()
+                for line in remainder:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    if self.LABEL_BREAK_PATTERN.match(stripped):
+                        break
+                    return stripped
         return None
     
     def _extract_date_field(self, text: str, specific_pattern: str = None) -> Optional[str]:

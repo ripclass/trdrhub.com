@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 import json
 
@@ -341,6 +341,15 @@ async def validate_doc(
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
+        company_size, tolerance_percent = _determine_company_size(current_user, payload)
+        payload["company_profile"] = {
+            "size": company_size,
+            "invoice_amount_tolerance_percent": float(tolerance_percent),
+        }
+        tolerance_value = _compute_invoice_amount_tolerance(payload, tolerance_percent)
+        if tolerance_value is not None:
+            payload["invoice_amount_tolerance_value"] = tolerance_value
+        
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
             quota = entitlements.record_usage(
@@ -557,16 +566,22 @@ def _infer_document_type_from_name(filename: Optional[str], index: int) -> str:
     """Infer the document type using filename patterns."""
     if filename:
         name = filename.lower()
-        if any(token in name for token in ("lc", "letter", "credit", "mt700")):
-            return "letter_of_credit"
         if any(token in name for token in ("invoice", "inv")):
             return "commercial_invoice"
-        if any(token in name for token in ("bill", "lading", "bl", "shipping")):
+        if any(token in name for token in ("bill_of_lading", "bill-of-lading", "bill", "lading", "bl", "shipping", "bol")):
             return "bill_of_lading"
         if any(token in name for token in ("packing", "packlist")):
             return "packing_list"
-        if any(token in name for token in ("certificate_of_origin", "coo", "certificate", "gsp")):
-            return "certificate"
+        if any(token in name for token in ("insurance", "policy")):
+            return "insurance_certificate"
+        if any(token in name for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
+            return "certificate_of_origin"
+        if any(token in name for token in ("inspection", "quality", "analysis")):
+            return "inspection_certificate"
+        if any(token in name for token in ("lc_", "letter_of_credit", "mt700")) or name.endswith("_lc.pdf"):
+            return "letter_of_credit"
+        if " credit " in name:
+            return "letter_of_credit"
 
     return _fallback_doc_type(index)
 
@@ -577,6 +592,8 @@ def _fallback_doc_type(index: int) -> str:
         0: "letter_of_credit",
         1: "commercial_invoice",
         2: "bill_of_lading",
+        3: "packing_list",
+        4: "insurance_certificate",
     }
     return mapping.get(index, "supporting_document")
 
@@ -603,6 +620,17 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     context: Dict[str, Any] = {}
     document_details: List[Dict[str, Any]] = []
     has_structured_data = False
+    known_doc_types = {
+        "letter_of_credit",
+        "commercial_invoice",
+        "bill_of_lading",
+        "packing_list",
+        "insurance_certificate",
+        "certificate_of_origin",
+    }
+    documents_presence: Dict[str, Dict[str, Any]] = {
+        doc_type: {"present": False, "count": 0} for doc_type in known_doc_types
+    }
 
     for idx, upload_file in enumerate(files_list):
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
@@ -620,6 +648,7 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
         extracted_text = await _extract_text_from_upload(upload_file)
         if not extracted_text:
             logger.warning(f"No text extracted from {filename} - skipping field extraction")
+            document_details.append(doc_info)
             continue
         
         logger.debug(f"Extracted {len(extracted_text)} characters from {filename}")
@@ -674,9 +703,16 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
                     logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
         except Exception as e:
             logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
+            document_details.append(doc_info)
             continue
 
         document_details.append(doc_info)
+        entry = documents_presence.setdefault(
+            document_type,
+            {"present": False, "count": 0},
+        )
+        entry["present"] = True
+        entry["count"] += 1
 
     # Set extraction status
     if has_structured_data:
@@ -692,8 +728,62 @@ async def _build_document_context(files_list: List[Any]) -> Dict[str, Any]:
     
     if document_details:
         context["documents"] = document_details
+
+    context["documents_presence"] = documents_presence
+    context["documents_summary"] = documents_presence
     
     return context
+
+
+def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tuple[str, Decimal]:
+    """Infer company size from user/company metadata."""
+    size = str(payload.get("company_size") or "").strip().lower()
+    onboarding_company = ((current_user.onboarding_data or {}).get("company") or {}) if current_user else {}
+    if onboarding_company:
+        size = (onboarding_company.get("size") or size).strip().lower()
+    if not size and getattr(current_user, "company", None):
+        company = current_user.company
+        if isinstance(company.event_metadata, dict):
+            meta_size = company.event_metadata.get("company_size")
+            if meta_size:
+                size = str(meta_size).strip().lower()
+    if size not in {"sme", "medium", "large"}:
+        size = "sme"
+    tolerance_map = {
+        "sme": Decimal("10.0"),
+        "medium": Decimal("5.0"),
+        "large": Decimal("2.0"),
+    }
+    tolerance_percent = tolerance_map.get(size, Decimal("7.5"))
+    return size, tolerance_percent
+
+
+def _compute_invoice_amount_tolerance(payload: Dict[str, Any], tolerance_percent: Decimal) -> Optional[float]:
+    """Compute absolute tolerance amount based on LC value."""
+    lc_amount = (((payload.get("lc") or {}).get("amount") or {}).get("value"))
+    lc_amount_decimal = _coerce_decimal(lc_amount)
+    if lc_amount_decimal is None:
+        return None
+    tolerance_value = lc_amount_decimal * tolerance_percent / Decimal("100")
+    return float(tolerance_value)
+
+
+def _coerce_decimal(value: Any) -> Optional[Decimal]:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+        if isinstance(value, str):
+            normalized = value.replace(",", "").strip()
+            if not normalized:
+                return None
+            return Decimal(normalized)
+    except InvalidOperation:
+        return None
+    return None
 
 
 async def _extract_text_from_upload(upload_file: Any) -> str:
