@@ -45,6 +45,12 @@ function useSafeContext<T>(context: React.Context<T | undefined>): T | null {
 export function UserMenu({ variant = "header" }: UserMenuProps) {
   const navigate = useNavigate()
   const location = useLocation()
+
+  // Route flags to scope which auth context should drive the UI
+  const isAdminRoute = location.pathname.startsWith("/admin")
+  const isBankRoute = location.pathname.includes("/bank-dashboard")
+  const isExporterRoute = location.pathname.includes("/exporter-dashboard")
+  const isImporterRoute = location.pathname.includes("/importer-dashboard")
   
   // Get main auth first (Supabase-based)
   const mainAuth = useAuth();
@@ -55,33 +61,59 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   const exporterAuth = useSafeContext(ExporterAuthContext);
   const importerAuth = useSafeContext(ImporterAuthContext);
 
-  // Determine which auth context to use - prioritize main auth (Supabase)
+  // Determine which auth context to use based on current route
   const activeAuth = useMemo(() => {
-    // Priority 1: Main auth (Supabase) - always check first
+    // 1) Admin pages: use admin auth only (never Supabase user)
+    if (isAdminRoute) {
+      return adminAuth || null
+    }
+
+    // 2) Bank dashboard: use bank auth only
+    if (isBankRoute) {
+      return bankAuth || null
+    }
+
+    // 3) SME exporter/importer dashboards: Supabase is the source of truth
+    if (isExporterRoute || isImporterRoute) {
+      if (mainAuth?.user) {
+        return {
+          user: mainAuth.user,
+          logout: mainAuth.logout,
+          isLoading: mainAuth.isLoading,
+        }
+      }
+      // Fallback if any legacy context is still in use
+      if (isExporterRoute && exporterAuth?.user) return exporterAuth
+      if (isImporterRoute && importerAuth?.user) return importerAuth
+      return null
+    }
+
+    // 4) Default / other pages: prefer Supabase, else any available context
     if (mainAuth?.user) {
       return {
         user: mainAuth.user,
         logout: mainAuth.logout,
         isLoading: mainAuth.isLoading,
-      };
+      }
     }
-    
-    // Priority 2: Check localStorage to determine which specific auth context
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem('admin_token') && adminAuth?.user) return adminAuth;
-      if (localStorage.getItem('bank_token') && bankAuth?.user) return bankAuth;
-      if (localStorage.getItem('exporter_token') && exporterAuth?.user) return exporterAuth;
-      if (localStorage.getItem('importer_token') && importerAuth?.user) return importerAuth;
-    }
-    
-    // Priority 3: Fallback to first available auth context with a user
-    if (adminAuth?.user) return adminAuth;
-    if (bankAuth?.user) return bankAuth;
-    if (exporterAuth?.user) return exporterAuth;
-    if (importerAuth?.user) return importerAuth;
-    
-    return null;
-  }, [mainAuth, adminAuth, bankAuth, exporterAuth, importerAuth]);
+
+    if (adminAuth?.user) return adminAuth
+    if (bankAuth?.user) return bankAuth
+    if (exporterAuth?.user) return exporterAuth
+    if (importerAuth?.user) return importerAuth
+
+    return null
+  }, [
+    isAdminRoute,
+    isBankRoute,
+    isExporterRoute,
+    isImporterRoute,
+    mainAuth,
+    adminAuth,
+    bankAuth,
+    exporterAuth,
+    importerAuth,
+  ]);
 
   const user = activeAuth?.user || null;
   const logout = activeAuth?.logout || null;
