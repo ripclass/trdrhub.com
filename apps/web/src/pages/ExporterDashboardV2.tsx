@@ -68,85 +68,26 @@ type Section =
   | "settings"
   | "help";
 
-const dashboardStats = {
-  thisMonth: 6,
-  successRate: 91.7,
-  avgProcessingTime: "2.8 minutes",
-  discrepanciesFound: 3,
-  totalReviews: 18,
-  documentsProcessed: 54,
+type DashboardStats = {
+  thisMonth?: number;
+  successRate?: number;
+  avgProcessingTime?: string;
+  discrepanciesFound?: number;
+  totalReviews?: number;
+  documentsProcessed?: number;
 };
 
-const mockHistory = [
-  {
-    id: "1",
-    date: "2024-01-18",
-    type: "LC Review",
-    supplier: "ABC Exports Ltd.",
-    status: "approved" as const,
-    risks: 2,
-  },
-  {
-    id: "2",
-    date: "2024-01-12",
-    type: "Document Check",
-    supplier: "XYZ Trading Co.",
-    status: "flagged" as const,
-    risks: 4,
-  },
-  {
-    id: "3",
-    date: "2024-01-08",
-    type: "LC Review",
-    supplier: "Global Textiles Inc.",
-    status: "approved" as const,
-    risks: 1,
-  },
-];
+type ValidationHistoryItem = {
+  id: string;
+  date: string;
+  type: string;
+  supplier: string;
+  status: "approved" | "flagged";
+  risks: number;
+};
 
-const notifications: Notification[] = [
-  {
-    id: 1,
-    title: "Export Regulations Update",
-    message: "New customs requirements effective Feb 1st. Review your upcoming shipments.",
-    type: "info",
-    timestamp: "2 hours ago",
-    read: false,
-    link: "/lcopilot/exporter-dashboard?section=settings",
-    action: {
-      label: "Review Settings",
-      action: () => {},
-    },
-  },
-  {
-    id: 2,
-    title: "LC Review Complete",
-    message: "Your draft LC has been reviewed with no critical risks identified.",
-    type: "success",
-    timestamp: "5 hours ago",
-    read: false,
-    link: "/lcopilot/exporter-dashboard?section=reviews",
-    action: {
-      label: "View Results",
-      action: () => {},
-    },
-  },
-  {
-    id: 3,
-    title: "Discrepancy Found",
-    message: "Bank identified discrepancies in LC-EXP-2024-005. Action required.",
-    type: "discrepancy",
-    timestamp: "1 day ago",
-    read: false,
-    link: "/lcopilot/exporter-dashboard?section=reviews&lc=LC-EXP-2024-005",
-    badge: "Urgent",
-    action: {
-      label: "Review Discrepancy",
-      action: () => {},
-      variant: "destructive",
-    },
-  },
-];
+const EMPTY_HISTORY: ValidationHistoryItem[] = [];
+const EMPTY_NOTIFICATIONS: Notification[] = [];
 
 export default function ExporterDashboardV2() {
   const { toast } = useToast();
@@ -165,6 +106,9 @@ export default function ExporterDashboardV2() {
   const { getAllAmendedLCs } = useVersions();
   const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const [searchParams, setSearchParams] = useSearchParams();
+  const dashboardStats: DashboardStats | null = null;
+  const recentHistory = EMPTY_HISTORY;
+  const dashboardNotifications = EMPTY_NOTIFICATIONS;
 
   // Redirect to login if not authenticated (unless in demo mode)
   useEffect(() => {
@@ -365,9 +309,10 @@ export default function ExporterDashboardV2() {
               onResumeDraft={handleResumeDraft}
               onDeleteDraft={handleDeleteDraft}
               formatTimeAgo={formatTimeAgo}
-              recentHistory={mockHistory}
+          recentHistory={recentHistory}
               workspaceTab={workspaceTab}
               onWorkspaceTabChange={setWorkspaceTab}
+          notifications={dashboardNotifications}
               userName={currentUser?.name || "User"}
             />
           )}
@@ -396,7 +341,9 @@ export default function ExporterDashboardV2() {
             <ExporterAnalytics embedded />
           )}
 
-          {activeSection === "notifications" && <NotificationsCard notifications={notifications} />}
+          {activeSection === "notifications" && (
+            <NotificationsCard notifications={dashboardNotifications} />
+          )}
 
           {activeSection === "billing" && (
             billingTab === "invoices" ? (
@@ -434,7 +381,7 @@ export default function ExporterDashboardV2() {
 }
 
 interface DashboardOverviewProps {
-  stats: typeof dashboardStats;
+  stats?: DashboardStats | null;
   drafts: DraftData[];
   amendedLCs: Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>;
   isLoadingDrafts: boolean;
@@ -442,9 +389,10 @@ interface DashboardOverviewProps {
   onResumeDraft: (draft: DraftData) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
-  recentHistory: typeof mockHistory;
+  recentHistory: ValidationHistoryItem[];
   workspaceTab: string;
   onWorkspaceTabChange: (value: string) => void;
+  notifications: Notification[];
   userName?: string;
 }
 
@@ -460,6 +408,7 @@ function DashboardOverview({
   recentHistory,
   workspaceTab,
   onWorkspaceTabChange,
+  notifications,
   userName = "User",
 }: DashboardOverviewProps) {
   return (
@@ -471,7 +420,7 @@ function DashboardOverview({
         </p>
       </div>
 
-      <StatGrid stats={stats} />
+      {stats ? <StatGrid stats={stats} /> : <EmptyStatsNotice />}
 
       <WorkspaceCard
         drafts={drafts}
@@ -495,14 +444,14 @@ function DashboardOverview({
         </div>
         <div className="space-y-6">
           <NotificationsCard notifications={notifications} />
-          <QuickStatsCard stats={stats} />
+          {stats ? <QuickStatsCard stats={stats} /> : <EmptyQuickStatsCard />}
         </div>
       </div>
     </>
   );
 }
 
-function StatGrid({ stats }: { stats: typeof dashboardStats }) {
+function StatGrid({ stats }: { stats: DashboardStats }) {
   const navigate = useNavigate();
   const { data: usageStats } = useUsageStats();
   const { data: invoicesData } = useInvoices({
@@ -619,6 +568,16 @@ function StatGrid({ stats }: { stats: typeof dashboardStats }) {
       </Card>
     </div>
     </div>
+  );
+}
+
+function EmptyStatsNotice() {
+  return (
+    <Card className="shadow-soft border-0">
+      <CardContent className="p-6 text-sm text-muted-foreground">
+        No exporter metrics yet. Start validating LCs to see insights here.
+      </CardContent>
+    </Card>
   );
 }
 
@@ -769,7 +728,7 @@ function WorkspaceCard({
 interface RecentValidationsCardProps {
   title: string;
   description: string;
-  history: typeof mockHistory;
+  history: ValidationHistoryItem[];
 }
 
 function RecentValidationsCard({ title, description, history }: RecentValidationsCardProps) {
@@ -783,49 +742,57 @@ function RecentValidationsCard({ title, description, history }: RecentValidation
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {history.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between p-4 rounded-lg border bg-secondary/20"
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0">
-                  {item.status === "approved" ? (
-                    <div className="bg-success/10 p-2 rounded-lg">
-                      <CheckCircle className="w-5 h-5 text-success" />
+        {history.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p>No LC validations yet.</p>
+            <p className="text-sm">Upload a document to see results here.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {history.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between p-4 rounded-lg border bg-secondary/20"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0">
+                    {item.status === "approved" ? (
+                      <div className="bg-success/10 p-2 rounded-lg">
+                        <CheckCircle className="w-5 h-5 text-success" />
+                      </div>
+                    ) : (
+                      <div className="bg-warning/10 p-2 rounded-lg">
+                        <AlertTriangle className="w-5 h-5 text-warning" />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground">
+                      {item.type} #{item.id}
+                    </h4>
+                    <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      <span>{item.date}</span>
                     </div>
-                  ) : (
-                    <div className="bg-warning/10 p-2 rounded-lg">
-                      <AlertTriangle className="w-5 h-5 text-warning" />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <h4 className="font-semibold text-foreground">
-                    {item.type} #{item.id}
-                  </h4>
-                  <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span>{item.date}</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
+                    {item.risks === 0
+                      ? "No issues"
+                      : item.risks === 1
+                      ? "1 issue"
+                      : `${item.risks} issues`}
+                  </StatusBadge>
+                  <Button variant="outline" size="sm">
+                    View
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
-                  {item.risks === 0
-                    ? "No issues"
-                    : item.risks === 1
-                    ? "1 issue"
-                    : `${item.risks} issues`}
-                </StatusBadge>
-                <Button variant="outline" size="sm">
-                  View
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -833,7 +800,6 @@ function RecentValidationsCard({ title, description, history }: RecentValidation
 
 function NotificationsCard({ notifications }: { notifications: Notification[] }) {
   const [localNotifications, setLocalNotifications] = React.useState(notifications);
-  const navigate = useNavigate();
 
   const handleMarkAsRead = (id: string | number) => {
     setLocalNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -857,19 +823,25 @@ function NotificationsCard({ notifications }: { notifications: Notification[] })
         <CardDescription>Updates and alerts</CardDescription>
       </CardHeader>
       <CardContent>
-        <NotificationList
-          notifications={localNotifications}
-          onMarkAsRead={handleMarkAsRead}
-          onDismiss={handleDismiss}
-          onMarkAllAsRead={handleMarkAllAsRead}
-          showHeader={false}
-        />
+        {localNotifications.length === 0 ? (
+          <div className="text-sm text-muted-foreground py-4">
+            No notifications yet. Activity from your validations will show here.
+          </div>
+        ) : (
+          <NotificationList
+            notifications={localNotifications}
+            onMarkAsRead={handleMarkAsRead}
+            onDismiss={handleDismiss}
+            onMarkAllAsRead={handleMarkAllAsRead}
+            showHeader={false}
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function QuickStatsCard({ stats }: { stats: typeof dashboardStats }) {
+function QuickStatsCard({ stats }: { stats: DashboardStats }) {
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
@@ -890,6 +862,21 @@ function QuickStatsCard({ stats }: { stats: typeof dashboardStats }) {
             <span className="text-foreground font-medium">{stats.avgProcessingTime}</span>
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyQuickStatsCard() {
+  return (
+    <Card className="shadow-soft border-0">
+      <CardHeader>
+        <CardTitle className="text-lg">Quick Stats</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">
+          No exporter activity yet. Submit a validation to populate these metrics.
+        </p>
       </CardContent>
     </Card>
   );

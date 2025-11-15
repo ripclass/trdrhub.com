@@ -14,6 +14,16 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
+class MissingFieldError(Exception):
+    """Raised when a rule references a field that is not present in the context."""
+
+    def __init__(self, field: Optional[str], operator: Optional[str]):
+        self.field = field
+        self.operator = operator
+        message = f"Missing field '{field}' for operator '{operator}'"
+        super().__init__(message)
+
+
 class RuleEvaluator:
     """
     Evaluates rules against document context.
@@ -108,10 +118,10 @@ class RuleEvaluator:
             compare_value = condition_value
         
         if field_value is None:
-            # Field doesn't exist
+            # Field doesn't exist for this rule
             if operator in ["exists", "not_exists", "is_empty"]:
                 return operator == "not_exists" or operator == "is_empty"
-            return False
+            raise MissingFieldError(field_path, operator)
         
         # Type coercion for comparisons
         try:
@@ -560,14 +570,26 @@ class RuleEvaluator:
         violations = []
         all_passed = True
         
+        missing_fields: List[str] = []
+        evaluated_conditions = 0
+
         for index, condition in enumerate(conditions):
-            passed = self.evaluate_condition(
-                condition,
-                context,
-                rule_id=rule_id,
-                condition_index=index,
-                condition_type="condition",
-            )
+            try:
+                passed = self.evaluate_condition(
+                    condition,
+                    context,
+                    rule_id=rule_id,
+                    condition_index=index,
+                    condition_type="condition",
+                )
+                evaluated_conditions += 1
+            except MissingFieldError as missing_error:
+                if missing_error.field:
+                    missing_fields.append(missing_error.field)
+                else:
+                    missing_fields.append(condition.get("field") or "unknown")
+                continue
+
             if not passed:
                 all_passed = False
                 violations.append({
@@ -576,6 +598,19 @@ class RuleEvaluator:
                     "operator": condition.get("operator"),
                     "message": condition.get("message", f"Condition failed: {condition.get('field')} {condition.get('operator')}")
                 })
+
+        if missing_fields and not violations:
+            missing_field_list = ", ".join(sorted(set(missing_fields)))
+            return {
+                "rule_id": rule_id,
+                "passed": True,
+                "violations": [],
+                "message": f"Rule skipped (missing data: {missing_field_list})",
+                "severity": rule.get("severity", "info"),
+                "title": rule.get("title", rule_id),
+                "not_applicable": True,
+                "missing_fields": sorted(set(missing_fields)),
+            }
         
         # Determine outcome message
         expected_outcome = rule.get("expected_outcome", {})
