@@ -346,9 +346,11 @@ async def validate_doc(
             "size": company_size,
             "invoice_amount_tolerance_percent": float(tolerance_percent),
         }
-        tolerance_value = _compute_invoice_amount_tolerance(payload, tolerance_percent)
+        tolerance_value, amount_limit = _compute_invoice_amount_bounds(payload, tolerance_percent)
         if tolerance_value is not None:
             payload["invoice_amount_tolerance_value"] = tolerance_value
+        if amount_limit is not None:
+            payload["invoice_amount_limit"] = amount_limit
         
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
@@ -758,14 +760,15 @@ def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tupl
     return size, tolerance_percent
 
 
-def _compute_invoice_amount_tolerance(payload: Dict[str, Any], tolerance_percent: Decimal) -> Optional[float]:
-    """Compute absolute tolerance amount based on LC value."""
-    lc_amount = (((payload.get("lc") or {}).get("amount") or {}).get("value"))
-    lc_amount_decimal = _coerce_decimal(lc_amount)
+def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: Decimal) -> Tuple[Optional[float], Optional[float]]:
+    """Compute absolute tolerance amount and allowed invoice limit."""
+    lc_amount_value = (((payload.get("lc") or {}).get("amount") or {}).get("value"))
+    lc_amount_decimal = _coerce_decimal(lc_amount_value)
     if lc_amount_decimal is None:
-        return None
+        return None, None
     tolerance_value = lc_amount_decimal * tolerance_percent / Decimal("100")
-    return float(tolerance_value)
+    limit = lc_amount_decimal + tolerance_value
+    return float(tolerance_value), float(limit)
 
 
 def _coerce_decimal(value: Any) -> Optional[Decimal]:
