@@ -35,7 +35,8 @@ import {
   Building2,
   FileCheck,
   X,
-  Loader2
+  Loader2,
+  Lightbulb
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -506,9 +507,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       ? (resolvedResults.extracted_data?.documents as Array<Record<string, any>>)
       : [];
   // Filter out not_applicable rules (backend already filters, but add safety filter here)
-  const discrepanciesList = (resolvedResults.discrepancies ?? []).filter(
-    (d: any) => !d.not_applicable
-  );
+  const issueCards = resolvedResults.issue_cards ?? [];
+  const referenceIssues = resolvedResults.reference_issues ?? [];
+  const aiInsights = resolvedResults.ai_enrichment ?? resolvedResults.aiEnrichment;
+  const hasIssueCards = issueCards.length > 0;
   const totalDocuments = documents.length || 0;
   // totalDiscrepancies already computed above for use in isReadyToSubmit
   const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
@@ -938,54 +940,147 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            {discrepanciesList.length === 0 ? (
-              <Card className="shadow-soft border-0">
-                <CardContent className="p-8 text-center">
-                  <div className="bg-success/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-8 h-8 text-success" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Perfect Compliance!</h3>
-                  <p className="text-muted-foreground">All export documents are ready for bank submission and customs clearance.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              discrepanciesList.map((discrepancy) => {
-                const normalizedSeverity = normalizeDiscrepancySeverity(
-                  (discrepancy as any)?.severity
-                );
-                const fallbackId =
-                  discrepancy.id ||
-                  `${discrepancy.rule ?? "rule"}-${discrepancy.title ?? "issue"}`;
-                const documentLabel =
-                  discrepancy.documentName ||
-                  (discrepancy as any)?.document ||
-                  "Supporting Document";
+            {hasIssueCards ? (
+              issueCards.map((card, index) => {
+                const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+                const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+                const documentLabel = card.documentName || card.document || "Supporting Document";
 
                 return (
                   <DiscrepancyGuidance
                     key={fallbackId}
                     discrepancy={{
-                      ...discrepancy,
                       id: fallbackId,
-                      documentName: documentLabel,
-                      documentType: documentLabel,
-                      description: discrepancy.description ?? (discrepancy as any)?.message ?? "",
-                      expected: discrepancy.expected ?? discrepancy.title ?? discrepancy.rule ?? "",
-                      actual: discrepancy.actual ?? (discrepancy as any)?.message ?? "",
-                      suggestion: discrepancy.suggestion ?? "",
+                      title: card.title ?? "Review Required",
+                      description: card.description ?? "",
                       severity: normalizedSeverity,
+                      documentName: documentLabel,
+                      documentType: card.documentType ?? documentLabel,
+                      rule: card.rule ?? fallbackId,
+                      expected: card.expected ?? card.title ?? card.rule ?? "",
+                      actual: card.actual ?? "",
+                      suggestion: card.suggestion ?? "Align the document with the LC clause.",
+                      field: card.field,
                     }}
                     onRevalidate={async (id) => {
-                      // In a real app, call API to re-validate
                       console.log("Re-validating discrepancy:", id);
                     }}
                     onUploadFixed={async (id, file) => {
-                      // In a real app, upload fixed document
                       console.log("Uploading fixed document for discrepancy:", id, file.name);
                     }}
                   />
                 );
               })
+            ) : (
+              <>
+                <Card className="shadow-soft border-0">
+                  <CardContent className="p-8 text-center">
+                    <div className="bg-success/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle className="w-8 h-8 text-success" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Perfect Compliance</h3>
+                    <p className="text-muted-foreground">
+                      All export documents align with the LC. Review the AI insights and technical references below for deeper context.
+                    </p>
+                  </CardContent>
+                </Card>
+                {aiInsights?.summary && (
+                  <Card className="shadow-soft border-0">
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Lightbulb className="w-5 h-5 text-primary" />
+                        <div>
+                          <CardTitle>AI Risk Insights</CardTitle>
+                          <CardDescription>Context-aware guidance generated for this LC package.</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
+                      {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Next Suggestions</p>
+                          <ul className="list-disc list-inside text-sm text-foreground space-y-1">
+                            {aiInsights.suggestions.map((suggestion, idx) => (
+                              <li key={idx}>{suggestion}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+                {referenceIssues.length > 0 && (
+                  <Card className="shadow-soft border border-dashed border-muted">
+                    <CardHeader>
+                      <CardTitle className="text-base">Technical References</CardTitle>
+                      <CardDescription>Underlying rule citations retained for audit (hidden from SME view).</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm text-muted-foreground">
+                      {referenceIssues.map((reference, idx) => (
+                        <div key={`${reference.rule}-${idx}`} className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="font-medium text-foreground">{reference.title || reference.rule}</p>
+                            <p>{reference.message}</p>
+                          </div>
+                          <Badge variant="outline">
+                            {(reference.ruleset_domain || "rulebook").toUpperCase()}
+                          </Badge>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
+
+            {hasIssueCards && aiInsights?.summary && (
+              <Card className="shadow-soft border-0">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Lightbulb className="w-5 h-5 text-primary" />
+                    <div>
+                      <CardTitle>AI Risk Insights</CardTitle>
+                      <CardDescription>Automatically generated guidance based on the failed checks.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
+                  {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">Suggested Actions</p>
+                      <ul className="list-disc list-inside text-sm text-foreground space-y-1">
+                        {aiInsights.suggestions.map((suggestion, idx) => (
+                          <li key={idx}>{suggestion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {referenceIssues.length > 0 && hasIssueCards && (
+              <Card className="shadow-soft border border-dashed border-muted">
+                <CardHeader>
+                  <CardTitle className="text-base">Technical References</CardTitle>
+                  <CardDescription>Additional rule hits kept for audit but hidden from SME view.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  {referenceIssues.map((reference, idx) => (
+                    <div key={`${reference.rule}-${idx}`} className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-medium text-foreground">{reference.title || reference.rule}</p>
+                        <p>{reference.message}</p>
+                      </div>
+                      <Badge variant="outline">
+                        {(reference.ruleset_domain || "rulebook").toUpperCase()}
+                      </Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 

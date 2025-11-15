@@ -339,12 +339,11 @@ async def validate_doc(
         if crossdoc_results:
             results.extend(crossdoc_results)
 
-        # Filter out not_applicable rules from discrepancies (they shouldn't appear in Issues tab)
-        # Only include rules that actually failed (passed=False AND not_applicable != True)
         failed_results = [
-            r for r in results 
+            r for r in results
             if not r.get("passed", False) and not r.get("not_applicable", False)
         ]
+        issue_cards, reference_issues = _build_issue_cards(failed_results)
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
@@ -480,6 +479,8 @@ async def validate_doc(
         extracted_data = stored_extracted_data or {}
         extraction_status = payload.get("extraction_status", "unknown")
 
+        ai_enrichment_payload = results_payload.get("ai_enrichment")
+
         return {
             "status": "ok",
             "results": results,
@@ -490,6 +491,9 @@ async def validate_doc(
             "job_id": str(job_id),
             "jobId": str(job_id),
             "quota": quota.to_dict() if quota else None,
+            "issue_cards": issue_cards,
+            "reference_issues": reference_issues,
+            "ai_enrichment": ai_enrichment_payload,
         }
     except HTTPException:
         raise
@@ -947,6 +951,8 @@ def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "expected": lc_goods,
             "actual": invoice_goods,
             "documents": ["Letter of Credit", "Commercial Invoice"],
+            "display_card": True,
+            "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
         })
 
@@ -974,6 +980,8 @@ def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "expected": expected_amount_msg,
             "actual": f"{invoice_amount:,.2f} USD",
             "documents": ["Commercial Invoice", "Letter of Credit"],
+            "display_card": True,
+            "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
         })
 
@@ -992,6 +1000,8 @@ def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "expected": "Upload an insurance certificate that matches the LC requirements.",
             "actual": "No insurance certificate detected among the uploaded documents.",
             "documents": ["Letter of Credit"],
+            "display_card": True,
+            "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
         })
 
@@ -1008,6 +1018,8 @@ def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "expected": lc_applicant,
             "actual": bl_shipper,
             "documents": ["Bill of Lading", "Letter of Credit"],
+            "display_card": True,
+            "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
         })
 
@@ -1023,11 +1035,139 @@ def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "expected": lc_beneficiary,
             "actual": bl_consignee,
             "documents": ["Bill of Lading", "Letter of Credit"],
+            "display_card": True,
+            "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
         })
 
     return issues
 
+
+def _build_issue_cards(
+    discrepancies: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Partition discrepancies into user-facing issue cards vs technical references.
+    """
+    issue_cards: List[Dict[str, Any]] = []
+    references: List[Dict[str, Any]] = []
+
+    for idx, item in enumerate(discrepancies):
+        domain = (item.get("ruleset_domain") or "").lower()
+        display_card = bool(item.get("display_card"))
+
+        if domain == "icc.lcopilot.crossdoc" or display_card:
+            issue_cards.append(_format_issue_card(item, idx))
+        else:
+            references.append(_format_reference_issue(item))
+
+    return issue_cards, references
+
+
+def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any]:
+    severity = _normalize_issue_severity(discrepancy.get("severity"))
+    document_label = _infer_primary_document(discrepancy)
+    expected_text = _stringify_issue_value(
+        discrepancy.get("expected")
+        or _extract_expected_text(discrepancy.get("expected_outcome"), "valid")
+    )
+    suggestion = discrepancy.get("suggestion") or _extract_expected_text(
+        discrepancy.get("expected_outcome"), "invalid"
+    ) or "Align the document with the LC requirement."
+    actual_text = _stringify_issue_value(discrepancy.get("actual"))
+    discrepancy_id = discrepancy.get("rule") or f"issue-{index}"
+
+    return {
+        "id": str(discrepancy_id),
+        "rule": discrepancy.get("rule"),
+        "title": discrepancy.get("title") or discrepancy.get("rule") or "Review Required",
+        "description": discrepancy.get("message") or discrepancy.get("description") or "",
+        "severity": severity,
+        "documentName": document_label,
+        "documentType": discrepancy.get("document_type"),
+        "expected": expected_text,
+        "actual": actual_text,
+        "suggestion": suggestion,
+        "field": _extract_field_name(discrepancy),
+    }
+
+
+def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "rule": discrepancy.get("rule"),
+        "title": discrepancy.get("title") or discrepancy.get("rule"),
+        "severity": discrepancy.get("severity"),
+        "message": discrepancy.get("message"),
+        "article": discrepancy.get("article"),
+        "ruleset_domain": discrepancy.get("ruleset_domain"),
+    }
+
+
+def _normalize_issue_severity(value: Optional[str]) -> str:
+    if not value:
+        return "minor"
+    severity_map = {
+        "fail": "critical",
+        "critical": "critical",
+        "major": "major",
+        "warning": "major",
+        "minor": "minor",
+        "info": "minor",
+        "reference": "minor",
+    }
+    return severity_map.get(value.lower(), "minor")
+
+
+def _infer_primary_document(discrepancy: Dict[str, Any]) -> str:
+    documents = discrepancy.get("documents")
+    if isinstance(documents, list) and documents:
+        first = documents[0]
+        if isinstance(first, dict):
+            return first.get("name") or first.get("title") or first.get("document") or "Supporting Document"
+        if isinstance(first, str):
+            return first
+    if isinstance(documents, str):
+        return documents
+    tags = discrepancy.get("tags") or []
+    if isinstance(tags, list):
+        for tag in tags:
+            if isinstance(tag, str) and "invoice" in tag.lower():
+                return "Commercial Invoice"
+            if isinstance(tag, str) and ("bill" in tag.lower() or "bl" in tag.lower()):
+                return "Bill of Lading"
+    return discrepancy.get("documentName") or discrepancy.get("document") or "Supporting Document"
+
+
+def _stringify_issue_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return f"{value}"
+    if isinstance(value, (list, dict)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
+def _extract_expected_text(expected_outcome: Any, key: str) -> Optional[str]:
+    if isinstance(expected_outcome, dict):
+        values = expected_outcome.get(key)
+        if isinstance(values, list) and values:
+            return str(values[0])
+        if isinstance(values, str):
+            return values
+    return None
+
+
+def _extract_field_name(discrepancy: Dict[str, Any]) -> Optional[str]:
+    violations = discrepancy.get("violations")
+    if isinstance(violations, list) and violations:
+        first = violations[0]
+        if isinstance(first, dict):
+            return first.get("field")
+    return None
 
 async def _extract_text_from_upload(upload_file: Any) -> str:
     """

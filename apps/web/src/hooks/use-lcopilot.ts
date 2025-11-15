@@ -25,6 +25,39 @@ export interface JobStatus {
   results?: any;
 }
 
+export interface IssueCard {
+  id: string;
+  rule?: string;
+  title: string;
+  description: string;
+  severity: string;
+  documentName?: string;
+  documentType?: string;
+  expected?: string;
+  actual?: string;
+  suggestion?: string;
+  field?: string;
+}
+
+export interface ReferenceIssue {
+  rule?: string;
+  title?: string;
+  severity?: string;
+  message?: string;
+  article?: string;
+  ruleset_domain?: string;
+}
+
+export interface AIEnrichmentPayload {
+  summary?: string;
+  suggestions?: string[];
+  confidence?: string;
+  rule_references?: Array<{
+    rule_code: string;
+    title?: string;
+  }>;
+}
+
 export interface ValidationResults {
   jobId: string;
   results: any[];
@@ -47,7 +80,10 @@ export interface ValidationResults {
   lcNumber?: string;
   completedAt?: string;
   status?: string;
-  aiEnrichment?: Record<string, any>;
+  issue_cards?: IssueCard[];
+  reference_issues?: ReferenceIssue[];
+  ai_enrichment?: AIEnrichmentPayload;
+  aiEnrichment?: AIEnrichmentPayload;
   extracted_data?: Record<string, any>;
   extraction_status?: 'success' | 'partial' | 'empty' | 'error' | 'unknown';
 }
@@ -262,6 +298,9 @@ export const useResults = () => {
     try {
       const response = await api.get(`/api/results/${jobId}`);
       const results: ValidationResults = response.data;
+      if (results.ai_enrichment && !results.aiEnrichment) {
+        results.aiEnrichment = results.ai_enrichment;
+      }
 
       setResults(results);
       return results;

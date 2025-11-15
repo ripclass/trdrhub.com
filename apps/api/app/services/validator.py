@@ -702,7 +702,11 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
 
             evaluator = RuleEvaluator()
             prepared_rules = [rule for rule, _ in filtered_rules_with_meta]
-            rule_metadata = [meta for _, meta in filtered_rules_with_meta]
+            rule_envelopes = [
+                {"rule": rule, "meta": meta}
+                for rule, meta in filtered_rules_with_meta
+            ]
+            prepared_rules = [env["rule"] for env in rule_envelopes]
 
             evaluation_result = await evaluator.evaluate_rules(prepared_rules, document_data)
 
@@ -713,16 +717,25 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 if outcome.get("not_applicable", False):
                     continue
 
-                meta = rule_metadata[idx] if idx < len(rule_metadata) else base_metadata
+                envelope = rule_envelopes[idx] if idx < len(rule_envelopes) else {"rule": {}, "meta": base_metadata}
+                rule_def = envelope.get("rule", {}) or {}
+                meta = envelope.get("meta") or base_metadata or {}
+
                 results.append({
-                    "rule": outcome.get("rule_id", "unknown"),
-                    "title": outcome.get("title", outcome.get("rule_id", "unknown")),
+                    "rule": outcome.get("rule_id", rule_def.get("rule_id", "unknown")),
+                    "title": rule_def.get("title") or outcome.get("rule_id", "unknown"),
+                    "description": rule_def.get("description"),
+                    "article": rule_def.get("article"),
+                    "tags": rule_def.get("tags"),
+                    "documents": rule_def.get("documents") or rule_def.get("document_types"),
+                    "display_card": rule_def.get("display_card") or rule_def.get("ui_card"),
+                    "expected_outcome": rule_def.get("expected_outcome"),
                     "passed": outcome.get("passed", False),
-                    "severity": outcome.get("severity", "warning"),
-                    "message": outcome.get("message", ""),
-                    "ruleset_version": (meta or {}).get("ruleset_version"),
-                    "rulebook_version": (meta or {}).get("rulebook_version"),
-                    "ruleset_domain": (meta or {}).get("domain"),
+                    "severity": outcome.get("severity", rule_def.get("severity", "warning")),
+                    "message": outcome.get("message", rule_def.get("description") or ""),
+                    "ruleset_version": meta.get("ruleset_version"),
+                    "rulebook_version": meta.get("rulebook_version"),
+                    "ruleset_domain": meta.get("domain"),
                 })
 
             logger.info(
