@@ -224,6 +224,9 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     null;
   const lcNumber = resolvedLcNumber ?? mockExporterResults.lcNumber;
   
+  // Compute totalDiscrepancies early for use in isReadyToSubmit
+  const totalDiscrepancies = resolvedResults?.discrepancies?.length ?? 0;
+  
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
     queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
     queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: resolvedLcNumber }),
@@ -275,7 +278,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     if (guardrailsLoading) return false;
     if (!guardrails) return totalDiscrepancies === 0;
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [guardrails, guardrailsLoading, enableBankSubmission]);
+  }, [guardrails, guardrailsLoading, enableBankSubmission, totalDiscrepancies]);
   
   // Generate idempotency key (Phase 7)
   const generateIdempotencyKey = () => {
@@ -352,7 +355,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const documents = resolvedResults.documents ?? [];
   const discrepanciesList = resolvedResults.discrepancies ?? [];
   const totalDocuments = documents.length || 0;
-  const totalDiscrepancies = discrepanciesList.length || 0;
+  // totalDiscrepancies already computed above for use in isReadyToSubmit
   const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
   const warningCount = documents?.filter((d) => d.status === "warning").length ?? 0;
   const errorCount = documents?.filter((d) => d.status === "error").length ?? 0;
@@ -374,7 +377,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     resolvedResults.processedAt ||
     resolvedResults.processed_at ||
     mockExporterResults.processedAt;
-  const lcNumber = lcNumberSource || resolvedResults.lcNumber || mockExporterResults.lcNumber;
   
   // Mock banks list (in production, fetch from API)
   const banks = [
