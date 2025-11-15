@@ -32,16 +32,28 @@ def _ensure_access(session: ValidationSession, user: User) -> None:
         )
 
 
-def _status_to_progress(status_value: str) -> int:
+def _status_to_progress(status_value: str | None) -> int:
+    """
+    Map ValidationSession.status to an approximate progress percentage.
+
+    The database may contain legacy statuses (e.g. "error") that are not part of
+    the Enum defined in the current code version. We therefore normalize to a
+    lowercase string and fall back gracefully instead of raising AttributeError.
+    """
+    if not status_value:
+        return 0
+
+    normalized = status_value.lower()
     mapping = {
         SessionStatus.CREATED.value: 10,
         SessionStatus.UPLOADING.value: 25,
         SessionStatus.PROCESSING.value: 70,
         SessionStatus.COMPLETED.value: 100,
         SessionStatus.FAILED.value: 100,
-        SessionStatus.ERROR.value: 100,
+        "error": 100,  # Legacy / extended status emitted by validation pipeline
+        "queued": 5,
     }
-    return mapping.get(status_value, 0)
+    return mapping.get(normalized, 0)
 
 
 def _extract_lc_number(session: ValidationSession) -> str | None:
