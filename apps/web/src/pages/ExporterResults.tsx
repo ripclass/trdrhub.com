@@ -170,7 +170,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const { getResults, isLoading: resultsLoading, error: resultsError } = useResults();
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
   const [resultsFetched, setResultsFetched] = useState(false);
-  const lcNumberSource = liveResults?.lcNumber || lcNumberParam || undefined;
+  const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
   const lcNumberParam = searchParams.get('lc') || undefined;
   
@@ -186,9 +186,11 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       getResults(validationSessionId)
         .then((data) => {
           setLiveResults(data);
+          setResultsErrorState(null);
           setResultsFetched(true);
         })
-        .catch(() => {
+        .catch((err: any) => {
+          setResultsErrorState(err?.message || "Failed to load validation results.");
           setResultsFetched(true);
         });
     }
@@ -211,21 +213,32 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const enableCustomsPackPDF = isExporterFeatureEnabled("exporter_customs_pack_pdf");
   
   // Guardrails check
+  const fallbackResults = isDemoMode ? mockExporterResults : null;
+  const resolvedResults = resultData ?? fallbackResults;
+  const resolvedLcNumber =
+    lcNumberParam ??
+    resultData?.lcNumber ??
+    liveResults?.lcNumber ??
+    jobStatus?.lcNumber ??
+    fallbackResults?.lcNumber ??
+    null;
+  const lcNumber = resolvedLcNumber ?? mockExporterResults.lcNumber;
+  
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
-    queryKey: ['exporter-guardrails', validationSessionId, lcNumberSource],
-    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: lcNumberSource }),
-    enabled: !!validationSessionId && !!lcNumberSource && enableBankSubmission,
+    queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
+    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: resolvedLcNumber }),
+    enabled: !!validationSessionId && !!resolvedLcNumber && enableBankSubmission,
     refetchInterval: 30000, // Check every 30 seconds
   });
   
   // Submission history
   const { data: submissionsData, isLoading: submissionsLoading } = useQuery({
-    queryKey: ['exporter-submissions', lcNumberSource, validationSessionId],
+    queryKey: ['exporter-submissions', resolvedLcNumber, validationSessionId],
     queryFn: () => exporterApi.listBankSubmissions({ 
-      lc_number: lcNumberSource, 
+      lc_number: resolvedLcNumber, 
       validation_session_id: validationSessionId 
     }),
-    enabled: !!lcNumberSource && enableBankSubmission,
+    enabled: !!resolvedLcNumber && enableBankSubmission,
   });
   
   // Poll submission status (Phase 7)
@@ -290,8 +303,12 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       );
     }
 
-    if (jobError || resultsError) {
-      const errorMessage = jobError?.message || resultsError?.message || "Failed to load validation results.";
+    if (jobError || resultsError || resultsErrorState) {
+      const errorMessage =
+        jobError?.message ||
+        resultsErrorState ||
+        resultsError?.message ||
+        "Failed to load validation results.";
       return (
         <div className="flex items-center justify-center min-h-[60vh]">
           <Card className="max-w-lg mx-auto">
@@ -328,7 +345,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     );
   }
 
-  const resolvedResults = resultData ?? (isDemoMode ? mockExporterResults : null);
   if (!resolvedResults) {
     return null;
   }

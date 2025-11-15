@@ -286,7 +286,11 @@ class RuleEvaluator:
     def evaluate_condition(
         self,
         condition: Dict[str, Any],
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        *,
+        rule_id: Optional[str] = None,
+        condition_index: Optional[int] = None,
+        condition_type: str = "condition"
     ) -> bool:
         """
         Evaluate a single condition against context.
@@ -302,7 +306,15 @@ class RuleEvaluator:
         day_type = condition.get("day_type")
         
         if not field_path or not operator:
-            logger.warning(f"Invalid condition: missing field or operator")
+            logger.warning(
+                "Invalid condition: missing field or operator",
+                extra={
+                    "rule_id": rule_id or "unknown",
+                    "condition_index": condition_index,
+                    "condition_type": condition_type,
+                    "condition": condition,
+                },
+            )
             return False
         
         # Resolve field value
@@ -340,7 +352,13 @@ class RuleEvaluator:
         applies_if = rule.get("applies_if", [])
         if applies_if:
             for precondition in applies_if:
-                if not self.evaluate_condition(precondition, context):
+                if not self.evaluate_condition(
+                    precondition,
+                    context,
+                    rule_id=rule_id,
+                    condition_index=index,
+                    condition_type="applies_if",
+                ):
                     # Rule doesn't apply - return as passed (not applicable)
                     return {
                         "rule_id": rule_id,
@@ -364,8 +382,14 @@ class RuleEvaluator:
         violations = []
         all_passed = True
         
-        for condition in conditions:
-            passed = self.evaluate_condition(condition, context)
+        for index, condition in enumerate(conditions):
+            passed = self.evaluate_condition(
+                condition,
+                context,
+                rule_id=rule_id,
+                condition_index=index,
+                condition_type="condition",
+            )
             if not passed:
                 all_passed = False
                 violations.append({
