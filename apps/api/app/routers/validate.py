@@ -370,6 +370,37 @@ async def validate_doc(
                 session_id=validation_session.id if validation_session else None,
             )
 
+        document_summaries = _build_document_summaries(
+            files_list,
+            results,
+            payload.get("documents"),
+        )
+        
+        stored_extracted_data = {}
+        if "lc" in payload:
+            stored_extracted_data["lc"] = payload["lc"]
+        if "invoice" in payload:
+            stored_extracted_data["invoice"] = payload["invoice"]
+        if "bill_of_lading" in payload:
+            stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
+        if payload.get("documents"):
+            stored_extracted_data["documents"] = payload["documents"]
+        if payload.get("documents_presence"):
+            stored_extracted_data["documents_presence"] = payload["documents_presence"]
+        
+        results_payload = {
+            "discrepancies": failed_results,
+            "results": results,
+            "documents": document_summaries,
+            "extracted_data": stored_extracted_data,
+            "extraction_status": payload.get("extraction_status", "unknown"),
+            "summary": {
+                "document_count": len(document_summaries),
+                "failed_rules": len(failed_results),
+            },
+            "lc_data": stored_extracted_data.get("lc", {}),
+        }
+        
         # Update session status if created
         if validation_session:
             # Apply bank policy overlays and exceptions (if bank user)
@@ -388,6 +419,8 @@ async def validate_doc(
                     import logging
                     logging.getLogger(__name__).warning(f"Bank policy application skipped: {e}")
             
+            validation_session.validation_results = results_payload.copy()
+            
             # Optionally enrich with AI (if feature flag enabled)
             ai_enrichment = {}
             try:
@@ -402,34 +435,12 @@ async def validate_doc(
                 # Don't fail validation if AI enrichment fails
                 import logging
                 logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
+                ai_enrichment = {}
             
-            document_summaries = _build_document_summaries(
-                files_list,
-                results,
-                payload.get("documents"),
-            )
-            
-            # Extract extracted_data from payload for storage
-            stored_extracted_data = {}
-            if "lc" in payload:
-                stored_extracted_data["lc"] = payload["lc"]
-            if "invoice" in payload:
-                stored_extracted_data["invoice"] = payload["invoice"]
-            if "bill_of_lading" in payload:
-                stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
+            if ai_enrichment:
+                results_payload.update(ai_enrichment)
+                validation_session.validation_results.update(ai_enrichment)
 
-            validation_session.validation_results = {
-                "discrepancies": failed_results,
-                "results": results,
-                "documents": document_summaries,
-                "extracted_data": stored_extracted_data,  # Store for later retrieval
-                "extraction_status": payload.get("extraction_status", "unknown"),  # Store status
-                "summary": {
-                    "document_count": len(document_summaries),
-                    "failed_rules": len(failed_results),
-                },
-                **ai_enrichment  # Merge AI enrichment if present
-            }
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
             db.commit()
@@ -465,25 +476,8 @@ async def validate_doc(
                     }
                 )
 
-        if not document_summaries:
-            document_summaries = _build_document_summaries(
-                files_list,
-                results,
-                payload.get("documents"),
-            )
-
         # Extract extracted data from payload for frontend display
-        extracted_data = {}
-        if "lc" in payload:
-            extracted_data["lc"] = payload["lc"]
-        if "invoice" in payload:
-            extracted_data["invoice"] = payload["invoice"]
-        if "bill_of_lading" in payload:
-            extracted_data["bill_of_lading"] = payload["bill_of_lading"]
-        if payload.get("documents"):
-            extracted_data["documents"] = payload["documents"]
-        if payload.get("documents_presence"):
-            extracted_data["documents_presence"] = payload["documents_presence"]
+        extracted_data = stored_extracted_data or {}
         extraction_status = payload.get("extraction_status", "unknown")
 
         return {
@@ -818,10 +812,24 @@ async def _build_document_context(
                     doc_info["extracted_fields"] = bl_context
                     doc_info["extraction_status"] = "success"
                     logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
+            else:
+                # For other document types, retain raw text for downstream use
+                doc_info["raw_text_preview"] = extracted_text[:500]
+                doc_info["extraction_status"] = "text_only"
+                extra_context = context.setdefault(document_type, {})
+                extra_context["raw_text"] = extracted_text
         except Exception as e:
             logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
             document_details.append(doc_info)
             continue
+
+        if doc_info.get("extracted_fields"):
+            doc_info["raw_text_preview"] = extracted_text[:500]
+        elif doc_info.get("extraction_status") in {"empty", "text_only"} and extracted_text:
+            # Ensure at least a preview is available for OCR overview
+            doc_info["raw_text_preview"] = extracted_text[:500]
+            if doc_info.get("extraction_status") == "empty":
+                doc_info["extraction_status"] = "text_only"
 
         document_details.append(doc_info)
         entry = documents_presence.setdefault(

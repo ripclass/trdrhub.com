@@ -185,9 +185,17 @@ class LLMAssistService:
             raise ValueError(error_msg or "Quota exceeded")
 
         # Prepare input data
+        session_results = session.validation_results if isinstance(session.validation_results, dict) else {}
+        lc_snapshot = (
+            session_results.get("lc_data")
+            or session_results.get("lc")
+            or (session_results.get("extracted_data", {}) if isinstance(session_results.get("extracted_data"), dict) else {}).get("lc")
+            or {}
+        )
+        
         input_data = {
             "discrepancies": request.discrepancies,
-            "lc_data": session.validation_results.get("lc_data", {}),
+            "lc_data": lc_snapshot,
             "language": request.language.value,
             "include_explanations": request.include_explanations,
             "include_fix_suggestions": request.include_fix_suggestions
