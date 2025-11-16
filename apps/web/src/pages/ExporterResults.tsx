@@ -277,6 +277,43 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   
   // Compute totalDiscrepancies early for use in isReadyToSubmit
   const totalDiscrepancies = resolvedResults?.discrepancies?.length ?? 0;
+  const documents = resolvedResults?.documents ?? [];
+  const extractedDocuments =
+    Array.isArray(resolvedResults?.extracted_data?.documents)
+      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
+      : [];
+  const issueCards = resolvedResults?.issue_cards ?? [];
+  const referenceIssues = resolvedResults?.reference_issues ?? [];
+  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
+  const hasIssueCards = issueCards.length > 0;
+  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      if (doc.name) {
+        map.set(doc.name, { status: doc.status, type: doc.type });
+      }
+    });
+    return map;
+  }, [documents]);
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
+  const filteredIssueCards = useMemo(() => {
+    if (issueFilter === "all") return issueCards;
+    return issueCards.filter(
+      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
+    );
+  }, [issueCards, issueFilter]);
   
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
     queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
@@ -500,45 +537,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   if (!resolvedResults) {
     return null;
   }
-
-  const documents = resolvedResults.documents ?? [];
-  const extractedDocuments =
-    Array.isArray(resolvedResults.extracted_data?.documents)
-      ? (resolvedResults.extracted_data?.documents as Array<Record<string, any>>)
-      : [];
-  // Filter out not_applicable rules (backend already filters, but add safety filter here)
-  const issueCards = resolvedResults.issue_cards ?? [];
-  const referenceIssues = resolvedResults.reference_issues ?? [];
-  const aiInsights = resolvedResults.ai_enrichment ?? resolvedResults.aiEnrichment;
-  const hasIssueCards = issueCards.length > 0;
-  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
-  const documentStatusMap = useMemo(() => {
-    const map = new Map<string, { status?: string; type?: string }>();
-    documents.forEach((doc) => {
-      if (doc.name) {
-        map.set(doc.name, { status: doc.status, type: doc.type });
-      }
-    });
-    return map;
-  }, [documents]);
-  const severityCounts = useMemo(
-    () =>
-      issueCards.reduce(
-        (acc, card) => {
-          const severity = normalizeDiscrepancySeverity(card.severity);
-          acc[severity] = (acc[severity] || 0) + 1;
-          return acc;
-        },
-        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
-      ),
-    [issueCards]
-  );
-  const filteredIssueCards = useMemo(() => {
-    if (issueFilter === "all") return issueCards;
-    return issueCards.filter(
-      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
-    );
-  }, [issueCards, issueFilter]);
 
   const getDocumentNamesForCard = (card: IssueCard): string[] => {
     const names = new Set<string>();
