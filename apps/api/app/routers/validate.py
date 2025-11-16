@@ -399,7 +399,8 @@ async def validate_doc(
             },
             "lc_data": stored_extracted_data.get("lc", {}),
         }
-        
+        ai_enrichment = {}
+
         # Update session status if created
         if validation_session:
             # Apply bank policy overlays and exceptions (if bank user)
@@ -421,7 +422,6 @@ async def validate_doc(
             validation_session.validation_results = results_payload.copy()
             
             # Optionally enrich with AI (if feature flag enabled)
-            ai_enrichment = {}
             try:
                 ai_enrichment = await enrich_validation_results_with_ai(
                     validation_results=results,
@@ -438,6 +438,8 @@ async def validate_doc(
             
             if ai_enrichment:
                 results_payload.update(ai_enrichment)
+                if not validation_session.validation_results:
+                    validation_session.validation_results = {}
                 validation_session.validation_results.update(ai_enrichment)
 
             validation_session.status = SessionStatus.COMPLETED.value
@@ -480,6 +482,9 @@ async def validate_doc(
         extraction_status = payload.get("extraction_status", "unknown")
 
         ai_enrichment_payload = results_payload.get("ai_enrichment")
+
+        if not results_payload.get("ai_enrichment") and ai_enrichment:
+            results_payload.update(ai_enrichment)
 
         return {
             "status": "ok",
