@@ -103,7 +103,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
               type: fileData.type,
               status: fileData.status,
               progress: fileData.progress,
-              documentType: fileData.documentType,
+              documentType: fileData.documentType || "other",
             }));
 
             setUploadedFiles(restoredFiles);
@@ -234,7 +234,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       size: file.size,
       type: file.type,
       status: "pending" as const,
-      progress: 0
+      progress: 0,
+      documentType: "other",
     }));
 
     setUploadedFiles(prev => [...prev, ...newFiles]);
@@ -716,7 +717,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                               Document Type:
                             </Label>
                             <Select
-                              value={file.documentType ?? undefined}
+                              value={file.documentType ?? "other"}
                               onValueChange={(value) => updateFileDocumentType(file.id, value)}
                             >
                               <SelectTrigger

@@ -137,6 +137,19 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   }, [user]);
 
   const initials = getInitials(displayName, email)
+  const avatarDataUri = useMemo(() => {
+    const safeInitials = initials || "TH"
+    const svg = `
+      <svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
+        <rect width='100%' height='100%' rx='12' fill='%230F172A'/>
+        <text x='50%' y='52%' dominant-baseline='middle' text-anchor='middle'
+          font-family='Inter, Arial, sans-serif' font-size='24' fill='%23FFFFFF'>
+          ${safeInitials}
+        </text>
+      </svg>
+    `
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  }, [initials])
 
   const handleNavigate = useCallback(
     (section: string) => {
@@ -182,8 +195,6 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
     return null;
   }
 
-  const avatarSeed = encodeURIComponent(email || displayName)
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -192,10 +203,7 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
           className={variant === "sidebar" ? "w-full justify-start gap-3 rounded-lg px-3 py-2" : "flex h-auto items-center gap-2 rounded-full px-2 py-1"}
         >
           <Avatar className="h-8 w-8">
-            <AvatarImage
-              src={`https://avatar.vercel.sh/${avatarSeed}.svg?size=64`}
-              alt={displayName}
-            />
+            <AvatarImage src={avatarDataUri} alt={displayName} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           <div className={variant === "sidebar" ? "flex flex-col text-left" : "hidden text-left sm:flex sm:flex-col"}>
