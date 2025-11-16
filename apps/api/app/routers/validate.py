@@ -579,18 +579,43 @@ def _build_document_summaries(
     document_details: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Create lightweight document summaries for downstream consumers."""
-    if not files_list:
-        return []
-
+    details = document_details or []
     has_failures = any(not r.get("passed", False) for r in results)
     discrepancy_count = len([r for r in results if not r.get("passed", False)])
 
-    detail_lookup: Dict[str, Dict[str, Any]] = {}
-    if document_details:
-        for detail in document_details:
+    def _summaries_from_details(details_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        summaries: List[Dict[str, Any]] = []
+        for index, detail in enumerate(details_list):
             filename = detail.get("filename")
-            if filename:
-                detail_lookup[filename] = detail
+            doc_type = detail.get("document_type") or _infer_document_type_from_name(filename, index)
+            extracted_fields = detail.get("extracted_fields") or {}
+            doc_has_failures = doc_type == "letter_of_credit" and has_failures
+            status = "warning" if doc_has_failures else "success"
+
+            summaries.append(
+                {
+                    "id": str(uuid4()),
+                    "name": filename or f"Document {index + 1}",
+                    "type": doc_type,
+                    "status": status,
+                    "discrepancyCount": discrepancy_count if doc_has_failures else 0,
+                    "extractedFields": extracted_fields,
+                    "ocrConfidence": detail.get("ocr_confidence"),
+                    "extractionStatus": detail.get("extraction_status"),
+                }
+            )
+        return summaries
+
+    if not files_list:
+        if details:
+            return _summaries_from_details(details)
+        return []
+
+    detail_lookup: Dict[str, Dict[str, Any]] = {}
+    for detail in details:
+        filename = detail.get("filename")
+        if filename:
+            detail_lookup[filename] = detail
 
     summaries: List[Dict[str, Any]] = []
     for index, file_obj in enumerate(files_list):
