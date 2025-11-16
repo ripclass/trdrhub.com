@@ -503,13 +503,26 @@ async def validate_doc(
             
             if ai_enrichment:
                 results_payload.update(ai_enrichment)
-                if not validation_session.validation_results:
-                    validation_session.validation_results = {}
-                validation_session.validation_results.update(ai_enrichment)
+                # CRITICAL: Update validation_results with FULL results_payload, not just ai_enrichment
+                # This ensures documents, discrepancies, issue_cards, etc. are all preserved
+                validation_session.validation_results = results_payload.copy()
+                logger.info(
+                    "Updated validation_results with AI enrichment: documents=%d keys=%s",
+                    len(results_payload.get("documents") or []),
+                    list(results_payload.keys()),
+                )
 
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
             db.commit()
+            
+            # Final verification log
+            stored_docs = (validation_session.validation_results or {}).get("documents") or []
+            logger.info(
+                "Final validation_results after commit: documents=%d total_keys=%d",
+                len(stored_docs),
+                len(validation_session.validation_results or {}),
+            )
             
             # Log bank validation upload if applicable
             if user_type == "bank":
