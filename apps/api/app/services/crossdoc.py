@@ -9,6 +9,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LABELS = {
+    "letter_of_credit": "Letter of Credit",
+    "commercial_invoice": "Commercial Invoice",
+    "bill_of_lading": "Bill of Lading",
+    "packing_list": "Packing List",
+    "insurance_certificate": "Insurance Certificate",
+    "certificate_of_origin": "Certificate of Origin",
+    "supporting_document": "Supporting Document",
+}
+
 
 def _coerce_decimal(value: Any) -> Optional[Decimal]:
     if value is None:
@@ -38,6 +48,7 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     invoice_context = payload.get("invoice") or {}
     bl_context = payload.get("bill_of_lading") or {}
     documents_presence = payload.get("documents_presence") or {}
+    document_lookup = _build_document_lookup(payload.get("documents"))
 
     def _clean_text(value: Optional[str]) -> str:
         if not value:
@@ -54,6 +65,11 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         invoice_context.get("product_description") or invoice_context.get("goods_description")
     )
     if lc_goods and invoice_goods and _text_signature(lc_goods) != _text_signature(invoice_goods):
+        doc_names, doc_ids = _resolve_doc_references(
+            document_lookup,
+            ["letter_of_credit", "commercial_invoice"],
+            ["Letter of Credit", "Commercial Invoice"],
+        )
         issues.append({
             "rule": "CROSSDOC-GOODS-1",
             "title": "Product Description Variation",
@@ -62,7 +78,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "message": "Product description in the commercial invoice differs from LC terms and may trigger a bank discrepancy.",
             "expected": lc_goods,
             "actual": invoice_goods,
-            "documents": ["Letter of Credit", "Commercial Invoice"],
+            "documents": doc_names,
+            "document_names": doc_names,
+            "document_ids": doc_ids,
             "display_card": True,
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
@@ -80,6 +98,11 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             if lc_amount is not None and tolerance_value is not None
             else f"<= {invoice_limit:,.2f} USD"
         )
+        doc_names, doc_ids = _resolve_doc_references(
+            document_lookup,
+            ["commercial_invoice", "letter_of_credit"],
+            ["Commercial Invoice", "Letter of Credit"],
+        )
         issues.append({
             "rule": "CROSSDOC-AMOUNT-1",
             "title": "Invoice Amount Exceeds LC + Tolerance",
@@ -91,7 +114,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             ),
             "expected": expected_amount_msg,
             "actual": f"{invoice_amount:,.2f} USD",
-            "documents": ["Commercial Invoice", "Letter of Credit"],
+            "documents": doc_names,
+            "document_names": doc_names,
+            "document_ids": doc_ids,
             "display_card": True,
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
@@ -103,6 +128,13 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     insurance_presence = documents_presence.get("insurance_certificate", {})
     insurance_present = insurance_presence.get("present", False)
     if insurance_required and not insurance_present:
+        doc_names, doc_ids = _resolve_doc_references(
+            document_lookup,
+            ["insurance_certificate"],
+            ["Insurance Certificate"],
+        )
+        if not doc_names:
+            doc_names = ["Letter of Credit"]
         issues.append({
             "rule": "CROSSDOC-DOC-1",
             "title": "Insurance Certificate Missing",
@@ -111,7 +143,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "message": "The LC references insurance coverage, but no insurance certificate was uploaded with the presentation.",
             "expected": "Upload an insurance certificate that matches the LC requirements.",
             "actual": "No insurance certificate detected among the uploaded documents.",
-            "documents": ["Letter of Credit"],
+            "documents": doc_names,
+            "document_names": doc_names,
+            "document_ids": doc_ids,
             "display_card": True,
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
@@ -121,6 +155,11 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     lc_applicant = _clean_text((lc_context.get("applicant") or {}).get("name") if isinstance(lc_context.get("applicant"), dict) else lc_context.get("applicant"))
     bl_shipper = _clean_text(bl_context.get("shipper"))
     if lc_applicant and bl_shipper and _text_signature(lc_applicant) != _text_signature(bl_shipper):
+        doc_names, doc_ids = _resolve_doc_references(
+            document_lookup,
+            ["bill_of_lading", "letter_of_credit"],
+            ["Bill of Lading", "Letter of Credit"],
+        )
         issues.append({
             "rule": "CROSSDOC-BL-1",
             "title": "B/L Shipper differs from LC Applicant",
@@ -129,7 +168,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "message": "The shipper shown on the Bill of Lading does not match the applicant named in the LC.",
             "expected": lc_applicant,
             "actual": bl_shipper,
-            "documents": ["Bill of Lading", "Letter of Credit"],
+            "documents": doc_names,
+            "document_names": doc_names,
+            "document_ids": doc_ids,
             "display_card": True,
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
@@ -138,6 +179,11 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     lc_beneficiary = _clean_text((lc_context.get("beneficiary") or {}).get("name") if isinstance(lc_context.get("beneficiary"), dict) else lc_context.get("beneficiary"))
     bl_consignee = _clean_text(bl_context.get("consignee"))
     if lc_beneficiary and bl_consignee and _text_signature(lc_beneficiary) != _text_signature(bl_consignee):
+        doc_names, doc_ids = _resolve_doc_references(
+            document_lookup,
+            ["bill_of_lading", "letter_of_credit"],
+            ["Bill of Lading", "Letter of Credit"],
+        )
         issues.append({
             "rule": "CROSSDOC-BL-2",
             "title": "B/L Consignee differs from LC Beneficiary",
@@ -146,7 +192,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "message": "The consignee on the Bill of Lading is different from the LC beneficiary, which may cause the bank to refuse documents.",
             "expected": lc_beneficiary,
             "actual": bl_consignee,
-            "documents": ["Bill of Lading", "Letter of Credit"],
+            "documents": doc_names,
+            "document_names": doc_names,
+            "document_ids": doc_ids,
             "display_card": True,
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "not_applicable": False,
@@ -214,6 +262,9 @@ def _normalize_issue_severity(value: Optional[str]) -> str:
 
 
 def _infer_primary_document(discrepancy: Dict[str, Any]) -> str:
+    document_names = discrepancy.get("document_names")
+    if isinstance(document_names, list) and document_names:
+        return document_names[0]
     documents = discrepancy.get("documents")
     if isinstance(documents, list) and documents:
         return documents[0]
@@ -260,6 +311,8 @@ def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
         "description": discrepancy.get("message") or discrepancy.get("description") or "",
         "severity": discrepancy.get("severity", "minor"),
         "documents": discrepancy.get("documents", []),
+        "document_names": discrepancy.get("document_names", []),
+        "document_ids": discrepancy.get("document_ids", []),
         "expected": discrepancy.get("expected"),
         "actual": discrepancy.get("actual"),
         "suggestion": discrepancy.get("suggestion"),
@@ -270,4 +323,40 @@ def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
 # Backwards compatibility for modules still using the legacy private names
 _run_cross_document_checks = run_cross_document_checks
 _build_issue_cards = build_issue_cards
+
+
+def _build_document_lookup(documents: Optional[List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    lookup: Dict[str, List[Dict[str, Any]]] = {}
+    if not documents:
+        return lookup
+    for doc in documents:
+        doc_type = doc.get("document_type") or doc.get("type")
+        if not doc_type:
+            continue
+        entry = {
+            "name": doc.get("filename") or doc.get("name"),
+            "id": doc.get("id"),
+            "type": doc_type,
+        }
+        lookup.setdefault(doc_type, []).append(entry)
+    return lookup
+
+
+def _resolve_doc_references(
+    lookup: Dict[str, List[Dict[str, Any]]],
+    canonical_types: List[str],
+    fallback_labels: List[str],
+) -> Tuple[List[str], List[str]]:
+    names: List[str] = []
+    ids: List[str] = []
+    for doc_type in canonical_types:
+        entries = lookup.get(doc_type) or []
+        for entry in entries:
+            label = entry.get("name") or DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
+            names.append(label)
+            if entry.get("id"):
+                ids.append(entry["id"])
+    if not names:
+        names = fallback_labels
+    return names, ids
 

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate } from "@/hooks/use-lcopilot";
+import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
@@ -66,6 +67,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const [hasSessionFiles, setHasSessionFiles] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ exists: boolean; nextVersion: string; currentVersions: number } | null>(null);
   const [isCheckingLC, setIsCheckingLC] = useState(false);
+  const [showDocTypeErrors, setShowDocTypeErrors] = useState(false);
 
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -289,13 +291,18 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   };
 
   const updateFileDocumentType = (fileId: string, documentType: string) => {
-    setUploadedFiles(prev =>
-      prev.map(file =>
-        file.id === fileId
-          ? { ...file, documentType }
-          : file
-      )
-    );
+    setUploadedFiles((prev) => {
+      const updated = prev.map((file) =>
+        file.id === fileId ? { ...file, documentType } : file
+      );
+      if (showDocTypeErrors) {
+        const completed = updated.filter((file) => file.status === "completed");
+        if (completed.length > 0 && completed.every((file) => !!file.documentType)) {
+          setShowDocTypeErrors(false);
+        }
+      }
+      return updated;
+    });
   };
 
   const formatFileSize = (bytes: number) => {
@@ -347,12 +354,24 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     }
 
     const completedFiles = uploadedFiles.filter(f => f.status === "completed");
+    if (completedFiles.some(file => !file.documentType)) {
+      setShowDocTypeErrors(true);
+      toast({
+        title: "Assign document types",
+        description: "Please categorize each uploaded document (LC, Invoice, B/L, etc.) before processing.",
+        variant: "destructive",
+      });
+      return;
+    } else {
+      setShowDocTypeErrors(false);
+    }
+
     const files = completedFiles.map(f => f.file);
 
     // Create document tags mapping
     const documentTags: Record<string, string> = {};
     completedFiles.forEach(file => {
-      documentTags[file.name] = file.documentType || 'other';
+      documentTags[file.name] = file.documentType || 'supporting_document';
     });
 
     try {
@@ -697,10 +716,17 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                               Document Type:
                             </Label>
                             <Select
-                              value={file.documentType || 'other'}
+                              value={file.documentType ?? undefined}
                               onValueChange={(value) => updateFileDocumentType(file.id, value)}
                             >
-                              <SelectTrigger className="h-7 text-xs">
+                              <SelectTrigger
+                                className={cn(
+                                  "h-7 text-xs",
+                                  showDocTypeErrors &&
+                                    !file.documentType &&
+                                    "border-destructive focus-visible:ring-destructive"
+                                )}
+                              >
                                 <SelectValue placeholder="Select type" />
                               </SelectTrigger>
                               <SelectContent>
@@ -711,6 +737,11 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                                 ))}
                               </SelectContent>
                             </Select>
+                            {showDocTypeErrors && !file.documentType && (
+                              <p className="text-xs text-destructive">
+                                Select the correct document category.
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}

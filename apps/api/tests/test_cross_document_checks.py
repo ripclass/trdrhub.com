@@ -50,6 +50,11 @@ def sample_crossdoc_payload():
             "insurance_certificate": {"present": False, "count": 0},
             "packing_list": {"present": True, "count": 1},
         },
+        "documents": [
+            {"id": "lc-doc", "filename": "LCSET01_01_LC.pdf", "document_type": "letter_of_credit"},
+            {"id": "invoice-doc", "filename": "LCSET01_02_Commercial_Invoice.pdf", "document_type": "commercial_invoice"},
+            {"id": "bl-doc", "filename": "LCSET01_03_Bill_of_Lading.pdf", "document_type": "bill_of_lading"},
+        ],
         "lc_text": (
             "Credit requires full set of insurance policies and mentions insurance coverage twice."
         ),
@@ -79,6 +84,8 @@ def test_cross_document_checks_emits_all_expected_issues(sample_crossdoc_payload
     assert goods_issue["display_card"] is True
     assert goods_issue["expected"].startswith("Refined white sugar")
     assert goods_issue["actual"].startswith("Brown cane sugar")
+    assert goods_issue["document_ids"] == ["lc-doc", "invoice-doc"]
+    assert goods_issue["documents"][0] == "LCSET01_01_LC.pdf"
 
 
 def test_issue_cards_render_cross_doc_rules(sample_crossdoc_payload):
@@ -92,4 +99,7 @@ def test_issue_cards_render_cross_doc_rules(sample_crossdoc_payload):
     ids = {card["id"] for card in issue_cards}
     assert "CROSSDOC-GOODS-1" in ids
     assert "CROSSDOC-AMOUNT-1" in ids
+
+    goods_card = next(card for card in issue_cards if card["id"] == "CROSSDOC-GOODS-1")
+    assert goods_card["documentName"] == "LCSET01_01_LC.pdf"
 
