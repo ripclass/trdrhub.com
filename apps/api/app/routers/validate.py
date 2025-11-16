@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 import json
+import copy
 
 import logging
 from io import BytesIO
@@ -562,7 +563,21 @@ async def validate_doc(
                 len(results_payload.get("issue_cards") or []),
             )
             
-            validation_session.validation_results = results_payload.copy()
+            # CRITICAL: Use deepcopy to ensure nested structures are properly copied
+            # Also ensure all required keys are present
+            required_keys = ["documents", "discrepancies", "results", "extracted_data", "issue_cards", "reference_issues"]
+            for key in required_keys:
+                if key not in results_payload:
+                    logger.warning(f"Missing required key '{key}' in results_payload, adding empty default")
+                    if key == "documents":
+                        results_payload[key] = document_summaries or []
+                    elif key in ["discrepancies", "results", "issue_cards", "reference_issues"]:
+                        results_payload[key] = []
+                    elif key == "extracted_data":
+                        results_payload[key] = stored_extracted_data or {}
+            
+            # Store initial payload with deep copy to ensure nested structures are preserved
+            validation_session.validation_results = copy.deepcopy(results_payload)
             
             # Optionally enrich with AI (if feature flag enabled)
             try:
@@ -580,10 +595,23 @@ async def validate_doc(
                 ai_enrichment = {}
             
             if ai_enrichment:
+                # CRITICAL: Update results_payload with ai_enrichment, then do a deep copy
+                # This ensures we're merging ai_enrichment into the existing payload, not replacing it
                 results_payload.update(ai_enrichment)
-                # CRITICAL: Update validation_results with FULL results_payload, not just ai_enrichment
-                # This ensures documents, discrepancies, issue_cards, etc. are all preserved
-                validation_session.validation_results = results_payload.copy()
+                
+                # Verify all required keys are still present after update
+                for key in required_keys:
+                    if key not in results_payload:
+                        logger.error(f"Key '{key}' lost after AI enrichment update! Restoring from original.")
+                        if key == "documents":
+                            results_payload[key] = document_summaries or []
+                        elif key in ["discrepancies", "results", "issue_cards", "reference_issues"]:
+                            results_payload[key] = []
+                        elif key == "extracted_data":
+                            results_payload[key] = stored_extracted_data or {}
+                
+                # CRITICAL: Use deepcopy to ensure nested structures are properly preserved
+                validation_session.validation_results = copy.deepcopy(results_payload)
                 logger.info(
                     "Updated validation_results with AI enrichment: documents=%d keys=%s",
                     len(results_payload.get("documents") or []),
@@ -594,13 +622,26 @@ async def validate_doc(
             validation_session.processing_completed_at = func.now()
             db.commit()
             
+            # CRITICAL: Refresh session to ensure we're reading the latest data from DB
+            db.refresh(validation_session)
+            
             # Final verification log
             stored_docs = (validation_session.validation_results or {}).get("documents") or []
+            stored_keys = list((validation_session.validation_results or {}).keys())
             logger.info(
-                "Final validation_results after commit: documents=%d total_keys=%d",
+                "Final validation_results after commit: documents=%d total_keys=%d keys=%s",
                 len(stored_docs),
                 len(validation_session.validation_results or {}),
+                stored_keys,
             )
+            
+            # Defensive check: if documents are missing, log error but don't fail
+            if not stored_docs and document_summaries:
+                logger.error(
+                    "CRITICAL: Documents lost after commit! Had %d summaries before commit, but validation_results only has keys: %s",
+                    len(document_summaries),
+                    stored_keys,
+                )
             
             # Log bank validation upload if applicable
             if user_type == "bank":
@@ -659,8 +700,10 @@ async def validate_doc(
                 # Update results_payload with the rebuilt documents
                 results_payload["documents"] = final_documents
                 if validation_session:
-                    validation_session.validation_results = results_payload.copy()
+                    # CRITICAL: Use deepcopy to ensure nested structures are preserved
+                    validation_session.validation_results = copy.deepcopy(results_payload)
                     db.commit()
+                    db.refresh(validation_session)  # Refresh to read latest data
         
         return {
             "status": "ok",
