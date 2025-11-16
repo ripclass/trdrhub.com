@@ -468,6 +468,22 @@ async def validate_doc(
                     import logging
                     logging.getLogger(__name__).warning(f"Bank policy application skipped: {e}")
             
+            # CRITICAL: Ensure documents are in validation_results before storing
+            if not results_payload.get("documents") and document_summaries:
+                logger.warning(
+                    "Document summaries missing from results_payload but available (%d summaries), adding them",
+                    len(document_summaries)
+                )
+                results_payload["documents"] = document_summaries
+            
+            # Log what we're storing
+            logger.info(
+                "Storing validation_results: documents=%d discrepancies=%d issue_cards=%d",
+                len(results_payload.get("documents") or []),
+                len(results_payload.get("discrepancies") or []),
+                len(results_payload.get("issue_cards") or []),
+            )
+            
             validation_session.validation_results = results_payload.copy()
             
             # Optionally enrich with AI (if feature flag enabled)
@@ -535,11 +551,31 @@ async def validate_doc(
         if not results_payload.get("ai_enrichment") and ai_enrichment:
             results_payload.update(ai_enrichment)
 
+        # CRITICAL: Ensure documents are always in the response
+        final_documents = document_summaries or []
+        if not final_documents and payload.get("documents"):
+            # Last resort: try to build summaries from document_details if summaries are empty
+            logger.warning(
+                "Document summaries empty but document_details exist, attempting to rebuild from payload"
+            )
+            final_documents = _build_document_summaries(
+                [],  # Empty files_list
+                results,
+                payload.get("documents"),  # Use document_details from payload
+            )
+            if final_documents:
+                logger.info("Successfully rebuilt %d document summaries from payload", len(final_documents))
+                # Update results_payload with the rebuilt documents
+                results_payload["documents"] = final_documents
+                if validation_session:
+                    validation_session.validation_results = results_payload.copy()
+                    db.commit()
+        
         return {
             "status": "ok",
             "results": results,
             "discrepancies": failed_results,  # Only failed, non-not_applicable rules
-            "documents": document_summaries,
+            "documents": final_documents,  # Use final_documents instead of document_summaries
             "extracted_data": extracted_data,  # Include extracted LC fields for frontend
             "extraction_status": extraction_status,  # success, partial, empty, error
             "job_id": str(job_id),

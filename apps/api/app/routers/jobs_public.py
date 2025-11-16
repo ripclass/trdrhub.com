@@ -73,6 +73,9 @@ def _extract_lc_number(session: ValidationSession) -> str | None:
 
 
 def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     discrepancy_map: Dict[str, List[Dict[str, Any]]] = {}
     for entry in discrepancies:
         doc_ids = entry.get("document_ids") or entry.get("document_id")
@@ -84,6 +87,7 @@ def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[st
 
     documents_payload: List[Dict[str, Any]] = []
     if session.documents:
+        logger.info("Using DB-backed documents: %d found", len(session.documents))
         for document in session.documents:
             doc_id = str(document.id)
             doc_discrepancies = discrepancy_map.get(doc_id, [])
@@ -107,10 +111,24 @@ def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[st
             )
 
     if documents_payload:
+        logger.info("Returning %d documents from DB-backed sources", len(documents_payload))
         return documents_payload
 
     # Fallback to summaries stored in validation_results when no DB-backed docs
-    fallback_docs = (session.validation_results or {}).get("documents") or []
+    validation_results = session.validation_results or {}
+    fallback_docs = validation_results.get("documents") or []
+    logger.info(
+        "No DB-backed documents, checking validation_results: has_results=%s documents_count=%d",
+        bool(validation_results),
+        len(fallback_docs),
+    )
+    
+    if not fallback_docs:
+        logger.warning(
+            "No documents found in validation_results! Keys: %s",
+            list(validation_results.keys()) if validation_results else "None"
+        )
+    
     for doc in fallback_docs:
         doc_id = str(doc.get("id") or uuid4())
         status_hint = doc.get("status") or "warning"
