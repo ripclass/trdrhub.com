@@ -396,10 +396,16 @@ async def validate_doc(
                 session_id=validation_session.id if validation_session else None,
             )
 
+        document_details_for_summaries = payload.get("documents")
+        logger.info(
+            "Building document summaries: files_list=%d details=%d",
+            len(files_list) if files_list else 0,
+            len(document_details_for_summaries) if document_details_for_summaries else 0,
+        )
         document_summaries = _build_document_summaries(
             files_list,
             results,
-            payload.get("documents"),
+            document_details_for_summaries,
         )
         if document_summaries:
             doc_status_counts: Dict[str, int] = {}
@@ -439,6 +445,8 @@ async def validate_doc(
                 "failed_rules": len(failed_results),
             },
             "lc_data": stored_extracted_data.get("lc", {}),
+            "issue_cards": issue_cards,  # User-facing actionable issues
+            "reference_issues": reference_issues,  # Technical rule references
         }
         ai_enrichment = {}
 
@@ -606,11 +614,21 @@ def _build_document_summaries(
             )
         return summaries
 
+    # CRITICAL: Always prioritize document_details if available - it has all the info we need
+    # and doesn't depend on file objects being readable (which may be consumed/closed)
+    if details:
+        logger.info(
+            "Building document summaries from details: %d documents found",
+            len(details)
+        )
+        return _summaries_from_details(details)
+
+    # Fallback: try to use files_list if details not available
     if not files_list:
-        if details:
-            return _summaries_from_details(details)
+        logger.warning("No document details or files_list available - returning empty summaries")
         return []
 
+    # Build summaries from files_list (less reliable since files may be consumed)
     detail_lookup: Dict[str, Dict[str, Any]] = {}
     for detail in details:
         filename = detail.get("filename")

@@ -318,6 +318,11 @@ def get_job_results(
         extracted_data = session.extracted_data
     
     extraction_status = results_payload.get("extraction_status") or "unknown"
+    
+    # Include issue_cards and reference_issues for better UI display
+    issue_cards = results_payload.get("issue_cards") or []
+    reference_issues = results_payload.get("reference_issues") or []
+    ai_enrichment = results_payload.get("ai_enrichment") or results_payload.get("aiEnrichment")
 
     return {
         "jobId": str(session.id),
@@ -330,7 +335,10 @@ def get_job_results(
         "documents": documents,
         "extracted_data": extracted_data,  # Include extracted LC fields for frontend
         "extraction_status": extraction_status,  # success, partial, empty, error
-        "aiEnrichment": results_payload.get("ai_enrichment"),
+        "issue_cards": issue_cards,  # User-facing actionable issues
+        "reference_issues": reference_issues,  # Technical rule references
+        "aiEnrichment": ai_enrichment,
+        "ai_enrichment": ai_enrichment,  # Support both naming conventions
     }
 
 
