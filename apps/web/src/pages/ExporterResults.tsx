@@ -511,6 +511,151 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const referenceIssues = resolvedResults.reference_issues ?? [];
   const aiInsights = resolvedResults.ai_enrichment ?? resolvedResults.aiEnrichment;
   const hasIssueCards = issueCards.length > 0;
+  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      if (doc.name) {
+        map.set(doc.name, { status: doc.status, type: doc.type });
+      }
+    });
+    return map;
+  }, [documents]);
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
+  const filteredIssueCards = useMemo(() => {
+    if (issueFilter === "all") return issueCards;
+    return issueCards.filter(
+      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
+    );
+  }, [issueCards, issueFilter]);
+
+  const getDocumentNamesForCard = (card: IssueCard): string[] => {
+    const names = new Set<string>();
+    const anyCard = card as any;
+    if (card.documentName) {
+      names.add(card.documentName);
+    }
+    if (Array.isArray(anyCard.documentNames)) {
+      anyCard.documentNames.forEach((name: string) => {
+        if (name) names.add(name);
+      });
+    }
+    if (Array.isArray(anyCard.documents)) {
+      anyCard.documents.forEach((name: string) => {
+        if (name) names.add(name);
+      });
+    }
+    return Array.from(names);
+  };
+
+  const renderDocumentChips = (card: IssueCard) => {
+    const names = getDocumentNamesForCard(card);
+    if (names.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {names.map((name) => {
+          const meta = documentStatusMap.get(name);
+          const status = meta?.status ?? "warning";
+          const statusClass =
+            status === "success"
+              ? "bg-success/10 text-success border-success/20"
+              : status === "error"
+              ? "bg-destructive/10 text-destructive border-destructive/20"
+              : "bg-warning/10 text-warning border-warning/20";
+          return (
+            <Badge key={name} variant="outline" className={statusClass}>
+              {meta?.type ? `${meta.type}: ` : ""}
+              {name}
+            </Badge>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderAIInsightsCard = () => {
+    if (!aiInsights?.summary) {
+      return null;
+    }
+
+    return (
+      <Card className="shadow-soft border-0">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Lightbulb className="w-5 h-5 text-primary" />
+            <div>
+              <CardTitle>AI Risk Insights</CardTitle>
+              <CardDescription>
+                Context-aware guidance generated for this LC package.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
+          {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">Next Suggestions</p>
+              <ul className="list-disc list-inside text-sm text-foreground space-y-1">
+                {aiInsights.suggestions.map((suggestion, idx) => (
+                  <li key={idx}>{suggestion}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderReferenceIssuesCard = () => {
+    if (!referenceIssues.length) {
+      return null;
+    }
+
+    return (
+      <Card className="shadow-soft border border-dashed border-muted">
+        <CardHeader>
+          <CardTitle className="text-base">Technical References</CardTitle>
+          <CardDescription>
+            Underlying rule citations retained for audit (hidden from SME view).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          {referenceIssues.map((issue, index) => (
+            <div key={index} className="p-3 rounded-lg bg-secondary/20 border border-secondary/40">
+              <p className="font-medium text-foreground">
+                {issue.title || issue.rule || `Rule ${index + 1}`}
+              </p>
+              <p className="text-xs uppercase tracking-wide mt-1">
+                Severity: {issue.severity || "reference"} · {issue.ruleset_domain || "rulebook"}
+              </p>
+              {issue.article && (
+                <p className="text-xs mt-1">
+                  Article: <span className="font-medium">{issue.article}</span>
+                </p>
+              )}
+              {issue.message && <p className="mt-2">{issue.message}</p>}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  };
   const totalDocuments = documents.length || 0;
   // totalDiscrepancies already computed above for use in isReadyToSubmit
   const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
@@ -941,36 +1086,89 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
 
           <TabsContent value="discrepancies" className="space-y-4">
             {hasIssueCards ? (
-              issueCards.map((card, index) => {
-                const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
-                const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-                const documentLabel = card.documentName || card.document || "Supporting Document";
+              <>
+                <Card className="shadow-soft border-0">
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-4">
+                      <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Critical</p>
+                        <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Major</p>
+                        <p className="text-2xl font-bold text-warning">{severityCounts.major}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/30 border border-muted">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Minor</p>
+                        <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Issues</p>
+                        <p className="text-2xl font-bold text-foreground">{issueCards.length}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: "all", label: `All (${issueCards.length})` },
+                        { value: "critical", label: `Critical (${severityCounts.critical})` },
+                        { value: "major", label: `Major (${severityCounts.major})` },
+                        { value: "minor", label: `Minor (${severityCounts.minor})` },
+                      ].map((option) => (
+                        <Button
+                          key={option.value}
+                          size="sm"
+                          variant={issueFilter === option.value ? "default" : "outline"}
+                          onClick={() => setIssueFilter(option.value as typeof issueFilter)}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                {filteredIssueCards.length === 0 ? (
+                  <Card className="shadow-soft border border-dashed">
+                    <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                      No issues match this severity filter.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredIssueCards.map((card, index) => {
+                    const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+                    const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+                    const documentLabel = card.documentName || (card as any).document || "Supporting Document";
 
-                return (
-                  <DiscrepancyGuidance
-                    key={fallbackId}
-                    discrepancy={{
-                      id: fallbackId,
-                      title: card.title ?? "Review Required",
-                      description: card.description ?? "",
-                      severity: normalizedSeverity,
-                      documentName: documentLabel,
-                      documentType: card.documentType ?? documentLabel,
-                      rule: card.rule ?? fallbackId,
-                      expected: card.expected ?? card.title ?? card.rule ?? "",
-                      actual: card.actual ?? "",
-                      suggestion: card.suggestion ?? "Align the document with the LC clause.",
-                      field: card.field,
-                    }}
-                    onRevalidate={async (id) => {
-                      console.log("Re-validating discrepancy:", id);
-                    }}
-                    onUploadFixed={async (id, file) => {
-                      console.log("Uploading fixed document for discrepancy:", id, file.name);
-                    }}
-                  />
-                );
-              })
+                    return (
+                      <div key={fallbackId} className="space-y-3">
+                        {renderDocumentChips(card)}
+                        <DiscrepancyGuidance
+                          discrepancy={{
+                            id: fallbackId,
+                            title: card.title ?? "Review Required",
+                            description: card.description ?? "",
+                            severity: normalizedSeverity,
+                            documentName: documentLabel,
+                            documentType: card.documentType ?? documentLabel,
+                            rule: card.rule ?? fallbackId,
+                            expected: card.expected ?? card.title ?? card.rule ?? "",
+                            actual: card.actual ?? "",
+                            suggestion: card.suggestion ?? "Align the document with the LC clause.",
+                            field: card.field,
+                          }}
+                          onRevalidate={async (id) => {
+                            console.log("Re-validating discrepancy:", id);
+                          }}
+                          onUploadFixed={async (id, file) => {
+                            console.log("Uploading fixed document for discrepancy:", id, file.name);
+                          }}
+                        />
+                      </div>
+                    );
+                  })
+                )}
+                {renderAIInsightsCard()}
+                {renderReferenceIssuesCard()}
+              </>
             ) : (
               <>
                 <Card className="shadow-soft border-0">
@@ -984,106 +1182,11 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </p>
                   </CardContent>
                 </Card>
-                {aiInsights?.summary && (
-                  <Card className="shadow-soft border-0">
-                    <CardHeader>
-                      <div className="flex items-center gap-3">
-                        <Lightbulb className="w-5 h-5 text-primary" />
-                        <div>
-                          <CardTitle>AI Risk Insights</CardTitle>
-                          <CardDescription>Context-aware guidance generated for this LC package.</CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
-                      {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">Next Suggestions</p>
-                          <ul className="list-disc list-inside text-sm text-foreground space-y-1">
-                            {aiInsights.suggestions.map((suggestion, idx) => (
-                              <li key={idx}>{suggestion}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-                {referenceIssues.length > 0 && (
-                  <Card className="shadow-soft border border-dashed border-muted">
-                    <CardHeader>
-                      <CardTitle className="text-base">Technical References</CardTitle>
-                      <CardDescription>Underlying rule citations retained for audit (hidden from SME view).</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm text-muted-foreground">
-                      {referenceIssues.map((reference, idx) => (
-                        <div key={`${reference.rule}-${idx}`} className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="font-medium text-foreground">{reference.title || reference.rule}</p>
-                            <p>{reference.message}</p>
-                          </div>
-                          <Badge variant="outline">
-                            {(reference.ruleset_domain || "rulebook").toUpperCase()}
-                          </Badge>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
+                {renderAIInsightsCard()}
+                {renderReferenceIssuesCard()}
               </>
             )}
-
-            {hasIssueCards && aiInsights?.summary && (
-              <Card className="shadow-soft border-0">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <Lightbulb className="w-5 h-5 text-primary" />
-                    <div>
-                      <CardTitle>AI Risk Insights</CardTitle>
-                      <CardDescription>Automatically generated guidance based on the failed checks.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
-                  {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-muted-foreground">Suggested Actions</p>
-                      <ul className="list-disc list-inside text-sm text-foreground space-y-1">
-                        {aiInsights.suggestions.map((suggestion, idx) => (
-                          <li key={idx}>{suggestion}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {referenceIssues.length > 0 && hasIssueCards && (
-              <Card className="shadow-soft border border-dashed border-muted">
-                <CardHeader>
-                  <CardTitle className="text-base">Technical References</CardTitle>
-                  <CardDescription>Additional rule hits kept for audit but hidden from SME view.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  {referenceIssues.map((reference, idx) => (
-                    <div key={`${reference.rule}-${idx}`} className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-medium text-foreground">{reference.title || reference.rule}</p>
-                        <p>{reference.message}</p>
-                      </div>
-                      <Badge variant="outline">
-                        {(reference.ruleset_domain || "rulebook").toUpperCase()}
-                      </Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
-
           <TabsContent value="extracted-data" className="space-y-4">
             <Card className="shadow-soft border-0">
               <CardHeader>
