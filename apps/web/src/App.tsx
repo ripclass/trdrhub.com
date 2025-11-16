@@ -14,7 +14,6 @@ import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import UploadLC from './pages/UploadLC'
-import Results from './pages/Results'
 import DraftLCCorrections from './pages/DraftLCCorrections'
 import DraftLCRiskResults from './pages/DraftLCRiskResults'
 import ExportLCUpload from './pages/ExportLCUpload'
@@ -78,8 +77,8 @@ function App() {
         <Route path="/lcopilot/demo" element={<DiscrepancyListDemo />} />
         <Route path="/lcopilot/dashboard" element={<Dashboard />} />
         <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
-        <Route path="/lcopilot/results" element={<Results />} />
-        <Route path="/lcopilot/results/:jobId" element={<Results />} />
+        <Route path="/lcopilot/results" element={<ExporterResults />} />
+        <Route path="/lcopilot/results/:jobId" element={<ExporterResults />} />
         <Route path="/lcopilot/draft-corrections" element={<DraftLCCorrections />} />
         <Route path="/lcopilot/draft-risk-results" element={<DraftLCRiskResults />} />
         <Route path="/export-lc-upload" element={<ExportLCUpload />} />

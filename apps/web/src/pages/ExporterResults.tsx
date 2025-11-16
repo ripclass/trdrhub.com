@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { Link, useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -171,13 +171,15 @@ const normalizeDiscrepancySeverity = (
 
 export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
   const [searchParams] = useSearchParams();
+  const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
   const jobIdParam = searchParams.get('jobId');
   const sessionParam = searchParams.get('session');
-  const validationSessionId = jobIdParam || sessionParam || null;
+  const jobIdFromPath = params.jobId;
+  const validationSessionId = jobIdParam || sessionParam || jobIdFromPath || null;
   const isDemoMode = searchParams.get('demo') === 'true';
   
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
