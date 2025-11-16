@@ -78,16 +78,23 @@ type DashboardStats = {
   documentsProcessed?: number;
 };
 
-type ValidationHistoryItem = {
+type RecentValidationRow = {
   id: string;
-  date: string;
-  type: string;
-  supplier: string;
+  lcNumber: string;
+  submittedAt?: string;
+  supplier?: string;
   status: "approved" | "flagged";
-  risks: number;
+  discrepancyCount: number;
+  topIssueTitle?: string;
+  topIssueSeverity?: string;
+  documentStatus?: {
+    success?: number;
+    warning?: number;
+    error?: number;
+  } | null;
 };
 
-const EMPTY_HISTORY: ValidationHistoryItem[] = [];
+const EMPTY_HISTORY: RecentValidationRow[] = [];
 const EMPTY_NOTIFICATIONS: Notification[] = [];
 
 export default function ExporterDashboardV2() {
@@ -109,13 +116,18 @@ export default function ExporterDashboardV2() {
   const [searchParams, setSearchParams] = useSearchParams();
   const dashboardStats: DashboardStats | null = null;
   const { history: validationHistory, isLoading: isLoadingHistory } = useValidationHistory(10, 'completed');
-  const recentHistory: ValidationHistoryItem[] = validationHistory.map((job) => ({
+  const recentHistory: RecentValidationRow[] = validationHistory.map((job) => ({
     id: job.jobId,
-    lcNumber: job.lcNumber || 'N/A',
-    date: job.completedAt || job.createdAt || new Date().toISOString(),
-    supplier: 'N/A', // Not available in current API response
-    status: job.discrepancyCount && job.discrepancyCount > 0 ? 'flagged' as const : 'approved' as const,
-    risks: job.discrepancyCount || 0,
+    lcNumber: job.lcNumber || "N/A",
+    submittedAt: job.completedAt || job.createdAt || new Date().toISOString(),
+    supplier: job.supplierName || "—",
+    status: job.topIssue || (job.discrepancyCount && job.discrepancyCount > 0)
+      ? ("flagged" as const)
+      : ("approved" as const),
+    discrepancyCount: job.discrepancyCount || 0,
+    topIssueTitle: job.topIssue?.title,
+    topIssueSeverity: job.topIssue?.severity,
+    documentStatus: job.documentStatus,
   }));
   const dashboardNotifications = EMPTY_NOTIFICATIONS;
 
@@ -398,7 +410,7 @@ interface DashboardOverviewProps {
   onResumeDraft: (draft: DraftData) => void;
   onDeleteDraft: (draftId: string) => void;
   formatTimeAgo: (date: string) => string;
-  recentHistory: ValidationHistoryItem[];
+  recentHistory: RecentValidationRow[];
   workspaceTab: string;
   onWorkspaceTabChange: (value: string) => void;
   notifications: Notification[];
@@ -737,10 +749,12 @@ function WorkspaceCard({
 interface RecentValidationsCardProps {
   title: string;
   description: string;
-  history: ValidationHistoryItem[];
+  history: RecentValidationRow[];
 }
 
 function RecentValidationsCard({ title, description, history }: RecentValidationsCardProps) {
+  const navigate = useNavigate();
+
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
@@ -759,7 +773,18 @@ function RecentValidationsCard({ title, description, history }: RecentValidation
           </div>
         ) : (
           <div className="space-y-4">
-            {history.map((item) => (
+            {history.map((item) => {
+              const severity = item.topIssueSeverity || (item.discrepancyCount > 0 ? "warning" : "success");
+              const issueLabel =
+                item.topIssueTitle ||
+                (item.discrepancyCount > 0
+                  ? `${item.discrepancyCount} issue${item.discrepancyCount === 1 ? "" : "s"}`
+                  : "No discrepancies");
+              const submittedLabel = item.submittedAt
+                ? new Date(item.submittedAt).toLocaleString()
+                : "In review";
+
+              return (
               <div
                 key={item.id}
                 className="flex items-center justify-between p-4 rounded-lg border bg-secondary/20"
@@ -778,28 +803,40 @@ function RecentValidationsCard({ title, description, history }: RecentValidation
                   </div>
                   <div>
                     <h4 className="font-semibold text-foreground">
-                      {item.type} #{item.id}
+                      {item.lcNumber}
                     </h4>
-                    <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Supplier: {item.supplier || "—"}
+                    </p>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                      <span>{item.date}</span>
+                      <span>{submittedLabel}</span>
                     </div>
+                    {item.documentStatus && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Docs: {item.documentStatus.success ?? 0} clear ·{" "}
+                        {item.documentStatus.warning ?? 0} warning ·{" "}
+                        {item.documentStatus.error ?? 0} error
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
-                    {item.risks === 0
-                      ? "No issues"
-                      : item.risks === 1
-                      ? "1 issue"
-                      : `${item.risks} issues`}
-                  </StatusBadge>
-                  <Button variant="outline" size="sm">
+                  <StatusBadge status={severity}>{issueLabel}</StatusBadge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate(
+                        `/lcopilot/exporter-dashboard?section=reviews&jobId=${item.id}`
+                      )
+                    }
+                  >
                     View
                   </Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

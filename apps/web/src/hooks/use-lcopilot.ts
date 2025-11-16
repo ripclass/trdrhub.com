@@ -438,6 +438,20 @@ export interface ValidationHistoryItem {
   completedAt?: string;
   documentCount?: number;
   discrepancyCount?: number;
+  supplierName?: string;
+  invoiceAmount?: string;
+  invoiceCurrency?: string;
+  documentStatus?: {
+    success?: number;
+    warning?: number;
+    error?: number;
+  } | null;
+  topIssue?: {
+    title?: string;
+    severity?: string;
+    documentName?: string;
+    rule?: string;
+  } | null;
 }
 
 export interface ValidationHistoryResponse {

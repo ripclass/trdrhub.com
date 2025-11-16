@@ -5,7 +5,7 @@ Public validation job status and results endpoints for exporter/importer flows.
 from __future__ import annotations
 
 from uuid import UUID, uuid4
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -128,6 +128,106 @@ def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[st
         )
 
     return documents_payload
+
+
+def _normalize_party(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        for key in ("name", "company", "full_name", "legal_name", "value"):
+            if value.get(key):
+                return str(value[key]).strip()
+        return None
+    return str(value).strip()
+
+
+def _extract_supplier(extracted_data: Dict[str, Any]) -> Optional[str]:
+    invoice = extracted_data.get("invoice") or {}
+    bl = extracted_data.get("bill_of_lading") or {}
+    lc = extracted_data.get("lc") or {}
+    return (
+        _normalize_party(invoice.get("consignee"))
+        or _normalize_party(invoice.get("buyer"))
+        or _normalize_party(bl.get("consignee"))
+        or _normalize_party(lc.get("beneficiary"))
+        or _normalize_party(lc.get("applicant"))
+    )
+
+
+def _extract_invoice_amount(extracted_data: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    invoice = extracted_data.get("invoice") or {}
+    amount_field = invoice.get("invoice_amount") or invoice.get("amount")
+    currency = invoice.get("currency") or invoice.get("invoice_currency")
+
+    if isinstance(amount_field, dict):
+        currency = currency or amount_field.get("currency")
+        amount = amount_field.get("value")
+    else:
+        amount = amount_field
+
+    if amount is None:
+        return None, currency
+    return str(amount), currency
+
+
+def _summarize_documents(results_payload: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    documents = results_payload.get("documents") or []
+    if not documents:
+        return None
+
+    summary = {"success": 0, "warning": 0, "error": 0}
+    for doc in documents:
+        status = (doc.get("status") or "success").lower()
+        if status not in summary:
+            status = "warning"
+        summary[status] += 1
+    return summary
+
+
+def _extract_top_issue(results_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    issue_cards = results_payload.get("issue_cards") or []
+    if issue_cards:
+        top_card = issue_cards[0]
+        return {
+            "title": top_card.get("title"),
+            "severity": top_card.get("severity"),
+            "documentName": top_card.get("documentName"),
+            "rule": top_card.get("rule"),
+        }
+
+    discrepancies = results_payload.get("discrepancies") or []
+    if discrepancies:
+        first = discrepancies[0]
+        return {
+            "title": first.get("title") or first.get("rule"),
+            "severity": first.get("severity"),
+            "documentName": (first.get("documents") or [None])[0],
+            "rule": first.get("rule"),
+        }
+
+    return None
+
+
+def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
+    results_payload = session.validation_results or {}
+    extracted_data = (
+        results_payload.get("extracted_data")
+        or session.extracted_data
+        or {}
+    )
+
+    supplier_name = _extract_supplier(extracted_data)
+    invoice_amount, invoice_currency = _extract_invoice_amount(extracted_data)
+    document_status = _summarize_documents(results_payload)
+    top_issue = _extract_top_issue(results_payload)
+
+    return {
+        "supplierName": supplier_name,
+        "invoiceAmount": invoice_amount,
+        "invoiceCurrency": invoice_currency,
+        "documentStatus": document_status,
+        "topIssue": top_issue,
+    }
 
 
 @router.get("/api/jobs/{job_id}")
@@ -275,6 +375,7 @@ def list_user_jobs(
                 "completedAt": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
                 "documentCount": len(session.documents) if session.documents else len((session.validation_results or {}).get("documents") or []),
                 "discrepancyCount": len(session.discrepancies) if session.discrepancies else len((session.validation_results or {}).get("discrepancies") or []),
+                **_summarize_job_overview(session),
             }
             for session in sessions
         ],
