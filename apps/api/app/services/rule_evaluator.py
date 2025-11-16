@@ -11,7 +11,27 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+from app.core.lc_types import LCType
+
 logger = logging.getLogger(__name__)
+
+
+def _normalize_lc_type_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    normalized: List[str] = []
+    for item in value:
+        if not item:
+            continue
+        token = str(item).strip().lower()
+        if token in {"all", "generic"}:
+            token = "any"
+        normalized.append(token)
+    return normalized
 
 
 class MissingFieldError(Exception):
@@ -588,6 +608,33 @@ class RuleEvaluator:
             }
         """
         rule_id = rule.get("rule_id", "unknown")
+        lc_type_context = str(context.get("lc_type") or LCType.UNKNOWN.value).lower()
+        allowed_types = _normalize_lc_type_list(
+            rule.get("lc_types")
+            or rule.get("lc_type")
+            or (rule.get("metadata") or {}).get("lc_types")
+            or (rule.get("metadata") or {}).get("lc_type")
+        )
+        if allowed_types:
+            if "any" in allowed_types or "*" in allowed_types:
+                pass
+            elif lc_type_context == LCType.UNKNOWN.value:
+                if "unknown" not in allowed_types:
+                    return {
+                        "rule_id": rule_id,
+                        "passed": True,
+                        "violations": [],
+                        "message": "Rule not applicable for LC type",
+                        "not_applicable": True,
+                    }
+            elif lc_type_context not in allowed_types:
+                return {
+                    "rule_id": rule_id,
+                    "passed": True,
+                    "violations": [],
+                    "message": "Rule not applicable for LC type",
+                    "not_applicable": True,
+                }
         
         # Check applies_if preconditions
         applies_if = rule.get("applies_if", [])

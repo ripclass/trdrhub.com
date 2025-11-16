@@ -9,12 +9,14 @@ export interface ValidationRequest {
   userType?: string; // 'exporter' or 'importer' or 'bank'
   workflowType?: string; // Specific workflow type
   metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
+  lcTypeOverride?: 'auto' | 'export' | 'import';
 }
 
 export interface ValidationResponse {
   jobId: string;
   request_id: string;
   status: 'created' | 'processing' | 'completed' | 'failed';
+  job_id?: string; // temporary compatibility field
 }
 
 export interface JobStatus {
@@ -23,6 +25,7 @@ export interface JobStatus {
   progress?: number;
   error?: string;
   results?: any;
+  lcNumber?: string;
 }
 
 export interface IssueCard {
@@ -67,6 +70,8 @@ export interface ValidationResults {
     passed: number;
     failed: number;
   };
+  totalDocuments?: number;
+  totalDiscrepancies?: number;
   documents?: Array<{
     id: string;
     name: string;
@@ -86,6 +91,18 @@ export interface ValidationResults {
   aiEnrichment?: AIEnrichmentPayload;
   extracted_data?: Record<string, any>;
   extraction_status?: 'success' | 'partial' | 'empty' | 'error' | 'unknown';
+  lc_type?: string;
+  lc_type_reason?: string;
+  lc_type_confidence?: number;
+  lc_type_source?: string;
+  overallStatus?: 'success' | 'error' | 'warning';
+  packGenerated?: boolean;
+  processingTime?: string;
+  processing_time?: string;
+  processingTimeMinutes?: string;
+  processedAt?: string;
+  processingCompletedAt?: string;
+  processed_at?: string;
 }
 
 export interface PackageResponse {
@@ -144,6 +161,10 @@ export const useValidate = () => {
       // Add metadata if provided
       if (request.metadata) {
         formData.append('metadata', JSON.stringify(request.metadata));
+      }
+
+      if (request.lcTypeOverride && request.lcTypeOverride !== 'auto') {
+        formData.append('lc_type_override', request.lcTypeOverride);
       }
 
       const response = await api.post('/api/validate', formData, {

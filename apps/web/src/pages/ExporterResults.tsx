@@ -42,26 +42,43 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
-import { useJob, useResults, type ValidationResults } from "@/hooks/use-lcopilot";
+import { useJob, useResults, type ValidationResults, type IssueCard } from "@/hooks/use-lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 
 // Mock exporter results
-const mockExporterResults = {
+const mockExporterResults: ValidationResults = {
+  jobId: "demo-job",
+  results: [],
+  summary: {
+    totalChecks: 0,
+    passed: 0,
+    failed: 0,
+  },
   lcNumber: "EXP-BD-2024-001",
   status: "completed",
   processedAt: "2024-01-15T14:30:00Z",
+  completedAt: "2024-01-15T14:30:00Z",
   processingTime: "1.8 minutes",
   totalDocuments: 6,
   totalDiscrepancies: 1,
   overallStatus: "warning" as "success" | "error" | "warning",
   packGenerated: true,
+  lc_type: "export",
+  lc_type_reason: "Mock data assumes exporter workflow.",
+  lc_type_confidence: 0.95,
+  lc_type_source: "auto",
+  issue_cards: [],
+  reference_issues: [],
+  ai_enrichment: {},
+  extracted_data: {},
+  extraction_status: "success",
   documents: [
     {
       id: "1",
       name: "Letter_of_Credit.pdf",
       type: "Letter of Credit",
       status: "success" as const,
-      discrepancies: 0,
+      discrepancies: [],
       extractedFields: {
         lcNumber: "LC-2024-BD-001",
         beneficiary: "Bangladesh Exports Ltd",
@@ -74,7 +91,7 @@ const mockExporterResults = {
       name: "Commercial_Invoice.pdf",
       type: "Commercial Invoice",
       status: "warning" as const,
-      discrepancies: 1,
+      discrepancies: [],
       extractedFields: {
         invoiceNumber: "INV-2024-001",
         invoiceDate: "2024-01-08",
@@ -87,7 +104,7 @@ const mockExporterResults = {
       name: "Packing_List.pdf", 
       type: "Packing List",
       status: "success" as const,
-      discrepancies: 0,
+      discrepancies: [],
       extractedFields: {
         totalPackages: "100 cartons",
         grossWeight: "2500 KG",
@@ -100,7 +117,7 @@ const mockExporterResults = {
       name: "Bill_of_Lading.pdf",
       type: "Bill of Lading", 
       status: "success" as const,
-      discrepancies: 0,
+      discrepancies: [],
       extractedFields: {
         blNumber: "BL-2024-001",
         vessel: "MV Bangladesh Express",
@@ -113,7 +130,7 @@ const mockExporterResults = {
       name: "Certificate_of_Origin.pdf",
       type: "Certificate of Origin",
       status: "success" as const, 
-      discrepancies: 0,
+      discrepancies: [],
       extractedFields: {
         originCountry: "Bangladesh",
         issuingAuthority: "BGMEA",
@@ -126,7 +143,7 @@ const mockExporterResults = {
       name: "GSP_Certificate.pdf",
       type: "GSP Certificate",
       status: "success" as const, 
-      discrepancies: 0,
+      discrepancies: [],
       extractedFields: {
         gspNumber: "GSP-BD-001",
         issuingCountry: "Bangladesh",
@@ -289,6 +306,19 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
   const hasIssueCards = issueCards.length > 0;
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
+  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
+  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
+  const lcTypeConfidenceValue =
+    typeof resolvedResults?.lc_type_confidence === "number"
+      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
+      : null;
+  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
+  const lcTypeLabelMap: Record<string, string> = {
+    export: "Export LC",
+    import: "Import LC",
+    unknown: "Unknown",
+  };
+  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
   const documentStatusMap = useMemo(() => {
     const map = new Map<string, { status?: string; type?: string }>();
     documents.forEach((doc) => {
@@ -857,6 +887,35 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                   )}
                   <Progress value={successRate} className="h-2 mt-2" />
+                  <div className="mt-4 p-3 rounded-lg bg-muted/30 text-left space-y-2">
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">
+                      LC Type
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{lcTypeLabel}</Badge>
+                      {lcTypeConfidenceValue !== null && (
+                        <span className="text-xs text-muted-foreground">
+                          {lcTypeConfidenceValue}% confidence
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{lcTypeReason}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Source: {lcTypeSource === "override" ? "Manual override" : "Auto-detected"}
+                    </p>
+                    {lcType === "unknown" && (
+                      <p className="text-xs text-warning">
+                        We could not confidently classify this LC. Some import/export checks were skipped.
+                      </p>
+                    )}
+                    <Link
+                      to={`/export-lc-upload?lcType=${lcType === "export" ? "import" : "export"}`}
+                    >
+                      <Button variant="outline" size="sm" className="mt-2 w-full">
+                        Adjust LC Type
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               </div>
 
@@ -1052,10 +1111,20 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <StatusBadge status={document.status}>
-                        {document.discrepancies === 0 ? "Verified" : 
-                         document.status === "warning" ? "Minor Issues" : `${document.discrepancies} Issues`}
-                      </StatusBadge>
+                      {(() => {
+                        const discrepancyCount = Array.isArray(document.discrepancies)
+                          ? document.discrepancies.length
+                          : ((document as { discrepancyCount?: number }).discrepancyCount ?? 0);
+                        return (
+                          <StatusBadge status={document.status}>
+                            {discrepancyCount === 0
+                              ? "Verified"
+                              : document.status === "warning"
+                                ? "Minor Issues"
+                                : `${discrepancyCount} Issues`}
+                          </StatusBadge>
+                        );
+                      })()}
                       <Button variant="outline" size="sm">
                         <Eye className="w-4 h-4 mr-2" />
                         View

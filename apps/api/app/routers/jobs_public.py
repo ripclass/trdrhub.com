@@ -357,6 +357,10 @@ def get_job_results(
         "reference_issues": reference_issues,  # Technical rule references
         "aiEnrichment": ai_enrichment,
         "ai_enrichment": ai_enrichment,  # Support both naming conventions
+        "lc_type": results_payload.get("lc_type"),
+        "lc_type_reason": results_payload.get("lc_type_reason"),
+        "lc_type_confidence": results_payload.get("lc_type_confidence"),
+        "lc_type_source": results_payload.get("lc_type_source"),
     }
 
 

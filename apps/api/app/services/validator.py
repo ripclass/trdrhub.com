@@ -9,6 +9,7 @@ from app.models.rules import Rule
 from app.database import SessionLocal
 from app.services.rulhub_client import fetch_rules_from_rulhub
 from app.config import settings
+from app.core.lc_types import LCType
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,60 @@ def _unique_preserve(items: List[str]) -> List[str]:
     return ordered
 
 
+def _extract_rule_lc_types(rule: Dict[str, Any]) -> List[str]:
+    if not isinstance(rule, dict):
+        return []
+    metadata = rule.get("metadata") or {}
+    lc_types = (
+        rule.get("lc_types")
+        or rule.get("lc_type")
+        or metadata.get("lc_types")
+        or metadata.get("lc_type")
+    )
+    if lc_types is None:
+        tags = rule.get("tags")
+        if isinstance(tags, list):
+            inferred = []
+            for tag in tags:
+                if isinstance(tag, str) and tag.lower().startswith("lc:"):
+                    inferred.append(tag.split(":", 1)[1].lower())
+            lc_types = inferred or None
+    if isinstance(lc_types, str):
+        lc_types = [lc_types]
+    if not lc_types:
+        return []
+    normalized: List[str] = []
+    for item in lc_types:
+        if not item:
+            continue
+        token = str(item).strip().lower()
+        if token in {"all", "generic"}:
+            token = "any"
+        normalized.append(token)
+    return normalized
+
+
+def _rule_matches_lc_type(rule: Dict[str, Any], domain: Optional[str], lc_type: str) -> bool:
+    domain_lower = (domain or "").lower()
+    if lc_type == LCType.EXPORT.value and ".import" in domain_lower:
+        return False
+    if lc_type == LCType.IMPORT.value and ".export" in domain_lower:
+        return False
+    if lc_type == LCType.UNKNOWN.value and (
+        ".import" in domain_lower or ".export" in domain_lower
+    ):
+        return False
+
+    allowed_types = _extract_rule_lc_types(rule)
+    if not allowed_types:
+        return True
+    if "any" in allowed_types or "*" in allowed_types:
+        return True
+    if lc_type == LCType.UNKNOWN.value:
+        return "unknown" in allowed_types
+    return lc_type in allowed_types
+
+
 def _detect_icc_ruleset_domains(document_data: Dict[str, Any]) -> Tuple[str, List[str]]:
     """
     Detect the base ICC ruleset domain and any supplement domains from document content.
@@ -692,6 +747,13 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 (rule, meta)
                 for rule, meta in aggregated_rules
                 if rule.get("document_type") in (None, "", document_type, "lc")
+            ]
+
+            lc_type_context = str(document_data.get("lc_type") or LCType.UNKNOWN.value).lower()
+            filtered_rules_with_meta = [
+                (rule, meta)
+                for rule, meta in filtered_rules_with_meta
+                if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
             ]
 
             if not filtered_rules_with_meta:

@@ -72,6 +72,12 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const initialLcTypeParam = (searchParams.get('lcType') || '').toLowerCase();
+  const initialLcTypeOverride: 'auto' | 'export' | 'import' =
+    initialLcTypeParam === 'export' || initialLcTypeParam === 'import'
+      ? (initialLcTypeParam as 'export' | 'import')
+      : 'auto';
+  const [lcTypeOverride, setLcTypeOverride] = useState<'auto' | 'export' | 'import'>(initialLcTypeOverride);
   const { validate, isLoading: isValidating, clearError } = useValidate();
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
   const { checkLCExists } = useVersions();
@@ -388,6 +394,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       console.log('📁 Files to validate:', files.map(f => f.name));
       console.log('🏷️  LC Number:', lcNumber.trim());
       console.log('📋 Document Tags:', documentTags);
+      console.log('⚙️  LC Type Override:', lcTypeOverride);
 
       const response = await validate({
         files,
@@ -396,6 +403,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         documentTags: documentTags,
         userType: "exporter",
         workflowType: "export-lc-upload",
+        lcTypeOverride,
       });
 
       const jobId = response.jobId || response.job_id;
@@ -520,7 +528,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="lcNumber">LC Number *</Label>
                 <div className="relative">
@@ -563,6 +571,27 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                   onChange={(e) => setIssueDate(e.target.value)}
                   className="mt-2"
                 />
+              </div>
+              <div>
+                <Label htmlFor="lcTypeOverride">LC Type Mode</Label>
+                <Select
+                  value={lcTypeOverride}
+                  onValueChange={(value) =>
+                    setLcTypeOverride(value as 'auto' | 'export' | 'import')
+                  }
+                >
+                  <SelectTrigger className="mt-2" id="lcTypeOverride">
+                    <SelectValue placeholder="Auto Detect" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
+                    <SelectItem value="export">Force Export LC</SelectItem>
+                    <SelectItem value="import">Force Import LC</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Override when the detector misclassifies your LC. Auto mode keeps both importer and exporter checks aligned.
+                </p>
               </div>
             </div>
             <div>

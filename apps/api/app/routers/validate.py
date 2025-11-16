@@ -24,10 +24,12 @@ from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
+from app.config import settings
+from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
+from app.services.lc_classifier import detect_lc_type
 from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
-from app.config import settings
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -248,6 +250,33 @@ async def validate_doc(
         else:
             logger.warning("Payload does not contain structured data - JSON rules will be skipped")
 
+        lc_context = payload.get("lc") or {}
+        shipment_context = _resolve_shipment_context(payload)
+        lc_type_guess = detect_lc_type(lc_context, shipment_context)
+        override_lc_type = _extract_lc_type_override(payload)
+        lc_type_source = "override" if override_lc_type else "auto"
+        lc_type = override_lc_type or lc_type_guess["lc_type"]
+        lc_type_reason = lc_type_guess["reason"]
+        lc_type_confidence = lc_type_guess["confidence"]
+        payload["lc_type"] = lc_type
+        payload["lc_type_reason"] = lc_type_reason
+        payload["lc_type_confidence"] = lc_type_confidence
+        payload["lc_type_source"] = lc_type_source
+        payload["lc_detection"] = {
+            "auto": lc_type_guess,
+            "lc_type": lc_type,
+            "source": lc_type_source,
+        }
+        logger.info(
+            "LC type detection: auto=%s override=%s final=%s confidence=%.2f reason=%s",
+            lc_type_guess["lc_type"],
+            override_lc_type,
+            lc_type,
+            lc_type_confidence,
+            lc_type_reason,
+        )
+        lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
+
         # Ensure user has a company (demo user will have one)
         if not current_user.company:
             # Try to get or create company for user
@@ -344,7 +373,10 @@ async def validate_doc(
         from app.services.validator import validate_document_async, validate_document
         
         use_json_rules = settings.USE_JSON_RULES
-        if use_json_rules and context_contains_structured_data:
+        if lc_type_is_unknown:
+            logger.info("LC type unknown - skipping ICC rule evaluation to avoid false positives.")
+            results: List[Dict[str, Any]] = []
+        elif use_json_rules and context_contains_structured_data:
             # Use async validation (router is already async)
             results = await validate_document_async(payload, doc_type)
         elif use_json_rules:
@@ -365,6 +397,25 @@ async def validate_doc(
             logger.info("Cross-document checks produced no issues for this payload.")
         if crossdoc_results:
             results.extend(crossdoc_results)
+
+        if lc_type_is_unknown:
+            results.append(
+                {
+                    "rule": "LC-TYPE-UNKNOWN",
+                    "title": "LC Type Not Determined",
+                    "passed": False,
+                    "severity": "warning",
+                    "message": (
+                        "We could not determine whether this LC is an import or export workflow. "
+                        "Advanced trade-specific checks were disabled for safety."
+                    ),
+                    "documents": ["Letter of Credit"],
+                    "document_names": ["Letter of Credit"],
+                    "display_card": True,
+                    "ruleset_domain": "system.lc_type",
+                    "not_applicable": False,
+                }
+            )
 
         failed_results = [
             r for r in results
@@ -433,6 +484,10 @@ async def validate_doc(
             stored_extracted_data["documents"] = payload["documents"]
         if payload.get("documents_presence"):
             stored_extracted_data["documents_presence"] = payload["documents_presence"]
+        stored_extracted_data["lc_type"] = lc_type
+        stored_extracted_data["lc_type_reason"] = lc_type_reason
+        stored_extracted_data["lc_type_confidence"] = lc_type_confidence
+        stored_extracted_data["lc_type_source"] = lc_type_source
         
         results_payload = {
             "discrepancies": failed_results,
@@ -447,11 +502,34 @@ async def validate_doc(
             "lc_data": stored_extracted_data.get("lc", {}),
             "issue_cards": issue_cards,  # User-facing actionable issues
             "reference_issues": reference_issues,  # Technical rule references
+            "lc_type": lc_type,
+            "lc_type_reason": lc_type_reason,
+            "lc_type_confidence": lc_type_confidence,
+            "lc_type_source": lc_type_source,
         }
         ai_enrichment = {}
 
         # Update session status if created
         if validation_session:
+            session_extracted_data = validation_session.extracted_data or {}
+            try:
+                session_extracted_data.update(
+                    {
+                        "lc_type": lc_type,
+                        "lc_type_reason": lc_type_reason,
+                        "lc_type_confidence": lc_type_confidence,
+                        "lc_type_source": lc_type_source,
+                    }
+                )
+            except AttributeError:
+                session_extracted_data = {
+                    "lc_type": lc_type,
+                    "lc_type_reason": lc_type_reason,
+                    "lc_type_confidence": lc_type_confidence,
+                    "lc_type_source": lc_type_source,
+                }
+            validation_session.extracted_data = session_extracted_data
+
             # Apply bank policy overlays and exceptions (if bank user)
             if current_user.is_bank_user() and current_user.company_id:
                 try:
@@ -1000,6 +1078,46 @@ async def _build_document_context(
     context["documents_summary"] = documents_presence
     
     return context
+
+
+def _resolve_shipment_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    for key in (
+        "bill_of_lading",
+        "billOfLading",
+        "awb",
+        "air_waybill",
+        "airway_bill",
+        "shipment",
+    ):
+        ctx = payload.get(key)
+        if isinstance(ctx, dict):
+            return ctx
+    lc_ports = (payload.get("lc") or {}).get("ports")
+    if isinstance(lc_ports, dict):
+        return lc_ports
+    return {}
+
+
+def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
+    options = payload.get("options") or {}
+    candidates = [
+        payload.get("lc_type_override"),
+        payload.get("lcTypeOverride"),
+        options.get("lc_type_override"),
+        options.get("lc_type"),
+        payload.get("lcType"),
+        payload.get("lc_type_selection"),
+        payload.get("requested_lc_type"),
+    ]
+    for candidate in candidates:
+        normalized = normalize_lc_type(candidate)
+        if normalized in VALID_LC_TYPES:
+            if normalized == LCType.UNKNOWN.value:
+                return LCType.UNKNOWN.value
+            return normalized
+        if candidate and str(candidate).strip().lower() == "auto":
+            return None
+    return None
 
 
 def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tuple[str, Decimal]:
