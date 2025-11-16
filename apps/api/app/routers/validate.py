@@ -15,6 +15,10 @@ from app.models import UsageAction, User, ValidationSession, SessionStatus, User
 from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
 from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai, apply_bank_policy
+from app.services.crossdoc import (
+    run_cross_document_checks,
+    build_issue_cards,
+)
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
@@ -215,10 +219,25 @@ async def validate_doc(
         document_tags = payload.get("document_tags")
         extracted_context = await _build_document_context(files_list, document_tags)
         if extracted_context:
-            logger.info(f"Extracted context from {len(files_list)} files: {list(extracted_context.keys())}")
+            logger.info(
+                "Extracted context from %d files. Keys: %s",
+                len(files_list),
+                list(extracted_context.keys()),
+            )
+            document_details = extracted_context.get("documents") or []
+            if document_details:
+                status_counts: Dict[str, int] = {}
+                for doc in document_details:
+                    status = doc.get("extraction_status") or "unknown"
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                logger.info(
+                    "Document extraction status summary: total=%d details=%s",
+                    len(document_details),
+                    status_counts,
+                )
             payload.update(extracted_context)
         else:
-            logger.warning(f"No structured data extracted from {len(files_list)} uploaded files")
+            logger.warning("No structured data extracted from %d uploaded files", len(files_list))
         
         context_contains_structured_data = any(
             key in payload for key in ("lc", "invoice", "bill_of_lading", "documents")
@@ -335,7 +354,15 @@ async def validate_doc(
             results = validate_document(payload, doc_type)
 
         # Post-process deterministic cross-document checks for richer SME messages
-        crossdoc_results = _run_cross_document_checks(payload)
+        crossdoc_results = run_cross_document_checks(payload)
+        if crossdoc_results:
+            logger.info(
+                "Cross-document checks produced %d SME issues: %s",
+                len(crossdoc_results),
+                [issue.get("rule") for issue in crossdoc_results],
+            )
+        else:
+            logger.info("Cross-document checks produced no issues for this payload.")
         if crossdoc_results:
             results.extend(crossdoc_results)
 
@@ -343,7 +370,7 @@ async def validate_doc(
             r for r in results
             if not r.get("passed", False) and not r.get("not_applicable", False)
         ]
-        issue_cards, reference_issues = _build_issue_cards(failed_results)
+        issue_cards, reference_issues = build_issue_cards(failed_results)
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
@@ -374,6 +401,20 @@ async def validate_doc(
             results,
             payload.get("documents"),
         )
+        if document_summaries:
+            doc_status_counts: Dict[str, int] = {}
+            for summary in document_summaries:
+                status = summary.get("status") or "unknown"
+                doc_status_counts[status] = doc_status_counts.get(status, 0) + 1
+            logger.info(
+                "Document summaries built: total=%d status_breakdown=%s",
+                len(document_summaries),
+                doc_status_counts,
+            )
+        else:
+            logger.warning(
+                "Document summaries are empty: no documents captured for job %s", job_id
+            )
         
         stored_extracted_data = {}
         if "lc" in payload:
@@ -904,6 +945,7 @@ def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: D
 
 
 def _coerce_decimal(value: Any) -> Optional[Decimal]:
+    """Lightweight decimal coercion used for tolerance math."""
     if value is None:
         return None
     try:
@@ -920,259 +962,6 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
         return None
     return None
 
-
-def _run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Perform deterministic cross-document checks to create SME-friendly discrepancies.
-    Returns list of result dicts in the same shape as JSON rule outcomes.
-    """
-    issues: List[Dict[str, Any]] = []
-    lc_context = payload.get("lc") or {}
-    invoice_context = payload.get("invoice") or {}
-    bl_context = payload.get("bill_of_lading") or {}
-    documents_presence = payload.get("documents_presence") or {}
-
-    def _clean_text(value: Optional[str]) -> str:
-        if not value:
-            return ""
-        normalized = re.sub(r"\s+", " ", value).strip()
-        return normalized
-
-    def _text_signature(value: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "", value.lower())
-
-    # 1. Goods description mismatch (LC vs Commercial Invoice)
-    lc_goods = _clean_text(lc_context.get("goods_description") or lc_context.get("description"))
-    invoice_goods = _clean_text(
-        invoice_context.get("product_description") or invoice_context.get("goods_description")
-    )
-    if lc_goods and invoice_goods and _text_signature(lc_goods) != _text_signature(invoice_goods):
-        issues.append({
-            "rule": "CROSSDOC-GOODS-1",
-            "title": "Product Description Variation",
-            "passed": False,
-            "severity": "major",
-            "message": "Product description in the commercial invoice differs from LC terms and may trigger a bank discrepancy.",
-            "expected": lc_goods,
-            "actual": invoice_goods,
-            "documents": ["Letter of Credit", "Commercial Invoice"],
-            "display_card": True,
-            "ruleset_domain": "icc.lcopilot.crossdoc",
-            "not_applicable": False,
-        })
-
-    # 2. Invoice amount exceeds LC amount + tolerance (deterministic version for clearer messaging)
-    invoice_amount = _coerce_decimal(invoice_context.get("invoice_amount"))
-    invoice_limit = _coerce_decimal(payload.get("invoice_amount_limit"))
-    tolerance_value = _coerce_decimal(payload.get("invoice_amount_tolerance_value"))
-    if invoice_amount is not None and invoice_limit is not None and invoice_amount > invoice_limit:
-        lc_amount = _coerce_decimal(((lc_context.get("amount") or {}).get("value")))
-        tolerance_display = f"{tolerance_value:,.2f} USD" if tolerance_value is not None else "tolerance limit"
-        expected_amount_msg = (
-            f"<= {invoice_limit:,.2f} USD (LC amount {lc_amount:,.2f} + allowed {tolerance_display})"
-            if lc_amount is not None and tolerance_value is not None
-            else f"<= {invoice_limit:,.2f} USD"
-        )
-        issues.append({
-            "rule": "CROSSDOC-AMOUNT-1",
-            "title": "Invoice Amount Exceeds LC + Tolerance",
-            "passed": False,
-            "severity": "warning",
-            "message": (
-                "The invoiced amount exceeds the LC face value plus the allowed tolerance, "
-                "which may lead to refusal."
-            ),
-            "expected": expected_amount_msg,
-            "actual": f"{invoice_amount:,.2f} USD",
-            "documents": ["Commercial Invoice", "Letter of Credit"],
-            "display_card": True,
-            "ruleset_domain": "icc.lcopilot.crossdoc",
-            "not_applicable": False,
-        })
-
-    # 3. Insurance certificate missing when LC references insurance
-    lc_text = (payload.get("lc_text") or "").lower()
-    insurance_required = "insurance" in lc_text
-    insurance_presence = documents_presence.get("insurance_certificate", {})
-    insurance_present = insurance_presence.get("present", False)
-    if insurance_required and not insurance_present:
-        issues.append({
-            "rule": "CROSSDOC-DOC-1",
-            "title": "Insurance Certificate Missing",
-            "passed": False,
-            "severity": "major",
-            "message": "The LC references insurance coverage, but no insurance certificate was uploaded with the presentation.",
-            "expected": "Upload an insurance certificate that matches the LC requirements.",
-            "actual": "No insurance certificate detected among the uploaded documents.",
-            "documents": ["Letter of Credit"],
-            "display_card": True,
-            "ruleset_domain": "icc.lcopilot.crossdoc",
-            "not_applicable": False,
-        })
-
-    # 4. Bill of Lading shipper/consignee vs LC parties (deterministic mirror of JSON rule)
-    lc_applicant = _clean_text((lc_context.get("applicant") or {}).get("name") if isinstance(lc_context.get("applicant"), dict) else lc_context.get("applicant"))
-    bl_shipper = _clean_text(bl_context.get("shipper"))
-    if lc_applicant and bl_shipper and _text_signature(lc_applicant) != _text_signature(bl_shipper):
-        issues.append({
-            "rule": "CROSSDOC-BL-1",
-            "title": "B/L Shipper differs from LC Applicant",
-            "passed": False,
-            "severity": "major",
-            "message": "The shipper shown on the Bill of Lading does not match the applicant named in the LC.",
-            "expected": lc_applicant,
-            "actual": bl_shipper,
-            "documents": ["Bill of Lading", "Letter of Credit"],
-            "display_card": True,
-            "ruleset_domain": "icc.lcopilot.crossdoc",
-            "not_applicable": False,
-        })
-
-    lc_beneficiary = _clean_text((lc_context.get("beneficiary") or {}).get("name") if isinstance(lc_context.get("beneficiary"), dict) else lc_context.get("beneficiary"))
-    bl_consignee = _clean_text(bl_context.get("consignee"))
-    if lc_beneficiary and bl_consignee and _text_signature(lc_beneficiary) != _text_signature(bl_consignee):
-        issues.append({
-            "rule": "CROSSDOC-BL-2",
-            "title": "B/L Consignee differs from LC Beneficiary",
-            "passed": False,
-            "severity": "major",
-            "message": "The consignee on the Bill of Lading is different from the LC beneficiary, which may cause the bank to refuse documents.",
-            "expected": lc_beneficiary,
-            "actual": bl_consignee,
-            "documents": ["Bill of Lading", "Letter of Credit"],
-            "display_card": True,
-            "ruleset_domain": "icc.lcopilot.crossdoc",
-            "not_applicable": False,
-        })
-
-    return issues
-
-
-def _build_issue_cards(
-    discrepancies: List[Dict[str, Any]]
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Partition discrepancies into user-facing issue cards vs technical references.
-    """
-    issue_cards: List[Dict[str, Any]] = []
-    references: List[Dict[str, Any]] = []
-
-    for idx, item in enumerate(discrepancies):
-        domain = (item.get("ruleset_domain") or "").lower()
-        display_card = bool(item.get("display_card"))
-
-        if domain == "icc.lcopilot.crossdoc" or display_card:
-            issue_cards.append(_format_issue_card(item, idx))
-        else:
-            references.append(_format_reference_issue(item))
-
-    return issue_cards, references
-
-
-def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any]:
-    severity = _normalize_issue_severity(discrepancy.get("severity"))
-    document_label = _infer_primary_document(discrepancy)
-    expected_text = _stringify_issue_value(
-        discrepancy.get("expected")
-        or _extract_expected_text(discrepancy.get("expected_outcome"), "valid")
-    )
-    suggestion = discrepancy.get("suggestion") or _extract_expected_text(
-        discrepancy.get("expected_outcome"), "invalid"
-    ) or "Align the document with the LC requirement."
-    actual_text = _stringify_issue_value(discrepancy.get("actual"))
-    discrepancy_id = discrepancy.get("rule") or f"issue-{index}"
-
-    return {
-        "id": str(discrepancy_id),
-        "rule": discrepancy.get("rule"),
-        "title": discrepancy.get("title") or discrepancy.get("rule") or "Review Required",
-        "description": discrepancy.get("message") or discrepancy.get("description") or "",
-        "severity": severity,
-        "documentName": document_label,
-        "documentType": discrepancy.get("document_type"),
-        "expected": expected_text,
-        "actual": actual_text,
-        "suggestion": suggestion,
-        "field": _extract_field_name(discrepancy),
-    }
-
-
-def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "rule": discrepancy.get("rule"),
-        "title": discrepancy.get("title") or discrepancy.get("rule"),
-        "severity": discrepancy.get("severity"),
-        "message": discrepancy.get("message"),
-        "article": discrepancy.get("article"),
-        "ruleset_domain": discrepancy.get("ruleset_domain"),
-    }
-
-
-def _normalize_issue_severity(value: Optional[str]) -> str:
-    if not value:
-        return "minor"
-    severity_map = {
-        "fail": "critical",
-        "critical": "critical",
-        "major": "major",
-        "warning": "major",
-        "minor": "minor",
-        "info": "minor",
-        "reference": "minor",
-    }
-    return severity_map.get(value.lower(), "minor")
-
-
-def _infer_primary_document(discrepancy: Dict[str, Any]) -> str:
-    documents = discrepancy.get("documents")
-    if isinstance(documents, list) and documents:
-        first = documents[0]
-        if isinstance(first, dict):
-            return first.get("name") or first.get("title") or first.get("document") or "Supporting Document"
-        if isinstance(first, str):
-            return first
-    if isinstance(documents, str):
-        return documents
-    tags = discrepancy.get("tags") or []
-    if isinstance(tags, list):
-        for tag in tags:
-            if isinstance(tag, str) and "invoice" in tag.lower():
-                return "Commercial Invoice"
-            if isinstance(tag, str) and ("bill" in tag.lower() or "bl" in tag.lower()):
-                return "Bill of Lading"
-    return discrepancy.get("documentName") or discrepancy.get("document") or "Supporting Document"
-
-
-def _stringify_issue_value(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (int, float)):
-        return f"{value}"
-    if isinstance(value, (list, dict)):
-        try:
-            return json.dumps(value, ensure_ascii=False)
-        except Exception:
-            return str(value)
-    return str(value)
-
-
-def _extract_expected_text(expected_outcome: Any, key: str) -> Optional[str]:
-    if isinstance(expected_outcome, dict):
-        values = expected_outcome.get(key)
-        if isinstance(values, list) and values:
-            return str(values[0])
-        if isinstance(values, str):
-            return values
-    return None
-
-
-def _extract_field_name(discrepancy: Dict[str, Any]) -> Optional[str]:
-    violations = discrepancy.get("violations")
-    if isinstance(violations, list) and violations:
-        first = violations[0]
-        if isinstance(first, dict):
-            return first.get("field")
-    return None
 
 async def _extract_text_from_upload(upload_file: Any) -> str:
     """
