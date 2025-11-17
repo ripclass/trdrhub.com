@@ -338,7 +338,7 @@ async def process_document(
 def _determine_document_type(filename: Optional[str], index: int) -> str:
     """Determine document type based on filename or position."""
     if not filename:
-        # Fallback to position-based mapping
+        # Fallback to position-based mapping for uploads that don't specify types
         type_mapping = {
             0: DocumentType.LETTER_OF_CREDIT.value,
             1: DocumentType.COMMERCIAL_INVOICE.value,
@@ -348,7 +348,7 @@ def _determine_document_type(filename: Optional[str], index: int) -> str:
             5: DocumentType.INSURANCE_CERTIFICATE.value,
             6: DocumentType.INSPECTION_CERTIFICATE.value,
         }
-        return type_mapping.get(index, DocumentType.LETTER_OF_CREDIT.value)
+        return type_mapping.get(index, DocumentType.SUPPORTING_DOCUMENT.value)
 
     filename_lower = filename.lower()
 
@@ -368,5 +368,5 @@ def _determine_document_type(filename: Optional[str], index: int) -> str:
     elif any(pattern in filename_lower for pattern in ['inspection', 'analysis']):
         return DocumentType.INSPECTION_CERTIFICATE.value
     else:
-        # Default mapping based on order
-        return _determine_document_type(None, index)
+        # Default to a generic supporting document if no hints were found
+        return DocumentType.SUPPORTING_DOCUMENT.value

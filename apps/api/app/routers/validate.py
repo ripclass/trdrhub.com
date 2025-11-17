@@ -1095,6 +1095,54 @@ async def _build_document_context(
                     doc_info["extracted_fields"] = bl_context
                     doc_info["extraction_status"] = "success"
                     logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
+            elif document_type == "packing_list":
+                packing_fields = extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
+                logger.info(f"Extracted {len(packing_fields)} fields from packing list {filename}")
+                packing_context = _fields_to_flat_context(packing_fields)
+                if packing_context:
+                    pkg_ctx = context.setdefault("packing_list", {})
+                    pkg_ctx["raw_text"] = extracted_text
+                    pkg_ctx.update(packing_context)
+                    has_structured_data = True
+                    doc_info["extracted_fields"] = packing_context
+                    doc_info["extraction_status"] = "success"
+                    logger.info(f"Packing list context keys: {list(pkg_ctx.keys())}")
+            elif document_type == "certificate_of_origin":
+                coo_fields = extractor.extract_fields(extracted_text, DocumentType.CERTIFICATE_OF_ORIGIN)
+                logger.info(f"Extracted {len(coo_fields)} fields from certificate of origin {filename}")
+                coo_context = _fields_to_flat_context(coo_fields)
+                if coo_context:
+                    coo_ctx = context.setdefault("certificate_of_origin", {})
+                    coo_ctx["raw_text"] = extracted_text
+                    coo_ctx.update(coo_context)
+                    has_structured_data = True
+                    doc_info["extracted_fields"] = coo_context
+                    doc_info["extraction_status"] = "success"
+                    logger.info(f"Certificate of origin context keys: {list(coo_ctx.keys())}")
+            elif document_type == "insurance_certificate":
+                insurance_fields = extractor.extract_fields(extracted_text, DocumentType.INSURANCE_CERTIFICATE)
+                logger.info(f"Extracted {len(insurance_fields)} fields from insurance certificate {filename}")
+                insurance_context = _fields_to_flat_context(insurance_fields)
+                if insurance_context:
+                    insurance_ctx = context.setdefault("insurance_certificate", {})
+                    insurance_ctx["raw_text"] = extracted_text
+                    insurance_ctx.update(insurance_context)
+                    has_structured_data = True
+                    doc_info["extracted_fields"] = insurance_context
+                    doc_info["extraction_status"] = "success"
+                    logger.info(f"Insurance context keys: {list(insurance_ctx.keys())}")
+            elif document_type == "inspection_certificate":
+                inspection_fields = extractor.extract_fields(extracted_text, DocumentType.INSPECTION_CERTIFICATE)
+                logger.info(f"Extracted {len(inspection_fields)} fields from inspection certificate {filename}")
+                inspection_context = _fields_to_flat_context(inspection_fields)
+                if inspection_context:
+                    inspection_ctx = context.setdefault("inspection_certificate", {})
+                    inspection_ctx["raw_text"] = extracted_text
+                    inspection_ctx.update(inspection_context)
+                    has_structured_data = True
+                    doc_info["extracted_fields"] = inspection_context
+                    doc_info["extraction_status"] = "success"
+                    logger.info(f"Inspection context keys: {list(inspection_ctx.keys())}")
             else:
                 # For other document types, retain raw text for downstream use
                 doc_info["raw_text_preview"] = extracted_text[:500]
