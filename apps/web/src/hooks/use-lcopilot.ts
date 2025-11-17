@@ -37,10 +37,12 @@ export interface IssueCard {
   severity: string;
   documentName?: string;
   documentType?: string;
+  documents?: string[];
   expected?: string;
   actual?: string;
   suggestion?: string;
   field?: string;
+  ucpReference?: string;
 }
 
 export interface ReferenceIssue {
@@ -62,31 +64,65 @@ export interface AIEnrichmentPayload {
   }>;
 }
 
+export interface SeverityBreakdown {
+  critical: number;
+  major: number;
+  medium: number;
+  minor: number;
+}
+
+export interface ProcessingSummaryPayload {
+  total_documents: number;
+  successful_extractions: number;
+  failed_extractions: number;
+  total_issues: number;
+  severity_breakdown: SeverityBreakdown;
+}
+
+export interface ValidationDocument {
+  id: string;
+  documentId: string;
+  name: string;
+  filename: string;
+  type: string;
+  typeKey?: string;
+  extractionStatus: string;
+  status: 'success' | 'warning' | 'error';
+  issuesCount: number;
+  extractedFields: Record<string, any>;
+}
+
+export interface DocumentRiskEntry {
+  document_id?: string;
+  filename?: string;
+  risk?: string;
+}
+
+export interface ValidationAnalytics {
+  compliance_score: number;
+  issue_counts: SeverityBreakdown;
+  document_risk: DocumentRiskEntry[];
+}
+
+export interface TimelineEvent {
+  title: string;
+  status: string;
+  description?: string;
+  timestamp?: string;
+}
+
 export interface ValidationResults {
   jobId: string;
-  results: any[];
-  discrepancies: any[];
-  summary: {
-    totalChecks: number;
-    passed: number;
-    failed: number;
-  };
-  totalDocuments?: number;
-  totalDiscrepancies?: number;
-  documents?: Array<{
-    id: string;
-    name: string;
-    type: string;
-    status?: string;
-    discrepancyCount?: number;
-    discrepancies?: any[];
-    extractedFields?: Record<string, any>;
-    ocrConfidence?: number;
-  }>;
+  summary: ProcessingSummaryPayload;
+  documents: ValidationDocument[];
+  issues: IssueCard[];
+  analytics: ValidationAnalytics;
+  timeline: TimelineEvent[];
+  results?: any[];
+  discrepancies?: any[];
   lcNumber?: string;
   completedAt?: string;
   status?: string;
-  issue_cards?: IssueCard[];
   reference_issues?: ReferenceIssue[];
   ai_enrichment?: AIEnrichmentPayload;
   aiEnrichment?: AIEnrichmentPayload;
@@ -104,42 +140,16 @@ export interface ValidationResults {
   processedAt?: string;
   processingCompletedAt?: string;
   processed_at?: string;
-  processing_summary?: {
-    documents: number;
-    verified: number;
-    warnings: number;
-    errors: number;
-    compliance_rate: number;
-    processing_time_seconds?: number;
-    processing_time_display?: string;
-    discrepancies?: number;
-  };
-  document_status?: Record<string, number>;
-  timeline?: Array<{
-    title: string;
-    status: string;
-    description?: string;
-    timestamp?: string;
-  }>;
-  analytics?: {
-    extraction_accuracy?: number;
-    lc_compliance_score?: number;
-    customs_ready_score?: number;
-    documents_processed?: number;
-    document_status_distribution?: Record<string, number>;
-    document_processing?: Array<{
-      name?: string;
-      type?: string;
-      status?: string;
-      processing_time_seconds?: number;
-      accuracy_score?: number;
-      compliance_level?: string;
-      risk_level?: string;
-    }>;
-    performance_insights?: string[];
-    processing_time_display?: string;
-  };
+  processing_summary?: ProcessingSummaryPayload;
+  issue_cards?: IssueCard[];
   overall_status?: string;
+  structured_result?: {
+    processing_summary?: ProcessingSummaryPayload;
+    documents?: any[];
+    issues?: any[];
+    analytics?: any;
+    timeline?: any[];
+  };
 }
 
 export interface PackageResponse {

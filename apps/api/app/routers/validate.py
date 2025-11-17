@@ -18,10 +18,10 @@ from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
 from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai, apply_bank_policy
 from app.services.crossdoc import (
-    run_cross_document_checks,
     build_issue_cards,
     DEFAULT_LABELS,
 )
+from app.services.ai_crossdoc_engine import generate_crossdoc_insights
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
@@ -388,19 +388,6 @@ async def validate_doc(
         else:
             results = validate_document(payload, doc_type)
 
-        # Post-process deterministic cross-document checks for richer SME messages
-        crossdoc_results = run_cross_document_checks(payload)
-        if crossdoc_results:
-            logger.info(
-                "Cross-document checks produced %d SME issues: %s",
-                len(crossdoc_results),
-                [issue.get("rule") for issue in crossdoc_results],
-            )
-        else:
-            logger.info("Cross-document checks produced no issues for this payload.")
-        if crossdoc_results:
-            results.extend(crossdoc_results)
-
         if lc_type_is_unknown:
             results.append(
                 {
@@ -720,7 +707,37 @@ async def validate_doc(
                     validation_session.validation_results = copy.deepcopy(results_payload)
                     db.commit()
                     db.refresh(validation_session)  # Refresh to read latest data
-        
+
+        for doc in final_documents:
+            if not doc.get("id"):
+                doc["id"] = str(uuid4())
+
+        structured_docs_input = _build_structured_docs_payload(payload, final_documents)
+        ai_crossdoc_issues: List[Dict[str, Any]] = []
+        if structured_docs_input:
+            try:
+                ai_crossdoc_issues = await generate_crossdoc_insights(structured_docs_input)
+            except Exception as exc:
+                logger.error("AI cross-document insights failed: %s", exc, exc_info=True)
+                ai_crossdoc_issues = []
+
+        structured_issues, document_issue_counts = _build_issue_payload(
+            failed_results,
+            ai_crossdoc_issues,
+            final_documents,
+        )
+        documents_payload = _build_documents_section(final_documents, document_issue_counts)
+        structured_summary = _compose_processing_summary(documents_payload, structured_issues)
+        analytics_payload = _build_analytics_section(structured_summary, documents_payload, structured_issues)
+        timeline_entries = _build_timeline_entries()
+        structured_result = {
+            "processing_summary": structured_summary,
+            "documents": documents_payload,
+            "issues": structured_issues,
+            "analytics": analytics_payload,
+            "timeline": timeline_entries,
+        }
+
         return {
             "status": "ok",
             "results": results,
@@ -734,6 +751,7 @@ async def validate_doc(
             "issue_cards": issue_cards,
             "reference_issues": reference_issues,
             "ai_enrichment": ai_enrichment_payload,
+            "structured_result": structured_result,
         }
     except HTTPException:
         raise
@@ -1741,6 +1759,286 @@ def _build_processing_timeline(
         )
     return events
 
+
+def _build_structured_docs_payload(
+    payload: Dict[str, Any],
+    documents: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    def _section(keys: List[str]) -> Dict[str, Any]:
+        for key in keys:
+            candidate = payload.get(key)
+            if isinstance(candidate, dict):
+                return candidate
+        return {}
+
+    return {
+        "lc": _section(["lc"]),
+        "invoice": _section(["invoice"]),
+        "bl": _section(["bill_of_lading", "billOfLading"]),
+        "packing": _section(["packing_list", "packingList"]),
+        "coo": _section(["certificate_of_origin", "certificateOfOrigin"]),
+        "insurance": _section(["insurance_certificate", "insurance"]),
+        "documents": [
+            {
+                "name": doc.get("name"),
+                "type": doc.get("documentType") or doc.get("type"),
+                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+            }
+            for doc in documents
+        ],
+    }
+
+
+def _build_issue_payload(
+    deterministic_results: List[Dict[str, Any]],
+    ai_issues: List[Dict[str, Any]],
+    documents: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    formatted: List[Dict[str, Any]] = []
+
+    for result in deterministic_results:
+        formatted.append(_format_deterministic_issue(result))
+
+    for issue in ai_issues:
+        formatted.append(_format_ai_issue(issue))
+
+    doc_meta, key_map = _build_document_lookup(documents)
+    doc_issue_counts: Dict[str, int] = {doc.get("id"): 0 for doc in documents if doc.get("id")}
+
+    for issue in formatted:
+        matched_names, matched_ids = _match_issue_documents(issue, doc_meta, key_map)
+        issue["documents"] = matched_names
+        for doc_id in matched_ids:
+            doc_issue_counts[doc_id] = doc_issue_counts.get(doc_id, 0) + 1
+
+    return formatted, doc_issue_counts
+
+
+def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
+    issue_id = str(result.get("rule") or result.get("rule_id") or uuid4())
+    severity = _normalize_issue_severity(result.get("severity"))
+    documents = _extract_document_names(result)
+    expected = result.get("expected") or result.get("expected_value")
+    found = result.get("found") or result.get("actual_value")
+    suggestion = result.get("suggestion")
+    expected_outcome = result.get("expected_outcome") or {}
+    if not suggestion:
+        suggestion = expected_outcome.get("invalid") or expected_outcome.get("message")
+
+    return {
+        "id": issue_id,
+        "title": result.get("title") or result.get("rule") or "Rule Breach",
+        "severity": severity,
+        "documents": documents,
+        "description": result.get("message") or "",
+        "expected": _coerce_issue_value(expected),
+        "found": _coerce_issue_value(found),
+        "suggested_fix": _coerce_issue_value(suggestion),
+        "ucp_reference": _coerce_issue_value(result.get("rule")),
+    }
+
+
+def _format_ai_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
+    formatted = {
+        "id": issue.get("id") or str(uuid4()),
+        "title": issue.get("title") or "Cross-document discrepancy",
+        "severity": _normalize_issue_severity(issue.get("severity")),
+        "documents": issue.get("documents") or [],
+        "description": issue.get("description") or "",
+        "expected": issue.get("expected") or "",
+        "found": issue.get("found") or "",
+        "suggested_fix": issue.get("suggested_fix") or "",
+        "ucp_reference": issue.get("ucp_reference") or "",
+    }
+    formatted["id"] = str(formatted["id"])
+    if isinstance(formatted["documents"], str):
+        formatted["documents"] = [formatted["documents"]]
+    return formatted
+
+
+def _coerce_issue_value(value: Any) -> str:
+    if not value:
+        return ""
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
+def _build_document_lookup(
+    documents: List[Dict[str, Any]]
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
+    meta: Dict[str, Dict[str, Any]] = {}
+    key_map: Dict[str, List[str]] = {}
+
+    for doc in documents:
+        doc_id = doc.get("id")
+        if not doc_id:
+            continue
+        display_name = doc.get("name") or doc.get("type") or doc.get("documentType") or doc_id
+        meta[doc_id] = {
+            "document_id": doc_id,
+            "name": doc.get("name"),
+            "display": display_name,
+            "type": doc.get("documentType") or doc.get("type"),
+        }
+        candidate_keys = {
+            _normalize_doc_match_key(display_name),
+            _normalize_doc_match_key(doc.get("name")),
+            _normalize_doc_match_key(_strip_extension(doc.get("name"))),
+            _normalize_doc_match_key(doc.get("documentType")),
+            _normalize_doc_match_key(doc.get("type")),
+        }
+        for key in filter(None, candidate_keys):
+            key_map.setdefault(key, []).append(doc_id)
+
+    return meta, key_map
+
+
+def _match_issue_documents(
+    issue: Dict[str, Any],
+    doc_meta: Dict[str, Dict[str, Any]],
+    key_map: Dict[str, List[str]],
+) -> Tuple[List[str], List[str]]:
+    matched: List[str] = []
+    matched_ids: List[str] = []
+
+    requested = issue.get("documents") or []
+    if isinstance(requested, str):
+        requested = [requested]
+
+    for raw in requested:
+        key = _normalize_doc_match_key(raw)
+        if not key:
+            continue
+        for doc_id in key_map.get(key, []):
+            if doc_id in matched_ids:
+                continue
+            meta = doc_meta.get(doc_id)
+            if not meta:
+                continue
+            matched.append(meta.get("name") or meta.get("display") or meta.get("type") or doc_id)
+            matched_ids.append(doc_id)
+
+    return matched, matched_ids
+
+
+def _normalize_doc_match_key(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = re.sub(r"[^a-z0-9]", "", str(value).lower())
+    return normalized or None
+
+
+def _strip_extension(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    if "." not in value:
+        return value
+    return value.rsplit(".", 1)[0]
+
+
+def _build_documents_section(
+    documents: List[Dict[str, Any]],
+    issue_counts: Dict[str, int],
+) -> List[Dict[str, Any]]:
+    section: List[Dict[str, Any]] = []
+    for doc in documents:
+        doc_id = doc.get("id") or str(uuid4())
+        extraction_status = (
+            doc.get("extractionStatus")
+            or doc.get("extraction_status")
+            or doc.get("status")
+            or "unknown"
+        )
+        section.append(
+            {
+                "document_id": doc_id,
+                "document_type": _humanize_doc_type(doc.get("documentType") or doc.get("type")),
+                "filename": doc.get("name"),
+                "extraction_status": extraction_status,
+                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+                "issues_count": issue_counts.get(doc_id, 0),
+            }
+        )
+    return section
+
+
+def _compose_processing_summary(
+    documents: List[Dict[str, Any]],
+    issues: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    total_docs = len(documents)
+    successful = sum(
+        1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
+    )
+    failed = total_docs - successful
+    severity_breakdown = _count_issue_severity(issues)
+
+    return {
+        "total_documents": total_docs,
+        "successful_extractions": successful,
+        "failed_extractions": failed,
+        "total_issues": len(issues),
+        "severity_breakdown": severity_breakdown,
+    }
+
+
+def _count_issue_severity(issues: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
+    for issue in issues:
+        severity = _normalize_issue_severity(issue.get("severity"))
+        if severity in counts:
+            counts[severity] += 1
+        else:
+            counts["minor"] += 1
+    return counts
+
+
+def _build_analytics_section(
+    summary: Dict[str, Any],
+    documents: List[Dict[str, Any]],
+    issues: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    severity = summary.get("severity_breakdown") or {}
+    compliance_score = max(
+        0,
+        100 - severity.get("critical", 0) * 30 - severity.get("major", 0) * 20 - severity.get("minor", 0) * 5,
+    )
+
+    document_risk = []
+    for doc in documents:
+        count = doc.get("issues_count", 0)
+        if count >= 3:
+            risk = "high"
+        elif count >= 1:
+            risk = "medium"
+        else:
+            risk = "low"
+        document_risk.append(
+            {
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("filename"),
+                "risk": risk,
+            }
+        )
+
+    return {
+        "compliance_score": compliance_score,
+        "issue_counts": severity,
+        "document_risk": document_risk,
+    }
+
+
+def _build_timeline_entries() -> List[Dict[str, str]]:
+    return [
+        {"label": "Upload Received", "status": "complete"},
+        {"label": "OCR Complete", "status": "complete"},
+        {"label": "Deterministic Rules", "status": "complete"},
+        {"label": "AI Cross-Document Analysis", "status": "complete"},
+    ]
 
 def _build_document_processing_analytics(
     document_summaries: List[Dict[str, Any]],

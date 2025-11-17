@@ -11,19 +11,33 @@ const DOC_LABELS: Record<string, string> = {
   supporting_document: 'Supporting Document',
 };
 
-const STATUS_ORDER: Record<string, number> = {
-  error: 3,
-  warning: 2,
-  success: 1,
+const DEFAULT_SEVERITY = {
+  critical: 0,
+  major: 0,
+  medium: 0,
+  minor: 0,
 };
 
-const humanizeDocType = (value?: string | null) => {
-  if (!value) return DOC_LABELS.supporting_document;
+const normalizeDocType = (value?: string | null) => {
+  if (!value) {
+    return DOC_LABELS.supporting_document;
+  }
   const normalized = value.toString().toLowerCase().replace(/\s+/g, '_');
   return DOC_LABELS[normalized] ?? value.toString().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
-export const formatExpectedFound = (value: any): string => {
+const deriveDocumentStatus = (extractionStatus: string, issuesCount: number): 'success' | 'warning' | 'error' => {
+  const status = extractionStatus?.toLowerCase();
+  if (status === 'error' || issuesCount >= 3) {
+    return 'error';
+  }
+  if (issuesCount > 0 || status === 'partial' || status === 'pending') {
+    return 'warning';
+  }
+  return 'success';
+};
+
+const formatTextValue = (value: any): string => {
   if (value === null || value === undefined) {
     return '—';
   }
@@ -31,189 +45,212 @@ export const formatExpectedFound = (value: any): string => {
     return value.trim() || '—';
   }
   if (Array.isArray(value)) {
-    return value.map((item) => formatExpectedFound(item)).filter(Boolean).join(', ');
+    return value.map((entry) => formatTextValue(entry)).filter(Boolean).join(', ');
   }
   if (typeof value === 'object') {
     if ('value' in value) {
-      return formatExpectedFound(value.value);
+      return formatTextValue(value.value);
     }
     if ('text' in value) {
-      return formatExpectedFound(value.text);
-    }
-    if ('message' in value) {
-      return formatExpectedFound(value.message);
+      return formatTextValue(value.text);
     }
     return JSON.stringify(value);
   }
   return String(value);
 };
 
-const normalizeDocumentStatuses = (documents: ValidationResults['documents'] = []) => {
-  return documents.reduce<Record<string, number>>((acc, doc) => {
-    const status = (doc.status || 'success').toLowerCase();
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, { success: 0, warning: 0, error: 0 });
+const normalizeSeverity = (value?: string | null): string => {
+  const normalized = (value ?? '').toLowerCase();
+  if (['critical', 'fail', 'error', 'high'].includes(normalized)) {
+    return 'critical';
+  }
+  if (['major', 'warn', 'warning', 'medium'].includes(normalized)) {
+    return 'major';
+  }
+  if (['minor', 'low'].includes(normalized)) {
+    return 'minor';
+  }
+  return normalized || 'minor';
 };
 
-const buildDefaultTimeline = (documentCount: number) => {
-  const now = new Date();
-  const entries = [
-    { title: 'Documents Uploaded', status: 'success', description: `${documentCount} document(s) received` },
-    { title: 'LC Terms Extracted', status: 'success', description: 'Structured LC context generated' },
-    { title: 'Document Cross-Check', status: 'success', description: 'Compared trade docs against LC terms' },
-    { title: 'Customs Pack Generated', status: 'success', description: 'Bundle prepared for submission' },
-  ];
-  return entries.map((event, index) => {
-    const timestamp = new Date(now.getTime() - (entries.length - index) * 45 * 1000);
-    return { ...event, timestamp: timestamp.toISOString() };
-  });
-};
-
-const buildDefaultAnalytics = (
-  documents: ValidationResults['documents'],
-  statusCounts: Record<string, number>,
-  processingSummary: ValidationResults['processing_summary'],
-) => {
-  return {
-    extraction_accuracy: 100 - (statusCounts.warning ?? 0) * 2 - (statusCounts.error ?? 0) * 5,
-    lc_compliance_score: processingSummary?.compliance_rate ?? 0,
-    customs_ready_score: Math.max(0, (processingSummary?.compliance_rate ?? 0) - (statusCounts.warning ?? 0) * 2),
-    documents_processed: documents?.length ?? 0,
-    document_status_distribution: statusCounts,
-    document_processing: (documents || []).map((doc, index) => ({
-      name: doc.name,
-      type: doc.type,
-      status: doc.status,
-      processing_time_seconds: Number((0.2 + index * 0.05).toFixed(2)),
-      accuracy_score: doc.ocrConfidence ? Math.round(doc.ocrConfidence * 100) : 95,
-      compliance_level: doc.status === 'success' ? 'High' : doc.status === 'warning' ? 'Medium' : 'Low',
-      risk_level: doc.status === 'success' ? 'Low Risk' : doc.status === 'warning' ? 'Medium Risk' : 'High Risk',
-    })),
-    performance_insights: [
-      `${documents?.length ?? 0} document(s) processed`,
-      `${statusCounts.success ?? 0} verified without issues`,
-      `Runtime: ${processingSummary?.processing_time_display ?? 'n/a'}`,
-    ],
-    processing_time_display: processingSummary?.processing_time_display,
-  };
-};
-
-export const mapDiscrepanciesToUI = (
-  rawItems: any[] = [],
-  documents: ValidationResults['documents'] = [],
-): IssueCard[] => {
-  const docStatusMap = new Map<string, { status?: string; type?: string }>();
-  documents.forEach((doc) => {
-    if (doc.name) {
-      docStatusMap.set(doc.name, { status: doc.status, type: doc.type });
-    }
-  });
-
-  return rawItems.map((item, index) => {
-    const documentNames: string[] = [];
-    const anyValue = item as any;
-    if (Array.isArray(anyValue.document_names)) {
-      documentNames.push(...anyValue.document_names);
-    }
-    if (Array.isArray(anyValue.documents)) {
-      documentNames.push(...anyValue.documents);
-    }
-    if (anyValue.documentName) {
-      documentNames.push(anyValue.documentName);
-    }
-
-    const documentName = documentNames.find(Boolean);
-    const linkedDoc = documentName ? docStatusMap.get(documentName) : undefined;
+const mapDocuments = (docs: any[] = []): ValidationResults['documents'] => {
+  return docs.map((doc, index) => {
+    const documentId = String(doc?.document_id ?? doc?.id ?? index);
+    const filename = doc?.filename ?? doc?.name ?? `Document ${index + 1}`;
+    const typeKey = doc?.document_type ?? doc?.type ?? 'supporting_document';
+    const issuesCount = Number(doc?.issues_count ?? 0);
+    const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
 
     return {
-      id: String(item.id ?? item.rule ?? `issue-${index}`),
-      rule: item.rule,
-      title: item.title ?? item.rule ?? 'Review Required',
-      description: item.description ?? item.message ?? '',
-      severity: item.severity ?? 'minor',
-      documentName: documentName,
-      documentType:
-        item.documentType ??
-        linkedDoc?.type ??
-        (item.document_type ? humanizeDocType(item.document_type) : undefined),
-      expected: formatExpectedFound(item.expected ?? item.expected_value ?? item.expectedValue),
-      actual: formatExpectedFound(item.actual ?? item.actual_value ?? item.actualValue ?? item.found),
-      suggestion:
-        item.suggestion ??
-        item.recommendation ??
-        item.suggested_fix ??
-        item.expected_outcome?.invalid ??
-        item.expected_outcome?.message,
-      field: item.field ?? item.field_name ?? item.metadata?.field,
+      id: documentId,
+      documentId,
+      name: filename,
+      filename,
+      type: normalizeDocType(typeKey),
+      typeKey,
+      extractionStatus,
+      status: deriveDocumentStatus(extractionStatus, issuesCount),
+      issuesCount,
+      extractedFields: doc?.extracted_fields ?? doc?.extractedFields ?? {},
     };
   });
 };
 
+const buildDocumentLookup = (documents: ValidationResults['documents']) => {
+  const lookup = new Map<string, ValidationResults['documents'][number]>();
+  documents.forEach((doc) => {
+    const candidates = [doc.filename, doc.name, doc.type, doc.typeKey];
+    candidates.forEach((candidate) => {
+      if (candidate) {
+        lookup.set(candidate.toLowerCase(), doc);
+      }
+    });
+  });
+  return lookup;
+};
+
+const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']): IssueCard[] => {
+  const lookup = buildDocumentLookup(documents);
+
+  return issues.map((issue, index) => {
+    const list = issue?.documents ?? issue?.document_names ?? [];
+    const normalizedList = Array.isArray(list) ? list : [list];
+    const documentNames = normalizedList
+      .map((name: any) => (typeof name === 'string' ? name : String(name ?? '')))
+      .filter(Boolean);
+    const firstDoc = documentNames[0];
+    const docMeta = firstDoc ? lookup.get(firstDoc.toLowerCase()) : undefined;
+
+    return {
+      id: String(issue?.id ?? issue?.rule ?? `issue-${index}`),
+      rule: issue?.rule,
+      title: issue?.title ?? 'Review Required',
+      description: issue?.description ?? issue?.message ?? '',
+      severity: normalizeSeverity(issue?.severity),
+      documentName: firstDoc ?? docMeta?.name,
+      documentType: docMeta?.type,
+      documents: documentNames,
+      expected: formatTextValue(issue?.expected ?? issue?.expected_value),
+      actual: formatTextValue(issue?.found ?? issue?.actual ?? issue?.actual_value),
+      suggestion: formatTextValue(issue?.suggested_fix ?? issue?.recommendation),
+      field: issue?.field ?? issue?.field_name ?? issue?.metadata?.field,
+      ucpReference: issue?.ucp_reference,
+    };
+  });
+};
+
+const summarizeSeverity = (issues: IssueCard[]): typeof DEFAULT_SEVERITY => {
+  return issues.reduce(
+    (acc, issue) => {
+      const key = normalizeSeverity(issue.severity);
+      if (key in acc) {
+        acc[key as keyof typeof acc] += 1;
+      } else {
+        acc.minor += 1;
+      }
+      return acc;
+    },
+    { ...DEFAULT_SEVERITY },
+  );
+};
+
+const ensureSummary = (
+  payload: any,
+  documents: ValidationResults['documents'],
+  issues: IssueCard[],
+): ValidationResults['summary'] => {
+  const severity = payload?.severity_breakdown ?? summarizeSeverity(issues);
+  const totalDocuments =
+    typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
+  const success =
+    typeof payload?.successful_extractions === 'number'
+      ? payload.successful_extractions
+      : documents.filter((doc) => doc.status === 'success').length;
+  const failed =
+    typeof payload?.failed_extractions === 'number'
+      ? payload.failed_extractions
+      : Math.max(0, totalDocuments - success);
+  const totalIssues =
+    typeof payload?.total_issues === 'number' ? payload.total_issues : issues.length;
+
+  return {
+    total_documents: totalDocuments,
+    successful_extractions: success,
+    failed_extractions: failed,
+    total_issues: totalIssues,
+    severity_breakdown: severity,
+  };
+};
+
+const ensureAnalytics = (
+  payload: any,
+  summary: ValidationResults['summary'],
+  documents: ValidationResults['documents'],
+): ValidationResults['analytics'] => {
+  const issueCounts = payload?.issue_counts ?? summary.severity_breakdown ?? { ...DEFAULT_SEVERITY };
+  const compliance =
+    typeof payload?.compliance_score === 'number'
+      ? payload.compliance_score
+      : Math.max(
+          0,
+          100 - issueCounts.critical * 30 - issueCounts.major * 20 - issueCounts.minor * 5,
+        );
+  const documentRisk = Array.isArray(payload?.document_risk)
+    ? payload.document_risk.map((entry: any) => ({
+        document_id: entry?.document_id,
+        filename: entry?.filename,
+        risk: entry?.risk ?? 'low',
+      }))
+    : documents.map((doc) => ({
+        document_id: doc.documentId,
+        filename: doc.name,
+        risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount >= 1 ? 'medium' : 'low',
+      }));
+
+  return {
+    compliance_score: Math.max(0, Math.min(100, compliance)),
+    issue_counts: issueCounts,
+    document_risk: documentRisk,
+  };
+};
+
+const mapTimeline = (entries: any[] = []): ValidationResults['timeline'] => {
+  return entries
+    .map((entry, index) => ({
+      title: entry?.title ?? entry?.label ?? `Step ${index + 1}`,
+      status: entry?.status ?? 'pending',
+      description: entry?.description ?? entry?.detail,
+      timestamp: entry?.timestamp ?? entry?.time,
+    }))
+    .filter((entry) => Boolean(entry.title));
+};
+
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const normalizedDocuments = Array.isArray(raw?.documents)
-    ? raw.documents.map((doc: any, index: number) => {
-        const canonicalType =
-          doc.documentType ??
-          (typeof doc.type === 'string' ? doc.type.replace(/\s+/g, '_').toLowerCase() : undefined);
-        return {
-          ...doc,
-          id: doc.id ?? doc.document_id ?? `${index}`,
-          name: doc.name ?? doc.filename ?? `Document ${index + 1}`,
-          type: humanizeDocType(canonicalType ?? doc.type),
-          documentType: canonicalType ?? doc.type ?? 'supporting_document',
-          status: doc.status ?? 'success',
-          discrepancyCount: doc.discrepancyCount ?? doc.discrepancies ?? 0,
-          extractedFields: doc.extractedFields ?? doc.extracted_fields ?? {},
-          ocrConfidence: doc.ocrConfidence ?? doc.ocr_confidence,
-          extractionStatus: doc.extractionStatus ?? doc.extraction_status,
-        };
-      })
-    : [];
+  const structured = raw?.structured_result ?? {};
+  const documentSource =
+    (Array.isArray(structured?.documents) && structured.documents.length > 0
+      ? structured.documents
+      : raw?.documents) ?? [];
+  const issueSource =
+    (Array.isArray(structured?.issues) && structured.issues.length > 0
+      ? structured.issues
+      : raw?.issue_cards ?? raw?.discrepancies) ?? [];
 
-  const issueCards = mapDiscrepanciesToUI(raw?.issue_cards ?? raw?.discrepancies ?? [], normalizedDocuments);
-  const documentStatus = raw?.document_status ?? normalizeDocumentStatuses(normalizedDocuments);
-  const totalDocuments = raw?.total_documents ?? normalizedDocuments.length;
-  const totalDiscrepancies =
-    raw?.total_discrepancies ?? (Array.isArray(raw?.discrepancies) ? raw.discrepancies.length : issueCards.length);
-  const processingSummary =
-    raw?.processing_summary ??
-    ({
-      documents: totalDocuments,
-      verified: documentStatus.success ?? 0,
-      warnings: documentStatus.warning ?? 0,
-      errors: documentStatus.error ?? 0,
-      compliance_rate: totalDocuments
-        ? Math.round(((documentStatus.success ?? 0) / totalDocuments) * 100)
-        : 0,
-      processing_time_display: raw?.processingTime ?? raw?.processing_time ?? raw?.processingTimeMinutes,
-    } satisfies ValidationResults['processing_summary']);
-
-  const analytics =
-    raw?.analytics ?? buildDefaultAnalytics(normalizedDocuments, documentStatus, processingSummary ?? {});
-  const timeline = raw?.timeline ?? buildDefaultTimeline(totalDocuments);
-  const overallStatus =
-    raw?.overall_status ??
-    (documentStatus.error
-      ? 'error'
-      : documentStatus.warning
-      ? 'warning'
-      : raw?.status ?? raw?.overallStatus ?? 'success');
+  const documents = mapDocuments(documentSource);
+  const issues = mapIssues(issueSource, documents);
+  const summary = ensureSummary(structured?.processing_summary ?? raw?.processing_summary, documents, issues);
+  const analytics = ensureAnalytics(structured?.analytics ?? raw?.analytics, summary, documents);
+  const timeline = mapTimeline(structured?.timeline ?? raw?.timeline);
 
   return {
     ...raw,
     jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
-    job_id: raw?.job_id ?? raw?.jobId ?? raw?.request_id,
-    results: raw?.results ?? [],
-    discrepancies: raw?.discrepancies ?? [],
-    documents: normalizedDocuments,
-    issue_cards: issueCards,
-    totalDocuments,
-    totalDiscrepancies,
-    document_status: documentStatus,
-    processing_summary: processingSummary,
+    summary,
+    documents,
+    issues,
     analytics,
     timeline,
-    overall_status: overallStatus,
+    processing_summary: summary,
+    issue_cards: issues,
   };
 };

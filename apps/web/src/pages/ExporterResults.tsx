@@ -45,174 +45,6 @@ import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type Gu
 import { useJob, useResults, type ValidationResults, type IssueCard } from "@/hooks/use-lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 
-// Mock exporter results
-const mockExporterResults: ValidationResults = {
-  jobId: "demo-job",
-  results: [],
-  summary: {
-    totalChecks: 0,
-    passed: 0,
-    failed: 0,
-  },
-  lcNumber: "EXP-BD-2024-001",
-  status: "completed",
-  processedAt: "2024-01-15T14:30:00Z",
-  completedAt: "2024-01-15T14:30:00Z",
-  processingTime: "1.8 minutes",
-  totalDocuments: 6,
-  totalDiscrepancies: 1,
-  overallStatus: "warning" as "success" | "error" | "warning",
-  packGenerated: true,
-  lc_type: "export",
-  lc_type_reason: "Mock data assumes exporter workflow.",
-  lc_type_confidence: 0.95,
-  lc_type_source: "auto",
-  issue_cards: [],
-  reference_issues: [],
-  ai_enrichment: {},
-  extracted_data: {},
-  extraction_status: "success",
-  documents: [
-    {
-      id: "1",
-      name: "Letter_of_Credit.pdf",
-      type: "Letter of Credit",
-      status: "success" as const,
-      discrepancies: [],
-      extractedFields: {
-        lcNumber: "LC-2024-BD-001",
-        beneficiary: "Bangladesh Exports Ltd",
-        amount: "USD 50,000",
-        expiryDate: "2024-02-15"
-      }
-    },
-    {
-      id: "2", 
-      name: "Commercial_Invoice.pdf",
-      type: "Commercial Invoice",
-      status: "warning" as const,
-      discrepancies: [],
-      extractedFields: {
-        invoiceNumber: "INV-2024-001",
-        invoiceDate: "2024-01-08",
-        totalAmount: "USD 50,000",
-        buyer: "German Import GmbH"
-      }
-    },
-    {
-      id: "3",
-      name: "Packing_List.pdf", 
-      type: "Packing List",
-      status: "success" as const,
-      discrepancies: [],
-      extractedFields: {
-        totalPackages: "100 cartons",
-        grossWeight: "2500 KG",
-        netWeight: "2300 KG",
-        dimensions: "120x80x60 cm"
-      }
-    },
-    {
-      id: "4",
-      name: "Bill_of_Lading.pdf",
-      type: "Bill of Lading", 
-      status: "success" as const,
-      discrepancies: [],
-      extractedFields: {
-        blNumber: "BL-2024-001",
-        vessel: "MV Bangladesh Express",
-        portOfLoading: "Chittagong",
-        portOfDischarge: "Hamburg"
-      }
-    },
-    {
-      id: "5",
-      name: "Certificate_of_Origin.pdf",
-      type: "Certificate of Origin",
-      status: "success" as const, 
-      discrepancies: [],
-      extractedFields: {
-        originCountry: "Bangladesh",
-        issuingAuthority: "BGMEA",
-        certificateNumber: "COO-2024-001",
-        exporterName: "Bangladesh Exports Ltd"
-      }
-    },
-    {
-      id: "6",
-      name: "GSP_Certificate.pdf",
-      type: "GSP Certificate",
-      status: "success" as const, 
-      discrepancies: [],
-      extractedFields: {
-        gspNumber: "GSP-BD-001",
-        issuingCountry: "Bangladesh",
-        beneficiaryCountry: "Germany",
-        productDescription: "Cotton T-shirts"
-      }
-    }
-  ],
-  discrepancies: [
-    {
-      id: "1",
-      documentId: "2",
-      documentName: "Commercial_Invoice.pdf",
-      severity: "medium" as const,
-      rule: "LC Terms Compliance",
-      title: "Product Description Variation",
-      description: "Product description in invoice slightly differs from LC terms. May cause bank discrepancy.",
-      suggestion: "Ensure product description exactly matches LC terms or request LC amendment.",
-      field: "productDescription",
-      expected: "100% Cotton T-shirts, Size M-XL",
-      actual: "Cotton T-shirts, Mixed sizes"
-    }
-  ]
-};
-
-const normalizeDocumentStatusCounts = (documents: ValidationResults['documents'] = []) =>
-  documents.reduce<Record<string, number>>(
-    (acc, doc) => {
-      const status = (doc.status || 'success').toLowerCase();
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    },
-    { success: 0, warning: 0, error: 0 }
-  );
-
-const buildFallbackTimeline = (documentCount: number) => [
-  { title: 'Documents Uploaded', status: 'success', description: `${documentCount} document(s) uploaded` },
-  { title: 'LC Terms Extracted', status: 'success', description: 'Structured LC context generated' },
-  { title: 'Document Cross-Check', status: 'success', description: 'Compared trade docs against LC terms' },
-  { title: 'Customs Pack Generated', status: 'success', description: 'Bundle prepared for customs clearance' },
-];
-
-const buildFallbackAnalytics = (
-  documents: ValidationResults['documents'],
-  statusCounts: Record<string, number>,
-  processingSummary?: ValidationResults['processing_summary'],
-) => ({
-  extraction_accuracy: 100 - (statusCounts.warning ?? 0) * 2 - (statusCounts.error ?? 0) * 5,
-  lc_compliance_score: processingSummary?.compliance_rate ?? 0,
-  customs_ready_score: Math.max(0, (processingSummary?.compliance_rate ?? 0) - (statusCounts.warning ?? 0) * 2),
-  documents_processed: documents?.length ?? 0,
-  document_status_distribution: statusCounts,
-  document_processing: (documents || []).map((doc, index) => ({
-    name: doc.name,
-    type: doc.type,
-    status: doc.status,
-    processing_time_seconds: Number((0.2 + index * 0.05).toFixed(2)),
-    accuracy_score: doc.ocrConfidence ? Math.round(doc.ocrConfidence * 100) : 95,
-    compliance_level: doc.status === 'success' ? 'High' : doc.status === 'warning' ? 'Medium' : 'Low',
-    risk_level: doc.status === 'success' ? 'Low Risk' : doc.status === 'warning' ? 'Medium Risk' : 'High Risk',
-  })),
-  performance_insights: [
-    `${documents?.length ?? 0} document(s) processed`,
-    `${statusCounts.success ?? 0} verified without issues`,
-    `Runtime: ${processingSummary?.processing_time_display ?? 'n/a'}`,
-  ],
-  processing_time_display: processingSummary?.processing_time_display,
-});
-
 type ExporterResultsProps = {
   embedded?: boolean;
 };
@@ -241,7 +73,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const sessionParam = searchParams.get('session');
   const jobIdFromPath = params.jobId;
   const validationSessionId = jobIdParam || sessionParam || jobIdFromPath || null;
-  const isDemoMode = searchParams.get('demo') === 'true';
   
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
   const { getResults, isLoading: resultsLoading, error: resultsError } = useResults();
@@ -318,78 +149,23 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [submissionNote, setSubmissionNote] = useState<string>("");
   const [manifestConfirmed, setManifestConfirmed] = useState(false);
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
+  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
   
-  const effectiveResults = liveResults ?? (isDemoMode ? mockExporterResults : null);
-  const resultData = effectiveResults;
+  const resultData = liveResults;
 
   // Feature flags
   const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
   const enableCustomsPackPDF = isExporterFeatureEnabled("exporter_customs_pack_pdf");
   
   // Guardrails check
-  const fallbackResults = isDemoMode ? mockExporterResults : null;
-  const resolvedResults = resultData ?? fallbackResults;
+  const resolvedResults = resultData;
   const resolvedLcNumber =
     lcNumberParam ??
     resultData?.lcNumber ??
     liveResults?.lcNumber ??
     jobStatus?.lcNumber ??
-    fallbackResults?.lcNumber ??
     null;
-  const lcNumber = resolvedLcNumber ?? mockExporterResults.lcNumber;
-  
-  // Compute totalDiscrepancies early for use in isReadyToSubmit
-  const totalDiscrepancies = resolvedResults.totalDiscrepancies ?? resolvedResults.discrepancies?.length ?? 0;
-  const documents = resolvedResults?.documents ?? [];
-  const extractedDocuments =
-    Array.isArray(resolvedResults?.extracted_data?.documents)
-      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
-      : [];
-  const issueCards = resolvedResults?.issue_cards ?? [];
-  const referenceIssues = resolvedResults?.reference_issues ?? [];
-  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
-  const hasIssueCards = issueCards.length > 0;
-  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
-  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
-  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
-  const lcTypeConfidenceValue =
-    typeof resolvedResults?.lc_type_confidence === "number"
-      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
-      : null;
-  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
-  const lcTypeLabelMap: Record<string, string> = {
-    export: "Export LC",
-    import: "Import LC",
-    unknown: "Unknown",
-  };
-  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
-  const documentStatusMap = useMemo(() => {
-    const map = new Map<string, { status?: string; type?: string }>();
-    documents.forEach((doc) => {
-      if (doc.name) {
-        map.set(doc.name, { status: doc.status, type: doc.type });
-      }
-    });
-    return map;
-  }, [documents]);
-  const severityCounts = useMemo(
-    () =>
-      issueCards.reduce(
-        (acc, card) => {
-          const severity = normalizeDiscrepancySeverity(card.severity);
-          acc[severity] = (acc[severity] || 0) + 1;
-          return acc;
-        },
-        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
-      ),
-    [issueCards]
-  );
-  const filteredIssueCards = useMemo(() => {
-    if (issueFilter === "all") return issueCards;
-    return issueCards.filter(
-      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
-    );
-  }, [issueCards, issueFilter]);
+  const lcNumber = resolvedLcNumber ?? 'LC-UNKNOWN';
   
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
     queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
@@ -435,14 +211,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   
   // Check if result has invoiceId (future enhancement)
   const invoiceId = (resolvedResults as any)?.invoiceId;
-  
-  // Check if ready to submit (Phase 5: Guardrails)
-  const isReadyToSubmit = useMemo(() => {
-    if (!enableBankSubmission) return false;
-    if (guardrailsLoading) return false;
-    if (!guardrails) return totalDiscrepancies === 0;
-    return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [guardrails, guardrailsLoading, enableBankSubmission, totalDiscrepancies]);
   
   // Generate idempotency key (Phase 7)
   const generateIdempotencyKey = () => {
@@ -547,7 +315,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     },
   });
 
-  if (!resultData && !isDemoMode) {
+  if (!resultData) {
     if (!validationSessionId) {
       return (
         <div className="flex items-center justify-center min-h-[60vh] p-6">
@@ -614,21 +382,91 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     return null;
   }
 
+  const summary = resolvedResults.summary;
+  const documents = resolvedResults.documents ?? [];
+  const issueCards = resolvedResults.issues ?? [];
+  const analyticsData = resolvedResults.analytics;
+  const timelineEvents = resolvedResults.timeline ?? [];
+  const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
+  const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
+  const severityBreakdown = summary?.severity_breakdown ?? {
+    critical: 0,
+    major: 0,
+    medium: 0,
+    minor: 0,
+  };
+  const extractedDocuments =
+    Array.isArray(resolvedResults?.extracted_data?.documents)
+      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
+      : [];
+  const referenceIssues = resolvedResults?.reference_issues ?? [];
+  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
+  const hasIssueCards = issueCards.length > 0;
+  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
+  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
+  const lcTypeConfidenceValue =
+    typeof resolvedResults?.lc_type_confidence === "number"
+      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
+      : null;
+  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
+  const lcTypeLabelMap: Record<string, string> = {
+    export: "Export LC",
+    import: "Import LC",
+    unknown: "Unknown",
+  };
+  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      if (doc.name) {
+        map.set(doc.name, { status: doc.status, type: doc.type });
+      }
+    });
+    return map;
+  }, [documents]);
+  const documentStatusCounts = useMemo(
+    () =>
+      documents.reduce(
+        (acc, doc) => {
+          const key = doc.status ?? 'warning';
+          if (!(key in acc)) {
+            acc[key as keyof typeof acc] = 0;
+          }
+          acc[key as keyof typeof acc] += 1;
+          return acc;
+        },
+        { success: 0, warning: 0, error: 0 } as Record<'success' | 'warning' | 'error', number>,
+      ),
+    [documents],
+  );
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
+  const filteredIssueCards = useMemo(() => {
+    if (issueFilter === "all") return issueCards;
+    return issueCards.filter(
+      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
+    );
+  }, [issueCards, issueFilter]);
+
   const getDocumentNamesForCard = (card: IssueCard): string[] => {
     const names = new Set<string>();
-    const anyCard = card as any;
+    if (Array.isArray(card.documents)) {
+      card.documents.forEach((name) => {
+        if (name) names.add(name);
+      });
+    }
     if (card.documentName) {
       names.add(card.documentName);
-    }
-    if (Array.isArray(anyCard.documentNames)) {
-      anyCard.documentNames.forEach((name: string) => {
-        if (name) names.add(name);
-      });
-    }
-    if (Array.isArray(anyCard.documents)) {
-      anyCard.documents.forEach((name: string) => {
-        if (name) names.add(name);
-      });
     }
     return Array.from(names);
   };
@@ -716,7 +554,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 {issue.title || issue.rule || `Rule ${index + 1}`}
               </p>
               <p className="text-xs uppercase tracking-wide mt-1">
-                Severity: {issue.severity || "reference"} Â· {issue.ruleset_domain || "rulebook"}
+                Severity: {issue.severity || "reference"} - {issue.ruleset_domain || "rulebook"}
               </p>
               {issue.article && (
                 <p className="text-xs mt-1">
@@ -730,66 +568,70 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       </Card>
     );
   };
-  const processingSummary = resolvedResults.processing_summary;
-  const documentStatusCounts =
-  const successCount = processingSummary?.verified ?? documentStatusCounts.success ?? 0;
-  const warningCount = processingSummary?.warnings ?? documentStatusCounts.warning ?? 0;
-  const errorCount = processingSummary?.errors ?? documentStatusCounts.error ?? 0;
-    resolvedResults.document_status || normalizeDocumentStatusCounts(documents);
-  const totalDocuments = processingSummary?.documents ?? documents.length ?? 0;
-  const successRate =
-    processingSummary?.compliance_rate ??
-    (totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0);
+  const successCount =
+    summary?.successful_extractions ?? documents.filter((doc) => doc.status === "success").length;
+  const errorCount =
+    summary?.failed_extractions ?? documents.filter((doc) => doc.status === "error").length;
+  const warningCount =
+    documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
+  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
   const overallStatus =
     resolvedResults.overall_status ||
     resolvedResults.overallStatus ||
     resolvedResults.status ||
-    (totalDiscrepancies > 0 ? "warning" : "success");
+    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
   const packGenerated = resolvedResults.packGenerated ?? overallStatus === "success";
   const processingTime =
-    processingSummary?.processing_time_display ||
     resolvedResults.processingTime ||
     resolvedResults.processing_time ||
     resolvedResults.processingTimeMinutes ||
-    "—";
-    resolvedResults.processingTimeMinutes ||
-    "â€”";
-  const timelineEvents =
-    (resolvedResults.timeline && resolvedResults.timeline.length > 0
-      ? resolvedResults.timeline
-      : buildFallbackTimeline(totalDocuments));
-  const analyticsData =
-    resolvedResults.analytics ||
-    buildFallbackAnalytics(documents, documentStatusCounts, processingSummary);
-  const documentProcessingList =
-  const extractionAccuracy = Math.min(100, Math.max(0, analyticsData?.extraction_accuracy ?? successRate));
-  const lcComplianceScore = Math.min(100, Math.max(0, analyticsData?.lc_compliance_score ?? successRate));
-  const customsReadyScore = Math.min(100, Math.max(0, analyticsData?.customs_ready_score ?? successRate));
-  const performanceInsights =
-    analyticsData?.performance_insights ?? [
-      'Processing 15% faster than average',
-      'Above average compliance rate',
-      'Ready for expedited customs clearance',
-    ];
-
-    analyticsData?.document_processing ||
-    documents.map((doc, index) => ({
+    '-';
+  const timelineDisplay =
+    timelineEvents.length > 0
+      ? timelineEvents
+      : [
+          { title: 'Upload Received', status: 'complete' },
+          { title: 'OCR Complete', status: 'complete' },
+          { title: 'Deterministic Checks', status: 'complete' },
+          { title: 'AI Cross-Document Analysis', status: 'complete' },
+        ];
+  const complianceScore = analyticsData?.compliance_score ?? successRate;
+  const lcComplianceScore = complianceScore;
+  const documentRisk =
+    analyticsData?.document_risk ??
+    documents.map((doc) => ({
+      document_id: doc.documentId,
+      filename: doc.name,
+      risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount > 0 ? 'medium' : 'low',
+    }));
+  const extractionAccuracy = successRate;
+  const customsReadyScore = Math.max(0, complianceScore - warningCount * 5);
+  const performanceInsights = [
+    successCount + '/' + (totalDocuments || 0) + ' documents extracted successfully',
+    totalDiscrepancies + ' issue' + (totalDiscrepancies === 1 ? '' : 's') + ' detected',
+    'Compliance score ' + complianceScore + '%',
+  ];
+  const documentProcessingList = documents.map((doc) => {
+    const riskEntry = documentRisk.find(
+      (entry) => entry.document_id === doc.documentId || entry.filename === doc.name,
+    );
+    const riskLabel = riskEntry?.risk ?? (doc.issuesCount > 0 ? 'medium' : 'low');
+    return {
       name: doc.name,
       type: doc.type,
       status: doc.status,
-      processing_time_seconds: Number((0.2 + index * 0.05).toFixed(2)),
-      accuracy_score: doc.ocrConfidence ? Math.round(doc.ocrConfidence * 100) : 95,
-      compliance_level: doc.status === "success" ? "High" : doc.status === "warning" ? "Medium" : "Low",
-      risk_level: doc.status === "success" ? "Low Risk" : doc.status === "warning" ? "Medium Risk" : "High Risk",
-    }));
-  const processedAt =
-    resolvedResults.processedAt ||
-    resolvedResults.completedAt ||
-    resolvedResults.processingCompletedAt ||
-    resolvedResults.processedAt ||
-    resolvedResults.processed_at ||
-    mockExporterResults.processedAt;
-  
+      risk: riskLabel,
+      issues: doc.issuesCount,
+    };
+  });
+  const isReadyToSubmit = useMemo(() => {
+    if (!enableBankSubmission) return false;
+    if (guardrailsLoading) return false;
+    if (!guardrails) {
+      return totalDiscrepancies === 0;
+    }
+    return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
+  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
   // Mock banks list (in production, fetch from API)
   const banks = [
     { id: "bank-1", name: "Standard Chartered Bank" },
@@ -1048,7 +890,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         <div className="text-xs text-muted-foreground space-y-1">
                           <p className="font-medium text-destructive">Cannot submit:</p>
                           {guardrails.blocking_issues.map((issue, idx) => (
-                            <p key={idx}>â€¢ {issue}</p>
+                            <p key={idx}>- {issue}</p>
                           ))}
                         </div>
                       )}
@@ -1098,7 +940,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {timelineEvents.map((event, index) => {
+                  {timelineDisplay.map((event, index) => {
                     const statusClass =
                       event.status === "error"
                         ? "bg-destructive"
@@ -1148,8 +990,8 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Customs Ready:</span>
-                      <span className={`font-medium ${(analyticsData?.customs_ready_score ?? successRate) >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {(analyticsData?.customs_ready_score ?? successRate) >= 90 ? 'Yes' : 'Review'}
+                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -1171,11 +1013,11 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
-            {documents.map((document) => (
-              <Card key={document.id} className="shadow-soft border-0">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    {documents.map((document) => (
+                      <Card key={document.id} className="shadow-soft border-0">
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${
                         document.status === "success" ? "bg-success/10" : 
                         document.status === "warning" ? "bg-warning/10" : "bg-destructive/10"
@@ -1192,16 +1034,14 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                     <div className="flex items-center gap-3">
                       {(() => {
-                        const discrepancyCount = Array.isArray(document.discrepancies)
-                          ? document.discrepancies.length
-                          : ((document as { discrepancyCount?: number }).discrepancyCount ?? 0);
+                        const discrepancyCount = document.issuesCount ?? 0;
                         return (
                           <StatusBadge status={document.status}>
                             {discrepancyCount === 0
                               ? "Verified"
                               : document.status === "warning"
-                                ? "Minor Issues"
-                                : `${discrepancyCount} Issues`}
+                              ? "Minor Issues"
+                              : `${discrepancyCount} Issues`}
                           </StatusBadge>
                         );
                       })()}
@@ -1575,15 +1415,11 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="text-lg font-bold text-success">
-                        {processingSummary?.processing_time_display ?? processingTime}
-                      </div>
+                      <div className="text-lg font-bold text-success">{processingTime}</div>
                       <div className="text-xs text-muted-foreground">Processing Time</div>
                     </div>
                     <div className="text-center p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <div className="text-lg font-bold text-primary">
-                        {analyticsData?.documents_processed ?? totalDocuments}/{totalDocuments}
-                      </div>
+                      <div className="text-lg font-bold text-primary">{totalDocuments}/{totalDocuments}</div>
                       <div className="text-xs text-muted-foreground">Documents Processed</div>
                     </div>
                   </div>
@@ -1635,7 +1471,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       {performanceInsights.map((insight, idx) => (
-                        <li key={idx}>• {insight}</li>
+                        <li key={idx}>- {insight}</li>
                       ))}
                     </ul>
                   </div>
@@ -1653,40 +1489,28 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-2">Document Type</th>
-                        <th className="text-left py-2">Processing Time</th>
-                        <th className="text-left py-2">Accuracy Score</th>
-                        <th className="text-left py-2">Compliance Level</th>
-                        <th className="text-left py-2">Risk Assessment</th>
+                        <th className="text-left py-2">Document</th>
+                        <th className="text-left py-2">Issues</th>
+                        <th className="text-left py-2">Status</th>
+                        <th className="text-left py-2">Risk</th>
                       </tr>
                     </thead>
                     <tbody className="space-y-2">
                       {documentProcessingList.map((item, index) => (
                         <tr key={item.name ?? index} className="border-b border-gray-200/50">
                           <td className="py-3 font-medium">{item.type ?? documents[index]?.type}</td>
-                          <td className="py-3 text-muted-foreground">
-                            {item.processing_time_seconds
-                              ? `${Number(item.processing_time_seconds).toFixed(2)}s`
-                              : '—'}
-                          </td>
-                          <td className="py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-16 bg-muted rounded-full h-2">
-                                <div 
-                                  className="h-2 rounded-full bg-success"
-                                  style={{ width: `${Math.min(100, item.accuracy_score ?? 0)}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-xs">{item.accuracy_score ?? '—'}%</span>
-                            </div>
-                          </td>
+                          <td className="py-3 text-muted-foreground">{item.issues ?? 0}</td>
                           <td className="py-3">
                             <StatusBadge status={item.status || 'success'}>
-                              {item.compliance_level ?? 'n/a'}
+                              {item.status === 'success'
+                                ? 'Verified'
+                                : item.status === 'warning'
+                                ? 'Review'
+                                : 'Fix Required'}
                             </StatusBadge>
                           </td>
-                          <td className="py-3 text-muted-foreground">
-                            {item.risk_level ?? '—'}
+                          <td className="py-3 text-muted-foreground text-capitalize">
+                            {item.risk ?? 'low'}
                           </td>
                         </tr>
                       ))}
