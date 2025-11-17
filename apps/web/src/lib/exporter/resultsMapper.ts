@@ -1,4 +1,4 @@
-import type { IssueCard, ValidationResults } from '@/hooks/use-lcopilot';
+import type { IssueCard, ValidationResults } from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
   letter_of_credit: 'Letter of Credit',

@@ -42,7 +42,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
-import { useJob, useResults, type ValidationResults, type IssueCard } from "@/hooks/use-lcopilot";
+import { useJob, useResults } from "@/hooks/use-lcopilot";
+import type { ValidationResults, IssueCard } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 
 type ExporterResultsProps = {
@@ -588,7 +589,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     '-';
   const timelineDisplay =
     timelineEvents.length > 0
-      ? timelineEvents
+      ? timelineEvents.map((event) => ({
+          ...event,
+          title: event.title ?? event.label ?? 'Milestone',
+        }))
       : [
           { title: 'Upload Received', status: 'complete' },
           { title: 'OCR Complete', status: 'complete' },

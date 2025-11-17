@@ -34,6 +34,8 @@ from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
 
+from pydantic import BaseModel, Field, ValidationError, root_validator
+
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 logger = logging.getLogger(__name__)
@@ -730,13 +732,20 @@ async def validate_doc(
         structured_summary = _compose_processing_summary(documents_payload, structured_issues)
         analytics_payload = _build_analytics_section(structured_summary, documents_payload, structured_issues)
         timeline_entries = _build_timeline_entries()
-        structured_result = {
-            "processing_summary": structured_summary,
-            "documents": documents_payload,
-            "issues": structured_issues,
-            "analytics": analytics_payload,
-            "timeline": timeline_entries,
-        }
+        try:
+            structured_result = _validate_structured_result({
+                "processing_summary": structured_summary,
+                "documents": documents_payload,
+                "issues": structured_issues,
+                "analytics": analytics_payload,
+                "timeline": timeline_entries,
+            })
+        except ValidationError as exc:
+            logger.error("Structured validation payload invalid: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Structured validation payload invalid",
+            )
 
         return {
             "status": "ok",
@@ -1787,6 +1796,74 @@ def _build_structured_docs_payload(
             for doc in documents
         ],
     }
+
+
+class ProcessingSummaryModel(BaseModel):
+    total_documents: int = Field(..., ge=0)
+    successful_extractions: int = Field(..., ge=0)
+    failed_extractions: int = Field(..., ge=0)
+    total_issues: int = Field(..., ge=0)
+    severity_breakdown: Dict[str, int]
+
+
+class StructuredDocumentModel(BaseModel):
+    document_id: str
+    document_type: str
+    filename: str
+    extraction_status: str
+    extracted_fields: Dict[str, Any]
+    issues_count: int = Field(..., ge=0)
+
+
+class StructuredIssueModel(BaseModel):
+    id: str
+    title: str
+    severity: str
+    documents: List[str]
+    expected: str
+    found: str
+    suggested_fix: str
+    description: str = ""
+    ucp_reference: Optional[str] = None
+
+
+class AnalyticsModel(BaseModel):
+    compliance_score: int
+    issue_counts: Dict[str, int]
+    document_risk: List[Dict[str, Any]]
+
+
+class TimelineEntryModel(BaseModel):
+    title: Optional[str] = None
+    label: Optional[str] = None
+    status: str
+    description: Optional[str] = None
+    timestamp: Optional[str] = None
+
+    @root_validator
+    def ensure_title(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if not values.get("title"):
+            if values.get("label"):
+                values["title"] = values["label"]
+            else:
+                raise ValueError("Timeline entry must include a title or label")
+        return values
+
+
+class StructuredResultModel(BaseModel):
+    processing_summary: ProcessingSummaryModel
+    documents: List[StructuredDocumentModel]
+    issues: List[StructuredIssueModel]
+    analytics: AnalyticsModel
+    timeline: List[TimelineEntryModel]
+
+
+def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ensure the structured_result payload respects the contract before returning it.
+    """
+    model = StructuredResultModel(**payload)
+    return json.loads(model.json())
 
 
 def _build_issue_payload(
