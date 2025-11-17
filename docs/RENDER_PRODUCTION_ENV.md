@@ -320,6 +320,16 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 LLM_MODEL_VERSION=gpt-4o-mini
 AI_ENRICHMENT=true
+
+# Semantic AI Configuration (for cross-document fuzzy comparisons)
+# Enable semantic_check operator in rule engine (defaults to true if not set)
+AI_SEMANTIC_ENABLED=true
+# Model for semantic comparisons (should be cost-effective)
+AI_SEMANTIC_MODEL=gpt-4o-mini
+# Confidence threshold for semantic matches (0.0-1.0, default 0.82)
+AI_SEMANTIC_THRESHOLD_DEFAULT=0.82
+# Timeout for semantic AI calls in milliseconds (default 6000ms)
+AI_SEMANTIC_TIMEOUT_MS=6000
 ```
 
 ## What Will Fail Without These Variables
