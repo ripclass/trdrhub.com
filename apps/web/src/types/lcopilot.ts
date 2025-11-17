@@ -73,12 +73,47 @@ export interface ValidationAnalytics {
   document_risk: DocumentRiskEntry[];
 }
 
+export interface StructuredResultDocument {
+  document_id: string;
+  document_type: string;
+  filename: string;
+  extraction_status: string;
+  extracted_fields: Record<string, any>;
+  issues_count: number;
+}
+
+export interface StructuredResultIssue {
+  id: string;
+  title: string;
+  severity: string;
+  documents: string[];
+  expected: string;
+  found: string;
+  suggested_fix: string;
+  description?: string;
+  ucp_reference?: string | null;
+}
+
 export interface TimelineEvent {
   title?: string;
   label?: string;
   status: string;
   description?: string;
   timestamp?: string;
+}
+
+export interface StructuredResultAnalytics {
+  compliance_score: number;
+  issue_counts: SeverityBreakdown;
+  document_risk: DocumentRiskEntry[];
+}
+
+export interface StructuredResultPayload {
+  processing_summary: ProcessingSummaryPayload;
+  documents: StructuredResultDocument[];
+  issues: StructuredResultIssue[];
+  analytics: StructuredResultAnalytics;
+  timeline: TimelineEvent[];
 }
 
 export interface ValidationResults {
@@ -113,11 +148,5 @@ export interface ValidationResults {
   processing_summary?: ProcessingSummaryPayload;
   issue_cards?: IssueCard[];
   overall_status?: string;
-  structured_result?: {
-    processing_summary?: ProcessingSummaryPayload;
-    documents?: any[];
-    issues?: any[];
-    analytics?: any;
-    timeline?: any[];
-  };
+  structured_result?: StructuredResultPayload;
 }

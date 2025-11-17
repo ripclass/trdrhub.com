@@ -639,28 +639,6 @@ async def validate_doc(
 
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
-            db.commit()
-            
-            # CRITICAL: Refresh session to ensure we're reading the latest data from DB
-            db.refresh(validation_session)
-            
-            # Final verification log
-            stored_docs = (validation_session.validation_results or {}).get("documents") or []
-            stored_keys = list((validation_session.validation_results or {}).keys())
-            logger.info(
-                "Final validation_results after commit: documents=%d total_keys=%d keys=%s",
-                len(stored_docs),
-                len(validation_session.validation_results or {}),
-                stored_keys,
-            )
-            
-            # Defensive check: if documents are missing, log error but don't fail
-            if not stored_docs and document_summaries:
-                logger.error(
-                    "CRITICAL: Documents lost after commit! Had %d summaries before commit, but validation_results only has keys: %s",
-                    len(document_summaries),
-                    stored_keys,
-                )
             
             # Log bank validation upload if applicable
             if user_type == "bank":
@@ -760,6 +738,30 @@ async def validate_doc(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Structured validation payload invalid",
             )
+
+        # Attach structured payload back onto results for persistence and frontend use
+        results_payload["structured_result"] = structured_result
+
+        if validation_session:
+            validation_session.validation_results = copy.deepcopy(results_payload)
+            db.commit()
+            db.refresh(validation_session)
+
+            stored_docs = (validation_session.validation_results or {}).get("documents") or []
+            stored_keys = list((validation_session.validation_results or {}).keys())
+            logger.info(
+                "Final validation_results after commit: documents=%d total_keys=%d keys=%s",
+                len(stored_docs),
+                len(validation_session.validation_results or {}),
+                stored_keys,
+            )
+
+            if not stored_docs and document_summaries:
+                logger.error(
+                    "CRITICAL: Documents lost after commit! Had %d summaries before commit, but validation_results only has keys: %s",
+                    len(document_summaries),
+                    stored_keys,
+                )
 
         return {
             "status": "ok",

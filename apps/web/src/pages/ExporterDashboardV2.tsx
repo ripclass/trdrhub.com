@@ -133,12 +133,18 @@ export default function ExporterDashboardV2() {
 
   // Redirect to login if not authenticated (unless in demo mode)
   useEffect(() => {
-    const demoMode = localStorage.getItem('demo_mode') === 'true' || 
-                    new URLSearchParams(window.location.search).get('demo') === 'true';
-    
+    const params = new URLSearchParams(window.location.search);
+    const demoParamActive = params.get('demo') === 'true';
+
+    if (!demoParamActive) {
+      localStorage.removeItem('demo_mode');
+    }
+
+    const demoMode = localStorage.getItem('demo_mode') === 'true' || demoParamActive;
+
     // Check both auth systems - if main auth has user, we're good
     const hasAuth = mainUser || (isAuthenticated && !authLoading);
-    
+
     if (!authLoading && !hasAuth && !demoMode) {
       navigate("/login"); // Redirect to main login page, not exporter-specific one
     }

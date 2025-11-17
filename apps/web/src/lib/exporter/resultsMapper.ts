@@ -1,4 +1,10 @@
-import type { IssueCard, ValidationResults } from '@/types/lcopilot';
+import type {
+  IssueCard,
+  ValidationResults,
+  StructuredResultPayload,
+  StructuredResultAnalytics,
+  TimelineEvent,
+} from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
   letter_of_credit: 'Letter of Credit',
@@ -225,22 +231,101 @@ const mapTimeline = (entries: any[] = []): ValidationResults['timeline'] => {
     .filter((entry) => Boolean(entry.title));
 };
 
+const structuredFromNormalized = (
+  summary: ValidationResults['summary'],
+  documents: ValidationResults['documents'],
+  issues: IssueCard[],
+  analytics: ValidationResults['analytics'],
+  timeline: ValidationResults['timeline'],
+): StructuredResultPayload => {
+  return {
+    processing_summary: summary,
+    documents: documents.map((doc) => ({
+      document_id: doc.documentId,
+      document_type: doc.typeKey ?? doc.type,
+      filename: doc.name,
+      extraction_status: doc.extractionStatus,
+      extracted_fields: doc.extractedFields ?? {},
+      issues_count: doc.issuesCount ?? 0,
+    })),
+    issues: issues.map((issue) => ({
+      id: issue.id,
+      title: issue.title,
+      severity: normalizeSeverity(issue.severity),
+      documents: issue.documents ?? (issue.documentName ? [issue.documentName] : []),
+      expected: formatTextValue(issue.expected),
+      found: formatTextValue(issue.actual),
+      suggested_fix: formatTextValue(issue.suggestion),
+      description: issue.description ?? '',
+      ucp_reference: issue.ucpReference,
+    })),
+    analytics,
+    timeline: timeline.map((entry) => ({
+      title: entry.title ?? entry.label,
+      label: entry.label ?? entry.title,
+      status: entry.status,
+      description: entry.description,
+      timestamp: entry.timestamp,
+    })),
+  };
+};
+
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const structured = raw?.structured_result ?? {};
-  const documentSource =
-    (Array.isArray(structured?.documents) && structured.documents.length > 0
-      ? structured.documents
-      : raw?.documents) ?? [];
+  const structured = raw?.structured_result as StructuredResultPayload | undefined;
+
+  if (structured) {
+    const documents = mapDocuments(structured.documents ?? []);
+    const issues = mapIssues(structured.issues ?? [], documents);
+    const summary = ensureSummary(structured.processing_summary, documents, issues);
+    const analytics = ensureAnalytics(structured.analytics, summary, documents);
+    const timeline = mapTimeline(structured.timeline ?? []);
+
+    const normalizedStructuredResult: StructuredResultPayload = {
+      processing_summary: structured.processing_summary ?? summary,
+      documents: Array.isArray(structured.documents) ? structured.documents : [],
+      issues: Array.isArray(structured.issues) ? structured.issues : [],
+      analytics: normalizeStructuredAnalytics(structured.analytics, analytics),
+      timeline: normalizeStructuredTimeline(structured.timeline ?? timeline, timeline),
+    };
+
+    return {
+      ...raw,
+      jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
+      summary,
+      documents,
+      issues,
+      analytics,
+      timeline,
+      processing_summary: summary,
+      issue_cards: issues,
+      structured_result: normalizedStructuredResult,
+    };
+  }
+
+  const structuredTimeline = raw?.structured_result?.timeline;
+  const hasStructuredDocs = Array.isArray(raw?.structured_result?.documents) && raw.structured_result.documents.length > 0;
+  const hasStructuredIssues = Array.isArray(raw?.structured_result?.issues) && raw.structured_result.issues.length > 0;
+
+  const documentSource = hasStructuredDocs ? raw.structured_result.documents : raw?.documents ?? [];
   const issueSource =
-    (Array.isArray(structured?.issues) && structured.issues.length > 0
-      ? structured.issues
-      : raw?.issue_cards ?? raw?.discrepancies) ?? [];
+    hasStructuredIssues ? raw.structured_result.issues : raw?.issue_cards ?? raw?.discrepancies ?? [];
 
   const documents = mapDocuments(documentSource);
   const issues = mapIssues(issueSource, documents);
-  const summary = ensureSummary(structured?.processing_summary ?? raw?.processing_summary, documents, issues);
-  const analytics = ensureAnalytics(structured?.analytics ?? raw?.analytics, summary, documents);
-  const timeline = mapTimeline(structured?.timeline ?? raw?.timeline);
+  const summary = ensureSummary(raw?.processing_summary, documents, issues);
+  const analytics = ensureAnalytics(raw?.analytics, summary, documents);
+  const timeline = mapTimeline(structuredTimeline ?? raw?.timeline);
+
+  const normalizedStructuredResult: StructuredResultPayload =
+    raw?.structured_result && (hasStructuredDocs || hasStructuredIssues || structuredTimeline)
+      ? {
+          processing_summary: raw.structured_result.processing_summary ?? summary,
+          documents: raw.structured_result.documents ?? [],
+          issues: raw.structured_result.issues ?? [],
+          analytics: normalizeStructuredAnalytics(raw.structured_result.analytics, analytics),
+          timeline: normalizeStructuredTimeline(raw.structured_result.timeline, timeline),
+        }
+      : structuredFromNormalized(summary, documents, issues, analytics, timeline);
 
   return {
     ...raw,
@@ -252,5 +337,41 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     timeline,
     processing_summary: summary,
     issue_cards: issues,
+    structured_result: normalizedStructuredResult,
   };
+};
+
+const normalizeStructuredAnalytics = (
+  analytics: StructuredResultAnalytics | undefined,
+  fallback: ValidationResults['analytics'],
+): StructuredResultAnalytics => {
+  if (!analytics) {
+    return {
+      compliance_score: fallback.compliance_score,
+      issue_counts: fallback.issue_counts,
+      document_risk: fallback.document_risk,
+    };
+  }
+
+  return {
+    compliance_score:
+      typeof analytics.compliance_score === 'number'
+        ? analytics.compliance_score
+        : fallback.compliance_score,
+    issue_counts: analytics.issue_counts ?? fallback.issue_counts,
+    document_risk:
+      Array.isArray(analytics.document_risk) && analytics.document_risk.length > 0
+        ? analytics.document_risk
+        : fallback.document_risk,
+  };
+};
+
+const normalizeStructuredTimeline = (
+  timeline: any,
+  fallback: TimelineEvent[],
+): TimelineEvent[] => {
+  if (!Array.isArray(timeline)) {
+    return fallback;
+  }
+  return mapTimeline(timeline);
 };

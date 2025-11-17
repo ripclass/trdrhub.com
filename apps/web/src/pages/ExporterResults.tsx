@@ -317,11 +317,12 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   });
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
-  const summary = resolvedResults?.summary;
+  const structuredResult = resolvedResults?.structured_result;
+  const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
   const documents = resolvedResults?.documents ?? [];
   const issueCards = resolvedResults?.issues ?? [];
-  const analyticsData = resolvedResults?.analytics;
-  const timelineEvents = resolvedResults?.timeline ?? [];
+  const analyticsData = structuredResult?.analytics ?? resolvedResults?.analytics;
+  const timelineEvents = structuredResult?.timeline ?? resolvedResults?.timeline ?? [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
   const severityBreakdown = summary?.severity_breakdown ?? {
@@ -333,7 +334,15 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const extractedDocuments =
     Array.isArray(resolvedResults?.extracted_data?.documents)
       ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
-      : [];
+      : structuredResult?.documents?.map((doc) => ({
+          filename: doc.filename,
+          name: doc.filename,
+          document_type: doc.document_type,
+          extraction_status: doc.extraction_status,
+          extractionStatus: doc.extraction_status,
+          extracted_fields: doc.extracted_fields,
+          extractedFields: doc.extracted_fields,
+        })) ?? [];
   const referenceIssues = resolvedResults?.reference_issues ?? [];
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
   const hasIssueCards = issueCards.length > 0;

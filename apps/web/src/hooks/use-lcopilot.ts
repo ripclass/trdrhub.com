@@ -249,6 +249,11 @@ export const useResults = () => {
     try {
       const response = await api.get(`/api/results/${jobId}`);
       const normalized: ValidationResults = buildValidationResponse(response.data);
+
+      if (!normalized.structured_result && response.data?.structured_result) {
+        normalized.structured_result = response.data.structured_result;
+      }
+
       if (normalized.ai_enrichment && !normalized.aiEnrichment) {
         normalized.aiEnrichment = normalized.ai_enrichment;
       }
@@ -281,6 +286,7 @@ export const useResults = () => {
 
   return {
     results,
+    structuredResult: results?.structured_result ?? null,
     getResults,
     isLoading,
     error,

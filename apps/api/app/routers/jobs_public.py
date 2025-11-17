@@ -361,6 +361,7 @@ def get_job_results(
         "lc_type_reason": results_payload.get("lc_type_reason"),
         "lc_type_confidence": results_payload.get("lc_type_confidence"),
         "lc_type_source": results_payload.get("lc_type_source"),
+        "structured_result": results_payload.get("structured_result"),
     }
 
 
