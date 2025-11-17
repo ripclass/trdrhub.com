@@ -34,7 +34,7 @@ from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
 
-from pydantic import BaseModel, Field, ValidationError, root_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -1840,13 +1840,15 @@ class TimelineEntryModel(BaseModel):
     description: Optional[str] = None
     timestamp: Optional[str] = None
 
-    @root_validator
+    @model_validator(mode='before')
+    @classmethod
     def ensure_title(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if not values.get("title"):
-            if values.get("label"):
-                values["title"] = values["label"]
-            else:
-                raise ValueError("Timeline entry must include a title or label")
+        if isinstance(values, dict):
+            if not values.get("title"):
+                if values.get("label"):
+                    values["title"] = values["label"]
+                else:
+                    raise ValueError("Timeline entry must include a title or label")
         return values
 
 
