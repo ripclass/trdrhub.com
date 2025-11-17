@@ -316,6 +316,94 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     },
   });
 
+  // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
+  const summary = resolvedResults?.summary;
+  const documents = resolvedResults?.documents ?? [];
+  const issueCards = resolvedResults?.issues ?? [];
+  const analyticsData = resolvedResults?.analytics;
+  const timelineEvents = resolvedResults?.timeline ?? [];
+  const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
+  const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
+  const severityBreakdown = summary?.severity_breakdown ?? {
+    critical: 0,
+    major: 0,
+    medium: 0,
+    minor: 0,
+  };
+  const extractedDocuments =
+    Array.isArray(resolvedResults?.extracted_data?.documents)
+      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
+      : [];
+  const referenceIssues = resolvedResults?.reference_issues ?? [];
+  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
+  const hasIssueCards = issueCards.length > 0;
+  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
+  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
+  const lcTypeConfidenceValue =
+    typeof resolvedResults?.lc_type_confidence === "number"
+      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
+      : null;
+  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
+  const lcTypeLabelMap: Record<string, string> = {
+    export: "Export LC",
+    import: "Import LC",
+    unknown: "Unknown",
+  };
+  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
+
+  // All hooks must be called BEFORE any conditional returns
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      if (doc.name) {
+        map.set(doc.name, { status: doc.status, type: doc.type });
+      }
+    });
+    return map;
+  }, [documents]);
+  const documentStatusCounts = useMemo(
+    () =>
+      documents.reduce(
+        (acc, doc) => {
+          const key = doc.status ?? 'warning';
+          if (!(key in acc)) {
+            acc[key as keyof typeof acc] = 0;
+          }
+          acc[key as keyof typeof acc] += 1;
+          return acc;
+        },
+        { success: 0, warning: 0, error: 0 } as Record<'success' | 'warning' | 'error', number>,
+      ),
+    [documents],
+  );
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
+  const filteredIssueCards = useMemo(() => {
+    if (issueFilter === "all") return issueCards;
+    return issueCards.filter(
+      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
+    );
+  }, [issueCards, issueFilter]);
+  const isReadyToSubmit = useMemo(() => {
+    if (!enableBankSubmission) return false;
+    if (guardrailsLoading) return false;
+    if (!guardrails) {
+      return totalDiscrepancies === 0;
+    }
+    return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
+  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
+
+  // Early returns AFTER all hooks are called
   if (!resultData) {
     if (!validationSessionId) {
       return (
@@ -382,82 +470,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   if (!resolvedResults) {
     return null;
   }
-
-  const summary = resolvedResults.summary;
-  const documents = resolvedResults.documents ?? [];
-  const issueCards = resolvedResults.issues ?? [];
-  const analyticsData = resolvedResults.analytics;
-  const timelineEvents = resolvedResults.timeline ?? [];
-  const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
-  const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
-  const severityBreakdown = summary?.severity_breakdown ?? {
-    critical: 0,
-    major: 0,
-    medium: 0,
-    minor: 0,
-  };
-  const extractedDocuments =
-    Array.isArray(resolvedResults?.extracted_data?.documents)
-      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
-      : [];
-  const referenceIssues = resolvedResults?.reference_issues ?? [];
-  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
-  const hasIssueCards = issueCards.length > 0;
-  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
-  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
-  const lcTypeConfidenceValue =
-    typeof resolvedResults?.lc_type_confidence === "number"
-      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
-      : null;
-  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
-  const lcTypeLabelMap: Record<string, string> = {
-    export: "Export LC",
-    import: "Import LC",
-    unknown: "Unknown",
-  };
-  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
-  const documentStatusMap = useMemo(() => {
-    const map = new Map<string, { status?: string; type?: string }>();
-    documents.forEach((doc) => {
-      if (doc.name) {
-        map.set(doc.name, { status: doc.status, type: doc.type });
-      }
-    });
-    return map;
-  }, [documents]);
-  const documentStatusCounts = useMemo(
-    () =>
-      documents.reduce(
-        (acc, doc) => {
-          const key = doc.status ?? 'warning';
-          if (!(key in acc)) {
-            acc[key as keyof typeof acc] = 0;
-          }
-          acc[key as keyof typeof acc] += 1;
-          return acc;
-        },
-        { success: 0, warning: 0, error: 0 } as Record<'success' | 'warning' | 'error', number>,
-      ),
-    [documents],
-  );
-  const severityCounts = useMemo(
-    () =>
-      issueCards.reduce(
-        (acc, card) => {
-          const severity = normalizeDiscrepancySeverity(card.severity);
-          acc[severity] = (acc[severity] || 0) + 1;
-          return acc;
-        },
-        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
-      ),
-    [issueCards]
-  );
-  const filteredIssueCards = useMemo(() => {
-    if (issueFilter === "all") return issueCards;
-    return issueCards.filter(
-      (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
-    );
-  }, [issueCards, issueFilter]);
 
   const getDocumentNamesForCard = (card: IssueCard): string[] => {
     const names = new Set<string>();
@@ -628,14 +640,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       issues: doc.issuesCount,
     };
   });
-  const isReadyToSubmit = useMemo(() => {
-    if (!enableBankSubmission) return false;
-    if (guardrailsLoading) return false;
-    if (!guardrails) {
-      return totalDiscrepancies === 0;
-    }
-    return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
   // Mock banks list (in production, fetch from API)
   const banks = [
     { id: "bank-1", name: "Standard Chartered Bank" },
