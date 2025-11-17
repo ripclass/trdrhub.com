@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     AI_MAX_OUTPUT_TOKENS_TRANSLATE: int = 600  # Translation max tokens
     AI_MAX_OUTPUT_TOKENS_CHAT: int = 400  # Chat max tokens
     AI_TIMEOUT_MS: int = 15000  # LLM API timeout
+    AI_SEMANTIC_ENABLED: bool = True  # Enable semantic rule operator
+    AI_SEMANTIC_MODEL: str = "gpt-4o-mini"
+    AI_SEMANTIC_LOW_COST_MODEL: str = "gpt-4o-mini"
+    AI_SEMANTIC_THRESHOLD_DEFAULT: float = 0.82
+    AI_SEMANTIC_TIMEOUT_MS: int = 6000
     
     # AI Rate Limits
     AI_RATE_LIMIT_PER_USER_PER_MIN: int = 10

@@ -224,15 +224,27 @@ def build_issue_cards(discrepancies: List[Dict[str, Any]]) -> Tuple[List[Dict[st
 
 def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any]:
     severity = _normalize_issue_severity(discrepancy.get("severity"))
+    semantic_payload = None
+    semantic_list = discrepancy.get("semantic_differences")
+    if isinstance(semantic_list, list) and semantic_list:
+        semantic_payload = semantic_list[0]
     document_label = _infer_primary_document(discrepancy)
     expected_text = _stringify_issue_value(
         discrepancy.get("expected")
         or _extract_expected_text(discrepancy.get("expected_outcome"), "valid")
     )
+    if semantic_payload and semantic_payload.get("expected"):
+        expected_text = semantic_payload.get("expected")
     suggestion = discrepancy.get("suggestion") or _extract_expected_text(
         discrepancy.get("expected_outcome"), "invalid"
     ) or "Align the document with the LC requirement."
     actual_text = _stringify_issue_value(discrepancy.get("actual"))
+    if semantic_payload and semantic_payload.get("found"):
+        actual_text = semantic_payload.get("found")
+    if semantic_payload and semantic_payload.get("documents"):
+        document_label = semantic_payload["documents"][0]
+    if semantic_payload and semantic_payload.get("suggested_fix"):
+        suggestion = semantic_payload["suggested_fix"]
     discrepancy_id = discrepancy.get("rule") or f"issue-{index}"
 
     return {

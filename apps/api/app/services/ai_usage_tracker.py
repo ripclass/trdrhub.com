@@ -31,6 +31,7 @@ class AIFeature(str, Enum):
     TRANSLATION = "translation"
     CHAT = "chat"
     SYSTEM_ENRICHMENT = "system_enrichment"
+    SEMANTIC_RULE = "semantic_rule"
 
 
 class QuotaScope(str, Enum):
@@ -119,6 +120,7 @@ class AIUsageTracker:
             AIFeature.SUMMARY: int(os.getenv("SME_PER_LC_LIMIT_SUMMARIES", "3")),
             AIFeature.TRANSLATION: int(os.getenv("SME_PER_LC_LIMIT_TRANSLATIONS", "5")),
             AIFeature.CHAT: int(os.getenv("SME_PER_LC_LIMIT_CHAT", "10")),
+            AIFeature.SEMANTIC_RULE: int(os.getenv("SME_PER_LC_LIMIT_SEMANTIC", "10")),
         }
         
         # Bank per-LC limits
@@ -127,6 +129,7 @@ class AIUsageTracker:
             AIFeature.SUMMARY: int(os.getenv("BANK_PER_LC_LIMIT_SUMMARIES", "5")),
             AIFeature.TRANSLATION: int(os.getenv("BANK_PER_LC_LIMIT_TRANSLATIONS", "10")),
             AIFeature.CHAT: int(os.getenv("BANK_PER_LC_LIMIT_CHAT", "20")),
+            AIFeature.SEMANTIC_RULE: int(os.getenv("BANK_PER_LC_LIMIT_SEMANTIC", "20")),
         }
         
         # Bank tenant monthly pools
@@ -135,6 +138,7 @@ class AIUsageTracker:
             AIFeature.TRANSLATION: int(os.getenv("BANK_TENANT_MONTHLY_TRANSLATIONS", "2000")),
             AIFeature.SUMMARY: int(os.getenv("BANK_TENANT_MONTHLY_SUMMARIES", "2000")),
             AIFeature.CHAT: int(os.getenv("BANK_TENANT_MONTHLY_CHAT", "5000")),
+            AIFeature.SEMANTIC_RULE: int(os.getenv("BANK_TENANT_MONTHLY_SEMANTIC", "5000")),
         }
         
         self.bank_reserve_percent = float(os.getenv("BANK_TENANT_RESERVE_PERCENT", "30"))
@@ -384,7 +388,13 @@ class AIUsageTracker:
                     "limit": per_lc_limits.get(feature, 0),
                     "remaining": per_lc_limits.get(feature, 0) - self._per_lc_counters[session_id].get(feature.value, 0)
                 }
-                for feature in [AIFeature.LETTER, AIFeature.SUMMARY, AIFeature.TRANSLATION, AIFeature.CHAT]
+                for feature in [
+                    AIFeature.LETTER,
+                    AIFeature.SUMMARY,
+                    AIFeature.TRANSLATION,
+                    AIFeature.CHAT,
+                    AIFeature.SEMANTIC_RULE,
+                ]
             }
         
         # Tenant monthly stats (banks only)
@@ -395,7 +405,13 @@ class AIUsageTracker:
                     "limit": self.bank_tenant_monthly.get(feature, 0),
                     "remaining": self._get_tenant_monthly_remaining(user.company_id, feature)
                 }
-                for feature in [AIFeature.LETTER, AIFeature.SUMMARY, AIFeature.TRANSLATION, AIFeature.CHAT]
+                for feature in [
+                    AIFeature.LETTER,
+                    AIFeature.SUMMARY,
+                    AIFeature.TRANSLATION,
+                    AIFeature.CHAT,
+                    AIFeature.SEMANTIC_RULE,
+                ]
             }
         
         return stats
