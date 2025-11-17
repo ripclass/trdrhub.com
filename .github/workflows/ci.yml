@@ -147,15 +147,11 @@ jobs:
         working-directory: ./apps/web
         run: |
           npm run lint
-          npm run lint:types
+          npm run type-check
 
       - name: Run unit tests
         working-directory: ./apps/web
-        run: npm run test:unit -- --coverage --watchAll=false
-
-      - name: Run component tests
-        working-directory: ./apps/web
-        run: npm run test:components -- --coverage --watchAll=false
+        run: npm run test
 
       - name: Build application
         working-directory: ./apps/web

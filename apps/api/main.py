@@ -200,6 +200,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+
+@app.get("/healthz", tags=["health"], summary="Lightweight liveness probe")
+async def healthz() -> Dict[str, str]:
+    """Simple health endpoint for load balancers and uptime checks."""
+    return {"status": "ok"}
+
+
 # Include API routers
 app.include_router(auth.router)
 app.include_router(sessions.router)
@@ -527,4 +534,3 @@ if MANGUM_AVAILABLE:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

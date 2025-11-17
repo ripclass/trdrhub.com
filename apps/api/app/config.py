@@ -247,6 +247,22 @@ class Settings(BaseSettings):
         # Fallback for any other type
         return ["*"]
 
+    @model_validator(mode='after')
+    def validate_required_environment(cls, values: 'Settings') -> 'Settings':
+        """Fail fast when mandatory production configuration is missing."""
+        if values.is_production():
+            missing: List[str] = []
+            if not values.DATABASE_URL:
+                missing.append("DATABASE_URL")
+            if not values.SECRET_KEY or values.SECRET_KEY == "dev-secret-key-change-in-production":
+                missing.append("SECRET_KEY")
+            if missing:
+                raise ValueError(
+                    "Missing required environment variables for production: "
+                    + ", ".join(missing)
+                )
+        return values
+
 
 # Global settings instance with error handling for CORS_ALLOW_ORIGINS
 def create_settings():
