@@ -969,6 +969,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     );
                   })}
                 </CardContent>
+              </Card>
               {/* Export Statistics */}
               <Card className="shadow-soft border-0">
                 <CardHeader>
