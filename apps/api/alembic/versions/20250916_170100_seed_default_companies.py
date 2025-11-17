@@ -1,7 +1,7 @@
 """Seed default companies for existing users
 
 Revision ID: 20250916_170100
-Revises: 20250916_170000_add_billing_system
+Revises: 20250916_170000
 Create Date: 2025-09-16 17:01:00.000000
 
 This migration:
@@ -18,7 +18,7 @@ import uuid
 
 # revision identifiers
 revision = '20250916_170100'
-down_revision = '20250916_170000_add_billing_system'
+down_revision = '20250916_170000'  # Fixed: use revision ID, not filename slug
 branch_labels = None
 depends_on = None
 

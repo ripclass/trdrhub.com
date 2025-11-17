@@ -1,7 +1,7 @@
 """Add billing system tables and company relationships
 
 Revision ID: 20250916_170000
-Revises: 20250916_160000_add_analytics_indexes
+Revises: 20250916_160000
 Create Date: 2025-09-16 17:00:00.000000
 
 This migration adds:
@@ -22,7 +22,7 @@ from datetime import datetime
 
 # revision identifiers
 revision = '20250916_170000'
-down_revision = '20250916_160000_add_analytics_indexes'
+down_revision = '20250916_160000'  # Fixed: use revision ID, not filename slug
 branch_labels = None
 depends_on = None
 
