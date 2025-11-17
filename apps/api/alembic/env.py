@@ -36,7 +36,10 @@ if database_url:
     # SQLAlchemy expects postgresql:// protocol, but Supabase uses postgres://
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
-    config.set_main_option("sqlalchemy.url", database_url)
+    # Escape % characters for ConfigParser (it uses % for interpolation)
+    # Double % to make ConfigParser treat it as a literal %
+    escaped_url = database_url.replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", escaped_url)
 
 
 def run_migrations_offline() -> None:
