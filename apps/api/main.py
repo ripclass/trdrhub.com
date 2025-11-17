@@ -262,13 +262,19 @@ app.add_middleware(LocaleMiddleware)  # Resolve locale for i18n
 app.add_middleware(SecurityHeadersMiddleware)  # Add security headers to all responses
 
 # Baseline abuse protection
-_rate_limit = os.getenv("API_RATE_LIMIT")
+_rate_limit = os.getenv("API_RATE_LIMIT_TENANT") or os.getenv("API_RATE_LIMIT")
+_anon_rate_limit = os.getenv("API_RATE_LIMIT_ANON")
 _rate_window = os.getenv("API_RATE_WINDOW")
 
 try:
     rate_limit_per_window = int(_rate_limit) if _rate_limit is not None else 120
 except ValueError:
     rate_limit_per_window = 120
+
+try:
+    anon_limit = int(_anon_rate_limit) if _anon_rate_limit is not None else 10
+except ValueError:
+    anon_limit = 10
 
 try:
     rate_limit_window_seconds = int(_rate_window) if _rate_window is not None else 60
@@ -279,6 +285,8 @@ app.add_middleware(
     RateLimiterMiddleware,
     limit=rate_limit_per_window,
     window_seconds=rate_limit_window_seconds,
+    unauthenticated_limit=anon_limit,
+    authenticated_limit=rate_limit_per_window,
     exempt_paths=(
         "/health",
         "/health/info",

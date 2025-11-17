@@ -2,7 +2,10 @@
 Document processing API endpoints.
 """
 
+import asyncio
+import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -31,6 +34,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["document-processing"])
+OCR_CONCURRENCY_LIMIT = max(1, int(os.getenv("OCR_MAX_CONCURRENCY", "3")))
 
 
 @router.post("/process-document", response_model=DocumentProcessingResponse, status_code=status.HTTP_200_OK)
@@ -144,95 +148,107 @@ async def process_document(
         session.ocr_provider = "google_documentai"
         db.commit()
 
-        processed_documents = []
+        processed_documents: List[ProcessedDocumentInfo] = []
         total_confidence = 0.0
         total_entities = 0
         total_pages = 0
 
-        # Process each file
-        for idx, file in enumerate(files):
-            logger.info(f"Processing file {idx + 1}/{len(files)}: {file.filename}")
+        file_jobs = [
+            {
+                "index": idx,
+                "file": file,
+                "document_type": _determine_document_type(file.filename, idx),
+                "bytes": files_content[idx],
+                "content_type": file.content_type or 'application/pdf'
+            }
+            for idx, file in enumerate(files)
+        ]
 
-            # Determine document type based on filename or order
-            document_type = _determine_document_type(file.filename, idx)
+        semaphore = asyncio.Semaphore(OCR_CONCURRENCY_LIMIT)
 
-            try:
-                # Step 1: Upload to S3
-                logger.info(f"Uploading {file.filename} to S3...")
-                upload_result = await s3_service.upload_file(file, session.id, document_type)
+        async def _process_single(job):
+            file = job["file"]
+            document_type = job["document_type"]
+            logger.info("Processing %s as %s", file.filename, document_type)
 
-                # Step 2: Process with Document AI
-                logger.info(f"Processing {file.filename} with Document AI...")
+            # Upload to S3 (reset pointer so upload service reads correct bytes)
+            await file.seek(0)
+            upload_result = await s3_service.upload_file(file, session.id, document_type)
 
-                # Reset file pointer for processing
-                await file.seek(0)
-                file_content = await file.read()
+            document_hash = hashlib.sha256(job["bytes"]).hexdigest()
 
+            async with semaphore:
+                ocr_start = time.perf_counter()
                 docai_result = await docai_service.process_file(
-                    file_content,
-                    file.content_type or 'application/pdf'
+                    job["bytes"],
+                    job["content_type"],
+                    document_hash=document_hash,
+                )
+                ocr_duration = (time.perf_counter() - ocr_start) * 1000
+                logger.info(
+                    "OCR completed for %s in %.2f ms (cache_hit=%s)",
+                    file.filename,
+                    ocr_duration,
+                    docai_result.get("cache_hit"),
                 )
 
-                if not docai_result['success']:
-                    logger.error(f"Document AI processing failed: {docai_result.get('error', 'Unknown error')}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Document AI processing failed: {docai_result.get('error', 'Unknown error')}"
-                    )
-
-                # Step 3: Save to database
-                logger.info(f"Saving document metadata to database...")
-                document = Document(
-                    validation_session_id=session.id,
-                    document_type=document_type,
-                    original_filename=upload_result['original_filename'],
-                    s3_key=upload_result['s3_key'],
-                    file_size=upload_result['file_size'],
-                    content_type=upload_result['content_type'],
-                    ocr_text=docai_result['extracted_text'],
-                    ocr_confidence=docai_result['overall_confidence'],
-                    ocr_processed_at=datetime.now(timezone.utc),
-                    extracted_fields=docai_result['extracted_fields']
-                )
-
-                db.add(document)
-                db.commit()
-                db.refresh(document)
-
-                # Prepare response data
-                text_preview = docai_result['extracted_text'][:200] if docai_result['extracted_text'] else ""
-
-                processed_doc_info = ProcessedDocumentInfo(
-                    document_id=document.id,
-                    document_type=document_type,
-                    original_filename=upload_result['original_filename'],
-                    s3_url=upload_result['s3_url'],
-                    s3_key=upload_result['s3_key'],
-                    file_size=upload_result['file_size'],
-                    extracted_text_preview=text_preview,
-                    extracted_fields=docai_result['extracted_fields'],
-                    ocr_confidence=docai_result['overall_confidence'],
-                    page_count=docai_result['page_count'],
-                    entity_count=docai_result['entity_count']
-                )
-
-                processed_documents.append(processed_doc_info)
-
-                # Accumulate stats
-                total_confidence += docai_result['overall_confidence']
-                total_entities += docai_result['entity_count']
-                total_pages += docai_result['page_count']
-
-                logger.info(f"Successfully processed {file.filename}")
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"Error processing file {file.filename}: {str(e)}")
+            if not docai_result["success"]:
+                logger.error("Document AI processing failed: %s", docai_result.get("error"))
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to process {file.filename}: {str(e)}"
+                    detail=f"Document AI processing failed: {docai_result.get('error', 'Unknown error')}",
                 )
+
+            document = Document(
+                validation_session_id=session.id,
+                document_type=document_type,
+                original_filename=upload_result["original_filename"],
+                s3_key=upload_result["s3_key"],
+                file_size=upload_result["file_size"],
+                content_type=upload_result["content_type"],
+                ocr_text=docai_result["extracted_text"],
+                ocr_confidence=docai_result["overall_confidence"],
+                ocr_processed_at=datetime.now(timezone.utc),
+                extracted_fields=docai_result["extracted_fields"],
+            )
+
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+
+            text_preview = docai_result["extracted_text"][:200] if docai_result["extracted_text"] else ""
+
+            processed_doc_info = ProcessedDocumentInfo(
+                document_id=document.id,
+                document_type=document_type,
+                original_filename=upload_result["original_filename"],
+                s3_url=upload_result["s3_url"],
+                s3_key=upload_result["s3_key"],
+                file_size=upload_result["file_size"],
+                extracted_text_preview=text_preview,
+                extracted_fields=docai_result["extracted_fields"],
+                ocr_confidence=docai_result["overall_confidence"],
+                page_count=docai_result["page_count"],
+                entity_count=docai_result["entity_count"],
+            )
+
+            stats = {
+                "confidence": docai_result["overall_confidence"],
+                "entity_count": docai_result["entity_count"],
+                "page_count": docai_result["page_count"],
+            }
+            return processed_doc_info, stats
+
+        task_results = await asyncio.gather(*( _process_single(job) for job in file_jobs), return_exceptions=True)
+
+        for result in task_results:
+            if isinstance(result, Exception):
+                raise result
+            processed_doc, stats = result
+            processed_documents.append(processed_doc)
+            total_confidence += stats["confidence"]
+            total_entities += stats["entity_count"]
+            total_pages += stats["page_count"]
 
         # Update session status to completed
         session = session_service.update_session_status(session, SessionStatus.COMPLETED)

@@ -20,6 +20,17 @@ except ImportError:
     CLOUDWATCH_AVAILABLE = False
     CloudWatchLogHandler = None
 
+TRACE_LOG_LEVEL = 5
+logging.addLevelName(TRACE_LOG_LEVEL, "TRACE")
+
+
+def _trace(self, message, *args, **kws):
+    if self.isEnabledFor(TRACE_LOG_LEVEL):
+        self._log(TRACE_LOG_LEVEL, message, args, **kws)
+
+
+logging.Logger.trace = _trace  # type: ignore[attr-defined]
+
 
 class LCopilotLogger:
     """

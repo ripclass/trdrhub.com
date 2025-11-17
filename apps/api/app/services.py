@@ -3,9 +3,12 @@ Business logic services for LCopilot.
 """
 
 import os
+import asyncio
 import boto3
 import tempfile
 import logging
+import hashlib
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Union
 from uuid import UUID, uuid4
@@ -23,6 +26,7 @@ from .rules.engine import RulesEngine
 from .reports.generator import ReportGenerator
 from .ocr.factory import get_ocr_factory
 from .config import settings
+from app.cache import ocr_cache
 
 
 class S3Service:
@@ -551,82 +555,96 @@ class DocumentAIService:
         except ImportError:
             raise ImportError("google-cloud-documentai package not installed")
 
-    async def process_file(self, file_content: bytes, mime_type: str) -> Dict[str, Any]:
-        """Process a file directly with Document AI."""
+    async def process_file(self, file_content: bytes, mime_type: str, *, document_hash: Optional[str] = None) -> Dict[str, Any]:
+        """Process a file directly with Document AI and cache OCR responses."""
+        loop = asyncio.get_running_loop()
+        cache_key = document_hash or hashlib.sha256(file_content).hexdigest()
+
+        cached = await ocr_cache.get(cache_key)
+        if cached:
+            cached_result = cached.copy()
+            cached_result["cache_hit"] = True
+            return cached_result
+
+        start = time.perf_counter()
+        result = await loop.run_in_executor(None, self._process_document_sync, file_content, mime_type)
+        duration_ms = (time.perf_counter() - start) * 1000
+        result["processing_time_ms"] = round(duration_ms, 2)
+        result["cache_hit"] = False
+
+        if result.get("success"):
+            await ocr_cache.set(cache_key, result)
+
+        return result
+
+    def _process_document_sync(self, file_content: bytes, mime_type: str) -> Dict[str, Any]:
+        """Blocking Document AI call executed in a thread to avoid choking the event loop."""
         try:
             from google.cloud import documentai
 
-            # Create Document AI request
-            raw_document = documentai.RawDocument(
-                content=file_content,
-                mime_type=mime_type
-            )
+            raw_document = documentai.RawDocument(content=file_content, mime_type=mime_type)
+            request = documentai.ProcessRequest(name=self.processor_name, raw_document=raw_document)
 
-            request = documentai.ProcessRequest(
-                name=self.processor_name,
-                raw_document=raw_document
-            )
-
-            # Process the document
             result = self.client.process_document(request=request)
             document = result.document
 
-            # Extract structured data
             extracted_text = document.text
             extracted_fields = {}
 
-            # Process entities (form fields)
             if document.entities:
                 for entity in document.entities:
                     field_name = entity.type_
                     field_value = entity.mention_text
-                    confidence = getattr(entity, 'confidence', 0.0)
+                    confidence = getattr(entity, "confidence", 0.0)
 
                     extracted_fields[field_name] = {
-                        'value': field_value,
-                        'confidence': confidence
+                        "value": field_value,
+                        "confidence": confidence,
                     }
 
-            # Calculate overall confidence
-            confidence_scores = [entity.confidence for entity in document.entities if hasattr(entity, 'confidence') and entity.confidence > 0]
+            confidence_scores = [
+                entity.confidence
+                for entity in document.entities
+                if hasattr(entity, "confidence") and entity.confidence > 0
+            ]
             overall_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
 
             return {
-                'success': True,
-                'extracted_text': extracted_text,
-                'extracted_fields': extracted_fields,
-                'overall_confidence': overall_confidence,
-                'page_count': len(document.pages) if document.pages else 0,
-                'processor_id': self.processor_id,
-                'processor_version': getattr(result, 'processor_version', 'unknown'),
-                'entity_count': len(document.entities) if document.entities else 0
+                "success": True,
+                "extracted_text": extracted_text,
+                "extracted_fields": extracted_fields,
+                "overall_confidence": overall_confidence,
+                "page_count": len(document.pages) if document.pages else 0,
+                "processor_id": self.processor_id,
+                "processor_version": getattr(result, "processor_version", "unknown"),
+                "entity_count": len(document.entities) if document.entities else 0,
             }
 
         except self.gcp_exceptions.InvalidArgument as e:
-            logging.error(f"Invalid document or request: {e}")
+            logging.error("Invalid document or request: %s", e)
             return {
-                'success': False,
-                'error': f"Invalid document format: {str(e)}",
-                'error_type': 'invalid_document'
+                "success": False,
+                "error": f"Invalid document format: {str(e)}",
+                "error_type": "invalid_document",
             }
         except self.gcp_exceptions.PermissionDenied as e:
-            logging.error(f"Permission denied: {e}")
+            logging.error("Permission denied: %s", e)
             return {
-                'success': False,
-                'error': f"Permission denied: {str(e)}",
-                'error_type': 'permission_denied'
+                "success": False,
+                "error": f"Permission denied: {str(e)}",
+                "error_type": "permission_denied",
             }
         except self.gcp_exceptions.NotFound as e:
-            logging.error(f"Processor not found: {e}")
+            logging.error("Document AI processor not found: %s", e)
             return {
-                'success': False,
-                'error': f"Document AI processor not found: {str(e)}",
-                'error_type': 'processor_not_found'
+                "success": False,
+                "error": f"Document AI processor not found: {str(e)}",
+                "error_type": "processor_not_found",
             }
         except Exception as e:
-            logging.error(f"Unexpected error in Document AI: {e}")
+            logging.error("Unexpected error in Document AI: %s", e)
             return {
-                'success': False,
-                'error': f"Document processing failed: {str(e)}",
-                'error_type': 'processing_error'
+                "success": False,
+                "error": f"Document processing failed: {str(e)}",
+                "error_type": "processing_error",
             }

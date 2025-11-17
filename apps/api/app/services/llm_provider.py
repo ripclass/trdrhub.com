@@ -77,8 +77,11 @@ class OpenAIProvider(LLMProviderInterface):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
             
+            model_override = kwargs.pop("model_override", None)
+            model_name = model_override or self.model
+
             response = await client.chat.completions.create(
-                model=self.model,
+                model=model_name,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -134,8 +137,11 @@ class AnthropicProvider(LLMProviderInterface):
             client = anthropic.AsyncAnthropic(api_key=self.api_key)
             
             # Anthropic uses system parameter separately
+            model_override = kwargs.pop("model_override", None)
+            model_name = model_override or self.model
+
             response = await client.messages.create(
-                model=self.model,
+                model=model_name,
                 system=system_prompt or "",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
@@ -214,7 +220,8 @@ class LLMProviderFactory:
         max_tokens: int = 600,
         temperature: float = 0.3,
         primary_provider: Optional[str] = None,
-        **kwargs
+        model_override: Optional[str] = None,
+        **kwargs,
     ) -> Tuple[str, int, int, str]:
         """
         Generate with automatic fallback between providers.
@@ -231,6 +238,7 @@ class LLMProviderFactory:
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                model_override=model_override,
                 **kwargs
             )
             return output, tokens_in, tokens_out, provider_name
@@ -247,6 +255,7 @@ class LLMProviderFactory:
                     system_prompt=system_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    model_override=model_override,
                     **kwargs
                 )
                 logger.info(f"Fallback to {fallback_name} succeeded")

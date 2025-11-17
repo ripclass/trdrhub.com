@@ -116,6 +116,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lcopilot_test
 
+      - name: Run performance tests
+        working-directory: ./apps/api
+        run: |
+          pytest tests/performance/ -v
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

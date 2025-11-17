@@ -3,9 +3,12 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 import json
 import copy
+import os
+import time
 
 import logging
 from io import BytesIO
+from contextlib import contextmanager
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
@@ -35,10 +38,21 @@ from typing import Optional, List, Dict, Any, Tuple
 import re
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
+from app.utils.logger import TRACE_LOG_LEVEL
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 logger = logging.getLogger(__name__)
+PROFILE_DB = os.getenv("ENABLE_QUERY_PROFILING", "false").lower() == "true"
+
+
+@contextmanager
+def _profile_section(label: str):
+    start = time.perf_counter()
+    yield
+    if PROFILE_DB:
+        elapsed = (time.perf_counter() - start) * 1000
+        logger.info("profile[%s]=%.2fms", label, elapsed)
 
 
 def get_or_create_demo_user(db: Session) -> User:
@@ -723,13 +737,13 @@ async def validate_doc(
                 logger.error("AI cross-document insights failed: %s", exc, exc_info=True)
                 ai_crossdoc_issues = []
 
-        structured_issues, document_issue_counts = _build_issue_payload(
+        structured_issues, document_issue_counts, severity_counts = _build_issue_payload(
             failed_results,
             ai_crossdoc_issues,
             final_documents,
         )
         documents_payload = _build_documents_section(final_documents, document_issue_counts)
-        structured_summary = _compose_processing_summary(documents_payload, structured_issues)
+        structured_summary = _compose_processing_summary(documents_payload, structured_issues, severity_counts)
         analytics_payload = _build_analytics_section(structured_summary, documents_payload, structured_issues)
         timeline_entries = _build_timeline_entries()
         try:
@@ -1321,7 +1335,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
     
-    logger.info(f"🔍 Starting text extraction for: {filename} (type: {content_type})")
+    logger.log(TRACE_LOG_LEVEL, "Starting text extraction for %s (type=%s)", filename, content_type)
     
     try:
         file_bytes = await upload_file.read()
@@ -1345,20 +1359,20 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     text_output = ""
 
     # Try pdfminer first (better for complex layouts)
-    logger.info(f"  → Trying pdfminer extraction...")
+        logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
         if text_output.strip():
-            logger.info(f"  ✓ pdfminer extracted {len(text_output)} characters from {filename}")
+            logger.log(TRACE_LOG_LEVEL, "pdfminer extracted %s characters from %s", len(text_output), filename)
             return text_output
         else:
-            logger.info(f"  ⚠ pdfminer returned empty text for {filename}")
+            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty text for %s", filename)
     except Exception as pdfminer_error:
-        logger.info(f"  ✗ pdfminer extraction failed for {filename}: {pdfminer_error}")
+        logger.log(TRACE_LOG_LEVEL, "pdfminer extraction failed for %s: %s", filename, pdfminer_error)
 
     # Fallback to PyPDF2
-    logger.info(f"  → Trying PyPDF2 extraction...")
+    logger.log(TRACE_LOG_LEVEL, "Trying PyPDF2 extraction for %s", filename)
     try:
         from PyPDF2 import PdfReader  # type: ignore
         reader = PdfReader(BytesIO(file_bytes))
@@ -1372,18 +1386,17 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 continue
         text_output = "\n".join(pieces)
         if text_output.strip():
-            logger.info(f"  ✓ PyPDF2 extracted {len(text_output)} characters from {filename} ({len(reader.pages)} pages)")
+            logger.log(TRACE_LOG_LEVEL, "PyPDF2 extracted %s characters from %s (%s pages)", len(text_output), filename, len(reader.pages))
             return text_output
         else:
-            logger.info(f"  ⚠ PyPDF2 returned empty text for {filename} ({len(reader.pages)} pages)")
+            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty text for %s (%s pages)", filename, len(reader.pages))
     except Exception as pypdf_error:
         logger.warning(f"  ✗ PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
     # If pdfminer/PyPDF2 returned empty and OCR is enabled, try OCR providers
     if not text_output.strip() and settings.OCR_ENABLED:
-        logger.info(f"  → Text extraction returned empty, attempting OCR fallback...")
-        logger.info(f"     OCR_ENABLED: {settings.OCR_ENABLED}")
-        logger.info(f"     OCR_PROVIDER_ORDER: {settings.OCR_PROVIDER_ORDER}")
+        logger.log(TRACE_LOG_LEVEL, "Text extraction empty for %s, attempting OCR fallback (enabled=%s)", filename, settings.OCR_ENABLED)
+        logger.log(TRACE_LOG_LEVEL, "OCR provider order: %s", settings.OCR_PROVIDER_ORDER)
         
         # Check file size and page count before attempting OCR
         page_count = 0
@@ -1391,11 +1404,11 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
             from PyPDF2 import PdfReader
             reader = PdfReader(BytesIO(file_bytes))
             page_count = len(reader.pages)
-            logger.info(f"     Page count: {page_count}")
+            logger.log(TRACE_LOG_LEVEL, "Page count for %s: %s", filename, page_count)
         except:
             # If we can't count pages, assume it's a single-page image
             page_count = 1 if content_type.startswith('image/') else 0
-            logger.info(f"     Could not determine page count, assuming: {page_count}")
+            logger.log(TRACE_LOG_LEVEL, "Could not determine page count for %s, assuming %s", filename, page_count)
         
         if page_count > settings.OCR_MAX_PAGES:
             logger.warning(
@@ -1409,22 +1422,22 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
             )
         else:
             # Try OCR providers in configured order
-            logger.info(f"  → Attempting OCR with providers: {settings.OCR_PROVIDER_ORDER}")
+            logger.log(TRACE_LOG_LEVEL, "Attempting OCR with providers %s for %s", settings.OCR_PROVIDER_ORDER, filename)
             text_output = await _try_ocr_providers(file_bytes, filename, content_type)
             if text_output.strip():
-                logger.info(f"  ✓ OCR extraction successful: {len(text_output)} characters")
+                logger.log(TRACE_LOG_LEVEL, "OCR extraction successful for %s (%s characters)", filename, len(text_output))
                 return text_output
             else:
                 logger.warning(f"  ✗ OCR extraction returned empty")
     elif not settings.OCR_ENABLED:
-        logger.info(f"  ⚠ OCR is DISABLED (OCR_ENABLED={settings.OCR_ENABLED})")
+        logger.log(TRACE_LOG_LEVEL, "OCR disabled, bypassing fallback for %s", filename)
 
     if not text_output.strip():
         logger.error(f"❌ ALL extraction methods failed for {filename}")
         logger.error(f"   Summary: pdfminer=empty, PyPDF2=empty, OCR={'attempted' if settings.OCR_ENABLED else 'disabled'}")
         logger.error(f"   File details: content-type={content_type}, size={len(file_bytes)} bytes")
     else:
-        logger.info(f"✅ Extraction complete for {filename}: {len(text_output)} characters")
+        logger.log(TRACE_LOG_LEVEL, "Extraction complete for %s (%s characters)", filename, len(text_output))
     
     return text_output
 
@@ -1872,8 +1885,9 @@ def _build_issue_payload(
     deterministic_results: List[Dict[str, Any]],
     ai_issues: List[Dict[str, Any]],
     documents: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
     formatted: List[Dict[str, Any]] = []
+    severity_counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
 
     for result in deterministic_results:
         formatted.append(_format_deterministic_issue(result))
@@ -1889,8 +1903,12 @@ def _build_issue_payload(
         issue["documents"] = matched_names
         for doc_id in matched_ids:
             doc_issue_counts[doc_id] = doc_issue_counts.get(doc_id, 0) + 1
+        severity = issue.get("severity", "minor")
+        if severity not in severity_counts:
+            severity = "minor"
+        severity_counts[severity] += 1
 
-    return formatted, doc_issue_counts
+    return formatted, doc_issue_counts, severity_counts
 
 
 def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -2048,13 +2066,14 @@ def _build_documents_section(
 def _compose_processing_summary(
     documents: List[Dict[str, Any]],
     issues: List[Dict[str, Any]],
+    severity_counts: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     total_docs = len(documents)
     successful = sum(
         1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
     )
     failed = total_docs - successful
-    severity_breakdown = _count_issue_severity(issues)
+    severity_breakdown = severity_counts or _count_issue_severity(issues)
 
     return {
         "total_documents": total_docs,
