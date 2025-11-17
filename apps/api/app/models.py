@@ -92,6 +92,11 @@ class DocumentType(str, Enum):
     LETTER_OF_CREDIT = "letter_of_credit"
     COMMERCIAL_INVOICE = "commercial_invoice"
     BILL_OF_LADING = "bill_of_lading"
+    PACKING_LIST = "packing_list"
+    CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
+    INSURANCE_CERTIFICATE = "insurance_certificate"
+    INSPECTION_CERTIFICATE = "inspection_certificate"
+    SUPPORTING_DOCUMENT = "supporting_document"
 
 
 class DiscrepancyType(str, Enum):

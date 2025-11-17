@@ -56,7 +56,11 @@ class S3Service:
         document_types = [
             DocumentType.LETTER_OF_CREDIT,
             DocumentType.COMMERCIAL_INVOICE,
-            DocumentType.BILL_OF_LADING
+            DocumentType.BILL_OF_LADING,
+            DocumentType.PACKING_LIST,
+            DocumentType.CERTIFICATE_OF_ORIGIN,
+            DocumentType.INSURANCE_CERTIFICATE,
+            DocumentType.INSPECTION_CERTIFICATE,
         ]
         
         for doc_type in document_types:

@@ -68,7 +68,12 @@ if settings.USE_STUBS:
                 doc_type_map = {
                     'letter_of_credit': DocumentType.LETTER_OF_CREDIT,
                     'commercial_invoice': DocumentType.COMMERCIAL_INVOICE,
-                    'bill_of_lading': DocumentType.BILL_OF_LADING
+                    'bill_of_lading': DocumentType.BILL_OF_LADING,
+                    'packing_list': DocumentType.PACKING_LIST,
+                    'certificate_of_origin': DocumentType.CERTIFICATE_OF_ORIGIN,
+                    'insurance_certificate': DocumentType.INSURANCE_CERTIFICATE,
+                    'inspection_certificate': DocumentType.INSPECTION_CERTIFICATE,
+                    'supporting_document': DocumentType.SUPPORTING_DOCUMENT,
                 }
                 
                 doc_type_enum = doc_type_map.get(document_type)

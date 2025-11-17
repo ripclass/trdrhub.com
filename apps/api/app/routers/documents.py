@@ -36,7 +36,7 @@ router = APIRouter(prefix="/documents", tags=["document-processing"])
 @router.post("/process-document", response_model=DocumentProcessingResponse, status_code=status.HTTP_200_OK)
 async def process_document(
     request: Request,
-    files: List[UploadFile] = File(..., description="1-3 PDF files (LC, Invoice, BL)"),
+    files: List[UploadFile] = File(..., description="1-6 trade documents (LC + supporting docs)"),
     session_id: Optional[str] = Form(None, description="Optional existing session ID"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -79,10 +79,10 @@ async def process_document(
             detail="At least one file must be provided"
         )
 
-    if len(files) > 3:
+    if len(files) > 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum 3 files allowed"
+            detail="Maximum 6 files allowed"
         )
 
     # Validate file types with content-based validation
@@ -342,7 +342,11 @@ def _determine_document_type(filename: Optional[str], index: int) -> str:
         type_mapping = {
             0: DocumentType.LETTER_OF_CREDIT.value,
             1: DocumentType.COMMERCIAL_INVOICE.value,
-            2: DocumentType.BILL_OF_LADING.value
+            2: DocumentType.BILL_OF_LADING.value,
+            3: DocumentType.PACKING_LIST.value,
+            4: DocumentType.CERTIFICATE_OF_ORIGIN.value,
+            5: DocumentType.INSURANCE_CERTIFICATE.value,
+            6: DocumentType.INSPECTION_CERTIFICATE.value,
         }
         return type_mapping.get(index, DocumentType.LETTER_OF_CREDIT.value)
 
@@ -355,6 +359,14 @@ def _determine_document_type(filename: Optional[str], index: int) -> str:
         return DocumentType.COMMERCIAL_INVOICE.value
     elif any(pattern in filename_lower for pattern in ['bl', 'bill', 'lading', 'shipping']):
         return DocumentType.BILL_OF_LADING.value
+    elif 'packing' in filename_lower or 'packlist' in filename_lower:
+        return DocumentType.PACKING_LIST.value
+    elif any(pattern in filename_lower for pattern in ['certificate_of_origin', 'certificate of origin', 'coo']):
+        return DocumentType.CERTIFICATE_OF_ORIGIN.value
+    elif any(pattern in filename_lower for pattern in ['insurance', 'policy']):
+        return DocumentType.INSURANCE_CERTIFICATE.value
+    elif any(pattern in filename_lower for pattern in ['inspection', 'analysis']):
+        return DocumentType.INSPECTION_CERTIFICATE.value
     else:
         # Default mapping based on order
         return _determine_document_type(None, index)

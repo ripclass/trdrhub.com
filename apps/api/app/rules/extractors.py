@@ -60,6 +60,14 @@ class DocumentFieldExtractor:
             fields.extend(self._extract_invoice_fields(ocr_text, confidence))
         elif document_type == DocumentType.BILL_OF_LADING:
             fields.extend(self._extract_bl_fields(ocr_text, confidence))
+        elif document_type == DocumentType.PACKING_LIST:
+            fields.extend(self._extract_packing_list_fields(ocr_text, confidence))
+        elif document_type == DocumentType.CERTIFICATE_OF_ORIGIN:
+            fields.extend(self._extract_certificate_of_origin_fields(ocr_text, confidence))
+        elif document_type == DocumentType.INSURANCE_CERTIFICATE:
+            fields.extend(self._extract_insurance_certificate_fields(ocr_text, confidence))
+        elif document_type == DocumentType.INSPECTION_CERTIFICATE:
+            fields.extend(self._extract_inspection_certificate_fields(ocr_text, confidence))
         
         return fields
     
@@ -371,6 +379,174 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.BILL_OF_LADING
             ))
         
+        return fields
+
+    def _extract_packing_list_fields(self, text: str, confidence: float) -> List[ExtractedField]:
+        fields = []
+        total_packages = self._extract_pattern(text, r'(?:TOTAL\s+PACKAGES|NO\.?\s+OF\s+PACKAGES|PACKAGES)[:\s]*([^\n]+)', 1)
+        if total_packages:
+            fields.append(ExtractedField(
+                field_name="total_packages",
+                field_type=FieldType.TEXT,
+                value=total_packages.strip(),
+                confidence=confidence,
+                document_type=DocumentType.PACKING_LIST,
+            ))
+
+        gross_weight = self._extract_pattern(text, r'(?:GROSS\s+WEIGHT|G\.W\.)[:\s]*([^\n]+)', 1)
+        if gross_weight:
+            fields.append(ExtractedField(
+                field_name="gross_weight",
+                field_type=FieldType.TEXT,
+                value=gross_weight.strip(),
+                confidence=confidence,
+                document_type=DocumentType.PACKING_LIST,
+            ))
+
+        net_weight = self._extract_pattern(text, r'(?:NET\s+WEIGHT|N\.W\.)[:\s]*([^\n]+)', 1)
+        if net_weight:
+            fields.append(ExtractedField(
+                field_name="net_weight",
+                field_type=FieldType.TEXT,
+                value=net_weight.strip(),
+                confidence=confidence,
+                document_type=DocumentType.PACKING_LIST,
+            ))
+
+        dimensions = self._extract_pattern(text, r'(?:DIMENSIONS|MEASUREMENTS)[:\s]*([^\n]+)', 1)
+        if dimensions:
+            fields.append(ExtractedField(
+                field_name="dimensions",
+                field_type=FieldType.TEXT,
+                value=dimensions.strip(),
+                confidence=confidence,
+                document_type=DocumentType.PACKING_LIST,
+            ))
+
+        return fields
+
+    def _extract_certificate_of_origin_fields(self, text: str, confidence: float) -> List[ExtractedField]:
+        fields = []
+        certificate_number = self._extract_pattern(text, r'(?:CERTIFICATE\s+NO\.?|CERTIFICATE\s+NUMBER)[:\s]*([^\n]+)', 1)
+        if certificate_number:
+            fields.append(ExtractedField(
+                field_name="certificate_number",
+                field_type=FieldType.TEXT,
+                value=certificate_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.CERTIFICATE_OF_ORIGIN,
+            ))
+
+        origin_country = self._extract_pattern(text, r'(?:COUNTRY\s+OF\s+ORIGIN|ORIGIN)[:\s]*([^\n]+)', 1)
+        if origin_country:
+            fields.append(ExtractedField(
+                field_name="origin_country",
+                field_type=FieldType.TEXT,
+                value=origin_country.strip(),
+                confidence=confidence,
+                document_type=DocumentType.CERTIFICATE_OF_ORIGIN,
+            ))
+
+        issuing_authority = self._extract_pattern(text, r'(?:ISSUED\s+BY|CHAMBER\s+OF\s+COMMERCE)[:\s]*([^\n]+)', 1)
+        if issuing_authority:
+            fields.append(ExtractedField(
+                field_name="issuing_authority",
+                field_type=FieldType.TEXT,
+                value=issuing_authority.strip(),
+                confidence=confidence,
+                document_type=DocumentType.CERTIFICATE_OF_ORIGIN,
+            ))
+
+        issue_date = self._extract_date_field(text, r'(?:DATE\s+OF\s+ISSUE|ISSUE\s+DATE)[:\s]*([^\n]+)')
+        if issue_date:
+            fields.append(ExtractedField(
+                field_name="issue_date",
+                field_type=FieldType.DATE,
+                value=issue_date,
+                confidence=confidence,
+                document_type=DocumentType.CERTIFICATE_OF_ORIGIN,
+            ))
+
+        return fields
+
+    def _extract_insurance_certificate_fields(self, text: str, confidence: float) -> List[ExtractedField]:
+        fields = []
+        policy_number = self._extract_pattern(text, r'(?:POLICY\s+NO\.?|POLICY\s+NUMBER)[:\s]*([^\n]+)', 1)
+        if policy_number:
+            fields.append(ExtractedField(
+                field_name="policy_number",
+                field_type=FieldType.TEXT,
+                value=policy_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.INSURANCE_CERTIFICATE,
+            ))
+
+        insured_amount = self._extract_amount_field(text)
+        if insured_amount:
+            fields.append(ExtractedField(
+                field_name="insured_amount",
+                field_type=FieldType.AMOUNT,
+                value=self._normalize_amount_string(insured_amount),
+                confidence=confidence,
+                document_type=DocumentType.INSURANCE_CERTIFICATE,
+            ))
+
+        insurer = self._extract_pattern(text, r'(?:INSURER|UNDERWRITER|INSURANCE\s+COMPANY)[:\s]*([^\n]+)', 1)
+        if insurer:
+            fields.append(ExtractedField(
+                field_name="insurer",
+                field_type=FieldType.TEXT,
+                value=insurer.strip(),
+                confidence=confidence,
+                document_type=DocumentType.INSURANCE_CERTIFICATE,
+            ))
+
+        validity = self._extract_date_field(text, r'(?:VALID\s+UNTIL|EXPIRY\s+DATE)[:\s]*([^\n]+)')
+        if validity:
+            fields.append(ExtractedField(
+                field_name="valid_until",
+                field_type=FieldType.DATE,
+                value=validity,
+                confidence=confidence,
+                document_type=DocumentType.INSURANCE_CERTIFICATE,
+            ))
+
+        return fields
+
+    def _extract_inspection_certificate_fields(self, text: str, confidence: float) -> List[ExtractedField]:
+        fields = []
+        inspector = self._extract_pattern(text, r'(?:INSPECTION\s+COMPANY|AGENCY|INSPECTOR)[:\s]*([^\n]+)', 1)
+        if inspector:
+            fields.append(ExtractedField(
+                field_name="inspection_company",
+                field_type=FieldType.TEXT,
+                value=inspector.strip(),
+                confidence=confidence,
+                document_type=DocumentType.INSPECTION_CERTIFICATE,
+            ))
+
+        inspection_date = self._extract_date_field(text, r'(?:INSPECTION\s+DATE|DATE\s+OF\s+INSPECTION)[:\s]*([^\n]+)')
+        if inspection_date:
+            fields.append(ExtractedField(
+                field_name="inspection_date",
+                field_type=FieldType.DATE,
+                value=inspection_date,
+                confidence=confidence,
+                document_type=DocumentType.INSPECTION_CERTIFICATE,
+            ))
+
+        findings = self._extract_label_block(text, [
+            r'(?:FINDINGS|OBSERVATIONS|RESULTS)[:\s]*(.+)',
+        ])
+        if findings:
+            fields.append(ExtractedField(
+                field_name="inspection_results",
+                field_type=FieldType.TEXT,
+                value=findings,
+                confidence=confidence,
+                document_type=DocumentType.INSPECTION_CERTIFICATE,
+            ))
+
         return fields
     
     def _extract_pattern(self, text: str, pattern: str, group: int = 0) -> Optional[str]:

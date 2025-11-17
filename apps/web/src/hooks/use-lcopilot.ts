@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '@/api/client';
+import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
 
 export interface ValidationRequest {
   files: File[];
@@ -103,6 +104,42 @@ export interface ValidationResults {
   processedAt?: string;
   processingCompletedAt?: string;
   processed_at?: string;
+  processing_summary?: {
+    documents: number;
+    verified: number;
+    warnings: number;
+    errors: number;
+    compliance_rate: number;
+    processing_time_seconds?: number;
+    processing_time_display?: string;
+    discrepancies?: number;
+  };
+  document_status?: Record<string, number>;
+  timeline?: Array<{
+    title: string;
+    status: string;
+    description?: string;
+    timestamp?: string;
+  }>;
+  analytics?: {
+    extraction_accuracy?: number;
+    lc_compliance_score?: number;
+    customs_ready_score?: number;
+    documents_processed?: number;
+    document_status_distribution?: Record<string, number>;
+    document_processing?: Array<{
+      name?: string;
+      type?: string;
+      status?: string;
+      processing_time_seconds?: number;
+      accuracy_score?: number;
+      compliance_level?: string;
+      risk_level?: string;
+    }>;
+    performance_insights?: string[];
+    processing_time_display?: string;
+  };
+  overall_status?: string;
 }
 
 export interface PackageResponse {
@@ -318,13 +355,13 @@ export const useResults = () => {
 
     try {
       const response = await api.get(`/api/results/${jobId}`);
-      const results: ValidationResults = response.data;
-      if (results.ai_enrichment && !results.aiEnrichment) {
-        results.aiEnrichment = results.ai_enrichment;
+      const normalized: ValidationResults = buildValidationResponse(response.data);
+      if (normalized.ai_enrichment && !normalized.aiEnrichment) {
+        normalized.aiEnrichment = normalized.ai_enrichment;
       }
 
-      setResults(results);
-      return results;
+      setResults(normalized);
+      return normalized;
     } catch (err: any) {
       let validationError: ValidationError;
 

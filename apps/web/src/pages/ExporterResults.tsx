@@ -169,6 +169,50 @@ const mockExporterResults: ValidationResults = {
   ]
 };
 
+const normalizeDocumentStatusCounts = (documents: ValidationResults['documents'] = []) =>
+  documents.reduce<Record<string, number>>(
+    (acc, doc) => {
+      const status = (doc.status || 'success').toLowerCase();
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    },
+    { success: 0, warning: 0, error: 0 }
+  );
+
+const buildFallbackTimeline = (documentCount: number) => [
+  { title: 'Documents Uploaded', status: 'success', description: `${documentCount} document(s) uploaded` },
+  { title: 'LC Terms Extracted', status: 'success', description: 'Structured LC context generated' },
+  { title: 'Document Cross-Check', status: 'success', description: 'Compared trade docs against LC terms' },
+  { title: 'Customs Pack Generated', status: 'success', description: 'Bundle prepared for customs clearance' },
+];
+
+const buildFallbackAnalytics = (
+  documents: ValidationResults['documents'],
+  statusCounts: Record<string, number>,
+  processingSummary?: ValidationResults['processing_summary'],
+) => ({
+  extraction_accuracy: 100 - (statusCounts.warning ?? 0) * 2 - (statusCounts.error ?? 0) * 5,
+  lc_compliance_score: processingSummary?.compliance_rate ?? 0,
+  customs_ready_score: Math.max(0, (processingSummary?.compliance_rate ?? 0) - (statusCounts.warning ?? 0) * 2),
+  documents_processed: documents?.length ?? 0,
+  document_status_distribution: statusCounts,
+  document_processing: (documents || []).map((doc, index) => ({
+    name: doc.name,
+    type: doc.type,
+    status: doc.status,
+    processing_time_seconds: Number((0.2 + index * 0.05).toFixed(2)),
+    accuracy_score: doc.ocrConfidence ? Math.round(doc.ocrConfidence * 100) : 95,
+    compliance_level: doc.status === 'success' ? 'High' : doc.status === 'warning' ? 'Medium' : 'Low',
+    risk_level: doc.status === 'success' ? 'Low Risk' : doc.status === 'warning' ? 'Medium Risk' : 'High Risk',
+  })),
+  performance_insights: [
+    `${documents?.length ?? 0} document(s) processed`,
+    `${statusCounts.success ?? 0} verified without issues`,
+    `Runtime: ${processingSummary?.processing_time_display ?? 'n/a'}`,
+  ],
+  processing_time_display: processingSummary?.processing_time_display,
+});
+
 type ExporterResultsProps = {
   embedded?: boolean;
 };
@@ -295,7 +339,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const lcNumber = resolvedLcNumber ?? mockExporterResults.lcNumber;
   
   // Compute totalDiscrepancies early for use in isReadyToSubmit
-  const totalDiscrepancies = resolvedResults?.discrepancies?.length ?? 0;
+  const totalDiscrepancies = resolvedResults.totalDiscrepancies ?? resolvedResults.discrepancies?.length ?? 0;
   const documents = resolvedResults?.documents ?? [];
   const extractedDocuments =
     Array.isArray(resolvedResults?.extracted_data?.documents)
@@ -686,22 +730,58 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       </Card>
     );
   };
-  const totalDocuments = documents.length || 0;
-  // totalDiscrepancies already computed above for use in isReadyToSubmit
-  const successCount = documents?.filter((d) => d.status === "success").length ?? 0;
-  const warningCount = documents?.filter((d) => d.status === "warning").length ?? 0;
-  const errorCount = documents?.filter((d) => d.status === "error").length ?? 0;
-  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
+  const processingSummary = resolvedResults.processing_summary;
+  const documentStatusCounts =
+  const successCount = processingSummary?.verified ?? documentStatusCounts.success ?? 0;
+  const warningCount = processingSummary?.warnings ?? documentStatusCounts.warning ?? 0;
+  const errorCount = processingSummary?.errors ?? documentStatusCounts.error ?? 0;
+    resolvedResults.document_status || normalizeDocumentStatusCounts(documents);
+  const totalDocuments = processingSummary?.documents ?? documents.length ?? 0;
+  const successRate =
+    processingSummary?.compliance_rate ??
+    (totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0);
   const overallStatus =
+    resolvedResults.overall_status ||
     resolvedResults.overallStatus ||
     resolvedResults.status ||
     (totalDiscrepancies > 0 ? "warning" : "success");
-  const packGenerated = resolvedResults.packGenerated ?? false;
+  const packGenerated = resolvedResults.packGenerated ?? overallStatus === "success";
   const processingTime =
+    processingSummary?.processing_time_display ||
     resolvedResults.processingTime ||
     resolvedResults.processing_time ||
     resolvedResults.processingTimeMinutes ||
+    "—";
+    resolvedResults.processingTimeMinutes ||
     "â€”";
+  const timelineEvents =
+    (resolvedResults.timeline && resolvedResults.timeline.length > 0
+      ? resolvedResults.timeline
+      : buildFallbackTimeline(totalDocuments));
+  const analyticsData =
+    resolvedResults.analytics ||
+    buildFallbackAnalytics(documents, documentStatusCounts, processingSummary);
+  const documentProcessingList =
+  const extractionAccuracy = Math.min(100, Math.max(0, analyticsData?.extraction_accuracy ?? successRate));
+  const lcComplianceScore = Math.min(100, Math.max(0, analyticsData?.lc_compliance_score ?? successRate));
+  const customsReadyScore = Math.min(100, Math.max(0, analyticsData?.customs_ready_score ?? successRate));
+  const performanceInsights =
+    analyticsData?.performance_insights ?? [
+      'Processing 15% faster than average',
+      'Above average compliance rate',
+      'Ready for expedited customs clearance',
+    ];
+
+    analyticsData?.document_processing ||
+    documents.map((doc, index) => ({
+      name: doc.name,
+      type: doc.type,
+      status: doc.status,
+      processing_time_seconds: Number((0.2 + index * 0.05).toFixed(2)),
+      accuracy_score: doc.ocrConfidence ? Math.round(doc.ocrConfidence * 100) : 95,
+      compliance_level: doc.status === "success" ? "High" : doc.status === "warning" ? "Medium" : "Low",
+      risk_level: doc.status === "success" ? "Low Risk" : doc.status === "warning" ? "Medium Risk" : "High Risk",
+    }));
   const processedAt =
     resolvedResults.processedAt ||
     resolvedResults.completedAt ||
@@ -1018,37 +1098,31 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-success rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Documents Uploaded</p>
-                      <p className="text-xs text-muted-foreground">14:28 - LC + 5 trade documents</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-success rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">LC Terms Extracted</p>
-                      <p className="text-xs text-muted-foreground">14:29 - Requirements identified</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-success rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Document Cross-Check</p>
-                      <p className="text-xs text-muted-foreground">14:30 - Against LC terms</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-warning rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Customs Pack Generated</p>
-                      <p className="text-xs text-muted-foreground">14:30 - 1 minor issue noted</p>
-                    </div>
-                  </div>
+                  {timelineEvents.map((event, index) => {
+                    const statusClass =
+                      event.status === "error"
+                        ? "bg-destructive"
+                        : event.status === "warning"
+                        ? "bg-warning"
+                        : "bg-success";
+                    return (
+                      <div key={`${event.title}-${index}`} className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{event.title}</p>
+                          {event.timestamp ? (
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(event.timestamp), "HH:mm")}
+                              {event.description ? ` - ${event.description}` : ''}
+                            </p>
+                          ) : event.description ? (
+                            <p className="text-xs text-muted-foreground">{event.description}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </CardContent>
-              </Card>
-
               {/* Export Statistics */}
               <Card className="shadow-soft border-0">
                 <CardHeader>
@@ -1068,20 +1142,26 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
-                      <span className="font-medium text-success">95%</span>
+                      <span className={`font-medium ${successRate >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {successRate}%
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Customs Ready:</span>
-                      <span className="font-medium text-success">Yes</span>
+                      <span className={`font-medium ${(analyticsData?.customs_ready_score ?? successRate) >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {(analyticsData?.customs_ready_score ?? successRate) >= 90 ? 'Yes' : 'Review'}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Bank Ready:</span>
-                      <span className="font-medium text-warning">Review needed</span>
+                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
+                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
+                      </span>
                     </div>
                   </div>
                   {packGenerated && (
                     <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <p className="text-sm font-medium text-primary">âœ“ Customs-Ready Pack Generated</p>
+                      <p className="text-sm font-medium text-primary">Customs-Ready Pack Generated</p>
                       <p className="text-xs text-muted-foreground mt-1">All documents bundled for smooth customs clearance</p>
                     </div>
                   )}
@@ -1478,31 +1558,32 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Document Extraction Speed</span>
-                      <span className="text-sm font-medium">98% accuracy</span>
+                      <span className="text-sm">Document Extraction Accuracy</span>
+                      <span className="text-sm font-medium">{extractionAccuracy}%</span>
                     </div>
-                    <Progress value={98} className="h-2" />
-                    
+                    <Progress value={extractionAccuracy} className="h-2" />
                     <div className="flex items-center justify-between">
                       <span className="text-sm">LC Compliance Check</span>
-                      <span className="text-sm font-medium">95% compliance</span>
+                      <span className="text-sm font-medium">{lcComplianceScore}%</span>
                     </div>
-                    <Progress value={95} className="h-2" />
-                    
+                    <Progress value={lcComplianceScore} className="h-2" />
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Customs Readiness</span>
-                      <span className="text-sm font-medium">92% ready</span>
+                      <span className="text-sm font-medium">{customsReadyScore}%</span>
                     </div>
-                    <Progress value={92} className="h-2" />
+                    <Progress value={customsReadyScore} className="h-2" />
                   </div>
-                  
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="text-lg font-bold text-success">1.8m</div>
+                      <div className="text-lg font-bold text-success">
+                        {processingSummary?.processing_time_display ?? processingTime}
+                      </div>
                       <div className="text-xs text-muted-foreground">Processing Time</div>
                     </div>
                     <div className="text-center p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <div className="text-lg font-bold text-primary">6/6</div>
+                      <div className="text-lg font-bold text-primary">
+                        {analyticsData?.documents_processed ?? totalDocuments}/{totalDocuments}
+                      </div>
                       <div className="text-xs text-muted-foreground">Documents Processed</div>
                     </div>
                   </div>
@@ -1524,35 +1605,38 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                         <div className="w-3 h-3 bg-success rounded-full"></div>
                         <span className="text-sm">Verified Documents</span>
                       </div>
-                      <span className="text-sm font-medium">{successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)</span>
+                      <span className="text-sm font-medium">
+                        {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
+                      </span>
                     </div>
-                    
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
                         <span className="text-sm">Minor Issues</span>
                       </div>
-                      <span className="text-sm font-medium">{warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)</span>
+                      <span className="text-sm font-medium">
+                        {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
+                      </span>
                     </div>
-                    
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-destructive rounded-full"></div>
                         <span className="text-sm">Critical Issues</span>
                       </div>
-                      <span className="text-sm font-medium">{errorCount} (0%)</span>
+                      <span className="text-sm font-medium">
+                        {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
+                      </span>
                     </div>
                   </div>
-                  
                   <div className="mt-4 p-3 bg-gradient-primary/5 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <TrendingUp className="w-4 h-4 text-primary" />
                       <span className="text-sm font-medium text-primary">Performance Insights</span>
                     </div>
                     <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>â€¢ Processing 15% faster than average</li>
-                      <li>â€¢ Above average compliance rate</li>
-                      <li>â€¢ Ready for expedited customs clearance</li>
+                      {performanceInsights.map((insight, idx) => (
+                        <li key={idx}>• {insight}</li>
+                      ))}
                     </ul>
                   </div>
                 </CardContent>
@@ -1577,28 +1661,32 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       </tr>
                     </thead>
                     <tbody className="space-y-2">
-                      {documents.map((doc, index) => (
-                        <tr key={doc.id} className="border-b border-gray-200/50">
-                          <td className="py-3 font-medium">{doc.type}</td>
-                          <td className="py-3 text-muted-foreground">{(0.2 + index * 0.1).toFixed(1)}s</td>
+                      {documentProcessingList.map((item, index) => (
+                        <tr key={item.name ?? index} className="border-b border-gray-200/50">
+                          <td className="py-3 font-medium">{item.type ?? documents[index]?.type}</td>
+                          <td className="py-3 text-muted-foreground">
+                            {item.processing_time_seconds
+                              ? `${Number(item.processing_time_seconds).toFixed(2)}s`
+                              : '—'}
+                          </td>
                           <td className="py-3">
                             <div className="flex items-center gap-2">
                               <div className="w-16 bg-muted rounded-full h-2">
                                 <div 
-                                  className="h-2 rounded-full bg-success" 
-                                  style={{ width: `${95 + Math.random() * 5}%` }}
+                                  className="h-2 rounded-full bg-success"
+                                  style={{ width: `${Math.min(100, item.accuracy_score ?? 0)}%` }}
                                 ></div>
                               </div>
-                              <span className="text-xs">{(95 + Math.random() * 5).toFixed(0)}%</span>
+                              <span className="text-xs">{item.accuracy_score ?? '—'}%</span>
                             </div>
                           </td>
                           <td className="py-3">
-                            <StatusBadge status={doc.status}>
-                              {doc.status === "success" ? "High" : doc.status === "warning" ? "Medium" : "Low"}
+                            <StatusBadge status={item.status || 'success'}>
+                              {item.compliance_level ?? 'n/a'}
                             </StatusBadge>
                           </td>
                           <td className="py-3 text-muted-foreground">
-                            {doc.status === "success" ? "Low Risk" : doc.status === "warning" ? "Medium Risk" : "High Risk"}
+                            {item.risk_level ?? '—'}
                           </td>
                         </tr>
                       ))}

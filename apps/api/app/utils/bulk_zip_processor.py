@@ -26,12 +26,13 @@ class LCSetDetector:
     
     # Document type keywords
     DOC_TYPE_KEYWORDS = {
-        'lc': ['lc', 'letter of credit', 'credit'],
-        'invoice': ['invoice', 'inv', 'commercial invoice'],
-        'bl': ['bl', 'bill of lading', 'b/l', 'b&l'],
+        'letter_of_credit': ['lc', 'letter of credit', 'credit'],
+        'commercial_invoice': ['invoice', 'inv', 'commercial invoice'],
+        'bill_of_lading': ['bl', 'bill of lading', 'b/l', 'b&l'],
         'packing_list': ['packing', 'pack', 'packing list'],
-        'coo': ['coo', 'certificate of origin', 'origin'],
-        'insurance': ['insurance', 'ins', 'certificate of insurance'],
+        'certificate_of_origin': ['coo', 'certificate of origin', 'origin'],
+        'insurance_certificate': ['insurance', 'ins', 'certificate of insurance'],
+        'inspection_certificate': ['inspection', 'quality inspection', 'analysis certificate'],
     }
     
     def __init__(self):

@@ -59,11 +59,15 @@ class StubS3Service:
         
         upload_urls = []
         
-        # Generate URLs for all three document types
+        # Generate URLs for all supported document types
         document_types = [
             DocumentType.LETTER_OF_CREDIT,
             DocumentType.COMMERCIAL_INVOICE,
-            DocumentType.BILL_OF_LADING
+            DocumentType.BILL_OF_LADING,
+            DocumentType.PACKING_LIST,
+            DocumentType.CERTIFICATE_OF_ORIGIN,
+            DocumentType.INSURANCE_CERTIFICATE,
+            DocumentType.INSPECTION_CERTIFICATE,
         ]
         
         for doc_type in document_types:

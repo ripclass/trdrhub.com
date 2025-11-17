@@ -30,7 +30,7 @@ def sync_rules_from_rulhub() -> None:
     """Full sync for common document types."""
     session = SessionLocal()
     try:
-        for dtype in ["lc", "invoice", "bol", "packing_list"]:
+        for dtype in ["lc", "invoice", "bol", "packing_list", "certificate_of_origin", "insurance_certificate", "inspection_certificate"]:
             rules = fetch_rules_from_rulhub(dtype)
             for r in rules:
                 existing = session.query(Rule).filter(Rule.code == r.get("code")).first()
