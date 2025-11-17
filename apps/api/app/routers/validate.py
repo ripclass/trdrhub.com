@@ -1911,6 +1911,18 @@ def _build_issue_payload(
     return formatted, doc_issue_counts, severity_counts
 
 
+def _normalize_issue_severity(value: Optional[str]) -> str:
+    """Normalize issue severity to standard values: critical, major, minor."""
+    if not value:
+        return "minor"
+    normalized = value.lower()
+    if normalized in {"critical", "high"}:
+        return "critical"
+    if normalized in {"major", "medium", "warn", "warning"}:
+        return "major"
+    return "minor"
+
+
 def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
     issue_id = str(result.get("rule") or result.get("rule_id") or uuid4())
     severity = _normalize_issue_severity(result.get("severity"))
