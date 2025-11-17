@@ -1359,7 +1359,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     text_output = ""
 
     # Try pdfminer first (better for complex layouts)
-        logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
+    logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
