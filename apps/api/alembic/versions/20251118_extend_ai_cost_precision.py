@@ -18,6 +18,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # First, expand alembic_version.version_num to accommodate longer revision IDs
+    # The default VARCHAR(32) is too small for revision IDs like "20251118_extend_ai_cost_precision"
+    op.execute(
+        "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"
+    )
+    
     op.alter_column(
         "ai_usage_records",
         "estimated_cost_usd",

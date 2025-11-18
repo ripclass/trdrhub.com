@@ -17,24 +17,52 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create ruleset status enum
-    ruleset_status_enum = postgresql.ENUM(
-        'draft', 'active', 'archived', 'scheduled',
-        name='ruleset_status',
-        create_type=True
-    )
-    ruleset_status_enum.create(op.get_bind(), checkfirst=True)
+    # Create ruleset status enum (only if it doesn't exist)
+    bind = op.get_bind()
+    result = bind.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ruleset_status')"
+    )).scalar()
+    if not result:
+        ruleset_status_enum = postgresql.ENUM(
+            'draft', 'active', 'archived', 'scheduled',
+            name='ruleset_status',
+            create_type=True
+        )
+        ruleset_status_enum.create(bind, checkfirst=False)
+    else:
+        # Enum exists, create a reference for use in table definition
+        ruleset_status_enum = postgresql.ENUM(
+            'draft', 'active', 'archived', 'scheduled',
+            name='ruleset_status',
+            create_type=False
+        )
 
-    # Create audit action enum
-    audit_action_enum = postgresql.ENUM(
-        'upload', 'validate', 'publish', 'rollback', 'archive',
-        name='ruleset_audit_action',
-        create_type=True
-    )
-    audit_action_enum.create(op.get_bind(), checkfirst=True)
+    # Create audit action enum (only if it doesn't exist)
+    result = bind.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ruleset_audit_action')"
+    )).scalar()
+    if not result:
+        audit_action_enum = postgresql.ENUM(
+            'upload', 'validate', 'publish', 'rollback', 'archive',
+            name='ruleset_audit_action',
+            create_type=True
+        )
+        audit_action_enum.create(bind, checkfirst=False)
+    else:
+        # Enum exists, create a reference for use in table definition
+        audit_action_enum = postgresql.ENUM(
+            'upload', 'validate', 'publish', 'rollback', 'archive',
+            name='ruleset_audit_action',
+            create_type=False
+        )
 
-    # Create rulesets table
-    op.create_table(
+    # Check if tables already exist
+    inspector = sa.inspect(bind)
+    existing_tables = inspector.get_table_names()
+    
+    # Create rulesets table (only if it doesn't exist)
+    if 'rulesets' not in existing_tables:
+        op.create_table(
         'rulesets',
         sa.Column(
             'id',
@@ -79,32 +107,42 @@ def upgrade() -> None:
         sa.Column('notes', sa.Text(), nullable=True),
     )
 
-    # Create indexes
-    op.create_index(
-        'ix_rulesets_domain_jurisdiction',
-        'rulesets',
-        ['domain', 'jurisdiction']
-    )
-    op.create_index(
-        'ix_rulesets_status',
-        'rulesets',
-        ['status']
-    )
-    op.create_index(
-        'ix_rulesets_created_at',
-        'rulesets',
-        ['created_at']
-    )
+        # Create indexes (table was just created, but indexes might exist from partial migration)
+        try:
+            op.create_index(
+                'ix_rulesets_domain_jurisdiction',
+                'rulesets',
+                ['domain', 'jurisdiction']
+            )
+        except Exception:
+            pass  # Index already exists
+        try:
+            op.create_index(
+                'ix_rulesets_status',
+                'rulesets',
+                ['status']
+            )
+        except Exception:
+            pass  # Index already exists
+        try:
+            op.create_index(
+                'ix_rulesets_created_at',
+                'rulesets',
+                ['created_at']
+            )
+        except Exception:
+            pass  # Index already exists
 
-    # Create partial unique index: one active per (domain, jurisdiction)
-    op.execute("""
-        CREATE UNIQUE INDEX ix_rulesets_active_unique 
-        ON rulesets (domain, jurisdiction) 
-        WHERE status = 'active'
-    """)
+        # Create partial unique index: one active per (domain, jurisdiction)
+        op.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_rulesets_active_unique 
+            ON rulesets (domain, jurisdiction) 
+            WHERE status = 'active'
+        """)
 
-    # Create ruleset_audit table
-    op.create_table(
+    # Create ruleset_audit table (only if it doesn't exist)
+    if 'ruleset_audit' not in existing_tables:
+        op.create_table(
         'ruleset_audit',
         sa.Column(
             'id',
@@ -138,22 +176,31 @@ def upgrade() -> None:
         ),
     )
 
-    # Create indexes for audit table
-    op.create_index(
-        'ix_ruleset_audit_ruleset_id',
-        'ruleset_audit',
-        ['ruleset_id']
-    )
-    op.create_index(
-        'ix_ruleset_audit_created_at',
-        'ruleset_audit',
-        ['created_at']
-    )
-    op.create_index(
-        'ix_ruleset_audit_action',
-        'ruleset_audit',
-        ['action']
-    )
+        # Create indexes for audit table (table was just created, but indexes might exist from partial migration)
+        try:
+            op.create_index(
+                'ix_ruleset_audit_ruleset_id',
+                'ruleset_audit',
+                ['ruleset_id']
+            )
+        except Exception:
+            pass  # Index already exists
+        try:
+            op.create_index(
+                'ix_ruleset_audit_created_at',
+                'ruleset_audit',
+                ['created_at']
+            )
+        except Exception:
+            pass  # Index already exists
+        try:
+            op.create_index(
+                'ix_ruleset_audit_action',
+                'ruleset_audit',
+                ['action']
+            )
+        except Exception:
+            pass  # Index already exists
 
 
 def downgrade() -> None:
