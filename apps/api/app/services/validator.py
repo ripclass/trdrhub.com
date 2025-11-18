@@ -676,7 +676,6 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     Checks feature flag USE_JSON_RULES to determine which validation system to use.
     """
     use_json_rules = settings.USE_JSON_RULES
-    use_json_rules = settings.USE_JSON_RULES
     
     if use_json_rules:
         # Use new JSON ruleset system
