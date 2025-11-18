@@ -36,6 +36,13 @@ if "pgbouncer=true" in DATABASE_URL:
 
 # Create engine - connection validation happens on first use, not at import time
 # This allows the app to start even if database is temporarily unavailable
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    # SQLite doesn't support connect_timeout; also need to disable thread check
+    connect_args["check_same_thread"] = False
+else:
+    connect_args["connect_timeout"] = 10  # 10 second timeout for Postgres
+
 engine = create_engine(
     DATABASE_URL,  # Use the normalized URL
     poolclass=QueuePool,
@@ -43,7 +50,7 @@ engine = create_engine(
     max_overflow=10,
     pool_pre_ping=True,  # Test connections before using them
     echo=settings.DEBUG,
-    connect_args={"connect_timeout": 10},  # 10 second timeout for connection attempts
+    connect_args=connect_args,
     pool_reset_on_return='commit'  # Reset connections when returned to pool
 )
 

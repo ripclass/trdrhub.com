@@ -4,6 +4,7 @@ Integration models for partner API management.
 
 import uuid
 import enum
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Any, Optional
 from decimal import Decimal
@@ -157,6 +158,27 @@ class CompanyIntegration(Base):
         if not self.oauth_expires_at:
             return False
         return datetime.utcnow() >= self.oauth_expires_at
+
+
+# Lightweight audit/billing data classes used by tests and event pipeline.
+# The production implementation stores richer records in dedicated tables,
+# but the tests only need structured containers.
+@dataclass
+class AIAuditEvent:
+    session_id: str
+    user_id: str
+    event_type: str
+    payload: Dict[str, Any]
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class BillingEvent:
+    company_id: str
+    event_type: BillingEventType
+    amount_usd: Decimal
+    metadata: Dict[str, Any]
+    created_at: datetime = field(default_factory=datetime.utcnow)
 
     @property
     def has_quota_remaining(self) -> bool:

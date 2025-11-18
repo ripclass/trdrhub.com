@@ -292,7 +292,7 @@ RECOMMENDATION: Safe to deploy with known issues documented
 # Problem: ImportError for async module
 # Solution: Use importlib
 import importlib
-async_module = importlib.import_module('async.queue_producer')
+async_module = importlib.import_module('async_tasks.queue_producer')
 ```
 
 #### 2. Mock Configuration

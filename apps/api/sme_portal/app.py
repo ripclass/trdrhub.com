@@ -30,7 +30,7 @@ from trust_platform.logging.structured_logger import get_logger
 from pipeline.safe_validator import SafeRuleValidator
 from bank_simulator import BankModeSimulator
 from trust_platform.compliance.bank_profile_engine import BankProfileEngine
-from async.api_integration import async_bp, init_async_components
+from async_tasks.api_integration import async_bp, init_async_components
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(16))
@@ -521,7 +521,7 @@ def health_check():
 
     # Check async processing health
     try:
-        from async.api_integration import async_bp
+        from async_tasks.api_integration import async_bp
         services["async_processing"] = "operational"
     except ImportError:
         services["async_processing"] = "unavailable"

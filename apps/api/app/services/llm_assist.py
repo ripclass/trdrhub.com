@@ -49,6 +49,14 @@ class AIOutputType(str, Enum):
     FIX_SUGGESTION = "fix_suggestion"
 
 
+class AIRequestType(str, Enum):
+    """Input request types accepted by LLMAssistService."""
+    DISCREPANCY_SUMMARY = "discrepancy_summary"
+    BANK_DRAFT = "bank_draft"
+    AMENDMENT_DRAFT = "amendment_draft"
+    CHAT = "chat"
+
+
 # Database Models
 class AIAssistEvent(Base):
     """Immutable audit log for all AI assistance events."""

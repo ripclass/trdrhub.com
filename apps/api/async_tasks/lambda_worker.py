@@ -17,8 +17,8 @@ import tempfile
 from datetime import datetime
 
 # Import local modules (these would be packaged with the Lambda)
-from async.job_status import JobStatusManager, JobStatus
-from async.rate_limiter import RateLimiter
+from .job_status import JobStatusManager, JobStatus
+from .rate_limiter import RateLimiter
 from ocr.textract_fallback import TextractFallback
 from trust_platform.compliance.validator import ComplianceValidator
 from trust_platform.compliance.bank_profile_engine import BankProfileEngine

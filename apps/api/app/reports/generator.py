@@ -2,6 +2,8 @@
 PDF report generator using WeasyPrint.
 """
 
+from __future__ import annotations
+
 import os
 import tempfile
 from datetime import datetime, timezone
@@ -11,13 +13,19 @@ from io import BytesIO
 from pathlib import Path
 
 import boto3
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
 from botocore.exceptions import ClientError
 
 from .templates import ReportTemplate
 from ..rules.models import DocumentValidationSummary
 from ..models import Report, ValidationSession, User
+
+
+def _import_weasyprint():
+    """Import WeasyPrint lazily so that missing native deps don't break imports."""
+    from weasyprint import HTML, CSS
+    from weasyprint.text.fonts import FontConfiguration
+
+    return HTML, CSS, FontConfiguration
 
 
 class ReportGenerator:
@@ -28,13 +36,25 @@ class ReportGenerator:
         self.s3_client = boto3.client('s3')
         self.bucket_name = os.getenv('S3_BUCKET_NAME', 'lcopilot-documents')
         self.region = os.getenv('AWS_REGION', 'us-east-1')
-
-        # Setup font configuration for better Bangla support
-        self.font_config = FontConfiguration()
         self.static_dir = Path(__file__).parent.parent.parent / "static"
 
-        # CSS for professional styling and font embedding
-        self.professional_css = self._load_professional_css()
+        self._weasyprint_ready = False
+        self._weasyprint_error: Optional[Exception] = None
+        self.HTML = None
+        self.CSS = None
+        self.font_config = None
+        self.professional_css = None
+
+        try:
+            self.HTML, self.CSS, FontConfiguration = _import_weasyprint()
+            self.font_config = FontConfiguration()
+            self.professional_css = self._load_professional_css()
+            self._weasyprint_ready = True
+        except Exception as exc:  # pragma: no cover - platform specific
+            # Keep import-time errors from crashing Windows/dev shells that
+            # don't have GTK/Pango. We'll raise a helpful error if report
+            # generation is attempted.
+            self._weasyprint_error = exc
     
     async def generate_report(
         self,
@@ -204,18 +224,21 @@ class ReportGenerator:
 
         return combined_buffer
 
-    def _load_professional_css(self) -> CSS:
+    def _load_professional_css(self) -> Optional["CSS"]:
         """Load professional CSS with embedded fonts."""
+
+        if not self.CSS:
+            return None
 
         # Path to CSS file
         css_path = self.static_dir / "css" / "reports.css"
 
         if css_path.exists():
             # Load external CSS file
-            return CSS(filename=str(css_path))
+            return self.CSS(filename=str(css_path))
         else:
             # Fallback inline CSS
-            return CSS(string="""
+            return self.CSS(string="""
             @page {
                 size: A4;
                 margin: 1.5cm 2cm;
@@ -237,16 +260,18 @@ class ReportGenerator:
     def _html_to_pdf(self, html_content: str, language: str = "en") -> BytesIO:
         """Convert HTML content to PDF using WeasyPrint with professional styling."""
 
+        self._ensure_weasyprint()
         try:
             # Create WeasyPrint HTML object with proper base URL
-            html_obj = HTML(string=html_content, base_url=str(self.static_dir))
+            html_obj = self.HTML(string=html_content, base_url=str(self.static_dir))
 
             # Generate PDF with professional CSS and font configuration
             pdf_buffer = BytesIO()
 
             # Use a more compatible approach
+            stylesheets = [css for css in [self.professional_css] if css is not None]
             document = html_obj.render(
-                stylesheets=[self.professional_css],
+                stylesheets=stylesheets,
                 font_config=self.font_config
             )
             document.write_pdf(pdf_buffer)
@@ -258,25 +283,30 @@ class ReportGenerator:
             # Fallback to basic PDF generation without font config
             print(f"Warning: Advanced PDF generation failed, using fallback mode: {str(e)}")
 
-            html_obj = HTML(string=html_content, base_url=str(self.static_dir))
+            html_obj = self.HTML(string=html_content, base_url=str(self.static_dir))
             pdf_buffer = BytesIO()
-            html_obj.write_pdf(pdf_buffer, stylesheets=[self.professional_css])
+            stylesheets = [css for css in [self.professional_css] if css is not None]
+            html_obj.write_pdf(pdf_buffer, stylesheets=stylesheets)
             pdf_buffer.seek(0)
             return pdf_buffer
 
     def _html_to_pdf_bilingual(self, html_content: str, languages: List[str]) -> BytesIO:
         """Convert bilingual HTML content to PDF with enhanced styling."""
+        self._ensure_weasyprint()
         try:
             # Create enhanced CSS for bilingual layout
             bilingual_css = self._get_bilingual_css(languages)
 
             # Create WeasyPrint HTML object
-            html_obj = HTML(string=html_content, base_url=str(self.static_dir))
+            html_obj = self.HTML(string=html_content, base_url=str(self.static_dir))
 
             # Generate PDF with bilingual styling
             pdf_buffer = BytesIO()
+            stylesheets = [
+                css for css in [self.professional_css, bilingual_css] if css is not None
+            ]
             document = html_obj.render(
-                stylesheets=[self.professional_css, bilingual_css],
+                stylesheets=stylesheets,
                 font_config=self.font_config
             )
             document.write_pdf(pdf_buffer)
@@ -289,8 +319,9 @@ class ReportGenerator:
             # Fallback to regular PDF generation
             return self._html_to_pdf(html_content, languages[0])
 
-    def _get_bilingual_css(self, languages: List[str]) -> CSS:
+    def _get_bilingual_css(self, languages: List[str]) -> Optional["CSS"]:
         """Generate CSS for bilingual layout."""
+        self._ensure_weasyprint()
         from ..utils.i18n import get_language_direction
 
         # Determine if any language is RTL
@@ -364,7 +395,7 @@ class ReportGenerator:
             }
             """
 
-        return CSS(string=bilingual_styles)
+        return self.CSS(string=bilingual_styles)
 
     async def _upload_to_s3(self, pdf_buffer: BytesIO, s3_key: str) -> int:
         """Upload PDF to S3 and return file size."""
@@ -551,3 +582,12 @@ class ReportGenerator:
             f.write(pdf_buffer.getvalue())
 
         return output_path
+
+    def _ensure_weasyprint(self) -> None:
+        """Ensure WeasyPrint is available before attempting to generate PDFs."""
+        if not self._weasyprint_ready:
+            raise RuntimeError(
+                "WeasyPrint is not available in this environment. Install the "
+                "platform dependencies (GTK/Pango) or skip PDF generation. "
+                f"Original import error: {self._weasyprint_error}"
+            )

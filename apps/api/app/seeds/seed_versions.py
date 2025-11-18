@@ -7,9 +7,7 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
 
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..models import ValidationSession
+from ..models import ValidationSession
 from ..models.lc_versions import LCVersion, LCVersionStatus
 from ..crud.lc_versions import LCVersionCRUD
 
