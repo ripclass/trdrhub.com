@@ -418,18 +418,28 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
-  const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
-  const summarySuccessCount =
-    typeof summary?.successful_extractions === 'number' ? summary.successful_extractions : undefined;
-  const successCount =
-    derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+  const derivedSuccessCount = useMemo(
+    () => documents.filter((doc) => doc.status === "success").length,
+    [documents]
+  );
+  const summarySuccessCount = useMemo(
+    () => typeof summary?.successful_extractions === 'number' ? summary.successful_extractions : undefined,
+    [summary?.successful_extractions]
+  );
+  const successCount = useMemo(
+    () => derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount,
+    [derivedSuccessCount, summarySuccessCount]
+  );
   const errorCount =
     summary?.failed_extractions ??
     documents.filter((doc) => (doc.status ?? '').toLowerCase() === 'error').length ??
     (summary ? summary.failed_extractions : 0);
   const warningCount =
     documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
-  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
+  const successRate = useMemo(
+    () => totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0,
+    [totalDocuments, successCount]
+  );
   const overallStatus =
     resolvedResults?.overall_status ||
     resolvedResults?.overallStatus ||
