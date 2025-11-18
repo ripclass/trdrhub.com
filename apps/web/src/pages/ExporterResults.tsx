@@ -7,12 +7,12 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { DiscrepancyGuidance } from "@/components/discrepancy/DiscrepancyGuidance";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   FileText, 
   Download, 
@@ -36,7 +36,9 @@ import {
   FileCheck,
   X,
   Loader2,
-  Lightbulb
+  Lightbulb,
+  ShieldCheck,
+  Sparkles
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +47,9 @@ import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type Gu
 import { useJob, useResults } from "@/hooks/use-lcopilot";
 import type { ValidationResults, IssueCard } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
+import { AISummaryCard } from "@/components/exporter/AISummaryCard";
+import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
+import { cn } from "@/lib/utils";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -345,6 +350,13 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
         })) ?? [];
   const referenceIssues = resolvedResults?.reference_issues ?? [];
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
+  const structuredAiSummary =
+    structuredResult && typeof (structuredResult as Record<string, unknown>)['ai_summary'] === 'string'
+      ? ((structuredResult as Record<string, string>)['ai_summary'] as string)
+      : structuredResult && typeof (structuredResult as Record<string, unknown>)['summary'] === 'string'
+        ? ((structuredResult as Record<string, string>)['summary'] as string)
+        : null;
+  const resolvedAiSummary = resolvedResults?.aiSummary ?? structuredAiSummary ?? aiInsights?.summary ?? null;
   const hasIssueCards = issueCards.length > 0;
   const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
   const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
@@ -403,6 +415,33 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
     );
   }, [issueCards, issueFilter]);
+  const aiSummaryFallback = useMemo(() => {
+    if (totalDiscrepancies === 0) {
+      return "All submitted trade documents comply with the LC terms. Continue with customs submission.";
+    }
+    const highestSeverity = severityBreakdown.critical > 0 ? "critical" : severityBreakdown.major > 0 ? "major" : "minor";
+    const severityLabel =
+      highestSeverity === "critical" ? "critical deviations" : highestSeverity === "major" ? "moderate findings" : "minor notes";
+    return `Detected ${totalDiscrepancies} ${totalDiscrepancies === 1 ? "issue" : "issues"} with ${severityLabel} across ${totalDocuments || 0} documents. ${successCount} document${successCount === 1 ? "" : "s"} are ready to file.`;
+  }, [totalDiscrepancies, severityBreakdown, totalDocuments, successCount]);
+  const aiSummaryFindings = useMemo(
+    () =>
+      issueCards
+        .slice(0, 3)
+        .map((issue) => issue.title || issue.description || "Review discrepancy details"),
+    [issueCards],
+  );
+  const aiSummaryNarrative = resolvedAiSummary ?? aiSummaryFallback;
+  const aiRiskLevel: "low" | "medium" | "high" = useMemo(() => {
+    if (severityBreakdown.critical > 0) return "high";
+    if (severityBreakdown.major > 0) return "medium";
+    return "low";
+  }, [severityBreakdown]);
+  const aiAnalysisAvailable = Boolean(
+    resolvedAiSummary || aiInsights?.summary || (aiInsights?.suggestions?.length ?? 0) > 0,
+  );
+  const aiSummaryDocumentQuality = `${successCount}/${totalDocuments || 0}`;
+  const aiSummaryIsFallback = !resolvedAiSummary;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
@@ -462,16 +501,15 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       : "Processing";
 
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
-          <div>
+      <div className="min-h-[60vh] p-6">
+        <div className="flex flex-col items-center justify-center space-y-4 pb-8">
+          <Loader2 className="w-10 h-10 animate-spin text-primary" />
+          <div className="text-center">
             <p className="text-lg font-semibold">Validation in progress</p>
-            <p className="text-sm text-muted-foreground">
-              Current status: {statusLabel}
-            </p>
+            <p className="text-sm text-muted-foreground">Current status: {statusLabel}</p>
           </div>
         </div>
+        {showSkeletonLayout && renderLoadingSkeletons()}
       </div>
     );
   }
@@ -480,46 +518,58 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     return null;
   }
 
-  const getDocumentNamesForCard = (card: IssueCard): string[] => {
-    const names = new Set<string>();
-    if (Array.isArray(card.documents)) {
-      card.documents.forEach((name) => {
-        if (name) names.add(name);
-      });
-    }
-    if (card.documentName) {
-      names.add(card.documentName);
-    }
-    return Array.from(names);
-  };
-
-  const renderDocumentChips = (card: IssueCard) => {
-    const names = getDocumentNamesForCard(card);
-    if (names.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="flex flex-wrap gap-2">
-        {names.map((name) => {
-          const meta = documentStatusMap.get(name);
-          const status = meta?.status ?? "warning";
-          const statusClass =
-            status === "success"
-              ? "bg-success/10 text-success border-success/20"
-              : status === "error"
-              ? "bg-destructive/10 text-destructive border-destructive/20"
-              : "bg-warning/10 text-warning border-warning/20";
-          return (
-            <Badge key={name} variant="outline" className={statusClass}>
-              {meta?.type ? `${meta.type}: ` : ""}
-              {name}
-            </Badge>
-          );
-        })}
+  const renderLoadingSkeletons = () => (
+    <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-2">
+        {[0, 1].map((index) => (
+          <Card key={`overview-skeleton-${index}`} className="border border-border/60 shadow-soft">
+            <CardContent className="space-y-3 p-6">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardContent>
+          </Card>
+        ))}
       </div>
-    );
-  };
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[0, 1].map((index) => (
+          <Card key={`document-skeleton-${index}`} className="border border-border/60 shadow-soft">
+            <CardContent className="space-y-4 p-6">
+              <Skeleton className="h-5 w-56" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[0, 1].map((index) => (
+          <Card key={`issue-skeleton-${index}`} className="border border-border/60 shadow-soft">
+            <CardContent className="space-y-3 p-6">
+              <Skeleton className="h-5 w-64" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {[0, 1].map((index) => (
+          <Card key={`analytics-skeleton-${index}`} className="border border-border/60 shadow-soft">
+            <CardContent className="space-y-4 p-6">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-4/5" />
+              <Skeleton className="h-4 w-2/5" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
 
   const renderAIInsightsCard = () => {
     if (!aiInsights?.summary) {
@@ -608,18 +658,13 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     resolvedResults.processing_time ||
     resolvedResults.processingTimeMinutes ||
     '-';
-  const timelineDisplay =
-    timelineEvents.length > 0
-      ? timelineEvents.map((event) => ({
-          ...event,
-          title: event.title ?? event.label ?? 'Milestone',
-        }))
-      : [
-          { title: 'Upload Received', status: 'complete' },
-          { title: 'OCR Complete', status: 'complete' },
-          { title: 'Deterministic Checks', status: 'complete' },
-          { title: 'AI Cross-Document Analysis', status: 'complete' },
-        ];
+  const hasTimeline = timelineEvents.length > 0;
+  const timelineDisplay = hasTimeline
+    ? timelineEvents.map((event) => ({
+        ...event,
+        title: event.title ?? event.label ?? 'Milestone',
+      }))
+    : [];
   const complianceScore = analyticsData?.compliance_score ?? successRate;
   const lcComplianceScore = complianceScore;
   const documentRisk =
@@ -649,6 +694,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       issues: doc.issuesCount,
     };
   });
+  const analyticsAvailable = Boolean(structuredResult?.analytics);
+  const showSkeletonLayout = Boolean(
+    validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
+  );
   // Mock banks list (in production, fetch from API)
   const banks = [
     { id: "bank-1", name: "Standard Chartered Bank" },
@@ -947,46 +996,65 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Processing Timeline */}
-              <Card className="shadow-soft border-0">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-5 h-5" />
-                    Export Processing Timeline
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {timelineDisplay.map((event, index) => {
-                    const statusClass =
-                      event.status === "error"
-                        ? "bg-destructive"
-                        : event.status === "warning"
-                        ? "bg-warning"
-                        : "bg-success";
-                    return (
-                      <div key={`${event.title}-${index}`} className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{event.title}</p>
-                          {event.timestamp ? (
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(event.timestamp), "HH:mm")}
-                              {event.description ? ` - ${event.description}` : ''}
-                            </p>
-                          ) : event.description ? (
-                            <p className="text-xs text-muted-foreground">{event.description}</p>
-                          ) : null}
+            <AISummaryCard
+              summaryText={aiSummaryNarrative}
+              findings={aiSummaryFindings}
+              totalIssues={totalDiscrepancies}
+              riskLevel={aiRiskLevel}
+              documentQuality={aiSummaryDocumentQuality}
+              isFallback={aiSummaryIsFallback}
+              aiAvailable={aiAnalysisAvailable}
+            />
+            <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
+              {hasTimeline && (
+                <Card className="shadow-soft border border-border/60">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                      <Clock className="w-5 h-5" />
+                      Export Processing Timeline
+                    </CardTitle>
+                    <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      Real-time processing journey
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {timelineDisplay.map((event, index) => {
+                      const statusClass =
+                        event.status === "error"
+                          ? "bg-destructive"
+                          : event.status === "warning"
+                          ? "bg-warning"
+                          : "bg-success";
+                      return (
+                        <div
+                          key={`${event.title}-${index}`}
+                          className="flex items-center gap-3 text-sm"
+                        >
+                          <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
+                          <div className="flex-1">
+                            <p className="font-medium">{event.title}</p>
+                            {event.timestamp ? (
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(event.timestamp), "HH:mm")}
+                                {event.description ? ` · ${event.description}` : ''}
+                              </p>
+                            ) : event.description ? (
+                              <p className="text-xs text-muted-foreground">{event.description}</p>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
               {/* Export Statistics */}
-              <Card className="shadow-soft border-0">
-                <CardHeader>
-                  <CardTitle>Export Document Statistics</CardTitle>
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold">Export Document Statistics</CardTitle>
+                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Validation health
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -1031,86 +1099,112 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
-                    {documents.map((document) => (
-                      <Card key={document.id} className="shadow-soft border-0">
-                        <CardHeader>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
-                        document.status === "success" ? "bg-success/10" : 
-                        document.status === "warning" ? "bg-warning/10" : "bg-destructive/10"
-                      }`}>
-                        <FileText className={`w-5 h-5 ${
-                          document.status === "success" ? "text-success" : 
-                          document.status === "warning" ? "text-warning" : "text-destructive"
-                        }`} />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{document.name}</CardTitle>
-                        <CardDescription>{document.type}</CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {(() => {
-                        const discrepancyCount = document.issuesCount ?? 0;
-                        return (
-                          <StatusBadge status={document.status}>
-                            {discrepancyCount === 0
-                              ? "Verified"
+            {documents.map((document) => {
+              const fieldEntries = Object.entries(document.extractedFields || {});
+              return (
+                <Card
+                  key={document.id}
+                  className="shadow-soft border border-border/60 transition duration-200 hover:-translate-y-0.5 hover:border-primary/40"
+                >
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={cn(
+                            "p-2 rounded-lg",
+                            document.status === "success"
+                              ? "bg-success/10"
                               : document.status === "warning"
-                              ? "Minor Issues"
-                              : `${discrepancyCount} Issues`}
-                          </StatusBadge>
-                        );
-                      })()}
-                      <Button variant="outline" size="sm">
-                        <Eye className="w-4 h-4 mr-2" />
-                        View
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {Object.entries(document.extractedFields || {}).map(([key, value]) => {
-                      const displayValue = formatExtractedValue(value);
-                      return (
-                        <div key={key} className="space-y-1">
-                          <p className="text-xs text-muted-foreground font-medium capitalize">
-                            {key.replace(/([A-Z])/g, ' $1').trim()}
-                          </p>
-                          <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
-                            {displayValue}
-                          </p>
+                                ? "bg-warning/10"
+                                : "bg-destructive/10",
+                          )}
+                        >
+                          <FileText
+                            className={cn(
+                              "w-5 h-5",
+                              document.status === "success"
+                                ? "text-success"
+                                : document.status === "warning"
+                                  ? "text-warning"
+                                  : "text-destructive",
+                            )}
+                          />
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                        <div>
+                          <CardTitle className="text-lg font-semibold">{document.name}</CardTitle>
+                          <CardDescription className="text-sm text-muted-foreground">
+                            {document.type}
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {(() => {
+                          const discrepancyCount = document.issuesCount ?? 0;
+                          return (
+                            <StatusBadge status={document.status}>
+                              {discrepancyCount === 0
+                                ? "Verified"
+                                : document.status === "warning"
+                                  ? "Minor Issues"
+                                  : `${discrepancyCount} Issues`}
+                            </StatusBadge>
+                          );
+                        })()}
+                        <Button variant="outline" size="sm">
+                          <Eye className="w-4 h-4 mr-2" />
+                          View
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {fieldEntries.length > 0 ? (
+                      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {fieldEntries.map(([key, value]) => {
+                          const displayValue = formatExtractedValue(value);
+                          return (
+                            <div key={key} className="space-y-1">
+                              <p className="text-xs text-muted-foreground font-medium capitalize">
+                                {key.replace(/([A-Z])/g, " $1").trim()}
+                              </p>
+                              <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
+                                {displayValue}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
+                        This document could not be fully parsed. Preview text is available for manual review.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
             {hasIssueCards ? (
               <>
-                <Card className="shadow-soft border-0">
+                <Card className="shadow-soft border border-border/60">
                   <CardContent className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-4">
                       <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Critical</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Critical</p>
                         <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Major</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Major</p>
                         <p className="text-2xl font-bold text-warning">{severityCounts.major}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-muted/30 border border-muted">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Minor</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Minor</p>
                         <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Issues</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
                         <p className="text-2xl font-bold text-foreground">{issueCards.length}</p>
                       </div>
                     </div>
@@ -1133,6 +1227,14 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                   </CardContent>
                 </Card>
+                {!aiAnalysisAvailable && (
+                  <Card className="border border-dashed border-warning/40 bg-warning/5">
+                    <CardContent className="flex items-center gap-3 py-4 text-sm text-warning">
+                      <AlertTriangle className="w-5 h-5" />
+                      AI analysis unavailable. Showing only deterministic checks.
+                    </CardContent>
+                  </Card>
+                )}
                 {filteredIssueCards.length === 0 ? (
                   <Card className="shadow-soft border border-dashed">
                     <CardContent className="py-6 text-center text-sm text-muted-foreground">
@@ -1143,56 +1245,38 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                   filteredIssueCards.map((card, index) => {
                     const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
                     const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-                    const documentLabel = card.documentName || (card as any).document || "Supporting Document";
-
                     return (
-                      <div key={fallbackId} className="space-y-3">
-                        {renderDocumentChips(card)}
-                        <DiscrepancyGuidance
-                          discrepancy={{
-                            id: fallbackId,
-                            title: card.title ?? "Review Required",
-                            description: card.description ?? "",
-                            severity: normalizedSeverity,
-                            documentName: documentLabel,
-                            documentType: card.documentType ?? documentLabel,
-                            rule: card.rule ?? fallbackId,
-                            expected: card.expected ?? card.title ?? card.rule ?? "",
-                            actual: card.actual ?? "",
-                            suggestion: card.suggestion ?? "Align the document with the LC clause.",
-                            field: card.field,
-                          }}
-                          onRevalidate={async (id) => {
-                            console.log("Re-validating discrepancy:", id);
-                          }}
-                          onUploadFixed={async (id, file) => {
-                            console.log("Uploading fixed document for discrepancy:", id, file.name);
-                          }}
-                        />
-                      </div>
+                      <ExporterIssueCard
+                        key={fallbackId}
+                        issue={card}
+                        normalizedSeverity={normalizedSeverity}
+                        documentStatusMap={documentStatusMap}
+                        fallbackId={fallbackId}
+                      />
                     );
                   })
                 )}
-                {renderAIInsightsCard()}
-                {renderReferenceIssuesCard()}
               </>
             ) : (
-              <>
-                <Card className="shadow-soft border-0">
-                  <CardContent className="p-8 text-center">
-                    <div className="bg-success/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <CheckCircle className="w-8 h-8 text-success" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">Perfect Compliance</h3>
-                    <p className="text-muted-foreground">
-                      All export documents align with the LC. Review the AI insights and technical references below for deeper context.
+              <Card className="border border-success/40 bg-success/5 text-success">
+                <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
+                  <ShieldCheck className="w-8 h-8" />
+                  <div>
+                    <p className="text-lg font-semibold">All documents comply with LC terms.</p>
+                    <p className="text-sm text-success/80">
+                      No discrepancies detected across the submitted document set.
                     </p>
-                  </CardContent>
-                </Card>
-                {renderAIInsightsCard()}
-                {renderReferenceIssuesCard()}
-              </>
+                  </div>
+                  {!aiAnalysisAvailable && (
+                    <p className="text-xs text-success/70">
+                      AI analysis unavailable. Deterministic checks show no issues.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             )}
+            {renderAIInsightsCard()}
+            {renderReferenceIssuesCard()}
           </TabsContent>
           <TabsContent value="extracted-data" className="space-y-4">
             <Card className="shadow-soft border-0">
@@ -1404,139 +1488,150 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Processing Performance */}
-              <Card className="shadow-soft border-0">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    Processing Performance
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Document Extraction Accuracy</span>
-                      <span className="text-sm font-medium">{extractionAccuracy}%</span>
-                    </div>
-                    <Progress value={extractionAccuracy} className="h-2" />
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">LC Compliance Check</span>
-                      <span className="text-sm font-medium">{lcComplianceScore}%</span>
-                    </div>
-                    <Progress value={lcComplianceScore} className="h-2" />
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Customs Readiness</span>
-                      <span className="text-sm font-medium">{customsReadyScore}%</span>
-                    </div>
-                    <Progress value={customsReadyScore} className="h-2" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="text-lg font-bold text-success">{processingTime}</div>
-                      <div className="text-xs text-muted-foreground">Processing Time</div>
-                    </div>
-                    <div className="text-center p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <div className="text-lg font-bold text-primary">{totalDocuments}/{totalDocuments}</div>
-                      <div className="text-xs text-muted-foreground">Documents Processed</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Document Status Breakdown */}
-              <Card className="shadow-soft border-0">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <PieChart className="w-5 h-5" />
-                    Document Status Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-success rounded-full"></div>
-                        <span className="text-sm">Verified Documents</span>
+            {analyticsAvailable ? (
+              <>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="shadow-soft border border-border/60">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5" />
+                        Processing Performance
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Document Extraction Accuracy</span>
+                          <span className="text-sm font-medium">{extractionAccuracy}%</span>
+                        </div>
+                        <Progress value={extractionAccuracy} className="h-2" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">LC Compliance Check</span>
+                          <span className="text-sm font-medium">{lcComplianceScore}%</span>
+                        </div>
+                        <Progress value={lcComplianceScore} className="h-2" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Customs Readiness</span>
+                          <span className="text-sm font-medium">{customsReadyScore}%</span>
+                        </div>
+                        <Progress value={customsReadyScore} className="h-2" />
                       </div>
-                      <span className="text-sm font-medium">
-                        {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">Minor Issues</span>
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
+                          <div className="text-lg font-bold text-success">{processingTime}</div>
+                          <div className="text-xs text-muted-foreground">Processing Time</div>
+                        </div>
+                        <div className="text-center p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                          <div className="text-lg font-bold text-primary">
+                            {totalDocuments}/{totalDocuments}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Documents Processed</div>
+                        </div>
                       </div>
-                      <span className="text-sm font-medium">
-                        {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                        <span className="text-sm">Critical Issues</span>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-soft border border-border/60">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <PieChart className="w-5 h-5" />
+                        Document Status Distribution
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 bg-success rounded-full"></div>
+                            <span className="text-sm">Verified Documents</span>
+                          </div>
+                          <span className="text-sm font-medium">
+                            {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 bg-warning rounded-full"></div>
+                            <span className="text-sm">Minor Issues</span>
+                          </div>
+                          <span className="text-sm font-medium">
+                            {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 bg-destructive rounded-full"></div>
+                            <span className="text-sm">Critical Issues</span>
+                          </div>
+                          <span className="text-sm font-medium">
+                            {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-sm font-medium">
-                        {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-4 p-3 bg-gradient-primary/5 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium text-primary">Performance Insights</span>
-                    </div>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      {performanceInsights.map((insight, idx) => (
-                        <li key={idx}>- {insight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            
-            {/* Detailed Analytics Table */}
-            <Card className="shadow-soft border-0">
-              <CardHeader>
-                <CardTitle>Document Processing Analytics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-2">Document</th>
-                        <th className="text-left py-2">Issues</th>
-                        <th className="text-left py-2">Status</th>
-                        <th className="text-left py-2">Risk</th>
-                      </tr>
-                    </thead>
-                    <tbody className="space-y-2">
-                      {documentProcessingList.map((item, index) => (
-                        <tr key={item.name ?? index} className="border-b border-gray-200/50">
-                          <td className="py-3 font-medium">{item.type ?? documents[index]?.type}</td>
-                          <td className="py-3 text-muted-foreground">{item.issues ?? 0}</td>
-                          <td className="py-3">
-                            <StatusBadge status={item.status || 'success'}>
-                              {item.status === 'success'
-                                ? 'Verified'
-                                : item.status === 'warning'
-                                ? 'Review'
-                                : 'Fix Required'}
-                            </StatusBadge>
-                          </td>
-                          <td className="py-3 text-muted-foreground text-capitalize">
-                            {item.risk ?? 'low'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      <div className="mt-4 p-3 bg-gradient-primary/5 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <TrendingUp className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-medium text-primary">Performance Insights</span>
+                        </div>
+                        <ul className="text-xs text-muted-foreground space-y-1">
+                          {performanceInsights.map((insight, idx) => (
+                            <li key={idx}>- {insight}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-              </CardContent>
-            </Card>
+                <Card className="shadow-soft border border-border/60">
+                  <CardHeader>
+                    <CardTitle>Document Processing Analytics</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-2">Document</th>
+                            <th className="text-left py-2">Issues</th>
+                            <th className="text-left py-2">Status</th>
+                            <th className="text-left py-2">Risk</th>
+                          </tr>
+                        </thead>
+                        <tbody className="space-y-2">
+                          {documentProcessingList.map((item, index) => (
+                            <tr key={item.name ?? index} className="border-b border-gray-200/50">
+                              <td className="py-3 font-medium">{item.type ?? documents[index]?.type}</td>
+                              <td className="py-3 text-muted-foreground">{item.issues ?? 0}</td>
+                              <td className="py-3">
+                                <StatusBadge status={item.status || 'success'}>
+                                  {item.status === 'success'
+                                    ? 'Verified'
+                                    : item.status === 'warning'
+                                    ? 'Review'
+                                    : 'Fix Required'}
+                                </StatusBadge>
+                              </td>
+                              <td className="py-3 text-muted-foreground text-capitalize">
+                                {item.risk ?? 'low'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <Card className="border border-dashed border-muted-foreground/40 bg-muted/10">
+                <CardContent className="py-10 text-center space-y-2">
+                  <Sparkles className="w-8 h-8 mx-auto text-muted-foreground" />
+                  <p className="text-lg font-semibold text-foreground">Analytics unavailable</p>
+                  <p className="text-sm text-muted-foreground">
+                    Analytics were not generated for this validation run. Re-run the validation to capture full metrics.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
 

@@ -141,6 +141,8 @@ const timeline = [
   { label: 'AI Cross-Document Analysis', status: 'complete' },
 ];
 
+const aiSummaryText = 'Detected misalignment in amount and insurance coverage.';
+
 const structuredResult: StructuredResultPayload = {
   processing_summary: summary,
   documents: documents.map((doc) => ({
@@ -183,10 +185,27 @@ export const mockValidationResults: ValidationResults = {
   issues,
   analytics,
   timeline,
+  aiSummary: aiSummaryText,
   structured_result: structuredResult,
   reference_issues: [],
   ai_enrichment: {
-    summary: 'Detected misalignment in amount and insurance coverage.',
+    summary: aiSummaryText,
     suggestions: ['Review invoice amount', 'Extend insurance policy'],
   },
+};
+
+export const buildValidationResults = (
+  overrides: Partial<ValidationResults> = {},
+): ValidationResults => {
+  const clone = JSON.parse(JSON.stringify(mockValidationResults)) as ValidationResults;
+  return {
+    ...clone,
+    ...overrides,
+    documents: overrides.documents ?? clone.documents,
+    issues: overrides.issues ?? clone.issues,
+    analytics: overrides.analytics ?? clone.analytics,
+    timeline: overrides.timeline ?? clone.timeline,
+    structured_result: overrides.structured_result ?? clone.structured_result,
+    summary: overrides.summary ?? clone.summary,
+  };
 };

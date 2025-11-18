@@ -4,9 +4,9 @@ import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
 import { renderWithProviders } from './testUtils';
-import { mockValidationResults } from './fixtures/lcopilot';
+import { buildValidationResults, mockValidationResults } from './fixtures/lcopilot';
 
-let activeResults = mockValidationResults;
+let activeResults = buildValidationResults();
 const totalDocuments = mockValidationResults.documents.length;
 const totalDiscrepancies = mockValidationResults.issues.length;
 const successCount = mockValidationResults.documents.filter((doc) => doc.status === 'success').length;
@@ -79,7 +79,7 @@ vi.mock('@/api/exporter', () => ({
 
 describe('ExporterResults', () => {
   beforeEach(() => {
-    activeResults = mockValidationResults;
+    activeResults = buildValidationResults();
   });
 
   it('renders overview metrics from processing summary', async () => {
@@ -108,6 +108,23 @@ describe('ExporterResults', () => {
     const complianceRow = screen.getByText(/LC Compliance:/i).parentElement as HTMLElement;
     const expectedCompliance = `${Math.round((successCount / totalDocuments) * 100)}%`;
     expect(within(complianceRow).getByText(expectedCompliance)).toBeInTheDocument();
+  });
+
+  it('renders AI summary from backend payload', async () => {
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
+    expect(screen.getByText(mockValidationResults.aiSummary ?? '')).toBeInTheDocument();
+  });
+
+  it('falls back to derived AI summary when LLM output is missing', async () => {
+    const fallbackResult = buildValidationResults();
+    fallbackResult.aiSummary = null;
+    fallbackResult.ai_enrichment = undefined as any;
+    activeResults = fallbackResult;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
+    expect(screen.getByText(/Detected 3 issues/i)).toBeInTheDocument();
   });
 
   it('renders documents tab with all trade documents', async () => {
@@ -153,6 +170,10 @@ describe('ExporterResults', () => {
         mockValidationResults.summary.severity_breakdown.minor.toString(),
       ),
     ).toBeInTheDocument();
+
+    const severityBadge = screen.getByTestId('severity-issue-1');
+    expect(severityBadge.dataset.icon).toBe('critical');
+    expect(severityBadge.className).toContain('bg-[#E24A4A]/10');
   });
 
   it('renders analytics tab with compliance score', async () => {
@@ -186,5 +207,79 @@ describe('ExporterResults', () => {
 
     await user.click(screen.getByRole('tab', { name: /Issues/i }));
     expect(screen.getByText(structuredOnly.issues[0]?.title ?? 'Review Required')).toBeInTheDocument();
+  });
+
+  it('shows success state when there are no issues', async () => {
+    const withoutIssues = buildValidationResults();
+    withoutIssues.issues = [];
+    withoutIssues.structured_result!.issues = [];
+    withoutIssues.summary = {
+      ...withoutIssues.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    withoutIssues.structured_result!.processing_summary = {
+      ...withoutIssues.structured_result!.processing_summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    activeResults = withoutIssues;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
+    expect(screen.getByText(/All documents comply with LC terms/i)).toBeInTheDocument();
+  });
+
+  it('shows AI analysis unavailable message when summaries are missing', async () => {
+    const deterministicOnly = buildValidationResults();
+    deterministicOnly.aiSummary = null;
+    deterministicOnly.ai_enrichment = undefined as any;
+    activeResults = deterministicOnly;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
+    expect(screen.getByText(/AI analysis unavailable/i)).toBeInTheDocument();
+  });
+
+  it('indicates analytics unavailability when structured_result analytics are missing', async () => {
+    const withoutAnalytics = buildValidationResults();
+    (withoutAnalytics.structured_result as any).analytics = undefined;
+    activeResults = withoutAnalytics;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Analytics/i }));
+    expect(screen.getByText(/Analytics unavailable/i)).toBeInTheDocument();
+  });
+
+  it('hides the timeline when no events are provided', async () => {
+    const noTimeline = buildValidationResults();
+    noTimeline.timeline = [];
+    if (noTimeline.structured_result) {
+      noTimeline.structured_result.timeline = [];
+    }
+    activeResults = noTimeline;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Export Processing Timeline/i)).not.toBeInTheDocument();
+  });
+
+  it('shows document parsing warning when extracted fields are empty', async () => {
+    const docWithNoFields = buildValidationResults();
+    docWithNoFields.documents[0].extractedFields = {};
+    if (docWithNoFields.structured_result) {
+      docWithNoFields.structured_result.documents[0].extracted_fields = {};
+    }
+    activeResults = docWithNoFields;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    expect(
+      screen.getByText(/This document could not be fully parsed/i),
+    ).toBeInTheDocument();
   });
 });

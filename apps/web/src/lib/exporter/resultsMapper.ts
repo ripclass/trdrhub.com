@@ -274,6 +274,12 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     const summary = ensureSummary(structured.processing_summary, documents, issues);
     const analytics = ensureAnalytics(structured.analytics, summary, documents);
     const timeline = mapTimeline(structured.timeline ?? []);
+    const structuredSummary =
+      typeof (structured as Record<string, unknown>)['ai_summary'] === 'string'
+        ? ((structured as Record<string, string>)['ai_summary'] as string)
+        : typeof (structured as Record<string, unknown>)['summary'] === 'string'
+          ? ((structured as Record<string, string>)['summary'] as string)
+          : null;
 
     const normalizedStructuredResult: StructuredResultPayload = {
       processing_summary: structured.processing_summary ?? summary,
@@ -294,6 +300,13 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
       processing_summary: summary,
       issue_cards: issues,
       structured_result: normalizedStructuredResult,
+      aiSummary:
+        structuredSummary ??
+        raw?.ai_summary ??
+        raw?.aiSummary ??
+        raw?.ai_enrichment?.summary ??
+        raw?.aiEnrichment?.summary ??
+        null,
     };
   }
 
@@ -319,8 +332,14 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
           issues: raw.structured_result.issues ?? [],
           analytics: normalizeStructuredAnalytics(raw.structured_result.analytics, analytics),
           timeline: normalizeStructuredTimeline(raw.structured_result.timeline, timeline),
-        }
+      }
       : structuredFromNormalized(summary, documents, issues, analytics, timeline);
+  const structuredSummary =
+    typeof raw?.structured_result?.ai_summary === 'string'
+      ? raw.structured_result.ai_summary
+      : typeof raw?.structured_result?.summary === 'string'
+        ? raw.structured_result.summary
+        : null;
 
   return {
     ...raw,
@@ -333,6 +352,13 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     processing_summary: summary,
     issue_cards: issues,
     structured_result: normalizedStructuredResult,
+    aiSummary:
+      structuredSummary ??
+      raw?.ai_summary ??
+      raw?.aiSummary ??
+      raw?.ai_enrichment?.summary ??
+      raw?.aiEnrichment?.summary ??
+      null,
   };
 };
 
