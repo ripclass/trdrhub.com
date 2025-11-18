@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "20250121_add_bank_policy_overlays"
-down_revision = "20251031_add_user_roles_bank_tables"
+down_revision = "20250120_add_company_profile"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

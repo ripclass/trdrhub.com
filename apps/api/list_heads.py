@@ -1,14 +1,21 @@
+import ast
 import os
 
 versions_dir = os.path.join(os.path.dirname(__file__), "alembic", "versions")
 infos = {}
 
-def parse_value(line: str) -> str:
+
+def parse_value(line: str):
     value = line.split("=", 1)[1].strip()
-    # Remove inline comments
     if "#" in value:
         value = value.split("#", 1)[0].strip()
-    return value.strip("\"'")
+    try:
+        return ast.literal_eval(value)
+    except Exception:
+        stripped = value.strip("\"'")
+        if stripped.lower() == "none":
+            return None
+        return stripped
 
 
 for fname in os.listdir(versions_dir):
@@ -30,8 +37,15 @@ for fname in os.listdir(versions_dir):
 heads = set(infos)
 for data in infos.values():
     down = data["down"]
-    if down and down in heads:
-        heads.remove(down)
+    if not down:
+        continue
+    if isinstance(down, (tuple, list, set)):
+        for parent in down:
+            if parent in heads:
+                heads.remove(parent)
+    else:
+        if down in heads:
+            heads.remove(down)
 
 print("Heads:", heads)
 for h in heads:
