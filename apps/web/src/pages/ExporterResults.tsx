@@ -81,7 +81,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const validationSessionId = jobIdParam || sessionParam || jobIdFromPath || null;
   
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
-  const { getResults, isLoading: resultsLoading, error: resultsError } = useResults();
+  const { getResults, isLoading: resultsLoading, error: resultsError, results: cachedResults } = useResults();
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
@@ -157,7 +157,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
   
-  const resultData = liveResults;
+  const resultData = liveResults ?? cachedResults;
 
   // Feature flags
   const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
@@ -415,8 +415,14 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
     );
   }, [issueCards, issueFilter]);
+  const showSkeletonLayout = Boolean(
+    validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
+  );
+  const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
+  const summarySuccessCount =
+    typeof summary?.successful_extractions === 'number' ? summary.successful_extractions : undefined;
   const successCount =
-    summary?.successful_extractions ?? documents.filter((doc) => doc.status === "success").length;
+    derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
   const errorCount =
     summary?.failed_extractions ??
     documents.filter((doc) => (doc.status ?? '').toLowerCase() === 'error').length ??
@@ -425,15 +431,15 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
   const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
   const overallStatus =
-    resolvedResults.overall_status ||
-    resolvedResults.overallStatus ||
-    resolvedResults.status ||
+    resolvedResults?.overall_status ||
+    resolvedResults?.overallStatus ||
+    resolvedResults?.status ||
     (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
-  const packGenerated = resolvedResults.packGenerated ?? overallStatus === "success";
+  const packGenerated = (resolvedResults?.packGenerated ?? null) ?? (overallStatus === "success");
   const processingTime =
-    resolvedResults.processingTime ||
-    resolvedResults.processing_time ||
-    resolvedResults.processingTimeMinutes ||
+    resolvedResults?.processingTime ||
+    resolvedResults?.processing_time ||
+    resolvedResults?.processingTimeMinutes ||
     '-';
   const aiSummaryFallback = useMemo(() => {
     if (totalDiscrepancies === 0) {
@@ -697,9 +703,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     };
   });
   const analyticsAvailable = Boolean(structuredResult?.analytics);
-  const showSkeletonLayout = Boolean(
-    validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
-  );
   // Mock banks list (in production, fetch from API)
   const banks = [
     { id: "bank-1", name: "Standard Chartered Bank" },

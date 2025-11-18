@@ -98,8 +98,8 @@ const issues = [
     severity: 'critical',
     documents: ['Invoice.pdf', 'LC.pdf'],
     expected: '50000 USD',
-    found: '49000 USD',
-    suggested_fix: 'Align invoice amount',
+    actual: '49000 USD',
+    suggestion: 'Align invoice amount',
     ucpReference: 'UCP 600',
   },
   {
@@ -109,8 +109,8 @@ const issues = [
     severity: 'major',
     documents: ['Invoice.pdf', 'LC.pdf'],
     expected: 'Cotton shirts',
-    found: 'Apparel',
-    suggested_fix: 'Update invoice',
+    actual: 'Apparel',
+    suggestion: 'Update invoice',
   },
   {
     id: 'issue-3',
@@ -119,8 +119,8 @@ const issues = [
     severity: 'medium',
     documents: ['Insurance.pdf'],
     expected: '110% of LC value',
-    found: '90% of LC value',
-    suggested_fix: 'Extend policy coverage',
+    actual: '90% of LC value',
+    suggestion: 'Extend policy coverage',
   },
 ];
 

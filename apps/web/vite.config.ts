@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@shared/types": path.resolve(__dirname, "../../packages/shared-types/src"),
+      '@': path.resolve(__dirname, 'src'),
+      '@shared/types': path.resolve(__dirname, '../../packages/shared-types/src'),
     },
     extensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
   },
@@ -31,6 +31,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+      '@shared/types': path.resolve(__dirname, '../../packages/shared-types/src'),
+    },
     css: true,
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'src/**/__tests__/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['tests/**', 'node_modules/**'],

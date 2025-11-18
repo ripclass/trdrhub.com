@@ -10,6 +10,20 @@ let activeResults = buildValidationResults();
 const totalDocuments = mockValidationResults.documents.length;
 const totalDiscrepancies = mockValidationResults.issues.length;
 const successCount = mockValidationResults.documents.filter((doc) => doc.status === 'success').length;
+const expectedSeverityCounts = mockValidationResults.issues.reduce(
+  (acc, issue) => {
+    const severity = (issue.severity ?? '').toLowerCase();
+    if (['critical', 'fail', 'error', 'high'].includes(severity)) {
+      acc.critical += 1;
+    } else if (['warning', 'warn', 'major', 'medium'].includes(severity)) {
+      acc.major += 1;
+    } else {
+      acc.minor += 1;
+    }
+    return acc;
+  },
+  { critical: 0, major: 0, minor: 0 },
+);
 
 const findCardByTitle = (title: RegExp | string): HTMLElement => {
   const heading = screen.getByText(title);
@@ -147,29 +161,29 @@ describe('ExporterResults', () => {
     );
     await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     expect(screen.getByText(/Amount mismatch/i)).toBeInTheDocument();
-    expect(screen.getByText(/Expected/i)).toBeInTheDocument();
-    expect(screen.getByText(/50000 USD/)).toBeInTheDocument();
-    expect(screen.getByText(/49000 USD/)).toBeInTheDocument();
+    const primaryIssue = screen.getByTestId('issue-card-issue-1');
+    expect(
+      within(primaryIssue)
+        .getAllByText(/^Expected$/i)[0],
+    ).toBeInTheDocument();
+    const expectedValueNodes = within(primaryIssue).getAllByText((_, node) =>
+      (node?.textContent ?? '').includes('50000 USD'),
+    );
+    const actualValueNodes = within(primaryIssue).getAllByText((_, node) =>
+      (node?.textContent ?? '').includes('49000 USD'),
+    );
+    expect(expectedValueNodes[0]).toBeInTheDocument();
+    expect(actualValueNodes[0]).toBeInTheDocument();
 
-    const criticalCard = screen.getByText(/^Critical$/i).closest('div') as HTMLElement;
-    const majorCard = screen.getByText(/^Major$/i).closest('div') as HTMLElement;
-    const minorCard = screen.getByText(/^Minor$/i).closest('div') as HTMLElement;
+    const criticalCard = screen.getAllByText(/^Critical$/i)[0]?.closest('div') as HTMLElement;
+    const majorCard = screen.getAllByText(/^Major$/i)[0]?.closest('div') as HTMLElement;
+    const minorCard = screen.getAllByText(/^Minor$/i)[0]?.closest('div') as HTMLElement;
 
-    expect(
-      within(criticalCard).getByText(
-        mockValidationResults.summary.severity_breakdown.critical.toString(),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(majorCard).getByText(
-        mockValidationResults.summary.severity_breakdown.major.toString(),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(minorCard).getByText(
-        mockValidationResults.summary.severity_breakdown.minor.toString(),
-      ),
-    ).toBeInTheDocument();
+    const getCountText = (element?: HTMLElement | null) =>
+      element?.querySelector('.text-2xl')?.textContent ?? '';
+    expect(getCountText(criticalCard)).toBe(expectedSeverityCounts.critical.toString());
+    expect(getCountText(majorCard)).toBe(expectedSeverityCounts.major.toString());
+    expect(getCountText(minorCard)).toBe(expectedSeverityCounts.minor.toString());
 
     const severityBadge = screen.getByTestId('severity-issue-1');
     expect(severityBadge.dataset.icon).toBe('critical');

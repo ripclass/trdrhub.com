@@ -2,18 +2,19 @@
   "name": "@shared/types",
   "version": "1.0.0",
   "description": "Shared TypeScript type definitions for API contracts",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/api.ts",
+  "types": "src/api.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "lint": "eslint src/**/*.ts",
     "type-check": "tsc --noEmit",
-    "generate-python": "node scripts/generate-python-schemas.js"
+    "generate-python": "node scripts/generate-python-schemas.js",
+    "test": "echo \"No tests for shared types\""
   },
   "files": [
-    "dist/**/*",
+    "src/**/*",
     "python/**/*"
   ],
   "devDependencies": {
@@ -26,9 +27,8 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
+      "import": "./src/api.ts",
+      "require": "./src/api.ts"
     },
     "./python": "./python/schemas.py"
   }

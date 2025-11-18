@@ -5,6 +5,7 @@ import baseConfig from './vite.config';
 export default mergeConfig(
   baseConfig,
   defineConfig({
+    root: __dirname,
     test: {
       globals: true,
       environment: 'jsdom',
