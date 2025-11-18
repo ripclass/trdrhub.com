@@ -2,8 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
+import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
 import { renderWithProviders } from './testUtils';
 import { mockValidationResults } from './fixtures/lcopilot';
+
+let activeResults = mockValidationResults;
 
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
@@ -15,8 +18,8 @@ vi.mock('@/hooks/use-lcopilot', () => {
       clearError: vi.fn(),
     }),
     useResults: () => ({
-      getResults: vi.fn().mockResolvedValue(mockValidationResults),
-      results: mockValidationResults,
+      getResults: vi.fn().mockResolvedValue(activeResults),
+      results: activeResults,
       isLoading: false,
       error: null,
       clearError: vi.fn(),
@@ -63,6 +66,10 @@ vi.mock('@/api/exporter', () => ({
 }));
 
 describe('ExporterResults', () => {
+  beforeEach(() => {
+    activeResults = mockValidationResults;
+  });
+
   it('renders overview metrics from processing summary', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
@@ -108,5 +115,26 @@ describe('ExporterResults', () => {
     await user.click(screen.getByRole('tab', { name: /Analytics/i }));
     expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
     expect(screen.getByText(`${mockValidationResults.analytics.compliance_score}%`)).toBeInTheDocument();
+  });
+
+  it('renders UI when only structured_result payload is provided', async () => {
+    const user = userEvent.setup();
+    const structuredOnly = buildValidationResponse({
+      structured_result: mockValidationResults.structured_result,
+    });
+    activeResults = structuredOnly;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    expect(
+      screen.getByText(structuredOnly.documents[0]?.name ?? 'Letter of Credit'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
+    expect(screen.getByText(structuredOnly.issues[0]?.title ?? 'Review Required')).toBeInTheDocument();
   });
 });

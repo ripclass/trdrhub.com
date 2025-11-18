@@ -243,6 +243,77 @@ export const ErrorResponseSchema = z.object({
 // Schema Collections for Export
 // ============================================================================
 
+export const SeverityBreakdownSchema = z.object({
+  critical: z.number().int().nonnegative(),
+  major: z.number().int().nonnegative(),
+  medium: z.number().int().nonnegative(),
+  minor: z.number().int().nonnegative(),
+});
+export type SeverityBreakdown = z.infer<typeof SeverityBreakdownSchema>;
+
+export const StructuredProcessingSummarySchema = z.object({
+  total_documents: z.number().int().nonnegative(),
+  successful_extractions: z.number().int().nonnegative(),
+  failed_extractions: z.number().int().nonnegative(),
+  total_issues: z.number().int().nonnegative(),
+  severity_breakdown: SeverityBreakdownSchema,
+});
+export type StructuredProcessingSummary = z.infer<typeof StructuredProcessingSummarySchema>;
+
+export const StructuredResultDocumentSchema = z.object({
+  document_id: z.string(),
+  document_type: z.string(),
+  filename: z.string(),
+  extraction_status: z.string(),
+  extracted_fields: z.record(z.unknown()),
+  issues_count: z.number().int().nonnegative(),
+});
+export type StructuredResultDocument = z.infer<typeof StructuredResultDocumentSchema>;
+
+export const StructuredResultIssueSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  severity: z.string(),
+  documents: z.array(z.string()),
+  expected: z.string(),
+  found: z.string(),
+  suggested_fix: z.string(),
+  description: z.string().optional(),
+  ucp_reference: z.string().nullable().optional(),
+});
+export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
+
+export const StructuredResultAnalyticsSchema = z.object({
+  compliance_score: z.number().int(),
+  issue_counts: SeverityBreakdownSchema,
+  document_risk: z.array(
+    z.object({
+      document_id: z.string().optional(),
+      filename: z.string().optional(),
+      risk: z.string().optional(),
+    }),
+  ),
+});
+export type StructuredResultAnalytics = z.infer<typeof StructuredResultAnalyticsSchema>;
+
+export const TimelineEntrySchema = z.object({
+  title: z.string().optional(),
+  label: z.string().optional(),
+  status: z.string(),
+  description: z.string().optional(),
+  timestamp: z.string().optional(),
+});
+export type TimelineEntry = z.infer<typeof TimelineEntrySchema>;
+
+export const StructuredResultSchema = z.object({
+  processing_summary: StructuredProcessingSummarySchema,
+  documents: z.array(StructuredResultDocumentSchema),
+  issues: z.array(StructuredResultIssueSchema),
+  analytics: StructuredResultAnalyticsSchema,
+  timeline: z.array(TimelineEntrySchema),
+});
+export type StructuredResult = z.infer<typeof StructuredResultSchema>;
+
 export const schemas = {
   // Health
   HealthResponse: HealthResponseSchema,
@@ -273,4 +344,12 @@ export const schemas = {
   // Pagination
   PaginationParams: PaginationParamsSchema,
   PaginationMeta: PaginationMetaSchema,
+
+  // Structured validation payload
+  StructuredProcessingSummary: StructuredProcessingSummarySchema,
+  StructuredResultDocument: StructuredResultDocumentSchema,
+  StructuredResultIssue: StructuredResultIssueSchema,
+  StructuredResultAnalytics: StructuredResultAnalyticsSchema,
+  StructuredResultTimelineEntry: TimelineEntrySchema,
+  StructuredResult: StructuredResultSchema,
 } as const;

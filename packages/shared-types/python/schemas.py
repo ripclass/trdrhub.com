@@ -221,6 +221,74 @@ class ReportJob(BaseModel):
 
 
 # ============================================================================
+# Structured Validation Payload Types
+# ============================================================================
+
+class SeverityBreakdown(BaseModel):
+    critical: int = Field(default=0, ge=0)
+    major: int = Field(default=0, ge=0)
+    medium: int = Field(default=0, ge=0)
+    minor: int = Field(default=0, ge=0)
+
+
+class StructuredProcessingSummary(BaseModel):
+    total_documents: int = Field(ge=0)
+    successful_extractions: int = Field(ge=0)
+    failed_extractions: int = Field(ge=0)
+    total_issues: int = Field(ge=0)
+    severity_breakdown: SeverityBreakdown
+
+
+class StructuredResultDocument(BaseModel):
+    document_id: str
+    document_type: str
+    filename: str
+    extraction_status: str
+    extracted_fields: Dict[str, Any]
+    issues_count: int = Field(ge=0)
+
+
+class StructuredResultIssue(BaseModel):
+    id: str
+    title: str
+    severity: str
+    documents: List[str]
+    expected: str
+    found: str
+    suggested_fix: str
+    description: Optional[str] = None
+    ucp_reference: Optional[str] = None
+
+
+class DocumentRiskEntry(BaseModel):
+    document_id: Optional[str] = None
+    filename: Optional[str] = None
+    risk: Optional[str] = None
+
+
+class StructuredResultAnalytics(BaseModel):
+    compliance_score: int
+    issue_counts: SeverityBreakdown
+    document_risk: List[DocumentRiskEntry]
+
+
+class TimelineEntry(BaseModel):
+    title: Optional[str] = None
+    label: Optional[str] = None
+    status: str
+    description: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class StructuredResultPayload(BaseModel):
+    processing_summary: StructuredProcessingSummary
+    documents: List[StructuredResultDocument]
+    issues: List[StructuredResultIssue]
+    analytics: StructuredResultAnalytics
+    timeline: List[TimelineEntry]
+
+
+# ============================================================================
 # Pagination Types
 # ============================================================================
 
@@ -298,6 +366,14 @@ SCHEMAS = {
     # Reports
     'ReportRequest': ReportRequest,
     'ReportJob': ReportJob,
+    
+    # Structured validation payload
+    'StructuredProcessingSummary': StructuredProcessingSummary,
+    'StructuredResultDocument': StructuredResultDocument,
+    'StructuredResultIssue': StructuredResultIssue,
+    'StructuredResultAnalytics': StructuredResultAnalytics,
+    'StructuredResultTimelineEntry': TimelineEntry,
+    'StructuredResultPayload': StructuredResultPayload,
     
     # Pagination
     'PaginationParams': PaginationParams,
