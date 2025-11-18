@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@shared/types": "file:../../packages/shared-types",
+    "@shared/types": "workspace:*",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -64,6 +64,7 @@
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.62.0",
     "react-i18next": "^13.5.0",
+    "react-is": "^18.2.0",
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^6.16.0",
     "recharts": "^3.2.0",
