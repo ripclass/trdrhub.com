@@ -1,7 +1,7 @@
 """Add integration models for partner API management
 
-Revision ID: 20250917_002
-Revises: 20250917_001
+Revision ID: 20250917_add_integration_models
+Revises: 20250917_add_preferred_language_to_company
 Create Date: 2025-09-17 12:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '20250917_002'
-down_revision = '20250917_001'
+revision = '20250917_add_integration_models'
+down_revision = '20250917_add_preferred_language_to_company'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Add preferred_language field to Company table
 
-Revision ID: 20250917_001
-Revises: 20250916_170100_seed_default_companies
+Revision ID: 20250917_add_preferred_language_to_company
+Revises: 20250916_170100
 Create Date: 2025-09-17 10:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '20250917_001'
-down_revision = '20250916_170100_seed_default_companies'
+revision = '20250917_add_preferred_language_to_company'
+down_revision = '20250916_170100'
 branch_labels = None
 depends_on = None
 

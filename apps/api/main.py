@@ -185,12 +185,21 @@ async def lifespan(app: FastAPI):
     logger.info("LCopilot API shutting down")
 
 
-# Create database tables in development/stub environments only
+# Create database tables only when explicitly allowed
+_auto_create_flag = os.getenv("ENABLE_SQLALCHEMY_CREATE_ALL", "").lower() in {"1", "true", "yes"}
 if settings.is_development() or settings.USE_STUBS:
+    # Keep backwards-compatible behavior for dev/stub installs unless the flag
+    # is explicitly disabled. Teams that prefer Alembic-only flows should unset
+    # the env var (default) and run `scripts/bootstrap_test_db.py`.
+    _auto_create_flag = _auto_create_flag or os.getenv("DISABLE_DEV_CREATE_ALL", "").lower() not in {"1", "true", "yes"}
+
+if _auto_create_flag:
     try:
         Base.metadata.create_all(bind=engine)
     except (UnsupportedCompilationError, CompileError) as exc:
         print(f"Skipping automatic schema creation due to unsupported dialect features: {exc}")
+else:
+    logger.info("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
 
 # Create FastAPI app with lifespan events
 app = FastAPI(

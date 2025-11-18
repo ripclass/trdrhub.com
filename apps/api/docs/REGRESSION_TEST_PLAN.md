@@ -62,6 +62,17 @@ export REDIS_PASSWORD="test_password"
 export KMS_KEY_ID="test_kms_key"
 ```
 
+#### Bootstrapping the local test database
+
+```bash
+# Generate (or refresh) the sqlite test database using Alembic
+cd apps/api
+python scripts/bootstrap_test_db.py --database sqlite:///$(pwd)/test_lcopilot.db
+
+# Point the API/tests at the sqlite DB
+export DATABASE_URL="sqlite:///$(pwd)/test_lcopilot.db"
+```
+
 ### Running All Regression Tests
 
 ```bash

@@ -4,7 +4,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "20251029_add_rules_registry"
-down_revision = "20250917_001"
+down_revision = "20250917_add_admin_console_tables"
 branch_labels = None
 depends_on = None
 

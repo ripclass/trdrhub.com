@@ -415,6 +415,26 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
     );
   }, [issueCards, issueFilter]);
+  const successCount =
+    summary?.successful_extractions ?? documents.filter((doc) => doc.status === "success").length;
+  const errorCount =
+    summary?.failed_extractions ??
+    documents.filter((doc) => (doc.status ?? '').toLowerCase() === 'error').length ??
+    (summary ? summary.failed_extractions : 0);
+  const warningCount =
+    documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
+  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
+  const overallStatus =
+    resolvedResults.overall_status ||
+    resolvedResults.overallStatus ||
+    resolvedResults.status ||
+    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
+  const packGenerated = resolvedResults.packGenerated ?? overallStatus === "success";
+  const processingTime =
+    resolvedResults.processingTime ||
+    resolvedResults.processing_time ||
+    resolvedResults.processingTimeMinutes ||
+    '-';
   const aiSummaryFallback = useMemo(() => {
     if (totalDiscrepancies === 0) {
       return "All submitted trade documents comply with the LC terms. Continue with customs submission.";
@@ -640,24 +660,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
       </Card>
     );
   };
-  const successCount =
-    summary?.successful_extractions ?? documents.filter((doc) => doc.status === "success").length;
-  const errorCount =
-    summary?.failed_extractions ?? documents.filter((doc) => doc.status === "error").length;
-  const warningCount =
-    documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
-  const successRate = totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0;
-  const overallStatus =
-    resolvedResults.overall_status ||
-    resolvedResults.overallStatus ||
-    resolvedResults.status ||
-    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
-  const packGenerated = resolvedResults.packGenerated ?? overallStatus === "success";
-  const processingTime =
-    resolvedResults.processingTime ||
-    resolvedResults.processing_time ||
-    resolvedResults.processingTimeMinutes ||
-    '-';
   const hasTimeline = timelineEvents.length > 0;
   const timelineDisplay = hasTimeline
     ? timelineEvents.map((event) => ({
