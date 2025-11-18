@@ -418,28 +418,39 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
-  const derivedSuccessCount = useMemo(
-    () => documents.filter((doc) => doc.status === "success").length,
-    [documents]
-  );
-  const summarySuccessCount = useMemo(
-    () => typeof summary?.successful_extractions === 'number' ? summary.successful_extractions : undefined,
-    [summary?.successful_extractions]
-  );
-  const successCount = useMemo(
-    () => derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount,
-    [derivedSuccessCount, summarySuccessCount]
-  );
-  const errorCount =
-    summary?.failed_extractions ??
-    documents.filter((doc) => (doc.status ?? '').toLowerCase() === 'error').length ??
-    (summary ? summary.failed_extractions : 0);
-  const warningCount =
-    documentStatusCounts.warning ?? documents.filter((doc) => doc.status === "warning").length;
-  const successRate = useMemo(
-    () => totalDocuments ? Math.round((successCount / totalDocuments) * 100) : 0,
-    [totalDocuments, successCount]
-  );
+  const { successCount, errorCount, warningCount, successRate } = useMemo(() => {
+    const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
+    const summarySuccessCount =
+      typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
+    const resolvedSuccessCount =
+      derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+
+    const resolvedErrorCount =
+      typeof summary?.failed_extractions === "number"
+        ? summary.failed_extractions
+        : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
+
+    const resolvedWarningCount =
+      typeof documentStatusCounts.warning === "number"
+        ? documentStatusCounts.warning
+        : documents.filter((doc) => doc.status === "warning").length;
+
+    const resolvedSuccessRate =
+      totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
+
+    return {
+      successCount: resolvedSuccessCount,
+      errorCount: resolvedErrorCount,
+      warningCount: resolvedWarningCount,
+      successRate: resolvedSuccessRate,
+    };
+  }, [
+    documents,
+    summary?.successful_extractions,
+    summary?.failed_extractions,
+    documentStatusCounts.warning,
+    totalDocuments,
+  ]);
   const overallStatus =
     resolvedResults?.overall_status ||
     resolvedResults?.overallStatus ||

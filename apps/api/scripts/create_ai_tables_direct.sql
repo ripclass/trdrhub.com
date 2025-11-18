@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_records (
     feature VARCHAR(50) NOT NULL,
     tokens_in INTEGER NOT NULL DEFAULT 0,
     tokens_out INTEGER NOT NULL DEFAULT 0,
-    estimated_cost_usd VARCHAR(20),
+    estimated_cost_usd VARCHAR(64),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS ai_assist_events (
     fallback_used BOOLEAN NOT NULL DEFAULT false,
     tokens_in INTEGER,
     tokens_out INTEGER,
-    estimated_cost_usd VARCHAR(20),
+    estimated_cost_usd VARCHAR(64),
     lc_session_id UUID REFERENCES validation_sessions(id),
     rule_references JSONB,
     prompt_template_id VARCHAR(100) NOT NULL,

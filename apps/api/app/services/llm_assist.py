@@ -81,7 +81,7 @@ class AIAssistEvent(Base):
     # Token and Cost Tracking
     tokens_in = Column(Integer, nullable=True)
     tokens_out = Column(Integer, nullable=True)
-    estimated_cost_usd = Column(String(20), nullable=True)
+    estimated_cost_usd = Column(String(64), nullable=True)
     lc_session_id = Column(UUID(as_uuid=True), ForeignKey('validation_sessions.id'), nullable=True)
 
     # Traceability

@@ -53,7 +53,7 @@ class AIUsageRecord(Base):
     feature = Column(String(50), nullable=False)  # AIFeature enum
     tokens_in = Column(Integer, nullable=False, default=0)
     tokens_out = Column(Integer, nullable=False, default=0)
-    estimated_cost_usd = Column(String(20), nullable=True)
+    estimated_cost_usd = Column(String(64), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
