@@ -199,7 +199,7 @@ if _auto_create_flag:
     except (UnsupportedCompilationError, CompileError) as exc:
         print(f"Skipping automatic schema creation due to unsupported dialect features: {exc}")
 else:
-    logger.info("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
+    print("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
 
 # Create FastAPI app with lifespan events
 app = FastAPI(
