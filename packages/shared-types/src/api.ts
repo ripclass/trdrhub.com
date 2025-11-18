@@ -198,6 +198,78 @@ export type ReportJob = z.infer<typeof ReportJobSchema>;
 // Pagination Types
 // ============================================================================
 
+export const SeverityBreakdownSchema = z.object({
+  critical: z.number().nonnegative(),
+  major: z.number().nonnegative(),
+  medium: z.number().nonnegative(),
+  minor: z.number().nonnegative(),
+});
+export type SeverityBreakdown = z.infer<typeof SeverityBreakdownSchema>;
+
+export const ProcessingSummarySchema = z.object({
+  total_documents: z.number().nonnegative(),
+  successful_extractions: z.number().nonnegative(),
+  failed_extractions: z.number().nonnegative(),
+  total_issues: z.number().nonnegative(),
+  severity_breakdown: SeverityBreakdownSchema,
+});
+export type ProcessingSummary = z.infer<typeof ProcessingSummarySchema>;
+
+export const StructuredResultDocumentSchema = z.object({
+  document_id: z.string(),
+  document_type: z.string(),
+  filename: z.string(),
+  extraction_status: z.string(),
+  extracted_fields: z.record(z.unknown()),
+  issues_count: z.number().nonnegative(),
+});
+export type StructuredResultDocument = z.infer<typeof StructuredResultDocumentSchema>;
+
+export const StructuredResultIssueSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  severity: z.string(),
+  documents: z.array(z.string()),
+  expected: z.string(),
+  found: z.string(),
+  suggested_fix: z.string(),
+  description: z.string().optional(),
+  ucp_reference: z.string().optional().nullable(),
+});
+export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
+
+export const DocumentRiskEntrySchema = z.object({
+  document_id: z.string().optional(),
+  filename: z.string().optional(),
+  risk: z.string().default('low'),
+});
+export type DocumentRiskEntry = z.infer<typeof DocumentRiskEntrySchema>;
+
+export const StructuredResultAnalyticsSchema = z.object({
+  compliance_score: z.number(),
+  issue_counts: SeverityBreakdownSchema,
+  document_risk: z.array(DocumentRiskEntrySchema),
+});
+export type StructuredResultAnalytics = z.infer<typeof StructuredResultAnalyticsSchema>;
+
+export const StructuredTimelineEntrySchema = z.object({
+  title: z.string().optional(),
+  status: z.string(),
+  description: z.string().optional(),
+  timestamp: z.string().optional(),
+  label: z.string().optional(),
+});
+export type StructuredTimelineEntry = z.infer<typeof StructuredTimelineEntrySchema>;
+
+export const StructuredResultSchema = z.object({
+  processing_summary: ProcessingSummarySchema,
+  documents: z.array(StructuredResultDocumentSchema),
+  issues: z.array(StructuredResultIssueSchema),
+  analytics: StructuredResultAnalyticsSchema,
+  timeline: z.array(StructuredTimelineEntrySchema),
+});
+export type StructuredResult = z.infer<typeof StructuredResultSchema>;
+
 export const PaginationParamsSchema = z.object({
   page: z.number().int().positive().default(1),
   limit: z.number().int().positive().max(100).default(20),
@@ -283,16 +355,17 @@ export const StructuredResultIssueSchema = z.object({
 });
 export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
 
+export const DocumentRiskEntrySchema = z.object({
+  document_id: z.string().optional(),
+  filename: z.string().optional(),
+  risk: z.string().optional(),
+});
+export type DocumentRiskEntry = z.infer<typeof DocumentRiskEntrySchema>;
+
 export const StructuredResultAnalyticsSchema = z.object({
   compliance_score: z.number().int(),
   issue_counts: SeverityBreakdownSchema,
-  document_risk: z.array(
-    z.object({
-      document_id: z.string().optional(),
-      filename: z.string().optional(),
-      risk: z.string().optional(),
-    }),
-  ),
+  document_risk: z.array(DocumentRiskEntrySchema),
 });
 export type StructuredResultAnalytics = z.infer<typeof StructuredResultAnalyticsSchema>;
 
@@ -313,6 +386,7 @@ export const StructuredResultSchema = z.object({
   timeline: z.array(TimelineEntrySchema),
 });
 export type StructuredResult = z.infer<typeof StructuredResultSchema>;
+export type StructuredResultPayload = StructuredResult;
 
 export const schemas = {
   // Health
@@ -349,6 +423,7 @@ export const schemas = {
   StructuredProcessingSummary: StructuredProcessingSummarySchema,
   StructuredResultDocument: StructuredResultDocumentSchema,
   StructuredResultIssue: StructuredResultIssueSchema,
+  StructuredResultDocumentRiskEntry: DocumentRiskEntrySchema,
   StructuredResultAnalytics: StructuredResultAnalyticsSchema,
   StructuredResultTimelineEntry: TimelineEntrySchema,
   StructuredResult: StructuredResultSchema,

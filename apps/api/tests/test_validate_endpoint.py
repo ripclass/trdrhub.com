@@ -176,29 +176,32 @@ def client():
 
 def test_validate_endpoint_returns_structured_result(monkeypatch, client: TestClient):
     async def fake_build_document_context(files_list, document_tags=None):
+        doc_types = [
+            ("letter_of_credit", "LC.pdf", {"lc_number": "LC100", "goods_description": "Refined sugar"}),
+            ("commercial_invoice", "Invoice.pdf", {"invoice_amount": "48000", "goods_description": "Refined sugar"}),
+            ("bill_of_lading", "BL.pdf", {"port_of_loading": "Chittagong", "port_of_discharge": "Los Angeles"}),
+            ("packing_list", "Packing.pdf", {"quantity": "1000 cartons"}),
+            ("certificate_of_origin", "COO.pdf", {"origin_country": "Bangladesh"}),
+            ("insurance_certificate", "Insurance.pdf", {"insured_value": "52000 USD"}),
+        ]
+        documents = [
+            {
+                "id": f"{doc_type}-doc",
+                "filename": filename,
+                "document_type": doc_type,
+                "extracted_fields": fields,
+                "extraction_status": "success",
+            }
+            for doc_type, filename, fields in doc_types
+        ]
+        documents_presence = {
+            doc_type: {"present": True, "count": 1} for doc_type, _, _ in doc_types
+        }
         return {
             "lc": {"number": "LC100"},
             "invoice": {"invoice_amount": "48000"},
-            "documents": [
-                {
-                    "id": "lc-doc",
-                    "filename": "LC.pdf",
-                    "document_type": "letter_of_credit",
-                    "extracted_fields": {"lc_number": "LC100"},
-                    "extraction_status": "success",
-                },
-                {
-                    "id": "invoice-doc",
-                    "filename": "Invoice.pdf",
-                    "document_type": "commercial_invoice",
-                    "extracted_fields": {"invoice_amount": "48000"},
-                    "extraction_status": "success",
-                },
-            ],
-            "documents_presence": {
-                "letter_of_credit": {"present": True, "count": 1},
-                "commercial_invoice": {"present": True, "count": 1},
-            },
+            "documents": documents,
+            "documents_presence": documents_presence,
             "extraction_status": "success",
         }
 
@@ -247,6 +250,10 @@ def test_validate_endpoint_returns_structured_result(monkeypatch, client: TestCl
     files = [
         ("files", ("Letter_of_Credit.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
         ("files", ("Commercial_Invoice.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
+        ("files", ("Bill_of_Lading.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
+        ("files", ("Packing_List.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
+        ("files", ("Certificate_of_Origin.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
+        ("files", ("Insurance_certificate.pdf", BytesIO(_pdf_bytes()), "application/pdf")),
     ]
 
     response = client.post("/api/validate", files=files)
@@ -255,10 +262,23 @@ def test_validate_endpoint_returns_structured_result(monkeypatch, client: TestCl
 
     assert "structured_result" in payload
     structured = payload["structured_result"]
-    assert structured["processing_summary"]["total_documents"] == 2
-    assert len(structured["documents"]) == 2
-    assert structured["documents"][0]["document_id"] == "lc-doc"
-    assert len(structured["issues"]) == 2  # deterministic + crossdoc
+    required_keys = {"processing_summary", "documents", "issues", "analytics", "timeline"}
+    assert set(structured.keys()) == required_keys
+    assert structured["processing_summary"]["total_documents"] == 6
+    assert len(structured["documents"]) == 6
+    for entry in structured["documents"]:
+        assert entry["document_id"].endswith("-doc")
+        assert entry["document_type"]
+        assert entry["filename"]
+        assert isinstance(entry["extracted_fields"], dict) and entry["extracted_fields"]
+        assert "issues_count" in entry
+    assert len(structured["issues"]) >= 2  # deterministic + crossdoc
     assert any(issue.get("expected") for issue in structured["issues"])
     assert len(structured["timeline"]) == 4
+    severity_breakdown = structured["processing_summary"]["severity_breakdown"]
+    for key in ("critical", "major", "medium", "minor"):
+        assert key in severity_breakdown
+        assert key in structured["analytics"]["issue_counts"]
+    assert structured["analytics"]["document_risk"], "Document risk entries should be populated"
+
     assert payload["issue_cards"], "Issue cards should be populated for Issues tab"

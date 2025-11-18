@@ -1,3 +1,14 @@
+import type {
+  StructuredResult as SharedStructuredResultPayload,
+  StructuredResultDocument as SharedStructuredResultDocument,
+  StructuredResultIssue as SharedStructuredResultIssue,
+  StructuredResultAnalytics as SharedStructuredResultAnalytics,
+  StructuredProcessingSummary as SharedProcessingSummary,
+  SeverityBreakdown as SharedSeverityBreakdown,
+  TimelineEntry as SharedTimelineEntry,
+  DocumentRiskEntry as SharedDocumentRiskEntry,
+} from '@shared/types';
+
 export interface IssueCard {
   id: string;
   rule?: string;
@@ -33,20 +44,9 @@ export interface AIEnrichmentPayload {
   }>;
 }
 
-export interface SeverityBreakdown {
-  critical: number;
-  major: number;
-  medium: number;
-  minor: number;
-}
+export type SeverityBreakdown = SharedSeverityBreakdown;
 
-export interface ProcessingSummaryPayload {
-  total_documents: number;
-  successful_extractions: number;
-  failed_extractions: number;
-  total_issues: number;
-  severity_breakdown: SeverityBreakdown;
-}
+export type ProcessingSummaryPayload = SharedProcessingSummary;
 
 export interface ValidationDocument {
   id: string;
@@ -61,60 +61,19 @@ export interface ValidationDocument {
   extractedFields: Record<string, any>;
 }
 
-export interface DocumentRiskEntry {
-  document_id?: string;
-  filename?: string;
-  risk?: string;
-}
+export type DocumentRiskEntry = SharedDocumentRiskEntry;
 
-export interface ValidationAnalytics {
-  compliance_score: number;
-  issue_counts: SeverityBreakdown;
-  document_risk: DocumentRiskEntry[];
-}
+export type ValidationAnalytics = SharedStructuredResultAnalytics;
 
-export interface StructuredResultDocument {
-  document_id: string;
-  document_type: string;
-  filename: string;
-  extraction_status: string;
-  extracted_fields: Record<string, any>;
-  issues_count: number;
-}
+export type StructuredResultDocument = SharedStructuredResultDocument;
 
-export interface StructuredResultIssue {
-  id: string;
-  title: string;
-  severity: string;
-  documents: string[];
-  expected: string;
-  found: string;
-  suggested_fix: string;
-  description?: string;
-  ucp_reference?: string | null;
-}
+export type StructuredResultIssue = SharedStructuredResultIssue;
 
-export interface TimelineEvent {
-  title?: string;
-  label?: string;
-  status: string;
-  description?: string;
-  timestamp?: string;
-}
+export type TimelineEvent = SharedTimelineEntry;
 
-export interface StructuredResultAnalytics {
-  compliance_score: number;
-  issue_counts: SeverityBreakdown;
-  document_risk: DocumentRiskEntry[];
-}
+export type StructuredResultAnalytics = SharedStructuredResultAnalytics;
 
-export interface StructuredResultPayload {
-  processing_summary: ProcessingSummaryPayload;
-  documents: StructuredResultDocument[];
-  issues: StructuredResultIssue[];
-  analytics: StructuredResultAnalytics;
-  timeline: TimelineEvent[];
-}
+export type StructuredResultPayload = SharedStructuredResultPayload;
 
 export interface ValidationResults {
   jobId: string;

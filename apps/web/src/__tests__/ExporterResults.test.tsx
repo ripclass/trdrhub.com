@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
@@ -7,6 +7,18 @@ import { renderWithProviders } from './testUtils';
 import { mockValidationResults } from './fixtures/lcopilot';
 
 let activeResults = mockValidationResults;
+const totalDocuments = mockValidationResults.documents.length;
+const totalDiscrepancies = mockValidationResults.issues.length;
+const successCount = mockValidationResults.documents.filter((doc) => doc.status === 'success').length;
+
+const findCardByTitle = (title: RegExp | string): HTMLElement => {
+  const heading = screen.getByText(title);
+  let current: HTMLElement | null = heading as HTMLElement;
+  while (current && !current.className.toString().includes('shadow-soft')) {
+    current = current.parentElement as HTMLElement | null;
+  }
+  return current ?? (heading as HTMLElement);
+};
 
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
@@ -76,9 +88,26 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
     expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument();
-    expect(screen.getByText(/6\)/i)).toBeInTheDocument(); // Documents tab label
-    expect(screen.getByText(/Issues \(3\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`Documents \\(${totalDocuments}\\)`, 'i')),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`Issues \\(${totalDiscrepancies}\\)`, 'i')),
+    ).toBeInTheDocument();
     expect(screen.getByText(/LC Compliance/i)).toBeInTheDocument();
+
+    const statsCard = findCardByTitle(/Export Document Statistics/i);
+    const verifiedLabel = within(statsCard).getByText(/^Verified$/i);
+    const verifiedValue = verifiedLabel.previousElementSibling;
+    expect(verifiedValue?.textContent).toBe(String(successCount));
+
+    const warningsLabel = within(statsCard).getByText(/^Warnings$/i);
+    const warningsValue = warningsLabel.previousElementSibling;
+    expect(warningsValue?.textContent).toBe(String(totalDiscrepancies));
+
+    const complianceRow = screen.getByText(/LC Compliance:/i).parentElement as HTMLElement;
+    const expectedCompliance = `${Math.round((successCount / totalDocuments) * 100)}%`;
+    expect(within(complianceRow).getByText(expectedCompliance)).toBeInTheDocument();
   });
 
   it('renders documents tab with all trade documents', async () => {
@@ -104,6 +133,26 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/Expected/i)).toBeInTheDocument();
     expect(screen.getByText(/50000 USD/)).toBeInTheDocument();
     expect(screen.getByText(/49000 USD/)).toBeInTheDocument();
+
+    const criticalCard = screen.getByText(/^Critical$/i).closest('div') as HTMLElement;
+    const majorCard = screen.getByText(/^Major$/i).closest('div') as HTMLElement;
+    const minorCard = screen.getByText(/^Minor$/i).closest('div') as HTMLElement;
+
+    expect(
+      within(criticalCard).getByText(
+        mockValidationResults.summary.severity_breakdown.critical.toString(),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(majorCard).getByText(
+        mockValidationResults.summary.severity_breakdown.major.toString(),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(minorCard).getByText(
+        mockValidationResults.summary.severity_breakdown.minor.toString(),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('renders analytics tab with compliance score', async () => {
@@ -115,6 +164,7 @@ describe('ExporterResults', () => {
     await user.click(screen.getByRole('tab', { name: /Analytics/i }));
     expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
     expect(screen.getByText(`${mockValidationResults.analytics.compliance_score}%`)).toBeInTheDocument();
+    expect(screen.getByText(/Document Status Distribution/i)).toBeInTheDocument();
   });
 
   it('renders UI when only structured_result payload is provided', async () => {

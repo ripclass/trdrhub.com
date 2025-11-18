@@ -371,6 +371,7 @@ SCHEMAS = {
     'StructuredProcessingSummary': StructuredProcessingSummary,
     'StructuredResultDocument': StructuredResultDocument,
     'StructuredResultIssue': StructuredResultIssue,
+    'StructuredResultDocumentRiskEntry': DocumentRiskEntry,
     'StructuredResultAnalytics': StructuredResultAnalytics,
     'StructuredResultTimelineEntry': TimelineEntry,
     'StructuredResultPayload': StructuredResultPayload,

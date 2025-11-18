@@ -1,10 +1,5 @@
-import type {
-  IssueCard,
-  ValidationResults,
-  StructuredResultPayload,
-  StructuredResultAnalytics,
-  TimelineEvent,
-} from '@/types/lcopilot';
+import type { StructuredResultPayload, StructuredResultAnalytics, TimelineEntry } from '@shared/types';
+import type { IssueCard, ValidationResults, TimelineEvent } from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
   letter_of_credit: 'Letter of Credit',
@@ -220,7 +215,7 @@ const ensureAnalytics = (
   };
 };
 
-const mapTimeline = (entries: any[] = []): ValidationResults['timeline'] => {
+const mapTimeline = (entries: Array<Partial<TimelineEntry>> = []): ValidationResults['timeline'] => {
   return entries
     .map((entry, index) => ({
       title: entry?.title ?? entry?.label ?? `Step ${index + 1}`,
