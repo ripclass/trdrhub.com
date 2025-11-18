@@ -487,7 +487,10 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const aiAnalysisAvailable = Boolean(
     resolvedAiSummary || aiInsights?.summary || (aiInsights?.suggestions?.length ?? 0) > 0,
   );
-  const aiSummaryDocumentQuality = `${successCount}/${totalDocuments || 0}`;
+  const aiSummaryDocumentQuality = useMemo(
+    () => `${successCount}/${totalDocuments || 0}`,
+    [successCount, totalDocuments]
+  );
   const aiSummaryIsFallback = !resolvedAiSummary;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
@@ -694,22 +697,34 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
         title: event.title ?? event.label ?? 'Milestone',
       }))
     : [];
-  const complianceScore = analyticsData?.compliance_score ?? successRate;
+  const complianceScore = useMemo(
+    () => analyticsData?.compliance_score ?? successRate,
+    [analyticsData?.compliance_score, successRate]
+  );
   const lcComplianceScore = complianceScore;
-  const documentRisk =
-    analyticsData?.document_risk ??
-    documents.map((doc) => ({
-      document_id: doc.documentId,
-      filename: doc.name,
-      risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount > 0 ? 'medium' : 'low',
-    }));
-  const extractionAccuracy = successRate;
-  const customsReadyScore = Math.max(0, complianceScore - warningCount * 5);
-  const performanceInsights = [
-    successCount + '/' + (totalDocuments || 0) + ' documents extracted successfully',
-    totalDiscrepancies + ' issue' + (totalDiscrepancies === 1 ? '' : 's') + ' detected',
-    'Compliance score ' + complianceScore + '%',
-  ];
+  const documentRisk = useMemo(
+    () =>
+      analyticsData?.document_risk ??
+      documents.map((doc) => ({
+        document_id: doc.documentId,
+        filename: doc.name,
+        risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount > 0 ? 'medium' : 'low',
+      })),
+    [analyticsData?.document_risk, documents]
+  );
+  const extractionAccuracy = useMemo(() => successRate, [successRate]);
+  const customsReadyScore = useMemo(
+    () => Math.max(0, complianceScore - warningCount * 5),
+    [complianceScore, warningCount]
+  );
+  const performanceInsights = useMemo(
+    () => [
+      successCount + '/' + (totalDocuments || 0) + ' documents extracted successfully',
+      totalDiscrepancies + ' issue' + (totalDiscrepancies === 1 ? '' : 's') + ' detected',
+      'Compliance score ' + complianceScore + '%',
+    ],
+    [successCount, totalDocuments, totalDiscrepancies, complianceScore]
+  );
   const documentProcessingList = documents.map((doc) => {
     const riskEntry = documentRisk.find(
       (entry) => entry.document_id === doc.documentId || entry.filename === doc.name,
