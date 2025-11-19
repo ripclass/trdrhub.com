@@ -8,7 +8,25 @@ from app.services.llm_provider import LLMProviderFactory
 
 logger = logging.getLogger(__name__)
 
-REWRITER_ENABLED = os.getenv("AI_ISSUE_REWRITER_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+_FALSEY = {"0", "false", "off", "no"}
+
+
+def _env_truthy(value: Optional[str], *, default: bool = True) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() not in _FALSEY
+
+
+def _llm_credentials_present() -> bool:
+    return bool(
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("LLM_PROVIDER_API_KEY")
+    )
+
+
+# Enabled by default; explicit opt-out (env=false) or missing credentials disables rewriting.
+REWRITER_ENABLED = _env_truthy(os.getenv("AI_ISSUE_REWRITER_ENABLED"), default=True) and _llm_credentials_present()
 MODEL_OVERRIDE = os.getenv("AI_ISSUE_REWRITER_MODEL", "gpt-4o-mini")
 SYSTEM_PROMPT = (
     "You rewrite deterministic LC discrepancy findings into concise SME-friendly cards. "

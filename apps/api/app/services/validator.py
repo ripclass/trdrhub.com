@@ -565,6 +565,8 @@ def filter_rules_by_lc_context(
             continue
         if third_party_allowed and _rule_mentions_keywords(rule, {"third party", "third-party"}):
             continue
+        if _is_informational_rule(rule, domain_lower):
+            continue
         filtered.append((rule, meta))
 
     return filtered
@@ -611,6 +613,56 @@ def _rule_mentions_keywords(rule: Dict[str, Any], keywords: Set[str]) -> bool:
         text_blobs.extend(str(tag).lower() for tag in tags if tag)
     combined = " ".join(text_blobs)
     return any(keyword in combined for keyword in keywords)
+
+
+INFORMATIONAL_TITLE_KEYWORDS = (
+    "application of ucp",
+    "scope of application",
+    "interpretation",
+    "interpretations",
+    "definitions",
+    "disclaimer",
+    "force majeure",
+    "bank-to-bank reimbursement",
+    "bank to bank reimbursement",
+    "assignment of proceeds",
+)
+
+INFORMATIONAL_TAGS = {
+    "application",
+    "scope",
+    "interpretation",
+    "definitions",
+    "disclaimer",
+    "reimbursement",
+    "force_majeure",
+}
+
+INFORMATIONAL_ARTICLES = {"1", "2", "3", "4", "5", "34", "35", "36", "37"}
+
+
+def _is_informational_rule(rule: Dict[str, Any], domain_lower: str) -> bool:
+    title = (rule.get("title") or "").lower()
+    if any(keyword in title for keyword in INFORMATIONAL_TITLE_KEYWORDS):
+        return True
+
+    tags = rule.get("tags")
+    if isinstance(tags, list):
+        tag_values = {str(tag).strip().lower() for tag in tags if tag}
+        if INFORMATIONAL_TAGS.intersection(tag_values):
+            return True
+
+    article = rule.get("article")
+    if isinstance(article, str):
+        article_code = article.strip().split()[0]
+        if domain_lower.startswith("icc.") and article_code in INFORMATIONAL_ARTICLES:
+            # Many articles in this range describe definitions/scope/disclaimers.
+            # Only treat them as informational when no document types are referenced.
+            documents = rule.get("documents") or rule.get("document_types")
+            if not documents:
+                return True
+
+    return False
 
 
 def _extract_additional_conditions(lc_text: str) -> Optional[str]:
