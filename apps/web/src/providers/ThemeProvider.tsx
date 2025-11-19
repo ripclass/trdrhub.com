@@ -12,7 +12,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    // Load theme from localStorage or default to 'light' for consistency
+    // Load theme from localStorage or default to 'light' for consistency across all deployments
     const stored = localStorage.getItem('lcopilot-theme') as Theme | null;
     return stored || 'light';
   });
