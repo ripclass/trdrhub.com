@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { bankApi, NotificationPreferences } from "@/api/bank";
+import { bankApi, type NotificationPreferences as BankNotificationPreferences } from "@/api/bank";
 import { Bell, Mail, MessageSquare, AlertTriangle, Save, Loader2 } from "lucide-react";
 
 interface NotificationPreferencesProps {}
@@ -15,7 +15,7 @@ export function NotificationPreferences({}: NotificationPreferencesProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const [preferences, setPreferences] = useState<NotificationPreferences>({
+  const [preferences, setPreferences] = useState<BankNotificationPreferences>({
     email_enabled: true,
     sms_enabled: false,
     job_completion_enabled: true,
@@ -39,7 +39,7 @@ export function NotificationPreferences({}: NotificationPreferencesProps) {
 
   // Update preferences mutation
   const updateMutation = useMutation({
-    mutationFn: (prefs: Partial<NotificationPreferences>) =>
+    mutationFn: (prefs: Partial<BankNotificationPreferences>) =>
       bankApi.updateNotificationPreferences(prefs),
     onSuccess: (response) => {
       toast({
@@ -59,7 +59,7 @@ export function NotificationPreferences({}: NotificationPreferencesProps) {
     },
   });
 
-  const handleToggle = (key: keyof NotificationPreferences, value: boolean) => {
+  const handleToggle = (key: keyof BankNotificationPreferences, value: boolean) => {
     setPreferences((prev) => ({ ...prev, [key]: value }));
   };
 

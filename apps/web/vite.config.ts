@@ -16,6 +16,7 @@ export default defineConfig({
     host: true,
   },
   build: {
+    sourcemap: true,
     // Force clean build - disable build cache
     emptyOutDir: true,
     // Force new bundle hash with timestamp

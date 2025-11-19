@@ -568,58 +568,60 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     return null;
   }
 
-  const renderLoadingSkeletons = () => (
-    <div className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-2">
-        {[0, 1].map((index) => (
-          <Card key={`overview-skeleton-${index}`} className="border border-border/60 shadow-soft">
-            <CardContent className="space-y-3 p-6">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-            </CardContent>
-          </Card>
-        ))}
+  function renderLoadingSkeletons() {
+    return (
+      <div className="space-y-6">
+        <div className="grid gap-6 md:grid-cols-2">
+          {[0, 1].map((index) => (
+            <Card key={`overview-skeleton-${index}`} className="border border-border/60 shadow-soft">
+              <CardContent className="space-y-3 p-6">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[0, 1].map((index) => (
+            <Card key={`document-skeleton-${index}`} className="border border-border/60 shadow-soft">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-56" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[0, 1].map((index) => (
+            <Card key={`issue-skeleton-${index}`} className="border border-border/60 shadow-soft">
+              <CardContent className="space-y-3 p-6">
+                <Skeleton className="h-5 w-64" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {[0, 1].map((index) => (
+            <Card key={`analytics-skeleton-${index}`} className="border border-border/60 shadow-soft">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/5" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {[0, 1].map((index) => (
-          <Card key={`document-skeleton-${index}`} className="border border-border/60 shadow-soft">
-            <CardContent className="space-y-4 p-6">
-              <Skeleton className="h-5 w-56" />
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-              <Skeleton className="h-4 w-1/2" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {[0, 1].map((index) => (
-          <Card key={`issue-skeleton-${index}`} className="border border-border/60 shadow-soft">
-            <CardContent className="space-y-3 p-6">
-              <Skeleton className="h-5 w-64" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-2/3" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        {[0, 1].map((index) => (
-          <Card key={`analytics-skeleton-${index}`} className="border border-border/60 shadow-soft">
-            <CardContent className="space-y-4 p-6">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-4/5" />
-              <Skeleton className="h-4 w-2/5" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+    );
+  }
 
   const renderAIInsightsCard = () => {
     if (!aiInsights?.summary) {
