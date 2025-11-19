@@ -532,44 +532,356 @@ def filter_rules_by_lc_context(
     rules_with_meta: List[Tuple[Dict[str, Any], Dict[str, Any]]],
     document_data: Dict[str, Any],
 ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
-    if not rules_with_meta:
+    """
+    Backwards-compatible wrapper for legacy callers.
+    """
+    lc_context = document_data.get("lc") or {}
+    return activate_rules_for_lc(lc_context, rules_with_meta, document_data)
+
+
+def activate_rules_for_lc(
+    lc_fields: Dict[str, Any],
+    rule_definitions: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+    doc_set: Dict[str, Any],
+) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """
+    Rule activation layer. Returns only the rules relevant to this LC package.
+    """
+    if not rule_definitions:
         return []
 
-    lc_context = document_data.get("lc") or {}
-    lc_text = (document_data.get("lc_text") or lc_context.get("raw_text") or "") or ""
-    additional_conditions = (
-        lc_context.get("additional_conditions")
-        or _extract_additional_conditions(lc_text)
-        or ""
-    )
-    additional_lower = additional_conditions.lower()
-    lc_type = str(document_data.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).lower()
-    incoterm = (lc_context.get("incoterm") or "").upper()
+    lc_context = lc_fields or {}
+    lc_text = _build_lc_text_blob(lc_context, doc_set)
+    doc_requirements = _infer_document_requirements(lc_context, lc_text, doc_set)
+    toggles = _derive_rule_toggles(lc_context, lc_text, doc_requirements)
+    goods_ready = _has_goods_context(lc_context, doc_set)
+    ports_ready = _has_complete_ports(lc_context)
+    lc_type = str(doc_set.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).lower()
 
-    ucp_referenced = _lc_mentions_ucp(lc_context, lc_text)
-    third_party_allowed = _allows_third_party_docs(additional_lower)
-    insurance_waived = incoterm.startswith("FOB") or _insurance_waived(additional_lower)
-
-    filtered: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-    for rule, meta in rules_with_meta:
+    active: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    for rule, meta in rule_definitions:
+        if not isinstance(rule, dict):
+            continue
         domain_lower = ((meta or {}).get("domain") or "").lower()
-        if domain_lower.startswith("icc.ucp") and not ucp_referenced:
-            continue
-        if "icc.isbp" in domain_lower:
-            continue
-        if lc_type == LCType.EXPORT.value and _rule_mentions_keywords(rule, {"import", "importer"}):
-            continue
-        if lc_type == LCType.IMPORT.value and _rule_mentions_keywords(rule, {"export", "exporter"}):
-            continue
-        if insurance_waived and _rule_mentions_keywords(rule, {"insurance", "insured", "policy"}):
-            continue
-        if third_party_allowed and _rule_mentions_keywords(rule, {"third party", "third-party"}):
-            continue
         if _is_informational_rule(rule, domain_lower):
             continue
-        filtered.append((rule, meta))
+        if not _rule_matches_doc_requirements(rule, doc_requirements):
+            continue
+        if not _rule_matches_lc_direction(rule, lc_type):
+            continue
+        if not ports_ready and _rule_targets_ports(rule):
+            continue
+        if not goods_ready and _rule_targets_goods(rule):
+            continue
+        if toggles["third_party_allowed"] and _rule_targets_third_party(rule):
+            continue
+        if toggles["non_negotiable_allowed"] and _rule_targets_negotiability(rule):
+            continue
+        if not toggles["hs_code_required"] and _rule_targets_hs_code(rule):
+            continue
+        if not toggles["signed_invoice_required"] and _rule_targets_signed_invoice(rule):
+            continue
+        if not toggles["insurance_required"] and _rule_targets_insurance(rule):
+            continue
+        active.append((rule, meta))
 
-    return filtered
+    return active
+
+
+DOC_KEYWORDS = {
+    "commercial_invoice": ["commercial invoice", "signed commercial invoice", "invoice"],
+    "bill_of_lading": ["bill of lading", "b/l", "transport document", "ocean bill"],
+    "packing_list": ["packing list", "weight list"],
+    "certificate_of_origin": ["certificate of origin", "c/o", "coo"],
+    "insurance_certificate": ["insurance certificate", "insurance policy", "coverage"],
+    "inspection_certificate": ["inspection certificate", "inspection report"],
+    "beneficiary_certificate": ["beneficiary certificate"],
+}
+
+DOC_SYNONYMS = {
+    "lc": "lc",
+    "letter_of_credit": "lc",
+    "commercial_invoice": "commercial_invoice",
+    "invoice": "commercial_invoice",
+    "ci": "commercial_invoice",
+    "bill_of_lading": "bill_of_lading",
+    "billoflading": "bill_of_lading",
+    "bl": "bill_of_lading",
+    "transport_document": "bill_of_lading",
+    "transport-documents": "bill_of_lading",
+    "packing_list": "packing_list",
+    "certificate_of_origin": "certificate_of_origin",
+    "coo": "certificate_of_origin",
+    "insurance_certificate": "insurance_certificate",
+    "insurance": "insurance_certificate",
+    "policy": "insurance_certificate",
+    "inspection_certificate": "inspection_certificate",
+    "beneficiary_certificate": "beneficiary_certificate",
+}
+
+FIELD_PREFIX_TO_DOC = {
+    "lc.": "lc",
+    "letter_of_credit.": "lc",
+    "invoice.": "commercial_invoice",
+    "commercial_invoice.": "commercial_invoice",
+    "bill_of_lading.": "bill_of_lading",
+    "bl.": "bill_of_lading",
+    "packing_list.": "packing_list",
+    "certificate_of_origin.": "certificate_of_origin",
+    "coo.": "certificate_of_origin",
+    "insurance_certificate.": "insurance_certificate",
+    "insurance.": "insurance_certificate",
+    "inspection_certificate.": "inspection_certificate",
+}
+
+GOODS_TAG_HINTS = {"goods", "description", "product", "hs_code", "hs code", "quantity", "hs-code"}
+PORT_TAG_HINTS = {"port", "ports", "shipment_route", "route", "loading_port", "discharge_port"}
+THIRD_PARTY_TAGS = {"third_party", "third-party", "thirdparty"}
+NEGOTIABILITY_TAGS = {"negotiable", "non_negotiable", "original_document", "negotiability"}
+INSURANCE_TAGS = {"insurance", "coverage", "policy", "premium"}
+SIGNED_INVOICE_TAGS = {"signed_invoice", "signed", "signature"}
+HS_CODE_TAGS = {"hs_code", "hs-code", "harmonized", "customs_hs"}
+
+
+def _build_lc_text_blob(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    for key in ("additional_conditions", "raw_text"):
+        value = lc_context.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    lc_text = doc_set.get("lc_text")
+    if isinstance(lc_text, str):
+        parts.append(lc_text)
+    return " ".join(parts).lower()
+
+
+def _infer_document_requirements(
+    lc_context: Dict[str, Any],
+    lc_text: str,
+    doc_set: Dict[str, Any],
+) -> Dict[str, bool]:
+    canonical_docs = [
+        "commercial_invoice",
+        "bill_of_lading",
+        "packing_list",
+        "certificate_of_origin",
+        "insurance_certificate",
+        "inspection_certificate",
+        "beneficiary_certificate",
+    ]
+    requirements = {doc: False for doc in canonical_docs}
+    requirements["lc"] = True
+
+    documents_presence = doc_set.get("documents_presence") or {}
+    for raw_key, entry in documents_presence.items():
+        normalized = _normalize_doc_label(raw_key)
+        if normalized:
+            requirements[normalized] = requirements.get(normalized, False) or bool(entry.get("present"))
+
+    doc_contexts = {
+        "commercial_invoice": doc_set.get("invoice"),
+        "bill_of_lading": doc_set.get("bill_of_lading") or doc_set.get("billOfLading"),
+        "packing_list": doc_set.get("packing_list"),
+        "certificate_of_origin": doc_set.get("certificate_of_origin"),
+        "insurance_certificate": doc_set.get("insurance_certificate"),
+        "inspection_certificate": doc_set.get("inspection_certificate"),
+        "beneficiary_certificate": doc_set.get("beneficiary_certificate"),
+    }
+    for doc, ctx in doc_contexts.items():
+        if isinstance(ctx, dict) and ctx:
+            requirements[doc] = True
+
+    for doc, keywords in DOC_KEYWORDS.items():
+        if _text_contains_any(lc_text, keywords):
+            requirements[doc] = True
+
+    incoterm = (lc_context.get("incoterm") or "").upper()
+    mentions_insurance = _text_contains_any(lc_text, DOC_KEYWORDS["insurance_certificate"])
+    if incoterm.startswith("FOB") and not mentions_insurance:
+        requirements["insurance_certificate"] = False
+    else:
+        requirements["insurance_certificate"] = requirements.get("insurance_certificate") or not incoterm.startswith("FOB") or mentions_insurance
+
+    return requirements
+
+
+def _derive_rule_toggles(
+    lc_context: Dict[str, Any],
+    lc_text: str,
+    doc_requirements: Dict[str, bool],
+) -> Dict[str, bool]:
+    text = lc_text or ""
+    toggles = {
+        "third_party_allowed": _text_contains_any(text, ["third party documents acceptable", "third-party documents acceptable", "third party docs acceptable"]),
+        "non_negotiable_allowed": _text_contains_any(text, ["non-negotiable documents acceptable", "non negotiable documents acceptable"]),
+        "hs_code_required": _text_contains_any(text, ["hs code", "harmonized system", "hs-code"]),
+        "signed_invoice_required": _text_contains_any(text, ["signed commercial invoice", "signed invoice"]),
+        "insurance_required": doc_requirements.get("insurance_certificate", False),
+    }
+    return toggles
+
+
+def _rule_matches_doc_requirements(rule: Dict[str, Any], requirements: Dict[str, bool]) -> bool:
+    targets = _rule_targets_documents(rule)
+    if not targets:
+        return True
+    for target in targets:
+        if target == "lc":
+            continue
+        canonical = "bill_of_lading" if target == "transport_document" else target
+        allowed = requirements.get(canonical, True)
+        if not allowed:
+            return False
+    return True
+
+
+def _rule_matches_lc_direction(rule: Dict[str, Any], lc_type: str) -> bool:
+    tags = _normalize_tags(rule)
+    if lc_type == LCType.EXPORT.value and "import" in tags and "export" not in tags:
+        return False
+    if lc_type == LCType.IMPORT.value and "export" in tags and "import" not in tags:
+        return False
+    return True
+
+
+def _rule_targets_ports(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(PORT_TAG_HINTS):
+        return True
+    for path in _extract_rule_field_paths(rule):
+        if "port" in path or "shipment" in path:
+            return True
+    return False
+
+
+def _rule_targets_goods(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(GOODS_TAG_HINTS):
+        return True
+    for path in _extract_rule_field_paths(rule):
+        if "goods" in path or "hs_code" in path or "product" in path:
+            return True
+    return False
+
+
+def _rule_targets_third_party(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(THIRD_PARTY_TAGS):
+        return True
+    title = (rule.get("title") or "").lower()
+    return "third party" in title
+
+
+def _rule_targets_negotiability(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(NEGOTIABILITY_TAGS):
+        return True
+    title = (rule.get("title") or "").lower()
+    return "negotiable" in title
+
+
+def _rule_targets_hs_code(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(HS_CODE_TAGS):
+        return True
+    title = (rule.get("title") or "").lower()
+    return "hs code" in title
+
+
+def _rule_targets_signed_invoice(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(SIGNED_INVOICE_TAGS):
+        return True
+    title = (rule.get("title") or "").lower()
+    return "signed invoice" in title
+
+
+def _rule_targets_insurance(rule: Dict[str, Any]) -> bool:
+    tags = _normalize_tags(rule)
+    if tags.intersection(INSURANCE_TAGS):
+        return True
+    for path in _extract_rule_field_paths(rule):
+        if "insurance" in path:
+            return True
+    return False
+
+
+def _rule_targets_documents(rule: Dict[str, Any]) -> Set[str]:
+    targets: Set[str] = set()
+    doc_entries = rule.get("documents") or rule.get("document_types") or []
+    if isinstance(doc_entries, str):
+        doc_entries = [doc_entries]
+    for entry in doc_entries:
+        normalized = _normalize_doc_label(entry)
+        if normalized:
+            targets.add(normalized)
+    for path in _extract_rule_field_paths(rule):
+        inferred = _infer_doc_from_field(path)
+        if inferred:
+            targets.add(inferred)
+    return targets
+
+
+def _normalize_doc_label(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    token = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if token in DOC_SYNONYMS:
+        return DOC_SYNONYMS[token]
+    compact = token.replace("_", "")
+    if compact in DOC_SYNONYMS:
+        return DOC_SYNONYMS[compact]
+    return token if token in {"lc"} else None
+
+
+def _infer_doc_from_field(field_path: Optional[str]) -> Optional[str]:
+    if not field_path:
+        return None
+    lowered = field_path.lower()
+    for prefix, doc in FIELD_PREFIX_TO_DOC.items():
+        if lowered.startswith(prefix):
+            return doc
+    return None
+
+
+def _extract_rule_field_paths(rule: Dict[str, Any]) -> List[str]:
+    paths: List[str] = []
+    for condition in rule.get("conditions") or []:
+        field_path = condition.get("field") or condition.get("field_path")
+        if isinstance(field_path, str):
+            paths.append(field_path.lower())
+        value_ref = condition.get("value_ref")
+        if isinstance(value_ref, str):
+            paths.append(value_ref.lower())
+    return paths
+
+
+def _normalize_tags(rule: Dict[str, Any]) -> Set[str]:
+    tags = rule.get("tags")
+    if not isinstance(tags, list):
+        return set()
+    return {str(tag).strip().lower() for tag in tags if tag}
+
+
+def _text_contains_any(text: str, keywords: List[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def _has_goods_context(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> bool:
+    lc_goods = lc_context.get("goods_description")
+    invoice_ctx = doc_set.get("invoice") or {}
+    packing_ctx = doc_set.get("packing_list") or {}
+    invoice_goods = invoice_ctx.get("goods_description") or invoice_ctx.get("description") or invoice_ctx.get("product_description")
+    packing_goods = packing_ctx.get("goods_description") or packing_ctx.get("description")
+    return bool(lc_goods and (invoice_goods or packing_goods))
+
+
+def _has_complete_ports(lc_context: Dict[str, Any]) -> bool:
+    ports = lc_context.get("ports") or {}
+    return bool(ports.get("loading") and ports.get("discharge"))
 
 
 def _lc_mentions_ucp(lc_context: Dict[str, Any], lc_text: str) -> bool:
@@ -902,7 +1214,11 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 for rule, meta in filtered_rules_with_meta
                 if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
             ]
-            filtered_rules_with_meta = filter_rules_by_lc_context(filtered_rules_with_meta, document_data)
+            filtered_rules_with_meta = activate_rules_for_lc(
+                document_data.get("lc") or {},
+                filtered_rules_with_meta,
+                document_data,
+            )
 
             if not filtered_rules_with_meta:
                 logger.warning(
