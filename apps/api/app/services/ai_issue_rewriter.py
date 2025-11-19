@@ -59,7 +59,7 @@ async def rewrite_issue(rule_issue: Dict[str, Any], extracted_docs: Dict[str, An
             temperature=0.1,
             model_override=MODEL_OVERRIDE,
         )
-        parsed = json.loads(output)
+        parsed = _coerce_json_output(output)
         rewrite_payload = _coerce_rewrite(parsed)
         if rewrite_payload:
             rewrite_payload["source"] = provider_used
@@ -203,4 +203,19 @@ def _coerce_text(value: Any) -> Optional[str]:
         return str(value).strip()
     except Exception:
         return None
+
+
+def _coerce_json_output(output: Optional[str]) -> Any:
+    if not output:
+        raise ValueError("AI response was empty")
+    stripped = output.strip()
+    if not stripped:
+        raise ValueError("AI response only contained whitespace")
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", stripped)
+        if match:
+            return json.loads(match.group(0))
+        raise
 
