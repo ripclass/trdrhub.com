@@ -1248,6 +1248,15 @@ def _resolve_shipment_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             return ctx
     lc_ports = (payload.get("lc") or {}).get("ports")
     if isinstance(lc_ports, dict):
+        shipment: Dict[str, Any] = {}
+        loading_value = lc_ports.get("port_of_loading") or lc_ports.get("loading")
+        discharge_value = lc_ports.get("port_of_discharge") or lc_ports.get("discharge")
+        if loading_value:
+            shipment["port_of_loading"] = loading_value
+        if discharge_value:
+            shipment["port_of_discharge"] = discharge_value
+        if shipment:
+            return shipment
         return lc_ports
     return {}
 

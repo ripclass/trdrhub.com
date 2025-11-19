@@ -27,7 +27,7 @@ _SCHEMA_EXAMPLE = """
 
 _LOW_COST_MODEL = os.getenv("LLM_LOW_COST_MODEL", "gpt-4o-mini")
 PRIMARY_MODEL = os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
-AI_TIMEOUT_SECONDS = 6
+AI_TIMEOUT_SECONDS = 15  # Increased from 6 to handle slower API responses
 RETRY_ATTEMPTS = 2
 RELEVANT_KEYWORDS = (
     "goods",
@@ -179,12 +179,23 @@ async def _invoke_llm(prompt: str, system_prompt: str, model_override: str) -> s
             output, _, _, provider_used = await asyncio.wait_for(coro, timeout=AI_TIMEOUT_SECONDS)
             logger.debug("AI crossdoc insights generated via %s (model=%s)", provider_used, model_override)
             return output
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            error_msg = f"Timeout after {AI_TIMEOUT_SECONDS}s (attempt {attempt + 1}/{RETRY_ATTEMPTS})"
+            logger.warning("AI request attempt %s failed: %s", attempt + 1, error_msg)
+            if attempt < RETRY_ATTEMPTS - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
         except Exception as exc:
             last_error = exc
-            logger.warning("AI request attempt %s failed: %s", attempt + 1, exc)
-            await asyncio.sleep(delay)
-            delay *= 2
+            error_msg = str(exc) or type(exc).__name__
+            logger.warning("AI request attempt %s failed: %s", attempt + 1, error_msg, exc_info=attempt == RETRY_ATTEMPTS - 1)
+            if attempt < RETRY_ATTEMPTS - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
 
+    error_msg = str(last_error) if last_error else "Unknown error"
+    logger.error("AI generation failed after %s attempts: %s", RETRY_ATTEMPTS, error_msg, exc_info=last_error)
     raise last_error or RuntimeError("AI generation failed")
 
 
@@ -257,7 +268,8 @@ async def generate_crossdoc_insights(structured_docs: Dict[str, Any]) -> List[Di
             raise ValueError("Low-cost model produced incomplete issues")
 
     except Exception as exc:
-        logger.warning("Low-cost AI tier failed: %s", exc)
+        error_msg = str(exc) or type(exc).__name__
+        logger.warning("Low-cost AI tier failed: %s", error_msg, exc_info=True)
         try:
             raw_output = await _invoke_llm(prompt, system_prompt, model_override=PRIMARY_MODEL)
             parsed = _extract_json_array(raw_output)
@@ -266,7 +278,8 @@ async def generate_crossdoc_insights(structured_docs: Dict[str, Any]) -> List[Di
                     if isinstance(record, dict):
                         issues.append(_sanitize_issue(record))
         except Exception as fallback_exc:
-            logger.error("Primary AI tier failed: %s", fallback_exc, exc_info=True)
+            fallback_error_msg = str(fallback_exc) or type(fallback_exc).__name__
+            logger.error("Primary AI tier failed: %s", fallback_error_msg, exc_info=True)
             issues = _fallback_issue()
 
     if not issues:

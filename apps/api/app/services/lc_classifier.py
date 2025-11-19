@@ -112,7 +112,26 @@ def detect_lc_type(
     weak_export = beneficiary_country and pol_country and beneficiary_country == pol_country
 
     # If both weak signals point to different countries, treat as unknown
-    if weak_import and weak_export and (applicant_country != beneficiary_country):
+    if weak_import and weak_export and applicant_country and beneficiary_country and applicant_country != beneficiary_country:
+        if pol_country and pod_country:
+            if beneficiary_country == pol_country and applicant_country == pod_country:
+                return {
+                    "lc_type": LCType.EXPORT.value,
+                    "reason": (
+                        f"Goods load in {pol_country} where beneficiary resides and discharge in {pod_country} "
+                        f"where applicant resides. Flow indicates an export LC."
+                    ),
+                    "confidence": 0.75,
+                }
+            if applicant_country == pol_country and beneficiary_country == pod_country:
+                return {
+                    "lc_type": LCType.IMPORT.value,
+                    "reason": (
+                        f"Goods load in {pol_country} where applicant resides and discharge in {pod_country} "
+                        f"where beneficiary resides. Flow indicates an import LC."
+                    ),
+                    "confidence": 0.75,
+                }
         return {
             "lc_type": LCType.UNKNOWN.value,
             "reason": (

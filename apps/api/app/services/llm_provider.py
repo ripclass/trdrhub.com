@@ -70,7 +70,10 @@ class OpenAIProvider(LLMProviderInterface):
             if not self.api_key:
                 raise ValueError("OpenAI API key not configured")
             
-            client = openai.AsyncOpenAI(api_key=self.api_key)
+            # Configure timeout for OpenAI client (20s total, 60s read timeout)
+            import httpx
+            timeout = httpx.Timeout(20.0, read=60.0)
+            client = openai.AsyncOpenAI(api_key=self.api_key, timeout=timeout)
             
             messages = []
             if system_prompt:
@@ -134,7 +137,10 @@ class AnthropicProvider(LLMProviderInterface):
             if not self.api_key:
                 raise ValueError("Anthropic API key not configured")
             
-            client = anthropic.AsyncAnthropic(api_key=self.api_key)
+            # Configure timeout for Anthropic client (20s total, 60s read timeout)
+            import httpx
+            timeout = httpx.Timeout(20.0, read=60.0)
+            client = anthropic.AsyncAnthropic(api_key=self.api_key, timeout=timeout)
             
             # Anthropic uses system parameter separately
             model_override = kwargs.pop("model_override", None)
