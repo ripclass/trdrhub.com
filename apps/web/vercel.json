@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "cd apps/web && npm run build",
-  "outputDirectory": "apps/web/dist",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
   "framework": "vite",
   "rewrites": [
@@ -15,6 +15,6 @@
     }
   ],
   "env": {
-    "VITE_API_URL": "@api_base_url"
+    "VITE_API_URL": "https://trdrhub-api.onrender.com"
   }
 }
