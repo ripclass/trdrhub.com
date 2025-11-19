@@ -4,11 +4,300 @@ Field extraction utilities for different document types.
 
 import json
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from decimal import Decimal, InvalidOperation
 
 from .models import ExtractedField, FieldType, DocumentType
+
+
+class ISO20022ParseError(Exception):
+    """Raised when an ISO 20022 LC payload cannot be parsed."""
+
+
+ISO_COUNTRY_NORMALIZATION = {
+    "us": "United States",
+    "usa": "United States",
+    "united states": "United States",
+    "united states of america": "United States",
+    "bd": "Bangladesh",
+    "bangladesh": "Bangladesh",
+    "de": "Germany",
+    "ger": "Germany",
+    "germany": "Germany",
+    "cn": "China",
+    "chn": "China",
+    "china": "China",
+    "hk": "Hong Kong",
+    "uk": "United Kingdom",
+    "gb": "United Kingdom",
+}
+
+ISO_PORT_NORMALIZATION = {
+    "chittagong": "Chittagong, Bangladesh",
+    "chattogram": "Chittagong, Bangladesh",
+    "chitagong": "Chittagong, Bangladesh",
+    "new york": "New York, United States",
+    "newyork": "New York, United States",
+    "ningbo": "Ningbo, China",
+    "shanghai": "Shanghai, China",
+}
+
+
+def extract_iso20022_lc(xml_text: str) -> Dict[str, Any]:
+    """Parse an ISO 20022 LC-style XML payload into the normalized lc.* context."""
+
+    if not xml_text or "<" not in xml_text:
+        raise ISO20022ParseError("ISO20022 LC payload is empty.")
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise ISO20022ParseError(f"Invalid ISO20022 LC XML: {exc}") from exc
+
+    trad_instr = _find_descendant_by_local_name(root, "TradInstr")
+    if trad_instr is None:
+        raise ISO20022ParseError("ISO20022 LC payload missing TradInstr block.")
+
+    lc_context: Dict[str, Any] = {"format": "iso20022"}
+
+    instr_id = _get_child_text(trad_instr, "InstrId")
+    if instr_id:
+        lc_context["number"] = instr_id
+
+    amount_elem = _find_child_by_local_name(trad_instr, "LcAmt")
+    if amount_elem is not None:
+        amount_value = _normalize_text(amount_elem.text)
+        if amount_value:
+            currency = (
+                amount_elem.attrib.get("Ccy")
+                or amount_elem.attrib.get("ccy")
+                or amount_elem.attrib.get("currency")
+            )
+            amount_data: Dict[str, Any] = {"value": _normalize_amount(amount_value)}
+            if currency:
+                amount_data["currency"] = currency
+            lc_context["amount"] = amount_data
+
+    buyer = _find_child_by_local_name(trad_instr, "Buyer")
+    applicant = _parse_party(buyer)
+    if applicant:
+        lc_context["applicant"] = applicant
+
+    seller = _find_child_by_local_name(trad_instr, "Seller")
+    beneficiary = _parse_party(seller)
+    if beneficiary:
+        lc_context["beneficiary"] = beneficiary
+
+    issuing_bank_elem = _find_child_by_local_name(trad_instr, "IssuingBank")
+    issuing_bank = _parse_bank(issuing_bank_elem)
+    if issuing_bank:
+        lc_context["issuing_bank"] = issuing_bank
+
+    terms = _find_child_by_local_name(trad_instr, "TermsAndCond")
+    if terms is not None:
+        latest_ship = _get_child_text(terms, "LatestShipDt")
+        expiry_date = _get_child_text(terms, "ExpiryDt")
+        place_of_expiry = _get_child_text(terms, "PlaceOfExpiry")
+        dates: Dict[str, Any] = {}
+        if latest_ship:
+            dates["latest_shipment"] = latest_ship
+        if expiry_date:
+            dates["expiry"] = expiry_date
+        if place_of_expiry:
+            dates["place_of_expiry"] = place_of_expiry
+        if dates:
+            lc_context["dates"] = dates
+
+        incoterm_value = _get_child_text(terms, "IncoTerm")
+        if incoterm_value:
+            normalized_incoterm = _normalize_incoterm(incoterm_value)
+            if normalized_incoterm:
+                lc_context["incoterm"] = normalized_incoterm
+
+        shipment_route = _find_child_by_local_name(terms, "ShipmentRoute")
+        if shipment_route is not None:
+            loading = _get_child_text(shipment_route, "PortOfLoading")
+            discharge = _get_child_text(shipment_route, "PortOfDischarge")
+            ports: Dict[str, Any] = {}
+            if loading:
+                normalized_loading = _normalize_port_name(loading)
+                ports["loading"] = normalized_loading
+                ports["port_of_loading"] = normalized_loading
+            if discharge:
+                normalized_discharge = _normalize_port_name(discharge)
+                ports["discharge"] = normalized_discharge
+                ports["port_of_discharge"] = normalized_discharge
+            if ports:
+                lc_context["ports"] = ports
+
+    goods = _find_child_by_local_name(trad_instr, "Goods")
+    if goods is not None:
+        goods_items: List[Dict[str, Any]] = []
+        descriptions: List[str] = []
+        for line_item in _findall_by_local_name(goods, "LineItm"):
+            item_desc = _get_child_text(line_item, "Desc")
+            hs_code = _get_child_text(line_item, "HSCode")
+            qty_elem = _find_child_by_local_name(line_item, "Qty")
+            qty_text = _normalize_text(qty_elem.text if qty_elem is not None else None)
+            uom = qty_elem.attrib.get("UOM") if qty_elem is not None else None
+            unit_price = _get_child_text(line_item, "UnitPrice")
+            if item_desc:
+                descriptions.append(item_desc)
+            goods_items.append(
+                {
+                    "description": item_desc,
+                    "hs_code": hs_code,
+                    "quantity": qty_text,
+                    "uom": uom,
+                    "unit_price": unit_price,
+                }
+            )
+        if descriptions:
+            lc_context["goods_description"] = "; ".join(descriptions)
+        if goods_items:
+            lc_context["goods_items"] = goods_items
+
+    return lc_context
+
+
+def _find_child_by_local_name(node: Optional[ET.Element], local_name: str) -> Optional[ET.Element]:
+    if node is None:
+        return None
+    for child in list(node):
+        if _local_name(child.tag) == local_name:
+            return child
+    return None
+
+
+def _findall_by_local_name(node: Optional[ET.Element], local_name: str) -> List[ET.Element]:
+    if node is None:
+        return []
+    return [child for child in list(node) if _local_name(child.tag) == local_name]
+
+
+def _find_descendant_by_local_name(node: Optional[ET.Element], local_name: str) -> Optional[ET.Element]:
+    if node is None:
+        return None
+    for descendant in node.iter():
+        if descendant is node:
+            continue
+        if _local_name(descendant.tag) == local_name:
+            return descendant
+    return None
+
+
+def _local_name(tag: Optional[str]) -> str:
+    if not tag:
+        return ""
+    if "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _normalize_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _normalize_amount(value: str) -> str:
+    try:
+        decimal_value = Decimal(value.replace(",", ""))
+        normalized = decimal_value.quantize(Decimal("0.01"))
+        return f"{normalized:.2f}"
+    except (InvalidOperation, ValueError):
+        return value.strip()
+
+
+def _parse_party(node: Optional[ET.Element]) -> Dict[str, Any]:
+    party: Dict[str, Any] = {}
+    if node is None:
+        return party
+
+    name = _get_child_text(node, "Nm") or _normalize_text(node.text)
+    if name:
+        party["name"] = name
+
+    address_lines: List[str] = []
+    pstl = _find_child_by_local_name(node, "PstlAdr")
+    if pstl is not None:
+        for child in list(pstl):
+            local = _local_name(child.tag).lower()
+            child_text = _normalize_text(child.text)
+            if not child_text:
+                continue
+            if local == "ctry":
+                party["country"] = _normalize_country(child_text)
+            else:
+                address_lines.append(child_text)
+    if address_lines:
+        party["address"] = ", ".join(address_lines)
+
+    if "country" not in party:
+        country_text = _get_child_text(node, "Ctry")
+        if country_text:
+            party["country"] = _normalize_country(country_text)
+
+    return party
+
+
+def _parse_bank(node: Optional[ET.Element]) -> Dict[str, Any]:
+    bank: Dict[str, Any] = {}
+    if node is None:
+        return bank
+    name = _get_child_text(node, "Nm") or _normalize_text(node.text)
+    if name:
+        bank["name"] = name
+    bic = _get_child_text(node, "BIC")
+    if bic:
+        bank["bic"] = bic
+    country_text = _get_child_text(node, "Ctry")
+    if country_text:
+        bank["country"] = _normalize_country(country_text)
+    return bank
+
+
+def _get_child_text(node: Optional[ET.Element], local_name: str) -> Optional[str]:
+    if node is None:
+        return None
+    child = _find_child_by_local_name(node, local_name)
+    if child is not None:
+        return _normalize_text(child.text)
+    return None
+
+
+def _normalize_country(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    key = re.sub(r"[^A-Za-z]", "", value).lower()
+    if not key:
+        return None
+    return ISO_COUNTRY_NORMALIZATION.get(key) or value.strip().title()
+
+
+def _normalize_port_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = re.sub(r"[^A-Za-z ]", "", value).strip().lower()
+    normalized = re.sub(r"\s+", " ", normalized)
+    for key, mapped in ISO_PORT_NORMALIZATION.items():
+        if key in normalized:
+            return mapped
+    return value.strip().title()
+
+
+def _normalize_incoterm(value: str) -> Optional[str]:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    parts = cleaned.split(None, 1)
+    term = parts[0].upper()
+    location = parts[1] if len(parts) > 1 else ""
+    normalized_location = _normalize_port_name(location) if location else ""
+    return f"{term} {normalized_location}".strip()
 
 
 class DocumentFieldExtractor:

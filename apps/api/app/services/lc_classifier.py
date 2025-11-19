@@ -41,6 +41,17 @@ def detect_lc_type(
     lc_context = lc_data or {}
     shipment_context = shipment_data or {}
 
+    ports_context = lc_context.get("ports") or {}
+    lc_format = (lc_context.get("format") or "").lower()
+    loading_hint = ports_context.get("loading") or ports_context.get("port_of_loading")
+    discharge_hint = ports_context.get("discharge") or ports_context.get("port_of_discharge")
+    if lc_format == "iso20022" and not shipment_context and (loading_hint or discharge_hint):
+        # ISO LCs already normalize ports/doc parties, so reuse them as shipment hints.
+        shipment_context = {
+            "port_of_loading": loading_hint,
+            "port_of_discharge": discharge_hint,
+        }
+
     applicant_country = _extract_party_country(lc_context.get("applicant")) or _normalize_country(
         lc_context.get("applicant_country") or lc_context.get("applicantCountry")
     )
@@ -56,7 +67,6 @@ def detect_lc_type(
         lc_context.get("advising_bank_country") or lc_context.get("advisingBankCountry")
     )
 
-    ports_context = lc_context.get("ports") or {}
     pol_country = (
         _extract_port_country(shipment_context, "port_of_loading")
         or _normalize_country(shipment_context.get("port_of_loading_country"))

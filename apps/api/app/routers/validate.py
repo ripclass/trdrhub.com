@@ -972,7 +972,7 @@ async def _build_document_context(
         return {"extraction_status": "empty"}
 
     try:
-        from app.rules.extractors import DocumentFieldExtractor
+        from app.rules.extractors import DocumentFieldExtractor, ISO20022ParseError, extract_iso20022_lc
         from app.rules.models import DocumentType
     except ImportError as e:
         logger.warning(f"DocumentFieldExtractor not available; skipping text extraction: {e}")
@@ -1037,26 +1037,43 @@ async def _build_document_context(
 
         try:
             if document_type == "letter_of_credit":
-                # Store raw text for LC documents
-                if "lc" not in context:
-                    context["lc"] = {}
-                    context["lc"]["raw_text"] = extracted_text
+                lc_payload = context.setdefault("lc", {})
+                if "raw_text" not in lc_payload:
+                    lc_payload["raw_text"] = extracted_text
                     context["lc_text"] = extracted_text
-                
-                lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
-                logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
-                lc_context = _fields_to_lc_context(lc_fields)
-                if lc_context:
-                    # Merge structured fields into lc context
-                    context["lc"].update(lc_context)
-                    has_structured_data = True
-                    logger.info(f"LC context keys: {list(context['lc'].keys())}")
-                    if not context.get("lc_number") and lc_context.get("number"):
-                        context["lc_number"] = lc_context["number"]
-                    doc_info["extracted_fields"] = lc_context
-                    doc_info["extraction_status"] = "success"
+
+                lc_format = detect_lc_format(extracted_text)
+                lc_payload["format"] = lc_format
+
+                if lc_format == "iso20022":
+                    try:
+                        iso_context = extract_iso20022_lc(extracted_text)
+                    except ISO20022ParseError as exc:
+                        logger.warning(f"ISO20022 LC parse failed for {filename}: {exc}")
+                        doc_info["extraction_status"] = "failed"
+                        doc_info["extraction_error"] = "iso20022_parse_failed"
+                    else:
+                        lc_payload.update(iso_context)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = iso_context
+                        doc_info["extraction_status"] = "success"
+                        logger.info(f"ISO20022 LC context keys: {list(lc_payload.keys())}")
+                        if not context.get("lc_number") and iso_context.get("number"):
+                            context["lc_number"] = iso_context["number"]
                 else:
-                    logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
+                    lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
+                    logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
+                    lc_context = _fields_to_lc_context(lc_fields)
+                    if lc_context:
+                        lc_payload.update(lc_context)
+                        has_structured_data = True
+                        logger.info(f"LC context keys: {list(lc_payload.keys())}")
+                        if not context.get("lc_number") and lc_context.get("number"):
+                            context["lc_number"] = lc_context["number"]
+                        doc_info["extracted_fields"] = lc_context
+                        doc_info["extraction_status"] = "success"
+                    else:
+                        logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
             elif document_type == "commercial_invoice":
                 invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
                 logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
@@ -1175,8 +1192,26 @@ async def _build_document_context(
 
     context["documents_presence"] = documents_presence
     context["documents_summary"] = documents_presence
-    
+
     return context
+
+
+def detect_lc_format(raw_lc_text: Optional[str]) -> str:
+    """
+    Detect whether an LC payload is ISO 20022 XML or MT700 text.
+    Defaults to MT700 when no XML signature is present.
+    """
+
+    if not raw_lc_text:
+        return "mt700"
+
+    snippet = raw_lc_text.strip()
+    lowered = snippet.lower()
+    if "<document" in lowered and "xmlns" in lowered:
+        return "iso20022"
+    if snippet.startswith("<?xml") and "<Document" in snippet:
+        return "iso20022"
+    return "mt700"
 
 
 def _resolve_shipment_context(payload: Dict[str, Any]) -> Dict[str, Any]:
