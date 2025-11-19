@@ -557,6 +557,20 @@ def activate_rules_for_lc(
     goods_ready = _has_goods_context(lc_context, doc_set)
     ports_ready = _has_complete_ports(lc_context)
     lc_type = str(doc_set.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).lower()
+    doc_ready_map = _build_document_ready_map(lc_context, doc_set)
+
+    drop_stats = {
+        "informational": 0,
+        "doc_requirement": 0,
+        "direction": 0,
+        "ports": 0,
+        "goods": 0,
+        "third_party": 0,
+        "negotiability": 0,
+        "hs_code": 0,
+        "signed_invoice": 0,
+        "insurance": 0,
+    }
 
     active: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for rule, meta in rule_definitions:
@@ -564,26 +578,48 @@ def activate_rules_for_lc(
             continue
         domain_lower = ((meta or {}).get("domain") or "").lower()
         if _is_informational_rule(rule, domain_lower):
+            drop_stats["informational"] += 1
             continue
-        if not _rule_matches_doc_requirements(rule, doc_requirements):
+        if not _rule_matches_doc_requirements(rule, doc_requirements, doc_ready_map):
+            drop_stats["doc_requirement"] += 1
             continue
         if not _rule_matches_lc_direction(rule, lc_type):
+            drop_stats["direction"] += 1
             continue
         if not ports_ready and _rule_targets_ports(rule):
+            drop_stats["ports"] += 1
             continue
         if not goods_ready and _rule_targets_goods(rule):
+            drop_stats["goods"] += 1
             continue
         if toggles["third_party_allowed"] and _rule_targets_third_party(rule):
+            drop_stats["third_party"] += 1
             continue
         if toggles["non_negotiable_allowed"] and _rule_targets_negotiability(rule):
+            drop_stats["negotiability"] += 1
             continue
         if not toggles["hs_code_required"] and _rule_targets_hs_code(rule):
+            drop_stats["hs_code"] += 1
             continue
         if not toggles["signed_invoice_required"] and _rule_targets_signed_invoice(rule):
+            drop_stats["signed_invoice"] += 1
             continue
         if not toggles["insurance_required"] and _rule_targets_insurance(rule):
+            drop_stats["insurance"] += 1
             continue
         active.append((rule, meta))
+
+    logger.info(
+        "Rule activation summary: total=%s active=%s drops=%s lc_type=%s toggles=%s goods_ready=%s ports_ready=%s doc_ready=%s",
+        len(rule_definitions),
+        len(active),
+        drop_stats,
+        lc_type,
+        toggles,
+        goods_ready,
+        ports_ready,
+        doc_ready_map,
+    )
 
     return active
 
@@ -641,6 +677,18 @@ NEGOTIABILITY_TAGS = {"negotiable", "non_negotiable", "original_document", "nego
 INSURANCE_TAGS = {"insurance", "coverage", "policy", "premium"}
 SIGNED_INVOICE_TAGS = {"signed_invoice", "signed", "signature"}
 HS_CODE_TAGS = {"hs_code", "hs-code", "harmonized", "customs_hs"}
+DOCUMENT_NOISE_KEYS = {
+    "raw_text",
+    "rawText",
+    "raw_text_preview",
+    "rawTextPreview",
+    "extraction_status",
+    "extractionStatus",
+    "tag",
+    "id",
+    "document_id",
+    "documentId",
+}
 
 
 def _build_lc_text_blob(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> str:
@@ -721,7 +769,11 @@ def _derive_rule_toggles(
     return toggles
 
 
-def _rule_matches_doc_requirements(rule: Dict[str, Any], requirements: Dict[str, bool]) -> bool:
+def _rule_matches_doc_requirements(
+    rule: Dict[str, Any],
+    requirements: Dict[str, bool],
+    doc_ready_map: Dict[str, bool],
+) -> bool:
     targets = _rule_targets_documents(rule)
     if not targets:
         return True
@@ -731,6 +783,8 @@ def _rule_matches_doc_requirements(rule: Dict[str, Any], requirements: Dict[str,
         canonical = "bill_of_lading" if target == "transport_document" else target
         allowed = requirements.get(canonical, True)
         if not allowed:
+            return False
+        if not doc_ready_map.get(canonical, False):
             return False
     return True
 
@@ -938,6 +992,16 @@ INFORMATIONAL_TITLE_KEYWORDS = (
     "bank-to-bank reimbursement",
     "bank to bank reimbursement",
     "assignment of proceeds",
+    "availability, expiry date",
+    "expiry date and place",
+    "role of confirming bank",
+    "clarify advising bank",
+    "chartered vessel",
+    "original documents and copies",
+    "mode of transport",
+    "clause inconsistent",
+    "set of transport documents",
+    "mandatory fields missing",
 )
 
 INFORMATIONAL_TAGS = {
@@ -974,6 +1038,41 @@ def _is_informational_rule(rule: Dict[str, Any], domain_lower: str) -> bool:
             if not documents:
                 return True
 
+    return False
+
+
+def _build_document_ready_map(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> Dict[str, bool]:
+    ready: Dict[str, bool] = {"lc": bool(lc_context)}
+    for doc_key in DOC_KEYWORDS.keys():
+        ctx = _resolve_document_context(doc_set, doc_key)
+        ready[doc_key] = _document_has_structured_fields(ctx)
+    return ready
+
+
+def _resolve_document_context(doc_set: Dict[str, Any], canonical: str) -> Dict[str, Any]:
+    ctx = doc_set.get(canonical)
+    if isinstance(ctx, dict):
+        return ctx
+    for key, value in doc_set.items():
+        if not isinstance(value, dict):
+            continue
+        normalized = _normalize_doc_label(key)
+        if normalized == canonical:
+            return value
+    return {}
+
+
+def _document_has_structured_fields(ctx: Any) -> bool:
+    if not isinstance(ctx, dict):
+        return False
+    for key, value in ctx.items():
+        if key in DOCUMENT_NOISE_KEYS:
+            continue
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return True
     return False
 
 
