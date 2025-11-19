@@ -2239,12 +2239,31 @@ def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
             _set_nested_value(lc_context, ("amount", "value"), value)
         elif name == "applicant":
             _set_nested_value(lc_context, ("applicant", "name"), value)
+        elif name == "applicant_address":
+            _set_nested_value(lc_context, ("applicant", "address"), value)
+        elif name == "applicant_country":
+            _set_nested_value(lc_context, ("applicant", "country"), value)
         elif name == "beneficiary":
             _set_nested_value(lc_context, ("beneficiary", "name"), value)
+        elif name == "beneficiary_address":
+            _set_nested_value(lc_context, ("beneficiary", "address"), value)
+        elif name == "beneficiary_country":
+            _set_nested_value(lc_context, ("beneficiary", "country"), value)
         elif name == "port_of_loading":
             _set_nested_value(lc_context, ("ports", "loading"), value)
         elif name == "port_of_discharge":
             _set_nested_value(lc_context, ("ports", "discharge"), value)
+        elif name == "goods_description":
+            lc_context["goods_description"] = value
+        elif name == "goods_items":
+            try:
+                lc_context["goods_items"] = json.loads(value)
+            except (TypeError, ValueError):
+                lc_context["goods_items"] = value
+        elif name == "incoterm":
+            lc_context["incoterm"] = value
+        elif name == "ucp_reference":
+            lc_context["ucp_reference"] = value
         else:
             lc_context[name] = value
 

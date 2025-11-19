@@ -2,6 +2,7 @@
 Field extraction utilities for different document types.
 """
 
+import json
 import re
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -13,6 +14,30 @@ from .models import ExtractedField, FieldType, DocumentType
 class DocumentFieldExtractor:
     """Extracts structured fields from OCR text for different document types."""
     
+    COUNTRY_NORMALIZATION = {
+        "usa": "United States",
+        "u.s.a": "United States",
+        "us": "United States",
+        "united states of america": "United States",
+        "united states america": "United States",
+        "bd": "Bangladesh",
+        "bangladesh": "Bangladesh",
+    }
+
+    PORT_NORMALIZATION = {
+        "chittagong": "Chittagong, Bangladesh",
+        "chattogram": "Chittagong, Bangladesh",
+        "new york": "New York, USA",
+        "ny usa": "New York, USA",
+        "ny, usa": "New York, USA",
+        "nyc": "New York, USA",
+    }
+
+    INCOTERM_PATTERN = re.compile(
+        r"\b(FOB|CIF|CFR|DAP|DDP|EXW|FCA|CPT|CIP)\b[\s\-]*([A-Z0-9 ,./]+)",
+        re.IGNORECASE,
+    )
+
     # Common patterns for field extraction
     DATE_PATTERNS = [
         r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # MM/DD/YYYY or DD/MM/YYYY
@@ -74,6 +99,7 @@ class DocumentFieldExtractor:
     def _extract_lc_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         """Extract fields specific to Letter of Credit."""
         fields = []
+        fields.extend(self._extract_mt700_fields(text, confidence))
         
         # LC Number
         lc_number = self._extract_pattern(text, r'(?:L/C|LC)\s*(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-\/]+)', 1)
@@ -182,6 +208,157 @@ class DocumentFieldExtractor:
             ))
         
         return fields
+    
+    def _extract_mt700_fields(self, text: str, confidence: float) -> List[ExtractedField]:
+        """Extract MT700 tag-based fields for Letters of Credit."""
+        blocks = self._parse_mt700_blocks(text)
+        if not blocks:
+            return []
+
+        fields: List[ExtractedField] = []
+
+        def _append_field(name: str, value: Optional[str], field_type: FieldType = FieldType.TEXT):
+            if value:
+                fields.append(
+                    ExtractedField(
+                        field_name=name,
+                        field_type=field_type,
+                        value=value.strip(),
+                        confidence=confidence,
+                        document_type=DocumentType.LETTER_OF_CREDIT,
+                    )
+                )
+
+        applicant_block = blocks.get("50") or blocks.get("50A") or blocks.get("50K") or blocks.get("50F")
+        if applicant_block:
+            applicant = self._parse_party_block(applicant_block)
+            _append_field("applicant", applicant.get("name"), FieldType.PARTY)
+            _append_field("applicant_address", applicant.get("address"))
+            _append_field("applicant_country", applicant.get("country"))
+
+        beneficiary_block = blocks.get("59") or blocks.get("59A") or blocks.get("59F")
+        if beneficiary_block:
+            beneficiary = self._parse_party_block(beneficiary_block)
+            _append_field("beneficiary", beneficiary.get("name"), FieldType.PARTY)
+            _append_field("beneficiary_address", beneficiary.get("address"))
+            _append_field("beneficiary_country", beneficiary.get("country"))
+
+        loading_value = blocks.get("44E")
+        discharge_value = blocks.get("44F")
+        if loading_value:
+            _append_field(
+                "port_of_loading",
+                self._normalize_port_name(loading_value),
+                FieldType.PORT,
+            )
+        if discharge_value:
+            _append_field(
+                "port_of_discharge",
+                self._normalize_port_name(discharge_value),
+                FieldType.PORT,
+            )
+
+        goods_description_text = None
+        goods_description = blocks.get("45A") or blocks.get("45B")
+        if goods_description:
+            goods_description_text = goods_description.strip()
+            _append_field("goods_description", goods_description_text)
+            goods_items = self._build_goods_items(goods_description_text)
+            if goods_items:
+                _append_field("goods_items", json.dumps(goods_items))
+
+        ucp_reference = blocks.get("40E")
+        if ucp_reference:
+            _append_field("ucp_reference", ucp_reference.strip())
+
+        shipment_date = blocks.get("44C") or blocks.get("31D") or blocks.get("31C")
+        if shipment_date:
+            _append_field("latest_shipment_date", shipment_date.strip())
+
+        incoterm_context = goods_description_text if goods_description_text else text
+        incoterm = self._extract_incoterm(incoterm_context)
+        if incoterm:
+            _append_field("incoterm", incoterm)
+
+        return fields
+
+    def _parse_mt700_blocks(self, text: str) -> Dict[str, str]:
+        pattern = re.compile(r":(\d{2}[A-Z]?)\:([\s\S]*?)(?=:\d{2}[A-Z]?:|$)")
+        blocks: Dict[str, str] = {}
+        for match in pattern.finditer(text):
+            tag = match.group(1)
+            value = match.group(2).strip()
+            blocks[tag] = value
+        return blocks
+
+    def _parse_party_block(self, block_text: str) -> Dict[str, str]:
+        party: Dict[str, str] = {}
+        lines = [line.strip(" ,") for line in block_text.splitlines() if line.strip()]
+        if not lines:
+            return party
+        party["name"] = lines[0]
+        if len(lines) > 1:
+            party["address"] = ", ".join(lines[1:])
+        country_candidate = self._normalize_country_name(lines[-1])
+        if country_candidate:
+            party["country"] = country_candidate
+        return party
+
+    def _normalize_country_name(self, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        text_value = re.sub(r"[^A-Za-z\s]", " ", value).strip().lower()
+        text_value = re.sub(r"\s+", " ", text_value)
+        if not text_value:
+            return None
+        if text_value in self.COUNTRY_NORMALIZATION:
+            return self.COUNTRY_NORMALIZATION[text_value]
+        tokens = text_value.split()
+        if tokens:
+            token = tokens[-1]
+            if token in self.COUNTRY_NORMALIZATION:
+                return self.COUNTRY_NORMALIZATION[token]
+        if len(text_value) <= 3 and text_value in self.COUNTRY_NORMALIZATION:
+            return self.COUNTRY_NORMALIZATION[text_value]
+        return text_value.title()
+
+    def _normalize_port_name(self, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return value
+        clean_value = value.strip()
+        normalized = clean_value.lower()
+        for key, mapped in self.PORT_NORMALIZATION.items():
+            if key in normalized:
+                return mapped
+        return clean_value.title()
+
+    def _extract_incoterm(self, text: Optional[str]) -> Optional[str]:
+        if not text:
+            return None
+        match = self.INCOTERM_PATTERN.search(text)
+        if not match:
+            return None
+        term = match.group(1).upper()
+        location = (match.group(2) or "").splitlines()[0]
+        location = location.strip(" ,.;")
+        normalized_location = self._normalize_port_name(location) or location.title()
+        return f"{term} {normalized_location}".strip()
+
+    def _build_goods_items(self, description: str) -> List[Dict[str, Optional[str]]]:
+        if not description:
+            return []
+        hs_match = re.search(r"(?:HS\s*CODE|H\.S\. CODE|HS CODE)[:\s]*([\d]{6,10})", description, re.IGNORECASE)
+        qty_match = re.search(
+            r"(\d[\d,.\s]*)\s*(PCS|PIECES|UNITS|KG|KGS|CARTONS|SETS|PAIRS|MT|MTS)",
+            description,
+            re.IGNORECASE,
+        )
+        item = {
+            "description": " ".join(line.strip() for line in description.splitlines() if line.strip()),
+            "hs_code": hs_match.group(1) if hs_match else None,
+            "qty": qty_match.group(0).strip().upper() if qty_match else None,
+        }
+        return [item]
     
     def _extract_invoice_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         """Extract fields specific to Commercial Invoice."""
