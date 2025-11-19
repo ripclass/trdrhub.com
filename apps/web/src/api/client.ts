@@ -37,9 +37,13 @@ const API_BASE_URL_VALUE = resolveApiBaseUrl()
 const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
+const DEFAULT_TIMEOUT_MS = 30000
+const LONG_REQUEST_TIMEOUT_MS = 180000
+const LONG_REQUEST_PATHS = ['/api/validate', '/api/legacy_validate', '/api/legacy-validate']
+
 const api = axios.create({
   baseURL: API_BASE_URL_VALUE,
-  timeout: 30000,
+  timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true, // Include cookies for CSRF token
 })
 
@@ -57,6 +61,10 @@ api.interceptors.request.use(
     
     if (AUTH_FREE_PATHS.some((path) => urlPath.startsWith(path))) {
       return config
+    }
+
+    if (LONG_REQUEST_PATHS.some((path) => urlPath.startsWith(path))) {
+      config.timeout = LONG_REQUEST_TIMEOUT_MS
     }
 
     // For admin endpoints, prefer backend JWT token over Supabase token
