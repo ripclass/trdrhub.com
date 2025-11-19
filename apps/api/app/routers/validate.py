@@ -259,6 +259,8 @@ async def validate_doc(
             payload.update(extracted_context)
         else:
             logger.warning("No structured data extracted from %d uploaded files", len(files_list))
+        if payload.get("lc"):
+            payload["lc"] = _normalize_lc_payload_structures(payload["lc"])
         
         context_contains_structured_data = any(
             key in payload for key in ("lc", "invoice", "bill_of_lading", "documents")
@@ -490,7 +492,7 @@ async def validate_doc(
 
         stored_extracted_data = {}
         if "lc" in payload:
-            stored_extracted_data["lc"] = payload["lc"]
+            stored_extracted_data["lc"] = _normalize_lc_payload_structures(payload["lc"])
         if "invoice" in payload:
             stored_extracted_data["invoice"] = payload["invoice"]
         if "bill_of_lading" in payload:
@@ -1192,6 +1194,8 @@ async def _build_document_context(
 
     context["documents_presence"] = documents_presence
     context["documents_summary"] = documents_presence
+    if context.get("lc"):
+        context["lc"] = _normalize_lc_payload_structures(context["lc"])
 
     return context
 
@@ -2308,6 +2312,53 @@ def _fields_to_flat_context(fields: List[Any]) -> Dict[str, Any]:
             continue
         context[field.field_name] = value
     return context
+
+
+def _parse_json_if_possible(value: Any) -> Any:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse JSON string in LC payload; leaving raw text")
+                return value
+    return value
+
+
+def _coerce_goods_items(value: Any) -> List[Dict[str, Any]]:
+    parsed = _parse_json_if_possible(value)
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        return [parsed]
+    return []
+
+
+def _normalize_lc_payload_structures(lc_payload: Any) -> Dict[str, Any]:
+    parsed = _parse_json_if_possible(lc_payload)
+    if not isinstance(parsed, dict):
+        return {}
+
+    nested_keys = (
+        "applicant",
+        "beneficiary",
+        "ports",
+        "dates",
+        "amount",
+        "issuing_bank",
+        "advising_bank",
+    )
+    for key in nested_keys:
+        if key in parsed:
+            nested = _parse_json_if_possible(parsed[key])
+            if isinstance(nested, dict):
+                parsed[key] = nested
+
+    if "goods_items" in parsed:
+        parsed["goods_items"] = _coerce_goods_items(parsed.get("goods_items"))
+
+    return parsed
 
 
 def _set_nested_value(container: Dict[str, Any], path: Tuple[str, ...], value: Any) -> None:
