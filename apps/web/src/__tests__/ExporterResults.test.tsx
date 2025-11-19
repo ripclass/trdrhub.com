@@ -124,23 +124,6 @@ describe('ExporterResults', () => {
     expect(within(complianceRow).getByText(expectedCompliance)).toBeInTheDocument();
   });
 
-  it('renders AI summary from backend payload', async () => {
-    render(renderWithProviders(<ExporterResults />));
-    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
-    expect(screen.getByText(mockValidationResults.aiSummary ?? '')).toBeInTheDocument();
-  });
-
-  it('falls back to derived AI summary when LLM output is missing', async () => {
-    const fallbackResult = buildValidationResults();
-    fallbackResult.aiSummary = null;
-    fallbackResult.ai_enrichment = undefined as any;
-    activeResults = fallbackResult;
-
-    render(renderWithProviders(<ExporterResults />));
-    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
-    expect(screen.getByText(/Detected 3 issues/i)).toBeInTheDocument();
-  });
-
   it('renders documents tab with all trade documents', async () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
@@ -245,18 +228,6 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/All documents comply with LC terms/i)).toBeInTheDocument();
   });
 
-  it('shows AI analysis unavailable message when summaries are missing', async () => {
-    const deterministicOnly = buildValidationResults();
-    deterministicOnly.aiSummary = null;
-    deterministicOnly.ai_enrichment = undefined as any;
-    activeResults = deterministicOnly;
-
-    const user = userEvent.setup();
-    render(renderWithProviders(<ExporterResults />));
-    await user.click(screen.getByRole('tab', { name: /Issues/i }));
-    expect(screen.getByText(/AI analysis unavailable/i)).toBeInTheDocument();
-  });
-
   it('indicates analytics unavailability when structured_result analytics are missing', async () => {
     const withoutAnalytics = buildValidationResults();
     (withoutAnalytics.structured_result as any).analytics = undefined;
@@ -277,7 +248,7 @@ describe('ExporterResults', () => {
     activeResults = noTimeline;
 
     render(renderWithProviders(<ExporterResults />));
-    await waitFor(() => expect(screen.getByText(/AI Summary/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument());
     expect(screen.queryByText(/Export Processing Timeline/i)).not.toBeInTheDocument();
   });
 

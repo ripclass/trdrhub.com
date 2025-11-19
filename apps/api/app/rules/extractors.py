@@ -303,6 +303,10 @@ class DocumentFieldExtractor:
         if shipment_date:
             _append_field("latest_shipment_date", shipment_date.strip(), FieldType.DATE)
 
+        additional_conditions = blocks.get("47A")
+        if additional_conditions:
+            _append_field("additional_conditions", additional_conditions.strip())
+
         incoterm_context = goods_description_text if goods_description_text else text
         incoterm = self._extract_incoterm(incoterm_context)
         if incoterm:

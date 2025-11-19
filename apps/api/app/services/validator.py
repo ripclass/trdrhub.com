@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import os
 import re
 import logging
@@ -528,6 +528,100 @@ def _rule_matches_lc_type(rule: Dict[str, Any], domain: Optional[str], lc_type: 
     return lc_type in allowed_types
 
 
+def filter_rules_by_lc_context(
+    rules_with_meta: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+    document_data: Dict[str, Any],
+) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    if not rules_with_meta:
+        return []
+
+    lc_context = document_data.get("lc") or {}
+    lc_text = (document_data.get("lc_text") or lc_context.get("raw_text") or "") or ""
+    additional_conditions = (
+        lc_context.get("additional_conditions")
+        or _extract_additional_conditions(lc_text)
+        or ""
+    )
+    additional_lower = additional_conditions.lower()
+    lc_type = str(document_data.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).lower()
+    incoterm = (lc_context.get("incoterm") or "").upper()
+
+    ucp_referenced = _lc_mentions_ucp(lc_context, lc_text)
+    third_party_allowed = _allows_third_party_docs(additional_lower)
+    insurance_waived = incoterm.startswith("FOB") or _insurance_waived(additional_lower)
+
+    filtered: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    for rule, meta in rules_with_meta:
+        domain_lower = ((meta or {}).get("domain") or "").lower()
+        if domain_lower.startswith("icc.ucp") and not ucp_referenced:
+            continue
+        if "icc.isbp" in domain_lower:
+            continue
+        if lc_type == LCType.EXPORT.value and _rule_mentions_keywords(rule, {"import", "importer"}):
+            continue
+        if lc_type == LCType.IMPORT.value and _rule_mentions_keywords(rule, {"export", "exporter"}):
+            continue
+        if insurance_waived and _rule_mentions_keywords(rule, {"insurance", "insured", "policy"}):
+            continue
+        if third_party_allowed and _rule_mentions_keywords(rule, {"third party", "third-party"}):
+            continue
+        filtered.append((rule, meta))
+
+    return filtered
+
+
+def _lc_mentions_ucp(lc_context: Dict[str, Any], lc_text: str) -> bool:
+    reference = str(lc_context.get("ucp_reference") or "")
+    blob = f"{reference} {lc_text}".lower()
+    return "ucp" in blob
+
+
+def _allows_third_party_docs(additional_lower: str) -> bool:
+    if "third" not in additional_lower:
+        return False
+    if "third party" not in additional_lower and "third-party" not in additional_lower:
+        return False
+    return any(token in additional_lower for token in ["allow", "accept", "permitted", "acceptable", "authorized"])
+
+
+def _insurance_waived(additional_lower: str) -> bool:
+    if "insurance" not in additional_lower:
+        return False
+    return any(
+        phrase in additional_lower
+        for phrase in [
+            "insurance not required",
+            "insurance to be covered by applicant",
+            "insurance by applicant",
+            "insurance at buyer",
+        ]
+    )
+
+
+def _rule_mentions_keywords(rule: Dict[str, Any], keywords: Set[str]) -> bool:
+    if not keywords:
+        return False
+    text_blobs: List[str] = []
+    for key in ("title", "description", "message", "rule_id", "rule"):
+        value = rule.get(key)
+        if isinstance(value, str):
+            text_blobs.append(value.lower())
+    tags = rule.get("tags")
+    if isinstance(tags, list):
+        text_blobs.extend(str(tag).lower() for tag in tags if tag)
+    combined = " ".join(text_blobs)
+    return any(keyword in combined for keyword in keywords)
+
+
+def _extract_additional_conditions(lc_text: str) -> Optional[str]:
+    if not lc_text:
+        return None
+    match = re.search(r":?47A\s*:\s*([\s\S]*?)(?=\n:?[\d]{2}[A-Z]?\s*:|$)", lc_text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def _detect_icc_ruleset_domains(document_data: Dict[str, Any]) -> Tuple[str, List[str]]:
     """
     Detect the base ICC ruleset domain and any supplement domains from document content.
@@ -756,6 +850,7 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 for rule, meta in filtered_rules_with_meta
                 if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
             ]
+            filtered_rules_with_meta = filter_rules_by_lc_context(filtered_rules_with_meta, document_data)
 
             if not filtered_rules_with_meta:
                 logger.warning(

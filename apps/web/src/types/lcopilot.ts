@@ -15,6 +15,7 @@ export interface IssueCard {
   title: string;
   description: string;
   severity: string;
+  priority?: string;
   documentName?: string;
   documentType?: string;
   documents?: string[];
@@ -82,7 +83,6 @@ export interface ValidationResults {
   issues: IssueCard[];
   analytics: ValidationAnalytics;
   timeline: TimelineEvent[];
-  aiSummary?: string | null;
   results?: any[];
   discrepancies?: any[];
   lcNumber?: string;

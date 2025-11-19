@@ -24,7 +24,7 @@ from app.services.crossdoc import (
     build_issue_cards,
     DEFAULT_LABELS,
 )
-from app.services.ai_crossdoc_engine import generate_crossdoc_insights
+from app.services.ai_issue_rewriter import rewrite_issue
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
@@ -427,6 +427,8 @@ async def validate_doc(
             r for r in results
             if not r.get("passed", False) and not r.get("not_applicable", False)
         ]
+        issue_context = _build_issue_context(payload)
+        failed_results = await _rewrite_failed_results(failed_results, issue_context)
         issue_cards, reference_issues = build_issue_cards(failed_results)
 
         # Record usage - link to session if created (skip for demo user)
@@ -660,18 +662,8 @@ async def validate_doc(
             if not doc.get("id"):
                 doc["id"] = str(uuid4())
 
-        structured_docs_input = _build_structured_docs_payload(payload, final_documents)
-        ai_crossdoc_issues: List[Dict[str, Any]] = []
-        if structured_docs_input:
-            try:
-                ai_crossdoc_issues = await generate_crossdoc_insights(structured_docs_input)
-            except Exception as exc:
-                logger.error("AI cross-document insights failed: %s", exc, exc_info=True)
-                ai_crossdoc_issues = []
-
         structured_issues, document_issue_counts, severity_counts = _build_issue_payload(
             failed_results,
-            ai_crossdoc_issues,
             final_documents,
         )
         documents_payload = _build_documents_section(final_documents, document_issue_counts)
@@ -1746,35 +1738,6 @@ def _build_processing_timeline(
     return events
 
 
-def _build_structured_docs_payload(
-    payload: Dict[str, Any],
-    documents: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    def _section(keys: List[str]) -> Dict[str, Any]:
-        for key in keys:
-            candidate = payload.get(key)
-            if isinstance(candidate, dict):
-                return candidate
-        return {}
-
-    return {
-        "lc": _section(["lc"]),
-        "invoice": _section(["invoice"]),
-        "bl": _section(["bill_of_lading", "billOfLading"]),
-        "packing": _section(["packing_list", "packingList"]),
-        "coo": _section(["certificate_of_origin", "certificateOfOrigin"]),
-        "insurance": _section(["insurance_certificate", "insurance"]),
-        "documents": [
-            {
-                "name": doc.get("name"),
-                "type": doc.get("documentType") or doc.get("type"),
-                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
-            }
-            for doc in documents
-        ],
-    }
-
-
 class ProcessingSummaryModel(BaseModel):
     total_documents: int = Field(..., ge=0)
     successful_extractions: int = Field(..., ge=0)
@@ -1847,7 +1810,6 @@ def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _build_issue_payload(
     deterministic_results: List[Dict[str, Any]],
-    ai_issues: List[Dict[str, Any]],
     documents: List[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
     formatted: List[Dict[str, Any]] = []
@@ -1855,9 +1817,6 @@ def _build_issue_payload(
 
     for result in deterministic_results:
         formatted.append(_format_deterministic_issue(result))
-
-    for issue in ai_issues:
-        formatted.append(_format_ai_issue(issue))
 
     doc_meta, key_map = _build_document_lookup(documents)
     doc_issue_counts: Dict[str, int] = {doc.get("id"): 0 for doc in documents if doc.get("id")}
@@ -1875,6 +1834,91 @@ def _build_issue_payload(
     return formatted, doc_issue_counts, severity_counts
 
 
+def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Collect document excerpts relevant for issue rewriting."""
+    context_snapshot: Dict[str, Any] = {}
+    for key in (
+        "lc",
+        "invoice",
+        "bill_of_lading",
+        "billOfLading",
+        "packing_list",
+        "packingList",
+        "insurance_certificate",
+        "insurance",
+        "documents",
+        "lc_text",
+        "lc_type",
+    ):
+        if payload.get(key) is not None:
+            context_snapshot[key] = payload.get(key)
+    return context_snapshot
+
+
+async def _rewrite_failed_results(
+    issues: List[Dict[str, Any]],
+    context_snapshot: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not issues:
+        return issues
+
+    rewritten: List[Dict[str, Any]] = []
+    for issue in issues:
+        try:
+            rewrite_payload = await rewrite_issue(issue, context_snapshot)
+            if rewrite_payload:
+                _apply_issue_rewrite(issue, rewrite_payload)
+        except Exception as exc:
+            logger.warning("Issue rewrite failed for %s: %s", issue.get("rule"), exc)
+        rewritten.append(issue)
+    return rewritten
+
+
+def _apply_issue_rewrite(issue: Dict[str, Any], rewrite_payload: Dict[str, Any]) -> None:
+    title = rewrite_payload.get("title")
+    if title:
+        issue["title"] = title
+
+    description = rewrite_payload.get("description")
+    if description:
+        issue["description"] = description
+        issue["message"] = description
+
+    expected = rewrite_payload.get("expected")
+    if expected is not None:
+        issue["expected"] = expected
+
+    found = rewrite_payload.get("found")
+    if found is not None:
+        issue["found"] = found
+        issue["actual"] = found
+
+    suggestion = rewrite_payload.get("suggested_fix") or rewrite_payload.get("suggestion")
+    if suggestion is not None:
+        issue["suggested_fix"] = suggestion
+        issue["suggestion"] = suggestion
+
+    documents = rewrite_payload.get("documents")
+    if documents:
+        issue["documents"] = documents
+        issue["document_names"] = documents
+
+    priority = rewrite_payload.get("priority")
+    severity = _priority_to_severity(priority, issue.get("severity"))
+    issue["severity"] = severity
+    if priority:
+        issue["priority"] = priority
+
+
+def _priority_to_severity(priority: Optional[str], fallback: Optional[str]) -> str:
+    candidate = (priority or fallback or "minor").lower()
+    if candidate in {"critical", "high"}:
+        return "critical"
+    if candidate in {"major", "medium", "warn", "warning"}:
+        return "major"
+    return "minor"
+
+
 def _normalize_issue_severity(value: Optional[str]) -> str:
     """Normalize issue severity to standard values: critical, major, minor."""
     if not value:
@@ -1890,6 +1934,7 @@ def _normalize_issue_severity(value: Optional[str]) -> str:
 def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
     issue_id = str(result.get("rule") or result.get("rule_id") or uuid4())
     severity = _normalize_issue_severity(result.get("severity"))
+    priority = result.get("priority") or severity
     documents = _extract_document_names(result)
     expected = result.get("expected") or result.get("expected_value")
     found = result.get("found") or result.get("actual_value")
@@ -1902,6 +1947,7 @@ def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
         "id": issue_id,
         "title": result.get("title") or result.get("rule") or "Rule Breach",
         "severity": severity,
+        "priority": priority,
         "documents": documents,
         "description": result.get("message") or "",
         "expected": _coerce_issue_value(expected),
@@ -1909,24 +1955,6 @@ def _format_deterministic_issue(result: Dict[str, Any]) -> Dict[str, Any]:
         "suggested_fix": _coerce_issue_value(suggestion),
         "ucp_reference": _coerce_issue_value(result.get("rule")),
     }
-
-
-def _format_ai_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
-    formatted = {
-        "id": issue.get("id") or str(uuid4()),
-        "title": issue.get("title") or "Cross-document discrepancy",
-        "severity": _normalize_issue_severity(issue.get("severity")),
-        "documents": issue.get("documents") or [],
-        "description": issue.get("description") or "",
-        "expected": issue.get("expected") or "",
-        "found": issue.get("found") or "",
-        "suggested_fix": issue.get("suggested_fix") or "",
-        "ucp_reference": issue.get("ucp_reference") or "",
-    }
-    formatted["id"] = str(formatted["id"])
-    if isinstance(formatted["documents"], str):
-        formatted["documents"] = [formatted["documents"]]
-    return formatted
 
 
 def _coerce_issue_value(value: Any) -> str:
@@ -2111,7 +2139,7 @@ def _build_timeline_entries() -> List[Dict[str, str]]:
         {"label": "Upload Received", "status": "complete"},
         {"label": "OCR Complete", "status": "complete"},
         {"label": "Deterministic Rules", "status": "complete"},
-        {"label": "AI Cross-Document Analysis", "status": "complete"},
+        {"label": "Issue Review Ready", "status": "complete"},
     ]
 
 def _build_document_processing_analytics(
@@ -2228,6 +2256,8 @@ def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
             lc_context["incoterm"] = value
         elif name == "ucp_reference":
             lc_context["ucp_reference"] = value
+        elif name == "additional_conditions":
+            lc_context["additional_conditions"] = value
         else:
             lc_context[name] = value
 

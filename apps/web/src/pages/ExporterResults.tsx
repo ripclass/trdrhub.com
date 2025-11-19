@@ -47,7 +47,6 @@ import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type Gu
 import { useJob, useResults } from "@/hooks/use-lcopilot";
 import type { ValidationResults, IssueCard } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
-import { AISummaryCard } from "@/components/exporter/AISummaryCard";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import { cn } from "@/lib/utils";
 
@@ -350,13 +349,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
         })) ?? [];
   const referenceIssues = resolvedResults?.reference_issues ?? [];
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
-  const structuredAiSummary =
-    structuredResult && typeof (structuredResult as Record<string, unknown>)['ai_summary'] === 'string'
-      ? ((structuredResult as Record<string, string>)['ai_summary'] as string)
-      : structuredResult && typeof (structuredResult as Record<string, unknown>)['summary'] === 'string'
-        ? ((structuredResult as Record<string, string>)['summary'] as string)
-        : null;
-  const resolvedAiSummary = resolvedResults?.aiSummary ?? structuredAiSummary ?? aiInsights?.summary ?? null;
   const hasIssueCards = issueCards.length > 0;
   const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
   const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
@@ -490,36 +482,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     resolvedResults?.processing_time ||
     resolvedResults?.processingTimeMinutes ||
     '-';
-  const aiSummaryFallback = useMemo(() => {
-    if (totalDiscrepancies === 0) {
-      return "All submitted trade documents comply with the LC terms. Continue with customs submission.";
-    }
-    const highestSeverity = severityBreakdown.critical > 0 ? "critical" : severityBreakdown.major > 0 ? "major" : "minor";
-    const severityLabel =
-      highestSeverity === "critical" ? "critical deviations" : highestSeverity === "major" ? "moderate findings" : "minor notes";
-    return `Detected ${totalDiscrepancies} ${totalDiscrepancies === 1 ? "issue" : "issues"} with ${severityLabel} across ${totalDocuments || 0} documents. ${successCount} document${successCount === 1 ? "" : "s"} are ready to file.`;
-  }, [totalDiscrepancies, severityBreakdown, totalDocuments, successCount]);
-  const aiSummaryFindings = useMemo(
-    () =>
-      issueCards
-        .slice(0, 3)
-        .map((issue) => issue.title || issue.description || "Review discrepancy details"),
-    [issueCards],
-  );
-  const aiSummaryNarrative = resolvedAiSummary ?? aiSummaryFallback;
-  const aiRiskLevel: "low" | "medium" | "high" = useMemo(() => {
-    if (severityBreakdown.critical > 0) return "high";
-    if (severityBreakdown.major > 0) return "medium";
-    return "low";
-  }, [severityBreakdown]);
-  const aiAnalysisAvailable = Boolean(
-    resolvedAiSummary || aiInsights?.summary || (aiInsights?.suggestions?.length ?? 0) > 0,
-  );
-  const aiSummaryDocumentQuality = useMemo(
-    () => `${successCount}/${totalDocuments || 0}`,
-    [successCount, totalDocuments]
-  );
-  const aiSummaryIsFallback = !resolvedAiSummary;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
@@ -1039,15 +1001,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <AISummaryCard
-              summaryText={aiSummaryNarrative}
-              findings={aiSummaryFindings}
-              totalIssues={totalDiscrepancies}
-              riskLevel={aiRiskLevel}
-              documentQuality={aiSummaryDocumentQuality}
-              isFallback={aiSummaryIsFallback}
-              aiAvailable={aiAnalysisAvailable}
-            />
             <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
@@ -1270,14 +1223,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                     </div>
                   </CardContent>
                 </Card>
-                {!aiAnalysisAvailable && (
-                  <Card className="border border-dashed border-warning/40 bg-warning/5">
-                    <CardContent className="flex items-center gap-3 py-4 text-sm text-warning">
-                      <AlertTriangle className="w-5 h-5" />
-                      AI analysis unavailable. Showing only deterministic checks.
-                    </CardContent>
-                  </Card>
-                )}
                 {filteredIssueCards.length === 0 ? (
                   <Card className="shadow-soft border border-dashed">
                     <CardContent className="py-6 text-center text-sm text-muted-foreground">
@@ -1310,11 +1255,6 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                       No discrepancies detected across the submitted document set.
                     </p>
                   </div>
-                  {!aiAnalysisAvailable && (
-                    <p className="text-xs text-success/70">
-                      AI analysis unavailable. Deterministic checks show no issues.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             )}

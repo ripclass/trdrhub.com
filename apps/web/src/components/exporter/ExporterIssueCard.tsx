@@ -79,6 +79,11 @@ export function ExporterIssueCard({
             {severity.label}
           </Badge>
         </div>
+        {issue.priority && (
+          <p className="text-xs font-medium text-muted-foreground">
+            Priority: {issue.priority.charAt(0).toUpperCase() + issue.priority.slice(1)}
+          </p>
+        )}
         {issue.description ? (
           <CardDescription className="text-sm text-muted-foreground">{issue.description}</CardDescription>
         ) : null}

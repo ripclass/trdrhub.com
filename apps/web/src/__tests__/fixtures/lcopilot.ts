@@ -137,11 +137,11 @@ const analytics = {
 const timeline = [
   { label: 'Upload Received', status: 'complete' },
   { label: 'OCR Complete', status: 'complete' },
-  { label: 'Deterministic Checks', status: 'complete' },
-  { label: 'AI Cross-Document Analysis', status: 'complete' },
+  { label: 'Deterministic Rules', status: 'complete' },
+  { label: 'Issue Review Ready', status: 'complete' },
 ];
 
-const aiSummaryText = 'Detected misalignment in amount and insurance coverage.';
+const aiInsightsText = 'Detected misalignment in amount and insurance coverage.';
 
 const structuredResult: StructuredResultPayload = {
   processing_summary: summary,
@@ -185,11 +185,10 @@ export const mockValidationResults: ValidationResults = {
   issues,
   analytics,
   timeline,
-  aiSummary: aiSummaryText,
   structured_result: structuredResult,
   reference_issues: [],
   ai_enrichment: {
-    summary: aiSummaryText,
+    summary: aiInsightsText,
     suggestions: ['Review invoice amount', 'Extend insurance policy'],
   },
 };

@@ -129,6 +129,7 @@ const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']
       rule: issue?.rule,
       title: issue?.title ?? 'Review Required',
       description: issue?.description ?? issue?.message ?? '',
+      priority,
       severity: normalizeSeverity(priority),
       documentName: firstDoc ?? docMeta?.name,
       documentType: docMeta?.type,
@@ -295,7 +296,6 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
       processing_summary: summary,
       issue_cards: issues,
       structured_result: normalizedStructuredResult,
-      aiSummary: null,
     };
   }
 
@@ -334,7 +334,6 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     processing_summary: summary,
     issue_cards: issues,
     structured_result: normalizedStructuredResult,
-    aiSummary: null,
   };
 };
 
