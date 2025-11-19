@@ -99,11 +99,15 @@ class DocumentFieldExtractor:
     def _extract_lc_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         """Extract fields specific to Letter of Credit."""
         fields = []
-        fields.extend(self._extract_mt700_fields(text, confidence))
+        mt700_fields = self._extract_mt700_fields(text, confidence)
+        fields.extend(mt700_fields)
+        
+        # Track which fields were already extracted by MT700 to avoid duplicates
+        mt700_field_names = {field.field_name for field in mt700_fields}
         
         # LC Number
         lc_number = self._extract_pattern(text, r'(?:L/C|LC)\s*(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-\/]+)', 1)
-        if lc_number:
+        if lc_number and "lc_number" not in mt700_field_names:
             fields.append(ExtractedField(
                 field_name="lc_number",
                 field_type=FieldType.TEXT,
@@ -115,7 +119,7 @@ class DocumentFieldExtractor:
         
         # Issue Date
         issue_date = self._extract_date_field(text, r'(?:ISSUE DATE|DATE OF ISSUE)[:\s]*([^\n]+)')
-        if issue_date:
+        if issue_date and "issue_date" not in mt700_field_names:
             fields.append(ExtractedField(
                 field_name="issue_date",
                 field_type=FieldType.DATE,
@@ -126,7 +130,7 @@ class DocumentFieldExtractor:
         
         # Expiry Date
         expiry_date = self._extract_date_field(text, r'(?:EXPIRY DATE|EXPIRY)[:\s]*([^\n]+)')
-        if expiry_date:
+        if expiry_date and "expiry_date" not in mt700_field_names:
             fields.append(ExtractedField(
                 field_name="expiry_date",
                 field_type=FieldType.DATE,
@@ -137,7 +141,7 @@ class DocumentFieldExtractor:
         
         # LC Amount
         lc_amount = self._extract_amount_field(text)
-        if lc_amount:
+        if lc_amount and "lc_amount" not in mt700_field_names:
             fields.append(ExtractedField(
                 field_name="lc_amount",
                 field_type=FieldType.AMOUNT,
@@ -146,66 +150,71 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.LETTER_OF_CREDIT
             ))
         
-        # Applicant (Buyer)
-        applicant = self._extract_pattern(text, r'(?:APPLICANT|BUYER|IMPORTER)[:\s]*([^\n]+)', 1)
-        if applicant:
-            fields.append(ExtractedField(
-                field_name="applicant",
-                field_type=FieldType.PARTY,
-                value=applicant.strip(),
-                confidence=confidence,
-                document_type=DocumentType.LETTER_OF_CREDIT
-            ))
+        # Applicant (Buyer) - only extract if not already found via MT700
+        if "applicant" not in mt700_field_names:
+            applicant = self._extract_pattern(text, r'(?:APPLICANT|BUYER|IMPORTER)[:\s]*([^\n]+)', 1)
+            if applicant:
+                fields.append(ExtractedField(
+                    field_name="applicant",
+                    field_type=FieldType.PARTY,
+                    value=applicant.strip(),
+                    confidence=confidence,
+                    document_type=DocumentType.LETTER_OF_CREDIT
+                ))
         
-        # Beneficiary (Seller)
-        beneficiary = self._extract_pattern(text, r'(?:BENEFICIARY|SELLER|EXPORTER)[:\s]*([^\n]+)', 1)
-        if beneficiary:
-            fields.append(ExtractedField(
-                field_name="beneficiary",
-                field_type=FieldType.PARTY,
-                value=beneficiary.strip(),
-                confidence=confidence,
-                document_type=DocumentType.LETTER_OF_CREDIT
-            ))
+        # Beneficiary (Seller) - only extract if not already found via MT700
+        if "beneficiary" not in mt700_field_names:
+            beneficiary = self._extract_pattern(text, r'(?:BENEFICIARY|SELLER|EXPORTER)[:\s]*([^\n]+)', 1)
+            if beneficiary:
+                fields.append(ExtractedField(
+                    field_name="beneficiary",
+                    field_type=FieldType.PARTY,
+                    value=beneficiary.strip(),
+                    confidence=confidence,
+                    document_type=DocumentType.LETTER_OF_CREDIT
+                ))
         
-        # Goods description
-        goods_description = self._extract_label_block(
-            text,
-            [
-                r'(?:DESCRIPTION OF GOODS|GOODS DESCRIPTION|MERCHANDISE)[:\s]*(.+)',
-                r'(?:GOODS|PRODUCTS)[:\s]*(.+)'
-            ]
-        )
-        if goods_description:
-            fields.append(ExtractedField(
-                field_name="goods_description",
-                field_type=FieldType.TEXT,
-                value=goods_description,
-                confidence=confidence,
-                document_type=DocumentType.LETTER_OF_CREDIT
-            ))
+        # Goods description - only extract if not already found via MT700
+        if "goods_description" not in mt700_field_names:
+            goods_description = self._extract_label_block(
+                text,
+                [
+                    r'(?:DESCRIPTION OF GOODS|GOODS DESCRIPTION|MERCHANDISE)[:\s]*(.+)',
+                    r'(?:GOODS|PRODUCTS)[:\s]*(.+)'
+                ]
+            )
+            if goods_description:
+                fields.append(ExtractedField(
+                    field_name="goods_description",
+                    field_type=FieldType.TEXT,
+                    value=goods_description,
+                    confidence=confidence,
+                    document_type=DocumentType.LETTER_OF_CREDIT
+                ))
         
-        # Port of Loading
-        pol = self._extract_port_field(text, r'(?:PORT OF LOADING|POL)[:\s]*([^\n]+)')
-        if pol:
-            fields.append(ExtractedField(
-                field_name="port_of_loading",
-                field_type=FieldType.PORT,
-                value=pol,
-                confidence=confidence,
-                document_type=DocumentType.LETTER_OF_CREDIT
-            ))
+        # Port of Loading - only extract if not already found via MT700
+        if "port_of_loading" not in mt700_field_names:
+            pol = self._extract_port_field(text, r'(?:PORT OF LOADING|POL)[:\s]*([^\n]+)')
+            if pol:
+                fields.append(ExtractedField(
+                    field_name="port_of_loading",
+                    field_type=FieldType.PORT,
+                    value=pol,
+                    confidence=confidence,
+                    document_type=DocumentType.LETTER_OF_CREDIT
+                ))
         
-        # Port of Discharge
-        pod = self._extract_port_field(text, r'(?:PORT OF DISCHARGE|POD)[:\s]*([^\n]+)')
-        if pod:
-            fields.append(ExtractedField(
-                field_name="port_of_discharge",
-                field_type=FieldType.PORT,
-                value=pod,
-                confidence=confidence,
-                document_type=DocumentType.LETTER_OF_CREDIT
-            ))
+        # Port of Discharge - only extract if not already found via MT700
+        if "port_of_discharge" not in mt700_field_names:
+            pod = self._extract_port_field(text, r'(?:PORT OF DISCHARGE|POD)[:\s]*([^\n]+)')
+            if pod:
+                fields.append(ExtractedField(
+                    field_name="port_of_discharge",
+                    field_type=FieldType.PORT,
+                    value=pod,
+                    confidence=confidence,
+                    document_type=DocumentType.LETTER_OF_CREDIT
+                ))
         
         return fields
     
@@ -228,6 +237,19 @@ class DocumentFieldExtractor:
                         document_type=DocumentType.LETTER_OF_CREDIT,
                     )
                 )
+
+        # LC Number (field 20)
+        lc_number = blocks.get("20")
+        if lc_number:
+            _append_field("lc_number", lc_number.strip(), FieldType.TEXT)
+
+        # LC Amount (field 32B)
+        lc_amount = blocks.get("32B")
+        if lc_amount:
+            # Extract numeric value from "USD 458,750.00" format
+            amount_match = re.search(r'([0-9,]+\.?\d*)', lc_amount.replace(',', ''))
+            if amount_match:
+                _append_field("lc_amount", amount_match.group(1), FieldType.AMOUNT)
 
         applicant_block = blocks.get("50") or blocks.get("50A") or blocks.get("50K") or blocks.get("50F")
         if applicant_block:
@@ -283,12 +305,18 @@ class DocumentFieldExtractor:
         return fields
 
     def _parse_mt700_blocks(self, text: str) -> Dict[str, str]:
-        pattern = re.compile(r":(\d{2}[A-Z]?)\:([\s\S]*?)(?=:\d{2}[A-Z]?:|$)")
+        # Updated pattern to handle both :50: and 50: formats, with optional space after colon
+        # Matches: :50:, 50:, :50A:, 50A:, etc.
+        # Also handles cases where tags may have special characters or formatting issues
+        # The lookahead ensures we stop at the next tag (with optional leading colon) or end of string
+        pattern = re.compile(r":?(\d{2}[A-Z]?)\s*:\s*([\s\S]*?)(?=\n:?\d{2}[A-Z]?\s*:|$)")
         blocks: Dict[str, str] = {}
         for match in pattern.finditer(text):
             tag = match.group(1)
             value = match.group(2).strip()
-            blocks[tag] = value
+            # Only store if we have a valid tag and non-empty value
+            if tag and value:
+                blocks[tag] = value
         return blocks
 
     def _parse_party_block(self, block_text: str) -> Dict[str, str]:
