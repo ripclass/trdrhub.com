@@ -29,6 +29,119 @@ class SemanticComparison(BaseModel):
     documents: List[str] = Field(default_factory=list)
     source: str = "fallback"
     raw_score: float = 0.0
+    severity: str = Field(default="minor")
+
+
+def _is_goods_context(context: str, documents: List[str]) -> bool:
+    lowered_context = (context or "").lower()
+    doc_blob = " ".join(documents or []).lower()
+    keywords = ("goods", "product", "description")
+    return any(keyword in lowered_context for keyword in keywords) or "invoice" in doc_blob
+
+
+def _normalize_item_name(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "", text.lower())
+    return normalized
+
+
+def _split_goods_lines(value: str) -> List[str]:
+    entries: List[str] = []
+    current: List[str] = []
+    for raw_line in value.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if re.match(r"^\s*(?:\d+[\.\)]|\(\d+\))", line):
+            if current:
+                entries.append(" ".join(current).strip())
+                current = []
+            line = re.sub(r"^\s*(?:\d+[\.\)]|\(\d+\))\s*", "", line)
+        current.append(line.strip())
+    if current:
+        entries.append(" ".join(current).strip())
+    if not entries and value.strip():
+        entries = [value.strip()]
+    return entries
+
+
+def _extract_item_tokens(value: str) -> List[str]:
+    if not value:
+        return []
+    entries = _split_goods_lines(value)
+    tokens = [_normalize_item_name(entry) for entry in entries if entry.strip()]
+    return [token for token in tokens if token]
+
+
+def _normalize_unit(unit: Optional[str]) -> str:
+    if not unit:
+        return ""
+    mapping = {
+        "pcs": "pcs",
+        "pieces": "pcs",
+        "units": "pcs",
+        "unit": "pcs",
+        "kgs": "kg",
+        "kg": "kg",
+        "cartons": "ctns",
+        "ctns": "ctns",
+        "sets": "sets",
+        "pairs": "pairs",
+        "mt": "mt",
+        "mts": "mt",
+    }
+    return mapping.get(unit.lower(), unit.lower())
+
+
+def _extract_quantity_components(value: str) -> Optional[tuple[str, str]]:
+    if not value:
+        return None
+    match = re.search(r"(\d[\d\s,\.]*)\s*(PCS|PIECES|UNITS|KG|KGS|CARTONS|CTNS|SETS|PAIRS|MT|MTS)", value, re.IGNORECASE)
+    if not match:
+        return None
+    digits = re.sub(r"[^\d]", "", match.group(1))
+    if not digits:
+        return None
+    normalized_unit = _normalize_unit(match.group(2))
+    return digits.lstrip("0") or "0", normalized_unit
+
+
+def _quantities_match(left: str, right: str) -> bool:
+    left_qty = _extract_quantity_components(left)
+    right_qty = _extract_quantity_components(right)
+    if not left_qty or not right_qty:
+        return False
+    return left_qty == right_qty
+
+
+def _extract_hs_code(value: str) -> Optional[str]:
+    if not value:
+        return None
+    match = re.search(r"(?:HS\s*CODE|H\.S\.?\s*CODE)[:\-\s]*([0-9]{4,10})", value, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _hs_codes_match(left: str, right: str) -> bool:
+    left_code = _extract_hs_code(left)
+    right_code = _extract_hs_code(right)
+    if not left_code or not right_code:
+        return False
+    return left_code == right_code
+
+
+def _goods_alignment(left: str, right: str) -> bool:
+    left_items = _extract_item_tokens(left)
+    right_items = _extract_item_tokens(right)
+    if not left_items or not right_items:
+        return False
+    if set(left_items) != set(right_items):
+        return False
+    if not _quantities_match(left, right):
+        return False
+    if not _hs_codes_match(left, right):
+        return False
+    return True
 
 
 def _normalize_text(value: Optional[str]) -> str:
@@ -103,6 +216,7 @@ def _fallback_similarity(
         materiality = "major" if ratio < (threshold - 0.2) else "minor"
     elif ratio < 0.95:
         materiality = "minor"
+    severity = "minor" if match else ("major" if materiality == "major" else "medium")
 
     return SemanticComparison(
         match=match,
@@ -115,6 +229,7 @@ def _fallback_similarity(
         documents=documents,
         source="fallback",
         raw_score=ratio,
+        severity=severity,
     )
 
 
@@ -168,6 +283,24 @@ async def run_semantic_comparison(
 
     left_normalized = _normalize_text(left_value)
     right_normalized = _normalize_text(right_value)
+
+    goods_context = _is_goods_context(context, documents)
+    if goods_context and _goods_alignment(original_left, original_right):
+        forced = SemanticComparison(
+            match=True,
+            confidence=1.0,
+            materiality="none",
+            expected=original_left,
+            found=original_right,
+            suggested_fix="Ensure invoice description corresponds to LC terms.",
+            reason="Goods description, HS code, and quantity match exactly.",
+            documents=documents,
+            source="goods-heuristic",
+            raw_score=1.0,
+            severity="medium",
+        )
+        await _set_cache(_build_cache_key(left_normalized, right_normalized, context, threshold), forced.model_dump())
+        return forced.model_dump()
 
     cache_key = _build_cache_key(left_normalized, right_normalized, context, threshold)
     cached = await _get_cache(cache_key)

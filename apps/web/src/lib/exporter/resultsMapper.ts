@@ -114,6 +114,8 @@ const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']
   const lookup = buildDocumentLookup(documents);
 
   return issues.map((issue, index) => {
+    const reference = issue?.reference ?? issue?.ucp_reference;
+    const priority = issue?.priority ?? issue?.severity;
     const list = issue?.documents ?? issue?.document_names ?? [];
     const normalizedList = Array.isArray(list) ? list : [list];
     const documentNames = normalizedList
@@ -127,7 +129,7 @@ const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']
       rule: issue?.rule,
       title: issue?.title ?? 'Review Required',
       description: issue?.description ?? issue?.message ?? '',
-      severity: normalizeSeverity(issue?.severity),
+      severity: normalizeSeverity(priority),
       documentName: firstDoc ?? docMeta?.name,
       documentType: docMeta?.type,
       documents: documentNames,
@@ -135,7 +137,7 @@ const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']
       actual: formatTextValue(issue?.found ?? issue?.actual ?? issue?.actual_value),
       suggestion: formatTextValue(issue?.suggested_fix ?? issue?.recommendation),
       field: issue?.field ?? issue?.field_name ?? issue?.metadata?.field,
-      ucpReference: issue?.ucp_reference,
+      ucpReference: reference ? formatTextValue(reference) : undefined,
     };
   });
 };
@@ -274,13 +276,6 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     const summary = ensureSummary(structured.processing_summary, documents, issues);
     const analytics = ensureAnalytics(structured.analytics, summary, documents);
     const timeline = mapTimeline(structured.timeline ?? []);
-    const structuredSummary =
-      typeof (structured as Record<string, unknown>)['ai_summary'] === 'string'
-        ? ((structured as Record<string, string>)['ai_summary'] as string)
-        : typeof (structured as Record<string, unknown>)['summary'] === 'string'
-          ? ((structured as Record<string, string>)['summary'] as string)
-          : null;
-
     const normalizedStructuredResult: StructuredResultPayload = {
       processing_summary: structured.processing_summary ?? summary,
       documents: Array.isArray(structured.documents) ? structured.documents : [],
@@ -300,13 +295,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
       processing_summary: summary,
       issue_cards: issues,
       structured_result: normalizedStructuredResult,
-      aiSummary:
-        structuredSummary ??
-        raw?.ai_summary ??
-        raw?.aiSummary ??
-        raw?.ai_enrichment?.summary ??
-        raw?.aiEnrichment?.summary ??
-        null,
+      aiSummary: null,
     };
   }
 
@@ -334,13 +323,6 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
           timeline: normalizeStructuredTimeline(raw.structured_result.timeline, timeline),
       }
       : structuredFromNormalized(summary, documents, issues, analytics, timeline);
-  const structuredSummary =
-    typeof raw?.structured_result?.ai_summary === 'string'
-      ? raw.structured_result.ai_summary
-      : typeof raw?.structured_result?.summary === 'string'
-        ? raw.structured_result.summary
-        : null;
-
   return {
     ...raw,
     jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
@@ -352,13 +334,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     processing_summary: summary,
     issue_cards: issues,
     structured_result: normalizedStructuredResult,
-    aiSummary:
-      structuredSummary ??
-      raw?.ai_summary ??
-      raw?.aiSummary ??
-      raw?.ai_enrichment?.summary ??
-      raw?.aiEnrichment?.summary ??
-      null,
+    aiSummary: null,
   };
 };
 

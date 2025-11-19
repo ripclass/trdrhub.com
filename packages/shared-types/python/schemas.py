@@ -252,11 +252,13 @@ class StructuredResultIssue(BaseModel):
     id: str
     title: str
     severity: str
+    priority: Optional[str] = None
     documents: List[str]
     expected: str
     found: str
     suggested_fix: str
     description: Optional[str] = None
+    reference: Optional[str] = None
     ucp_reference: Optional[str] = None
 
 

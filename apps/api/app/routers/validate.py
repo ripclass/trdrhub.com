@@ -19,7 +19,7 @@ from app.database import get_db
 from app.models import UsageAction, User, ValidationSession, SessionStatus, UserRole
 from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
-from app.services.validator import validate_document, validate_document_async, enrich_validation_results_with_ai, apply_bank_policy
+from app.services.validator import validate_document, validate_document_async, apply_bank_policy
 from app.services.crossdoc import (
     build_issue_cards,
     DEFAULT_LABELS,
@@ -527,8 +527,6 @@ async def validate_doc(
             "lc_type_confidence": lc_type_confidence,
             "lc_type_source": lc_type_source,
         }
-        ai_enrichment = {}
-
         # Update session status if created
         if validation_session:
             session_extracted_data = validation_session.extracted_data or {}
@@ -597,45 +595,6 @@ async def validate_doc(
             
             # Store initial payload with deep copy to ensure nested structures are preserved
             validation_session.validation_results = copy.deepcopy(results_payload)
-            
-            # Optionally enrich with AI (if feature flag enabled)
-            try:
-                ai_enrichment = await enrich_validation_results_with_ai(
-                    validation_results=results,
-                    document_data=payload,
-                    session_id=str(validation_session.id),
-                    user_id=str(current_user.id),
-                    db_session=db
-                )
-            except Exception as e:
-                # Don't fail validation if AI enrichment fails
-                import logging
-                logging.getLogger(__name__).warning(f"AI enrichment skipped: {e}")
-                ai_enrichment = {}
-            
-            if ai_enrichment:
-                # CRITICAL: Update results_payload with ai_enrichment, then do a deep copy
-                # This ensures we're merging ai_enrichment into the existing payload, not replacing it
-                results_payload.update(ai_enrichment)
-                
-                # Verify all required keys are still present after update
-                for key in required_keys:
-                    if key not in results_payload:
-                        logger.error(f"Key '{key}' lost after AI enrichment update! Restoring from original.")
-                        if key == "documents":
-                            results_payload[key] = document_summaries or []
-                        elif key in ["discrepancies", "results", "issue_cards", "reference_issues"]:
-                            results_payload[key] = []
-                        elif key == "extracted_data":
-                            results_payload[key] = stored_extracted_data or {}
-                
-                # CRITICAL: Use deepcopy to ensure nested structures are properly preserved
-                validation_session.validation_results = copy.deepcopy(results_payload)
-                logger.info(
-                    "Updated validation_results with AI enrichment: documents=%d keys=%s",
-                    len(results_payload.get("documents") or []),
-                    list(results_payload.keys()),
-                )
 
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
@@ -674,11 +633,6 @@ async def validate_doc(
         # Extract extracted data from payload for frontend display
         extracted_data = stored_extracted_data or {}
         extraction_status = payload.get("extraction_status", "unknown")
-
-        ai_enrichment_payload = results_payload.get("ai_enrichment")
-
-        if not results_payload.get("ai_enrichment") and ai_enrichment:
-            results_payload.update(ai_enrichment)
 
         # CRITICAL: Ensure documents are always in the response
         final_documents = document_summaries or []
@@ -775,7 +729,6 @@ async def validate_doc(
             "quota": quota.to_dict() if quota else None,
             "issue_cards": issue_cards,
             "reference_issues": reference_issues,
-            "ai_enrichment": ai_enrichment_payload,
             "structured_result": structured_result,
         }
     except HTTPException:
@@ -2244,6 +2197,8 @@ def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
             _set_nested_value(lc_context, ("dates", "issue"), value)
         elif name == "expiry_date":
             _set_nested_value(lc_context, ("dates", "expiry"), value)
+        elif name == "latest_shipment_date":
+            _set_nested_value(lc_context, ("dates", "latest_shipment"), value)
         elif name == "lc_amount":
             _set_nested_value(lc_context, ("amount", "value"), value)
         elif name == "applicant":

@@ -229,11 +229,13 @@ export const StructuredResultIssueSchema = z.object({
   id: z.string(),
   title: z.string(),
   severity: z.string(),
+  priority: z.string().optional(),
   documents: z.array(z.string()),
   expected: z.string(),
   found: z.string(),
   suggested_fix: z.string(),
   description: z.string().optional(),
+  reference: z.string().optional().nullable(),
   ucp_reference: z.string().optional().nullable(),
 });
 export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
@@ -346,11 +348,13 @@ export const StructuredResultIssueSchema = z.object({
   id: z.string(),
   title: z.string(),
   severity: z.string(),
+  priority: z.string().optional(),
   documents: z.array(z.string()),
   expected: z.string(),
   found: z.string(),
   suggested_fix: z.string(),
   description: z.string().optional(),
+  reference: z.string().nullable().optional(),
   ucp_reference: z.string().nullable().optional(),
 });
 export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;

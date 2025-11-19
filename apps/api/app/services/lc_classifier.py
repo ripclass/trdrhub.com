@@ -70,6 +70,54 @@ def detect_lc_type(
         or _normalize_country(shipment_context.get("port_of_destination"))
     )
 
+    def _guess(lc_type_value: str, reason_text: str, confidence_value: float) -> LCTypeGuess:
+        return {
+            "lc_type": lc_type_value,
+            "reason": reason_text,
+            "confidence": confidence_value,
+            "source": "auto-detected",
+        }
+
+    flow_export = (
+        applicant_country
+        and beneficiary_country
+        and pol_country
+        and pod_country
+        and applicant_country != beneficiary_country
+        and beneficiary_country == pol_country
+        and applicant_country == pod_country
+    )
+
+    if flow_export:
+        return _guess(
+            LCType.EXPORT.value,
+            (
+                f"Goods load in {pol_country} where the beneficiary resides and discharge in {pod_country} "
+                f"where the applicant resides. Shipment flow confirms export LC."
+            ),
+            0.95,
+        )
+
+    flow_import = (
+        applicant_country
+        and beneficiary_country
+        and pol_country
+        and pod_country
+        and applicant_country != beneficiary_country
+        and applicant_country == pol_country
+        and beneficiary_country == pod_country
+    )
+
+    if flow_import:
+        return _guess(
+            LCType.IMPORT.value,
+            (
+                f"Goods load in {pol_country} where the applicant resides and discharge in {pod_country} "
+                f"where the beneficiary resides. Shipment flow confirms import LC."
+            ),
+            0.95,
+        )
+
     strong_import = (
         applicant_country
         and issuing_country
@@ -80,14 +128,14 @@ def detect_lc_type(
     )
 
     if strong_import:
-        return {
-            "lc_type": LCType.IMPORT.value,
-            "reason": (
+        return _guess(
+            LCType.IMPORT.value,
+            (
                 f"Applicant, issuing bank, and discharge port all in {applicant_country}; "
                 f"beneficiary in {beneficiary_country}. Typical import LC."
             ),
-            "confidence": 0.95,
-        }
+            0.95,
+        )
 
     strong_export = (
         beneficiary_country
@@ -99,14 +147,14 @@ def detect_lc_type(
     )
 
     if strong_export:
-        return {
-            "lc_type": LCType.EXPORT.value,
-            "reason": (
+        return _guess(
+            LCType.EXPORT.value,
+            (
                 f"Beneficiary, issuing bank, and loading port all in {beneficiary_country}; "
                 f"applicant in {applicant_country}. Typical export LC."
             ),
-            "confidence": 0.95,
-        }
+            0.95,
+        )
 
     weak_import = applicant_country and pod_country and applicant_country == pod_country
     weak_export = beneficiary_country and pol_country and beneficiary_country == pol_country
@@ -132,56 +180,56 @@ def detect_lc_type(
                     ),
                     "confidence": 0.75,
                 }
-        return {
-            "lc_type": LCType.UNKNOWN.value,
-            "reason": (
+        return _guess(
+            LCType.UNKNOWN.value,
+            (
                 "Conflicting port heuristics: applicant/discharge suggest import while "
                 "beneficiary/loading suggest export."
             ),
-            "confidence": 0.1,
-        }
+            0.1,
+        )
 
     if weak_import:
         confidence = 0.65 if issuing_country == applicant_country else 0.6
-        return {
-            "lc_type": LCType.IMPORT.value,
-            "reason": f"Applicant country matches discharge port ({applicant_country}). Likely import LC.",
-            "confidence": confidence,
-        }
+        return _guess(
+            LCType.IMPORT.value,
+            f"Applicant country matches discharge port ({applicant_country}). Likely import LC.",
+            confidence,
+        )
 
     if weak_export:
         confidence = 0.65 if issuing_country == beneficiary_country else 0.6
-        return {
-            "lc_type": LCType.EXPORT.value,
-            "reason": f"Beneficiary country matches loading port ({beneficiary_country}). Likely export LC.",
-            "confidence": confidence,
-        }
+        return _guess(
+            LCType.EXPORT.value,
+            f"Beneficiary country matches loading port ({beneficiary_country}). Likely export LC.",
+            confidence,
+        )
 
     if issuing_country and applicant_country and issuing_country == applicant_country and not pol_country:
-        return {
-            "lc_type": LCType.IMPORT.value,
-            "reason": (
+        return _guess(
+            LCType.IMPORT.value,
+            (
                 f"Issuing bank and applicant share the same country ({applicant_country}) with no clear "
                 "loading port information."
             ),
-            "confidence": 0.55,
-        }
+            0.55,
+        )
 
     if issuing_country and beneficiary_country and issuing_country == beneficiary_country and not pod_country:
-        return {
-            "lc_type": LCType.EXPORT.value,
-            "reason": (
+        return _guess(
+            LCType.EXPORT.value,
+            (
                 f"Issuing/advising bank and beneficiary share the same country ({beneficiary_country}) with no clear "
                 "discharge port information."
             ),
-            "confidence": 0.55,
-        }
+            0.55,
+        )
 
-    return {
-        "lc_type": LCType.UNKNOWN.value,
-        "reason": "Insufficient or conflicting country/port details to determine LC type.",
-        "confidence": 0.0,
-    }
+    return _guess(
+        LCType.UNKNOWN.value,
+        "Insufficient or conflicting country/port details to determine LC type.",
+        0.0,
+    )
 
 
 def _extract_party_country(party: Any) -> Optional[str]:

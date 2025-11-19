@@ -27,14 +27,20 @@ class DocumentFieldExtractor:
     PORT_NORMALIZATION = {
         "chittagong": "Chittagong, Bangladesh",
         "chattogram": "Chittagong, Bangladesh",
-        "new york": "New York, USA",
-        "ny usa": "New York, USA",
-        "ny, usa": "New York, USA",
-        "nyc": "New York, USA",
+        "new york": "New York, United States",
+        "ny usa": "New York, United States",
+        "ny, usa": "New York, United States",
+        "nyc": "New York, United States",
     }
 
     INCOTERM_PATTERN = re.compile(
         r"\b(FOB|CIF|CFR|DAP|DDP|EXW|FCA|CPT|CIP)\b[\s\-]*([A-Z0-9 ,./]+)",
+        re.IGNORECASE,
+    )
+    GOODS_ITEM_PREFIX = re.compile(r"^\s*(?:\d+[\.\)]|\(\d+\))")
+    HS_CODE_PATTERN = re.compile(r"(?:HS\s*CODE|H\.S\.?\s*CODE)[:\s\-]*([0-9]{4,10})", re.IGNORECASE)
+    QTY_PATTERN = re.compile(
+        r"(\d[\d\s,\.]*)\s*(PCS|PIECES|UNITS|KG|KGS|CARTONS|CTNS|SETS|PAIRS|MT|MTS)",
         re.IGNORECASE,
     )
 
@@ -295,7 +301,7 @@ class DocumentFieldExtractor:
 
         shipment_date = blocks.get("44C") or blocks.get("31D") or blocks.get("31C")
         if shipment_date:
-            _append_field("latest_shipment_date", shipment_date.strip())
+            _append_field("latest_shipment_date", shipment_date.strip(), FieldType.DATE)
 
         incoterm_context = goods_description_text if goods_description_text else text
         incoterm = self._extract_incoterm(incoterm_context)
@@ -375,18 +381,64 @@ class DocumentFieldExtractor:
     def _build_goods_items(self, description: str) -> List[Dict[str, Optional[str]]]:
         if not description:
             return []
-        hs_match = re.search(r"(?:HS\s*CODE|H\.S\. CODE|HS CODE)[:\s]*([\d]{6,10})", description, re.IGNORECASE)
-        qty_match = re.search(
-            r"(\d[\d,.\s]*)\s*(PCS|PIECES|UNITS|KG|KGS|CARTONS|SETS|PAIRS|MT|MTS)",
-            description,
-            re.IGNORECASE,
-        )
-        item = {
-            "description": " ".join(line.strip() for line in description.splitlines() if line.strip()),
-            "hs_code": hs_match.group(1) if hs_match else None,
-            "qty": qty_match.group(0).strip().upper() if qty_match else None,
-        }
-        return [item]
+
+        entries = self._split_goods_entries(description)
+        items: List[Dict[str, Optional[str]]] = []
+
+        for entry in entries:
+            normalized_entry = " ".join(line.strip() for line in entry.splitlines() if line.strip())
+            items.append(
+                {
+                    "description": normalized_entry,
+                    "hs_code": self._extract_hs_code_from_text(entry),
+                    "qty": self._extract_quantity_from_text(entry),
+                }
+            )
+
+        return items
+
+    def _split_goods_entries(self, description: str) -> List[str]:
+        entries: List[str] = []
+        current: List[str] = []
+
+        for raw_line in description.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if self.GOODS_ITEM_PREFIX.match(line):
+                if current:
+                    entries.append(" ".join(current).strip())
+                    current = []
+                line = self.GOODS_ITEM_PREFIX.sub("", line, count=1).strip()
+
+            current.append(line)
+
+        if current:
+            entries.append(" ".join(current).strip())
+
+        if not entries and description.strip():
+            entries = [description.strip()]
+
+        return entries
+
+    def _extract_hs_code_from_text(self, value: str) -> Optional[str]:
+        if not value:
+            return None
+        match = self.HS_CODE_PATTERN.search(value)
+        if match:
+            return match.group(1)
+        return None
+
+    def _extract_quantity_from_text(self, value: str) -> Optional[str]:
+        if not value:
+            return None
+        match = self.QTY_PATTERN.search(value)
+        if not match:
+            return None
+        digits = re.sub(r"[^\d.]", "", match.group(1))
+        unit = (match.group(2) or "").upper()
+        return f"{digits} {unit}".strip()
     
     def _extract_invoice_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         """Extract fields specific to Commercial Invoice."""

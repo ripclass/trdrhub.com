@@ -16,10 +16,11 @@ class LCType(str, Enum):
 VALID_LC_TYPES: set[str] = {member.value for member in LCType}
 
 
-class LCTypeGuess(TypedDict):
+class LCTypeGuess(TypedDict, total=False):
     lc_type: LCTypeLiteral
     reason: str
     confidence: float
+    source: str
 
 
 def normalize_lc_type(value: Optional[str]) -> Optional[str]:

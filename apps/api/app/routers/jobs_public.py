@@ -340,7 +340,6 @@ def get_job_results(
     # Include issue_cards and reference_issues for better UI display
     issue_cards = results_payload.get("issue_cards") or []
     reference_issues = results_payload.get("reference_issues") or []
-    ai_enrichment = results_payload.get("ai_enrichment") or results_payload.get("aiEnrichment")
 
     return {
         "jobId": str(session.id),
@@ -355,8 +354,6 @@ def get_job_results(
         "extraction_status": extraction_status,  # success, partial, empty, error
         "issue_cards": issue_cards,  # User-facing actionable issues
         "reference_issues": reference_issues,  # Technical rule references
-        "aiEnrichment": ai_enrichment,
-        "ai_enrichment": ai_enrichment,  # Support both naming conventions
         "lc_type": results_payload.get("lc_type"),
         "lc_type_reason": results_payload.get("lc_type_reason"),
         "lc_type_confidence": results_payload.get("lc_type_confidence"),

@@ -14,13 +14,13 @@ _SCHEMA_EXAMPLE = """
 [
   {
     "title": "Product Description Variation",
-    "severity": "major",
-    "documents": ["Commercial_Invoice.pdf", "Letter_of_Credit.pdf"],
-    "description": "Describe the discrepancy in one sentence.",
+    "priority": "medium",
+    "documents": ["Commercial_Invoice.pdf", "LC.pdf"],
+    "description": "Single sentence describing the discrepancy.",
     "expected": "The expected wording or value",
     "found": "The discovered wording or value",
     "suggested_fix": "Actionable fix the exporter can take",
-    "ucp_reference": "Relevant UCP or ICC reference"
+    "reference": "LC Terms Compliance"
   }
 ]
 """.strip()
@@ -67,30 +67,49 @@ def _sanitize_issue(record: Dict[str, Any]) -> Dict[str, Any]:
             return ""
         return str(value).strip()
 
+    def _normalize_priority(value: str) -> str:
+        normalized = value.lower()
+        if normalized in {"critical", "high"}:
+            return "critical"
+        if normalized in {"major", "medium", "warn"}:
+            return "major"
+        if normalized in {"minor", "low"}:
+            return "minor"
+        return "minor"
+
     documents = record.get("documents") or []
     if isinstance(documents, str):
         documents = [documents]
     elif not isinstance(documents, list):
         documents = []
 
-    severity = _coerce_str(record.get("severity")).lower()
-    if severity not in {"critical", "major", "medium", "minor"}:
-        severity = "minor"
+    priority_value = _coerce_str(record.get("priority") or record.get("severity"))
+    severity = _normalize_priority(priority_value)
 
     expected = _coerce_str(record.get("expected"))
     found = _coerce_str(record.get("found"))
     suggested_fix = _coerce_str(record.get("suggested_fix"))
+    description = _coerce_str(record.get("description"))
+    if description:
+        description = " ".join(description.split())
+
+    reference = _coerce_str(record.get("reference") or record.get("ucp_reference"))
+    if reference.lower().startswith("ucp") or "article" in reference.lower():
+        reference = ""
+    reference = reference or "LC Terms Compliance"
 
     return {
         "id": _coerce_str(record.get("id")) or None,
         "title": _coerce_str(record.get("title")) or "Cross-document discrepancy",
         "severity": severity,
+        "priority": severity,
         "documents": [str(doc).strip() for doc in documents if str(doc).strip()],
-        "description": _coerce_str(record.get("description")),
+        "description": description,
         "expected": expected,
         "found": found,
         "suggested_fix": suggested_fix,
-        "ucp_reference": _coerce_str(record.get("ucp_reference")),
+        "reference": reference,
+        "ucp_reference": reference,
     }
 
 
@@ -205,12 +224,14 @@ def _fallback_issue() -> List[Dict[str, Any]]:
         {
             "title": "AI Analysis Unavailable",
             "severity": "minor",
+            "priority": "minor",
             "documents": [],
             "description": "Automatic cross-document analysis is temporarily unavailable.",
             "expected": "",
             "found": "",
             "suggested_fix": "Retry the validation or contact support if the issue persists.",
-            "ucp_reference": "",
+            "reference": "LC Terms Compliance",
+            "ucp_reference": "LC Terms Compliance",
         }
     ]
 
@@ -235,16 +256,21 @@ async def generate_crossdoc_insights(structured_docs: Dict[str, Any]) -> List[Di
 
     system_prompt = (
         "You are an LC compliance analyst. Compare Letters of Credit and supporting "
-        "trade documents to spot cross-document discrepancies. Return ONLY valid JSON."
+        "trade documents to spot cross-document discrepancies. Respond ONLY with JSON "
+        "arrays of objects containing the keys: title, priority (critical/major/medium/minor), "
+        "documents, description (single concise sentence), expected, found, suggested_fix, reference. "
+        "Do not include paragraphs, UCP article citations, or ICC commentary in any field."
     )
 
     prompt = (
         "You will receive structured JSON representing an LC package. "
         "Identify up to 6 meaningful cross-document issues (product description, amounts, "
         "shipment details, ports, dates, HS codes, insurance alignment, consignee/shipper differences).\n\n"
-        "Respond with a JSON array that matches the following schema:\n"
+        "Respond with a JSON array that matches the following schema exactly, ensuring descriptions are single sentences and references "
+        "are short labels such as 'LC Terms Compliance':\n"
         f"{_SCHEMA_EXAMPLE}\n\n"
-        "Always reference the exact filenames from the `documents` list when possible.\n"
+        "Always reference the exact filenames from the `documents` list when possible. "
+        "Never mention UCP article numbers or ICC commentary. "
         "If there are no discrepancies, return an empty JSON array [].\n\n"
         "Structured document payload:\n"
         f"{json.dumps(compressed_payload, ensure_ascii=False, indent=2)}"
