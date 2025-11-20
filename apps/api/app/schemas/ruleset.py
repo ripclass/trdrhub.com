@@ -71,6 +71,7 @@ class RulesetUploadResponse(BaseModel):
     """Response for ruleset upload."""
     ruleset: RulesetResponse
     validation: ValidationReport
+    import_summary: Optional["RulesImportSummaryModel"] = None
 
 
 class ActiveRulesetResponse(BaseModel):
@@ -91,4 +92,15 @@ class RulesetAuditResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class RulesImportSummaryModel(BaseModel):
+    """Schema describing normalized rule import results."""
+
+    total_rules: int
+    inserted: int
+    updated: int
+    skipped: int
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
 

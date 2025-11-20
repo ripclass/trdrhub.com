@@ -16,14 +16,13 @@ logger = logging.getLogger(__name__)
 
 class RulesStorageService:
     """Service for managing rules files in Supabase Storage."""
-    
-    BUCKET_NAME = "rules"
-    
+
     def __init__(self):
         """Initialize Supabase client with service role key for admin operations."""
         # Read from settings (which loads from environment variables)
         supabase_url = settings.SUPABASE_URL or os.getenv("SUPABASE_URL")
         service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        self.bucket_name = getattr(settings, "RULES_STORAGE_BUCKET", None) or "rules"
         
         if not supabase_url:
             logger.error("SUPABASE_URL is not set in environment variables")
@@ -88,7 +87,7 @@ class RulesStorageService:
         
         # Upload to Supabase Storage
         try:
-            response = self.client.storage.from_(self.BUCKET_NAME).upload(
+            response = self.client.storage.from_(self.bucket_name).upload(
                 path=file_path,
                 file=normalized_json.encode('utf-8'),
                 file_options={
@@ -110,14 +109,14 @@ class RulesStorageService:
             # If bucket doesn't exist, provide helpful error
             if "Bucket not found" in error_msg or "does not exist" in error_msg:
                 raise ValueError(
-                    f"Supabase Storage bucket '{self.BUCKET_NAME}' does not exist. "
+                    f"Supabase Storage bucket '{self.bucket_name}' does not exist. "
                     f"Please create it in the Supabase dashboard or via API."
                 ) from e
             
             # If permission denied
             if "permission" in error_msg.lower() or "forbidden" in error_msg.lower() or "unauthorized" in error_msg.lower():
                 raise ValueError(
-                    f"Permission denied accessing Supabase Storage bucket '{self.BUCKET_NAME}'. "
+                    f"Permission denied accessing Supabase Storage bucket '{self.bucket_name}'. "
                     f"Verify that SUPABASE_SERVICE_ROLE_KEY has storage access permissions."
                 ) from e
             
@@ -138,7 +137,7 @@ class RulesStorageService:
             Dict with content (parsed JSON), checksum_md5, file_size
         """
         try:
-            response = self.client.storage.from_(self.BUCKET_NAME).download(file_path)
+            response = self.client.storage.from_(self.bucket_name).download(file_path)
             content = response.decode('utf-8')
             rules_json = json.loads(content)
             
@@ -166,7 +165,7 @@ class RulesStorageService:
             Signed URL string
         """
         try:
-            response = self.client.storage.from_(self.BUCKET_NAME).create_signed_url(
+            response = self.client.storage.from_(self.bucket_name).create_signed_url(
                 path=file_path,
                 expires_in=expires_in
             )
@@ -185,7 +184,7 @@ class RulesStorageService:
             True if successful
         """
         try:
-            self.client.storage.from_(self.BUCKET_NAME).remove([file_path])
+            self.client.storage.from_(self.bucket_name).remove([file_path])
             return True
         except Exception as e:
             raise ValueError(f"Failed to delete file {file_path}") from e

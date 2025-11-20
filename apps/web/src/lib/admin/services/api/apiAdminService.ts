@@ -9,6 +9,10 @@ import type {
   ActiveRulesetResult,
   RulesetAuditLog,
   MutationResult,
+  RuleRecord,
+  RuleListParams,
+  RuleUpdatePayload,
+  BulkSyncResult,
 } from "../../types";
 
 const KPI_ICON_MAP: Record<string, LucideIcon> = {
@@ -87,11 +91,22 @@ export class ApiAdminService implements AdminService {
       });
 
       const data = response.data;
+      const importSummary = data.import_summary
+        ? {
+            totalRules: data.import_summary.total_rules,
+            inserted: data.import_summary.inserted,
+            updated: data.import_summary.updated,
+            skipped: data.import_summary.skipped,
+            errors: data.import_summary.errors ?? [],
+            warnings: data.import_summary.warnings ?? [],
+          }
+        : undefined;
       return {
         success: true,
         data: {
           ruleset: this.transformRuleset(data.ruleset),
           validation: data.validation,
+          importSummary,
         },
         message: "Ruleset uploaded successfully",
       };
@@ -208,9 +223,135 @@ export class ApiAdminService implements AdminService {
     }
   }
 
+  async listRules(params: RuleListParams): Promise<PaginatedResult<RuleRecord>> {
+    try {
+      const queryParams = new URLSearchParams({
+        page: params.page.toString(),
+        page_size: params.pageSize.toString(),
+      });
+      if (params.domain) queryParams.append("domain", params.domain);
+      if (params.documentType) queryParams.append("document_type", params.documentType);
+      if (params.severity) queryParams.append("severity", params.severity);
+      if (params.requiresLlm !== undefined) queryParams.append("requires_llm", String(params.requiresLlm));
+      if (params.isActive !== undefined) queryParams.append("is_active", String(params.isActive));
+      if (params.search) queryParams.append("search", params.search);
+
+      const response = await api.get(`/admin/rules?${queryParams.toString()}`);
+      const data = response.data;
+      return {
+        items: data.items.map((item: any) => this.transformRuleRecord(item)),
+        total: data.total,
+        page: data.page,
+        pageSize: data.page_size,
+      };
+    } catch (error: any) {
+      console.error("Failed to list rules:", error);
+      throw new Error(error?.response?.data?.detail || "Failed to load rules");
+    }
+  }
+
+  async getRule(ruleId: string): Promise<RuleRecord> {
+    try {
+      const response = await api.get(`/admin/rules/${ruleId}`);
+      return this.transformRuleRecord(response.data);
+    } catch (error: any) {
+      console.error("Failed to fetch rule:", error);
+      throw new Error(error?.response?.data?.detail || "Failed to retrieve rule");
+    }
+  }
+
+  async updateRule(ruleId: string, payload: RuleUpdatePayload): Promise<RuleRecord> {
+    try {
+      const response = await api.patch(`/admin/rules/${ruleId}`, payload);
+      return this.transformRuleRecord(response.data);
+    } catch (error: any) {
+      console.error("Failed to update rule:", error);
+      throw new Error(error?.response?.data?.detail || "Failed to update rule");
+    }
+  }
+
+  async deleteRule(ruleId: string, hard = false): Promise<MutationResult> {
+    try {
+      await api.delete(`/admin/rules/${ruleId}`, {
+        params: { hard: hard ? "true" : "false" },
+      });
+      return { success: true, message: "Rule removed" };
+    } catch (error: any) {
+      console.error("Failed to delete rule:", error);
+      return {
+        success: false,
+        message: error?.response?.data?.detail || "Failed to delete rule",
+      };
+    }
+  }
+
+  async bulkSyncRules(params: { rulesetId?: string; includeInactive?: boolean } = {}): Promise<BulkSyncResult> {
+    try {
+      const payload =
+        params.rulesetId || params.includeInactive
+          ? {
+              ruleset_id: params.rulesetId,
+              include_inactive: params.includeInactive ?? false,
+            }
+          : undefined;
+
+      const response = await api.post("/admin/rules/bulk-sync", payload, {
+        params: {
+          ruleset_id: params.rulesetId,
+          include_inactive: params.includeInactive,
+        },
+      });
+      const data = response.data;
+      return {
+        items: data.items.map(
+          (item: any): BulkSyncResult["items"][number] => ({
+            rulesetId: item.ruleset_id,
+            status: item.status,
+            domain: item.domain,
+            jurisdiction: item.jurisdiction,
+            summary: item.summary ?? {},
+          })
+        ),
+      };
+    } catch (error: any) {
+      console.error("Failed to run rules bulk sync:", error);
+      throw new Error(error?.response?.data?.detail || "Failed to sync rules");
+    }
+  }
+
   /**
    * Transform backend ruleset format to frontend format
    */
+  private transformRuleRecord(data: any): RuleRecord {
+    return {
+      ruleId: data.rule_id,
+      ruleVersion: data.rule_version ?? undefined,
+      article: data.article ?? undefined,
+      version: data.version ?? undefined,
+      domain: data.domain,
+      jurisdiction: data.jurisdiction,
+      documentType: data.document_type,
+      ruleType: data.rule_type,
+      severity: data.severity,
+      deterministic: Boolean(data.deterministic),
+      requiresLlm: Boolean(data.requires_llm),
+      title: data.title,
+      reference: data.reference ?? undefined,
+      description: data.description ?? undefined,
+      conditions: data.conditions ?? [],
+      expectedOutcome: data.expected_outcome ?? {},
+      tags: data.tags ?? [],
+      metadata: data.metadata ?? null,
+      checksum: data.checksum,
+      rulesetId: data.ruleset_id ?? undefined,
+      rulesetVersion: data.ruleset_version ?? undefined,
+      isActive: Boolean(data.is_active),
+      archivedAt: data.archived_at ?? undefined,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
+
   private transformRuleset(data: any): RulesetRecord {
     return {
       id: data.id,

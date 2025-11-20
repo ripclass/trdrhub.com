@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     # Rules System
     USE_JSON_RULES: bool = True  # Enable JSON ruleset validation system
     RULESET_CACHE_TTL_MINUTES: int = 10  # Cache TTL for rulesets
+    RULES_STORAGE_BUCKET: str = "rules"
     RULHUB_API_URL: str = ""
     RULHUB_API_KEY: str = ""
 

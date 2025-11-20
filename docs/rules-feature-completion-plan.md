@@ -5,15 +5,15 @@
 **Phase 0**: ✅ Complete - Standards and shapes defined, JSON schemas in repo
 **Phase 1**: ⚠️ Partial - Storage bucket + tables created, RLS policies missing
 **Phase 2**: ✅ Complete - All API endpoints implemented
-**Phase 3**: ⚠️ Partial - Rulesets list + Upload UI done, "Active" view missing
+**Phase 3**: ✅ Complete - Rulesets list + Upload + governance/active views live
 **Phase 4**: ❌ Not Started - RulesService + RuleEvaluator + Integration needed
-**Phase 5**: ⚠️ Partial - Audit logging done, analytics/metrics missing
+**Phase 5**: ⚠️ Partial - Audit logging done, Prometheus counters flowing, dashboards pending
 
 ## Remaining Work
 
 ### Phase 1 Completion: RLS Policies
 
-**File**: SQL migration to be applied via Supabase MCP
+**File**: `infra/sql/rules_rls.sql` (apply via Supabase SQL editor / MCP)
 
 **Actions**:
 1. Enable RLS on `rulesets` table
@@ -54,22 +54,24 @@ CREATE POLICY "admin_read_audit" ON ruleset_audit
   );
 ```
 
-### Phase 3 Completion: Active Ruleset View
+### Phase 3 Completion: Active Ruleset View & Governance
 
-**File**: `apps/web/src/pages/admin/sections/rules/Active.tsx` (new)
+**Files**:
+- `apps/web/src/pages/admin/sections/rules/Active.tsx`
+- `apps/web/src/pages/admin/sections/rules/Governance.tsx`
+- `apps/web/src/lib/admin/services/api/apiAdminService.ts`
+- `apps/web/src/components/admin/AdminSidebar.tsx`
 
 **Actions**:
-1. Create `Active.tsx` component showing active rulesets per domain/jurisdiction
-2. Display cards/table with: Domain, Jurisdiction, Rulebook Version, Rules Count, Published Date
-3. Add "Download JSON" button per active ruleset (uses signed URL from API)
-4. Add to AdminShell routing (`rules-active` section)
-5. Add to AdminSidebar navigation
+1. `Active.tsx` shows per-domain cards (domain, jurisdiction, rulebook version, rule count, publish date) plus JSON download.
+2. `RulesGovernance.tsx` lists normalized rules with filters, inline toggle/edit drawer, and bulk sync CTA.
+3. Admin API client exposes `listRules`, `getRule`, `updateRule`, `deleteRule`, `bulkSyncRules`.
+4. AdminShell/Sidebar wire `rules-governance` plus renamed `Rulesets` nav item.
 
 **Key Features**:
-- Fetches active rulesets via `service.getActiveRuleset(domain, jurisdiction)`
-- Shows download button that triggers signed URL fetch
-- Displays "No active ruleset" message for empty domains
-- Filter by domain/jurisdiction dropdowns
+- Governance drawer displays severity select, activation switch, JSON textarea with validation.
+- Bulk sync button calls `/admin/rules/bulk-sync` and reloads the table.
+- Audit + metrics emitted via `RulesImporter` and admin router hooks.
 
 ### Phase 4: RulesService Interface & LocalAdapter
 

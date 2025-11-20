@@ -5,16 +5,17 @@ import json
 import hashlib
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from ..database import get_db
 from ..models import User
 from ..models.ruleset import Ruleset, RulesetStatus, RulesetAudit, RulesetAuditAction
+from ..models.rule_record import RuleRecord
 from ..core.security import require_admin, get_current_user
 from ..schemas.ruleset import (
     RulesetCreate,
@@ -24,9 +25,23 @@ from ..schemas.ruleset import (
     ValidationReport,
     RulesetUploadResponse,
     ActiveRulesetResponse,
-    RulesetAuditResponse
+    RulesetAuditResponse,
+    RulesImportSummaryModel,
+)
+from ..schemas.rules import (
+    RuleListResponse,
+    RuleRecordResponse,
+    RuleUpdateRequest,
+    RuleDeleteResponse,
+    BulkSyncRequest,
+    BulkSyncResponse,
+    BulkSyncResponseItem,
 )
 from ..services.rules_storage import RulesStorageService
+from ..services.rules_importer import RulesImporter
+from ..services.rules_audit import record_rule_audit
+from ..services.rules_service import get_rules_service
+from ..metrics.rules_metrics import rules_update_total
 
 try:
     import jsonschema
@@ -41,6 +56,83 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/rulesets", tags=["admin-rules"])
+
+
+def _load_ruleset_rules(ruleset: Ruleset) -> List[Dict[str, Any]]:
+    if not ruleset.file_path:
+        raise ValueError("Ruleset file reference missing")
+
+    storage_service = RulesStorageService()
+    file_data = storage_service.get_ruleset_file(ruleset.file_path)
+    content = file_data.get("content")
+    if not isinstance(content, list):
+        raise ValueError("Ruleset file does not contain a list of rules")
+    return content
+
+
+def _set_rules_activation(db: Session, ruleset_id: Optional[UUID], *, is_active: bool) -> None:
+    if not ruleset_id:
+        return
+    update_payload = {"is_active": is_active}
+    update_payload["archived_at"] = None if is_active else func.now()
+    db.query(RuleRecord).filter(RuleRecord.ruleset_id == ruleset_id).update(
+        update_payload,
+        synchronize_session=False,
+    )
+
+
+rules_router = APIRouter(prefix="/admin/rules", tags=["admin-rules"])
+
+
+def _clear_rules_cache(domain: Optional[str], jurisdiction: Optional[str]) -> None:
+    try:
+        rules_service = get_rules_service()
+        if domain and jurisdiction:
+            rules_service.clear_cache(domain=domain, jurisdiction=jurisdiction)
+        else:
+            rules_service.clear_cache()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to clear rules cache: %s", exc)
+
+
+def _get_rule_or_404(db: Session, rule_id: str) -> RuleRecord:
+    rule = db.query(RuleRecord).filter(RuleRecord.rule_id == rule_id).first()
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rule {rule_id} not found",
+        )
+    return rule
+
+
+def _serialize_rule_record(rule: RuleRecord) -> RuleRecordResponse:
+    return RuleRecordResponse(
+        rule_id=rule.rule_id,
+        rule_version=rule.rule_version,
+        article=rule.article,
+        version=rule.version,
+        domain=rule.domain,
+        jurisdiction=rule.jurisdiction,
+        document_type=rule.document_type,
+        rule_type=rule.rule_type,
+        severity=rule.severity,
+        deterministic=bool(rule.deterministic),
+        requires_llm=bool(rule.requires_llm),
+        title=rule.title,
+        reference=rule.reference,
+        description=rule.description,
+        conditions=rule.conditions or [],
+        expected_outcome=rule.expected_outcome or {},
+        tags=rule.tags or [],
+        metadata=rule.metadata,
+        checksum=rule.checksum,
+        ruleset_id=rule.ruleset_id,
+        ruleset_version=rule.ruleset_version,
+        is_active=bool(rule.is_active),
+        archived_at=rule.archived_at,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+    )
 
 
 def _load_ruleset_schema() -> dict:
@@ -229,6 +321,23 @@ async def upload_ruleset(
     )
     db.add(ruleset)
     db.flush()  # Get ID
+
+    import_summary = None
+    if isinstance(rules_json, list):
+        try:
+            importer = RulesImporter(db)
+            import_summary = importer.import_ruleset(
+                ruleset=ruleset,
+                rules_payload=rules_json,
+                activate=False,
+                actor_id=current_user.id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Rules import failed for ruleset %s", ruleset.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to import rules: {exc}",
+            )
     
     # Create audit log
     audit = RulesetAudit(
@@ -269,9 +378,16 @@ async def upload_ruleset(
             detail=f"Failed to save ruleset: {str(e)}"
         )
     
+    summary_payload = (
+        RulesImportSummaryModel.model_validate(import_summary.as_dict())
+        if import_summary
+        else None
+    )
+
     return RulesetUploadResponse(
         ruleset=RulesetResponse.model_validate(ruleset),
-        validation=validation
+        validation=validation,
+        import_summary=summary_payload,
     )
 
 
@@ -312,6 +428,7 @@ async def publish_ruleset(
     
     if existing_active:
         existing_active.status = RulesetStatus.ARCHIVED.value
+        _set_rules_activation(db, existing_active.id, is_active=False)
         # Create audit log for archiving
         archive_audit = RulesetAudit(
             ruleset_id=existing_active.id,
@@ -327,6 +444,36 @@ async def publish_ruleset(
     ruleset.published_by = current_user.id
     ruleset.published_at = datetime.now(timezone.utc)
     
+    # Import normalized rules and activate them
+    try:
+        rules_payload = _load_ruleset_rules(ruleset)
+    except (FileNotFoundError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load ruleset file: {exc}"
+        )
+
+    try:
+        importer = RulesImporter(db)
+        import_summary = importer.import_ruleset(
+            ruleset=ruleset,
+            rules_payload=rules_payload,
+            activate=True,
+            actor_id=current_user.id,
+        )
+        logger.info(
+            "Ruleset %s import summary: %s",
+            ruleset.id,
+            import_summary.as_dict(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import rules for publish: {exc}",
+        )
+
     # Create audit log
     publish_audit = RulesetAudit(
         ruleset_id=ruleset.id,
@@ -351,14 +498,7 @@ async def publish_ruleset(
         )
     
     # Invalidate cache for this domain/jurisdiction
-    try:
-        from app.services.rules_service import get_rules_service
-        rules_service = get_rules_service()
-        if hasattr(rules_service, 'clear_cache'):
-            rules_service.clear_cache(domain=ruleset.domain, jurisdiction=ruleset.jurisdiction)
-            logger.info(f"Cleared cache for {ruleset.domain}/{ruleset.jurisdiction} after publish")
-    except Exception as e:
-        logger.warning(f"Failed to clear cache after publish: {e}")
+    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
     
     return RulesetResponse.model_validate(ruleset)
 
@@ -397,6 +537,7 @@ async def rollback_ruleset(
     # Archive current active
     if current_active:
         current_active.status = RulesetStatus.ARCHIVED.value
+        _set_rules_activation(db, current_active.id, is_active=False)
         archive_audit = RulesetAudit(
             ruleset_id=current_active.id,
             action=RulesetAuditAction.ARCHIVE.value,
@@ -410,6 +551,29 @@ async def rollback_ruleset(
     target_ruleset.status = RulesetStatus.ACTIVE.value
     target_ruleset.published_by = current_user.id
     target_ruleset.published_at = datetime.now(timezone.utc)
+    try:
+        rules_payload = _load_ruleset_rules(target_ruleset)
+    except (FileNotFoundError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load ruleset file: {exc}"
+        )
+
+    try:
+        importer = RulesImporter(db)
+        importer.import_ruleset(
+            ruleset=target_ruleset,
+            rules_payload=rules_payload,
+            activate=True,
+            actor_id=current_user.id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import rules for rollback: {exc}",
+        )
     
     # Create audit log
     rollback_audit = RulesetAudit(
@@ -422,6 +586,8 @@ async def rollback_ruleset(
     
     db.commit()
     db.refresh(target_ruleset)
+
+    _clear_rules_cache(target_ruleset.domain, target_ruleset.jurisdiction)
     
     return RulesetResponse.model_validate(target_ruleset)
 
@@ -660,3 +826,263 @@ async def get_ruleset_audit(
     ).order_by(RulesetAudit.created_at.desc()).all()
     
     return [RulesetAuditResponse.model_validate(log) for log in audit_logs]
+
+
+@rules_router.get("", response_model=RuleListResponse)
+async def list_rules(
+    domain: Optional[str] = Query(None),
+    document_type: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    requires_llm: Optional[bool] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    query = db.query(RuleRecord)
+
+    if domain:
+        query = query.filter(RuleRecord.domain == domain)
+    if document_type:
+        query = query.filter(RuleRecord.document_type == document_type)
+    if severity:
+        query = query.filter(RuleRecord.severity == severity)
+    if requires_llm is not None:
+        query = query.filter(RuleRecord.requires_llm.is_(requires_llm))
+    if is_active is not None:
+        query = query.filter(RuleRecord.is_active.is_(is_active))
+    if search:
+        like_value = f"%{search.lower()}%"
+        query = query.filter(
+            or_(
+                RuleRecord.rule_id.ilike(like_value),
+                RuleRecord.title.ilike(like_value),
+                RuleRecord.reference.ilike(like_value),
+            )
+        )
+
+    total = query.count()
+    rules = (
+        query.order_by(RuleRecord.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    items = [_serialize_rule_record(rule) for rule in rules]
+    return RuleListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@rules_router.get("/{rule_id}", response_model=RuleRecordResponse)
+async def get_rule(
+    rule_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rule = _get_rule_or_404(db, rule_id)
+    return _serialize_rule_record(rule)
+
+
+@rules_router.patch("/{rule_id}", response_model=RuleRecordResponse)
+async def update_rule(
+    rule_id: str,
+    payload: RuleUpdateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rule = _get_rule_or_404(db, rule_id)
+    update_data = payload.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update fields provided",
+        )
+
+    if payload.rule_json:
+        if not rule.ruleset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rule is not linked to a ruleset",
+            )
+        target_ruleset = (
+            db.query(Ruleset).filter(Ruleset.id == rule.ruleset_id).first()
+        )
+        if not target_ruleset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Linked ruleset not found",
+            )
+        importer = RulesImporter(db)
+        importer.import_ruleset(
+            ruleset=target_ruleset,
+            rules_payload=[payload.rule_json],
+            activate=payload.is_active if payload.is_active is not None else rule.is_active,
+            actor_id=current_user.id,
+        )
+        record_rule_audit(
+            db,
+            action="edit_json",
+            rule_id=rule.rule_id,
+            ruleset_id=rule.ruleset_id,
+            actor_id=current_user.id,
+            detail={"updated_fields": list(payload.rule_json.keys())},
+        )
+        rules_update_total.labels(action="edit_json").inc()
+    else:
+        detail_payload: Dict[str, Any] = {}
+        if payload.is_active is not None:
+            rule.is_active = payload.is_active
+            rule.archived_at = None if payload.is_active else datetime.now(timezone.utc)
+            detail_payload["is_active"] = payload.is_active
+        if payload.severity is not None:
+            rule.severity = payload.severity
+            detail_payload["severity"] = payload.severity
+        if payload.tags is not None:
+            rule.tags = payload.tags
+            detail_payload["tags"] = payload.tags
+        if payload.metadata is not None:
+            rule.metadata = payload.metadata
+            detail_payload["metadata"] = payload.metadata
+
+        if detail_payload:
+            record_rule_audit(
+                db,
+                action="update",
+                rule_id=rule.rule_id,
+                ruleset_id=rule.ruleset_id,
+                actor_id=current_user.id,
+                detail=detail_payload,
+            )
+            rules_update_total.labels(action="update").inc()
+
+    db.commit()
+    db.refresh(rule)
+    _clear_rules_cache(rule.domain, rule.jurisdiction)
+    return _serialize_rule_record(rule)
+
+
+@rules_router.delete("/{rule_id}", response_model=RuleDeleteResponse)
+async def delete_rule(
+    rule_id: str,
+    hard: bool = Query(False, description="Permanently delete the rule"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rule = _get_rule_or_404(db, rule_id)
+    if hard:
+        db.delete(rule)
+        record_rule_audit(
+            db,
+            action="delete",
+            rule_id=rule_id,
+            ruleset_id=rule.ruleset_id,
+            actor_id=current_user.id,
+            detail=None,
+        )
+        rules_update_total.labels(action="delete").inc()
+        db.commit()
+        _clear_rules_cache(rule.domain, rule.jurisdiction)
+        return RuleDeleteResponse(rule_id=rule_id, archived=False)
+
+    rule.is_active = False
+    rule.archived_at = datetime.now(timezone.utc)
+    record_rule_audit(
+        db,
+        action="archive",
+        rule_id=rule_id,
+        ruleset_id=rule.ruleset_id,
+        actor_id=current_user.id,
+        detail=None,
+    )
+    rules_update_total.labels(action="archive").inc()
+    db.commit()
+    _clear_rules_cache(rule.domain, rule.jurisdiction)
+    return RuleDeleteResponse(rule_id=rule_id, archived=True)
+
+
+@rules_router.post("/bulk-sync", response_model=BulkSyncResponse)
+async def bulk_sync_rules(
+    request: Optional[BulkSyncRequest] = Body(default=None),
+    ruleset_id: Optional[UUID] = Query(None),
+    include_inactive: bool = Query(False),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    effective_ruleset_id = ruleset_id or (request.ruleset_id if request else None)
+    effective_include_inactive = include_inactive or (
+        request.include_inactive if request else False
+    )
+
+    query = db.query(Ruleset)
+    if effective_ruleset_id:
+        query = query.filter(Ruleset.id == effective_ruleset_id)
+    elif not effective_include_inactive:
+        query = query.filter(Ruleset.status == RulesetStatus.ACTIVE.value)
+
+    rulesets = query.all()
+    if not rulesets:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching rulesets found",
+        )
+
+    importer = RulesImporter(db)
+    response_items: List[BulkSyncResponseItem] = []
+    cache_keys: Set[Tuple[Optional[str], Optional[str]]] = set()
+
+    for target in rulesets:
+        try:
+            payload = _load_ruleset_rules(target)
+        except (FileNotFoundError, ValueError) as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to load ruleset {target.id}: {exc}",
+            )
+
+        try:
+            summary = importer.import_ruleset(
+                ruleset=target,
+                rules_payload=payload,
+                activate=target.status == RulesetStatus.ACTIVE.value,
+                actor_id=current_user.id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to import rules for ruleset {target.id}: {exc}",
+            )
+
+        if target.status != RulesetStatus.ACTIVE.value:
+            _set_rules_activation(db, target.id, is_active=False)
+        else:
+            cache_keys.add((target.domain, target.jurisdiction))
+
+        response_items.append(
+            BulkSyncResponseItem(
+                ruleset_id=target.id,
+                status=target.status,
+                domain=target.domain,
+                jurisdiction=target.jurisdiction,
+                summary=summary.as_dict(),
+            )
+        )
+        logger.info(
+            "Rules bulk sync complete",
+            extra={
+                "ruleset_id": str(target.id),
+                "domain": target.domain,
+                "jurisdiction": target.jurisdiction,
+                "inserted": summary.inserted,
+                "updated": summary.updated,
+                "skipped": summary.skipped,
+            },
+        )
+
+    db.commit()
+    for domain, jurisdiction in cache_keys:
+        _clear_rules_cache(domain, jurisdiction)
+    return BulkSyncResponse(items=response_items)

@@ -259,6 +259,7 @@ if settings.is_development() or settings.USE_STUBS:
 app.include_router(documents.router)
 app.include_router(validate.router)
 app.include_router(rules_admin.router)
+app.include_router(rules_admin.rules_router)
 
 # Note: Startup logging is now handled in the lifespan function
 

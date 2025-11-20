@@ -5,6 +5,21 @@ All notable changes to TRDR Hub LCopilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2025-11-20] - Rules Table Integration
+
+### Added
+- Governance columns and indexes on `rules`, plus the new `rules_audit` table with logging hooks.
+- `RulesImporter`, bulk sync endpoints, Supabase storage helpers, and CLI entrypoints (`scripts/import_rules.py`, `scripts/sync_rulesets.py`).
+- Admin UI updates: Rules Governance view, upload import summary, navigation refresh, and Prometheus counters.
+- Vitest/pytest coverage for importer + UI, runbook (`docs/runbooks/rules-sync-runbook.md`), and Supabase RLS SQL (`infra/sql/rules_rls.sql`).
+
+### Changed
+- Cache invalidation, audit logging, and metrics now execute on publish/rollback/update/delete/bulk-sync.
+- Docs (`docs/rules-feature-completion-plan.md`, `CHANGELOG.md`) now reflect the new flow and operations handoff.
+
+### Known Issues
+- Automated validation regression tests could not be executed locally because a Python interpreter entrypoint (pytest) is not exposed on this workstation. Re-run the backend suite once the env provides a CLI.
+
 ## [5.0.0] - 2025-09-18 - BMAD Retrofit v5
 
 ### Added - BMAD Framework Integration

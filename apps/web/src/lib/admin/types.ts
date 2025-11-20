@@ -456,6 +456,16 @@ export interface ValidationReport {
 export interface RulesetUploadResult {
   ruleset: RulesetRecord;
   validation: ValidationReport;
+  importSummary?: RulesImportSummary;
+}
+
+export interface RulesImportSummary {
+  totalRules: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+  warnings: string[];
 }
 
 export interface ActiveRulesetResult {
@@ -487,6 +497,65 @@ export interface AdminAuditEvent {
 export type MutationResult<T = undefined> =
   | { success: true; message?: string; data?: T }
   | { success: false; message: string };
+
+export interface RuleRecord {
+  ruleId: string;
+  ruleVersion?: string;
+  article?: string;
+  version?: string;
+  domain: string;
+  jurisdiction: string;
+  documentType: string;
+  ruleType: string;
+  severity: string;
+  deterministic: boolean;
+  requiresLlm: boolean;
+  title: string;
+  reference?: string;
+  description?: string;
+  conditions: Record<string, unknown>[];
+  expectedOutcome: Record<string, unknown>;
+  tags: string[];
+  metadata?: Record<string, unknown> | null;
+  checksum: string;
+  rulesetId?: string;
+  rulesetVersion?: string;
+  isActive: boolean;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RuleListParams {
+  page: number;
+  pageSize: number;
+  domain?: string;
+  documentType?: string;
+  severity?: string;
+  requiresLlm?: boolean;
+  isActive?: boolean;
+  search?: string;
+}
+
+export interface RuleUpdatePayload {
+  isActive?: boolean;
+  severity?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  ruleJson?: Record<string, unknown>;
+}
+
+export interface BulkSyncResultItem {
+  rulesetId: string;
+  status: string;
+  domain: string;
+  jurisdiction: string;
+  summary: Record<string, unknown>;
+}
+
+export interface BulkSyncResult {
+  items: BulkSyncResultItem[];
+}
 
 export interface AdminService {
   getDashboardStats(range: TimeRange): Promise<KPIStat[]>;
@@ -567,5 +636,10 @@ export interface AdminService {
 
   recordAdminAudit(event: Omit<AdminAuditEvent, "id" | "createdAt">): Promise<MutationResult>;
   listAdminAuditLog(params: { page: number; pageSize: number }): Promise<PaginatedResult<AdminAuditEvent>>;
+  listRules(params: RuleListParams): Promise<PaginatedResult<RuleRecord>>;
+  getRule(ruleId: string): Promise<RuleRecord>;
+  updateRule(ruleId: string, payload: RuleUpdatePayload): Promise<RuleRecord>;
+  deleteRule(ruleId: string, hard?: boolean): Promise<MutationResult>;
+  bulkSyncRules(params?: { rulesetId?: string; includeInactive?: boolean }): Promise<BulkSyncResult>;
 }
 

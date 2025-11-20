@@ -39,7 +39,8 @@ import {
   Receipt,
   TrendingUp,
   Calculator,
-  BookOpen
+  BookOpen,
+  Settings2,
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
 import { UserMenu } from '@/components/layout/UserMenu';
@@ -169,7 +170,8 @@ const navigation: SidebarSection[] = [
       { name: 'Feature Flags', section: 'system-feature-flags', icon: Flag, permissions: ['feature_flags:read'] },
       { name: 'Releases', section: 'system-releases', icon: FileText, permissions: ['releases:read'] },
       { name: 'Settings', section: 'system-settings', icon: Settings, permissions: ['settings:read'] },
-      { name: 'Rules', section: 'rules-list', icon: BookOpen, permissions: ['rule:read'] },
+      { name: 'Rulesets', section: 'rules-list', icon: BookOpen, permissions: ['rule:read'] },
+      { name: 'Rules Governance', section: 'rules-governance', icon: Settings2, permissions: ['rule:read'] },
       { name: 'Active Rulesets', section: 'rules-active', icon: FileText, permissions: ['rule:read'] },
     ],
   },

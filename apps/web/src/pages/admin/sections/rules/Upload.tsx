@@ -15,6 +15,7 @@ import { ArrowLeft, CheckCircle2, FileText, Upload, XCircle } from "lucide-react
 import { getAdminService } from "@/lib/admin/services";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 import { PRIMARY_DOMAIN_OPTIONS, RULEBOOK_OPTIONS_BY_DOMAIN } from "./constants";
+import type { RulesImportSummary } from "@/lib/admin/types";
 
 const service = getAdminService();
 
@@ -50,6 +51,7 @@ const [rulebook, setRulebook] = React.useState<string>("");
     errors: string[];
     warnings: string[];
   } | null>(null);
+  const [importSummary, setImportSummary] = React.useState<RulesImportSummary | null>(null);
 
 const rulebookOptionsForDomain = React.useMemo(() => {
   if (!domain) return [];
@@ -223,7 +225,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         notes || undefined
       );
 
-      if (result.success && result.data) {
+        if (result.success && result.data) {
         await audit("upload_ruleset", {
           entityId: result.data.ruleset.id,
           metadata: {
@@ -249,6 +251,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setEffectiveTo("");
         setNotes("");
         setValidationResult(null);
+        setImportSummary(result.data.importSummary ?? null);
 
         // Navigate back to list
         navigate("/admin?section=rules-list");
@@ -343,6 +346,24 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                           ))}
                         </ul>
                       </div>
+                    )}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            {importSummary && (
+              <Alert>
+                <AlertTitle>Import Summary</AlertTitle>
+                <AlertDescription>
+                  <div className="space-y-1 text-sm">
+                    <p>
+                      Processed {importSummary.totalRules} rules • Inserted {importSummary.inserted} • Updated {importSummary.updated} • Skipped {importSummary.skipped}
+                    </p>
+                    {importSummary.warnings.length > 0 && (
+                      <p>Warnings: {importSummary.warnings.join(", ")}</p>
+                    )}
+                    {importSummary.errors.length > 0 && (
+                      <p className="text-destructive">Errors: {importSummary.errors.join(", ")}</p>
                     )}
                   </div>
                 </AlertDescription>

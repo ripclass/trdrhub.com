@@ -50,6 +50,10 @@ import {
   TimeRange,
   AdminUser,
   WebhookDelivery,
+  RuleRecord,
+  RuleListParams,
+  RuleUpdatePayload,
+  BulkSyncResult,
 } from "../../types";
 
 type PaginateParams = {
@@ -200,6 +204,7 @@ export class MockAdminService implements AdminService {
   private settings: AdminSettings;
   private adminAudit: AdminAuditEvent[];
   private rulesets: RulesetRecord[];
+  private rules: RuleRecord[];
   private rulesetAudit: RulesetAuditLog[];
 
   constructor() {
@@ -809,6 +814,89 @@ export class MockAdminService implements AdminService {
 
     // Initialize rulesets mock data
     this.rulesets = [];
+    this.rules = [
+      {
+        ruleId: "UCP600-14A",
+        ruleVersion: "1.0.0",
+        article: "14(a)",
+        version: "UCP600:2007",
+        domain: "icc",
+        jurisdiction: "global",
+        documentType: "lc",
+        ruleType: "deterministic",
+        severity: "warning",
+        deterministic: true,
+        requiresLlm: false,
+        title: "Consistency of data across documents",
+        reference: "UCP600",
+        description: "All documents must contain consistent data across the LC.",
+        conditions: [{ field: "documents[].amount", operator: "equals", value_ref: "lc.amount" }],
+        expectedOutcome: { valid: ["All documents aligned"], invalid: ["Mismatch detected"] },
+        tags: ["consistency", "lc"],
+        metadata: { source: "mock" },
+        checksum: randomId(),
+        rulesetId: undefined,
+        rulesetVersion: "1.0.0",
+        isActive: true,
+        archivedAt: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      {
+        ruleId: "LCINV-001",
+        ruleVersion: "1.0.0",
+        article: "XDOC-1",
+        version: "LCOPILOT:2025",
+        domain: "icc",
+        jurisdiction: "global",
+        documentType: "invoice",
+        ruleType: "semantic",
+        severity: "warning",
+        deterministic: false,
+        requiresLlm: true,
+        title: "Invoice goods description matches LC",
+        reference: "LCOPILOT",
+        description: "Invoice description should align with LC terms.",
+        conditions: [{ field: "invoice.description", operator: "semantic_check", value_ref: "lc.description" }],
+        expectedOutcome: { valid: ["Descriptions align"], invalid: ["Invoice deviated from LC"] },
+        tags: ["invoice", "semantic"],
+        metadata: { documents: ["Invoice", "LC"] },
+        checksum: randomId(),
+        rulesetId: undefined,
+        rulesetVersion: "2025.01",
+        isActive: true,
+        archivedAt: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      {
+        ruleId: "DOC-PRESENTATION-5",
+        ruleVersion: "2.0.0",
+        article: "5",
+        version: "URDG758:2010",
+        domain: "icc",
+        jurisdiction: "global",
+        documentType: "guarantee",
+        ruleType: "deterministic",
+        severity: "fail",
+        deterministic: true,
+        requiresLlm: false,
+        title: "Presentation within expiry",
+        reference: "URDG758",
+        description: "Documents must be presented prior to expiry date.",
+        conditions: [{ field: "documents[].date", operator: "before", value_ref: "lc.expiry_date" }],
+        expectedOutcome: { valid: ["Presented before expiry"], invalid: ["Presented after expiry"] },
+        tags: ["timing"],
+        metadata: { thresholdDays: 0 },
+        checksum: randomId(),
+        rulesetId: undefined,
+        rulesetVersion: "2.0.0",
+        isActive: true,
+        archivedAt: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+    ];
 
     this.rulesetAudit = [
       {
@@ -1365,6 +1453,112 @@ export class MockAdminService implements AdminService {
       notifications: { ...this.settings.notifications, ...settings.notifications },
     };
     return { success: true, data: clone(this.settings), message: "Settings saved" };
+  }
+
+  async listRules(params: RuleListParams): Promise<PaginatedResult<RuleRecord>> {
+    let results = [...this.rules];
+    if (params.domain) {
+      results = results.filter((rule) => rule.domain === params.domain);
+    }
+    if (params.documentType) {
+      results = results.filter((rule) => rule.documentType === params.documentType);
+    }
+    if (params.severity) {
+      results = results.filter((rule) => rule.severity === params.severity);
+    }
+    if (params.requiresLlm !== undefined) {
+      results = results.filter((rule) => rule.requiresLlm === params.requiresLlm);
+    }
+    if (params.isActive !== undefined) {
+      results = results.filter((rule) => rule.isActive === params.isActive);
+    }
+    if (params.search) {
+      const term = params.search.toLowerCase();
+      results = results.filter(
+        (rule) =>
+          rule.ruleId.toLowerCase().includes(term) ||
+          rule.title.toLowerCase().includes(term) ||
+          (rule.description ?? "").toLowerCase().includes(term),
+      );
+    }
+
+    const start = (params.page - 1) * params.pageSize;
+    const paginated = results.slice(start, start + params.pageSize).map((rule) => clone(rule));
+    return {
+      items: paginated,
+      total: results.length,
+      page: params.page,
+      pageSize: params.pageSize,
+    };
+  }
+
+  async getRule(ruleId: string): Promise<RuleRecord> {
+    const rule = this.rules.find((item) => item.ruleId === ruleId);
+    if (!rule) {
+      throw new Error("Rule not found");
+    }
+    return clone(rule);
+  }
+
+  async updateRule(ruleId: string, payload: RuleUpdatePayload): Promise<RuleRecord> {
+    const index = this.rules.findIndex((item) => item.ruleId === ruleId);
+    if (index === -1) {
+      throw new Error("Rule not found");
+    }
+    const existing = this.rules[index];
+    const updated: RuleRecord = {
+      ...existing,
+      isActive: payload.isActive ?? existing.isActive,
+      severity: payload.severity ?? existing.severity,
+      tags: payload.tags ?? existing.tags,
+      metadata: payload.metadata ?? existing.metadata,
+      updatedAt: now(),
+    };
+    if (payload.ruleJson) {
+      updated.metadata = {
+        ...(updated.metadata ?? {}),
+        editedFields: Object.keys(payload.ruleJson),
+        editedAt: now(),
+      };
+    }
+    this.rules[index] = updated;
+    return clone(updated);
+  }
+
+  async deleteRule(ruleId: string, hard = false): Promise<MutationResult> {
+    const index = this.rules.findIndex((item) => item.ruleId === ruleId);
+    if (index === -1) {
+      return { success: false, message: "Rule not found" };
+    }
+    if (hard) {
+      this.rules.splice(index, 1);
+      return { success: true, message: "Rule deleted" };
+    }
+    this.rules[index] = {
+      ...this.rules[index],
+      isActive: false,
+      archivedAt: now(),
+      updatedAt: now(),
+    };
+    return { success: true, message: "Rule archived" };
+  }
+
+  async bulkSyncRules(params: { rulesetId?: string; includeInactive?: boolean } = {}): Promise<BulkSyncResult> {
+    const targetRulesets =
+      params.rulesetId != null
+        ? this.rulesets.filter((ruleset) => ruleset.id === params.rulesetId)
+        : this.rulesets.slice(0, 2);
+    const items = targetRulesets.map((ruleset) => ({
+      rulesetId: ruleset.id,
+      status: ruleset.status,
+      domain: ruleset.domain,
+      jurisdiction: ruleset.jurisdiction,
+      summary: {
+        total_rules: this.rules.length,
+        synced_at: now(),
+      },
+    }));
+    return { items };
   }
 
   async listRulesets(params: { page: number; pageSize: number; domain?: string; jurisdiction?: string; status?: RulesetStatus }): Promise<PaginatedResult<RulesetRecord>> {
