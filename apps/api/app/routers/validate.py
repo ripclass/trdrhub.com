@@ -19,7 +19,12 @@ from app.database import get_db
 from app.models import UsageAction, User, ValidationSession, SessionStatus, UserRole
 from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
-from app.services.validator import validate_document, validate_document_async, apply_bank_policy
+from app.services.validator import (
+    validate_document,
+    validate_document_async,
+    apply_bank_policy,
+    filter_informational_issues,
+)
 from app.services.crossdoc import (
     build_issue_cards,
     DEFAULT_LABELS,
@@ -393,16 +398,48 @@ async def validate_doc(
         # Use async validation if JSON rules are enabled
         from app.services.validator import validate_document_async, validate_document
         
-        use_json_rules = settings.USE_JSON_RULES
+        request_user_type = _extract_request_user_type(payload)
+        force_json_rules = _should_force_json_rules(payload)
+        use_json_rules = settings.USE_JSON_RULES or force_json_rules
+        workflow_hint = payload.get("workflow_type") or payload.get("workflowType")
+        if force_json_rules:
+            logger.info(
+                "Exporter flow forcing JSON rules pipeline",
+                extra={
+                    "job_id": str(job_id),
+                    "user_type": request_user_type or "unknown",
+                    "workflow_type": workflow_hint,
+                },
+            )
+
+        should_use_json_rules = use_json_rules
+        if use_json_rules and not context_contains_structured_data:
+            if force_json_rules:
+                logger.warning(
+                    "Structured data missing but forcing JSON rules evaluation",
+                    extra={"job_id": str(job_id)},
+                )
+            else:
+                logger.info("Structured data unavailable, skipping JSON rules evaluation.")
+                should_use_json_rules = False
+        
         if lc_type_is_unknown:
             logger.info("LC type unknown - skipping ICC rule evaluation to avoid false positives.")
-            results: List[Dict[str, Any]] = []
-        elif use_json_rules and context_contains_structured_data:
-            # Use async validation (router is already async)
-            results = await validate_document_async(payload, doc_type)
-        elif use_json_rules:
-            logger.info("Structured data unavailable, skipping JSON rules evaluation.")
             results = []
+        elif should_use_json_rules:
+            try:
+                results = await validate_document_async(payload, doc_type)
+            except ValueError as e:
+                logger.warning(
+                    "JSON ruleset unavailable (%s), falling back to legacy evaluation", e
+                )
+                results = validate_document(payload, doc_type)
+            except Exception as e:
+                logger.error(
+                    "JSON validation failed, falling back to legacy system",
+                    exc_info=True,
+                )
+                results = validate_document(payload, doc_type)
         else:
             results = validate_document(payload, doc_type)
 
@@ -429,6 +466,7 @@ async def validate_doc(
             r for r in results
             if not r.get("passed", False) and not r.get("not_applicable", False)
         ]
+        failed_results = filter_informational_issues(failed_results)
         issue_context = _build_issue_context(payload)
         failed_results = await _rewrite_failed_results(failed_results, issue_context)
         issue_cards, reference_issues = build_issue_cards(failed_results)
@@ -711,6 +749,18 @@ async def validate_doc(
                     stored_keys,
                 )
 
+        logger.info(
+            "Validation completed",
+            extra={
+                "job_id": str(job_id),
+                "user_type": request_user_type or (current_user.role.value if hasattr(current_user, "role") else "unknown"),
+                "rules_evaluated": len(results),
+                "failed_rules": len(failed_results),
+                "issue_cards": len(issue_cards),
+                "json_pipeline": should_use_json_rules,
+            },
+        )
+
         return {
             "status": "ok",
             "results": results,
@@ -872,6 +922,25 @@ def _fallback_doc_type(index: int) -> str:
         6: "inspection_certificate",
     }
     return mapping.get(index, "supporting_document")
+
+
+def _extract_request_user_type(payload: Dict[str, Any]) -> str:
+    value = payload.get("user_type") or payload.get("userType")
+    if not value:
+        return ""
+    return str(value).strip().lower()
+
+
+def _should_force_json_rules(payload: Dict[str, Any]) -> bool:
+    user_type = _extract_request_user_type(payload)
+    if user_type in {"exporter", "importer"}:
+        return True
+    workflow = payload.get("workflow_type") or payload.get("workflowType")
+    if workflow:
+        normalized = str(workflow).strip().lower()
+        if normalized.startswith(("export", "import")):
+            return True
+    return False
 
 
 DOCUMENT_TYPE_ALIASES: Dict[str, List[str]] = {

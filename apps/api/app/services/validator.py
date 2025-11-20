@@ -1062,6 +1062,25 @@ INFORMATIONAL_TAGS = {
 }
 
 INFORMATIONAL_ARTICLES = {"1", "2", "3", "4", "5", "34", "35", "36", "37"}
+INFORMATIONAL_DROP_TITLES = [
+    "Advising of Credits",
+    "Advising of Credits and Amendments",
+    "Dishonour Documents",
+    "Waiver and Notice",
+    "Confirming Bank Undertaking",
+    "Availability, Expiry Date and Place for Presentation",
+    "Force Majeure",
+    "Interpretations",
+    "Application of UCP",
+    "Reimbursement Arrangements",
+    "Original Documents and Copies",
+    "Transport Document Covering at Least Two Different Modes of Transport",
+    "Non-Negotiable Documents",
+    "Set of Transport Documents",
+    "Mode of Transport",
+    "Technical References",
+    "Bank-to-Bank Reimbursement",
+]
 
 
 def _is_informational_rule(rule: Dict[str, Any], domain_lower: str) -> bool:
@@ -1086,6 +1105,19 @@ def _is_informational_rule(rule: Dict[str, Any], domain_lower: str) -> bool:
                 return True
 
     return False
+
+
+def filter_informational_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not issues:
+        return issues
+    drop_tokens = [title.lower() for title in INFORMATIONAL_DROP_TITLES]
+    cleaned: List[Dict[str, Any]] = []
+    for issue in issues:
+        title_value = str(issue.get("title") or issue.get("rule") or "").lower()
+        if title_value and any(token in title_value for token in drop_tokens):
+            continue
+        cleaned.append(issue)
+    return cleaned
 
 
 def _build_document_ready_map(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> Dict[str, bool]:
@@ -1353,26 +1385,41 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 for rule, meta in aggregated_rules
                 if rule.get("document_type") in (None, "", document_type, "lc")
             ]
-
+            doc_scope_count = len(filtered_rules_with_meta)
             lc_type_context = str(document_data.get("lc_type") or LCType.UNKNOWN.value).lower()
             filtered_rules_with_meta = [
                 (rule, meta)
                 for rule, meta in filtered_rules_with_meta
                 if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
             ]
-            filtered_rules_with_meta = activate_rules_for_lc(
+            activated_rules_with_meta = activate_rules_for_lc(
                 document_data.get("lc") or {},
                 filtered_rules_with_meta,
                 document_data,
             )
+            sample_rules = [
+                (rule.get("rule_id") or rule.get("code") or rule.get("title"))
+                for rule, _ in activated_rules_with_meta[:5]
+            ]
+            logger.info(
+                "JSON rule selection summary",
+                extra={
+                    "domains": domain_sequence,
+                    "total_rules": len(aggregated_rules),
+                    "doc_scope_rules": doc_scope_count,
+                    "activated_rules": len(activated_rules_with_meta),
+                    "sample_rule_ids": sample_rules,
+                },
+            )
 
-            if not filtered_rules_with_meta:
+            if not activated_rules_with_meta:
                 logger.warning(
                     f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
                 )
                 return []
 
             evaluator = RuleEvaluator()
+            filtered_rules_with_meta = activated_rules_with_meta
             prepared_rules = [rule for rule, _ in filtered_rules_with_meta]
             rule_envelopes = [
                 {"rule": rule, "meta": meta}

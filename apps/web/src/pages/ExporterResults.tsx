@@ -1305,7 +1305,48 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {fieldEntries.length > 0 ? (
+                    {document.typeKey === "letter_of_credit" && lcData ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
+                          <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
+                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
+                          </Button>
+                        </div>
+                        <div className="rounded-md border bg-card/50 p-4 space-y-4">
+                          {lcSummaryRows.length > 0 && (
+                            <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
+                          )}
+                          {lcDateRows.length > 0 && (
+                            <div>
+                              <p className="text-sm font-semibold mb-2">Key Dates</p>
+                              <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
+                            </div>
+                          )}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {lcApplicantCard}
+                            {lcBeneficiaryCard}
+                          </div>
+                          {lcPortsCard}
+                          {lcGoodsItemsList}
+                          {lcAdditionalConditions && (
+                            <div>
+                              <p className="text-sm font-semibold mb-1">Additional Conditions</p>
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {formatExtractedValue(lcAdditionalConditions)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {showRawLcJson && (
+                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                              {JSON.stringify(lcData, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    ) : fieldEntries.length > 0 ? (
                       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {fieldEntries.map(([key, value]) => {
                           const displayValue = formatExtractedValue(value);
