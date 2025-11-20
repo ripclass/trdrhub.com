@@ -118,6 +118,24 @@ const formatAmountValue = (amount: any): string => {
   return formatExtractedValue(amount);
 };
 
+const DOCUMENT_LABELS: Record<string, string> = {
+  letter_of_credit: "Letter of Credit",
+  commercial_invoice: "Commercial Invoice",
+  bill_of_lading: "Bill of Lading",
+  packing_list: "Packing List",
+  insurance_certificate: "Insurance Certificate",
+  certificate_of_origin: "Certificate of Origin",
+  inspection_certificate: "Inspection Certificate",
+  supporting_documents: "Supporting Documents",
+};
+
+const humanizeLabel = (value: string): string =>
+  value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+
 const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: string): ReactElement[] => {
   return fields
     .map((field) => {
@@ -136,6 +154,20 @@ const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: stri
       );
     })
     .filter((node): node is ReactElement => Boolean(node));
+};
+
+const buildFieldRowsFromObject = (
+  source: Record<string, any> | null | undefined,
+  prefix: string,
+): ReactElement[] => {
+  if (!source || typeof source !== "object") {
+    return [];
+  }
+  const entries = Object.entries(source).map(([key, value]) => ({
+    label: humanizeLabel(key),
+    value,
+  }));
+  return buildFieldRows(entries, prefix);
 };
 
 const renderPartyCard = (label: string, party: any, keyPrefix: string): ReactElement | null => {
@@ -219,6 +251,31 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
     <div className="space-y-2">
       <p className="text-sm font-semibold">Goods Items</p>
       <div className="space-y-2">{cards}</div>
+    </div>
+  );
+};
+
+const renderGenericExtractedSection = (key: string, data: Record<string, any>) => {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const label = DOCUMENT_LABELS[key] ?? humanizeLabel(key);
+  const rows = buildFieldRowsFromObject(data, `extracted-${key}`);
+
+  return (
+    <div key={key} className="space-y-2">
+      <h3 className="font-semibold text-lg">{label} Data</h3>
+      {rows.length ? (
+        <div className="grid gap-4 md:grid-cols-2">{rows}</div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No structured fields extracted for this document.</p>
+      )}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">View Raw JSON</summary>
+        <pre className="text-xs overflow-auto max-h-[400px] whitespace-pre-wrap mt-2">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      </details>
     </div>
   );
 };
@@ -443,6 +500,7 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
   const structuredResult = resolvedResults?.structured_result;
+  const structuredDocumentsPayload = structuredResult?.documents ?? [];
   const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
   const documents = resolvedResults?.documents ?? [];
   const issueCards = resolvedResults?.issues ?? [];
@@ -456,19 +514,24 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
     medium: 0,
     minor: 0,
   };
-  const extractedDocuments =
-    Array.isArray(resolvedResults?.extracted_data?.documents)
-      ? (resolvedResults?.extracted_data?.documents as Array<Record<string, any>>)
-      : structuredResult?.documents?.map((doc) => ({
-          filename: doc.filename,
-          name: doc.filename,
-          document_type: doc.document_type,
-          extraction_status: doc.extraction_status,
-          extractionStatus: doc.extraction_status,
-          extracted_fields: doc.extracted_fields,
-          extractedFields: doc.extracted_fields,
-        })) ?? [];
-  const lcData = resolvedResults?.extracted_data?.lc;
+  const extractedDocumentsMap = (structuredResult?.extracted_documents ?? {}) as Record<string, any>;
+  const extractedDocuments = useMemo(
+    () =>
+      structuredDocumentsPayload.map((doc) => ({
+        filename: doc.filename,
+        name: doc.filename,
+        document_type: doc.document_type,
+        extraction_status: doc.extraction_status,
+        extractionStatus: doc.extraction_status,
+        extracted_fields: doc.extracted_fields ?? {},
+        extractedFields: doc.extracted_fields ?? {},
+      })),
+    [structuredDocumentsPayload],
+  );
+  const lcData = (extractedDocumentsMap.letter_of_credit ??
+    extractedDocumentsMap.lc ??
+    extractedDocumentsMap["letter_of_credit"] ??
+    null) as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
         [
@@ -1496,9 +1559,8 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
                 </div>
 
                 {/* Extracted Data Display */}
-                {resolvedResults.extracted_data ? (
+                {lcData || Object.keys(extractedDocumentsMap).length > 0 ? (
                   <div className="space-y-4">
-                    {/* LC Data */}
                     {lcData && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1542,102 +1604,9 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
                       </div>
                     )}
 
-                    {/* Invoice Data */}
-                    {resolvedResults.extracted_data.invoice && (
-                      <div className="space-y-2">
-                        <h3 className="font-semibold text-lg">Commercial Invoice Data</h3>
-                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                            {JSON.stringify(resolvedResults.extracted_data.invoice, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Bill of Lading Data */}
-                    {resolvedResults.extracted_data.bill_of_lading && (
-                      <div className="space-y-2">
-                        <h3 className="font-semibold text-lg">Bill of Lading Data</h3>
-                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                            {JSON.stringify(resolvedResults.extracted_data.bill_of_lading, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Raw Extracted Data (if no structured sections) */}
-                    {!resolvedResults.extracted_data.lc &&
-                      !resolvedResults.extracted_data.invoice &&
-                      !resolvedResults.extracted_data.bill_of_lading && (
-                        <div className="space-y-2">
-                          <h3 className="font-semibold text-lg">Raw Extracted Data</h3>
-                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                              {JSON.stringify(resolvedResults.extracted_data, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      )}
-
-                    {/* Per-document OCR summary */}
-                    {extractedDocuments.length > 0 && (
-                      <div className="space-y-3">
-                        <h3 className="font-semibold text-lg">Document OCR Overview</h3>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {extractedDocuments.map((doc, index) => {
-                            const cardTitle = doc.filename || doc.name || `Document ${index + 1}`;
-                            const docType = (doc.document_type || doc.type || "supporting_document")
-                              .toString()
-                              .replace(/_/g, " ");
-                            const extractionStatus = doc.extraction_status || doc.extractionStatus || "unknown";
-                            const fieldEntries = Object.entries(doc.extracted_fields || doc.extractedFields || {});
-
-                            return (
-                              <div key={`${cardTitle}-${index}`} className="border rounded-lg p-4 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-semibold">{cardTitle}</p>
-                                    <p className="text-xs text-muted-foreground capitalize">{docType}</p>
-                                  </div>
-                                  <Badge
-                                    variant={
-                                      extractionStatus === "success"
-                                        ? "default"
-                                        : extractionStatus === "empty"
-                                        ? "destructive"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {extractionStatus}
-                                  </Badge>
-                                </div>
-
-                                {fieldEntries.length > 0 ? (
-                                  <div className="space-y-2 text-sm">
-                                    {fieldEntries.map(([key, value]) => (
-                                      <div key={key} className="flex flex-col">
-                                        <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                                          {key.replace(/([A-Z])/g, " $1").trim()}
-                                        </span>
-                                        <span className="font-medium whitespace-pre-wrap break-words">
-                                          {formatExtractedValue(value)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">
-                                    No structured fields extracted for this document. OCR text is still available for
-                                    AI-assisted explanations.
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    {Object.entries(extractedDocumentsMap)
+                      .filter(([key]) => key !== "letter_of_credit" && key !== "lc")
+                      .map(([key, value]) => renderGenericExtractedSection(key, value))}
                   </div>
                 ) : (
                   <div className="text-center py-8">
@@ -1648,6 +1617,63 @@ const renderGoodsItemsList = (items: any[]): ReactElement | null => {
                         ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
                         : "Data extraction may still be in progress or failed. Please check the extraction status above."}
                     </p>
+                  </div>
+                )}
+
+                {/* Per-document OCR summary */}
+                {extractedDocuments.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-lg">Document OCR Overview</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {extractedDocuments.map((doc, index) => {
+                        const cardTitle = doc.filename || doc.name || `Document ${index + 1}`;
+                        const docType = (doc.document_type || "supporting_document").toString().replace(/_/g, " ");
+                        const extractionStatus = doc.extraction_status || "unknown";
+                        const fieldEntries = Object.entries(doc.extracted_fields || {});
+
+                        return (
+                          <div key={`${cardTitle}-${index}`} className="border rounded-lg p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold">{cardTitle}</p>
+                                <p className="text-xs text-muted-foreground capitalize">{docType}</p>
+                              </div>
+                              <Badge
+                                variant={
+                                  extractionStatus === "success"
+                                    ? "default"
+                                    : extractionStatus === "empty"
+                                    ? "destructive"
+                                    : "secondary"
+                                }
+                              >
+                                {extractionStatus}
+                              </Badge>
+                            </div>
+
+                            {fieldEntries.length > 0 ? (
+                              <div className="space-y-2 text-sm">
+                                {fieldEntries.map(([key, value]) => (
+                                  <div key={key} className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                                      {key.replace(/([A-Z])/g, " $1").trim()}
+                                    </span>
+                                    <span className="font-medium whitespace-pre-wrap break-words">
+                                      {formatExtractedValue(value)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                No structured fields extracted for this document. OCR text is still available for
+                                AI-assisted explanations.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </CardContent>

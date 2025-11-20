@@ -262,6 +262,8 @@ export const StructuredTimelineEntrySchema = z.object({
   label: z.string().optional(),
 });
 export type StructuredTimelineEntry = z.infer<typeof StructuredTimelineEntrySchema>;
+export const TimelineEntrySchema = StructuredTimelineEntrySchema;
+export type TimelineEntry = StructuredTimelineEntry;
 
 export const StructuredResultSchema = z.object({
   processing_summary: ProcessingSummarySchema,
@@ -269,9 +271,11 @@ export const StructuredResultSchema = z.object({
   issues: z.array(StructuredResultIssueSchema),
   analytics: StructuredResultAnalyticsSchema,
   timeline: z.array(StructuredTimelineEntrySchema),
+  extracted_documents: z.record(z.unknown()).optional(),
 });
 export type StructuredResult = z.infer<typeof StructuredResultSchema>;
-
+export const StructuredProcessingSummarySchema = ProcessingSummarySchema;
+export type StructuredProcessingSummary = ProcessingSummary;
 export const PaginationParamsSchema = z.object({
   page: z.number().int().positive().default(1),
   limit: z.number().int().positive().max(100).default(20),
@@ -317,79 +321,6 @@ export const ErrorResponseSchema = z.object({
 // Schema Collections for Export
 // ============================================================================
 
-export const SeverityBreakdownSchema = z.object({
-  critical: z.number().int().nonnegative(),
-  major: z.number().int().nonnegative(),
-  medium: z.number().int().nonnegative(),
-  minor: z.number().int().nonnegative(),
-});
-export type SeverityBreakdown = z.infer<typeof SeverityBreakdownSchema>;
-
-export const StructuredProcessingSummarySchema = z.object({
-  total_documents: z.number().int().nonnegative(),
-  successful_extractions: z.number().int().nonnegative(),
-  failed_extractions: z.number().int().nonnegative(),
-  total_issues: z.number().int().nonnegative(),
-  severity_breakdown: SeverityBreakdownSchema,
-});
-export type StructuredProcessingSummary = z.infer<typeof StructuredProcessingSummarySchema>;
-
-export const StructuredResultDocumentSchema = z.object({
-  document_id: z.string(),
-  document_type: z.string(),
-  filename: z.string(),
-  extraction_status: z.string(),
-  extracted_fields: z.record(z.unknown()),
-  issues_count: z.number().int().nonnegative(),
-});
-export type StructuredResultDocument = z.infer<typeof StructuredResultDocumentSchema>;
-
-export const StructuredResultIssueSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  severity: z.string(),
-  priority: z.string().optional(),
-  documents: z.array(z.string()),
-  expected: z.string(),
-  found: z.string(),
-  suggested_fix: z.string(),
-  description: z.string().optional(),
-  reference: z.string().nullable().optional(),
-  ucp_reference: z.string().nullable().optional(),
-});
-export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
-
-export const DocumentRiskEntrySchema = z.object({
-  document_id: z.string().optional(),
-  filename: z.string().optional(),
-  risk: z.string().optional(),
-});
-export type DocumentRiskEntry = z.infer<typeof DocumentRiskEntrySchema>;
-
-export const StructuredResultAnalyticsSchema = z.object({
-  compliance_score: z.number().int(),
-  issue_counts: SeverityBreakdownSchema,
-  document_risk: z.array(DocumentRiskEntrySchema),
-});
-export type StructuredResultAnalytics = z.infer<typeof StructuredResultAnalyticsSchema>;
-
-export const TimelineEntrySchema = z.object({
-  title: z.string().optional(),
-  label: z.string().optional(),
-  status: z.string(),
-  description: z.string().optional(),
-  timestamp: z.string().optional(),
-});
-export type TimelineEntry = z.infer<typeof TimelineEntrySchema>;
-
-export const StructuredResultSchema = z.object({
-  processing_summary: StructuredProcessingSummarySchema,
-  documents: z.array(StructuredResultDocumentSchema),
-  issues: z.array(StructuredResultIssueSchema),
-  analytics: StructuredResultAnalyticsSchema,
-  timeline: z.array(TimelineEntrySchema),
-});
-export type StructuredResult = z.infer<typeof StructuredResultSchema>;
 export type StructuredResultPayload = StructuredResult;
 
 export const schemas = {

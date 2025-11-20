@@ -143,6 +143,26 @@ const timeline = [
 
 const aiInsightsText = 'Detected misalignment in amount and insurance coverage.';
 
+const extractedDocumentsSnapshot = {
+  letter_of_credit: {
+    number: 'LC-EXP-2025',
+    amount: { value: '50000', currency: 'USD' },
+    applicant: { name: 'Global Importers', country: 'United States' },
+    beneficiary: { name: 'Dhaka Knitwear', country: 'Bangladesh' },
+    ports: { loading: 'Chittagong, Bangladesh', discharge: 'New York, United States' },
+    goods_description: '100% cotton knit shirts',
+  },
+  commercial_invoice: {
+    invoice_number: 'INV-22-001',
+    goods_description: 'Cotton shirts',
+    invoice_amount: { value: '50000', currency: 'USD' },
+  },
+  bill_of_lading: {
+    vessel: 'MV Compliance',
+    bl_number: 'BOL-55-XYZ',
+  },
+};
+
 const structuredResult: StructuredResultPayload = {
   processing_summary: summary,
   documents: documents.map((doc) => ({
@@ -176,6 +196,7 @@ const structuredResult: StructuredResultPayload = {
     description: entry.description,
     timestamp: entry.timestamp,
   })),
+  extracted_documents: extractedDocumentsSnapshot,
 };
 
 export const mockValidationResults: ValidationResults = {
@@ -186,6 +207,7 @@ export const mockValidationResults: ValidationResults = {
   analytics,
   timeline,
   structured_result: structuredResult,
+  extracted_data: extractedDocumentsSnapshot,
   reference_issues: [],
   ai_enrichment: {
     summary: aiInsightsText,

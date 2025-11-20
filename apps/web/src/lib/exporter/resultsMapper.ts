@@ -218,7 +218,7 @@ const ensureAnalytics = (
   };
 };
 
-const mapTimeline = (entries: Array<Partial<TimelineEntry>> = []): ValidationResults['timeline'] => {
+const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] => {
   return entries
     .map((entry, index) => ({
       title: entry?.title ?? entry?.label ?? `Step ${index + 1}`,
@@ -229,100 +229,28 @@ const mapTimeline = (entries: Array<Partial<TimelineEntry>> = []): ValidationRes
     .filter((entry) => Boolean(entry.title));
 };
 
-const structuredFromNormalized = (
-  summary: ValidationResults['summary'],
-  documents: ValidationResults['documents'],
-  issues: IssueCard[],
-  analytics: ValidationResults['analytics'],
-  timeline: ValidationResults['timeline'],
-): StructuredResultPayload => {
-  return {
-    processing_summary: summary,
-    documents: documents.map((doc) => ({
-      document_id: doc.documentId,
-      document_type: doc.typeKey ?? doc.type,
-      filename: doc.name,
-      extraction_status: doc.extractionStatus,
-      extracted_fields: doc.extractedFields ?? {},
-      issues_count: doc.issuesCount ?? 0,
-    })),
-    issues: issues.map((issue) => ({
-      id: issue.id,
-      title: issue.title,
-      severity: normalizeSeverity(issue.severity),
-      documents: issue.documents ?? (issue.documentName ? [issue.documentName] : []),
-      expected: formatTextValue(issue.expected),
-      found: formatTextValue(issue.actual),
-      suggested_fix: formatTextValue(issue.suggestion),
-      description: issue.description ?? '',
-      ucp_reference: issue.ucpReference,
-    })),
-    analytics,
-    timeline: timeline.map((entry) => ({
-      title: entry.title ?? entry.label,
-      label: entry.label ?? entry.title,
-      status: entry.status,
-      description: entry.description,
-      timestamp: entry.timestamp,
-    })),
-  };
-};
-
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const structured = raw?.structured_result as StructuredResultPayload | undefined;
+  const structured = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload>;
+  const documentsPayload = Array.isArray(structured.documents) ? structured.documents : [];
+  const issuesPayload = Array.isArray(structured.issues) ? structured.issues : [];
+  const analyticsPayload = structured.analytics;
+  const timelinePayload = structured.timeline;
+  const extractedDocumentsPayload = structured.extracted_documents ?? {};
 
-  if (structured) {
-    const documents = mapDocuments(structured.documents ?? []);
-    const issues = mapIssues(structured.issues ?? [], documents);
-    const summary = ensureSummary(structured.processing_summary, documents, issues);
-    const analytics = ensureAnalytics(structured.analytics, summary, documents);
-    const timeline = mapTimeline(structured.timeline ?? []);
-    const normalizedStructuredResult: StructuredResultPayload = {
-      processing_summary: structured.processing_summary ?? summary,
-      documents: Array.isArray(structured.documents) ? structured.documents : [],
-      issues: Array.isArray(structured.issues) ? structured.issues : [],
-      analytics: normalizeStructuredAnalytics(structured.analytics, analytics),
-      timeline: normalizeStructuredTimeline(structured.timeline ?? timeline, timeline),
-    };
+  const documents = mapDocuments(documentsPayload);
+  const issues = mapIssues(issuesPayload, documents);
+  const summary = ensureSummary(structured.processing_summary, documents, issues);
+  const analytics = ensureAnalytics(analyticsPayload, summary, documents);
+  const timeline = mapTimeline(timelinePayload);
+  const normalizedStructuredResult: StructuredResultPayload = {
+    processing_summary: summary,
+    documents: documentsPayload,
+    issues: issuesPayload,
+    analytics: normalizeStructuredAnalytics(analyticsPayload, analytics),
+    timeline: normalizeStructuredTimeline(timelinePayload, timeline),
+    extracted_documents: extractedDocumentsPayload,
+  };
 
-    return {
-      ...raw,
-      jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
-      summary,
-      documents,
-      issues,
-      analytics,
-      timeline,
-      processing_summary: summary,
-      issue_cards: issues,
-      structured_result: normalizedStructuredResult,
-    };
-  }
-
-  const structuredTimeline = raw?.structured_result?.timeline;
-  const hasStructuredDocs = Array.isArray(raw?.structured_result?.documents) && raw.structured_result.documents.length > 0;
-  const hasStructuredIssues = Array.isArray(raw?.structured_result?.issues) && raw.structured_result.issues.length > 0;
-
-  const documentSource = hasStructuredDocs ? raw.structured_result.documents : raw?.documents ?? [];
-  const issueSource =
-    hasStructuredIssues ? raw.structured_result.issues : raw?.issue_cards ?? raw?.discrepancies ?? [];
-
-  const documents = mapDocuments(documentSource);
-  const issues = mapIssues(issueSource, documents);
-  const summary = ensureSummary(raw?.processing_summary, documents, issues);
-  const analytics = ensureAnalytics(raw?.analytics, summary, documents);
-  const timeline = mapTimeline(structuredTimeline ?? raw?.timeline);
-
-  const normalizedStructuredResult: StructuredResultPayload =
-    raw?.structured_result && (hasStructuredDocs || hasStructuredIssues || structuredTimeline)
-      ? {
-          processing_summary: raw.structured_result.processing_summary ?? summary,
-          documents: raw.structured_result.documents ?? [],
-          issues: raw.structured_result.issues ?? [],
-          analytics: normalizeStructuredAnalytics(raw.structured_result.analytics, analytics),
-          timeline: normalizeStructuredTimeline(raw.structured_result.timeline, timeline),
-      }
-      : structuredFromNormalized(summary, documents, issues, analytics, timeline);
   return {
     ...raw,
     jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
@@ -334,6 +262,8 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     processing_summary: summary,
     issue_cards: issues,
     structured_result: normalizedStructuredResult,
+    extracted_data: normalizedStructuredResult.extracted_documents,
+    extraction_status: raw?.extraction_status ?? 'unknown',
   };
 };
 

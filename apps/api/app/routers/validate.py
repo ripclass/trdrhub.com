@@ -710,6 +710,7 @@ async def validate_doc(
         structured_summary = _compose_processing_summary(documents_payload, structured_issues, severity_counts)
         analytics_payload = _build_analytics_section(structured_summary, documents_payload, structured_issues)
         timeline_entries = _build_timeline_entries()
+        extracted_documents_snapshot = _build_extracted_documents_snapshot(extracted_data)
         try:
             structured_result = _validate_structured_result({
                 "processing_summary": structured_summary,
@@ -717,6 +718,7 @@ async def validate_doc(
                 "issues": structured_issues,
                 "analytics": analytics_payload,
                 "timeline": timeline_entries,
+                "extracted_documents": extracted_documents_snapshot,
             })
         except ValidationError as exc:
             logger.error("Structured validation payload invalid: %s", exc)
@@ -1906,6 +1908,7 @@ class StructuredResultModel(BaseModel):
     issues: List[StructuredIssueModel]
     analytics: AnalyticsModel
     timeline: List[TimelineEntryModel]
+    extracted_documents: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -2173,6 +2176,23 @@ def _build_documents_section(
             }
         )
     return section
+
+
+def _build_extracted_documents_snapshot(extracted_data: Dict[str, Any]) -> Dict[str, Any]:
+    if not extracted_data:
+        return {}
+
+    mapping = {
+        "letter_of_credit": extracted_data.get("lc"),
+        "commercial_invoice": extracted_data.get("invoice"),
+        "bill_of_lading": extracted_data.get("bill_of_lading") or extracted_data.get("billOfLading"),
+        "packing_list": extracted_data.get("packing_list") or extracted_data.get("packingList"),
+        "insurance_certificate": extracted_data.get("insurance_certificate"),
+        "certificate_of_origin": extracted_data.get("certificate_of_origin"),
+        "inspection_certificate": extracted_data.get("inspection_certificate"),
+        "supporting_documents": extracted_data.get("documents"),
+    }
+    return {key: value for key, value in mapping.items() if value}
 
 
 def _compose_processing_summary(
