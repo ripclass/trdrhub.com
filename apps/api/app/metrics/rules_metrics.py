@@ -1,6 +1,6 @@
-"\"\""
+"""
 Prometheus metrics for rules governance workflows.
-"\"\""
+"""
 
 try:
     from prometheus_client import Counter
