@@ -47,7 +47,7 @@ class RuleRecord(Base):
     conditions = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     expected_outcome = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     tags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
-    metadata = Column(JSONB, nullable=True)
+    rule_metadata = Column(JSONB, name="metadata", nullable=True, server_default=text("'{}'::jsonb"))
 
     checksum = Column(String(32), nullable=False)
 

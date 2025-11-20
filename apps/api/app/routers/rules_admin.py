@@ -124,7 +124,7 @@ def _serialize_rule_record(rule: RuleRecord) -> RuleRecordResponse:
         conditions=rule.conditions or [],
         expected_outcome=rule.expected_outcome or {},
         tags=rule.tags or [],
-        metadata=rule.metadata,
+        metadata=rule.rule_metadata,
         checksum=rule.checksum,
         ruleset_id=rule.ruleset_id,
         ruleset_version=rule.ruleset_version,
@@ -943,7 +943,7 @@ async def update_rule(
             rule.tags = payload.tags
             detail_payload["tags"] = payload.tags
         if payload.metadata is not None:
-            rule.metadata = payload.metadata
+            rule.rule_metadata = payload.metadata
             detail_payload["metadata"] = payload.metadata
 
         if detail_payload:
