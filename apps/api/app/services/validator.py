@@ -720,13 +720,71 @@ def _infer_document_requirements(
     requirements = {doc: False for doc in canonical_docs}
     requirements["lc"] = True
 
+    requested_docs = _extract_requested_documents(lc_context, lc_text)
+    if not requested_docs:
+        requested_docs = _fallback_documents_from_payload(doc_set)
+
+    for doc in canonical_docs:
+        requirements[doc] = doc in requested_docs
+
+    incoterm = (lc_context.get("incoterm") or "").upper()
+    mentions_insurance = _text_contains_any(lc_text, DOC_KEYWORDS["insurance_certificate"])
+    insurance_required = "insurance_certificate" in requested_docs or mentions_insurance
+    if incoterm.startswith("FOB") and not mentions_insurance:
+        insurance_required = False
+    requirements["insurance_certificate"] = insurance_required
+
+    return requirements
+
+
+def _extract_requested_documents(lc_context: Dict[str, Any], lc_text: str) -> Set[str]:
+    requested: Set[str] = set()
+
+    def _consume_tokens(raw: Any):
+        if isinstance(raw, str):
+            tokens = re.split(r"[,\n;]+", raw)
+        elif isinstance(raw, (list, tuple, set)):
+            tokens = list(raw)
+        else:
+            return
+        for token in tokens:
+            normalized = _normalize_doc_label(token)
+            if normalized:
+                requested.add(normalized)
+
+    for key in ("requested_documents", "documents_requested", "documents_required"):
+        if key in lc_context:
+            _consume_tokens(lc_context.get(key))
+
+    if isinstance(lc_context.get("documents"), list):
+        for entry in lc_context["documents"]:
+            if isinstance(entry, str):
+                _consume_tokens(entry)
+            elif isinstance(entry, dict):
+                label = entry.get("label") or entry.get("name")
+                _consume_tokens(label)
+
+    if lc_text:
+        for doc, keywords in DOC_KEYWORDS.items():
+            if _text_contains_any(lc_text, keywords):
+                requested.add(doc)
+
+    return requested
+
+
+def _fallback_documents_from_payload(doc_set: Dict[str, Any]) -> Set[str]:
+    fallback: Set[str] = set()
     documents_presence = doc_set.get("documents_presence") or {}
     for raw_key, entry in documents_presence.items():
+        if not entry:
+            continue
+        if not entry.get("present"):
+            continue
         normalized = _normalize_doc_label(raw_key)
         if normalized:
-            requirements[normalized] = requirements.get(normalized, False) or bool(entry.get("present"))
+            fallback.add(normalized)
 
-    doc_contexts = {
+    payload_keys = {
         "commercial_invoice": doc_set.get("invoice"),
         "bill_of_lading": doc_set.get("bill_of_lading") or doc_set.get("billOfLading"),
         "packing_list": doc_set.get("packing_list"),
@@ -735,22 +793,11 @@ def _infer_document_requirements(
         "inspection_certificate": doc_set.get("inspection_certificate"),
         "beneficiary_certificate": doc_set.get("beneficiary_certificate"),
     }
-    for doc, ctx in doc_contexts.items():
+    for doc, ctx in payload_keys.items():
         if isinstance(ctx, dict) and ctx:
-            requirements[doc] = True
+            fallback.add(doc)
 
-    for doc, keywords in DOC_KEYWORDS.items():
-        if _text_contains_any(lc_text, keywords):
-            requirements[doc] = True
-
-    incoterm = (lc_context.get("incoterm") or "").upper()
-    mentions_insurance = _text_contains_any(lc_text, DOC_KEYWORDS["insurance_certificate"])
-    if incoterm.startswith("FOB") and not mentions_insurance:
-        requirements["insurance_certificate"] = False
-    else:
-        requirements["insurance_certificate"] = requirements.get("insurance_certificate") or not incoterm.startswith("FOB") or mentions_insurance
-
-    return requirements
+    return fallback
 
 
 def _derive_rule_toggles(

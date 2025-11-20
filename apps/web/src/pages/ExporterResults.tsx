@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactElement } from "react";
 import { Link, useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,126 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
     }
     return String(value);
   };
+
+const formatAmountValue = (amount: any): string => {
+  if (!amount) {
+    return "";
+  }
+  if (typeof amount === "object") {
+    const value = amount.value ?? amount.amount ?? amount.text ?? "";
+    const currency = amount.currency ?? amount.curr ?? amount.ccy ?? "";
+    const normalized = [value, currency].filter(Boolean).join(" ").trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return formatExtractedValue(amount);
+};
+
+const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: string): ReactElement[] => {
+  return fields
+    .map((field) => {
+      if (field.value === undefined || field.value === null || field.value === "") {
+        return null;
+      }
+      const formatted = formatExtractedValue(field.value);
+      if (!formatted || formatted === "N/A") {
+        return null;
+      }
+      return (
+        <div key={`${keyPrefix}-${field.label}`} className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">{field.label}</span>
+          <span className="font-medium whitespace-pre-wrap break-words">{formatted}</span>
+        </div>
+      );
+    })
+    .filter((node): node is ReactElement => Boolean(node));
+};
+
+const renderPartyCard = (label: string, party: any, keyPrefix: string): ReactElement | null => {
+  if (!party || typeof party !== "object") {
+    return null;
+  }
+  const rows = buildFieldRows(
+    [
+      { label: "Name", value: party.name },
+      { label: "Address", value: party.address },
+      { label: "Country", value: party.country },
+      { label: "Contact", value: party.contact },
+    ],
+    keyPrefix,
+  );
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div key={`${keyPrefix}-card`} className="border rounded-lg p-3 space-y-2 bg-background">
+      <p className="text-sm font-semibold">{label}</p>
+      <div className="space-y-2 text-sm">{rows}</div>
+    </div>
+  );
+};
+
+const renderPortsCard = (ports: any): ReactElement | null => {
+  if (!ports || typeof ports !== "object") {
+    return null;
+  }
+  const rows = buildFieldRows(
+    [
+      { label: "Port of Loading", value: ports.port_of_loading ?? ports.loading },
+      { label: "Port of Discharge", value: ports.port_of_discharge ?? ports.discharge },
+    ],
+    "lc-ports",
+  );
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div className="border rounded-lg p-3 space-y-2 bg-background">
+      <p className="text-sm font-semibold">Shipping Ports</p>
+      <div className="grid gap-3 md:grid-cols-2">{rows}</div>
+    </div>
+  );
+};
+
+const renderGoodsItemsList = (items: any[]): ReactElement | null => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return null;
+  }
+  const cards = items
+    .map((item, idx) => {
+      const rows = buildFieldRows(
+        [
+          { label: "Description", value: item.description },
+          { label: "HS Code", value: item.hs_code },
+          { label: "Quantity", value: item.quantity },
+          { label: "Unit", value: item.uom },
+          { label: "Unit Price", value: item.unit_price },
+        ],
+        `goods-${idx}`,
+      );
+      if (!rows.length) {
+        return null;
+      }
+      return (
+        <div key={`goods-${idx}`} className="border rounded-lg p-3 space-y-2 text-sm bg-background">
+          {rows}
+        </div>
+      );
+    })
+    .filter((node): node is ReactElement => Boolean(node));
+
+  if (!cards.length) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold">Goods Items</p>
+      <div className="space-y-2">{cards}</div>
+    </div>
+  );
+};
   
   useEffect(() => {
     setLiveResults(null);
@@ -155,6 +275,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [manifestConfirmed, setManifestConfirmed] = useState(false);
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
+  const [showRawLcJson, setShowRawLcJson] = useState(false);
   
   const resultData = liveResults ?? cachedResults;
 
@@ -347,6 +468,36 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
           extracted_fields: doc.extracted_fields,
           extractedFields: doc.extracted_fields,
         })) ?? [];
+  const lcData = resolvedResults?.extracted_data?.lc;
+  const lcSummaryRows = lcData
+    ? buildFieldRows(
+        [
+          { label: "LC Number", value: lcData.number ?? lcData.lc_number },
+          { label: "LC Amount", value: formatAmountValue(lcData.amount) },
+          { label: "Incoterm", value: lcData.incoterm },
+          { label: "UCP Reference", value: lcData.ucp_reference },
+          { label: "Goods Description", value: lcData.goods_description },
+        ],
+        "lc-summary",
+      )
+    : [];
+  const lcDateRows = lcData
+    ? buildFieldRows(
+        [
+          { label: "Issue Date", value: lcData.dates?.issue },
+          { label: "Expiry Date", value: lcData.dates?.expiry },
+          { label: "Latest Shipment", value: lcData.dates?.latest_shipment },
+          { label: "Place of Expiry", value: lcData.dates?.place_of_expiry },
+        ],
+        "lc-dates",
+      )
+    : [];
+  const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) ? lcData.goods_items : [];
+  const lcApplicantCard = lcData ? renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
+  const lcBeneficiaryCard = lcData ? renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
+  const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
+  const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
+  const lcAdditionalConditions = lcData?.additional_conditions;
   const referenceIssues = resolvedResults?.reference_issues ?? [];
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
   const hasIssueCards = issueCards.length > 0;
@@ -1307,14 +1458,46 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
                 {resolvedResults.extracted_data ? (
                   <div className="space-y-4">
                     {/* LC Data */}
-                    {resolvedResults.extracted_data.lc && (
-                      <div className="space-y-2">
-                        <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
-                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                          <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                            {JSON.stringify(resolvedResults.extracted_data.lc, null, 2)}
-                          </pre>
+                    {lcData && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
+                          <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
+                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
+                          </Button>
                         </div>
+                        <div className="rounded-md border bg-card/50 p-4 space-y-4">
+                          {lcSummaryRows.length > 0 && (
+                            <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
+                          )}
+                          {lcDateRows.length > 0 && (
+                            <div>
+                              <p className="text-sm font-semibold mb-2">Key Dates</p>
+                              <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
+                            </div>
+                          )}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {lcApplicantCard}
+                            {lcBeneficiaryCard}
+                          </div>
+                          {lcPortsCard}
+                          {lcGoodsItemsList}
+                          {lcAdditionalConditions && (
+                            <div>
+                              <p className="text-sm font-semibold mb-1">Additional Conditions</p>
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {formatExtractedValue(lcAdditionalConditions)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {showRawLcJson && (
+                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
+                              {JSON.stringify(lcData, null, 2)}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     )}
 
