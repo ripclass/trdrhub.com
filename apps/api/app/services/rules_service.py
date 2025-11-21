@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, desc, nullslast
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
@@ -309,6 +310,86 @@ class DBRulesAdapter(RulesService):
                 payload[key] = value
 
         return payload
+
+
+class RulesServiceDBAdapter:
+    """
+    DB-backed adapter for active rules that accepts an existing Session.
+    
+    Use this when you already have a database session and want to avoid
+    creating a new one. Replaces JSON adapter entirely.
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def get_active_rules(
+        self,
+        domain: str,
+        jurisdiction: str,
+        document_type: str = "lc",
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns ONLY active rules from RuleRecord table.
+        
+        Args:
+            domain: Rule domain (e.g., 'icc.ucp600')
+            jurisdiction: Jurisdiction (e.g., 'global')
+            document_type: Document type (default: 'lc')
+            
+        Returns:
+            List of normalized rule dictionaries
+        """
+        rules = (
+            self.db.query(RuleRecord)
+            .filter(
+                RuleRecord.domain == domain,
+                RuleRecord.jurisdiction == jurisdiction,
+                RuleRecord.document_type == document_type,
+                RuleRecord.is_active.is_(True),
+            )
+            .order_by(
+                nullslast(RuleRecord.article.asc()),
+                RuleRecord.rule_id.asc()
+            )
+            .all()
+        )
+        
+        # Transform DB objects into normalized rule dicts
+        output = []
+        for r in rules:
+            metadata = r.rule_metadata or {}
+            output.append({
+                "rule_id": r.rule_id,
+                "rule_version": r.rule_version,
+                "article": r.article,
+                "version": r.version,
+                "domain": r.domain,
+                "jurisdiction": r.jurisdiction,
+                "document_type": r.document_type,
+                "rule_type": r.rule_type,
+                "title": r.title,
+                "reference": r.reference,
+                "description": r.description,
+                "severity": r.severity,
+                "deterministic": r.deterministic,
+                "requires_llm": r.requires_llm,
+                "conditions": r.conditions or [],
+                "expected_outcome": r.expected_outcome or {},
+                "tags": r.tags or [],
+                "metadata": metadata,
+                "checksum": r.checksum,
+                "ruleset_id": str(r.ruleset_id) if r.ruleset_id else None,
+                "ruleset_version": r.ruleset_version,
+            })
+            
+            # Extract common metadata fields to top level for backwards compatibility
+            for key in ("documents", "supplements", "notes", "source"):
+                value = metadata.get(key)
+                if value is not None:
+                    output[-1][key] = value
+        
+        return output
 
 
 # Singleton instance

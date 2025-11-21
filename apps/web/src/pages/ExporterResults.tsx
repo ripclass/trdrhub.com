@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { 
   FileText, 
   Download, 
@@ -1403,9 +1404,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                         {showRawLcJson && (
                           <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                              {JSON.stringify(lcData, null, 2)}
-                            </pre>
+                            <Table>
+                              <TableBody>
+                                {Object.entries(lcData || {}).map(([key, val]) => (
+                                  <TableRow key={key}>
+                                    <TableCell className="font-medium capitalize w-1/3">
+                                      {key.replace(/([A-Z])/g, " $1").trim()}
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      {typeof val === "object" && val !== null
+                                        ? JSON.stringify(val, null, 2)
+                                        : String(val || "")}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
                           </div>
                         )}
                       </div>
@@ -1596,9 +1610,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                         {showRawLcJson && (
                           <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                            <pre className="text-sm overflow-auto max-h-[400px] whitespace-pre-wrap">
-                              {JSON.stringify(lcData, null, 2)}
-                            </pre>
+                            <Table>
+                              <TableBody>
+                                {Object.entries(lcData || {}).map(([key, val]) => (
+                                  <TableRow key={key}>
+                                    <TableCell className="font-medium capitalize w-1/3">
+                                      {key.replace(/([A-Z])/g, " $1").trim()}
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      {typeof val === "object" && val !== null
+                                        ? JSON.stringify(val, null, 2)
+                                        : String(val || "")}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
                           </div>
                         )}
                       </div>
