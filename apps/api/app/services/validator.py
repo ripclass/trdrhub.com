@@ -1354,6 +1354,27 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 jurisdiction,
                 document_type=document_type,
             )
+            
+            # Handle None return (no active ruleset found)
+            if ruleset_data is None:
+                logger.warning(
+                    f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}",
+                    extra={
+                        "domain": domain_key,
+                        "jurisdiction": jurisdiction,
+                        "document_type": document_type,
+                        "index": idx,
+                    },
+                )
+                if idx == 0:
+                    # First domain is required - raise error
+                    raise ValueError(
+                        f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
+                    )
+                # Supplements can be skipped
+                logger.warning(f"Skipping supplement domain={domain_key} (no active ruleset)")
+                continue
+            
             logger.info(
                 "Loaded ruleset from DB",
                 extra={
@@ -1376,6 +1397,21 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             if idx == 0:
                 raise
             logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")
+            continue
+        except Exception as e:
+            logger.error(
+                "Unexpected error fetching ruleset",
+                exc_info=True,
+                extra={
+                    "domain": domain_key,
+                    "jurisdiction": jurisdiction,
+                    "document_type": document_type,
+                    "error": str(e),
+                },
+            )
+            if idx == 0:
+                raise
+            logger.warning(f"Error loading supplement domain={domain_key}, skipping.")
             continue
 
         meta = {
