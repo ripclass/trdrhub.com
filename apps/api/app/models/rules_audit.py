@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.database import Base
@@ -11,7 +11,12 @@ class RuleAudit(Base):
 
     __tablename__ = "rules_audit"
 
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+        nullable=False
+    )
     rule_id = Column(String(255), nullable=True, index=True)
     ruleset_id = Column(UUID(as_uuid=True), ForeignKey("rulesets.id", ondelete="SET NULL"), nullable=True, index=True)
     action = Column(String(50), nullable=False)
