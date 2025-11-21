@@ -15,7 +15,7 @@ import { ArrowLeft, CheckCircle2, FileText, Upload, XCircle } from "lucide-react
 import { getAdminService } from "@/lib/admin/services";
 import { useAdminAudit } from "@/lib/admin/useAdminAudit";
 import { PRIMARY_DOMAIN_OPTIONS, RULEBOOK_OPTIONS_BY_DOMAIN } from "./constants";
-import type { RulesImportSummary } from "@/lib/admin/types";
+import type { RulesImportSummary, RulesetRecord } from "@/lib/admin/types";
 
 const service = getAdminService();
 
@@ -52,6 +52,20 @@ const [rulebook, setRulebook] = React.useState<string>("");
     warnings: string[];
   } | null>(null);
   const [importSummary, setImportSummary] = React.useState<RulesImportSummary | null>(null);
+  const [rulesets, setRulesets] = React.useState<RulesetRecord[]>([]);
+
+  // Fetch rulesets on mount
+  React.useEffect(() => {
+    const fetchRulesets = async () => {
+      try {
+        const result = await service.listRulesets({ page: 1, pageSize: 1000 });
+        setRulesets(result.items);
+      } catch (error) {
+        console.error("Failed to fetch rulesets:", error);
+      }
+    };
+    fetchRulesets();
+  }, []);
 
 const rulebookOptionsForDomain = React.useMemo(() => {
   if (!domain) return [];
@@ -156,10 +170,21 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   };
 
   const handleUpload = async () => {
+    // 1) File presence check
     if (!file) {
       toast({
         title: "No file selected",
-        description: "Please select a file to upload.",
+        description: "Please select a JSON file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 2) Enforce .json extension
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      toast({
+        title: "Invalid file type",
+        description: "Only .json files are allowed.",
         variant: "destructive",
       });
       return;
@@ -183,19 +208,85 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       return;
     }
 
-    if (validationResult && !validationResult.valid) {
+    if (!rulebook) {
       toast({
-        title: "Validation required",
-        description: "Please validate the file and fix errors before uploading.",
+        title: "Rulebook required",
+        description: "Please select a rulebook.",
         variant: "destructive",
       });
       return;
     }
 
-    if (!rulebook) {
+    // 3) Enforce filename structure:
+    //    {domain}-{rulebook_version}-v{ruleset_version}.json
+    const validPattern = new RegExp(
+      `${domain.replace(".", "\\.")}-${rulebookVersion.replace(":", "\\:")}-v${rulesetVersion}\\.json$`
+    );
+
+    if (!validPattern.test(file.name)) {
       toast({
-        title: "Rulebook required",
-        description: "Please select a rulebook.",
+        title: "Invalid file name",
+        description: `Invalid file name.\nExpected: ${domain}-${rulebookVersion}-v${rulesetVersion}.json`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 4) Prevent uploading if a DRAFT already exists with same version
+    const alreadyExists = rulesets.some(
+      (r) =>
+        r.domain === domain &&
+        r.rulebook_version === rulebookVersion &&
+        r.ruleset_version === rulesetVersion &&
+        r.status === "draft"
+    );
+
+    if (alreadyExists) {
+      toast({
+        title: "Draft already exists",
+        description: `A DRAFT version ${rulesetVersion} already exists.\nPlease delete or publish it first.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 5) JSON validity pre-check
+    const text = await file.text();
+    try {
+      JSON.parse(text);
+    } catch (err) {
+      toast({
+        title: "Invalid JSON",
+        description: "File contains invalid JSON.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 6) Optional: lightweight schema check
+    try {
+      const obj = JSON.parse(text);
+      if (!Array.isArray(obj) || obj.length === 0) {
+        toast({
+          title: "Invalid ruleset file",
+          description: "Invalid ruleset file: missing rules[].",
+          variant: "destructive",
+        });
+        return;
+      }
+    } catch (err) {
+      toast({
+        title: "Validation failed",
+        description: "Ruleset file failed validation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (validationResult && !validationResult.valid) {
+      toast({
+        title: "Validation required",
+        description: "Please validate the file and fix errors before uploading.",
         variant: "destructive",
       });
       return;
@@ -211,6 +302,8 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       });
       return;
     }
+
+    // 7) Continue to upload
 
     setUploading(true);
     try {
