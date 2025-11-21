@@ -1,7 +1,7 @@
 """Add UNIQUE(ruleset_id, rule_id) constraint to rules table.
 
 Revision ID: 20251222_add_unique_ruleset_rule
-Revises: 20251119_merge_phase7_heads
+Revises: 20251220_add_rules_table_extensions
 Create Date: 2025-12-22
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 # revision identifiers
 revision = "20251222_add_unique_ruleset_rule"
-down_revision = "20251119_merge_phase7_heads"
+down_revision = "20251220_add_rules_table_extensions"
 branch_labels = None
 depends_on = None
 
@@ -23,7 +23,6 @@ def upgrade():
             ["ruleset_id", "rule_id"],
         )
     except Exception:
-        # In case it already exists or partial application
         pass
 
 def downgrade():
