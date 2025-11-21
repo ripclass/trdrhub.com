@@ -20,8 +20,8 @@ class RuleRecord(Base):
     """
     Normalized rule definition stored in the `rules` governance table.
 
-    This model sits alongside the legacy `Rule` / `rules_registry` table that the
-    validator still references for fallback behaviour.
+    This is the primary source of truth for rules. The legacy `Rule` / `rules_registry`
+    table has been deprecated and is no longer used.
     """
 
     __tablename__ = "rules"

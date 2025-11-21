@@ -166,14 +166,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("All startup validations passed")
     
-    # Start weekly RulHub sync when enabled
-    try:
-        if settings.USE_RULHUB_API:
-            from app.jobs.rulhub_sync_job import start_sync_job
-            start_sync_job()
-            logger.info("RulHub weekly sync job started")
-    except Exception as e:
-        logger.error("Failed to start RulHub sync job", error=str(e))
+    # Removed legacy sync event – rules are now DB-driven.
 
     # Initialize performance optimizations for Lambda
     if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') and HAS_MONITORING:
