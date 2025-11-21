@@ -6,11 +6,15 @@ Supports caching and future Rulhub integration.
 """
 
 import logging
-import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
+from sqlalchemy import and_
+
 from app.config import settings
+from app.database import SessionLocal
+from app.models.rule_record import RuleRecord
+from app.models.ruleset import Ruleset, RulesetStatus
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,10 @@ class RulesService:
     """
     
     async def get_active_ruleset(
-        self, domain: str, jurisdiction: str = "global"
+        self,
+        domain: str,
+        jurisdiction: str = "global",
+        document_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Returns active ruleset with rules array.
@@ -69,9 +76,10 @@ class LocalAdapter(RulesService):
         self._cache_timestamps: Dict[str, datetime] = {}
         self._api_base_url = settings.API_BASE_URL or "http://localhost:8000"
     
-    def _get_cache_key(self, domain: str, jurisdiction: str) -> str:
-        """Generate cache key for domain/jurisdiction combination."""
-        return f"{domain}:{jurisdiction}"
+    def _get_cache_key(self, domain: str, jurisdiction: str, document_type: Optional[str]) -> str:
+        """Generate cache key for domain/jurisdiction/document_type combination."""
+        doc_key = document_type or "*"
+        return f"{domain}:{jurisdiction}:{doc_key}"
     
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cached entry is still valid."""
@@ -82,14 +90,19 @@ class LocalAdapter(RulesService):
         age = datetime.now() - timestamp
         return age < timedelta(minutes=self.cache_ttl_minutes)
     
-    def _clear_cache_entry(self, domain: str, jurisdiction: str):
+    def _clear_cache_entry(self, domain: str, jurisdiction: str, document_type: Optional[str]):
         """Clear a specific cache entry."""
-        cache_key = self._get_cache_key(domain, jurisdiction)
+        cache_key = self._get_cache_key(domain, jurisdiction, document_type)
         self._cache.pop(cache_key, None)
         self._cache_timestamps.pop(cache_key, None)
         logger.info(f"Cleared cache for {cache_key}")
     
-    def clear_cache(self, domain: Optional[str] = None, jurisdiction: Optional[str] = None):
+    def clear_cache(
+        self,
+        domain: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ):
         """
         Clear cache entries.
         
@@ -97,14 +110,17 @@ class LocalAdapter(RulesService):
         Otherwise clears all cache.
         """
         if domain and jurisdiction:
-            self._clear_cache_entry(domain, jurisdiction)
+            self._clear_cache_entry(domain, jurisdiction, document_type)
         else:
             self._cache.clear()
             self._cache_timestamps.clear()
             logger.info("Cleared all ruleset cache")
     
     async def get_active_ruleset(
-        self, domain: str, jurisdiction: str = "global"
+        self,
+        domain: str,
+        jurisdiction: str = "global",
+        document_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Fetch active ruleset from API with caching.
@@ -112,91 +128,94 @@ class LocalAdapter(RulesService):
         Cache key: {domain}:{jurisdiction}
         Cache TTL: configurable (default 10 minutes)
         """
-        cache_key = self._get_cache_key(domain, jurisdiction)
+        cache_key = self._get_cache_key(domain, jurisdiction, document_type)
         
         # Check cache first
         if self._is_cache_valid(cache_key):
             logger.debug(f"Cache hit for {cache_key}")
             return self._cache[cache_key]
         
-        # Fetch from API
         try:
-            # Use internal DB access instead of HTTP for better performance
-            # This avoids HTTP overhead when running in the same process
-            from app.database import SessionLocal
-            from app.models.ruleset import Ruleset, RulesetStatus
-            from sqlalchemy import and_
-            from app.services.rules_storage import RulesStorageService
-            
             db = SessionLocal()
             try:
-                # Log database connection info for debugging
-                from app.config import settings
-                db_url_redacted = settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else 'unknown'
-                logger.info(f"Querying ruleset: domain={domain}, jurisdiction={jurisdiction}, db={db_url_redacted}")
-                
-                # First, check if ANY rulesets exist
-                total_count = db.query(Ruleset).count()
-                active_count = db.query(Ruleset).filter(Ruleset.status == RulesetStatus.ACTIVE.value).count()
-                logger.info(f"Database stats: total_rulesets={total_count}, active_rulesets={active_count}")
-                
-                # List all domains/jurisdictions for debugging
-                if total_count > 0:
-                    all_rulesets = db.query(Ruleset.domain, Ruleset.jurisdiction, Ruleset.status).all()
-                    logger.info(f"Existing rulesets: {[(r.domain, r.jurisdiction, r.status) for r in all_rulesets]}")
-                
-                ruleset = db.query(Ruleset).filter(
-                    and_(
-                        Ruleset.domain == domain,
-                        Ruleset.jurisdiction == jurisdiction,
-                        Ruleset.status == RulesetStatus.ACTIVE.value
+                ruleset = (
+                    db.query(Ruleset)
+                    .filter(
+                        and_(
+                            Ruleset.domain == domain,
+                            Ruleset.jurisdiction == jurisdiction,
+                            Ruleset.status == RulesetStatus.ACTIVE.value,
+                        )
                     )
-                ).first()
-                
+                    .first()
+                )
+
                 if not ruleset:
-                    logger.error(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
+                    logger.error("No active ruleset found", extra={"domain": domain, "jurisdiction": jurisdiction})
                     raise ValueError(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
-                
-                logger.info(f"Found active ruleset: id={ruleset.id}, domain={ruleset.domain}, jurisdiction={ruleset.jurisdiction}, rule_count={ruleset.rule_count}")
-                
-                # Fetch content from storage (synchronous call)
-                storage_service = RulesStorageService()
-                file_data = storage_service.get_ruleset_file(ruleset.file_path)
-                rules_content = file_data.get("content", [])
-                
+
+                query = (
+                    db.query(RuleRecord)
+                    .filter(
+                        RuleRecord.ruleset_id == ruleset.id,
+                        RuleRecord.domain == domain,
+                        RuleRecord.is_active.is_(True),
+                    )
+                )
+                if document_type:
+                    query = query.filter(RuleRecord.document_type == document_type)
+
+                records: List[RuleRecord] = query.all()
+
+                normalized_rules = [self._normalize_rule_record(record) for record in records]
+                sample_rule_ids = [rule["rule_id"] for rule in normalized_rules[:5]]
+                logger.info(
+                    "DB rules fetch summary",
+                    extra={
+                        "domain": domain,
+                        "jurisdiction": jurisdiction,
+                        "document_type": document_type or "*",
+                        "rule_count": len(normalized_rules),
+                        "sample_rule_ids": sample_rule_ids,
+                    },
+                )
+
                 ruleset_metadata = {
                     "id": str(ruleset.id),
                     "domain": ruleset.domain,
                     "jurisdiction": ruleset.jurisdiction,
                     "ruleset_version": ruleset.ruleset_version,
                     "rulebook_version": ruleset.rulebook_version,
-                    "file_path": ruleset.file_path,
                     "status": ruleset.status,
-                    "rule_count": ruleset.rule_count,
+                    "rule_count": len(normalized_rules),
                     "published_at": ruleset.published_at.isoformat() if ruleset.published_at else None,
                 }
             finally:
                 db.close()
-            
+
             result = {
                 "ruleset": ruleset_metadata,
-                "rules": rules_content if isinstance(rules_content, list) else [],
+                "rules": normalized_rules,
                 "ruleset_version": ruleset_metadata.get("ruleset_version", "unknown"),
                 "rulebook_version": ruleset_metadata.get("rulebook_version", "unknown"),
             }
-            
-            # Update cache
+
             self._cache[cache_key] = result
             self._cache_timestamps[cache_key] = datetime.now()
-            logger.info(f"Cached ruleset {cache_key} (rules: {len(result['rules'])})")
-            
+            logger.info(
+                "Cached DB ruleset",
+                extra={
+                    "cache_key": cache_key,
+                    "rule_count": len(normalized_rules),
+                },
+            )
+
             return result
-            
-        except ValueError as e:
-            # Re-raise ValueError (no active ruleset found)
+
+        except ValueError:
             raise
         except Exception as e:
-            logger.error(f"Failed to fetch ruleset {cache_key}: {e}")
+            logger.error("Failed to fetch ruleset from DB", exc_info=True, extra={"cache_key": cache_key})
             raise
     
     async def evaluate_rules(
@@ -213,6 +232,38 @@ class LocalAdapter(RulesService):
         
         evaluator = RuleEvaluator()
         return await evaluator.evaluate_rules(rules, input_context)
+
+    def _normalize_rule_record(self, record: RuleRecord) -> Dict[str, Any]:
+        """Convert a RuleRecord ORM row into the evaluator-ready payload."""
+        metadata = record.metadata or {}
+        payload: Dict[str, Any] = {
+            "rule_id": record.rule_id,
+            "rule_version": record.rule_version,
+            "article": record.article,
+            "version": record.version,
+            "domain": record.domain,
+            "jurisdiction": record.jurisdiction,
+            "document_type": record.document_type,
+            "rule_type": record.rule_type,
+            "severity": record.severity,
+            "deterministic": record.deterministic,
+            "requires_llm": record.requires_llm,
+            "title": record.title,
+            "reference": record.reference,
+            "description": record.description,
+            "conditions": record.conditions or [],
+            "expected_outcome": record.expected_outcome or {},
+            "tags": record.tags or [],
+            "metadata": metadata,
+            "checksum": record.checksum,
+        }
+
+        for key in ("documents", "supplements", "notes", "source"):
+            value = metadata.get(key)
+            if value is not None:
+                payload[key] = value
+
+        return payload
 
 
 # Singleton instance

@@ -395,16 +395,14 @@ async def validate_doc(
         else:
             job_id = payload.get("job_id") or f"job_{uuid4()}"
 
-        # Use async validation if JSON rules are enabled
-        from app.services.validator import validate_document_async, validate_document
+        from app.services.validator import validate_document_async
         
         request_user_type = _extract_request_user_type(payload)
         force_json_rules = _should_force_json_rules(payload)
-        use_json_rules = settings.USE_JSON_RULES or force_json_rules
         workflow_hint = payload.get("workflow_type") or payload.get("workflowType")
         if force_json_rules:
             logger.info(
-                "Exporter flow forcing JSON rules pipeline",
+                "Exporter flow requesting rules pipeline",
                 extra={
                     "job_id": str(job_id),
                     "user_type": request_user_type or "unknown",
@@ -412,36 +410,17 @@ async def validate_doc(
                 },
             )
 
-        should_use_json_rules = use_json_rules
-        if use_json_rules and not context_contains_structured_data:
-            if force_json_rules:
-                logger.warning(
-                    "Structured data missing but forcing JSON rules evaluation",
-                    extra={"job_id": str(job_id)},
-                )
-            else:
-                logger.info("Structured data unavailable, skipping JSON rules evaluation.")
-                should_use_json_rules = False
+        if not context_contains_structured_data:
+            logger.warning(
+                "Structured data unavailable; DB-backed rules may have limited context",
+                extra={"job_id": str(job_id)},
+            )
         
         if lc_type_is_unknown:
             logger.info("LC type unknown - skipping ICC rule evaluation to avoid false positives.")
             results = []
-        elif should_use_json_rules:
-            try:
-                results = await validate_document_async(payload, doc_type)
-            except ValueError as e:
-                logger.warning(
-                    "JSON ruleset unavailable (%s), falling back to legacy evaluation", e
-                )
-                results = validate_document(payload, doc_type)
-            except Exception as e:
-                logger.error(
-                    "JSON validation failed, falling back to legacy system",
-                    exc_info=True,
-                )
-                results = validate_document(payload, doc_type)
         else:
-            results = validate_document(payload, doc_type)
+            results = await validate_document_async(payload, doc_type)
 
         if lc_type_is_unknown:
             results.append(

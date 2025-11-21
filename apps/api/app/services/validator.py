@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Set, Tuple
+import asyncio
 import os
 import re
 import logging
@@ -6,9 +7,6 @@ import copy
 from datetime import datetime
 from uuid import UUID
 
-from app.models.rules import Rule
-from app.database import SessionLocal
-from app.services.rulhub_client import fetch_rules_from_rulhub
 from app.config import settings
 from app.core.lc_types import LCType
 from app.services.semantic_compare import run_semantic_comparison
@@ -1307,215 +1305,209 @@ async def enrich_validation_results_with_ai(
 
 async def validate_document_async(document_data: Dict[str, Any], document_type: str) -> List[Dict[str, Any]]:
     """
-    Async version of validate_document that supports JSON rulesets.
-    
-    Checks feature flag USE_JSON_RULES to determine which validation system to use.
+    DB-backed validation pipeline that loads rules from the normalized rules table,
+    filters them for the LC context, and evaluates outcomes.
     """
-    use_json_rules = settings.USE_JSON_RULES
-    
-    if use_json_rules:
-        # Use new JSON ruleset system
+    from app.services.rules_service import get_rules_service
+
+    rules_service = get_rules_service()
+
+    requested_domain = document_data.get("domain")
+    jurisdiction = document_data.get("jurisdiction", "global")
+    extra_supplements = document_data.get("supplement_domains", []) or []
+
+    if requested_domain and requested_domain != "icc":
+        domain_sequence = _unique_preserve(
+            [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
+        )
+    else:
+        base_domain, detected_supplements = _detect_icc_ruleset_domains(document_data)
+        domain_sequence = _unique_preserve(
+            [base_domain, *detected_supplements, *[d for d in extra_supplements if isinstance(d, str)]]
+        )
+
+    domain_sequence = [d for d in domain_sequence if isinstance(d, str) and d.strip()]
+    if not domain_sequence:
+        domain_sequence = ["icc.ucp600"]
+
+    if any(d.startswith("icc.") for d in domain_sequence):
+        crossdoc_domain = "icc.lcopilot.crossdoc"
+        if crossdoc_domain not in domain_sequence:
+            domain_sequence.append(crossdoc_domain)
+
+    aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    base_metadata: Optional[Dict[str, Any]] = None
+
+    for idx, domain_key in enumerate(domain_sequence):
         try:
-            from app.services.rules_service import get_rules_service
-            
-            rules_service = get_rules_service()
-            
-            requested_domain = document_data.get("domain")
-            jurisdiction = document_data.get("jurisdiction", "global")
-            extra_supplements = document_data.get("supplement_domains", []) or []
-
-            if requested_domain and requested_domain != "icc":
-                # Caller explicitly requested a non-ICC domain (e.g. customs, sanctions)
-                domain_sequence = _unique_preserve(
-                    [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
-                )
-            else:
-                # ICC flow: detect UCP/ISP/URDG/URC base + supplements (eUCP, URR, etc.)
-                base_domain, detected_supplements = _detect_icc_ruleset_domains(document_data)
-                domain_sequence = _unique_preserve(
-                    [base_domain, *detected_supplements, *[d for d in extra_supplements if isinstance(d, str)]]
-                )
-
-            domain_sequence = [d for d in domain_sequence if isinstance(d, str) and d.strip()]
-            if not domain_sequence:
-                domain_sequence = ["icc.ucp600"]
-
-            # Always try to load LCOPILOT cross-document rules alongside UCP600-based flows.
-            # These are our proprietary LC cross-checks (LC vs invoice/B/L) and live in a
-            # separate ruleset: domain='icc.lcopilot.crossdoc', jurisdiction='global'.
-            if any(d.startswith("icc.") for d in domain_sequence):
-                crossdoc_domain = "icc.lcopilot.crossdoc"
-                if crossdoc_domain not in domain_sequence:
-                    domain_sequence.append(crossdoc_domain)
-
-            aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-            base_metadata: Optional[Dict[str, Any]] = None
-
-            for idx, domain_key in enumerate(domain_sequence):
-                try:
-                    logger.info(f"Fetching ruleset: domain={domain_key}, jurisdiction={jurisdiction}, index={idx}")
-                    ruleset_data = await rules_service.get_active_ruleset(domain_key, jurisdiction)
-                    logger.info(f"Successfully fetched ruleset: domain={domain_key}, rule_count={len(ruleset_data.get('rules', []))}")
-                except ValueError as e:
-                    logger.error(f"Failed to fetch ruleset: domain={domain_key}, jurisdiction={jurisdiction}, error={e}")
-                    if idx == 0:
-                        raise
-                    logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")
-                    continue
-
-                meta = {
-                    "domain": domain_key,
-                    "ruleset_version": ruleset_data.get("ruleset_version"),
-                    "rulebook_version": ruleset_data.get("rulebook_version"),
-                }
-                if idx == 0:
-                    base_metadata = meta
-
-                for rule in ruleset_data.get("rules", []) or []:
-                    aggregated_rules.append((rule, meta))
-
-            if not aggregated_rules:
-                logger.warning(
-                    f"No rules retrieved for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
-                )
-                return []
-
-            filtered_rules_with_meta = [
-                (rule, meta)
-                for rule, meta in aggregated_rules
-                if rule.get("document_type") in (None, "", document_type, "lc")
-            ]
-            doc_scope_count = len(filtered_rules_with_meta)
-            lc_type_context = str(document_data.get("lc_type") or LCType.UNKNOWN.value).lower()
-            filtered_rules_with_meta = [
-                (rule, meta)
-                for rule, meta in filtered_rules_with_meta
-                if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
-            ]
-            activated_rules_with_meta = activate_rules_for_lc(
-                document_data.get("lc") or {},
-                filtered_rules_with_meta,
-                document_data,
-            )
-            sample_rules = [
-                (rule.get("rule_id") or rule.get("code") or rule.get("title"))
-                for rule, _ in activated_rules_with_meta[:5]
-            ]
             logger.info(
-                "JSON rule selection summary",
+                "Fetching ruleset from DB",
                 extra={
-                    "domains": domain_sequence,
-                    "total_rules": len(aggregated_rules),
-                    "doc_scope_rules": doc_scope_count,
-                    "activated_rules": len(activated_rules_with_meta),
-                    "sample_rule_ids": sample_rules,
+                    "domain": domain_key,
+                    "jurisdiction": jurisdiction,
+                    "document_type": document_type,
+                    "index": idx,
                 },
             )
-
-            if not activated_rules_with_meta:
-                logger.warning(
-                    f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
-                )
-                return []
-
-            evaluator = RuleEvaluator()
-            filtered_rules_with_meta = activated_rules_with_meta
-            prepared_rules = [rule for rule, _ in filtered_rules_with_meta]
-            rule_envelopes = [
-                {"rule": rule, "meta": meta}
-                for rule, meta in filtered_rules_with_meta
-            ]
-            prepared_rules = [env["rule"] for env in rule_envelopes]
-            semantic_registry: Dict[str, List[str]] = {}
-            prepared_rules, semantic_registry = await _inject_semantic_conditions(
-                prepared_rules,
-                document_data,
-                evaluator,
-            )
-            for idx, rule in enumerate(prepared_rules):
-                rule_envelopes[idx]["rule"] = rule
-
-            evaluation_result = await evaluator.evaluate_rules(prepared_rules, document_data)
-
-            results: List[Dict[str, Any]] = []
-            outcomes = evaluation_result.get("outcomes", [])
-
-            for idx, outcome in enumerate(outcomes):
-                if outcome.get("not_applicable", False):
-                    continue
-
-                envelope = rule_envelopes[idx] if idx < len(rule_envelopes) else {"rule": {}, "meta": base_metadata}
-                rule_def = envelope.get("rule", {}) or {}
-                meta = envelope.get("meta") or base_metadata or {}
-
-                result_payload = {
-                    "rule": outcome.get("rule_id", rule_def.get("rule_id", "unknown")),
-                    "title": rule_def.get("title") or outcome.get("rule_id", "unknown"),
-                    "description": rule_def.get("description"),
-                    "article": rule_def.get("article"),
-                    "tags": rule_def.get("tags"),
-                    "documents": rule_def.get("documents") or rule_def.get("document_types"),
-                    "display_card": rule_def.get("display_card") or rule_def.get("ui_card"),
-                    "expected_outcome": rule_def.get("expected_outcome"),
-                    "passed": outcome.get("passed", False),
-                    "severity": outcome.get("severity", rule_def.get("severity", "warning")),
-                    "message": outcome.get("message", rule_def.get("description") or ""),
-                    "ruleset_version": meta.get("ruleset_version"),
-                    "rulebook_version": meta.get("rulebook_version"),
-                    "ruleset_domain": meta.get("domain"),
-                }
-
-                sem_keys = semantic_registry.get(result_payload["rule"], [])
-                if sem_keys:
-                    semantic_store = document_data.get("_semantic") or {}
-                    comparisons = [
-                        semantic_store.get(key)
-                        for key in sem_keys
-                        if semantic_store.get(key)
-                    ]
-                    if comparisons:
-                        result_payload["semantic_differences"] = comparisons
-                        primary = comparisons[0]
-                        if primary.get("expected"):
-                            result_payload.setdefault("expected", primary.get("expected"))
-                        if primary.get("found"):
-                            result_payload.setdefault("actual", primary.get("found"))
-                        if primary.get("suggested_fix"):
-                            result_payload.setdefault("suggestion", primary.get("suggested_fix"))
-                        if not result_payload.get("documents") and primary.get("documents"):
-                            result_payload["documents"] = primary.get("documents")
-
-                results.append(result_payload)
-
-            logger.info(
-                "Evaluated %d rules using JSON ruleset system (domains=%s, jurisdiction=%s)",
-                len(prepared_rules),
-                domain_sequence,
+            ruleset_data = await rules_service.get_active_ruleset(
+                domain_key,
                 jurisdiction,
+                document_type=document_type,
             )
-            return results
-            
+            logger.info(
+                "Loaded ruleset from DB",
+                extra={
+                    "domain": domain_key,
+                    "jurisdiction": jurisdiction,
+                    "document_type": document_type,
+                    "rule_count": len(ruleset_data.get("rules", [])),
+                },
+            )
         except ValueError as e:
-            # No active ruleset found - fall back to legacy system
-            logger.warning(f"JSON ruleset not available ({e}), falling back to legacy validation")
-            try:
-                return validate_document(document_data, document_type)
-            except Exception as legacy_error:
-                logger.error(f"Legacy validation also failed: {legacy_error}", exc_info=True)
-                # Return empty results instead of crashing
-                return []
-        except Exception as e:
-            logger.error(f"Error in JSON ruleset validation: {e}", exc_info=True)
-            # Fall back to legacy system on error
-            try:
-                return validate_document(document_data, document_type)
-            except Exception as legacy_error:
-                logger.error(f"Legacy validation also failed: {legacy_error}", exc_info=True)
-                # Return empty results instead of crashing
-                return []
-    else:
-        # Use legacy validation system
-        return validate_document(document_data, document_type)
+            logger.error(
+                "Failed to fetch ruleset",
+                extra={
+                    "domain": domain_key,
+                    "jurisdiction": jurisdiction,
+                    "document_type": document_type,
+                    "error": str(e),
+                },
+            )
+            if idx == 0:
+                raise
+            logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")
+            continue
+
+        meta = {
+            "domain": domain_key,
+            "ruleset_version": ruleset_data.get("ruleset_version"),
+            "rulebook_version": ruleset_data.get("rulebook_version"),
+        }
+        if idx == 0:
+            base_metadata = meta
+
+        for rule in ruleset_data.get("rules", []) or []:
+            aggregated_rules.append((rule, meta))
+
+    if not aggregated_rules:
+        logger.warning(
+            f"No rules retrieved for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
+        )
+        return []
+
+    filtered_rules_with_meta = [
+        (rule, meta)
+        for rule, meta in aggregated_rules
+        if rule.get("document_type") in (None, "", document_type, "lc")
+    ]
+    doc_scope_count = len(filtered_rules_with_meta)
+    lc_type_context = str(document_data.get("lc_type") or LCType.UNKNOWN.value).lower()
+    filtered_rules_with_meta = [
+        (rule, meta)
+        for rule, meta in filtered_rules_with_meta
+        if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
+    ]
+    activated_rules_with_meta = activate_rules_for_lc(
+        document_data.get("lc") or {},
+        filtered_rules_with_meta,
+        document_data,
+    )
+    sample_rules = [
+        (rule.get("rule_id") or rule.get("code") or rule.get("title"))
+        for rule, _ in activated_rules_with_meta[:5]
+    ]
+    logger.info(
+        "DB rule selection summary",
+        extra={
+            "domains": domain_sequence,
+            "total_rules": len(aggregated_rules),
+            "doc_scope_rules": doc_scope_count,
+            "activated_rules": len(activated_rules_with_meta),
+            "sample_rule_ids": sample_rules,
+        },
+    )
+
+    if not activated_rules_with_meta:
+        logger.warning(
+            f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
+        )
+        return []
+
+    evaluator = RuleEvaluator()
+    filtered_rules_with_meta = activated_rules_with_meta
+    rule_envelopes = [
+        {"rule": rule, "meta": meta}
+        for rule, meta in filtered_rules_with_meta
+    ]
+    prepared_rules = [env["rule"] for env in rule_envelopes]
+    semantic_registry: Dict[str, List[str]] = {}
+    prepared_rules, semantic_registry = await _inject_semantic_conditions(
+        prepared_rules,
+        document_data,
+        evaluator,
+    )
+    for idx, rule in enumerate(prepared_rules):
+        rule_envelopes[idx]["rule"] = rule
+
+    evaluation_result = await evaluator.evaluate_rules(prepared_rules, document_data)
+
+    results: List[Dict[str, Any]] = []
+    outcomes = evaluation_result.get("outcomes", [])
+
+    for idx, outcome in enumerate(outcomes):
+        if outcome.get("not_applicable", False):
+            continue
+
+        envelope = rule_envelopes[idx] if idx < len(rule_envelopes) else {"rule": {}, "meta": base_metadata}
+        rule_def = envelope.get("rule", {}) or {}
+        meta = envelope.get("meta") or base_metadata or {}
+
+        result_payload = {
+            "rule": outcome.get("rule_id", rule_def.get("rule_id", "unknown")),
+            "title": rule_def.get("title") or outcome.get("rule_id", "unknown"),
+            "description": rule_def.get("description"),
+            "article": rule_def.get("article"),
+            "tags": rule_def.get("tags"),
+            "documents": rule_def.get("documents") or rule_def.get("document_types"),
+            "display_card": rule_def.get("display_card") or rule_def.get("ui_card"),
+            "expected_outcome": rule_def.get("expected_outcome"),
+            "passed": outcome.get("passed", False),
+            "severity": outcome.get("severity", rule_def.get("severity", "warning")),
+            "message": outcome.get("message", rule_def.get("description") or ""),
+            "ruleset_version": meta.get("ruleset_version"),
+            "rulebook_version": meta.get("rulebook_version"),
+            "ruleset_domain": meta.get("domain"),
+        }
+
+        sem_keys = semantic_registry.get(result_payload["rule"], [])
+        if sem_keys:
+            semantic_store = document_data.get("_semantic") or {}
+            comparisons = [
+                semantic_store.get(key)
+                for key in sem_keys
+                if semantic_store.get(key)
+            ]
+            if comparisons:
+                result_payload["semantic_differences"] = comparisons
+                primary = comparisons[0]
+                if primary.get("expected"):
+                    result_payload.setdefault("expected", primary.get("expected"))
+                if primary.get("found"):
+                    result_payload.setdefault("actual", primary.get("found"))
+                if primary.get("suggested_fix"):
+                    result_payload.setdefault("suggestion", primary.get("suggested_fix"))
+                if not result_payload.get("documents") and primary.get("documents"):
+                    result_payload["documents"] = primary.get("documents")
+
+        results.append(result_payload)
+
+    logger.info(
+        "Evaluated %d rules using DB-backed system (domains=%s, jurisdiction=%s)",
+        len(prepared_rules),
+        domain_sequence,
+        jurisdiction,
+    )
+    return results
 
 
 async def _inject_semantic_conditions(
@@ -1589,80 +1581,20 @@ async def _inject_semantic_conditions(
 
 
 def validate_document(document_data: Dict[str, Any], document_type: str) -> List[Dict[str, Any]]:
-    use_api = os.getenv("USE_RULHUB_API", "false").lower() == "true"
-    session = SessionLocal()
+    """
+    Synchronous wrapper for validate_document_async.
+    """
     try:
-        rules_source: List[Any] = []
-        if use_api:
-            try:
-                rules_source = fetch_rules_from_rulhub(document_type)
-            except Exception:
-                # Fallback to local DB
-                rules_source = session.query(Rule).filter(Rule.document_type == document_type).all()
-        else:
-            rules_source = session.query(Rule).filter(Rule.document_type == document_type).all()
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            raise RuntimeError(
+                "validate_document cannot be called from an active event loop; "
+                "await validate_document_async instead."
+            )
+    except RuntimeError:
+        # No running loop in this thread; safe to spawn a new one
+        pass
 
-        results: List[Dict[str, Any]] = []
-        for rule in rules_source:
-            # Support dict rules from API and ORM objects locally
-            if isinstance(rule, dict):
-                results.append(apply_rule_dict(rule, document_data))
-            else:
-                results.append(apply_rule(rule, document_data))
-        return results
-    finally:
-        session.close()
-
-
-def apply_rule(rule: Rule, doc: Dict[str, Any]) -> Dict[str, Any]:
-    field = rule.condition.get("field")
-    op = rule.condition.get("operator")
-    val = rule.condition.get("value")
-    actual = doc.get(field)
-
-    if op == "equals":
-        passed = actual == val
-    elif op == "matches":
-        # Interpret value as regex pattern
-        try:
-            passed = bool(re.match(str(val), str(actual)))
-        except re.error:
-            passed = False
-    else:
-        passed = False
-
-    return {
-        "rule": rule.code,
-        "title": rule.title,
-        "passed": passed,
-        "severity": rule.severity,
-        "message": rule.expected_outcome.get("message") if passed else rule.description,
-    }
-
-
-def apply_rule_dict(rule: Dict[str, Any], doc: Dict[str, Any]) -> Dict[str, Any]:
-    condition = rule.get("condition", {})
-    field = condition.get("field")
-    op = condition.get("operator")
-    val = condition.get("value")
-    actual = doc.get(field)
-
-    if op == "equals":
-        passed = actual == val
-    elif op == "matches":
-        try:
-            passed = bool(re.match(str(val), str(actual)))
-        except re.error:
-            passed = False
-    else:
-        passed = False
-
-    return {
-        "rule": rule.get("code"),
-        "title": rule.get("title"),
-        "passed": passed,
-        "severity": rule.get("severity", "fail"),
-        "message": (rule.get("expected_outcome", {}) or {}).get("message") if passed else rule.get("description"),
-    }
+    return asyncio.run(validate_document_async(document_data, document_type))
 
 
