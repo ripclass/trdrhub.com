@@ -4,6 +4,7 @@ Admin API endpoints for ruleset management (upload, validate, publish, rollback)
 import json
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID
@@ -56,6 +57,27 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/rulesets", tags=["admin-rules"])
+
+# Filename patterns for auto-detection
+FILENAME_PATTERNS = [
+    re.compile(r"icc\.?(?P<rulebook>ucp600)-(?P<version>2007)-v(?P<ruleset>[\d\.]+)\.json"),
+    re.compile(r"icc\.?(?P<rulebook>eucp2\.1)-v(?P<ruleset>[\d\.]+)\.json"),
+    re.compile(r"icc\.?(?P<rulebook>urdg758)-v(?P<ruleset>[\d\.]+)\.json"),
+    re.compile(r"icc\.?(?P<rulebook>lcopilot\.crossdoc)-v(?P<ruleset>[\d\.]+)\.json"),
+]
+
+
+def autodetect_metadata(filename: str) -> Optional[Dict[str, str]]:
+    """
+    Auto-detect metadata from filename.
+    
+    Returns dict with 'rulebook' and 'ruleset' keys if match found, None otherwise.
+    """
+    for pattern in FILENAME_PATTERNS:
+        match = pattern.match(filename)
+        if match:
+            return match.groupdict()
+    return None
 
 
 def _load_ruleset_rules(ruleset: Ruleset) -> List[Dict[str, Any]]:
@@ -211,6 +233,15 @@ async def upload_ruleset(
     Validates the JSON against schema, uploads to Supabase Storage,
     and creates a draft ruleset record.
     """
+    # Auto-detect metadata from filename (optional)
+    auto = autodetect_metadata(file.filename)
+    if auto:
+        # Only override fields user left empty
+        if not rulebook_version:
+            rulebook_version = f"{auto['rulebook']}-{auto['version']}" if 'version' in auto else auto['rulebook']
+        if not ruleset_version:
+            ruleset_version = auto.get("ruleset", ruleset_version)
+    
     # Read and parse JSON file
     # Use utf-8-sig to automatically handle UTF-8 BOM if present
     try:
@@ -383,6 +414,13 @@ async def upload_ruleset(
         if import_summary
         else None
     )
+    
+    # Clear cache so dashboard refreshes instantly
+    try:
+        rules_service = get_rules_service()
+        rules_service.clear_cache()
+    except Exception:
+        pass  # Don't fail upload if cache clear fails
 
     return RulesetUploadResponse(
         ruleset=RulesetResponse.model_validate(ruleset),
