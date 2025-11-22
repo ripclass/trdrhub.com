@@ -419,21 +419,14 @@ def main() -> None:
         print(f"Active ICC rulesets: {summary.active_icc_rulesets}")
         print(f"Total rules in ICC rulesets: {summary.total_icc_rules}")
         print(f"Rulesets with count mismatch: {summary.rulesets_count_mismatch}")
-        print(
-            f"Active rulesets with zero rules: {summary.rulesets_active_with_zero_rules}"
-        )
+        print(f"Active rulesets with zero rules: {summary.rulesets_active_with_zero_rules}")
         print(f"Rules with missing fields: {summary.rules_missing_fields}")
+        print(f"Rules with bad severity/flags: {summary.rules_bad_severity_flags}")
+        print(f"Rules with bad condition types: {summary.rules_bad_condition_types}")
+        print(f"Duplicate rule_ids (within ruleset): {summary.duplicate_rule_ids_within_ruleset}")
         print(
-            f"Rules with bad severity/flags: {summary.rules_bad_severity_flags}"
-        )
-        print(
-            f"Rules with bad condition types: {summary.rules_bad_condition_types}"
-        )
-        print(
-            f"Duplicate rule_ids (within ruleset): {summary.duplicate_rule_ids_within_ruleset}"
-        )
-        print(
-            f\"Cross-ruleset collisions (same domain/jurisdiction/document_type/rule_id): {summary.cross_ruleset_collisions}\"
+            f"Cross-ruleset collisions (same domain/jurisdiction/document_type/rule_id): "
+            f"{summary.cross_ruleset_collisions}"
         )
         print(f"Orphan rules: {summary.orphan_rules}")
 
@@ -441,7 +434,7 @@ def main() -> None:
         session.close()
 
 
-if __name__ == \"__main__\":
+if __name__ == "__main__":
     main()
 
 
