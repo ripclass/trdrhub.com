@@ -211,6 +211,10 @@ class LCExtractor:
         docs_46a = _prune_block(docs_46a)
         addl_47a = _prune_block(addl_47a)
 
+        # Parse 46A into structured items
+        from app.services.extraction.docs_46a_parser import parse_docs_46A
+        docs_structured = parse_docs_46A(docs_46a) if docs_46a else []
+
         # Build final structure expected by UI
 
         result: Dict[str, Any] = {
@@ -224,7 +228,8 @@ class LCExtractor:
             "incoterm": _clean(incoterm),
             "goods_description": _clean(goods_45a),
             "clauses": {
-                "documents_required_46A": _clean(docs_46a),
+                "documents_required_raw": _clean(docs_46a),
+                "documents_structured": docs_structured,
                 "additional_conditions_47A": _clean(addl_47a),
             },
         }

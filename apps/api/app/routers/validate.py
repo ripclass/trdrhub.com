@@ -11,6 +11,8 @@ from io import BytesIO
 from contextlib import contextmanager
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,7 @@ import re
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
+from app.services.customs.customs_pack import CustomsPackBuilder
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -2461,3 +2464,73 @@ def _set_nested_value(container: Dict[str, Any], path: Tuple[str, ...], value: A
     for segment in path[:-1]:
         current = current.setdefault(segment, {})
     current[path[-1]] = value
+
+
+@router.get("/customs-pack/{session_id}")
+async def download_customs_pack(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Download a ZIP archive containing extracted LC data, document data, and submission summary.
+    """
+    from uuid import UUID
+    
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session ID format"
+        )
+    
+    session = (
+        db.query(ValidationSession)
+        .filter(
+            ValidationSession.id == session_uuid,
+            ValidationSession.deleted_at.is_(None)
+        )
+        .first()
+    )
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation session not found"
+        )
+    
+    # Check access - user must own the session or be admin
+    if session.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Get validation results
+    validation_results = session.validation_results or {}
+    
+    if not validation_results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No validation results found for this session"
+        )
+    
+    # Build the customs pack
+    try:
+        pack_builder = CustomsPackBuilder()
+        zip_data = pack_builder.build_zip(validation_results)
+    except Exception as e:
+        logger.error(f"Failed to build customs pack for session {session_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate customs pack: {str(e)}"
+        )
+    
+    return StreamingResponse(
+        BytesIO(zip_data),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=customs_pack_{session_id[:8]}.zip"
+        }
+    )
