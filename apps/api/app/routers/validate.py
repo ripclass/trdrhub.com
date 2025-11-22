@@ -738,7 +738,7 @@ async def validate_doc(
                 "rules_evaluated": len(results),
                 "failed_rules": len(failed_results),
                 "issue_cards": len(issue_cards),
-                "json_pipeline": should_use_json_rules,
+                "json_pipeline": True,
             },
         )
 
