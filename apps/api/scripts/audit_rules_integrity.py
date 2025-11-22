@@ -399,12 +399,23 @@ def check_crossdoc_sanity(session: Session, summary: AuditSummary) -> None:
         )
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-
+def run_full_audit(session: Session = None) -> AuditSummary:
+    """
+    Run full integrity audit and return summary.
+    
+    Args:
+        session: Optional database session. If None, creates a new one.
+    
+    Returns:
+        AuditSummary with all audit results
+    """
     summary = AuditSummary()
-    session: Session = SessionLocal()
-
+    should_close = False
+    
+    if session is None:
+        session = SessionLocal()
+        should_close = True
+    
     try:
         check_ruleset_rule_counts(session, summary)
         check_field_completeness(session, summary)
@@ -413,25 +424,33 @@ def main() -> None:
         check_duplicates_and_collisions(session, summary)
         check_orphans(session, summary)
         check_crossdoc_sanity(session, summary)
-
-        _print_header("RULESET INTEGRITY SUMMARY")
-        print(f"Total ICC rulesets: {summary.total_icc_rulesets}")
-        print(f"Active ICC rulesets: {summary.active_icc_rulesets}")
-        print(f"Total rules in ICC rulesets: {summary.total_icc_rules}")
-        print(f"Rulesets with count mismatch: {summary.rulesets_count_mismatch}")
-        print(f"Active rulesets with zero rules: {summary.rulesets_active_with_zero_rules}")
-        print(f"Rules with missing fields: {summary.rules_missing_fields}")
-        print(f"Rules with bad severity/flags: {summary.rules_bad_severity_flags}")
-        print(f"Rules with bad condition types: {summary.rules_bad_condition_types}")
-        print(f"Duplicate rule_ids (within ruleset): {summary.duplicate_rule_ids_within_ruleset}")
-        print(
-            f"Cross-ruleset collisions (same domain/jurisdiction/document_type/rule_id): "
-            f"{summary.cross_ruleset_collisions}"
-        )
-        print(f"Orphan rules: {summary.orphan_rules}")
-
+        
+        return summary
     finally:
-        session.close()
+        if should_close:
+            session.close()
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+
+    summary = run_full_audit()
+
+    _print_header("RULESET INTEGRITY SUMMARY")
+    print(f"Total ICC rulesets: {summary.total_icc_rulesets}")
+    print(f"Active ICC rulesets: {summary.active_icc_rulesets}")
+    print(f"Total rules in ICC rulesets: {summary.total_icc_rules}")
+    print(f"Rulesets with count mismatch: {summary.rulesets_count_mismatch}")
+    print(f"Active rulesets with zero rules: {summary.rulesets_active_with_zero_rules}")
+    print(f"Rules with missing fields: {summary.rules_missing_fields}")
+    print(f"Rules with bad severity/flags: {summary.rules_bad_severity_flags}")
+    print(f"Rules with bad condition types: {summary.rules_bad_condition_types}")
+    print(f"Duplicate rule_ids (within ruleset): {summary.duplicate_rule_ids_within_ruleset}")
+    print(
+        f"Cross-ruleset collisions (same domain/jurisdiction/document_type/rule_id): "
+        f"{summary.cross_ruleset_collisions}"
+    )
+    print(f"Orphan rules: {summary.orphan_rules}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # TRDR Hub Bank Pilot Makefile
 # Commands for managing bank pilot infrastructure, deployments, and compliance operations
 
-.PHONY: help bank_init bank_promote_uat bank_promote_prod bank_bundle_evidence bank_dashboards bank_test bank_deploy db_init migrate upgrade downgrade seed_demo pilot_demo admin_demo backup restore dr_drill rotate_secrets runbooks_serve
+.PHONY: help bank_init bank_promote_uat bank_promote_prod bank_bundle_evidence bank_dashboards bank_test bank_deploy db_init migrate upgrade downgrade seed_demo pilot_demo admin_demo backup restore dr_drill rotate_secrets runbooks_serve audit-rules
 
 # Variables
 BANK_ALIAS ?= demo
@@ -388,6 +388,12 @@ runbooks_serve: ## Serve operational runbooks locally
 	@echo "📚 Starting runbook server"
 	cd docs && python3 -m http.server 8080
 	@echo "📖 Runbooks available at: http://localhost:8080/runbooks/"
+
+# Ruleset Management
+audit-rules: ## Run ruleset integrity audit (validates JSON files and DB state)
+	@echo "🔍 Running ruleset integrity audit..."
+	@PYTHONPATH=. python apps/api/scripts/recheck_rules.py
+	@echo "✅ Ruleset audit completed"
 
 # Version and build info
 version: ## Show version information
