@@ -5,6 +5,7 @@ import json
 import hashlib
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID
@@ -45,8 +46,8 @@ from ..services.rules_service import get_rules_service
 from ..metrics.rules_metrics import rules_update_total
 
 try:
-    import jsonschema
-    from jsonschema import validate, ValidationError
+    import jsonschema  # type: ignore[reportMissingModuleSource]
+    from jsonschema import validate, ValidationError  # type: ignore[reportMissingModuleSource]
 except ImportError:
     # Fallback if jsonschema not installed
     jsonschema = None
@@ -638,41 +639,44 @@ async def list_rulesets(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=2000),
     current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """List rulesets with filtering and pagination."""
+    """
+    List rulesets from the new DB-backed system.
+
+    Removes legacy rules_registry entirely.
+
+    Supports domain/jurisdiction/status filtering + pagination.
+
+    """
+
     query = db.query(Ruleset)
-    
-    # Apply filters
+
     if domain:
         query = query.filter(Ruleset.domain == domain)
+
     if jurisdiction:
         query = query.filter(Ruleset.jurisdiction == jurisdiction)
+
     if status:
         query = query.filter(Ruleset.status == status)
-    
-    # Get total count
+
     total = query.count()
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    rulesets = query.order_by(Ruleset.created_at.desc()).offset(offset).limit(page_size).all()
-    
-    # Convert to response models with error handling
-    items = []
-    for r in rulesets:
-        try:
-            items.append(RulesetResponse.model_validate(r))
-        except Exception as e:
-            logger.error(f"Failed to validate ruleset {r.id}: {e}", exc_info=True)
-            # Skip invalid rulesets rather than failing the entire request
-            continue
-    
+
+    rulesets = (
+        query.order_by(Ruleset.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    items = [RulesetResponse.model_validate(r) for r in rulesets]
+
     return RulesetListResponse(
-        items=items,
         total=total,
         page=page,
-        page_size=page_size
+        page_size=page_size,
+        items=items,
     )
 
 
