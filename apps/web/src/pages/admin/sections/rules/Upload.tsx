@@ -269,22 +269,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       return;
     }
 
-    // 3) Enforce filename structure:
-    //    {domain}-{rulebook_version}-v{ruleset_version}.json
-    const validPattern = new RegExp(
-      `${domain.replace(".", "\\.")}-${rulebookVersion.replace(":", "\\:")}-v${rulesetVersion}\\.json$`
-    );
-
-    if (!validPattern.test(file.name)) {
-      toast({
-        title: "Invalid file name",
-        description: `Invalid file name.\nExpected: ${domain}-${rulebookVersion}-v${rulesetVersion}.json`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 4) Prevent uploading if a DRAFT already exists with same version
+    // Prevent uploading if a DRAFT already exists with same version
     const alreadyExists = rulesets.some(
       (r) =>
         r.domain === domain &&
