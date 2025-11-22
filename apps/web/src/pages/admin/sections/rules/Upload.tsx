@@ -67,6 +67,37 @@ const [rulebook, setRulebook] = React.useState<string>("");
     fetchRulesets();
   }, []);
 
+  // --------------------------------------------------------
+  // AUTO-DETECTION: Extract domain, rulebook_version, ruleset_version
+  // Filename format expected:
+  //    {domain}-{rulebook_version}-v{ruleset_version}.json
+  // Example:
+  //    icc.ucp600-UCP600-2007-v1.0.0.json
+  //
+  // --------------------------------------------------------
+  const parseFilename = (filename: string): { domain: string; rulebook_version: string; ruleset_version: string } | null => {
+    // remove .json
+    const base = filename.replace(/\.json$/i, "");
+
+    // split only first 2 hyphens safely: domain-rulebook-version-vX.Y.Z
+    const parts = base.split("-");
+    if (parts.length < 3) return null;
+
+    const domain = parts[0];
+    const rulebook_version = parts[1];
+
+    // ruleset version always starts with "v"
+    const versionPart = parts.slice(2).join("-"); // in case rulebook names have hyphens
+    const match = versionPart.match(/^v(\d+\.\d+\.\d+)$/);
+    if (!match) return null;
+
+    return {
+      domain,
+      rulebook_version,
+      ruleset_version: match[1],
+    };
+  };
+
 const rulebookOptionsForDomain = React.useMemo(() => {
   if (!domain) return [];
   return RULEBOOK_OPTIONS_BY_DOMAIN[domain] ?? [];
@@ -88,6 +119,27 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         });
         return;
       }
+      
+      // ----------------------------------------------
+      // AUTO-DETECT when user selects a file
+      // ----------------------------------------------
+      const detected = parseFilename(selectedFile.name);
+      if (detected) {
+        setDomain(detected.domain);
+        setRulebookVersion(detected.rulebook_version);
+        setRulesetVersion(detected.ruleset_version);
+        toast({
+          title: "Metadata auto-detected",
+          description: `Domain: ${detected.domain}, Rulebook: ${detected.rulebook_version}, Version: v${detected.ruleset_version}`,
+        });
+      } else {
+        toast({
+          title: "Could not auto-detect metadata",
+          description: "Please manually enter domain, rulebook version, and ruleset version.",
+          variant: "destructive",
+        });
+      }
+      
       setFile(selectedFile);
       setValidationResult(null);
     }
