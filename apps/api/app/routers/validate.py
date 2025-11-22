@@ -706,6 +706,10 @@ async def validate_doc(
                 detail="Structured validation payload invalid",
             )
 
+        # Add LC data directly to structured_result for frontend access
+        if extracted_data and extracted_data.get("lc"):
+            structured_result["lc_data"] = extracted_data["lc"]
+
         # Attach structured payload back onto results for persistence and frontend use
         results_payload["structured_result"] = structured_result
 
@@ -1026,6 +1030,7 @@ async def _build_document_context(
     try:
         from app.rules.extractors import DocumentFieldExtractor, ISO20022ParseError, extract_iso20022_lc
         from app.rules.models import DocumentType
+        from app.services.extraction.lc_extractor import extract_lc
     except ImportError as e:
         logger.warning(f"DocumentFieldExtractor not available; skipping text extraction: {e}")
         return {"extraction_status": "error", "extraction_error": str(e)}
@@ -1113,19 +1118,41 @@ async def _build_document_context(
                         if not context.get("lc_number") and iso_context.get("number"):
                             context["lc_number"] = iso_context["number"]
                 else:
-                    lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
-                    logger.info(f"Extracted {len(lc_fields)} fields from LC document {filename}")
-                    lc_context = _fields_to_lc_context(lc_fields)
-                    if lc_context:
-                        lc_payload.update(lc_context)
-                        has_structured_data = True
-                        logger.info(f"LC context keys: {list(lc_payload.keys())}")
-                        if not context.get("lc_number") and lc_context.get("number"):
-                            context["lc_number"] = lc_context["number"]
-                        doc_info["extracted_fields"] = lc_context
-                        doc_info["extraction_status"] = "success"
-                    else:
-                        logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
+                    # Use new LC extractor for OCR/plaintext LC documents
+                    try:
+                        lc_struct = extract_lc(extracted_text)
+                        logger.info(f"Extracted LC structure from {filename} with keys: {list(lc_struct.keys())}")
+                        if lc_struct:
+                            lc_payload.update(lc_struct)
+                            has_structured_data = True
+                            logger.info(f"LC context keys: {list(lc_payload.keys())}")
+                            if not context.get("lc_number") and lc_struct.get("number"):
+                                context["lc_number"] = lc_struct["number"]
+                            doc_info["extracted_fields"] = lc_struct
+                            doc_info["extraction_status"] = "success"
+                        else:
+                            logger.warning(f"No LC structure extracted from {filename}")
+                    except Exception as extract_error:
+                        logger.warning(f"LC extraction failed for {filename}: {extract_error}", exc_info=True)
+                        # Fallback to old extractor if new one fails
+                        try:
+                            lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
+                            logger.info(f"Fallback: Extracted {len(lc_fields)} fields from LC document {filename}")
+                            lc_context = _fields_to_lc_context(lc_fields)
+                            if lc_context:
+                                lc_payload.update(lc_context)
+                                has_structured_data = True
+                                logger.info(f"LC context keys: {list(lc_payload.keys())}")
+                                if not context.get("lc_number") and lc_context.get("number"):
+                                    context["lc_number"] = lc_context["number"]
+                                doc_info["extracted_fields"] = lc_context
+                                doc_info["extraction_status"] = "success"
+                            else:
+                                logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
+                        except Exception as fallback_error:
+                            logger.error(f"Both LC extraction methods failed for {filename}: {fallback_error}", exc_info=True)
+                            doc_info["extraction_status"] = "failed"
+                            doc_info["extraction_error"] = str(fallback_error)
             elif document_type == "commercial_invoice":
                 invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
                 logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
