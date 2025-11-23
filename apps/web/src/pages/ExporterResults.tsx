@@ -69,6 +69,9 @@ const normalizeDiscrepancySeverity = (
 };
 
 export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
+  const FILE_ID = "apps/web/src/pages/ExporterResults.tsx";
+  console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID });
+  (window as any).__LIVE = FILE_ID;
   const [searchParams] = useSearchParams();
   const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
@@ -411,6 +414,25 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
     return () => clearTimeout(timeoutId);
   }, [validationSessionId, fetchResults, jobStatus, resultsLoading]);
+
+  // Minimal terminal guard to force network call in case any guard above is bypassed
+  useEffect(() => {
+    const st = (jobStatus?.status || '').toLowerCase();
+    const terminal = ['completed', 'failed', 'error'];
+    const jobId = validationSessionId;
+
+    (window as any).__lastJobStatus = st;
+
+    if (!jobId || !terminal.includes(st)) return;
+
+    console.log('[LIVE_FETCH]', { jobId, st, jobStatus });
+    fetchResults('auto', jobId)
+      .then((r) => {
+        console.log('[LIVE_RESULTS]', r);
+        (window as any).__RESULTS = r;
+      })
+      .catch((err) => console.error('[LIVE_ERROR]', err));
+  }, [jobStatus?.status, validationSessionId, fetchResults]);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
