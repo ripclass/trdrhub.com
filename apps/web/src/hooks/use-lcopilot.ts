@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '@/api/client';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
 import type {
@@ -193,6 +193,8 @@ export const useJob = (jobId: string | null) => {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [error, setError] = useState<ValidationError | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastStatusRef = useRef<string | null>(null);
 
   const pollJob = useCallback(async () => {
     if (!jobId) return;
@@ -206,17 +208,44 @@ export const useJob = (jobId: string | null) => {
 
       // Normalize status to lowercase for reliable comparisons
       const normalizedStatus = (status.status || '').toString().toLowerCase() as JobStatus['status'];
+      const previousStatus = lastStatusRef.current;
       // Overwrite the status we store with normalized to keep UI logic consistent
       status.status = normalizedStatus;
 
+      if (normalizedStatus !== previousStatus) {
+        console.log('[LCopilot][Job] status update', {
+          jobId,
+          status: normalizedStatus,
+          previousStatus,
+          progress: status.progress,
+        });
+        lastStatusRef.current = normalizedStatus;
+      }
+
       setJobStatus(status);
 
-      // Continue polling if job is still processing
-      if (normalizedStatus === 'processing' || normalizedStatus === 'created' || normalizedStatus === 'queued') {
-        setTimeout(() => {
+      const isTerminal =
+        normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'error';
+      const isActive =
+        normalizedStatus === 'processing' ||
+        normalizedStatus === 'created' ||
+        normalizedStatus === 'queued' ||
+        normalizedStatus === 'uploading';
+
+      // Continue polling if job is still active (processing, uploading, queued, created)
+      if (isActive && !isTerminal) {
+        if (pollTimeoutRef.current) {
+          clearTimeout(pollTimeoutRef.current);
+        }
+        pollTimeoutRef.current = setTimeout(() => {
           pollJob();
         }, 2000); // Poll every 2 seconds
       } else {
+        console.log('[LCopilot][Job] polling stopped', {
+          jobId,
+          status: normalizedStatus,
+          reason: isTerminal ? 'terminal' : 'inactive',
+        });
         setIsPolling(false);
       }
     } catch (err: any) {
@@ -246,6 +275,11 @@ export const useJob = (jobId: string | null) => {
     if (jobId && !isPolling) {
       pollJob();
     }
+    return () => {
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+      }
+    };
   }, [jobId, isPolling, pollJob]);
 
   return {
@@ -264,6 +298,7 @@ export const useResults = () => {
   const [error, setError] = useState<ValidationError | null>(null);
 
   const getResults = useCallback(async (jobId: string): Promise<ValidationResults> => {
+    console.log('[LCopilot][Results] fetching results', { jobId });
     setIsLoading(true);
     setError(null);
 
@@ -280,6 +315,13 @@ export const useResults = () => {
       }
 
       setResults(normalized);
+      console.log('[LCopilot][Results] fetched results', {
+        jobId,
+        hasStructuredResult: !!normalized.structured_result,
+        hasLcStructured: !!(normalized.structured_result?.lc_structured || normalized.lc_structured),
+        documents: normalized.documents?.length ?? 0,
+        issues: normalized.issues?.length ?? 0,
+      });
       return normalized;
     } catch (err: any) {
       let validationError: ValidationError;
@@ -299,6 +341,11 @@ export const useResults = () => {
       }
 
       setError(validationError);
+      console.warn('[LCopilot][Results] failed to fetch results', {
+        jobId,
+        error: validationError?.message,
+        statusCode: validationError?.statusCode,
+      });
       throw validationError;
     } finally {
       setIsLoading(false);

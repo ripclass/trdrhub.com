@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactElement } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, type ReactElement } from "react";
 import { Link, useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
   const { getResults, isLoading: resultsLoading, error: resultsError, results: cachedResults } = useResults();
   const fetchedOnceRef = useRef(false);
+  const lastFetchedJobIdRef = useRef<string | null>(null);
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
@@ -286,30 +287,83 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     setLiveResults(null);
     setResultsErrorState(null);
     fetchedOnceRef.current = false;
+    lastFetchedJobIdRef.current = null;
+    if (validationSessionId) {
+      console.log('[LCopilot][UI] reset results state for session change', { validationSessionId });
+    }
   }, [validationSessionId]);
 
+  const fetchResults = useCallback(
+    async (source: 'auto' | 'manual', sessionOverride?: string) => {
+      const targetId = sessionOverride ?? validationSessionId;
+      if (!targetId) {
+        console.log('[LCopilot][UI] skip results fetch: missing validation session id', { source });
+        return;
+      }
+
+      fetchedOnceRef.current = true;
+      lastFetchedJobIdRef.current = targetId;
+      console.log('[LCopilot][UI] fetching results', { validationSessionId: targetId, source });
+
+      try {
+        const data = await getResults(targetId);
+        console.log('[LCopilot][UI] results received', {
+          validationSessionId: targetId,
+          hasStructured: !!data?.structured_result,
+          hasLcStructured: !!data?.structured_result?.lc_structured,
+        });
+        setLiveResults(data);
+        setResultsErrorState(null);
+      } catch (e: any) {
+        console.warn('[LCopilot][UI] results fetch failed', {
+          validationSessionId: targetId,
+          error: e?.message,
+          source,
+        });
+        fetchedOnceRef.current = false; // allow manual retry
+        lastFetchedJobIdRef.current = null;
+        setResultsErrorState(e?.message || 'Failed to load validation results.');
+        throw e;
+      }
+    },
+    [getResults, validationSessionId],
+  );
+
   useEffect(() => {
-    const st = (jobStatus?.status || '').toString().toLowerCase();
-    if (!validationSessionId || !st || fetchedOnceRef.current) {
-      return;
-    }
-    const isTerminal = st === 'completed' || st === 'failed' || st === 'error';
-    if (!isTerminal) {
+    const normalizedStatus = (jobStatus?.status || '').toString().toLowerCase();
+    const isTerminal =
+      normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'error';
+    const alreadyFetched = fetchedOnceRef.current && lastFetchedJobIdRef.current === validationSessionId;
+
+    if (!validationSessionId) {
+      console.log('[LCopilot][UI] results fetch skipped: no validationSessionId');
       return;
     }
 
-    fetchedOnceRef.current = true;
-    getResults(validationSessionId)
-      .then((data) => {
-        setLiveResults(data);
-        setResultsErrorState(null);
-      })
-      .catch((e) => {
-        console.warn('Failed to fetch results:', e);
-        fetchedOnceRef.current = false; // allow manual retry
-        setResultsErrorState(e?.message || 'Failed to load validation results.');
+    if (!normalizedStatus) {
+      console.log('[LCopilot][UI] waiting for job status before fetching results', { validationSessionId });
+      return;
+    }
+
+    if (!isTerminal) {
+      console.log('[LCopilot][UI] job not terminal yet, skipping results fetch', {
+        validationSessionId,
+        status: normalizedStatus,
       });
-  }, [validationSessionId, jobStatus?.status, getResults]);
+      return;
+    }
+
+    if (resultsLoading) {
+      console.log('[LCopilot][UI] results fetch already in-flight', { validationSessionId });
+      return;
+    }
+
+    if (alreadyFetched) {
+      return;
+    }
+
+    fetchResults('auto', validationSessionId).catch(() => {});
+  }, [validationSessionId, jobStatus?.status, resultsLoading, fetchResults]);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
@@ -1018,10 +1072,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => validationSessionId && getResults(validationSessionId)}
-                  className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+                  onClick={() => fetchResults('manual')}
+                  disabled={!validationSessionId || resultsLoading}
+                  className="rounded-md border px-3 py-1 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Fetch results
+                  {resultsLoading ? 'Fetching…' : 'Fetch Results'}
                 </button>
               </div>
             </div>
@@ -1316,6 +1371,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           <TabsContent value="documents" className="space-y-4">
             {documents.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
+              const hasFieldEntries = fieldEntries.length > 0;
               return (
                 <Card
                   key={document.id}
@@ -1373,76 +1429,78 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {document.typeKey === "letter_of_credit" && lcData ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
-                          <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
-                          </Button>
-                        </div>
-                        <div className="rounded-md border bg-card/50 p-4 space-y-4">
-                          {lcSummaryRows.length > 0 && (
-                            <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
-                          )}
-                          {lcDateRows.length > 0 && (
-                            <div>
-                              <p className="text-sm font-semibold mb-2">Key Dates</p>
-                              <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
-                            </div>
-                          )}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {lcApplicantCard}
-                            {lcBeneficiaryCard}
+                    {hasFieldEntries ? (
+                      document.typeKey === "letter_of_credit" && lcData ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
+                            <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
+                              {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
+                            </Button>
                           </div>
-                          {lcPortsCard}
-                          {lcGoodsItemsList}
-                          {lcAdditionalConditions && (
-                            <div>
-                              <p className="text-sm font-semibold mb-1">Additional Conditions</p>
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {formatExtractedValue(lcAdditionalConditions)}
-                              </p>
+                          <div className="rounded-md border bg-card/50 p-4 space-y-4">
+                            {lcSummaryRows.length > 0 && (
+                              <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
+                            )}
+                            {lcDateRows.length > 0 && (
+                              <div>
+                                <p className="text-sm font-semibold mb-2">Key Dates</p>
+                                <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
+                              </div>
+                            )}
+                            <div className="grid gap-4 md:grid-cols-2">
+                              {lcApplicantCard}
+                              {lcBeneficiaryCard}
+                            </div>
+                            {lcPortsCard}
+                            {lcGoodsItemsList}
+                            {lcAdditionalConditions && (
+                              <div>
+                                <p className="text-sm font-semibold mb-1">Additional Conditions</p>
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {formatExtractedValue(lcAdditionalConditions)}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {showRawLcJson && (
+                            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
+                              <Table>
+                                <TableBody>
+                                  {Object.entries(lcData || {}).map(([key, val]) => (
+                                    <TableRow key={key}>
+                                      <TableCell className="font-medium capitalize w-1/3">
+                                        {key.replace(/([A-Z])/g, " $1").trim()}
+                                      </TableCell>
+                                      <TableCell className="text-sm">
+                                        {typeof val === "object" && val !== null
+                                          ? JSON.stringify(val, null, 2)
+                                          : String(val || "")}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
                             </div>
                           )}
                         </div>
-                        {showRawLcJson && (
-                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                            <Table>
-                              <TableBody>
-                                {Object.entries(lcData || {}).map(([key, val]) => (
-                                  <TableRow key={key}>
-                                    <TableCell className="font-medium capitalize w-1/3">
-                                      {key.replace(/([A-Z])/g, " $1").trim()}
-                                    </TableCell>
-                                    <TableCell className="text-sm">
-                                      {typeof val === "object" && val !== null
-                                        ? JSON.stringify(val, null, 2)
-                                        : String(val || "")}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        )}
-                      </div>
-                    ) : fieldEntries.length > 0 ? (
-                      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {fieldEntries.map(([key, value]) => {
-                          const displayValue = formatExtractedValue(value);
-                          return (
-                            <div key={key} className="space-y-1">
-                              <p className="text-xs text-muted-foreground font-medium capitalize">
-                                {key.replace(/([A-Z])/g, " $1").trim()}
-                              </p>
-                              <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
-                                {displayValue}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      ) : (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {fieldEntries.map(([key, value]) => {
+                            const displayValue = formatExtractedValue(value);
+                            return (
+                              <div key={key} className="space-y-1">
+                                <p className="text-xs text-muted-foreground font-medium capitalize">
+                                  {key.replace(/([A-Z])/g, " $1").trim()}
+                                </p>
+                                <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
+                                  {displayValue}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )
                     ) : (
                       <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
                         This document could not be fully parsed. Preview text is available for manual review.

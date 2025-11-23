@@ -230,28 +230,38 @@ const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] =>
 };
 
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const structured = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload>;
+  const structured = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload> & Record<string, any>;
+  const rawExtractedData = (raw?.extracted_data ?? {}) as Record<string, any>;
   const documentsPayload = Array.isArray(structured.documents) ? structured.documents : [];
   const issuesPayload = Array.isArray(structured.issues) ? structured.issues : [];
-  const analyticsPayload = structured.analytics;
+  const analyticsPayload = structured.analytics as StructuredResultAnalytics | undefined;
   const timelinePayload = structured.timeline;
   const extractedDocumentsPayload = structured.extracted_documents ?? {};
-  const lcStructuredPayload = structured.lc_structured ?? null; // Extract lc_structured from structured_result
+  const lcStructuredPayload =
+    structured.lc_structured ??
+    raw?.lc_structured ??
+    rawExtractedData.lc_structured ??
+    null; // Extract lc_structured from any available source
 
   const documents = mapDocuments(documentsPayload);
   const issues = mapIssues(issuesPayload, documents);
   const summary = ensureSummary(structured.processing_summary, documents, issues);
   const analytics = ensureAnalytics(analyticsPayload, summary, documents);
   const timeline = mapTimeline(timelinePayload);
-  const normalizedStructuredResult: StructuredResultPayload = {
-    processing_summary: summary,
-    documents: documentsPayload,
-    issues: issuesPayload,
+  const normalizedStructuredResult: StructuredResultPayload & Record<string, any> = {
+    ...structured,
+    processing_summary: structured.processing_summary
+      ? { ...structured.processing_summary, ...summary }
+      : summary,
+    documents: structured.documents ?? documentsPayload,
+    issues: structured.issues ?? issuesPayload,
     analytics: normalizeStructuredAnalytics(analyticsPayload, analytics),
     timeline: normalizeStructuredTimeline(timelinePayload, timeline),
-    extracted_documents: extractedDocumentsPayload,
+    extracted_documents: structured.extracted_documents ?? extractedDocumentsPayload,
     lc_structured: lcStructuredPayload, // Include lc_structured in normalized result
   };
+
+  const hasRawExtractedData = rawExtractedData && Object.keys(rawExtractedData).length > 0;
 
   const normalized: ValidationResults = {
     ...raw,
@@ -264,19 +274,10 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     processing_summary: summary,
     issue_cards: issues,
     structured_result: normalizedStructuredResult,
-    extracted_data: normalizedStructuredResult.extracted_documents,
+    extracted_data: hasRawExtractedData ? rawExtractedData : normalizedStructuredResult.extracted_documents,
     extraction_status: raw?.extraction_status ?? 'unknown',
     lc_structured: lcStructuredPayload, // Add lc_structured to top-level for easy access
   };
-
-  // Preserve structured_result and lc_structured if backend sent them
-  if (raw?.structured_result && !normalized.structured_result) {
-    normalized.structured_result = raw.structured_result;
-  }
-  if (raw?.structured_result?.lc_structured && !normalized?.structured_result?.lc_structured) {
-    normalized.structured_result = normalized.structured_result || ({} as any);
-    (normalized.structured_result as any).lc_structured = raw.structured_result.lc_structured;
-  }
 
   return normalized;
 };
