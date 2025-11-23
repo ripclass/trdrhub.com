@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
 from app.core.security import get_current_user
 from app.core.rbac import RBACPolicyEngine, Permission
+from app.services.extraction.structured_lc_builder import build_unified_structured_result
 
 
 router = APIRouter(tags=["validation-jobs"])
@@ -249,6 +250,53 @@ def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
     }
 
 
+def _collect_structured_documents(session: ValidationSession, results_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    documents_structured: List[Dict[str, Any]] = []
+    for document in session.documents or []:
+        documents_structured.append(
+            {
+                "id": str(document.id),
+                "document_type": document.document_type,
+                "original_filename": document.original_filename,
+                "extraction_status": getattr(document, "extraction_status", None) or "unknown",
+                "extracted_fields": document.extracted_fields or {},
+            }
+        )
+
+    if not documents_structured:
+        for doc in results_payload.get("documents") or []:
+            documents_structured.append(doc)
+
+    return documents_structured
+
+
+def _build_structured_result_for_response(
+    results_payload: Dict[str, Any],
+    extracted_data: Dict[str, Any],
+    session_documents: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    structured_result = (results_payload.get("structured_result") or {}).copy()
+    if structured_result.get("version") == "structured_result_v1":
+        return structured_result
+
+    lc_type_hint = {
+        "lc_type": results_payload.get("lc_type"),
+        "lc_type_reason": results_payload.get("lc_type_reason"),
+        "lc_type_confidence": results_payload.get("lc_type_confidence"),
+        "lc_type_source": results_payload.get("lc_type_source"),
+    }
+
+    extractor_outputs = structured_result.get("lc_structured") or (extracted_data or {}).get("lc_structured")
+
+    return build_unified_structured_result(
+        extracted_data=extracted_data,
+        legacy_results_payload=results_payload,
+        extractor_outputs=extractor_outputs,
+        lc_type_hint=lc_type_hint,
+        session_documents=session_documents,
+    )
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
     job_id: UUID,
@@ -336,38 +384,31 @@ def get_job_results(
 
     # Defensive: some pipelines stash structured bits at different levels
     extracted_data = results_payload.get("extracted_data") or session.extracted_data or {}
-    root_lc_structured = results_payload.get("lc_structured") or {}
-    ed_lc_structured = (extracted_data or {}).get("lc_structured") or {}
+    session_structured_docs = _collect_structured_documents(session, results_payload)
 
-    # Start with whatever was explicitly saved as structured_result
-    structured_result = (results_payload.get("structured_result") or {}).copy()
-
-    # Merge lc_structured from all plausible sources (root → extracted_data → existing)
-    structured_result.setdefault("lc_structured", {})
-    if root_lc_structured:
-        structured_result["lc_structured"] = root_lc_structured
-    if ed_lc_structured and not structured_result.get("lc_structured"):
-        structured_result["lc_structured"] = ed_lc_structured
-
-    # Pass through other structured blocks if present anywhere reasonable
-    for key in ("mt700", "goods", "clauses", "timeline", "analytics", "documents_structured"):
-        if key not in structured_result:
-            structured_result[key] = (
-                results_payload.get(key)
-                or (extracted_data or {}).get(key)
-                or structured_result.get(key)
-            ) or None
+    structured_result = _build_structured_result_for_response(
+        results_payload,
+        extracted_data,
+        session_structured_docs,
+    )
+    logger.info(
+        "UnifiedStructuredResultServed",
+        extra={
+            "job_id": str(session.id),
+            "version": structured_result.get("version"),
+        },
+    )
 
     # Ensure lc_type (and friends) survive regardless of where the classifier wrote them
     lc_type = (
-        results_payload.get("lc_type")
-        or structured_result.get("lc_type")
+        structured_result.get("lc_type")
+        or results_payload.get("lc_type")
         or (structured_result.get("lc_structured") or {}).get("lc_type")
         or (extracted_data.get("lc_structured") or {}).get("lc_type")
     )
-    lc_type_reason = results_payload.get("lc_type_reason") or structured_result.get("lc_type_reason")
-    lc_type_confidence = results_payload.get("lc_type_confidence") or structured_result.get("lc_type_confidence")
-    lc_type_source = results_payload.get("lc_type_source") or structured_result.get("lc_type_source")
+    lc_type_reason = structured_result.get("lc_type_reason") or results_payload.get("lc_type_reason")
+    lc_type_confidence = structured_result.get("lc_type_confidence") or results_payload.get("lc_type_confidence")
+    lc_type_source = structured_result.get("lc_type_source") or results_payload.get("lc_type_source")
 
     # Results & discrepancies (filter N/A)
     raw_results = results_payload.get("results") or []

@@ -48,6 +48,8 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
 from app.services.customs.customs_pack import prepare_customs_pack  # keep metadata-only if needed
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
+from app.services.extraction.lc_extractor import extract_lc_structured
+from app.services.extraction.structured_lc_builder import build_unified_structured_result
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -689,83 +691,65 @@ async def validate_doc(
             if not doc.get("id"):
                 doc["id"] = str(uuid4())
 
-        structured_issues, document_issue_counts, severity_counts = _build_issue_payload(
-            failed_results,
-            final_documents,
+        # Legacy structured payload builders remain for backward compatibility,
+        # but unified structured_result now derives analytics internally.
+
+        extracted_data = results_payload.get("extracted_data") or {}
+        extractor_outputs = context.get("lc_structured_output")
+        if not extractor_outputs:
+            raw_text = (extracted_data.get("lc") or {}).get("raw_text")
+            if raw_text:
+                try:
+                    extractor_outputs = extract_lc_structured(raw_text)
+                    logger.info("Extracted LC structured data from stored raw_text for unified builder")
+                except Exception as exc:
+                    logger.error("Failed to extract LC structured data during builder stage: %s", exc, exc_info=True)
+                    extractor_outputs = None
+
+        if extractor_outputs:
+            extracted_data.setdefault("lc_structured", extractor_outputs)
+        if extracted_data.get("lc"):
+            extracted_data["lc"].pop("raw_text", None)
+        results_payload["extracted_data"] = extracted_data
+
+        lc_type_hint = {
+            "lc_type": results_payload.get("lc_type"),
+            "lc_type_reason": results_payload.get("lc_type_reason"),
+            "lc_type_confidence": results_payload.get("lc_type_confidence"),
+            "lc_type_source": results_payload.get("lc_type_source"),
+        }
+
+        unified_structured_result = build_unified_structured_result(
+            extracted_data=extracted_data,
+            legacy_results_payload=results_payload,
+            extractor_outputs=extractor_outputs,
+            lc_type_hint=lc_type_hint,
+            session_documents=final_documents,
         )
-        documents_payload = _build_documents_section(final_documents, document_issue_counts)
-        structured_summary = _compose_processing_summary(documents_payload, structured_issues, severity_counts)
-        analytics_payload = _build_analytics_section(structured_summary, documents_payload, structured_issues)
-        timeline_entries = _build_timeline_entries()
-        extracted_documents_snapshot = _build_extracted_documents_snapshot(extracted_data)
-        try:
-            structured_result = _validate_structured_result({
-                "processing_summary": structured_summary,
-                "documents": documents_payload,
-                "issues": structured_issues,
-                "analytics": analytics_payload,
-                "timeline": timeline_entries,
-                "extracted_documents": extracted_documents_snapshot,
-            })
-        except ValidationError as exc:
-            logger.error("Structured validation payload invalid: %s", exc)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Structured validation payload invalid",
-            )
+        results_payload["structured_result"] = unified_structured_result
+        structured_result = unified_structured_result
 
-        # Normalize structured LC data and remove messy narrative blocks
-        lc_structured_data = None
-        if "extracted_data" in results_payload:
-            ed = results_payload["extracted_data"]
-            # Check if lc_structured already exists (from document processing)
-            if isinstance(ed, dict) and "lc_structured" in ed:
-                lc_structured_data = ed["lc_structured"]
-                logger.info("Found existing lc_structured in extracted_data with keys: %s", list(lc_structured_data.keys()) if isinstance(lc_structured_data, dict) else "non-dict")
-            # Prefer our structured LC extraction if available
-            elif isinstance(ed, dict) and "lc" in ed:
-                raw_text = ed["lc"].get("raw_text")
-                if raw_text:
-                    try:
-                        from app.services.extraction.lc_extractor import extract_lc_structured
-                        logger.info("Extracting LC structured data from raw_text (length: %d)", len(raw_text))
-                        lc_struct = extract_lc_structured(raw_text)
-                        if lc_struct:
-                            ed["lc_structured"] = lc_struct
-                            lc_structured_data = lc_struct  # Store for structured_result
-                            logger.info("Successfully extracted LC structured data with keys: %s", list(lc_struct.keys()) if isinstance(lc_struct, dict) else "non-dict")
-                        else:
-                            logger.warning("extract_lc_structured returned None/empty")
-                        # Do not leak large raw OCR into the final payload
-                        ed["lc"].pop("raw_text", None)
-                    except Exception as exc:
-                        logger.error("Failed to extract LC structured data: %s", exc, exc_info=True)
-                        lc_structured_data = None
-                else:
-                    logger.warning("No raw_text found in extracted_data.lc, keys: %s", list(ed["lc"].keys()) if isinstance(ed["lc"], dict) else "not a dict")
-            else:
-                logger.warning("extracted_data structure unexpected: has_lc=%s, has_lc_structured=%s, is_dict=%s", 
-                             "lc" in ed if isinstance(ed, dict) else False,
-                             "lc_structured" in ed if isinstance(ed, dict) else False,
-                             isinstance(ed, dict))
-            results_payload["extracted_data"] = ed
-
-        # Add lc_structured to structured_result if it was extracted
-        if lc_structured_data:
-            structured_result["lc_structured"] = lc_structured_data
-            logger.info("Added lc_structured to structured_result with keys: %s", list(lc_structured_data.keys()) if isinstance(lc_structured_data, dict) else "non-dict")
-        else:
-            logger.warning("No lc_structured_data available to add to structured_result")
+        logger.info(
+            "UnifiedStructuredResultBuilt",
+            extra={
+                "job_id": str(validation_session.id if validation_session else job_id),
+                "has_mt700": bool(
+                    (
+                        unified_structured_result.get("lc_structured", {})
+                        .get("mt700", {})
+                        .get("blocks")
+                    )
+                ),
+                "goods_len": len(unified_structured_result.get("lc_structured", {}).get("goods") or []),
+                "issues": len(unified_structured_result.get("issues") or []),
+            },
+        )
 
         # Compute customs risk and pack readiness flags
         try:
             from app.services.risk.customs_risk import compute_customs_risk
             from app.services.customs.customs_pack import prepare_customs_pack
-            lc_struct = (
-                (results_payload.get("extracted_data") or {}).get("lc_structured")
-                or lc_structured_data
-                or {}
-            )
+            lc_struct = (results_payload.get("extracted_data") or {}).get("lc_structured") or {}
             risk = compute_customs_risk(lc_struct, {"documents": results_payload.get("documents", [])})
             if "analytics" not in results_payload:
                 results_payload["analytics"] = {}
@@ -775,9 +759,6 @@ async def validate_doc(
             # Never fail the request due to analytics
             logger.warning("Failed to compute customs risk: %s", exc, exc_info=True)
             pass
-
-        # Attach structured payload back onto results for persistence and frontend use
-        results_payload["structured_result"] = structured_result
 
         if validation_session:
             validation_session.validation_results = copy.deepcopy(results_payload)
@@ -1194,11 +1175,11 @@ async def _build_document_context(
                 else:
                     # Use new LC extractor for OCR/plaintext LC documents
                     try:
-                        from app.services.extraction.lc_extractor import extract_lc_structured
                         lc_struct = extract_lc_structured(extracted_text)
                         logger.info(f"Extracted LC structure from {filename} with keys: {list(lc_struct.keys())}")
                         if lc_struct:
                             lc_payload.update(lc_struct)
+                            context["lc_structured_output"] = lc_struct
                             has_structured_data = True
                             logger.info(f"LC context keys: {list(lc_payload.keys())}")
                             if not context.get("lc_number") and lc_struct.get("number"):
@@ -2005,25 +1986,6 @@ class TimelineEntryModel(BaseModel):
                 else:
                     raise ValueError("Timeline entry must include a title or label")
         return values
-
-
-class StructuredResultModel(BaseModel):
-    processing_summary: ProcessingSummaryModel
-    documents: List[StructuredDocumentModel]
-    issues: List[StructuredIssueModel]
-    analytics: AnalyticsModel
-    timeline: List[TimelineEntryModel]
-    extracted_documents: Dict[str, Any] = Field(default_factory=dict)
-    
-    model_config = {"extra": "allow"}  # Allow additional fields like lc_structured
-
-
-def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ensure the structured_result payload respects the contract before returning it.
-    """
-    model = StructuredResultModel(**payload)
-    return json.loads(model.json())
 
 
 def _build_issue_payload(
