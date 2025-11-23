@@ -97,10 +97,26 @@ export const useValidate = () => {
         formData.append('lc_type_override', request.lcTypeOverride);
       }
 
+      // Debug: Log request details
+      console.log('🚀 [DEBUG] Making validation request:', {
+        url: '/api/validate',
+        baseURL: api.defaults.baseURL,
+        fullURL: `${api.defaults.baseURL}/api/validate`,
+        filesCount: request.files.length,
+        fileNames: request.files.map(f => f.name),
+        formDataKeys: Array.from(formData.keys()),
+      });
+
       const response = await api.post('/api/validate', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+      });
+
+      console.log('✅ [DEBUG] Validation response received:', {
+        status: response.status,
+        hasData: !!response.data,
+        jobId: response.data?.jobId || response.data?.job_id,
       });
 
       return response.data;
