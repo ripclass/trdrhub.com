@@ -53,6 +53,8 @@ import { cn } from "@/lib/utils";
 
 type ExporterResultsProps = {
   embedded?: boolean;
+  jobId?: string;
+  lcNumber?: string;
 };
 
 const normalizeDiscrepancySeverity = (
@@ -68,9 +70,9 @@ const normalizeDiscrepancySeverity = (
   return "minor";
 };
 
-export default function ExporterResults({ embedded = false }: ExporterResultsProps = {}) {
+export default function ExporterResults({ embedded = false, jobId: jobIdProp, lcNumber: lcNumberProp }: ExporterResultsProps = {}) {
   const FILE_ID = "apps/web/src/pages/ExporterResults.tsx";
-  console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID });
+  console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID, jobIdProp, lcNumberProp });
   (window as any).__LIVE = FILE_ID;
   const [searchParams] = useSearchParams();
   const params = useParams<{ jobId?: string }>();
@@ -78,7 +80,8 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const jobIdParam = searchParams.get('jobId');
+  // Prioritize props over searchParams for remounting support
+  const jobIdParam = jobIdProp || searchParams.get('jobId');
   const sessionParam = searchParams.get('session');
   const jobIdFromPath = params.jobId;
   const validationSessionId = jobIdParam || sessionParam || jobIdFromPath || null;
@@ -90,7 +93,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
-  const lcNumberParam = searchParams.get('lc') || undefined;
+  const lcNumberParam = lcNumberProp || searchParams.get('lc') || undefined;
 
   const formatExtractedValue = (value: any): string => {
     if (value === null || value === undefined) {

@@ -361,7 +361,12 @@ export default function ExporterDashboardV2() {
           )}
 
           {activeSection === "reviews" && (
-            <ExporterResults embedded />
+            <ExporterResults
+              embedded
+              key={searchParams.get("jobId") || "no-job"}
+              jobId={searchParams.get("jobId") || undefined}
+              lcNumber={searchParams.get("lc") || undefined}
+            />
           )}
 
           {activeSection === "analytics" && (
