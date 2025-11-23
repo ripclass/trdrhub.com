@@ -695,16 +695,20 @@ async def validate_doc(
         # but unified structured_result now derives analytics internally.
 
         extracted_data = results_payload.get("extracted_data") or {}
-        extractor_outputs = context.get("lc_structured_output")
-        if not extractor_outputs:
-            raw_text = (extracted_data.get("lc") or {}).get("raw_text")
-            if raw_text:
-                try:
-                    extractor_outputs = extract_lc_structured(raw_text)
-                    logger.info("Extracted LC structured data from stored raw_text for unified builder")
-                except Exception as exc:
-                    logger.error("Failed to extract LC structured data during builder stage: %s", exc, exc_info=True)
-                    extractor_outputs = None
+
+        # -------------------------------
+        # Unified Extractor Output Fix
+        # -------------------------------
+        extractor_outputs = None
+        try:
+            extractor_outputs = (results_payload.get("extracted_data", {}) or {}).get("lc_structured")
+        except Exception:
+            extractor_outputs = None
+
+        if not extractor_outputs and "structured_result" in results_payload:
+            extractor_outputs = (results_payload["structured_result"] or {}).get("lc_structured")
+
+        results_payload["extractor_outputs_debug"] = extractor_outputs is not None
 
         if extractor_outputs:
             extracted_data.setdefault("lc_structured", extractor_outputs)
@@ -1986,6 +1990,25 @@ class TimelineEntryModel(BaseModel):
                 else:
                     raise ValueError("Timeline entry must include a title or label")
         return values
+
+
+class StructuredResultModel(BaseModel):
+    processing_summary: ProcessingSummaryModel
+    documents: List[StructuredDocumentModel]
+    issues: List[StructuredIssueModel]
+    analytics: AnalyticsModel
+    timeline: List[TimelineEntryModel]
+    extracted_documents: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "allow"}
+
+
+def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate structured_result payload for legacy callers/tests.
+    """
+    model = StructuredResultModel(**payload)
+    return json.loads(model.json())
 
 
 def _build_issue_payload(
