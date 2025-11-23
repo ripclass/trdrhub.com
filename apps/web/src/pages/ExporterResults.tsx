@@ -82,6 +82,7 @@ export default function ExporterResults({ embedded = false }: ExporterResultsPro
   
   const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
   const { getResults, isLoading: resultsLoading, error: resultsError, results: cachedResults } = useResults();
+  const fetchedOnceRef = useRef(false);
   const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
@@ -284,45 +285,31 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   useEffect(() => {
     setLiveResults(null);
     setResultsErrorState(null);
+    fetchedOnceRef.current = false;
   }, [validationSessionId]);
 
   useEffect(() => {
-    if (!validationSessionId) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const st = (jobStatus?.status || '').toString().toLowerCase();
+    if (!validationSessionId || !st || fetchedOnceRef.current) {
+      return;
+    }
+    const isTerminal = st === 'completed' || st === 'failed' || st === 'error';
+    if (!isTerminal) {
+      return;
+    }
 
-    const pollResults = async (attempt = 0) => {
-      try {
-        const data = await getResults(validationSessionId);
-        if (cancelled) {
-          return;
-        }
+    fetchedOnceRef.current = true;
+    getResults(validationSessionId)
+      .then((data) => {
         setLiveResults(data);
         setResultsErrorState(null);
-      } catch (err: any) {
-        if (cancelled) {
-          return;
-        }
-        const statusCode = err?.statusCode;
-        const retriable = statusCode === 404 || statusCode === 409;
-        if (retriable && attempt < 15) {
-          const delay = Math.min(2000 + attempt * 500, 8000);
-          retryTimer = setTimeout(() => pollResults(attempt + 1), delay);
-        } else {
-          setResultsErrorState(err?.message || "Failed to load validation results.");
-        }
-      }
-    };
-
-    pollResults();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-      }
-    };
-  }, [validationSessionId, getResults]);
+      })
+      .catch((e) => {
+        console.warn('Failed to fetch results:', e);
+        fetchedOnceRef.current = false; // allow manual retry
+        setResultsErrorState(e?.message || 'Failed to load validation results.');
+      });
+  }, [validationSessionId, jobStatus?.status, getResults]);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
@@ -1028,6 +1015,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <p className="text-sm text-muted-foreground">Review the results of your latest document validation</p>
                   </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => validationSessionId && getResults(validationSessionId)}
+                  className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+                >
+                  Fetch results
+                </button>
               </div>
             </div>
           </div>

@@ -253,7 +253,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     lc_structured: lcStructuredPayload, // Include lc_structured in normalized result
   };
 
-  return {
+  const normalized: ValidationResults = {
     ...raw,
     jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
     summary,
@@ -268,6 +268,17 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     extraction_status: raw?.extraction_status ?? 'unknown',
     lc_structured: lcStructuredPayload, // Add lc_structured to top-level for easy access
   };
+
+  // Preserve structured_result and lc_structured if backend sent them
+  if (raw?.structured_result && !normalized.structured_result) {
+    normalized.structured_result = raw.structured_result;
+  }
+  if (raw?.structured_result?.lc_structured && !normalized?.structured_result?.lc_structured) {
+    normalized.structured_result = normalized.structured_result || ({} as any);
+    (normalized.structured_result as any).lc_structured = raw.structured_result.lc_structured;
+  }
+
+  return normalized;
 };
 
 const normalizeStructuredAnalytics = (

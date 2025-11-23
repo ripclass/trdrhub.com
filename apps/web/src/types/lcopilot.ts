@@ -108,6 +108,9 @@ export interface ValidationResults {
   processing_summary?: ProcessingSummaryPayload;
   issue_cards?: IssueCard[];
   overall_status?: string;
-  structured_result?: StructuredResultPayload;
+  structured_result?: (StructuredResultPayload & {
+    lc_structured?: Record<string, any> | null;
+    [k: string]: any;
+  }) | null;
   lc_structured?: Record<string, any> | null; // Structured LC data from extractor (MT700, goods, clauses, etc.)
 }

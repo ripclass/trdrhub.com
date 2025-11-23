@@ -22,13 +22,13 @@ export interface ValidationRequest {
 export interface ValidationResponse {
   jobId: string;
   request_id: string;
-  status: 'created' | 'processing' | 'completed' | 'failed';
+  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error';
   job_id?: string; // temporary compatibility field
 }
 
 export interface JobStatus {
   jobId: string;
-  status: 'created' | 'processing' | 'completed' | 'failed';
+  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error';
   progress?: number;
   error?: string;
   results?: any;
@@ -204,10 +204,15 @@ export const useJob = (jobId: string | null) => {
       const response = await api.get(`/api/jobs/${jobId}`);
       const status: JobStatus = response.data;
 
+      // Normalize status to lowercase for reliable comparisons
+      const normalizedStatus = (status.status || '').toString().toLowerCase() as JobStatus['status'];
+      // Overwrite the status we store with normalized to keep UI logic consistent
+      status.status = normalizedStatus;
+
       setJobStatus(status);
 
       // Continue polling if job is still processing
-      if (status.status === 'processing' || status.status === 'created') {
+      if (normalizedStatus === 'processing' || normalizedStatus === 'created' || normalizedStatus === 'queued') {
         setTimeout(() => {
           pollJob();
         }, 2000); // Poll every 2 seconds
