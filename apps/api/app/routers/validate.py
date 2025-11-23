@@ -715,16 +715,47 @@ async def validate_doc(
             )
 
         # Normalize structured LC data and remove messy narrative blocks
+        lc_structured_data = None
         if "extracted_data" in results_payload:
             ed = results_payload["extracted_data"]
+            # Check if lc_structured already exists (from document processing)
+            if isinstance(ed, dict) and "lc_structured" in ed:
+                lc_structured_data = ed["lc_structured"]
+                logger.info("Found existing lc_structured in extracted_data with keys: %s", list(lc_structured_data.keys()) if isinstance(lc_structured_data, dict) else "non-dict")
             # Prefer our structured LC extraction if available
-            if isinstance(ed, dict) and "lc" in ed and "raw_text" in ed["lc"]:
-                from app.services.extraction.lc_extractor import extract_lc_structured
-                lc_struct = extract_lc_structured(ed["lc"]["raw_text"])
-                ed["lc_structured"] = lc_struct
-                # Do not leak large raw OCR into the final payload
-                ed["lc"].pop("raw_text", None)
+            elif isinstance(ed, dict) and "lc" in ed:
+                raw_text = ed["lc"].get("raw_text")
+                if raw_text:
+                    try:
+                        from app.services.extraction.lc_extractor import extract_lc_structured
+                        logger.info("Extracting LC structured data from raw_text (length: %d)", len(raw_text))
+                        lc_struct = extract_lc_structured(raw_text)
+                        if lc_struct:
+                            ed["lc_structured"] = lc_struct
+                            lc_structured_data = lc_struct  # Store for structured_result
+                            logger.info("Successfully extracted LC structured data with keys: %s", list(lc_struct.keys()) if isinstance(lc_struct, dict) else "non-dict")
+                        else:
+                            logger.warning("extract_lc_structured returned None/empty")
+                        # Do not leak large raw OCR into the final payload
+                        ed["lc"].pop("raw_text", None)
+                    except Exception as exc:
+                        logger.error("Failed to extract LC structured data: %s", exc, exc_info=True)
+                        lc_structured_data = None
+                else:
+                    logger.warning("No raw_text found in extracted_data.lc, keys: %s", list(ed["lc"].keys()) if isinstance(ed["lc"], dict) else "not a dict")
+            else:
+                logger.warning("extracted_data structure unexpected: has_lc=%s, has_lc_structured=%s, is_dict=%s", 
+                             "lc" in ed if isinstance(ed, dict) else False,
+                             "lc_structured" in ed if isinstance(ed, dict) else False,
+                             isinstance(ed, dict))
             results_payload["extracted_data"] = ed
+
+        # Add lc_structured to structured_result if it was extracted
+        if lc_structured_data:
+            structured_result["lc_structured"] = lc_structured_data
+            logger.info("Added lc_structured to structured_result with keys: %s", list(lc_structured_data.keys()) if isinstance(lc_structured_data, dict) else "non-dict")
+        else:
+            logger.warning("No lc_structured_data available to add to structured_result")
 
         # Compute customs risk and pack readiness flags
         try:
@@ -732,6 +763,7 @@ async def validate_doc(
             from app.services.customs.customs_pack import prepare_customs_pack
             lc_struct = (
                 (results_payload.get("extracted_data") or {}).get("lc_structured")
+                or lc_structured_data
                 or {}
             )
             risk = compute_customs_risk(lc_struct, {"documents": results_payload.get("documents", [])})
@@ -739,8 +771,9 @@ async def validate_doc(
                 results_payload["analytics"] = {}
             results_payload["analytics"]["customs_risk"] = risk
             results_payload["customs_pack"] = prepare_customs_pack(results_payload)
-        except Exception:
+        except Exception as exc:
             # Never fail the request due to analytics
+            logger.warning("Failed to compute customs risk: %s", exc, exc_info=True)
             pass
 
         # Attach structured payload back onto results for persistence and frontend use
