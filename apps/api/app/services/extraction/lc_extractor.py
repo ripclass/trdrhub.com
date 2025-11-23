@@ -8,7 +8,8 @@ from .docs_46a_parser import parse_46a_block, extract_46a_text
 from .clauses_47a_parser import parse_47a_block
 from .hs_code_extractor import extract_hs_codes
 from .goods_46a_parser import parse_goods_46a
-from ..parsers.swift_mt700 import parse_mt700_core
+from .swift_mt700_full import parse_mt700_full
+from ..parsers.swift_mt700 import parse_mt700_core  # Keep for fallback
 
 LC_NO_RE = re.compile(r"\b(?:LC|L/C|Letter of Credit).*?\b(?:No\.?|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", re.I | re.S)
 AMOUNT_RE = re.compile(r"\b(?:amount|lc amount|face value)\b[^\d]*([\d.,]+)", re.I)
@@ -45,18 +46,65 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
 
     text = raw_text or ""
 
-    # 1) Try SWIFT MT700 core first (if present)
-    mt = parse_mt700_core(text)
+    # 1) Try SWIFT MT700 full parser first (if present)
+    mt_full = None
+    try:
+        mt_full = parse_mt700_full(text)
+    except Exception:
+        mt_full = None
 
-    # 2) Generic fields (fallback or supplement)
-    lc_number = mt.get("number") or _first(LC_NO_RE, text)
-    amount_raw = mt.get("amount") or _amount(text)
-    incoterm_line = mt.get("incoterm_line") or _first(INCOTERM_RE, text)
-    pol = mt.get("ports", {}).get("loading") or _first(PORT_LOAD_RE, text)
-    pod = mt.get("ports", {}).get("discharge") or _first(PORT_DISC_RE, text)
-    applicant_line, beneficiary_line = _parse_parties(text)
-    applicant = mt.get("applicant") or ({"name": _strip(applicant_line)} if applicant_line else None)
-    beneficiary = mt.get("beneficiary") or ({"name": _strip(beneficiary_line)} if beneficiary_line else None)
+    # Fallback to core parser if full parser fails or returns empty
+    mt_core = None
+    if not mt_full or not mt_full.get("fields"):
+        try:
+            mt_core = parse_mt700_core(text)
+        except Exception:
+            mt_core = {}
+
+    # Extract fields from full parser or fallback to core/generic
+    mt_fields = mt_full.get("fields", {}) if mt_full else {}
+    
+    # LC number
+    lc_number = (
+        mt_fields.get("reference") or 
+        mt_core.get("number") or 
+        _first(LC_NO_RE, text)
+    )
+    
+    # Amount
+    credit_amount = mt_fields.get("credit_amount")
+    if credit_amount and isinstance(credit_amount, dict):
+        amount_raw = str(credit_amount.get("amount", ""))
+    else:
+        amount_raw = mt_core.get("amount") or _amount(text)
+    
+    # Incoterm
+    incoterm_line = _first(INCOTERM_RE, text)
+    
+    # Ports
+    shipment_details = mt_fields.get("shipment_details", {})
+    pol = (
+        shipment_details.get("port_of_loading_airport_of_departure") or
+        mt_core.get("ports", {}).get("loading") or
+        _first(PORT_LOAD_RE, text)
+    )
+    pod = (
+        shipment_details.get("port_of_discharge_airport_of_destination") or
+        mt_core.get("ports", {}).get("discharge") or
+        _first(PORT_DISC_RE, text)
+    )
+    
+    # Applicant / Beneficiary
+    applicant_raw = mt_fields.get("applicant") or mt_core.get("applicant")
+    beneficiary_raw = mt_fields.get("beneficiary") or mt_core.get("beneficiary")
+    
+    if not applicant_raw or not beneficiary_raw:
+        applicant_line, beneficiary_line = _parse_parties(text)
+        applicant = applicant_raw or ({"name": _strip(applicant_line)} if applicant_line else None)
+        beneficiary = beneficiary_raw or ({"name": _strip(beneficiary_line)} if beneficiary_line else None)
+    else:
+        applicant = {"name": _strip(applicant_raw)} if isinstance(applicant_raw, str) else applicant_raw
+        beneficiary = {"name": _strip(beneficiary_raw)} if isinstance(beneficiary_raw, str) else beneficiary_raw
 
     # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
     docs46a = parse_46a_block(text)
@@ -109,17 +157,48 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         "hs_codes": hs_codes,
         "documents_required": docs46a.get("documents_required", []),
         "clauses_47a": clauses47a.get("conditions", []),
-        "ucp_reference": mt.get("ucp_reference") or "UCP LATEST VERSION",
+        "ucp_reference": (
+            mt_fields.get("applicable_rules") or
+            mt_core.get("ucp_reference") or
+            "UCP LATEST VERSION"
+        ),
         "timeline": {
-            "latest_shipment": docs46a.get("latest_shipment"),
-            "issue_date": mt.get("issue_date"),
-            "expiry_date": mt.get("expiry_date"),
+            "latest_shipment": (
+                shipment_details.get("latest_date_of_shipment") or
+                docs46a.get("latest_shipment")
+            ),
+            "issue_date": (
+                mt_fields.get("date_of_issue") or
+                mt_core.get("issue_date")
+            ),
+            "expiry_date": (
+                mt_fields.get("expiry_details", {}).get("expiry_date_iso") or
+                mt_core.get("expiry_date")
+            ),
         },
         "source": {
-            "parsers": ["mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"],
+            "parsers": (
+                ["mt700_full", "mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"]
+                if mt_full else
+                ["mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"]
+            ),
             "version": "lc_extractor_v1",
         },
     }
+    
+    # Add MT700 full fields if available
+    if mt_full:
+        lc_structured["mt700"] = mt_fields
+        lc_structured["mt700_raw"] = mt_full.get("raw", {})
+        lc_structured["lc_type"] = mt_fields.get("lc_classification")
+        
+        # Promote commonly-used fields to top-level for compatibility
+        if not lc_structured.get("applicant") and mt_fields.get("applicant"):
+            lc_structured["applicant"] = {"name": _strip(mt_fields["applicant"])}
+        if not lc_structured.get("beneficiary") and mt_fields.get("beneficiary"):
+            lc_structured["beneficiary"] = {"name": _strip(mt_fields["beneficiary"])}
+        if not lc_structured.get("amount") and credit_amount:
+            lc_structured["amount"] = credit_amount
 
     # Cleanup None keys
     return {k: v for k, v in lc_structured.items() if v not in (None, [], {})}
