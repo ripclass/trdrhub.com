@@ -2014,6 +2014,8 @@ class StructuredResultModel(BaseModel):
     analytics: AnalyticsModel
     timeline: List[TimelineEntryModel]
     extracted_documents: Dict[str, Any] = Field(default_factory=dict)
+    
+    model_config = {"extra": "allow"}  # Allow additional fields like lc_structured
 
 
 def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
