@@ -111,6 +111,16 @@ class LCExtractor:
         # Normalize common header tokens
         t = re.sub(r"\u2013|\u2014|–|—", "-", t)  # dashes
 
+        # Try to detect and parse SWIFT MT700 format
+        mt700_data = None
+        if re.search(r":\d{2}[A-Z]?:\s*", t):
+            try:
+                from app.services.parsers.swift_mt700 import parse_mt700
+                mt700_data = parse_mt700(t)
+            except Exception:
+                # If MT700 parsing fails, continue with regular extraction
+                pass
+
         # --- simple fields
 
         lc_number = _find(r"(?:^|[^A-Z])(?:LC(?: No\.?| Number)?|L/C(?: No\.?)?)\s*[:\-]?\s*([A-Z0-9\-\/]+)", t)
@@ -183,21 +193,36 @@ class LCExtractor:
         )
 
         # 45A / 46A / 47A blocks
+        # If MT700 format detected, use parsed tags; otherwise use regex capture
 
-        goods_45a = _capture_block(
-            ["45A - Description of Goods", "45A – Description of Goods", "45A Description of Goods", "DESCRIPTION OF GOODS"],
-            t, self.STOP_LABELS
-        )
+        if mt700_data:
+            goods_45a = mt700_data.get("45A") or _capture_block(
+                ["45A - Description of Goods", "45A – Description of Goods", "45A Description of Goods", "DESCRIPTION OF GOODS"],
+                t, self.STOP_LABELS
+            )
+            docs_46a = mt700_data.get("46A") or _capture_block(
+                ["46A - Documents Required", "46A – Documents Required", "46A Documents Required", "DOCUMENTS REQUIRED"],
+                t, self.STOP_LABELS
+            )
+            addl_47a = mt700_data.get("47A") or _capture_block(
+                ["47A - Additional Conditions", "47A – Additional Conditions", "47A Additional Conditions", "ADDITIONAL CONDITIONS"],
+                t, self.STOP_LABELS
+            )
+        else:
+            goods_45a = _capture_block(
+                ["45A - Description of Goods", "45A – Description of Goods", "45A Description of Goods", "DESCRIPTION OF GOODS"],
+                t, self.STOP_LABELS
+            )
 
-        docs_46a = _capture_block(
-            ["46A - Documents Required", "46A – Documents Required", "46A Documents Required", "DOCUMENTS REQUIRED"],
-            t, self.STOP_LABELS
-        )
+            docs_46a = _capture_block(
+                ["46A - Documents Required", "46A – Documents Required", "46A Documents Required", "DOCUMENTS REQUIRED"],
+                t, self.STOP_LABELS
+            )
 
-        addl_47a = _capture_block(
-            ["47A - Additional Conditions", "47A – Additional Conditions", "47A Additional Conditions", "ADDITIONAL CONDITIONS"],
-            t, self.STOP_LABELS
-        )
+            addl_47a = _capture_block(
+                ["47A - Additional Conditions", "47A – Additional Conditions", "47A Additional Conditions", "ADDITIONAL CONDITIONS"],
+                t, self.STOP_LABELS
+            )
 
         # Cleanup obvious "bleed" (long paragraphs stuffed into wrong field)
 
