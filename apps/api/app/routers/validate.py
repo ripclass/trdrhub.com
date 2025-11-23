@@ -1521,7 +1521,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     # Fallback to PyPDF2
     logger.log(TRACE_LOG_LEVEL, "Trying PyPDF2 extraction for %s", filename)
     try:
-        from PyPDF2 import PdfReader  # type: ignore
+        from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
         reader = PdfReader(BytesIO(file_bytes))
         pieces = []
         for page_num, page in enumerate(reader.pages):
@@ -1548,7 +1548,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         # Check file size and page count before attempting OCR
         page_count = 0
         try:
-            from PyPDF2 import PdfReader
+            from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
             reader = PdfReader(BytesIO(file_bytes))
             page_count = len(reader.pages)
             logger.log(TRACE_LOG_LEVEL, "Page count for %s: %s", filename, page_count)
