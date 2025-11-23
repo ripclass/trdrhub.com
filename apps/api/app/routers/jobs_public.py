@@ -341,6 +341,19 @@ def get_job_results(
     issue_cards = results_payload.get("issue_cards") or []
     reference_issues = results_payload.get("reference_issues") or []
 
+    # Ensure structured_result exists and includes lc_structured
+    structured_result = results_payload.get("structured_result") or {}
+    
+    # If validator populated extracted_data.lc_structured but not structured_result.lc_structured, mirror it
+    if isinstance(extracted_data, dict) and extracted_data.get("lc_structured"):
+        if not structured_result.get("lc_structured"):
+            structured_result = structured_result.copy() if structured_result else {}
+            structured_result["lc_structured"] = extracted_data["lc_structured"]
+    
+    # Ensure structured_result is always a dict (not None)
+    if not structured_result:
+        structured_result = {}
+
     return {
         "jobId": str(session.id),
         "lcNumber": _extract_lc_number(session),
@@ -358,7 +371,7 @@ def get_job_results(
         "lc_type_reason": results_payload.get("lc_type_reason"),
         "lc_type_confidence": results_payload.get("lc_type_confidence"),
         "lc_type_source": results_payload.get("lc_type_source"),
-        "structured_result": results_payload.get("structured_result"),
+        "structured_result": structured_result,  # Ensure lc_structured is included
     }
 
 
