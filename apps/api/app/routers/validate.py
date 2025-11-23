@@ -711,7 +711,40 @@ async def validate_doc(
 
         # Add LC data directly to structured_result for frontend access
         if extracted_data and extracted_data.get("lc"):
-            structured_result["lc_data"] = extracted_data["lc"]
+            lc_data = extracted_data["lc"]
+            
+            # Enhance HS code extraction with invoice and packing list texts
+            from app.services.extraction.hs_code_extractor import extract_hs_codes
+            
+            invoice_text = ""
+            packing_list_text = ""
+            
+            if extracted_data.get("invoice") and isinstance(extracted_data["invoice"], dict):
+                invoice_text = extracted_data["invoice"].get("raw_text", "")
+            
+            if extracted_data.get("packing_list") and isinstance(extracted_data["packing_list"], dict):
+                packing_list_text = extracted_data["packing_list"].get("raw_text", "")
+            
+            # Extract HS codes from all available sources
+            goods_desc = lc_data.get("goods_description", "")
+            docs_46a = lc_data.get("clauses", {}).get("documents_required_raw", "")
+            addl_47a = lc_data.get("clauses", {}).get("additional_conditions_raw", "")
+            
+            hs_codes = extract_hs_codes(
+                goods_desc,
+                docs_46a,
+                addl_47a,
+                invoice_text,
+                packing_list_text
+            )
+            
+            # Add HS codes to LC data goods section
+            if hs_codes.get("hs_full"):
+                if "goods" not in lc_data:
+                    lc_data["goods"] = {}
+                lc_data["goods"]["hs"] = hs_codes
+            
+            structured_result["lc_data"] = lc_data
 
         # Attach structured payload back onto results for persistence and frontend use
         results_payload["structured_result"] = structured_result

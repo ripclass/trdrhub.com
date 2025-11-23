@@ -219,6 +219,14 @@ class LCExtractor:
         from app.services.extraction.clauses_47a_parser import tokenize_47a
         clauses_47a_structured = tokenize_47a(addl_47a) if addl_47a else []
 
+        # Extract HS codes from LC text fields
+        from app.services.extraction.hs_code_extractor import extract_hs_codes
+        hs_codes = extract_hs_codes(
+            goods_45a or "",
+            docs_46a or "",
+            addl_47a or ""
+        )
+
         # Build final structure expected by UI
 
         result: Dict[str, Any] = {
@@ -238,6 +246,10 @@ class LCExtractor:
                 "additional_conditions_structured": clauses_47a_structured,
             },
         }
+
+        # Add HS codes to goods section if any found
+        if hs_codes.get("hs_full"):
+            result["goods"] = {"hs": hs_codes}
 
         # Strip empty keys for a clean payload
         return {k: v for k, v in result.items() if v not in (None, "", {})}
