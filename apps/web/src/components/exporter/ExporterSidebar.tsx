@@ -26,6 +26,7 @@ type ExporterSection =
   | "analytics"
   | "notifications"
   | "billing"
+  | "billing-usage"
   | "ai-assistance"
   | "content-library"
   | "shipment-timeline"

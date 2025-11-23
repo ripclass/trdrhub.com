@@ -483,7 +483,7 @@ function StatGrid({ stats }: { stats: DashboardStats }) {
   const { data: usageStats } = useUsageStats();
   const { data: invoicesData } = useInvoices({
     status: InvoiceStatus.PENDING,
-    limit: 1,
+    per_page: 1,
   });
 
   const hasPendingInvoices = invoicesData?.invoices && invoicesData.invoices.length > 0;

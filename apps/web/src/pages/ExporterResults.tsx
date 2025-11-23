@@ -329,6 +329,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [getResults, validationSessionId],
   );
 
+  // Auto-fetch results when job reaches terminal state
   useEffect(() => {
     const normalizedStatus = (jobStatus?.status || '').toString().toLowerCase();
     const isTerminal =
@@ -340,12 +341,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return;
     }
 
-    if (!normalizedStatus) {
+    // If job status is not available yet, wait for it (but don't block forever)
+    if (!normalizedStatus && !jobStatus) {
       console.log('[LCopilot][UI] waiting for job status before fetching results', { validationSessionId });
       return;
     }
 
-    if (!isTerminal) {
+    // If we have a status but it's not terminal, wait
+    if (normalizedStatus && !isTerminal) {
       console.log('[LCopilot][UI] job not terminal yet, skipping results fetch', {
         validationSessionId,
         status: normalizedStatus,
@@ -353,17 +356,61 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return;
     }
 
-    if (resultsLoading) {
-      console.log('[LCopilot][UI] results fetch already in-flight', { validationSessionId });
-      return;
-    }
+    // If job is terminal, fetch results
+    if (isTerminal) {
+      if (resultsLoading) {
+        console.log('[LCopilot][UI] results fetch already in-flight', { validationSessionId });
+        return;
+      }
 
-    if (alreadyFetched) {
-      return;
-    }
+      if (alreadyFetched) {
+        console.log('[LCopilot][UI] results already fetched for this session', { validationSessionId });
+        return;
+      }
 
-    fetchResults('auto', validationSessionId).catch(() => {});
-  }, [validationSessionId, jobStatus?.status, resultsLoading, fetchResults]);
+      console.log('[LCopilot][UI][FETCH_RESULTS_TRIGGERED]', {
+        jobId: validationSessionId,
+        status: normalizedStatus,
+        jobStatus: jobStatus,
+      });
+      (window as any).__FETCH = { jobId: validationSessionId, status: normalizedStatus, jobStatus };
+      
+      fetchResults('auto', validationSessionId)
+        .then((results) => {
+          console.log('[LCopilot][UI][FETCH_RESULTS_SUCCESS]', results);
+          (window as any).__RESULTS = results;
+        })
+        .catch((err) => {
+          console.error('[LCopilot][UI][FETCH_RESULTS_ERROR]', err);
+        });
+    }
+  }, [validationSessionId, jobStatus?.status, resultsLoading, fetchResults, jobStatus]);
+
+  // Fallback: If we have a jobId but no jobStatus after 3 seconds, try fetching results anyway
+  // (This handles the case where the job is already completed when component mounts)
+  useEffect(() => {
+    if (!validationSessionId) return;
+    if (fetchedOnceRef.current) return;
+    if (resultsLoading) return;
+    if (jobStatus?.status) return; // If we have status, the main effect handles it
+
+    const timeoutId = setTimeout(() => {
+      console.log('[LCopilot][UI][FETCH_RESULTS_FALLBACK]', {
+        jobId: validationSessionId,
+        reason: 'No jobStatus after 3s, attempting direct fetch',
+      });
+      fetchResults('auto', validationSessionId)
+        .then((results) => {
+          console.log('[LCopilot][UI][FETCH_RESULTS_FALLBACK_SUCCESS]', results);
+          (window as any).__RESULTS = results;
+        })
+        .catch((err) => {
+          console.warn('[LCopilot][UI][FETCH_RESULTS_FALLBACK_ERROR]', err);
+        });
+    }, 3000);
+
+    return () => clearTimeout(timeoutId);
+  }, [validationSessionId, fetchResults, jobStatus, resultsLoading]);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [showBankSelector, setShowBankSelector] = useState(false);
