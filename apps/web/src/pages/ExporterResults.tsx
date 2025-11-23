@@ -529,7 +529,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       })),
     [structuredDocumentsPayload],
   );
-  const lcData = (extractedDocumentsMap.letter_of_credit ??
+  // Prefer lc_structured from structured_result (new format) over extracted_documents (legacy)
+  const lcStructured = resolvedResults?.lc_structured ?? structuredResult?.lc_structured ?? null;
+  const lcData = (lcStructured ??
+    extractedDocumentsMap.letter_of_credit ??
     extractedDocumentsMap.lc ??
     extractedDocumentsMap["letter_of_credit"] ??
     null) as Record<string, any> | null;
@@ -565,7 +568,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const referenceIssues = resolvedResults?.reference_issues ?? [];
   const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
   const hasIssueCards = issueCards.length > 0;
-  const lcType = (resolvedResults?.lc_type as 'export' | 'import' | 'unknown') ?? 'unknown';
+  // Determine LC type: prefer from lc_structured.lc_type, then fallback to resolvedResults.lc_type
+  const lcTypeFromStructured = lcStructured?.lc_type?.types?.[0]?.toLowerCase() ?? 
+                                lcStructured?.lc_type?.types?.[0]?.toLowerCase() ?? 
+                                null;
+  const lcType = (lcTypeFromStructured ?? 
+                  resolvedResults?.lc_type ?? 
+                  'unknown') as 'export' | 'import' | 'unknown';
   const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
   const lcTypeConfidenceValue =
     typeof resolvedResults?.lc_type_confidence === "number"

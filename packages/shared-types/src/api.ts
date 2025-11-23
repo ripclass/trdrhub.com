@@ -272,7 +272,8 @@ export const StructuredResultSchema = z.object({
   analytics: StructuredResultAnalyticsSchema,
   timeline: z.array(StructuredTimelineEntrySchema),
   extracted_documents: z.record(z.unknown()).optional(),
-});
+  lc_structured: z.record(z.unknown()).optional(), // Structured LC data from extractor (MT700, goods, clauses, etc.)
+}).passthrough(); // Allow extra fields for backward compatibility
 export type StructuredResult = z.infer<typeof StructuredResultSchema>;
 export const StructuredProcessingSummarySchema = ProcessingSummarySchema;
 export type StructuredProcessingSummary = ProcessingSummary;

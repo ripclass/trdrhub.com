@@ -236,6 +236,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const analyticsPayload = structured.analytics;
   const timelinePayload = structured.timeline;
   const extractedDocumentsPayload = structured.extracted_documents ?? {};
+  const lcStructuredPayload = structured.lc_structured ?? null; // Extract lc_structured from structured_result
 
   const documents = mapDocuments(documentsPayload);
   const issues = mapIssues(issuesPayload, documents);
@@ -249,6 +250,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     analytics: normalizeStructuredAnalytics(analyticsPayload, analytics),
     timeline: normalizeStructuredTimeline(timelinePayload, timeline),
     extracted_documents: extractedDocumentsPayload,
+    lc_structured: lcStructuredPayload, // Include lc_structured in normalized result
   };
 
   return {
@@ -264,6 +266,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     structured_result: normalizedStructuredResult,
     extracted_data: normalizedStructuredResult.extracted_documents,
     extraction_status: raw?.extraction_status ?? 'unknown',
+    lc_structured: lcStructuredPayload, // Add lc_structured to top-level for easy access
   };
 };
 
