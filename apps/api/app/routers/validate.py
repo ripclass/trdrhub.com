@@ -1853,15 +1853,38 @@ def _build_processing_summary(
     if total_docs:
         compliance_rate = max(0, round((verified / total_docs) * 100))
 
+    # Calculate extraction quality from OCR confidence
+    confidences = [
+        doc.get("ocrConfidence") 
+        for doc in document_summaries 
+        if isinstance(doc.get("ocrConfidence"), (int, float))
+    ]
+    if confidences:
+        extraction_quality = round(sum(confidences) / len(confidences) * 100)
+    else:
+        # Fallback: estimate quality based on status distribution
+        extraction_quality = max(
+            80, 
+            100 - warnings * 5 - errors * 10
+        )
+
+    # Convert processing time to milliseconds
+    processing_time_ms = round(processing_seconds * 1000)
+
     return {
-        "documents": total_docs,  # Keep for backward compatibility
+        # --- Document counts ---
+        "documents": total_docs,  # backward compatibility
         "documents_found": total_docs,  # Frontend expects this field
+        
+        # --- Validation/Extraction ---
         "verified": verified,
         "warnings": warnings,
         "errors": errors,
         "compliance_rate": compliance_rate,
         "processing_time_seconds": round(processing_seconds, 2),
         "processing_time_display": _format_duration(processing_seconds),
+        "processing_time_ms": processing_time_ms,  # NEW — milliseconds version
+        "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
         "status_counts": status_counts,
     }
