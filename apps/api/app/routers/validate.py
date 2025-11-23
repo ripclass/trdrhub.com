@@ -1854,7 +1854,8 @@ def _build_processing_summary(
         compliance_rate = max(0, round((verified / total_docs) * 100))
 
     return {
-        "documents": total_docs,
+        "documents": total_docs,  # Keep for backward compatibility
+        "documents_found": total_docs,  # Frontend expects this field
         "verified": verified,
         "warnings": warnings,
         "errors": errors,
