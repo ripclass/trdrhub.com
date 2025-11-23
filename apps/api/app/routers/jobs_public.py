@@ -11,6 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc
+import logging
 
 from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
@@ -288,6 +289,7 @@ def get_job_results(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    logger = logging.getLogger(__name__)
     session = (
         db.query(ValidationSession)
         .options(
@@ -309,7 +311,45 @@ def get_job_results(
             detail=f"Job is not completed yet (status={session.status})",
         )
 
+    # Prefer validator output; never None
     results_payload = session.validation_results or {}
+
+    # Defensive: some pipelines stash structured bits at different levels
+    extracted_data = results_payload.get("extracted_data") or session.extracted_data or {}
+    root_lc_structured = results_payload.get("lc_structured") or {}
+    ed_lc_structured = (extracted_data or {}).get("lc_structured") or {}
+
+    # Start with whatever was explicitly saved as structured_result
+    structured_result = (results_payload.get("structured_result") or {}).copy()
+
+    # Merge lc_structured from all plausible sources (root → extracted_data → existing)
+    structured_result.setdefault("lc_structured", {})
+    if root_lc_structured:
+        structured_result["lc_structured"] = root_lc_structured
+    if ed_lc_structured and not structured_result.get("lc_structured"):
+        structured_result["lc_structured"] = ed_lc_structured
+
+    # Pass through other structured blocks if present anywhere reasonable
+    for key in ("mt700", "goods", "clauses", "timeline", "analytics", "documents_structured"):
+        if key not in structured_result:
+            structured_result[key] = (
+                results_payload.get(key)
+                or (extracted_data or {}).get(key)
+                or structured_result.get(key)
+            ) or None
+
+    # Ensure lc_type (and friends) survive regardless of where the classifier wrote them
+    lc_type = (
+        results_payload.get("lc_type")
+        or structured_result.get("lc_type")
+        or (structured_result.get("lc_structured") or {}).get("lc_type")
+        or (extracted_data.get("lc_structured") or {}).get("lc_type")
+    )
+    lc_type_reason = results_payload.get("lc_type_reason") or structured_result.get("lc_type_reason")
+    lc_type_confidence = results_payload.get("lc_type_confidence") or structured_result.get("lc_type_confidence")
+    lc_type_source = results_payload.get("lc_type_source") or structured_result.get("lc_type_source")
+
+    # Results & discrepancies (filter N/A)
     raw_results = results_payload.get("results") or []
     raw_discrepancies = results_payload.get("discrepancies") or []
     
@@ -326,33 +366,26 @@ def get_job_results(
     }
 
     documents = _serialize_documents(session, filtered_discrepancies)
-    
-    # Extract extracted_data from validation_results or session.extracted_data
-    extracted_data = {}
-    if "extracted_data" in results_payload:
-        extracted_data = results_payload["extracted_data"]
-    elif session.extracted_data:
-        # Try to reconstruct from session.extracted_data if available
-        extracted_data = session.extracted_data
-    
+
+    # Extraction status & cards
     extraction_status = results_payload.get("extraction_status") or "unknown"
-    
-    # Include issue_cards and reference_issues for better UI display
     issue_cards = results_payload.get("issue_cards") or []
     reference_issues = results_payload.get("reference_issues") or []
 
-    # Ensure structured_result exists and includes lc_structured
-    structured_result = results_payload.get("structured_result") or {}
-    
-    # If validator populated extracted_data.lc_structured but not structured_result.lc_structured, mirror it
-    if isinstance(extracted_data, dict) and extracted_data.get("lc_structured"):
-        if not structured_result.get("lc_structured"):
-            structured_result = structured_result.copy() if structured_result else {}
-            structured_result["lc_structured"] = extracted_data["lc_structured"]
-    
-    # Ensure structured_result is always a dict (not None)
-    if not structured_result:
-        structured_result = {}
+    # Optional AI enrichment passthrough (UI may map it)
+    ai_enrichment = (
+        results_payload.get("ai_enrichment")
+        or results_payload.get("aiEnrichment")
+        or None
+    )
+
+    # Useful trace for verifying payload size/shape in logs
+    try:
+        sr_len = len(str(structured_result))  # cheap size hint
+        logger.info("results[%s]: sr_len=%s results=%d discrepancies=%d docs=%d lc_type=%s",
+                    job_id, sr_len, len(raw_results), len(filtered_discrepancies), len(documents), lc_type)
+    except Exception:
+        pass
 
     return {
         "jobId": str(session.id),
@@ -363,15 +396,16 @@ def get_job_results(
         "discrepancies": filtered_discrepancies,  # Only failed, non-not_applicable rules
         "summary": summary,
         "documents": documents,
-        "extracted_data": extracted_data,  # Include extracted LC fields for frontend
+        "extracted_data": extracted_data,  # include raw extracted LC fields
         "extraction_status": extraction_status,  # success, partial, empty, error
         "issue_cards": issue_cards,  # User-facing actionable issues
         "reference_issues": reference_issues,  # Technical rule references
-        "lc_type": results_payload.get("lc_type"),
-        "lc_type_reason": results_payload.get("lc_type_reason"),
-        "lc_type_confidence": results_payload.get("lc_type_confidence"),
-        "lc_type_source": results_payload.get("lc_type_source"),
-        "structured_result": structured_result,  # Ensure lc_structured is included
+        "lc_type": lc_type,
+        "lc_type_reason": lc_type_reason,
+        "lc_type_confidence": lc_type_confidence,
+        "lc_type_source": lc_type_source,
+        "structured_result": structured_result,  # normalized, merged view
+        "ai_enrichment": ai_enrichment,
     }
 
 
