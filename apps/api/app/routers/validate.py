@@ -746,6 +746,17 @@ async def validate_doc(
             
             structured_result["lc_data"] = lc_data
 
+        # Compute customs risk score
+        from app.services.risk.customs_risk import compute_customs_risk
+        
+        # Prepare result dict for risk computation (includes structured_result and extracted_data)
+        risk_input = {
+            "lc_data": structured_result.get("lc_data", {}),
+            "extracted_data": extracted_data,
+        }
+        
+        structured_result["customs_risk"] = compute_customs_risk(risk_input)
+
         # Attach structured payload back onto results for persistence and frontend use
         results_payload["structured_result"] = structured_result
 
