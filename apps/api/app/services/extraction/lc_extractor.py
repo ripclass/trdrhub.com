@@ -54,10 +54,10 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         mt_full = None
 
     # Fallback to core parser if full parser fails or returns empty
-    mt_core = None
+    mt_core = {}
     if not mt_full or not mt_full.get("fields"):
         try:
-            mt_core = parse_mt700_core(text)
+            mt_core = parse_mt700_core(text) or {}
         except Exception:
             mt_core = {}
 
@@ -67,7 +67,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # LC number
     lc_number = (
         mt_fields.get("reference") or 
-        mt_core.get("number") or 
+        (mt_core.get("number") if mt_core else None) or 
         _first(LC_NO_RE, text)
     )
     
@@ -76,27 +76,35 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     if credit_amount and isinstance(credit_amount, dict):
         amount_raw = str(credit_amount.get("amount", ""))
     else:
-        amount_raw = mt_core.get("amount") or _amount(text)
+        amount_raw = (mt_core.get("amount") if mt_core else None) or _amount(text)
     
     # Incoterm
     incoterm_line = _first(INCOTERM_RE, text)
     
     # Ports
     shipment_details = mt_fields.get("shipment_details", {})
+    pol_raw = shipment_details.get("port_of_loading_airport_of_departure")
+    # Handle list values (repeatable tags)
+    if isinstance(pol_raw, list):
+        pol_raw = pol_raw[0] if pol_raw else None
     pol = (
-        shipment_details.get("port_of_loading_airport_of_departure") or
-        mt_core.get("ports", {}).get("loading") or
+        pol_raw or
+        (mt_core.get("ports", {}) if mt_core else {}).get("loading") or
         _first(PORT_LOAD_RE, text)
     )
+    pod_raw = shipment_details.get("port_of_discharge_airport_of_destination")
+    # Handle list values (repeatable tags)
+    if isinstance(pod_raw, list):
+        pod_raw = pod_raw[0] if pod_raw else None
     pod = (
-        shipment_details.get("port_of_discharge_airport_of_destination") or
-        mt_core.get("ports", {}).get("discharge") or
+        pod_raw or
+        (mt_core.get("ports", {}) if mt_core else {}).get("discharge") or
         _first(PORT_DISC_RE, text)
     )
     
     # Applicant / Beneficiary
-    applicant_raw = mt_fields.get("applicant") or mt_core.get("applicant")
-    beneficiary_raw = mt_fields.get("beneficiary") or mt_core.get("beneficiary")
+    applicant_raw = mt_fields.get("applicant") or (mt_core.get("applicant") if mt_core else None)
+    beneficiary_raw = mt_fields.get("beneficiary") or (mt_core.get("beneficiary") if mt_core else None)
     
     if not applicant_raw or not beneficiary_raw:
         applicant_line, beneficiary_line = _parse_parties(text)
@@ -159,7 +167,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         "clauses_47a": clauses47a.get("conditions", []),
         "ucp_reference": (
             mt_fields.get("applicable_rules") or
-            mt_core.get("ucp_reference") or
+            (mt_core.get("ucp_reference") if mt_core else None) or
             "UCP LATEST VERSION"
         ),
         "timeline": {
@@ -169,11 +177,11 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             ),
             "issue_date": (
                 mt_fields.get("date_of_issue") or
-                mt_core.get("issue_date")
+                (mt_core.get("issue_date") if mt_core else None)
             ),
             "expiry_date": (
                 mt_fields.get("expiry_details", {}).get("expiry_date_iso") or
-                mt_core.get("expiry_date")
+                (mt_core.get("expiry_date") if mt_core else None)
             ),
         },
         "source": {
