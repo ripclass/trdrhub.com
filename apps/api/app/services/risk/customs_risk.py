@@ -1,68 +1,40 @@
-# apps/api/app/services/risk/customs_risk.py
+from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-
-def compute_customs_risk(result: Dict[str, Any]) -> Dict[str, Any]:
+def compute_customs_risk(lc_data: Dict[str, Any], docs: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Rule-based quick score (0–100). Start simple; expand with models later.
+    Lightweight heuristic risk score for customs readiness.
     """
-    score, reasons = 10, []  # base 10 (never zero)
+    score = 0
+    flags: List[str] = []
 
-    lc = result.get("lc_data", {})
-    clauses = lc.get("clauses", {})
-    addl = clauses.get("additional_conditions_structured", [])
-    hs = lc.get("goods", {}).get("hs", {})
-    ports = lc.get("ports", {})
+    # Basic presence checks
+    if not lc_data.get("number"):
+        score += 15; flags.append("missing_lc_number")
+    if not lc_data.get("amount"):
+        score += 15; flags.append("missing_amount")
+    ports = lc_data.get("ports") or {}
+    if not ports.get("loading"):
+        score += 10; flags.append("missing_port_loading")
+    if not ports.get("discharge"):
+        score += 10; flags.append("missing_port_discharge")
+    if not lc_data.get("goods"):
+        score += 10; flags.append("missing_goods_lines")
+    if not lc_data.get("documents_required"):
+        score += 8; flags.append("missing_documents_required")
 
-    # HS diversity
-    n_hs = len(hs.get("hs6", []))
-    if n_hs == 0:
-        score += 25
-        reasons.append("no_hs_detected")
-    elif n_hs > 3:
-        score += 10
-        reasons.append("multi_hs_mixture")
+    # HS code heuristic
+    hs = lc_data.get("hs_codes", [])
+    if not hs:
+        score += 8; flags.append("missing_hs_codes")
 
-    # Sensitive clauses
-    tokens = " ".join([t["code"] for item in addl for t in item.get("tokens", [])]) if addl else ""
-
-    if "auth_corrections" in tokens:
-        score += 5
-        reasons.append("auth_corrections_required")
-
-    if "third_party_docs" in tokens:
-        score += 7
-        reasons.append("third_party_docs_allowed")
-
-    if "flag_restriction" in tokens:
-        score += 4
-        reasons.append("flag_restriction_present")
-
-    # Ports mismatch heuristic
-    if ports.get("loading") and ports.get("discharge"):
-        if ports["loading"].split(",")[-1].strip().lower() == ports["discharge"].split(",")[-1].strip().lower():
-            score += 8
-            reasons.append("same_country_route")
-
-    # Document coverage (missing docs => risk)
-    # Check extracted_data for document presence
-    extracted_docs = result.get("extracted_data", {})
-    required_keys = ["invoice", "bill_of_lading", "packing_list", "certificate_of_origin"]
-    missing = []
-    
-    for key in required_keys:
-        # Check if document exists in extracted_data (can be dict or any truthy value)
-        if key not in extracted_docs or not extracted_docs.get(key):
-            missing.append(key)
-    
-    if missing:
-        score += 15
-        reasons.append(f"missing_docs:{','.join(missing)}")
-
-    # Clamp
+    # Clip score 0-100
     score = max(0, min(100, score))
-    rating = "low" if score < 25 else "medium" if score < 60 else "high"
+    tier = "low"
+    if score >= 50:
+        tier = "high"
+    elif score >= 25:
+        tier = "medium"
 
-    return {"score": score, "rating": rating, "reasons": reasons}
-
+    return {"score": score, "tier": tier, "flags": flags}

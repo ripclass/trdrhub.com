@@ -1,294 +1,91 @@
-# apps/api/app/services/extraction/lc_extractor.py
-
 from __future__ import annotations
 
 import re
 
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, List, Optional, Tuple
 
-from typing import Dict, Any, Optional
+from .docs_46a_parser import parse_46a_block
+from .clauses_47a_parser import parse_47a_block
+from .hs_code_extractor import extract_hs_codes
+from ..parsers.swift_mt700 import parse_mt700_core
 
-# ----------- helpers
+LC_NO_RE = re.compile(r"\b(?:LC|L/C|Letter of Credit).*?\b(?:No\.?|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", re.I | re.S)
+AMOUNT_RE = re.compile(r"\b(?:amount|lc amount|face value)\b[^\d]*([\d.,]+)", re.I)
+INCOTERM_RE = re.compile(r"\b(?:Incoterm|Trade Term)\b[^A-Z0-9]*(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)\b[^\n]*", re.I)
+PORT_LOAD_RE = re.compile(r"(?:Port of Loading|POL|Loading Port)\s*[:\-]?\s*([^\n]+)", re.I)
+PORT_DISC_RE = re.compile(r"(?:Port of Discharge|POD|Discharge Port|Destination Port)\s*[:\-]?\s*([^\n]+)", re.I)
+APPLICANT_RE = re.compile(r"\bApplicant\b[^\S\r\n]*[:\-]?\s*(.*?)(?:\n{1,2}|$)", re.I)
+BENEFICIARY_RE = re.compile(r"\bBeneficiary\b[^\S\r\n]*[:\-]?\s*(.*?)(?:\n{1,2}|$)", re.I)
 
-_ws = r"[ \t]*"
+def _strip(s: Optional[str]) -> Optional[str]:
+    return s.strip() if isinstance(s, str) else s
 
-NL = r"(?:\r?\n)+"
+def _first(rx: re.Pattern, text: str) -> Optional[str]:
+    m = rx.search(text or "")
+    return _strip(m.group(1)) if m else None
 
-def _clean(s: Optional[str]) -> Optional[str]:
-    if not s:
+def _amount(text: str) -> Optional[str]:
+    v = _first(AMOUNT_RE, text)
+    if not v:
         return None
-    s = re.sub(r"[ \t]+", " ", s.strip())
-    # kill form-feed or stray OCR control chars
-    s = s.replace("\x0c", " ").replace("\f", " ")
-    return s or None
+    return v.replace(",", "")
 
-def _find(pattern: str, text: str, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL) -> Optional[str]:
-    m = re.search(pattern, text, flags)
-    return _clean(m.group(1)) if m else None
+def _parse_parties(text: str) -> Tuple[Optional[str], Optional[str]]:
+    a = _first(APPLICANT_RE, text)
+    b = _first(BENEFICIARY_RE, text)
+    return a, b
 
-def _capture_block(label_variants, text: str, stop_labels) -> Optional[str]:
+def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     """
-    Capture a multi-line block that starts at any of label_variants and stops
-    at the next header in stop_labels or end of string.
-    """
-    lbl = r"|".join([re.escape(v) for v in label_variants])
-    stop = r"|".join([re.escape(v) for v in stop_labels])
-    pattern = rf"(?:^|{NL})(?:{lbl}){_ws}[:\-]?\s*(.+?)(?=(?:{NL}(?:{stop}){_ws}[:\-]?)|$)"
-    m = re.search(pattern, text, re.IGNORECASE | re.DOTALL | re.MULTILINE)
-    return _clean(m.group(1)) if m else None
+    Top-level extraction orchestrator. Works with LC PDFs converted to text or OCR text.
 
-def _country_from(addr: str) -> Optional[str]:
-    if not addr:
-        return None
-    # last token heuristic
-    tail = addr.split(",")[-1].strip()
-    # common OCR mishaps normalized
-    replacements = {
-        "u s a": "USA",
-        "u.s.a.": "USA",
-        "u s": "US",
+    Returns a clean, structured dict (no messy narrative blobs).
+    """
+
+    text = raw_text or ""
+
+    # 1) Try SWIFT MT700 core first (if present)
+    mt = parse_mt700_core(text)
+
+    # 2) Generic fields (fallback or supplement)
+    lc_number = mt.get("number") or _first(LC_NO_RE, text)
+    amount_raw = mt.get("amount") or _amount(text)
+    incoterm_line = mt.get("incoterm_line") or _first(INCOTERM_RE, text)
+    pol = mt.get("ports", {}).get("loading") or _first(PORT_LOAD_RE, text)
+    pod = mt.get("ports", {}).get("discharge") or _first(PORT_DISC_RE, text)
+    applicant_line, beneficiary_line = _parse_parties(text)
+    applicant = mt.get("applicant") or ({"name": _strip(applicant_line)} if applicant_line else None)
+    beneficiary = mt.get("beneficiary") or ({"name": _strip(beneficiary_line)} if beneficiary_line else None)
+
+    # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
+    docs46a = parse_46a_block(text)
+    clauses47a = parse_47a_block(text)
+    goods = docs46a.get("goods", [])
+    hs_codes = extract_hs_codes("\n".join([g.get("line", "") for g in goods]) + "\n" + text)
+
+    # 4) Compose structured result (NO large narrative blobs here)
+    lc_structured: Dict[str, Any] = {
+        "number": lc_number,
+        "amount": {"value": amount_raw} if amount_raw else None,
+        "applicant": applicant,
+        "beneficiary": beneficiary,
+        "ports": {"loading": _strip(pol), "discharge": _strip(pod)},
+        "incoterm": _strip(incoterm_line),
+        "goods": goods,
+        "hs_codes": hs_codes,
+        "documents_required": docs46a.get("documents_required", []),
+        "clauses_47a": clauses47a.get("conditions", []),
+        "ucp_reference": mt.get("ucp_reference") or "UCP LATEST VERSION",
+        "timeline": {
+            "latest_shipment": docs46a.get("latest_shipment"),
+            "issue_date": mt.get("issue_date"),
+            "expiry_date": mt.get("expiry_date"),
+        },
+        "source": {
+            "parsers": ["mt700_core", "regex_core", "46A_parser", "47A_parser", "hs_code_extractor"],
+            "version": "lc_extractor_v1",
+        },
     }
-    t = replacements.get(tail.lower(), tail)
-    return t
 
-_money = re.compile(r"(?<!\w)(?:USD|US\$|\$)?\s*([0-9]{1,3}(?:[, ]?[0-9]{3})*(?:\.[0-9]{2})?)", re.I)
-
-# ----------- data model
-
-@dataclass
-class Party:
-    name: Optional[str] = None
-    address: Optional[str] = None
-    country: Optional[str] = None
-
-@dataclass
-class Ports:
-    loading: Optional[str] = None
-    discharge: Optional[str] = None
-
-@dataclass
-class LCDates:
-    issue: Optional[str] = None
-    latest_shipment: Optional[str] = None
-    expiry: Optional[str] = None
-
-# ----------- core parser
-
-class LCExtractor:
-    """
-    Parses OCR/plaintext of an LC PDF (export LC typical format or SWIFT MT700-like)
-    into the structure our frontend expects.
-    """
-
-    H_LABELS = [
-        "45A – Description of Goods",
-        "45A-Description of Goods",
-        "45A Description of Goods",
-        "46A – Documents Required",
-        "46A-Documents Required",
-        "46A Documents Required",
-        "47A – Additional Conditions",
-        "47A-Additional Conditions",
-        "47A Additional Conditions",
-        "DESCRIPTION OF GOODS",
-        "DOCUMENTS REQUIRED",
-        "ADDITIONAL CONDITIONS",
-    ]
-
-    STOP_LABELS = [
-        "45A", "46A", "47A",
-        "INCOTERM", "INCOTERMS",
-        "PORT OF LOADING", "PORT OF DISCHARGE",
-        "APPLICANT", "BENEFICIARY",
-        "AMOUNT", "LC NO", "LC NUMBER",
-        "ISSUE DATE", "EXPIRY", "LATEST SHIPMENT",
-        "UCP", "UCP600", "APPLICABLE RULES",
-        "CHARGES", "PRESENTATION", "INSTRUCTIONS"
-    ]
-
-    def parse(self, text: str) -> Dict[str, Any]:
-        t = text.replace("\r", "")
-        # Normalize common header tokens
-        t = re.sub(r"\u2013|\u2014|–|—", "-", t)  # dashes
-
-        # Try to detect and parse SWIFT MT700 format
-        mt700_data = None
-        if re.search(r":\d{2}[A-Z]?:\s*", t):
-            try:
-                from app.services.parsers.swift_mt700 import parse_mt700
-                mt700_data = parse_mt700(t)
-            except Exception:
-                # If MT700 parsing fails, continue with regular extraction
-                pass
-
-        # --- simple fields
-
-        lc_number = _find(r"(?:^|[^A-Z])(?:LC(?: No\.?| Number)?|L/C(?: No\.?)?)\s*[:\-]?\s*([A-Z0-9\-\/]+)", t)
-        if not lc_number:
-            # fallback to pattern like EXP2026BD001 in text blob
-            m = re.search(r"\b([A-Z]{2,4}\d{4,}[A-Z]{0,4}\d{0,4})\b", t)
-            lc_number = _clean(m.group(1)) if m else None
-
-        amount_raw = _find(r"(?:Amount|LC Amount|Face Value)\s*[:\-]?\s*(.+)", t)
-        amount_val = None
-        if amount_raw:
-            m = _money.search(amount_raw)
-            if m:
-                amount_val = m.group(1).replace(" ", "").replace(",", "")
-
-        # Applicant / Beneficiary blocks
-
-        applicant_block = _capture_block(
-            ["Applicant", "Applicant (Buyer)", "Applicant:"], t, self.STOP_LABELS
-        )
-
-        beneficiary_block = _capture_block(
-            ["Beneficiary", "Beneficiary (Seller)", "Beneficiary:"], t, self.STOP_LABELS
-        )
-
-        applicant = Party(
-            name=_find(r"^\s*Name\s*[:\-]\s*(.+)$", applicant_block or "", re.I | re.M) or
-                 _find(r"^(.+?)(?:,|$)", applicant_block or "", re.I | re.M),
-            address=_find(r"(?:Address|Addr)\s*[:\-]\s*(.+)", applicant_block or "") or _clean(applicant_block),
-            country=_country_from(applicant_block or "")
-        )
-
-        beneficiary = Party(
-            name=_find(r"^\s*Name\s*[:\-]\s*(.+)$", beneficiary_block or "", re.I | re.M) or
-                 _find(r"^(.+?)(?:,|$)", beneficiary_block or "", re.I | re.M),
-            address=_find(r"(?:Address|Addr)\s*[:\-]\s*(.+)", beneficiary_block or "") or _clean(beneficiary_block),
-            country=_country_from(beneficiary_block or "")
-        )
-
-        # Ports
-
-        port_loading = (
-            _find(r"(?:Port of Loading|Loading Port)\s*[:\-]\s*(.+)", t)
-            or _find(r"loading\s*[:\-]?\s*(.+)", t)
-        )
-
-        port_discharge = (
-            _find(r"(?:Port of Discharge|Discharge Port|Destination Port)\s*[:\-]\s*(.+)", t)
-            or _find(r"discharge\s*[:\-]?\s*(.+)", t)
-        )
-
-        ports = Ports(loading=port_loading, discharge=port_discharge)
-
-        # Incoterm
-
-        incoterm = _find(r"(?:INCOTERMS?|Trade Term)\s*[:\-]?\s*([A-Z]{3}.*?$)", t, re.I | re.M) \
-                   or _find(r"\b(FOB|CIF|CFR|EXW|DAP|DDP)\b[^\n]*", t, re.I)
-
-        # UCP reference
-
-        ucp = _find(r"(?:UCP|Applicable Rules)\s*[:\-]?\s*(.+)", t) \
-              or _find(r"\bUCP\s*600\b(?:.*?version.*?\b2007\b)?", t, re.I)
-
-        # Dates
-
-        dates = LCDates(
-            issue=_find(r"(?:Issue Date|Date of Issue)\s*[:\-]\s*([0-9]{2,4}[^\n]+)", t),
-            expiry=_find(r"(?:Expiry(?: Date)?)\s*[:\-]\s*([0-9]{2,4}[^\n]+)", t),
-            latest_shipment=_find(r"(?:Latest Shipment|Latest Date of Shipment)\s*[:\-]\s*([0-9]{2,4}[^\n]+)", t),
-        )
-
-        # 45A / 46A / 47A blocks
-        # If MT700 format detected, use parsed tags; otherwise use regex capture
-
-        if mt700_data:
-            goods_45a = mt700_data.get("45A") or _capture_block(
-                ["45A - Description of Goods", "45A – Description of Goods", "45A Description of Goods", "DESCRIPTION OF GOODS"],
-                t, self.STOP_LABELS
-            )
-            docs_46a = mt700_data.get("46A") or _capture_block(
-                ["46A - Documents Required", "46A – Documents Required", "46A Documents Required", "DOCUMENTS REQUIRED"],
-                t, self.STOP_LABELS
-            )
-            addl_47a = mt700_data.get("47A") or _capture_block(
-                ["47A - Additional Conditions", "47A – Additional Conditions", "47A Additional Conditions", "ADDITIONAL CONDITIONS"],
-                t, self.STOP_LABELS
-            )
-        else:
-            goods_45a = _capture_block(
-                ["45A - Description of Goods", "45A – Description of Goods", "45A Description of Goods", "DESCRIPTION OF GOODS"],
-                t, self.STOP_LABELS
-            )
-
-            docs_46a = _capture_block(
-                ["46A - Documents Required", "46A – Documents Required", "46A Documents Required", "DOCUMENTS REQUIRED"],
-                t, self.STOP_LABELS
-            )
-
-            addl_47a = _capture_block(
-                ["47A - Additional Conditions", "47A – Additional Conditions", "47A Additional Conditions", "ADDITIONAL CONDITIONS"],
-                t, self.STOP_LABELS
-            )
-
-        # Cleanup obvious "bleed" (long paragraphs stuffed into wrong field)
-
-        def _prune_block(s: Optional[str]) -> Optional[str]:
-            if not s:
-                return s
-            s = re.sub(rf"\b(?:{ '|'.join([re.escape(x) for x in self.STOP_LABELS]) })\b.*$", "", s, flags=re.I | re.S)
-            return _clean(s)
-
-        goods_45a = _prune_block(goods_45a)
-        docs_46a = _prune_block(docs_46a)
-        addl_47a = _prune_block(addl_47a)
-
-        # Parse 46A into structured items
-        from app.services.extraction.docs_46a_parser import parse_docs_46A
-        docs_structured = parse_docs_46A(docs_46a) if docs_46a else []
-
-        # Parse 47A into structured tokens
-        from app.services.extraction.clauses_47a_parser import tokenize_47a
-        clauses_47a_structured = tokenize_47a(addl_47a) if addl_47a else []
-
-        # Extract HS codes from LC text fields
-        from app.services.extraction.hs_code_extractor import extract_hs_codes
-        hs_codes = extract_hs_codes(
-            goods_45a or "",
-            docs_46a or "",
-            addl_47a or ""
-        )
-
-        # Build final structure expected by UI
-
-        result: Dict[str, Any] = {
-            "number": lc_number,
-            "amount": {"value": amount_val} if amount_val else None,
-            "applicant": asdict(applicant) if any(asdict(applicant).values()) else None,
-            "beneficiary": asdict(beneficiary) if any(asdict(beneficiary).values()) else None,
-            "ports": asdict(ports) if any(asdict(ports).values()) else None,
-            "ucp_reference": _clean(ucp),
-            "dates": asdict(dates) if any(asdict(dates).values()) else None,
-            "incoterm": _clean(incoterm),
-            "goods_description": _clean(goods_45a),
-            "clauses": {
-                "documents_required_raw": _clean(docs_46a),
-                "documents_structured": docs_structured,
-                "additional_conditions_raw": _clean(addl_47a),
-                "additional_conditions_structured": clauses_47a_structured,
-            },
-        }
-
-        # Add HS codes to goods section if any found
-        if hs_codes.get("hs_full"):
-            result["goods"] = {"hs": hs_codes}
-
-        # Strip empty keys for a clean payload
-        return {k: v for k, v in result.items() if v not in (None, "", {})}
-
-# ----------- public API
-
-def extract_lc(text: str) -> Dict[str, Any]:
-    """
-    Entry point used by the validation pipeline.
-
-    `text` is the full OCR/plaintext of the LC PDF.
-
-    Returns a dict that matches the frontend "Extracted Data → LC" expectations.
-
-    """
-    return LCExtractor().parse(text)
-
+    # Cleanup None keys
+    return {k: v for k, v in lc_structured.items() if v not in (None, [], {})}

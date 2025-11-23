@@ -1,110 +1,50 @@
-# apps/api/app/services/extraction/docs_46a_parser.py
+from __future__ import annotations
 
 import re
 
-from typing import List, Dict, Optional
+from typing import Dict, Any, List, Optional
 
+BLOCK_RE = re.compile(r"\b46A\b[^\S\r\n]*\–?[^\S\r\n]*Documents Required(.*?)(?:\n\d{2,3}[A-Z]\b|\Z)", re.I | re.S)
+GOODS_RE = re.compile(r"^\s*\d+\)\s*(.+?)\s*(?:HS\s*CODE\s*[: ]\s*([0-9]{6,10}))?.*$", re.I | re.M)
+SHIPMENT_RE = re.compile(r"(?:latest shipment|last date of shipment)\s*[:\-]?\s*([0-9]{6,8}|[0-9]{2}\s*[A-Za-z]{3}\s*[0-9]{2,4})", re.I)
 
-def _clean(s: Optional[str]) -> Optional[str]:
-    if not s:
-        return None
-    return re.sub(r"\s+", " ", s.strip())
+def parse_46a_block(text: str) -> Dict[str, Any]:
+    block = ""
+    m = BLOCK_RE.search(text or "")
+    if m:
+        block = m.group(1).strip()
 
+    # Extract goods lines (if 46A often holds itemized lines)
+    goods: List[Dict[str, Any]] = []
+    for gm in GOODS_RE.finditer(block):
+        line = gm.group(1).strip()
+        hs = (gm.group(2) or "").strip() or None
+        goods.append({"line": line, **({"hs_code": hs} if hs else {})})
 
-def parse_docs_46A(text: str) -> List[Dict]:
-    """
-    Converts 46A – Documents Required block into structured items.
-    """
-    if not text:
-        return []
+    # Rough pickup for documents list (split by line and keep non-empty)
+    documents_required: List[str] = []
+    if block:
+        for ln in block.splitlines():
+            ln = ln.strip("-• \t")
+            if ln and not GOODS_RE.match(ln):
+                documents_required.append(ln)
 
-    lines = [
-        _clean(l) for l in text.split("\n")
-        if _clean(l) and len(_clean(l)) > 3
-    ]
+    latest_shipment = None
+    ms = SHIPMENT_RE.search(block)
+    if ms:
+        latest_shipment = ms.group(1).strip()
 
-    results = []
+    # De-dup and trim docs
+    docs_clean = []
+    seen = set()
+    for d in documents_required:
+        dnorm = " ".join(d.split())
+        if dnorm and dnorm.lower() not in seen:
+            docs_clean.append(dnorm)
+            seen.add(dnorm.lower())
 
-    for line in lines:
-        l = line.lower()
-
-        # --- Commercial Invoice
-        if "invoice" in l:
-            copies = None
-            cm = re.search(r"(\d+)\s*cop", l)
-            if cm:
-                copies = int(cm.group(1))
-
-            results.append({
-                "type": "commercial_invoice",
-                "copies": copies,
-                "notes": line
-            })
-            continue
-
-        # --- Bill of Lading
-        if "bill of lading" in l or "b/l" in l:
-            results.append({
-                "type": "bill_of_lading",
-                "copies": "full set" if "full set" in l else None,
-                "freight": "collect" if "freight collect" in l else None,
-                "notes": line
-            })
-            continue
-
-        # --- Packing List
-        if "packing list" in l:
-            cp = re.search(r"(\d+)\s*cop", l)
-            results.append({
-                "type": "packing_list",
-                "copies": int(cp.group(1)) if cp else None,
-                "notes": line
-            })
-            continue
-
-        # --- Certificate of Origin
-        if "certificate of origin" in l:
-            issuer = None
-            if "epb" in l:
-                issuer = "EPB"
-            if "chamber" in l:
-                issuer = "Chamber"
-
-            results.append({
-                "type": "certificate_of_origin",
-                "issuer": issuer,
-                "notes": line
-            })
-            continue
-
-        # --- Inspection Certificate
-        if "inspection" in l and "certificate" in l:
-            issuer = None
-            if "sgs" in l:
-                issuer = "SGS"
-            if "intertek" in l:
-                issuer = "Intertek"
-
-            results.append({
-                "type": "inspection_certificate",
-                "issuer": issuer,
-                "notes": line
-            })
-            continue
-
-        # --- Beneficiary Certificate
-        if "beneficiary certificate" in l:
-            results.append({
-                "type": "beneficiary_certificate",
-                "notes": line
-            })
-            continue
-
-        # --- Fallback Unknown
-        results.append({
-            "type": "other",
-            "notes": line
-        })
-
-    return results
-
+    return {
+        "goods": goods,
+        "documents_required": docs_clean,
+        "latest_shipment": latest_shipment,
+    }

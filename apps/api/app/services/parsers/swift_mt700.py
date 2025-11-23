@@ -1,46 +1,55 @@
-# apps/api/app/services/parsers/swift_mt700.py
+from __future__ import annotations
 
 import re
 
-from typing import Dict
+from typing import Dict, Any, Optional
 
+F40E_UCP_RE = re.compile(r":40E:.*?(UCP.*?)(?:\n:|$)", re.S | re.I)
+F31C_ISSUE_RE = re.compile(r":31C:\s*([0-9]{6,8})")
+F31D_EXPIRY_RE = re.compile(r":31D:\s*([0-9]{6,8})")
+F20_NO_RE = re.compile(r":20:\s*([A-Z0-9\/\-]+)")
+F32B_AMT_RE = re.compile(r":32B:\s*[A-Z]{3}([\d,\.]+)")
+F44E_SHIP_FROM_RE = re.compile(r":44E:\s*(.+)")
+F44F_SHIP_TO_RE = re.compile(r":44F:\s*(.+)")
 
-TAG_RX = re.compile(r"(?ms)^\s*:(\d{2}[A-Z]?):\s*(.*?)\s*(?=(?:^\s*:\d{2}[A-Z]?:)|\Z)")
+def _strip(s: Optional[str]) -> Optional[str]:
+    return s.strip() if isinstance(s, str) else s
 
-
-def parse_mt700(text: str) -> Dict:
+def parse_mt700_core(text: str) -> Dict[str, Any]:
     """
-    Robust tag slicer for MT700. Handles multiline fields and continuation.
-
-    Returns a dict keyed by tag (e.g., '20','40A','31D','50','59','32B','39A','44E','44F','44B','45A','46A','47A').
+    Minimal MT700 core field parser (robust enough for production baselines).
     """
-    if not text:
-        return {}
+    t = text or ""
+    m20 = re.search(F20_NO_RE, t)
+    number = _strip(m20.group(1)) if m20 else None
+    
+    m32b = re.search(F32B_AMT_RE, t)
+    amount = _strip(m32b.group(1)) if m32b else None
+    
+    m40e = re.search(F40E_UCP_RE, t)
+    ucp = _strip(m40e.group(1)) if m40e else None
+    
+    m31c = re.search(F31C_ISSUE_RE, t)
+    issue_date = _strip(m31c.group(1)) if m31c else None
+    
+    m31d = re.search(F31D_EXPIRY_RE, t)
+    expiry_date = _strip(m31d.group(1)) if m31d else None
+    
+    m44e = re.search(F44E_SHIP_FROM_RE, t)
+    pol = _strip(m44e.group(1)) if m44e else None
+    
+    m44f = re.search(F44F_SHIP_TO_RE, t)
+    pod = _strip(m44f.group(1)) if m44f else None
 
-    # normalize EOLs and remove hidden chars
-    t = re.sub(r"\r\n?", "\n", text)
-    t = re.sub(r"[^\S\n]+", " ", t)
+    ports = {}
+    if pol: ports["loading"] = pol
+    if pod: ports["discharge"] = pod
 
-    data = {}
-
-    for tag, body in TAG_RX.findall(t):
-        data[tag] = body.strip()
-
-    # convenience mapping
     return {
-        "20": data.get("20"),   # Sender's Reference
-        "40A": data.get("40A"),  # Form of Documentary Credit
-        "31D": data.get("31D"),  # Date/Place of Expiry
-        "50": data.get("50"),   # Applicant
-        "59": data.get("59"),   # Beneficiary
-        "32B": data.get("32B"),  # Currency/Amount
-        "39A": data.get("39A"),  # Tolerances
-        "44E": data.get("44E"),  # Shipment from
-        "44F": data.get("44F"),  # Shipment to
-        "44B": data.get("44B"),  # Latest Date of Shipment
-        "45A": data.get("45A"),  # Goods/Services
-        "46A": data.get("46A"),  # Documents Required
-        "47A": data.get("47A"),  # Additional Conditions
-        "_raw": data
+        "number": number,
+        "amount": amount,
+        "ucp_reference": ucp,
+        "issue_date": issue_date,
+        "expiry_date": expiry_date,
+        "ports": ports,
     }
-

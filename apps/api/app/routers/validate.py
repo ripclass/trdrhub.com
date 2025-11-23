@@ -400,6 +400,9 @@ async def validate_doc(
 
         from app.services.validator import validate_document_async
         
+        # Ensure this flag exists; legacy code referenced it without definition
+        should_use_json_rules: bool = True
+        
         request_user_type = _extract_request_user_type(payload)
         force_json_rules = _should_force_json_rules(payload)
         workflow_hint = payload.get("workflow_type") or payload.get("workflowType")
@@ -674,6 +677,7 @@ async def validate_doc(
                 logger.info("Successfully rebuilt %d document summaries from payload", len(final_documents))
                 # Update results_payload with the rebuilt documents
                 results_payload["documents"] = final_documents
+                results_payload["total_documents"] = len(final_documents)
                 if validation_session:
                     # CRITICAL: Use deepcopy to ensure nested structures are preserved
                     validation_session.validation_results = copy.deepcopy(results_payload)
@@ -709,53 +713,34 @@ async def validate_doc(
                 detail="Structured validation payload invalid",
             )
 
-        # Add LC data directly to structured_result for frontend access
-        if extracted_data and extracted_data.get("lc"):
-            lc_data = extracted_data["lc"]
-            
-            # Enhance HS code extraction with invoice and packing list texts
-            from app.services.extraction.hs_code_extractor import extract_hs_codes
-            
-            invoice_text = ""
-            packing_list_text = ""
-            
-            if extracted_data.get("invoice") and isinstance(extracted_data["invoice"], dict):
-                invoice_text = extracted_data["invoice"].get("raw_text", "")
-            
-            if extracted_data.get("packing_list") and isinstance(extracted_data["packing_list"], dict):
-                packing_list_text = extracted_data["packing_list"].get("raw_text", "")
-            
-            # Extract HS codes from all available sources
-            goods_desc = lc_data.get("goods_description", "")
-            docs_46a = lc_data.get("clauses", {}).get("documents_required_raw", "")
-            addl_47a = lc_data.get("clauses", {}).get("additional_conditions_raw", "")
-            
-            hs_codes = extract_hs_codes(
-                goods_desc,
-                docs_46a,
-                addl_47a,
-                invoice_text,
-                packing_list_text
-            )
-            
-            # Add HS codes to LC data goods section
-            if hs_codes.get("hs_full"):
-                if "goods" not in lc_data:
-                    lc_data["goods"] = {}
-                lc_data["goods"]["hs"] = hs_codes
-            
-            structured_result["lc_data"] = lc_data
+        # Normalize structured LC data and remove messy narrative blocks
+        if "extracted_data" in results_payload:
+            ed = results_payload["extracted_data"]
+            # Prefer our structured LC extraction if available
+            if isinstance(ed, dict) and "lc" in ed and "raw_text" in ed["lc"]:
+                from app.services.extraction.lc_extractor import extract_lc_structured
+                lc_struct = extract_lc_structured(ed["lc"]["raw_text"])
+                ed["lc_structured"] = lc_struct
+                # Do not leak large raw OCR into the final payload
+                ed["lc"].pop("raw_text", None)
+            results_payload["extracted_data"] = ed
 
-        # Compute customs risk score
-        from app.services.risk.customs_risk import compute_customs_risk
-        
-        # Prepare result dict for risk computation (includes structured_result and extracted_data)
-        risk_input = {
-            "lc_data": structured_result.get("lc_data", {}),
-            "extracted_data": extracted_data,
-        }
-        
-        structured_result["customs_risk"] = compute_customs_risk(risk_input)
+        # Compute customs risk and pack readiness flags
+        try:
+            from app.services.risk.customs_risk import compute_customs_risk
+            from app.services.customs.customs_pack import prepare_customs_pack
+            lc_struct = (
+                (results_payload.get("extracted_data") or {}).get("lc_structured")
+                or {}
+            )
+            risk = compute_customs_risk(lc_struct, {"documents": results_payload.get("documents", [])})
+            if "analytics" not in results_payload:
+                results_payload["analytics"] = {}
+            results_payload["analytics"]["customs_risk"] = risk
+            results_payload["customs_pack"] = prepare_customs_pack(results_payload)
+        except Exception:
+            # Never fail the request due to analytics
+            pass
 
         # Attach structured payload back onto results for persistence and frontend use
         results_payload["structured_result"] = structured_result
@@ -793,6 +778,13 @@ async def validate_doc(
             },
         )
 
+        # overall status calculation remains; ensure it is present
+        overall_status = "ok"
+        if failed_results:
+            overall_status = "error"
+        elif issue_cards:
+            overall_status = "warning"
+        
         return {
             "status": "ok",
             "results": results,
@@ -806,6 +798,7 @@ async def validate_doc(
             "issue_cards": issue_cards,
             "reference_issues": reference_issues,
             "structured_result": structured_result,
+            "overall_status": overall_status,
         }
     except HTTPException:
         raise
@@ -1167,7 +1160,8 @@ async def _build_document_context(
                 else:
                     # Use new LC extractor for OCR/plaintext LC documents
                     try:
-                        lc_struct = extract_lc(extracted_text)
+                        from app.services.extraction.lc_extractor import extract_lc_structured
+                        lc_struct = extract_lc_structured(extracted_text)
                         logger.info(f"Extracted LC structure from {filename} with keys: {list(lc_struct.keys())}")
                         if lc_struct:
                             lc_payload.update(lc_struct)
