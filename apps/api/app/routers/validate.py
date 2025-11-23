@@ -46,7 +46,8 @@ import re
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
-from app.services.customs.customs_pack import CustomsPackBuilder
+from app.services.customs.customs_pack import prepare_customs_pack  # keep metadata-only if needed
+from app.services.customs.customs_pack_full import CustomsPackBuilderFull
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -2505,13 +2506,14 @@ def _set_nested_value(container: Dict[str, Any], path: Tuple[str, ...], value: A
 
 
 @router.get("/customs-pack/{session_id}")
-async def download_customs_pack(
+async def generate_customs_pack(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Download a ZIP archive containing extracted LC data, document data, and submission summary.
+    Build the customs pack ZIP, upload to S3, and return a signed URL.
+    The FE should read .customs_pack.download_url and redirect the browser to it.
     """
     from uuid import UUID
     
@@ -2545,19 +2547,24 @@ async def download_customs_pack(
             detail="Access denied"
         )
     
-    # Get validation results
+    # Validate session has been processed
     validation_results = session.validation_results or {}
-    
     if not validation_results:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No validation results found for this session"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Session has no validation_results yet. Please run validation first."
         )
     
     # Build the customs pack
     try:
-        pack_builder = CustomsPackBuilder()
-        zip_data = pack_builder.build_zip(validation_results)
+        builder = CustomsPackBuilderFull()
+        result = builder.build_and_upload(db=db, session_id=session_id)
+    except ValueError as e:
+        # Session not found or invalid
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"Failed to build customs pack for session {session_id}: {e}", exc_info=True)
         raise HTTPException(
@@ -2565,10 +2572,4 @@ async def download_customs_pack(
             detail=f"Failed to generate customs pack: {str(e)}"
         )
     
-    return StreamingResponse(
-        BytesIO(zip_data),
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename=customs_pack_{session_id[:8]}.zip"
-        }
-    )
+    return {"customs_pack": result}
