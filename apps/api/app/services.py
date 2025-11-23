@@ -381,8 +381,12 @@ class DocumentProcessingService:
                 },
                 "validated_at": validation_summary.validated_at.isoformat()
             }
+            # Mark the job complete when results are persisted so polling can stop
+            session.status = SessionStatus.COMPLETED.value
+            session.processing_completed_at = datetime.now(timezone.utc)
             
             self.db.commit()
+            self.db.refresh(session)
             
             return validation_summary
             

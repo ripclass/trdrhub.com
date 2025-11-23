@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
@@ -270,6 +270,16 @@ def get_job_status(
 
     _ensure_access(session, current_user)
 
+    # Self-heal stuck jobs: if results are present but status never flipped, mark as completed
+    if (
+        session.validation_results
+        and session.status not in [SessionStatus.COMPLETED.value, SessionStatus.FAILED.value]
+    ):
+        session.status = SessionStatus.COMPLETED.value
+        session.processing_completed_at = session.processing_completed_at or datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(session)
+
     return {
         "jobId": str(session.id),
         "status": session.status,
@@ -304,6 +314,16 @@ def get_job_results(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     _ensure_access(session, current_user)
+
+    # If the pipeline persisted results but left the status non-terminal, close it out here
+    if (
+        session.validation_results
+        and session.status not in [SessionStatus.COMPLETED.value, SessionStatus.FAILED.value]
+    ):
+        session.status = SessionStatus.COMPLETED.value
+        session.processing_completed_at = session.processing_completed_at or datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(session)
 
     if session.status not in [SessionStatus.COMPLETED.value, SessionStatus.FAILED.value]:
         raise HTTPException(
