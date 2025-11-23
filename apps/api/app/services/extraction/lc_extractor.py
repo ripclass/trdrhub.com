@@ -4,9 +4,10 @@ import re
 
 from typing import Dict, Any, List, Optional, Tuple
 
-from .docs_46a_parser import parse_46a_block
+from .docs_46a_parser import parse_46a_block, extract_46a_text
 from .clauses_47a_parser import parse_47a_block
 from .hs_code_extractor import extract_hs_codes
+from .goods_46a_parser import parse_goods_46a
 from ..parsers.swift_mt700 import parse_mt700_core
 
 LC_NO_RE = re.compile(r"\b(?:LC|L/C|Letter of Credit).*?\b(?:No\.?|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", re.I | re.S)
@@ -60,8 +61,36 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
     docs46a = parse_46a_block(text)
     clauses47a = parse_47a_block(text)
-    goods = docs46a.get("goods", [])
-    hs_codes = extract_hs_codes("\n".join([g.get("line", "") for g in goods]) + "\n" + text)
+    
+    # Extract goods using enhanced parser (46A/45A deep parsing)
+    goods_items: List[Dict[str, Any]] = []
+    try:
+        terms_46a = extract_46a_text(text)  # Extract raw 46A/45A block text
+        if terms_46a:
+            goods_items = parse_goods_46a(terms_46a)
+    except Exception:
+        # Fallback to simple goods extraction if enhanced parser fails
+        goods_items = docs46a.get("goods", [])
+    
+    # If enhanced parser returned empty, fallback to simple extraction
+    if not goods_items:
+        goods_items = docs46a.get("goods", [])
+    
+    # Extract HS codes from goods descriptions and full text
+    hs_codes = extract_hs_codes("\n".join([
+        g.get("description", "") or g.get("line", "") for g in goods_items
+    ]) + "\n" + text)
+
+    # Aggregate goods summary for UI/AI layers
+    total_qty = 0.0
+    units = set()
+    for it in goods_items:
+        qty = it.get("quantity")
+        if qty and isinstance(qty, dict):
+            total_qty += float(qty.get("value", 0))
+            units.add(qty.get("unit", ""))
+        elif isinstance(qty, (int, float)):
+            total_qty += float(qty)
 
     # 4) Compose structured result (NO large narrative blobs here)
     lc_structured: Dict[str, Any] = {
@@ -71,7 +100,12 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         "beneficiary": beneficiary,
         "ports": {"loading": _strip(pol), "discharge": _strip(pod)},
         "incoterm": _strip(incoterm_line),
-        "goods": goods,
+        "goods": goods_items,
+        "goods_summary": {
+            "items": len(goods_items),
+            "total_quantity": total_qty if goods_items else 0,
+            "units": sorted([u for u in units if u]),
+        } if goods_items else None,
         "hs_codes": hs_codes,
         "documents_required": docs46a.get("documents_required", []),
         "clauses_47a": clauses47a.get("conditions", []),
@@ -82,7 +116,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             "expiry_date": mt.get("expiry_date"),
         },
         "source": {
-            "parsers": ["mt700_core", "regex_core", "46A_parser", "47A_parser", "hs_code_extractor"],
+            "parsers": ["mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"],
             "version": "lc_extractor_v1",
         },
     }
