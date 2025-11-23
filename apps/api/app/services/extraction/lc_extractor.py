@@ -215,6 +215,10 @@ class LCExtractor:
         from app.services.extraction.docs_46a_parser import parse_docs_46A
         docs_structured = parse_docs_46A(docs_46a) if docs_46a else []
 
+        # Parse 47A into structured tokens
+        from app.services.extraction.clauses_47a_parser import tokenize_47a
+        clauses_47a_structured = tokenize_47a(addl_47a) if addl_47a else []
+
         # Build final structure expected by UI
 
         result: Dict[str, Any] = {
@@ -230,7 +234,8 @@ class LCExtractor:
             "clauses": {
                 "documents_required_raw": _clean(docs_46a),
                 "documents_structured": docs_structured,
-                "additional_conditions_47A": _clean(addl_47a),
+                "additional_conditions_raw": _clean(addl_47a),
+                "additional_conditions_structured": clauses_47a_structured,
             },
         }
 
