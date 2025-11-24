@@ -12,6 +12,19 @@ import RiskPanel from "@/components/lcopilot/RiskPanel";
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { useResultsContext, ResultsProvider } from "@/context/ResultsContext";
 
+const normalizeDiscrepancySeverity = (
+  severity?: string | null
+): "critical" | "major" | "minor" => {
+  const value = (severity ?? "").toLowerCase();
+  if (["critical", "fail", "error", "high"].includes(value)) {
+    return "critical";
+  }
+  if (["warning", "warn", "major", "medium"].includes(value)) {
+    return "major";
+  }
+  return "minor";
+};
+
 const SECTION_PARAM = "section";
 const JOB_PARAM = "jobId";
 
@@ -213,6 +226,24 @@ const IssuesSection = () => {
 
   const issues = results.issues ?? [];
 
+  const documents =
+    results?.structured_result?.documents_structured ??
+    results?.structured_result?.lc_structured?.documents_structured ??
+    [];
+
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      if (doc.filename) {
+        map.set(doc.filename, {
+          status: doc.extraction_status ?? undefined,
+          type: doc.document_type,
+        });
+      }
+    });
+    return map;
+  }, [documents]);
+
   if (!issues.length) {
     return (
       <Card className="border border-success/40 bg-success/5 text-success">
@@ -226,9 +257,19 @@ const IssuesSection = () => {
 
   return (
     <div className="space-y-4">
-      {issues.map((issue, index) => (
-        <ExporterIssueCard key={issue.id ?? `issue-${index}`} issue={issue} normalizedSeverity={issue.severity ?? "minor"} />
-      ))}
+      {issues.map((issue, index) => {
+        const normalizedSeverity = normalizeDiscrepancySeverity(issue.severity);
+        const fallbackId = issue.id ?? `issue-${index}`;
+        return (
+          <ExporterIssueCard
+            key={fallbackId}
+            issue={issue}
+            normalizedSeverity={normalizedSeverity}
+            documentStatusMap={documentStatusMap}
+            fallbackId={fallbackId}
+          />
+        );
+      })}
     </div>
   );
 };
