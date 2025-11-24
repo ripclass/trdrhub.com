@@ -46,9 +46,11 @@ import re
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
+from app.services.customs.customs_pack import build_customs_manifest_from_option_e
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
 from app.services.extraction.lc_extractor import extract_lc_structured
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
+from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -530,6 +532,17 @@ async def validate_doc(
             legacy_payload=None,
         )
         structured_result = option_e_payload["structured_result"]
+
+        customs_risk = compute_customs_risk_from_option_e(structured_result)
+        customs_pack = build_customs_manifest_from_option_e(structured_result)
+
+        structured_result.setdefault("analytics", {})
+        structured_result["analytics"]["customs_risk"] = customs_risk
+        structured_result["customs_pack"] = customs_pack
+
+        lc_structured_docs = (structured_result.get("lc_structured") or {}).get("documents_structured") or []
+        if lc_structured_docs and not structured_result.get("documents_structured"):
+            structured_result["documents_structured"] = lc_structured_docs
 
         telemetry_payload = {
             "UnifiedStructuredResultBuilt": True,

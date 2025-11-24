@@ -46,7 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
 import { useJob, useResults } from "@/hooks/use-lcopilot";
-import type { ValidationResults, IssueCard } from "@/types/lcopilot";
+import type { ValidationResults, IssueCard, AIEnrichmentPayload } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import { cn } from "@/lib/utils";
@@ -456,10 +456,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   
   // Guardrails check
   const resolvedResults = resultData;
+  const structuredResult = resolvedResults?.structured_result;
+  const structuredLcNumber =
+    (structuredResult?.lc_structured?.mt700?.blocks?.["20"] as string | undefined) ??
+    (structuredResult?.lc_structured?.mt700?.blocks?.["27"] as string | undefined) ??
+    null;
   const resolvedLcNumber =
     lcNumberParam ??
-    resultData?.lcNumber ??
-    liveResults?.lcNumber ??
+    structuredLcNumber ??
     jobStatus?.lcNumber ??
     null;
   const lcNumber = resolvedLcNumber ?? 'LC-UNKNOWN';
@@ -613,17 +617,32 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   });
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
-  const structuredResult = resolvedResults?.structured_result;
   const structuredDocumentsPayload = structuredResult?.documents_structured ?? [];
   const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
+  const extractionStatus = useMemo(() => {
+    if (!summary) return "unknown";
+    const successExtractions = Number(summary.successful_extractions ?? 0);
+    const failedExtractions = Number(summary.failed_extractions ?? 0);
+    if (failedExtractions === 0) {
+      return successExtractions > 0 ? "success" : "pending";
+    }
+    if (successExtractions > 0 && failedExtractions > 0) {
+      return "partial";
+    }
+    if (successExtractions === 0 && failedExtractions > 0) {
+      return "error";
+    }
+    return "unknown";
+  }, [summary]);
   const documents = useMemo(() => {
     return structuredDocumentsPayload.map((doc, index) => {
-      const documentId = String(doc.document_id ?? doc.id ?? index);
-      const filename = doc.filename ?? doc.name ?? `Document ${index + 1}`;
-      const typeKeyRaw = doc.document_type ?? doc.type ?? "supporting_document";
+      const docAny = doc as Record<string, any>;
+      const documentId = String(doc.document_id ?? docAny.id ?? index);
+      const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
+      const typeKeyRaw = doc.document_type ?? docAny.type ?? "supporting_document";
       const typeKey = (typeKeyRaw || "supporting_document").toString();
-      const issuesCount = Number(doc.issues_count ?? doc.issues ?? doc.discrepancy_count ?? 0);
-      const extractionStatus = (doc.extraction_status ?? doc.extractionStatus ?? "unknown").toString().toLowerCase();
+      const issuesCount = Number(doc.issues_count ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
+      const extractionStatus = (doc.extraction_status ?? docAny.extractionStatus ?? "unknown").toString().toLowerCase();
       const status: "success" | "warning" | "error" = (() => {
         if (extractionStatus === "error") return "error";
         if (extractionStatus === "partial" || extractionStatus === "pending") return "warning";
@@ -641,14 +660,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         extractionStatus,
         status,
         issuesCount,
-        extractedFields: doc.extracted_fields ?? doc.extractedFields ?? {},
+        extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
   }, [structuredDocumentsPayload]);
   console.log("[DOCS_DEBUG]", documents);
   const issueCards = resolvedResults?.issues ?? [];
   const analyticsData = structuredResult?.analytics ?? resolvedResults?.analytics;
-  const timelineEvents = structuredResult?.timeline ?? resolvedResults?.timeline ?? [];
+  const timelineEvents =
+    structuredResult?.lc_structured?.timeline ??
+    structuredResult?.timeline ??
+    resolvedResults?.timeline ??
+    [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
   const severityBreakdown = summary?.severity_breakdown ?? {
@@ -660,8 +683,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const extractedDocumentsMap = useMemo(() => {
     const map: Record<string, any> = {};
     structuredDocumentsPayload.forEach((doc, idx) => {
+      const docAny = doc as Record<string, any>;
       const key = doc.document_type || doc.filename || `doc_${idx}`;
-      map[key] = doc.extracted_fields ?? doc.extractedFields ?? {};
+      map[key] = doc.extracted_fields ?? docAny.extractedFields ?? {};
     });
     return map;
   }, [structuredDocumentsPayload]);
@@ -679,7 +703,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [structuredDocumentsPayload],
   );
   // Prefer lc_structured (structured_result v1) only
-  const lcStructured = resolvedResults?.lc_structured ?? structuredResult?.lc_structured ?? null;
+  const lcStructured = structuredResult?.lc_structured ?? resolvedResults?.lc_structured ?? null;
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
@@ -710,22 +734,32 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
-  const referenceIssues = resolvedResults?.reference_issues ?? [];
-  const aiInsights = resolvedResults?.ai_enrichment ?? resolvedResults?.aiEnrichment;
+  const referenceIssues = structuredResult?.reference_issues ?? resolvedResults?.reference_issues ?? [];
+  const rawAiInsights = structuredResult?.ai_enrichment ?? resolvedResults?.ai_enrichment ?? null;
+  const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
+    if (!rawAiInsights) {
+      return null;
+    }
+    if (typeof (rawAiInsights as AIEnrichmentPayload).summary === "string" || Array.isArray((rawAiInsights as AIEnrichmentPayload).suggestions)) {
+      return rawAiInsights as AIEnrichmentPayload;
+    }
+    const notes = Array.isArray((rawAiInsights as any).notes) ? (rawAiInsights as any).notes : [];
+    if (!notes.length) {
+      return null;
+    }
+    return {
+      summary: notes.join("\n"),
+      suggestions: notes as string[],
+    };
+  }, [rawAiInsights]);
   const hasIssueCards = issueCards.length > 0;
-  // Determine LC type: prefer from lc_structured.lc_type, then fallback to resolvedResults.lc_type
-  const lcTypeFromStructured = lcStructured?.lc_type?.types?.[0]?.toLowerCase() ?? 
-                                lcStructured?.lc_type?.types?.[0]?.toLowerCase() ?? 
-                                null;
-  const lcType = (lcTypeFromStructured ?? 
-                  resolvedResults?.lc_type ?? 
-                  'unknown') as 'export' | 'import' | 'unknown';
-  const lcTypeReason = resolvedResults?.lc_type_reason ?? "LC type detection details unavailable.";
+  const lcType = (structuredResult?.lc_type ?? "unknown") as "export" | "import" | "unknown";
+  const lcTypeReason = structuredResult?.lc_type_reason ?? "LC type detection details unavailable.";
   const lcTypeConfidenceValue =
-    typeof resolvedResults?.lc_type_confidence === "number"
-      ? Math.round((resolvedResults?.lc_type_confidence ?? 0) * 100)
+    typeof structuredResult?.lc_type_confidence === "number"
+      ? Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
       : null;
-  const lcTypeSource = resolvedResults?.lc_type_source ?? "auto";
+  const lcTypeSource = structuredResult?.lc_type_source ?? "auto";
   const lcTypeLabelMap: Record<string, string> = {
     export: "Export LC",
     import: "Import LC",
@@ -840,17 +874,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
-  const overallStatus =
-    resolvedResults?.overall_status ||
-    resolvedResults?.overallStatus ||
-    resolvedResults?.status ||
-    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
-  const packGenerated = (resolvedResults?.packGenerated ?? null) ?? (overallStatus === "success");
+  const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
+  const packGenerated = structuredResult?.customs_pack?.ready ?? false;
+  const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
+  const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
-    resolvedResults?.processingTime ||
-    resolvedResults?.processing_time ||
-    resolvedResults?.processingTimeMinutes ||
-    '-';
+    processingSummaryExtras?.processing_time_display ||
+    analyticsExtras?.processing_time_display ||
+    "-";
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
@@ -1055,7 +1086,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const timelineDisplay = hasTimeline
     ? timelineEvents.map((event) => ({
         ...event,
-        title: event.title ?? event.label ?? 'Milestone',
+        title: event.title ?? 'Milestone',
       }))
     : [];
   const documentProcessingList = documents.map((doc) => {
@@ -1710,28 +1741,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="font-semibold">Extraction Status:</div>
                   <Badge
                     variant={
-                      resolvedResults.extraction_status === "success"
+                      extractionStatus === "success"
                         ? "default"
-                        : resolvedResults.extraction_status === "partial"
+                        : extractionStatus === "partial"
                         ? "outline"
-                        : resolvedResults.extraction_status === "empty"
+                        : extractionStatus === "pending"
                         ? "destructive"
                         : "secondary"
                     }
                   >
-                    {resolvedResults.extraction_status || "unknown"}
+                    {extractionStatus || "unknown"}
                   </Badge>
-                  {resolvedResults.extraction_status === "empty" && (
+                  {extractionStatus === "pending" && (
                     <p className="text-sm text-muted-foreground ml-2">
                       No text could be extracted from the documents. This may indicate scanned images that require OCR.
                     </p>
                   )}
-                  {resolvedResults.extraction_status === "partial" && (
+                  {extractionStatus === "partial" && (
                     <p className="text-sm text-muted-foreground ml-2">
                       Some text was extracted, but structured fields could not be fully parsed.
                     </p>
                   )}
-                  {resolvedResults.extraction_status === "error" && (
+                  {extractionStatus === "error" && (
                     <p className="text-sm text-muted-foreground ml-2">
                       An error occurred during extraction. Please try uploading the documents again.
                     </p>
@@ -1806,7 +1837,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-2">No extracted data available</p>
                     <p className="text-sm text-muted-foreground">
-                      {resolvedResults.extraction_status === "empty"
+                      {extractionStatus === "pending"
                         ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
                         : "Data extraction may still be in progress or failed. Please check the extraction status above."}
                     </p>

@@ -3,21 +3,28 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-def prepare_customs_pack(structured_result: Dict[str, Any]) -> Dict[str, Any]:
+def build_customs_manifest_from_option_e(structured_result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Prepare a serialized 'customs pack' payload based purely on Option-E data.
+    Build a customs pack manifest using Option-E structured_result data.
     """
-    docs: List[Dict[str, Any]] = structured_result.get("documents_structured", []) or []
+
+    lc_structured = structured_result.get("lc_structured") or {}
+    docs: List[Dict[str, Any]] = (
+        structured_result.get("documents_structured")
+        or lc_structured.get("documents_structured")
+        or []
+    )
+
     manifest = [
         {
             "name": doc.get("filename"),
-            "document_type": doc.get("document_type"),
-            "extraction_status": doc.get("extraction_status"),
+            "tag": doc.get("document_type"),
         }
         for doc in docs
     ]
+
     return {
-        "ready": True,
+        "ready": bool(manifest),
         "manifest": manifest,
-        "format": "option-e-zip-manifest-v1",
+        "format": "zip-manifest-v1",
     }

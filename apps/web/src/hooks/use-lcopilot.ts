@@ -309,14 +309,6 @@ export const useResults = () => {
         const response = await api.get(`/api/results/${jobId}`);
         const normalized: ValidationResults = buildValidationResponse(response.data);
 
-        if (!normalized.structured_result && response.data?.structured_result) {
-          normalized.structured_result = response.data.structured_result;
-        }
-
-        if (normalized.ai_enrichment && !normalized.aiEnrichment) {
-          normalized.aiEnrichment = normalized.ai_enrichment;
-        }
-
         setResults(normalized);
         console.log('[LCopilot][Results] fetched results', {
           jobId,

@@ -163,16 +163,22 @@ const extractedDocumentsSnapshot = {
   },
 };
 
+const optionEDocuments = documents.map((doc) => ({
+  document_id: doc.documentId,
+  document_type: doc.typeKey ?? doc.type,
+  filename: doc.filename,
+  extraction_status: doc.extractionStatus,
+  extracted_fields: doc.extractedFields,
+  issues_count: doc.issuesCount,
+}));
+
 const structuredResult: StructuredResultPayload = {
+  version: 'structured_result_v1',
   processing_summary: summary,
-  documents: documents.map((doc) => ({
-    document_id: doc.documentId,
-    document_type: doc.typeKey ?? doc.type,
-    filename: doc.filename,
-    extraction_status: doc.extractionStatus,
-    extracted_fields: doc.extractedFields,
-    issues_count: doc.issuesCount,
-  })),
+  documents_structured: optionEDocuments,
+  lc_structured: {
+    documents_structured: optionEDocuments,
+  },
   issues: issues.map((issue) => ({
     id: issue.id,
     title: issue.title,
@@ -188,6 +194,7 @@ const structuredResult: StructuredResultPayload = {
     compliance_score: analytics.compliance_score,
     issue_counts: analytics.issue_counts,
     document_risk: analytics.document_risk,
+    customs_risk: { score: 62, tier: 'med', flags: ['missing_port_loading'] },
   },
   timeline: timeline.map((entry) => ({
     title: entry.title ?? entry.label ?? 'Milestone',
@@ -197,6 +204,14 @@ const structuredResult: StructuredResultPayload = {
     timestamp: entry.timestamp,
   })),
   extracted_documents: extractedDocumentsSnapshot,
+  customs_pack: {
+    ready: true,
+    manifest: optionEDocuments.map((doc) => ({
+      name: doc.filename,
+      tag: doc.document_type ?? null,
+    })),
+    format: 'zip-manifest-v1',
+  },
 };
 
 export const mockValidationResults: ValidationResults = {

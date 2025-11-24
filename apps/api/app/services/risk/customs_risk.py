@@ -3,46 +3,46 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-def compute_customs_risk(structured_result: Dict[str, Any]) -> Dict[str, Any]:
+def compute_customs_risk_from_option_e(structured_result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Lightweight heuristic risk score derived from Option-E structured_result.
+    Compute a lightweight customs readiness risk score using Option-E structured_result_v1.
     """
 
-    lc_structured = structured_result.get("lc_structured", {}) or {}
-    documents = structured_result.get("documents_structured", []) or []
-    score = 0
+    lc_structured = structured_result.get("lc_structured") or {}
+    mt_blocks = (lc_structured.get("mt700") or {}).get("blocks") or {}
+    goods = lc_structured.get("goods") or []
+    documents = (
+        lc_structured.get("documents_structured")
+        or structured_result.get("documents_structured")
+        or []
+    )
+
     flags: List[str] = []
 
-    mt700_fields = lc_structured.get("mt700", {}).get("blocks", {}) or {}
-    goods = lc_structured.get("goods") or []
+    def _flag_missing(field: str, key: str) -> None:
+        if not mt_blocks.get(key):
+            flags.append(field)
 
-    if not mt700_fields.get("20"):
-        score += 15
-        flags.append("missing_lc_reference")
-    if not mt700_fields.get("32B"):
-        score += 15
-        flags.append("missing_amount")
+    _flag_missing("missing_lc_number", "27")
+    _flag_missing("missing_amount", "32B")
+    _flag_missing("missing_port_loading", "44E")
+    _flag_missing("missing_port_discharge", "44F")
+
     if not goods:
-        score += 10
         flags.append("missing_goods_lines")
-    if not lc_structured.get("clauses"):
-        score += 5
-        flags.append("missing_clauses")
 
-    # document coverage
-    required_types = {"letter_of_credit", "commercial_invoice", "bill_of_lading"}
-    present_types = {doc.get("document_type") for doc in documents}
-    for required in required_types:
-        if required not in present_types:
-            score += 10
-            flags.append(f"missing_{required}")
+    required_types = {"commercial_invoice", "packing_list", "certificate_of_origin"}
+    present_types = {doc.get("document_type") for doc in documents if doc.get("document_type")}
+    for doc_type in required_types:
+        if doc_type not in present_types:
+            flags.append(f"missing_{doc_type}")
 
-    score = max(0, min(100, score))
-    if score >= 50:
+    base_score = 20
+    score = base_score + min(80, 10 * len(flags))
+    tier = "low"
+    if score >= 67:
         tier = "high"
-    elif score >= 25:
-        tier = "medium"
-    else:
-        tier = "low"
+    elif score >= 34:
+        tier = "med"
 
     return {"score": score, "tier": tier, "flags": flags}
