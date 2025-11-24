@@ -52,12 +52,15 @@ import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import LcHeader from "@/components/lcopilot/LcHeader";
 import RiskPanel from "@/components/lcopilot/RiskPanel";
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
+import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
 
 type ExporterResultsProps = {
   embedded?: boolean;
   jobId?: string;
   lcNumber?: string;
+  initialTab?: ResultsTab;
+  onTabChange?: (tab: ResultsTab) => void;
 };
 
 const normalizeDiscrepancySeverity = (
@@ -73,11 +76,17 @@ const normalizeDiscrepancySeverity = (
   return "minor";
 };
 
-export default function ExporterResults({ embedded = false, jobId: jobIdProp, lcNumber: lcNumberProp }: ExporterResultsProps = {}) {
+export default function ExporterResults({
+  embedded = false,
+  jobId: jobIdProp,
+  lcNumber: lcNumberProp,
+  initialTab,
+  onTabChange,
+}: ExporterResultsProps = {}) {
   const FILE_ID = "apps/web/src/pages/ExporterResults.tsx";
   console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID, jobIdProp, lcNumberProp });
   (window as any).__LIVE = FILE_ID;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -97,6 +106,8 @@ export default function ExporterResults({ embedded = false, jobId: jobIdProp, lc
   const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
   
   const lcNumberParam = lcNumberProp || searchParams.get('lc') || undefined;
+  const tabParamRaw = searchParams.get("tab");
+  const tabParam = isResultsTab(tabParamRaw) - tabParamRaw : null;
 
   const formatExtractedValue = (value: any): string => {
     if (value === null || value === undefined) {
@@ -277,7 +288,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   return (
     <div key={key} className="space-y-2">
       <h3 className="font-semibold text-lg">{label} Data</h3>
-      {rows.length ? (
+      {rows.length - (
         <div className="grid gap-4 md:grid-cols-2">{rows}</div>
       ) : (
         <p className="text-sm text-muted-foreground">No structured fields extracted for this document.</p>
@@ -440,7 +451,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       .catch((err) => console.error('[LIVE_ERROR]', err));
   }, [jobStatus?.status, validationSessionId, fetchResults]);
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [showManifestPreview, setShowManifestPreview] = useState(false);
   const [selectedBankId, setSelectedBankId] = useState<string>("");
@@ -452,6 +463,32 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [showRawLcJson, setShowRawLcJson] = useState(false);
   
   const resultData = liveResults ?? cachedResults;
+
+  useEffect(() => {
+    if (!initialTab) {
+      return;
+    }
+    if (initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, activeTab]);
+
+  useEffect(() => {
+    if (embedded) return;
+    if (!initialTab && tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [embedded, initialTab, tabParam, activeTab]);
+
+  const handleActiveTabChange = (next: ResultsTab) => {
+    setActiveTab(next);
+    onTabChange?.(next);
+    if (!embedded) {
+      const params = new URLSearchParams(searchParams);
+      params.set("tab", next);
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   // Feature flags
   const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
@@ -629,7 +666,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const successExtractions = Number(summary.successful_extractions ?? 0);
     const failedExtractions = Number(summary.failed_extractions ?? 0);
     if (failedExtractions === 0) {
-      return successExtractions > 0 ? "success" : "pending";
+      return successExtractions > 0 - "success" : "pending";
     }
     if (successExtractions > 0 && failedExtractions > 0) {
       return "partial";
@@ -707,7 +744,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcStructured = structuredResult?.lc_structured ?? null;
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
-    ? buildFieldRows(
+    - buildFieldRows(
         [
           { label: "LC Number", value: lcData.number ?? lcData.lc_number },
           { label: "LC Amount", value: formatAmountValue(lcData.amount) },
@@ -719,7 +756,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       )
     : [];
   const lcDateRows = lcData
-    ? buildFieldRows(
+    - buildFieldRows(
         [
           { label: "Issue Date", value: lcData.dates?.issue },
           { label: "Expiry Date", value: lcData.dates?.expiry },
@@ -729,14 +766,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         "lc-dates",
       )
     : [];
-  const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) ? lcData.goods_items : [];
-  const lcApplicantCard = lcData ? renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
-  const lcBeneficiaryCard = lcData ? renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
-  const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
-  const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
+  const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) - lcData.goods_items : [];
+  const lcApplicantCard = lcData - renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
+  const lcBeneficiaryCard = lcData - renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
+  const lcPortsCard = lcData - renderPortsCard(lcData.ports) : null;
+  const lcGoodsItemsList = lcData - renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
-    ? (structuredResult?.reference_issues as ReferenceIssue[])
+    - (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
   const rawAiInsights = structuredResult?.ai_enrichment ?? null;
   const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
@@ -746,7 +783,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (typeof (rawAiInsights as AIEnrichmentPayload).summary === "string" || Array.isArray((rawAiInsights as AIEnrichmentPayload).suggestions)) {
       return rawAiInsights as AIEnrichmentPayload;
     }
-    const notes = Array.isArray((rawAiInsights as any).notes) ? (rawAiInsights as any).notes : [];
+    const notes = Array.isArray((rawAiInsights as any).notes) - (rawAiInsights as any).notes : [];
     if (!notes.length) {
       return null;
     }
@@ -760,7 +797,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcTypeReason = structuredResult?.lc_type_reason ?? "LC type detection details unavailable.";
   const lcTypeConfidenceValue =
     typeof structuredResult?.lc_type_confidence === "number"
-      ? Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
+      - Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
       : null;
   const lcTypeSource = structuredResult?.lc_type_source ?? "auto";
   const lcTypeLabelMap: Record<string, string> = {
@@ -819,22 +856,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const { successCount, errorCount, warningCount, successRate } = useMemo(() => {
     const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
     const summarySuccessCount =
-      typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
+      typeof summary?.successful_extractions === "number" - summary.successful_extractions : undefined;
     const resolvedSuccessCount =
-      derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+      derivedSuccessCount > 0 - derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
 
     const resolvedErrorCount =
       typeof summary?.failed_extractions === "number"
-        ? summary.failed_extractions
+        - summary.failed_extractions
         : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
 
     const resolvedWarningCount =
       typeof documentStatusCounts.warning === "number"
-        ? documentStatusCounts.warning
+        - documentStatusCounts.warning
         : documents.filter((doc) => doc.status === "warning").length;
 
     const resolvedSuccessRate =
-      totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
+      totalDocuments > 0 - Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
 
     return {
       successCount: resolvedSuccessCount,
@@ -860,7 +897,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       documents.map((doc) => ({
         document_id: doc.documentId,
         filename: doc.name,
-        risk: doc.issuesCount >= 3 ? "high" : doc.issuesCount > 0 ? "medium" : "low",
+        risk: doc.issuesCount >= 3 - "high" : doc.issuesCount > 0 - "medium" : "low",
       })),
     [analyticsData?.document_risk, documents],
   );
@@ -872,13 +909,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const performanceInsights = useMemo(
     () => [
       successCount + "/" + (totalDocuments || 0) + " documents extracted successfully",
-      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
+      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 - "" : "s") + " detected",
       "Compliance score " + complianceScore + "%",
     ],
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
-  const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
-  const packGenerated = structuredResult?.customs_pack?.ready ?? false;
+  const overallStatus = errorCount > 0 - "error" : warningCount > 0 || totalDiscrepancies > 0 - "warning" : "success";
+  const customsPack = structuredResult?.customs_pack;
+  const packGenerated = customsPack?.ready ?? false;
   const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
   const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
@@ -940,7 +978,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }
 
     const statusLabel = jobStatus?.status
-      ? jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+      - jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       : "Processing";
 
     return (
@@ -1087,7 +1125,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
   const hasTimeline = timelineEvents.length > 0;
   const timelineDisplay = hasTimeline
-    ? timelineEvents.map((event) => ({
+    - timelineEvents.map((event) => ({
         ...event,
         title: event.title ?? 'Milestone',
       }))
@@ -1096,7 +1134,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const riskEntry = documentRisk.find(
       (entry) => entry.document_id === doc.documentId || entry.filename === doc.name,
     );
-    const riskLabel = riskEntry?.risk ?? (doc.issuesCount > 0 ? 'medium' : 'low');
+    const riskLabel = riskEntry?.risk ?? (doc.issuesCount > 0 - 'medium' : 'low');
     return {
       name: doc.name,
       type: doc.type,
@@ -1181,11 +1219,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
 
   const containerClass = embedded
-    ? "mx-auto w-full max-w-6xl py-4"
+    - "mx-auto w-full max-w-6xl py-4"
     : "container mx-auto px-4 py-8 max-w-6xl";
 
   return (
-    <div className={embedded ? "bg-transparent" : "bg-background min-h-screen"}>
+    <div className={embedded - "bg-transparent" : "bg-background min-h-screen"}>
       {/* Header */}
       {!embedded && (
         <header className="bg-card border-b border-gray-200">
@@ -1214,7 +1252,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   disabled={!validationSessionId || resultsLoading}
                   className="rounded-md border px-3 py-1 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {resultsLoading ? 'Fetching…' : 'Fetch Results'}
+                  {resultsLoading ? 'Fetching...' : 'Fetch Results'}
                 </button>
               </div>
             </div>
@@ -1237,15 +1275,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <div
                 className={`w-16 h-16 mx-auto md:mx-0 rounded-full flex items-center justify-center ${
                   overallStatus === 'success'
-                    ? 'bg-success/10'
+                    - 'bg-success/10'
                     : overallStatus === 'error'
-                      ? 'bg-destructive/10'
+                      - 'bg-destructive/10'
                       : 'bg-warning/10'
                 }`}
               >
-                {overallStatus === 'success' ? (
+                {overallStatus === 'success' - (
                   <CheckCircle className="w-8 h-8 text-success" />
-                ) : overallStatus === 'error' ? (
+                ) : overallStatus === 'error' - (
                   <XCircle className="w-8 h-8 text-destructive" />
                 ) : (
                   <AlertTriangle className="w-8 h-8 text-warning" />
@@ -1253,7 +1291,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </div>
               <div className="flex flex-col items-center md:items-start gap-2">
                 <StatusBadge status={overallStatus} className="text-sm font-medium">
-                  {packGenerated ? 'Customs Pack Ready' : 'Processing'}
+                  {packGenerated - 'Customs Pack Ready' : 'Processing'}
                 </StatusBadge>
                 {isReadyToSubmit && (
                   <Badge className="bg-green-600 text-white">
@@ -1262,7 +1300,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </Badge>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {processingTime ? `Processed in ${processingTime}` : 'Processing time unavailable'}
+                  {processingTime - `Processed in ${processingTime}` : 'Processing time unavailable'}
                 </p>
               </div>
             </div>
@@ -1293,7 +1331,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{lcTypeReason}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    Source: {lcTypeSource === 'override' ? 'Manual override' : 'Auto-detected'}
+                    Source: {lcTypeSource === 'override' - 'Manual override' : 'Auto-detected'}
                   </p>
                 </div>
               </div>
@@ -1301,7 +1339,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
             <div className="space-y-3">
               <h3 className="font-semibold text-foreground">Next Actions</h3>
-              {totalDiscrepancies > 0 ? (
+              {totalDiscrepancies > 0 - (
                 <>
                   <Link to="/lcopilot/exporter-dashboard?section=upload">
                     <Button variant="outline" size="sm" className="w-full">
@@ -1330,7 +1368,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   onClick={handleSubmitToBank}
                   disabled={createSubmissionMutation.isPending || guardrailsLoading}
                 >
-                  {createSubmissionMutation.isPending ? (
+                  {createSubmissionMutation.isPending - (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Submitting...
@@ -1364,8 +1402,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         </Card>
 
         {/* Detailed Results */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            if (isResultsTab(value)) {
+              handleActiveTabChange(value);
+            }
+          }}
+          className="space-y-6"
+        >
+          <TabsList className="grid w-full grid-cols-7 md:grid-cols-7">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
             <TabsTrigger value="discrepancies" className="relative">
@@ -1377,10 +1423,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <TabsTrigger value="extracted-data">Extracted Data</TabsTrigger>
             <TabsTrigger value="history">Submission History</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="customs">Customs Pack</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
+            <div className={cn("grid gap-6", hasTimeline - "md:grid-cols-2" : "md:grid-cols-1")}>
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
                   <CardHeader className="pb-3">
@@ -1396,9 +1443,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     {timelineDisplay.map((event, index) => {
                       const statusClass =
                         event.status === "error"
-                          ? "bg-destructive"
+                          - "bg-destructive"
                           : event.status === "warning"
-                          ? "bg-warning"
+                          - "bg-warning"
                           : "bg-success";
                       return (
                         <div
@@ -1408,12 +1455,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
                           <div className="flex-1">
                             <p className="font-medium">{event.title}</p>
-                            {event.timestamp ? (
+                            {event.timestamp - (
                               <p className="text-xs text-muted-foreground">
                                 {format(new Date(event.timestamp), "HH:mm")}
-                                {event.description ? ` · ${event.description}` : ''}
+                                {event.description ? ` - ${event.description}` : ''}
                               </p>
-                            ) : event.description ? (
+                            ) : event.description - (
                               <p className="text-xs text-muted-foreground">{event.description}</p>
                             ) : null}
                           </div>
@@ -1445,20 +1492,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
-                      <span className={`font-medium ${successRate >= 90 ? 'text-success' : 'text-warning'}`}>
+                      <span className={`font-medium ${successRate >= 90 - 'text-success' : 'text-warning'}`}>
                         {successRate}%
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Customs Ready:</span>
-                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
+                      <span className={`font-medium ${customsReadyScore >= 90 - 'text-success' : 'text-warning'}`}>
+                        {customsReadyScore >= 90 - 'Yes' : 'Review'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Bank Ready:</span>
-                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
-                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
+                      <span className={`font-medium ${overallStatus === 'success' - 'text-success' : 'text-warning'}`}>
+                        {overallStatus === 'success' - 'Ready' : 'Review needed'}
                       </span>
                     </div>
                   </div>
@@ -1471,6 +1518,113 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+          <TabsContent value="customs" className="space-y-6">
+            <Card className="shadow-soft border border-border/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                  <Package className="w-5 h-5" />
+                  Customs Pack
+                </CardTitle>
+                <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Manifest, readiness, and downloads
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="p-4 rounded-lg border border-border/60 space-y-2">
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={packGenerated - "success" : "warning"}>
+                        {packGenerated - "Ready" : "Pending"}
+                      </StatusBadge>
+                      <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {packGenerated
+                        - "Customs pack generated and ready to download."
+                        : "Generate your customs pack after resolving issues."}
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border/60 space-y-2">
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Readiness</p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-semibold">{customsReadyScore}%</div>
+                      <Badge variant="outline">Customs Ready Score</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Derived from structured_result.analytics.customs_ready_score
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border/60 space-y-2">
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => generateCustomsPackMutation.mutate()}
+                        disabled={generateCustomsPackMutation.isPending}
+                      >
+                        {generateCustomsPackMutation.isPending - "Generating..." : "Generate Customs Pack"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleDownloadCustomsPack}
+                        disabled={downloadCustomsPackMutation.isPending || generateCustomsPackMutation.isPending}
+                      >
+                        {downloadCustomsPackMutation.isPending - "Downloading..." : "Download Pack"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="w-full"
+                        onClick={() => setShowManifestPreview(true)}
+                        disabled={!manifestData}
+                      >
+                        Preview Manifest
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold">Manifest</p>
+                  {manifestData - (
+                    <div className="rounded-lg border border-border/60 p-4 space-y-2">
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>LC Number</span>
+                        <span className="font-medium text-foreground">{manifestData.lc_number}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>Generated</span>
+                        <span className="font-medium text-foreground">
+                          {format(new Date(manifestData.generated_at), "MMM d, yyyy HH:mm")}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Documents</p>
+                        <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+                          {manifestData.documents.map((doc, idx) => (
+                            <li key={`${doc.name}-${idx}`} className="flex items-center justify-between px-3 py-2 text-sm">
+                              <span className="font-medium">{doc.name}</span>
+                              <Badge variant="outline">{doc.type}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <Card className="border-dashed">
+                      <CardContent className="py-6 text-sm text-muted-foreground">
+                        Generate a customs pack to view the manifest.
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
@@ -1489,9 +1643,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           className={cn(
                             "p-2 rounded-lg",
                             document.status === "success"
-                              ? "bg-success/10"
+                              - "bg-success/10"
                               : document.status === "warning"
-                                ? "bg-warning/10"
+                                - "bg-warning/10"
                                 : "bg-destructive/10",
                           )}
                         >
@@ -1499,9 +1653,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             className={cn(
                               "w-5 h-5",
                               document.status === "success"
-                                ? "text-success"
+                                - "text-success"
                                 : document.status === "warning"
-                                  ? "text-warning"
+                                  - "text-warning"
                                   : "text-destructive",
                             )}
                           />
@@ -1519,9 +1673,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           return (
                             <StatusBadge status={document.status}>
                               {discrepancyCount === 0
-                                ? "Verified"
+                                - "Verified"
                                 : document.status === "warning"
-                                  ? "Minor Issues"
+                                  - "Minor Issues"
                                   : `${discrepancyCount} Issues`}
                             </StatusBadge>
                           );
@@ -1534,13 +1688,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {hasFieldEntries ? (
-                      document.typeKey === "letter_of_credit" && lcData ? (
+                    {hasFieldEntries - (
+                      document.typeKey === "letter_of_credit" && lcData - (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between gap-3 flex-wrap">
                             <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
                             <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                              {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
+                              {showRawLcJson - "Hide raw JSON" : "View raw JSON"}
                             </Button>
                           </div>
                           <div className="rounded-md border bg-card/50 p-4 space-y-4">
@@ -1579,7 +1733,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                                       </TableCell>
                                       <TableCell className="text-sm">
                                         {typeof val === "object" && val !== null
-                                          ? JSON.stringify(val, null, 2)
+                                          - JSON.stringify(val, null, 2)
                                           : String(val || "")}
                                       </TableCell>
                                     </TableRow>
@@ -1618,7 +1772,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            {hasIssueCards ? (
+            {hasIssueCards - (
               <>
                 <Card className="shadow-soft border border-border/60">
                   <CardContent className="space-y-4">
@@ -1650,7 +1804,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <Button
                           key={option.value}
                           size="sm"
-                          variant={issueFilter === option.value ? "default" : "outline"}
+                          variant={issueFilter === option.value - "default" : "outline"}
                           onClick={() => setIssueFilter(option.value as typeof issueFilter)}
                         >
                           {option.label}
@@ -1659,7 +1813,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardContent>
                 </Card>
-                {filteredIssueCards.length === 0 ? (
+                {filteredIssueCards.length === 0 - (
                   <Card className="shadow-soft border border-dashed">
                     <CardContent className="py-6 text-center text-sm text-muted-foreground">
                       No issues match this severity filter.
@@ -1712,11 +1866,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <Badge
                     variant={
                       extractionStatus === "success"
-                        ? "default"
+                        - "default"
                         : extractionStatus === "partial"
-                        ? "outline"
+                        - "outline"
                         : extractionStatus === "pending"
-                        ? "destructive"
+                        - "destructive"
                         : "secondary"
                     }
                   >
@@ -1740,14 +1894,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
 
                 {/* Extracted Data Display */}
-                {lcData || Object.keys(extractedDocumentsMap).length > 0 ? (
+                {lcData || Object.keys(extractedDocumentsMap).length > 0 - (
                   <div className="space-y-4">
                     {lcData && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
                           <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
+                            {showRawLcJson - "Hide raw JSON" : "View raw JSON"}
                           </Button>
                         </div>
                         <div className="rounded-md border bg-card/50 p-4 space-y-4">
@@ -1786,7 +1940,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       {typeof val === "object" && val !== null
-                                        ? JSON.stringify(val, null, 2)
+                                        - JSON.stringify(val, null, 2)
                                         : String(val || "")}
                                     </TableCell>
                                   </TableRow>
@@ -1808,7 +1962,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <p className="text-muted-foreground mb-2">No extracted data available</p>
                     <p className="text-sm text-muted-foreground">
                       {extractionStatus === "pending"
-                        ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
+                        - "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
                         : "Data extraction may still be in progress or failed. Please check the extraction status above."}
                     </p>
                   </div>
@@ -1835,9 +1989,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               <Badge
                                 variant={
                                   extractionStatus === "success"
-                                    ? "default"
+                                    - "default"
                                     : extractionStatus === "empty"
-                                    ? "destructive"
+                                    - "destructive"
                                     : "secondary"
                                 }
                               >
@@ -1845,7 +1999,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               </Badge>
                             </div>
 
-                            {fieldEntries.length > 0 ? (
+                            {fieldEntries.length > 0 - (
                               <div className="space-y-2 text-sm">
                                 {fieldEntries.map(([key, value]) => (
                                   <div key={key} className="flex flex-col">
@@ -1886,12 +2040,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {submissionsLoading ? (
+                {submissionsLoading - (
                   <div className="text-center py-12">
                     <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
                     <p className="text-muted-foreground">Loading submission history...</p>
                   </div>
-                ) : !submissionsData || submissionsData.items.length === 0 ? (
+                ) : !submissionsData || submissionsData.items.length === 0 - (
                   <div className="text-center py-12">
                     <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-2">No submissions yet</p>
@@ -1915,7 +2069,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
-            {analyticsAvailable ? (
+            {analyticsAvailable - (
               <>
                 <div className="grid md:grid-cols-2 gap-6">
                   <Card className="shadow-soft border border-border/60">
@@ -1972,7 +2126,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Verified Documents</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
+                            {successCount} ({totalDocuments - Math.round((successCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1981,7 +2135,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Minor Issues</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
+                            {warningCount} ({totalDocuments - Math.round((warningCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1990,7 +2144,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Critical Issues</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
+                            {errorCount} ({totalDocuments - Math.round((errorCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                       </div>
@@ -2031,9 +2185,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               <td className="py-3">
                                 <StatusBadge status={item.status || 'success'}>
                                   {item.status === 'success'
-                                    ? 'Verified'
+                                    - 'Verified'
                                     : item.status === 'warning'
-                                    ? 'Review'
+                                    - 'Review'
                                     : 'Fix Required'}
                                 </StatusBadge>
                               </td>
@@ -2129,7 +2283,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              {manifestData ? (
+              {manifestData - (
                 <>
                   <div className="p-4 bg-muted rounded-lg space-y-2">
                     <div className="flex justify-between text-sm">
@@ -2186,7 +2340,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 disabled={!manifestConfirmed || !manifestData || createSubmissionMutation.isPending}
                 className="bg-green-600 hover:bg-green-700"
               >
-                {createSubmissionMutation.isPending ? (
+                {createSubmissionMutation.isPending - (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Submitting...
@@ -2255,7 +2409,7 @@ function SubmissionHistoryCard({
           )}
         </div>
         <div className="text-sm text-muted-foreground space-y-1">
-          <div>Submitted: {submission.submitted_at ? format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm") : 'N/A'}</div>
+          <div>Submitted: {submission.submitted_at - format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm") : 'N/A'}</div>
           {submission.note && (
             <div className="mt-2 p-2 bg-muted rounded text-xs">
               <strong>Note:</strong> {submission.note}
