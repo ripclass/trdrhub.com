@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc
 import logging
+import copy
 
 from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
@@ -250,53 +251,6 @@ def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
     }
 
 
-def _collect_structured_documents(session: ValidationSession, results_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    documents_structured: List[Dict[str, Any]] = []
-    for document in session.documents or []:
-        documents_structured.append(
-            {
-                "id": str(document.id),
-                "document_type": document.document_type,
-                "original_filename": document.original_filename,
-                "extraction_status": getattr(document, "extraction_status", None) or "unknown",
-                "extracted_fields": document.extracted_fields or {},
-            }
-        )
-
-    if not documents_structured:
-        for doc in results_payload.get("documents") or []:
-            documents_structured.append(doc)
-
-    return documents_structured
-
-
-def _build_structured_result_for_response(
-    results_payload: Dict[str, Any],
-    extracted_data: Dict[str, Any],
-    session_documents: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    structured_result = (results_payload.get("structured_result") or {}).copy()
-    if structured_result.get("version") == "structured_result_v1":
-        return structured_result
-
-    lc_type_hint = {
-        "lc_type": results_payload.get("lc_type"),
-        "lc_type_reason": results_payload.get("lc_type_reason"),
-        "lc_type_confidence": results_payload.get("lc_type_confidence"),
-        "lc_type_source": results_payload.get("lc_type_source"),
-    }
-
-    extractor_outputs = structured_result.get("lc_structured") or (extracted_data or {}).get("lc_structured")
-
-    return build_unified_structured_result(
-        extracted_data=extracted_data,
-        legacy_results_payload=results_payload,
-        extractor_outputs=extractor_outputs,
-        lc_type_hint=lc_type_hint,
-        session_documents=session_documents,
-    )
-
-
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
     job_id: UUID,
@@ -379,95 +333,33 @@ def get_job_results(
             detail=f"Job is not completed yet (status={session.status})",
         )
 
-    # Prefer validator output; never None
-    results_payload = session.validation_results or {}
+    payload = copy.deepcopy(session.validation_results or {})
+    structured_result = payload.get("structured_result") or {}
+    if structured_result.get("version") != "structured_result_v1":
+        try:
+            payload["structured_result"] = build_unified_structured_result(
+                extracted_data=payload.get("extracted_data"),
+                documents=payload.get("documents"),
+                discrepancies=payload.get("discrepancies"),
+                results=payload.get("results"),
+                issue_cards=payload.get("issue_cards"),
+                lc_type_data={
+                    "lc_type": payload.get("lc_type"),
+                    "lc_type_reason": payload.get("lc_type_reason"),
+                    "lc_type_confidence": payload.get("lc_type_confidence"),
+                    "lc_type_source": payload.get("lc_type_source"),
+                },
+                ai_enrichment=payload.get("ai_enrichment"),
+                legacy_payload=payload,
+            )
+            payload.setdefault("telemetry", {})["UnifiedStructuredResultServed"] = True
+        except Exception as exc:
+            logger.warning("Unified structured result build failed: %s", exc)
+            telemetry = payload.setdefault("telemetry", {})
+            telemetry["UnifiedStructuredResultServed"] = False
+            telemetry["UnifiedStructuredResultError"] = str(exc)
 
-    # Defensive: some pipelines stash structured bits at different levels
-    extracted_data = results_payload.get("extracted_data") or session.extracted_data or {}
-    session_structured_docs = _collect_structured_documents(session, results_payload)
-
-    structured_result = _build_structured_result_for_response(
-        results_payload,
-        extracted_data,
-        session_structured_docs,
-    )
-    logger.info(
-        "UnifiedStructuredResultServed",
-        extra={
-            "job_id": str(session.id),
-            "version": structured_result.get("version"),
-        },
-    )
-
-    # Ensure lc_type (and friends) survive regardless of where the classifier wrote them
-    lc_type = (
-        structured_result.get("lc_type")
-        or results_payload.get("lc_type")
-        or (structured_result.get("lc_structured") or {}).get("lc_type")
-        or (extracted_data.get("lc_structured") or {}).get("lc_type")
-    )
-    lc_type_reason = structured_result.get("lc_type_reason") or results_payload.get("lc_type_reason")
-    lc_type_confidence = structured_result.get("lc_type_confidence") or results_payload.get("lc_type_confidence")
-    lc_type_source = structured_result.get("lc_type_source") or results_payload.get("lc_type_source")
-
-    # Results & discrepancies (filter N/A)
-    raw_results = results_payload.get("results") or []
-    raw_discrepancies = results_payload.get("discrepancies") or []
-    
-    # Filter out not_applicable rules from discrepancies (they shouldn't appear in Issues tab)
-    filtered_discrepancies = [
-        d for d in raw_discrepancies
-        if not d.get("not_applicable", False)
-    ]
-
-    summary = {
-        "totalChecks": len(raw_results),
-        "passed": sum(1 for item in raw_results if item.get("passed")),
-        "failed": sum(1 for item in raw_results if not item.get("passed") and not item.get("not_applicable", False)),
-    }
-
-    documents = _serialize_documents(session, filtered_discrepancies)
-
-    # Extraction status & cards
-    extraction_status = results_payload.get("extraction_status") or "unknown"
-    issue_cards = results_payload.get("issue_cards") or []
-    reference_issues = results_payload.get("reference_issues") or []
-
-    # Optional AI enrichment passthrough (UI may map it)
-    ai_enrichment = (
-        results_payload.get("ai_enrichment")
-        or results_payload.get("aiEnrichment")
-        or None
-    )
-
-    # Useful trace for verifying payload size/shape in logs
-    try:
-        sr_len = len(str(structured_result))  # cheap size hint
-        logger.info("results[%s]: sr_len=%s results=%d discrepancies=%d docs=%d lc_type=%s",
-                    job_id, sr_len, len(raw_results), len(filtered_discrepancies), len(documents), lc_type)
-    except Exception:
-        pass
-
-    return {
-        "jobId": str(session.id),
-        "lcNumber": _extract_lc_number(session),
-        "status": session.status,
-        "completedAt": session.processing_completed_at,
-        "results": raw_results,
-        "discrepancies": filtered_discrepancies,  # Only failed, non-not_applicable rules
-        "summary": summary,
-        "documents": documents,
-        "extracted_data": extracted_data,  # include raw extracted LC fields
-        "extraction_status": extraction_status,  # success, partial, empty, error
-        "issue_cards": issue_cards,  # User-facing actionable issues
-        "reference_issues": reference_issues,  # Technical rule references
-        "lc_type": lc_type,
-        "lc_type_reason": lc_type_reason,
-        "lc_type_confidence": lc_type_confidence,
-        "lc_type_source": lc_type_source,
-        "structured_result": structured_result,  # normalized, merged view
-        "ai_enrichment": ai_enrichment,
-    }
+    return payload
 
 
 @router.get("/api/jobs")

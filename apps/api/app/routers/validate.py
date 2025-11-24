@@ -723,15 +723,26 @@ async def validate_doc(
             "lc_type_source": results_payload.get("lc_type_source"),
         }
 
-        unified_structured_result = build_unified_structured_result(
-            extracted_data=extracted_data,
-            legacy_results_payload=results_payload,
-            extractor_outputs=extractor_outputs,
-            lc_type_hint=lc_type_hint,
-            session_documents=final_documents,
-        )
-        results_payload["structured_result"] = unified_structured_result
-        structured_result = unified_structured_result
+        try:
+            unified_structured_result = build_unified_structured_result(
+                extracted_data=results_payload.get("extracted_data"),
+                documents=results_payload.get("documents"),
+                discrepancies=results_payload.get("discrepancies"),
+                results=results_payload.get("results"),
+                issue_cards=results_payload.get("issue_cards"),
+                lc_type_data=lc_type_hint,
+                ai_enrichment=results_payload.get("ai_enrichment"),
+                legacy_payload=results_payload,
+            )
+            results_payload["structured_result"] = unified_structured_result
+            structured_result = unified_structured_result
+            results_payload.setdefault("telemetry", {})["UnifiedStructuredResultBuilt"] = True
+        except Exception as exc:
+            logger.exception("Unified structured builder failed; returning legacy payload")
+            telemetry = results_payload.setdefault("telemetry", {})
+            telemetry["UnifiedStructuredResultBuilt"] = False
+            telemetry["UnifiedStructuredResultError"] = str(exc)
+            structured_result = results_payload.get("structured_result") or {}
 
         logger.info(
             "UnifiedStructuredResultBuilt",
@@ -739,13 +750,13 @@ async def validate_doc(
                 "job_id": str(validation_session.id if validation_session else job_id),
                 "has_mt700": bool(
                     (
-                        unified_structured_result.get("lc_structured", {})
+                        structured_result.get("lc_structured", {})
                         .get("mt700", {})
                         .get("blocks")
                     )
                 ),
-                "goods_len": len(unified_structured_result.get("lc_structured", {}).get("goods") or []),
-                "issues": len(unified_structured_result.get("issues") or []),
+                "goods_len": len(structured_result.get("lc_structured", {}).get("goods") or []),
+                "issues": len(structured_result.get("issues") or []),
             },
         )
 
