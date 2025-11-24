@@ -101,6 +101,9 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
+    expect(screen.getByText(/Letter of Credit Overview/i)).toBeInTheDocument();
+    expect(screen.getByText(/Customs Risk Assessment/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Processing Summary/i)[0]).toBeInTheDocument();
     expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument();
     expect(
       screen.getByText(new RegExp(`Documents \\(${totalDocuments}\\)`, 'i')),

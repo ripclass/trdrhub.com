@@ -46,9 +46,12 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
 import { useJob, useResults } from "@/hooks/use-lcopilot";
-import type { ValidationResults, IssueCard, AIEnrichmentPayload } from "@/types/lcopilot";
+import type { ValidationResults, IssueCard, AIEnrichmentPayload, ReferenceIssue } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
+import LcHeader from "@/components/lcopilot/LcHeader";
+import RiskPanel from "@/components/lcopilot/RiskPanel";
+import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { cn } from "@/lib/utils";
 
 type ExporterResultsProps = {
@@ -455,8 +458,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const enableCustomsPackPDF = isExporterFeatureEnabled("exporter_customs_pack_pdf");
   
   // Guardrails check
-  const resolvedResults = resultData;
-  const structuredResult = resolvedResults?.structured_result;
+  const structuredResult = resultData?.structured_result;
   const structuredLcNumber =
     (structuredResult?.lc_structured?.mt700?.blocks?.["20"] as string | undefined) ??
     (structuredResult?.lc_structured?.mt700?.blocks?.["27"] as string | undefined) ??
@@ -511,7 +513,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }, [submissionsData, queryClient, enableBankSubmission]);
   
   // Check if result has invoiceId (future enhancement)
-  const invoiceId = (resolvedResults as any)?.invoiceId;
+  const invoiceId = (resultData as any)?.invoiceId;
   
   // Generate idempotency key (Phase 7)
   const generateIdempotencyKey = () => {
@@ -617,8 +619,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   });
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
-  const structuredDocumentsPayload = structuredResult?.documents_structured ?? [];
-  const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
+  const structuredDocumentsPayload =
+    structuredResult?.documents_structured ??
+    structuredResult?.lc_structured?.documents_structured ??
+    [];
+  const summary = structuredResult?.processing_summary;
   const extractionStatus = useMemo(() => {
     if (!summary) return "unknown";
     const successExtractions = Number(summary.successful_extractions ?? 0);
@@ -664,14 +669,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       };
     });
   }, [structuredDocumentsPayload]);
-  console.log("[DOCS_DEBUG]", documents);
-  const issueCards = resolvedResults?.issues ?? [];
-  const analyticsData = structuredResult?.analytics ?? resolvedResults?.analytics;
-  const timelineEvents =
-    structuredResult?.lc_structured?.timeline ??
-    structuredResult?.timeline ??
-    resolvedResults?.timeline ??
-    [];
+  console.log("[DOCS_DEBUG_PHASE4]", documents);
+  const issueCards = resultData?.issues ?? [];
+  const analyticsData = resultData?.analytics ?? null;
+  const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
   const severityBreakdown = summary?.severity_breakdown ?? {
@@ -703,7 +704,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [structuredDocumentsPayload],
   );
   // Prefer lc_structured (structured_result v1) only
-  const lcStructured = structuredResult?.lc_structured ?? resolvedResults?.lc_structured ?? null;
+  const lcStructured = structuredResult?.lc_structured ?? null;
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
@@ -734,8 +735,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
-  const referenceIssues = structuredResult?.reference_issues ?? resolvedResults?.reference_issues ?? [];
-  const rawAiInsights = structuredResult?.ai_enrichment ?? resolvedResults?.ai_enrichment ?? null;
+  const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
+    ? (structuredResult?.reference_issues as ReferenceIssue[])
+    : [];
+  const rawAiInsights = structuredResult?.ai_enrichment ?? null;
   const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
     if (!rawAiInsights) {
       return null;
@@ -954,7 +957,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     );
   }
 
-  if (!resolvedResults) {
+  if (!structuredResult) {
     return null;
   }
 
@@ -1220,175 +1223,142 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       )}
 
       <div className={containerClass}>
-        {/* Status Overview */}
-        <Card className="mb-8 shadow-soft border-0">
-          <CardContent className="p-6">
-            <div className="grid md:grid-cols-4 gap-6">
-              <div className="text-center">
-                <div className={`w-16 h-16 mx-auto mb-3 rounded-full flex items-center justify-center ${
-                  overallStatus === "success" ? "bg-success/10" :
-                  overallStatus === "error" ? "bg-destructive/10" : "bg-warning/10"
-                }`}>
-                  {overallStatus === "success" ? (
-                    <CheckCircle className="w-8 h-8 text-success" />
-                  ) : overallStatus === "error" ? (
-                    <XCircle className="w-8 h-8 text-destructive" />
-                  ) : (
-                    <AlertTriangle className="w-8 h-8 text-warning" />
-                  )}
-                </div>
-                <StatusBadge status={overallStatus} className="text-sm font-medium">
-                  {packGenerated ? "Customs Pack Ready" : "Processing Required"}
-                </StatusBadge>
-                {/* Ready to Submit Badge */}
-                {isReadyToSubmit && (
-                  <Badge className="mt-2 bg-green-600 text-white">
-                    <Send className="w-3 h-3 mr-1" />
-                    Ready to Submit to Bank
-                  </Badge>
+        <div className="space-y-6 mb-8">
+          <LcHeader data={resultData ?? null} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <RiskPanel data={resultData ?? null} />
+            <SummaryStrip data={resultData ?? null} />
+          </div>
+        </div>
+
+        <Card className="mb-8 shadow-soft border border-border/60">
+          <CardContent className="p-6 grid gap-6 md:grid-cols-3">
+            <div className="space-y-3 text-center md:text-left">
+              <div
+                className={`w-16 h-16 mx-auto md:mx-0 rounded-full flex items-center justify-center ${
+                  overallStatus === 'success'
+                    ? 'bg-success/10'
+                    : overallStatus === 'error'
+                      ? 'bg-destructive/10'
+                      : 'bg-warning/10'
+                }`}
+              >
+                {overallStatus === 'success' ? (
+                  <CheckCircle className="w-8 h-8 text-success" />
+                ) : overallStatus === 'error' ? (
+                  <XCircle className="w-8 h-8 text-destructive" />
+                ) : (
+                  <AlertTriangle className="w-8 h-8 text-warning" />
                 )}
               </div>
-
-              <div className="space-y-2">
-                <h3 className="font-semibold text-foreground">Processing Summary</h3>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Documents:</span>
-                    <span className="font-medium">{totalDocuments}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Compliance Rate:</span>
-                    <span className="font-medium text-success">
-                      {totalDocuments ? Math.round(((totalDocuments - totalDiscrepancies) / totalDocuments) * 100) : 0}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Processing Time:</span>
-                    <span className="font-medium">{processingTime}</span>
-                  </div>
-                </div>
+              <div className="flex flex-col items-center md:items-start gap-2">
+                <StatusBadge status={overallStatus} className="text-sm font-medium">
+                  {packGenerated ? 'Customs Pack Ready' : 'Processing'}
+                </StatusBadge>
+                {isReadyToSubmit && (
+                  <Badge className="bg-green-600 text-white">
+                    <Send className="w-3 h-3 mr-1" />
+                    Ready to Submit
+                  </Badge>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {processingTime ? `Processed in ${processingTime}` : 'Processing time unavailable'}
+                </p>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <h3 className="font-semibold text-foreground">Document Status</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-success rounded-full"></div>
-                    <span className="text-sm">{successCount} documents verified</span>
-                  </div>
-                  {warningCount > 0 && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-warning rounded-full"></div>
-                      <span className="text-sm">{warningCount} with warnings</span>
-                    </div>
-                  )}
-                  {errorCount > 0 && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                      <span className="text-sm">{errorCount} with errors</span>
-                    </div>
-                  )}
-                  <Progress value={successRate} className="h-2 mt-2" />
-                  <div className="mt-4 p-3 rounded-lg bg-muted/30 text-left space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">
-                      LC Type
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{lcTypeLabel}</Badge>
-                      {lcTypeConfidenceValue !== null && (
-                        <span className="text-xs text-muted-foreground">
-                          {lcTypeConfidenceValue}% confidence
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{lcTypeReason}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Source: {lcTypeSource === "override" ? "Manual override" : "Auto-detected"}
-                    </p>
-                    {lcType === "unknown" && (
-                      <p className="text-xs text-warning">
-                        We could not confidently classify this LC. Some import/export checks were skipped.
-                      </p>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-foreground">Document Health</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Verified</span>
+                  <span className="font-semibold">{successCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Warnings</span>
+                  <span className="font-semibold text-warning">{warningCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Errors</span>
+                  <span className="font-semibold text-destructive">{errorCount}</span>
+                </div>
+                <Progress value={successRate} className="h-2" />
+                <div className="mt-4 p-3 rounded-lg bg-muted/30">
+                  <p className="text-xs uppercase text-muted-foreground tracking-wide">LC Type</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline">{lcTypeLabel}</Badge>
+                    {lcTypeConfidenceValue !== null && (
+                      <span className="text-xs text-muted-foreground">{lcTypeConfidenceValue}% confidence</span>
                     )}
-                    <Link
-                      to={`/export-lc-upload?lcType=${lcType === "export" ? "import" : "export"}`}
-                    >
-                      <Button variant="outline" size="sm" className="mt-2 w-full">
-                        Adjust LC Type
-                      </Button>
-                    </Link>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">{lcTypeReason}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Source: {lcTypeSource === 'override' ? 'Manual override' : 'Auto-detected'}
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <h3 className="font-semibold text-foreground">Next Steps</h3>
-                <div className="space-y-2">
-                  {totalDiscrepancies > 0 ? (
+            <div className="space-y-3">
+              <h3 className="font-semibold text-foreground">Next Actions</h3>
+              {totalDiscrepancies > 0 ? (
+                <>
+                  <Link to="/lcopilot/exporter-dashboard?section=upload">
+                    <Button variant="outline" size="sm" className="w-full">
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Fix & Re-process
+                    </Button>
+                  </Link>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Resolve discrepancies before customs/bank submission.
+                  </p>
+                </>
+              ) : (
+                <Button
+                  className="w-full bg-gradient-primary hover:opacity-90"
+                  size="sm"
+                  onClick={handleDownloadCustomsPack}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Customs Pack
+                </Button>
+              )}
+              {isReadyToSubmit && enableBankSubmission && (
+                <Button
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  size="sm"
+                  onClick={handleSubmitToBank}
+                  disabled={createSubmissionMutation.isPending || guardrailsLoading}
+                >
+                  {createSubmissionMutation.isPending ? (
                     <>
-                      <Link to="/lcopilot/exporter-dashboard?section=upload">
-                        <Button variant="outline" size="sm" className="w-full">
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Fix & Re-process
-                        </Button>
-                      </Link>
-                      <p className="text-xs text-muted-foreground text-center">
-                        Review warnings before bank submission
-                      </p>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Submitting...
                     </>
                   ) : (
                     <>
-                      <Button 
-                        className="w-full bg-gradient-primary hover:opacity-90" 
-                        size="sm"
-                        onClick={handleDownloadCustomsPack}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download Customs Pack
-                      </Button>
-                      {isReadyToSubmit && enableBankSubmission && (
-                        <Button 
-                          className="w-full bg-green-600 hover:bg-green-700 text-white" 
-                          size="sm"
-                          onClick={handleSubmitToBank}
-                          disabled={createSubmissionMutation.isPending || guardrailsLoading}
-                        >
-                          {createSubmissionMutation.isPending ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Submitting...
-                            </>
-                          ) : (
-                            <>
-                              <Send className="w-4 h-4 mr-2" />
-                              Submit to Bank
-                            </>
-                          )}
-                        </Button>
-                      )}
-                      {!isReadyToSubmit && guardrails && guardrails.blocking_issues.length > 0 && (
-                        <div className="text-xs text-muted-foreground space-y-1">
-                          <p className="font-medium text-destructive">Cannot submit:</p>
-                          {guardrails.blocking_issues.map((issue, idx) => (
-                            <p key={idx}>- {issue}</p>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-xs text-success text-center">
-                        {isReadyToSubmit ? "Ready for bank submission" : "Ready for customs clearance"}
-                      </p>
+                      <Send className="w-4 h-4 mr-2" />
+                      Submit to Bank
                     </>
                   )}
-                  {invoiceId && (
-                    <Link to={`/lcopilot/exporter-dashboard?tab=billing&invoice=${invoiceId}`}>
-                      <Button variant="outline" size="sm" className="w-full">
-                        <Receipt className="w-4 h-4 mr-2" />
-                        View Invoice
-                      </Button>
-                    </Link>
-                  )}
+                </Button>
+              )}
+              {!isReadyToSubmit && guardrails && guardrails.blocking_issues.length > 0 && (
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p className="font-medium text-destructive">Cannot submit:</p>
+                  {guardrails.blocking_issues.map((issue, idx) => (
+                    <p key={idx}>- {issue}</p>
+                  ))}
                 </div>
-              </div>
+              )}
+              {invoiceId && (
+                <Link to={`/lcopilot/exporter-dashboard?tab=billing&invoice=${invoiceId}`}>
+                  <Button variant="outline" size="sm" className="w-full">
+                    <Receipt className="w-4 h-4 mr-2" />
+                    View Invoice
+                  </Button>
+                </Link>
+              )}
             </div>
           </CardContent>
         </Card>

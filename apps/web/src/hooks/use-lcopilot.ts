@@ -306,14 +306,22 @@ export const useResults = () => {
 
     try {
       const fetchFn = async (): Promise<ValidationResults> => {
-        const response = await api.get(`/api/results/${jobId}`);
-        const normalized: ValidationResults = buildValidationResponse(response.data);
+        const baseURL = api.defaults.baseURL?.replace(/\/$/, '') ?? '';
+        const url = `${baseURL}/api/results/${jobId}`;
+        const response = await fetch(url, {
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch results (${response.status})`);
+        }
+        const payload = await response.json();
+        const normalized: ValidationResults = buildValidationResponse(payload);
 
         setResults(normalized);
         console.log('[LCopilot][Results] fetched results', {
           jobId,
           hasStructuredResult: !!normalized.structured_result,
-          hasLcStructured: !!(normalized.structured_result?.lc_structured || normalized.lc_structured),
+          hasLcStructured: !!normalized.structured_result?.lc_structured,
           documents: normalized.documents?.length ?? 0,
           issues: normalized.issues?.length ?? 0,
         });

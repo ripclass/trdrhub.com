@@ -215,12 +215,16 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     throw new Error('structured_result_v1 payload missing');
   }
 
-  console.log('[DOCS_MAPPER_DEBUG]', structured.documents_structured ?? []);
-  const documents = mapDocuments(structured.documents_structured ?? []);
+  const optionEDocuments =
+    structured.documents_structured ?? structured.lc_structured?.documents_structured ?? [];
+
+  console.log('[DOCS_MAPPER_DEBUG]', optionEDocuments);
+
+  const documents = mapDocuments(optionEDocuments);
   const issues = mapIssues(structured.issues ?? [], documents);
   const summary = ensureSummary(structured.processing_summary, documents, issues);
   const analytics = ensureAnalytics(structured.analytics, documents, issues);
-  const timeline = mapTimeline(structured.lc_structured?.timeline ?? []);
+  const timeline = mapTimeline(structured.lc_structured?.timeline ?? structured.timeline ?? []);
 
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
