@@ -232,7 +232,9 @@ const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] =>
 export const buildValidationResponse = (raw: any): ValidationResults => {
   const structuredResultRaw = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload> & Record<string, any>;
   const rawExtractedData = (raw?.extracted_data ?? {}) as Record<string, any>;
-  const documentsPayload = Array.isArray(raw?.structured_result?.documents) ? raw.structured_result.documents : [];
+  const documentsPayload = Array.isArray(raw?.structured_result?.documents_structured)
+    ? raw.structured_result.documents_structured
+    : [];
   const issuesPayload = Array.isArray(structuredResultRaw.issues) ? structuredResultRaw.issues : [];
   const analyticsPayload = structuredResultRaw.analytics as StructuredResultAnalytics | undefined;
   const timelinePayload = structuredResultRaw.timeline;

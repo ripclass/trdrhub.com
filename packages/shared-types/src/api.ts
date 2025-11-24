@@ -216,13 +216,22 @@ export const ProcessingSummarySchema = z.object({
 export type ProcessingSummary = z.infer<typeof ProcessingSummarySchema>;
 
 export const StructuredResultDocumentSchema = z.object({
-  document_id: z.string(),
-  document_type: z.string(),
-  filename: z.string(),
-  extraction_status: z.string(),
-  extracted_fields: z.record(z.unknown()),
-  issues_count: z.number().nonnegative(),
-});
+  document_id: z.string().optional(),
+  document_type: z.string().optional(),
+  filename: z.string().optional(),
+  extraction_status: z.string().optional(),
+  extracted_fields: z.record(z.unknown()).optional(),
+  issues_count: z.number().nonnegative().optional(),
+  // Legacy camelCase fields for backward compatibility
+  id: z.string().optional(),
+  name: z.string().optional(),
+  type: z.string().optional(),
+  extractionStatus: z.string().optional(),
+  extractedFields: z.record(z.unknown()).optional(),
+  discrepancy_count: z.number().nonnegative().optional(),
+  discrepancyCount: z.number().nonnegative().optional(),
+  issues: z.number().nonnegative().optional(),
+}).passthrough();
 export type StructuredResultDocument = z.infer<typeof StructuredResultDocumentSchema>;
 
 export const StructuredResultIssueSchema = z.object({
