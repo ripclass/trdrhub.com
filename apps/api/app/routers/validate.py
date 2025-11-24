@@ -516,287 +516,37 @@ async def validate_doc(
         document_status_counts = processing_summary.pop("status_counts", _summarize_document_statuses(document_summaries))
         overall_status = "error" if document_status_counts.get("error") else "warning" if document_status_counts.get("warning") else "success"
 
-        stored_extracted_data = {}
-        if "lc" in payload:
-            stored_extracted_data["lc"] = _normalize_lc_payload_structures(payload["lc"])
-        if "invoice" in payload:
-            stored_extracted_data["invoice"] = payload["invoice"]
-        if "bill_of_lading" in payload:
-            stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
-        if payload.get("documents"):
-            stored_extracted_data["documents"] = payload["documents"]
-        if payload.get("documents_presence"):
-            stored_extracted_data["documents_presence"] = payload["documents_presence"]
-        stored_extracted_data["lc_type"] = lc_type
-        stored_extracted_data["lc_type_reason"] = lc_type_reason
-        stored_extracted_data["lc_type_confidence"] = lc_type_confidence
-        stored_extracted_data["lc_type_source"] = lc_type_source
-        
-        results_payload = {
-            "discrepancies": failed_results,
-            "results": results,
-            "documents": document_summaries,
-            "extracted_data": stored_extracted_data,
-            "extraction_status": payload.get("extraction_status", "unknown"),
-            "summary": {
-                "document_count": len(document_summaries),
-                "failed_rules": len(failed_results),
+        option_e_structured = build_unified_structured_result(
+            session_documents=document_summaries,
+            issue_cards=issue_cards,
+            discrepancies=failed_results,
+            extractor_outputs=context.get("lc_structured_output"),
+            lc_type_data={
+                "lc_type": lc_type,
+                "lc_type_reason": lc_type_reason,
+                "lc_type_confidence": lc_type_confidence,
+                "lc_type_source": lc_type_source,
             },
-            "total_documents": len(document_summaries),
-            "total_discrepancies": len(failed_results),
-            "processing_summary": processing_summary,
-            "document_status": document_status_counts,
-            "timeline": timeline_events,
-            "analytics": analytics_payload,
-            "overall_status": overall_status,
-            "lc_data": stored_extracted_data.get("lc", {}),
-            "issue_cards": issue_cards,  # User-facing actionable issues
-            "reference_issues": reference_issues,  # Technical rule references
-            "lc_type": lc_type,
-            "lc_type_reason": lc_type_reason,
-            "lc_type_confidence": lc_type_confidence,
-            "lc_type_source": lc_type_source,
-        }
-        # Update session status if created
-        if validation_session:
-            session_extracted_data = validation_session.extracted_data or {}
-            try:
-                session_extracted_data.update(
-                    {
-                        "lc_type": lc_type,
-                        "lc_type_reason": lc_type_reason,
-                        "lc_type_confidence": lc_type_confidence,
-                        "lc_type_source": lc_type_source,
-                    }
-                )
-            except AttributeError:
-                session_extracted_data = {
-                    "lc_type": lc_type,
-                    "lc_type_reason": lc_type_reason,
-                    "lc_type_confidence": lc_type_confidence,
-                    "lc_type_source": lc_type_source,
-                }
-            validation_session.extracted_data = session_extracted_data
-
-            # Apply bank policy overlays and exceptions (if bank user)
-            if current_user.is_bank_user() and current_user.company_id:
-                try:
-                    results = await apply_bank_policy(
-                        validation_results=results,
-                        bank_id=str(current_user.company_id),
-                        document_data=payload,
-                        db_session=db,
-                        validation_session_id=str(validation_session.id) if validation_session else None,
-                        user_id=str(current_user.id)
-                    )
-                except Exception as e:
-                    # Don't fail validation if policy application fails
-                    import logging
-                    logging.getLogger(__name__).warning(f"Bank policy application skipped: {e}")
-            
-            # CRITICAL: Ensure documents are in validation_results before storing
-            if not results_payload.get("documents") and document_summaries:
-                logger.warning(
-                    "Document summaries missing from results_payload but available (%d summaries), adding them",
-                    len(document_summaries)
-                )
-                results_payload["documents"] = document_summaries
-            
-            # Log what we're storing
-            logger.info(
-                "Storing validation_results: documents=%d discrepancies=%d issue_cards=%d",
-                len(results_payload.get("documents") or []),
-                len(results_payload.get("discrepancies") or []),
-                len(results_payload.get("issue_cards") or []),
-            )
-            
-            # CRITICAL: Use deepcopy to ensure nested structures are properly copied
-            # Also ensure all required keys are present
-            required_keys = ["documents", "discrepancies", "results", "extracted_data", "issue_cards", "reference_issues"]
-            for key in required_keys:
-                if key not in results_payload:
-                    logger.warning(f"Missing required key '{key}' in results_payload, adding empty default")
-                    if key == "documents":
-                        results_payload[key] = document_summaries or []
-                    elif key in ["discrepancies", "results", "issue_cards", "reference_issues"]:
-                        results_payload[key] = []
-                    elif key == "extracted_data":
-                        results_payload[key] = stored_extracted_data or {}
-            
-            # Store initial payload with deep copy to ensure nested structures are preserved
-            validation_session.validation_results = copy.deepcopy(results_payload)
-
-            validation_session.status = SessionStatus.COMPLETED.value
-            validation_session.processing_completed_at = func.now()
-            
-            # Log bank validation upload if applicable
-            if user_type == "bank":
-                duration_ms = int((time.time() - start_time) * 1000)
-                metadata_dict = payload.get("metadata") or {}
-                if isinstance(metadata_dict, str):
-                    try:
-                        metadata_dict = json.loads(metadata_dict)
-                    except:
-                        metadata_dict = {}
-                
-                audit_service.log_action(
-                    action=AuditAction.UPLOAD,
-                    user=current_user,
-                    correlation_id=audit_context['correlation_id'],
-                    resource_type="bank_validation",
-                    resource_id=str(validation_session.id),
-                    lc_number=metadata_dict.get("lcNumber") or metadata_dict.get("lc_number"),
-                    ip_address=audit_context['ip_address'],
-                    user_agent=audit_context['user_agent'],
-                    endpoint=audit_context['endpoint'],
-                    http_method=audit_context['http_method'],
-                    result=AuditResult.SUCCESS,
-                    duration_ms=duration_ms,
-                    audit_metadata={
-                        "client_name": metadata_dict.get("clientName") or metadata_dict.get("client_name"),
-                        "date_received": metadata_dict.get("dateReceived") or metadata_dict.get("date_received"),
-                        "discrepancy_count": len(failed_results),
-                        "document_count": len(payload.get("files", [])) if isinstance(payload.get("files"), list) else 0,
-                    }
-                )
-
-        # Extract extracted data from payload for frontend display
-        extracted_data = stored_extracted_data or {}
-        extraction_status = payload.get("extraction_status", "unknown")
-
-        # CRITICAL: Ensure documents are always in the response
-        final_documents = document_summaries or []
-        if not final_documents and payload.get("documents"):
-            # Last resort: try to build summaries from document_details if summaries are empty
-            logger.warning(
-                "Document summaries empty but document_details exist, attempting to rebuild from payload"
-            )
-            final_documents = _build_document_summaries(
-                [],  # Empty files_list
-                results,
-                payload.get("documents"),  # Use document_details from payload
-            )
-            if final_documents:
-                logger.info("Successfully rebuilt %d document summaries from payload", len(final_documents))
-                # Update results_payload with the rebuilt documents
-                results_payload["documents"] = final_documents
-                results_payload["total_documents"] = len(final_documents)
-                if validation_session:
-                    # CRITICAL: Use deepcopy to ensure nested structures are preserved
-                    validation_session.validation_results = copy.deepcopy(results_payload)
-                    db.commit()
-                    db.refresh(validation_session)  # Refresh to read latest data
-
-        for doc in final_documents:
-            if not doc.get("id"):
-                doc["id"] = str(uuid4())
-
-        # Legacy structured payload builders remain for backward compatibility,
-        # but unified structured_result now derives analytics internally.
-
-        extracted_data = results_payload.get("extracted_data") or {}
-
-        # -------------------------------
-        # Unified Extractor Output Fix
-        # -------------------------------
-        extractor_outputs = None
-        try:
-            extractor_outputs = (results_payload.get("extracted_data", {}) or {}).get("lc_structured")
-        except Exception:
-            extractor_outputs = None
-
-        if not extractor_outputs and "structured_result" in results_payload:
-            extractor_outputs = (results_payload["structured_result"] or {}).get("lc_structured")
-
-        results_payload["extractor_outputs_debug"] = extractor_outputs is not None
-
-        if extractor_outputs:
-            extracted_data.setdefault("lc_structured", extractor_outputs)
-        if extracted_data.get("lc"):
-            extracted_data["lc"].pop("raw_text", None)
-        results_payload["extracted_data"] = extracted_data
-
-        lc_type_hint = {
-            "lc_type": results_payload.get("lc_type"),
-            "lc_type_reason": results_payload.get("lc_type_reason"),
-            "lc_type_confidence": results_payload.get("lc_type_confidence"),
-            "lc_type_source": results_payload.get("lc_type_source"),
-        }
-
-        try:
-            unified_structured_result = build_unified_structured_result(
-                extracted_data=results_payload.get("extracted_data"),
-                documents=results_payload.get("documents"),
-                discrepancies=results_payload.get("discrepancies"),
-                results=results_payload.get("results"),
-                issue_cards=results_payload.get("issue_cards"),
-                lc_type_data=lc_type_hint,
-                ai_enrichment=results_payload.get("ai_enrichment"),
-                legacy_payload=results_payload,
-                session_documents=final_documents,
-                extractor_outputs=extractor_outputs,
-            )
-            results_payload["structured_result"] = unified_structured_result
-            structured_result = unified_structured_result
-            results_payload.setdefault("telemetry", {})["UnifiedStructuredResultBuilt"] = True
-        except Exception as exc:
-            logger.exception("Unified structured builder failed; returning legacy payload")
-            telemetry = results_payload.setdefault("telemetry", {})
-            telemetry["UnifiedStructuredResultBuilt"] = False
-            telemetry["UnifiedStructuredResultError"] = str(exc)
-            structured_result = results_payload.get("structured_result") or {}
-
-        logger.info(
-            "UnifiedStructuredResultBuilt",
-            extra={
-                "job_id": str(validation_session.id if validation_session else job_id),
-                "has_mt700": bool(
-                    (
-                        structured_result.get("lc_structured", {})
-                        .get("mt700", {})
-                        .get("blocks")
-                    )
-                ),
-                "goods_len": len(structured_result.get("lc_structured", {}).get("goods") or []),
-                "issues": len(structured_result.get("issues") or []),
-            },
+            ai_enrichment=None,
+            processing_seconds=processing_duration,
         )
 
-        # Compute customs risk and pack readiness flags
-        try:
-            from app.services.risk.customs_risk import compute_customs_risk
-            from app.services.customs.customs_pack import prepare_customs_pack
-            lc_struct = (results_payload.get("extracted_data") or {}).get("lc_structured") or {}
-            risk = compute_customs_risk(lc_struct, {"documents": results_payload.get("documents", [])})
-            if "analytics" not in results_payload:
-                results_payload["analytics"] = {}
-            results_payload["analytics"]["customs_risk"] = risk
-            results_payload["customs_pack"] = prepare_customs_pack(results_payload)
-        except Exception as exc:
-            # Never fail the request due to analytics
-            logger.warning("Failed to compute customs risk: %s", exc, exc_info=True)
-            pass
-
         if validation_session:
-            validation_session.validation_results = copy.deepcopy(results_payload)
+            validation_session.validation_results = option_e_structured
+            validation_session.status = SessionStatus.COMPLETED.value
+            validation_session.processing_completed_at = func.now()
             db.commit()
             db.refresh(validation_session)
+        else:
+            db.commit()
 
-            stored_docs = (validation_session.validation_results or {}).get("documents") or []
-            stored_keys = list((validation_session.validation_results or {}).keys())
-            logger.info(
-                "Final validation_results after commit: documents=%d total_keys=%d keys=%s",
-                len(stored_docs),
-                len(validation_session.validation_results or {}),
-                stored_keys,
-            )
+        telemetry_payload = {
+            "UnifiedStructuredResultBuilt": True,
+            "documents": len(option_e_structured.get("documents_structured", [])),
+            "issues": len(option_e_structured.get("issues", [])),
+        }
 
-            if not stored_docs and document_summaries:
-                logger.error(
-                    "CRITICAL: Documents lost after commit! Had %d summaries before commit, but validation_results only has keys: %s",
-                    len(document_summaries),
-                    stored_keys,
-                )
+        customs_pack = prepare_customs_pack(option_e_structured)
 
         logger.info(
             "Validation completed",
@@ -810,27 +560,11 @@ async def validate_doc(
             },
         )
 
-        # overall status calculation remains; ensure it is present
-        overall_status = "ok"
-        if failed_results:
-            overall_status = "error"
-        elif issue_cards:
-            overall_status = "warning"
-        
         return {
-            "status": "ok",
-            "results": results,
-            "discrepancies": failed_results,  # Only failed, non-not_applicable rules
-            "documents": final_documents,  # Use final_documents instead of document_summaries
-            "extracted_data": extracted_data,  # Include extracted LC fields for frontend
-            "extraction_status": extraction_status,  # success, partial, empty, error
-            "job_id": str(job_id),
             "jobId": str(job_id),
-            "quota": quota.to_dict() if quota else None,
-            "issue_cards": issue_cards,
-            "reference_issues": reference_issues,
-            "structured_result": structured_result,
-            "overall_status": overall_status,
+            "structured_result": option_e_structured,
+            "telemetry": telemetry_payload,
+            "customs_pack": customs_pack,
         }
     except HTTPException:
         raise

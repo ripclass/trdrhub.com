@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+VERSION = "structured_result_v1"
 
 DEFAULT_MT700_BLOCKS = [
+    "20",
     "27",
     "31C",
+    "31D",
+    "40A",
     "40E",
     "50",
     "59",
     "32B",
+    "39A",
+    "39B",
     "41A",
     "41D",
     "44A",
@@ -24,78 +33,54 @@ DEFAULT_MT700_BLOCKS = [
     "78",
 ]
 
-VERSION = "structured_result_v1"
-
 
 def build_unified_structured_result(
     *,
-    extracted_data: Optional[Dict[str, Any]],
-    documents: Optional[List[Dict[str, Any]]],
-    discrepancies: Optional[List[Dict[str, Any]]],
-    results: Optional[List[Dict[str, Any]]],
+    session_documents: Optional[List[Dict[str, Any]]],
     issue_cards: Optional[List[Dict[str, Any]]],
+    discrepancies: Optional[List[Dict[str, Any]]],
+    extractor_outputs: Optional[Dict[str, Any]],
     lc_type_data: Optional[Dict[str, Any]],
     ai_enrichment: Optional[Dict[str, Any]],
-    legacy_payload: Dict[str, Any],
-    session_documents: Optional[List[Dict[str, Any]]] = None,
-    extractor_outputs: Optional[Dict[str, Any]] = None,
+    processing_seconds: float,
 ) -> Dict[str, Any]:
     """
-    Build the unified structured_result payload (structured_result_v1).
+    Build the canonical Option-E structured_result payload.
     """
 
-    extracted_data = extracted_data or {}
-    legacy_payload = legacy_payload or {}
-    extractor_outputs = extractor_outputs or extracted_data.get("lc_structured") or {}
-
-    documents_structured = normalize_documents_structured(
-        session_documents,
-        documents or legacy_payload.get("documents"),
-    )
-
-    issues = normalize_issues(
-        issue_cards,
-        discrepancies,
-    )
+    extractor_outputs = extractor_outputs or {}
+    documents_structured = _normalize_documents_structured(session_documents or [])
+    issues = _normalize_issues(issue_cards or [], discrepancies or [])
+    processing_summary = _compute_processing_summary(documents_structured, issues, processing_seconds)
+    analytics = _compute_analytics(documents_structured, issues)
+    timeline = _build_timeline(processing_summary)
 
     lc_structured = {
-        "mt700": normalize_mt700(extractor_outputs),
-        "goods": normalize_goods(extractor_outputs, extracted_data),
-        "clauses": normalize_clauses(extractor_outputs, legacy_payload),
-        "timeline": normalize_timeline(extractor_outputs, legacy_payload),
+        "mt700": _normalize_mt700(extractor_outputs),
+        "goods": _normalize_goods(extractor_outputs),
+        "clauses": _normalize_clauses(extractor_outputs),
+        "timeline": _normalize_lc_timeline(extractor_outputs),
         "documents_structured": documents_structured,
-        "analytics": compute_lc_structured_analytics(legacy_payload, issues),
     }
 
-    processing_summary = compute_processing_summary(legacy_payload, issues, documents_structured)
-    analytics = compute_analytics(legacy_payload, issues)
+    normalized_ai = _normalize_ai_payload(ai_enrichment)
 
-    lc_type_details = derive_lc_type(extracted_data, extractor_outputs, lc_type_data)
-
-    normalized_ai = ai_enrichment or legacy_payload.get("ai_enrichment") or legacy_payload.get("aiEnrichment")
-    if not isinstance(normalized_ai, dict):
-        normalized_ai = {"enabled": False, "notes": []}
-    else:
-        normalized_ai.setdefault("enabled", False)
-        normalized_ai.setdefault("notes", [])
-
-    # Ensure structured_result.documents_structured mirrors lc_structured block
-    documents_structured = lc_structured.get("documents_structured") or []
-
-    return {
+    structured_result = {
         "version": VERSION,
-        **lc_type_details,
+        **_derive_lc_type(extractor_outputs, lc_type_data),
         "lc_structured": lc_structured,
         "documents_structured": documents_structured,
         "issues": issues,
         "processing_summary": processing_summary,
         "analytics": analytics,
+        "timeline": timeline,
         "ai_enrichment": normalized_ai,
     }
 
+    return structured_result
 
-def derive_lc_type(
-    extracted_data: Dict[str, Any],
+
+def _derive_lc_type(
     extractor_outputs: Dict[str, Any],
     lc_type_hint: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -105,11 +90,10 @@ def derive_lc_type(
         "lc_type_confidence": 0,
         "lc_type_source": "auto",
     }
-    lc_structured = extracted_data.get("lc_structured") or extractor_outputs or {}
 
+    lc_structured = extractor_outputs or {}
     candidates = [
         (lc_type_hint or {}).get("lc_type"),
-        extracted_data.get("lc_type"),
         lc_structured.get("lc_type"),
     ]
     for candidate in candidates:
@@ -119,45 +103,191 @@ def derive_lc_type(
 
     details["lc_type_reason"] = (
         (lc_type_hint or {}).get("lc_type_reason")
-        or extracted_data.get("lc_type_reason")
         or lc_structured.get("lc_type_reason")
     )
     details["lc_type_confidence"] = (
         (lc_type_hint or {}).get("lc_type_confidence")
-        or extracted_data.get("lc_type_confidence")
         or lc_structured.get("lc_type_confidence")
         or 0
     )
     details["lc_type_source"] = (
         (lc_type_hint or {}).get("lc_type_source")
-        or extracted_data.get("lc_type_source")
         or lc_structured.get("lc_type_source")
         or "auto"
     )
     return details
 
 
-def normalize_mt700(extractor_outputs: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_documents_structured(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for index, doc in enumerate(documents):
+        normalized.append(
+            {
+                "document_id": str(doc.get("document_id") or doc.get("id") or uuid4()),
+                "document_type": doc.get("document_type") or doc.get("documentType") or "supporting_document",
+                "filename": doc.get("filename") or doc.get("name") or doc.get("original_filename") or f"Document {index + 1}",
+                "extraction_status": doc.get("extraction_status") or doc.get("extractionStatus") or "unknown",
+                "extracted_fields": doc.get("extracted_fields") or doc.get("extractedFields") or {},
+                "issues_count": doc.get("issues_count") or doc.get("discrepancyCount") or 0,
+            }
+        )
+    return normalized
+
+
+def _normalize_issues(
+    issue_cards: List[Dict[str, Any]],
+    discrepancies: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    def _append_issue(source: Dict[str, Any], fallback_title: str, issue_id: Optional[str]):
+        if issue_id and issue_id in seen_ids:
+            return
+        if issue_id:
+            seen_ids.add(issue_id)
+        issues.append(
+            {
+                "id": issue_id or fallback_title,
+                "rule": source.get("rule"),
+                "title": source.get("title") or fallback_title,
+                "severity": (source.get("severity") or "minor").lower(),
+                "documents": source.get("documents") or source.get("document_names") or [],
+                "expected": source.get("expected"),
+                "found": source.get("found") or source.get("actual"),
+                "suggested_fix": source.get("suggested_fix") or source.get("suggestion"),
+                "description": source.get("description") or source.get("message") or "",
+                "ucp_reference": source.get("ucp_reference") or source.get("reference"),
+            }
+        )
+
+    for issue in issue_cards:
+        issue_id = str(issue.get("id") or issue.get("rule") or uuid4())
+        _append_issue(issue, "Issue", issue_id)
+
+    for discrepancy in discrepancies:
+        issue_id = str(discrepancy.get("id") or discrepancy.get("rule") or uuid4())
+        _append_issue(discrepancy, discrepancy.get("title") or "Rule Failure", issue_id)
+
+    return issues
+
+
+def _compute_processing_summary(
+    documents_structured: List[Dict[str, Any]],
+    issues: List[Dict[str, Any]],
+    processing_seconds: float,
+) -> Dict[str, Any]:
+    severity_breakdown = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
+    for issue in issues:
+        severity = issue.get("severity") or "minor"
+        if severity not in severity_breakdown:
+            severity = "minor"
+        severity_breakdown[severity] += 1
+
+    total_documents = len(documents_structured)
+    successful = sum(
+        1 for doc in documents_structured if (doc.get("extraction_status") or "").lower() in {"success", "complete"}
+    )
+    failed = sum(
+        1
+        for doc in documents_structured
+        if (doc.get("extraction_status") or "").lower() in {"error", "failed"}
+    )
+
+    return {
+        "total_documents": total_documents,
+        "successful_extractions": successful,
+        "failed_extractions": failed,
+        "total_issues": sum(severity_breakdown.values()),
+        "severity_breakdown": severity_breakdown,
+        "processing_time_seconds": round(processing_seconds, 2),
+        "processing_time_display": _format_duration(processing_seconds),
+    }
+
+
+def _compute_analytics(
+    documents_structured: List[Dict[str, Any]],
+    issues: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    issue_counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
+    for issue in issues:
+        severity = issue.get("severity") or "minor"
+        if severity not in issue_counts:
+            severity = "minor"
+        issue_counts[severity] += 1
+
+    compliance_penalty = (
+        issue_counts["critical"] * 30
+        + issue_counts["major"] * 20
+        + issue_counts["medium"] * 10
+        + issue_counts["minor"] * 5
+    )
+    compliance_score = max(0, min(100, 100 - compliance_penalty))
+
+    document_risk = [
+        {
+            "document_id": doc.get("document_id"),
+            "filename": doc.get("filename"),
+            "risk": "high" if doc.get("issues_count", 0) >= 3 else "medium" if doc.get("issues_count", 0) >= 1 else "low",
+        }
+        for doc in documents_structured
+    ]
+
+    return {
+        "compliance_score": compliance_score,
+        "issue_counts": issue_counts,
+        "document_risk": document_risk,
+    }
+
+
+def _build_timeline(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    doc_count = summary.get("total_documents", 0)
+    now = datetime.utcnow()
+    stages = [
+        ("Documents Uploaded", "success", f"{doc_count} document(s) received"),
+        ("LC Terms Extracted", "success", "Structured LC context generated"),
+        ("Document Cross-Check", "success", "Validated trade docs against LC terms"),
+        (
+            "Customs Pack Generated",
+            "warning" if summary.get("severity_breakdown", {}).get("major") else "success",
+            "Bundle prepared for customs clearance",
+        ),
+    ]
+
+    for index, (title, status, description) in enumerate(stages):
+        events.append(
+            {
+                "title": title,
+                "status": status,
+                "description": description,
+                "timestamp": (now - timedelta(seconds=max(5, (len(stages) - index) * 5))).isoformat() + "Z",
+            }
+        )
+    return events
+
+
+def _normalize_mt700(extractor_outputs: Dict[str, Any]) -> Dict[str, Any]:
     fields = extractor_outputs.get("mt700") or extractor_outputs.get("fields") or {}
     raw = extractor_outputs.get("mt700_raw") or extractor_outputs.get("raw") or {}
-
     blocks = {tag: None for tag in DEFAULT_MT700_BLOCKS}
 
-    shipment_details = fields.get("shipment_details") or {}
+    shipment_details = fields.get("shipment_details") or extractor_outputs.get("shipment_details") or {}
 
     block_mapping = {
+        "20": fields.get("reference"),
         "27": fields.get("sequence"),
         "31C": fields.get("date_of_issue"),
+        "31D": fields.get("expiry_details", {}).get("expiry_place_and_date") if isinstance(fields.get("expiry_details"), dict) else fields.get("expiry_details"),
+        "40A": fields.get("form_of_doc_credit"),
         "40E": fields.get("applicable_rules"),
         "50": fields.get("applicant"),
         "59": fields.get("beneficiary"),
         "32B": fields.get("credit_amount"),
-        "41A": (fields.get("available_with") or {}).get("details")
-        if isinstance(fields.get("available_with"), dict)
-        else None,
-        "41D": (fields.get("available_with") or {}).get("details")
-        if isinstance(fields.get("available_with"), dict)
-        else None,
+        "39A": fields.get("tolerance"),
+        "39B": fields.get("max_credit_amt"),
+        "41A": fields.get("available_with"),
+        "41D": fields.get("available_with"),
         "44A": shipment_details.get("place_of_taking_in_charge_dispatch_from"),
         "44B": shipment_details.get("place_of_final_destination_for_transport"),
         "44C": shipment_details.get("latest_date_of_shipment"),
@@ -182,19 +312,9 @@ def normalize_mt700(extractor_outputs: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def normalize_goods(
-    extractor_outputs: Dict[str, Any],
-    extracted_data: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+def _normalize_goods(extractor_outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
     goods = extractor_outputs.get("goods") or []
-    if not goods:
-        goods = (
-            (extractor_outputs.get("documents_required") or {}).get("goods")
-            or extracted_data.get("goods")
-            or []
-        )
-
-    normalized = []
+    normalized: List[Dict[str, Any]] = []
 
     for item in goods:
         if not isinstance(item, dict):
@@ -202,8 +322,8 @@ def normalize_goods(
         normalized.append(
             {
                 "description": item.get("description") or item.get("line"),
-                "quantity": (item.get("quantity") or {}).get("value") if isinstance(item.get("quantity"), dict) else item.get("quantity"),
-                "unit": (item.get("quantity") or {}).get("unit") if isinstance(item.get("quantity"), dict) else item.get("unit"),
+                "quantity": item.get("quantity"),
+                "unit": item.get("unit"),
                 "hs_code": item.get("hs_code") or item.get("hsCode"),
                 "unit_price": item.get("unit_price") or item.get("unitPrice"),
                 "amount": item.get("amount"),
@@ -214,34 +334,34 @@ def normalize_goods(
     return normalized
 
 
-def normalize_clauses(
-    extractor_outputs: Dict[str, Any],
-    legacy_results_payload: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+def _normalize_clauses(extractor_outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
     clauses = extractor_outputs.get("clauses_47a") or extractor_outputs.get("additional_conditions") or []
-    if not clauses:
-        clauses = legacy_results_payload.get("clauses") or []
+    normalized: List[Dict[str, Any]] = []
 
-    normalized = []
     for clause in clauses:
         if isinstance(clause, dict):
             normalized.append(
                 {
                     "code": clause.get("code") or clause.get("id") or "",
                     "title": clause.get("title") or clause.get("label") or "",
-                    "text": clause.get("text") or clause.get("value") or clause.get("description") or "",
+                    "text": clause.get("text") or clause.get("value") or "",
                     "source": clause.get("source") or "lc",
                 }
             )
         else:
-            normalized.append({"code": "", "title": "", "text": str(clause), "source": "lc"})
+            normalized.append(
+                {
+                    "code": "",
+                    "title": "",
+                    "text": str(clause),
+                    "source": "lc",
+                }
+            )
+
     return normalized
 
 
-def normalize_timeline(
-    extractor_outputs: Dict[str, Any],
-    legacy_results_payload: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+def _normalize_lc_timeline(extractor_outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
     timeline = []
     extractor_timeline = extractor_outputs.get("timeline") or {}
 
@@ -250,184 +370,37 @@ def normalize_timeline(
         ("expiry_date", "Expiry Date"),
         ("latest_shipment", "Latest Shipment"),
     ]
+
     for key, title in timeline_map:
         value = extractor_timeline.get(key)
         if value:
             timeline.append(
-                {"title": title, "status": "complete", "timestamp": value, "description": None}
-            )
-
-    legacy_timeline = legacy_results_payload.get("timeline") or []
-    if isinstance(legacy_timeline, list):
-        for entry in legacy_timeline:
-            if not isinstance(entry, dict):
-                continue
-            timeline.append(
                 {
-                    "title": entry.get("title") or entry.get("label"),
-                    "status": entry.get("status") or entry.get("state") or "pending",
-                    "timestamp": entry.get("timestamp"),
-                    "description": entry.get("description") or entry.get("detail"),
+                    "title": title,
+                    "status": "complete",
+                    "timestamp": value,
+                    "description": None,
                 }
             )
 
     return timeline
 
 
-def normalize_documents_structured(
-    session_documents: Optional[List[Dict[str, Any]]],
-    legacy_docs: Optional[List[Dict[str, Any]]],
-) -> List[Dict[str, Any]]:
-    documents_structured: List[Dict[str, Any]] = []
-
-    if session_documents:
-        for doc in session_documents:
-            documents_structured.append(
-                {
-                    "document_id": str(doc.get("id") or doc.get("documentId") or doc.get("document_id") or ""),
-                    "document_type": doc.get("document_type") or doc.get("documentType"),
-                    "filename": doc.get("original_filename") or doc.get("filename") or doc.get("name"),
-                    "extraction_status": doc.get("extraction_status") or doc.get("extractionStatus") or "unknown",
-                    "extracted_fields": doc.get("extracted_fields") or doc.get("extractedFields") or {},
-                }
-            )
-
-    if not documents_structured and isinstance(legacy_docs, list):
-        for doc in legacy_docs:
-            documents_structured.append(
-                {
-                    "document_id": str(doc.get("id") or ""),
-                    "document_type": doc.get("documentType") or doc.get("type"),
-                    "filename": doc.get("name") or doc.get("original_filename"),
-                    "extraction_status": doc.get("extraction_status") or doc.get("status") or "unknown",
-                    "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
-                }
-            )
-
-    return documents_structured
+def _normalize_ai_payload(ai_enrichment: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(ai_enrichment, dict):
+        return {"enabled": False, "notes": []}
+    payload = dict(ai_enrichment)
+    payload.setdefault("enabled", False)
+    payload.setdefault("notes", [])
+    return payload
 
 
-def normalize_issues(
-    issue_cards: Optional[List[Dict[str, Any]]],
-    discrepancies: Optional[List[Dict[str, Any]]],
-) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
-    seen_ids = set()
+def _format_duration(duration_seconds: float) -> str:
+    if duration_seconds < 60:
+        return f"{int(duration_seconds)}s"
+    minutes, seconds = divmod(int(duration_seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
 
-    for source in (issue_cards or []):
-        issue_id = source.get("id") or source.get("rule") or source.get("title")
-        if issue_id and issue_id in seen_ids:
-            continue
-        seen_ids.add(issue_id)
-        issues.append(
-            {
-                "id": issue_id,
-                "rule": source.get("rule"),
-                "title": source.get("title"),
-                "severity": source.get("severity") or "minor",
-                "documents": source.get("documents") or ([source.get("documentName")] if source.get("documentName") else []),
-                "expected": source.get("expected"),
-                "found": source.get("actual") or source.get("found"),
-                "suggested_fix": source.get("suggestion") or source.get("suggestedFix"),
-                "description": source.get("description"),
-                "ucp_reference": source.get("ucpReference"),
-            }
-        )
-
-    for source in discrepancies or []:
-        if source.get("not_applicable"):
-            continue
-        issue_id = source.get("id") or source.get("rule") or source.get("title")
-        if issue_id and issue_id in seen_ids:
-            continue
-        seen_ids.add(issue_id)
-        issues.append(
-            {
-                "id": issue_id,
-                "rule": source.get("rule"),
-                "title": source.get("title") or source.get("rule"),
-                "severity": source.get("severity") or "minor",
-                "documents": source.get("documents") or [],
-                "expected": source.get("expected"),
-                "found": source.get("found"),
-                "suggested_fix": source.get("suggestedFix") or source.get("suggestion"),
-                "description": source.get("message") or source.get("description"),
-                "ucp_reference": source.get("ucp_reference"),
-            }
-        )
-
-    return issues
-
-
-def compute_lc_structured_analytics(
-    legacy_results_payload: Dict[str, Any],
-    issues: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    issue_counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
-    for issue in issues:
-        severity = (issue.get("severity") or "minor").lower()
-        if severity in issue_counts:
-            issue_counts[severity] += 1
-        else:
-            issue_counts["minor"] += 1
-
-    compliance_score = 100 - ((issue_counts["critical"] * 30) + (issue_counts["major"] * 20) + (issue_counts["medium"] * 10))
-    compliance_score = max(0, min(100, compliance_score))
-
-    return {"compliance_score": compliance_score, "issue_counts": issue_counts}
-
-
-def compute_processing_summary(
-    legacy_results_payload: Dict[str, Any],
-    issues: List[Dict[str, Any]],
-    documents_structured: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    severity_breakdown = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
-    for issue in issues:
-        severity = (issue.get("severity") or "minor").lower()
-        if severity in severity_breakdown:
-            severity_breakdown[severity] += 1
-        else:
-            severity_breakdown["minor"] += 1
-
-    processing_summary = {
-        "total_documents": len(documents_structured),
-        "successful_extractions": sum(1 for doc in documents_structured if doc.get("extraction_status") in {"success", "complete"}),
-        "failed_extractions": sum(1 for doc in documents_structured if doc.get("extraction_status") not in {"success", "complete", "partial"}),
-        "total_issues": sum(severity_breakdown.values()),
-        "severity_breakdown": severity_breakdown,
-    }
-
-    legacy_summary = legacy_results_payload.get("processing_summary") or {}
-    for key, value in legacy_summary.items():
-        if key not in processing_summary or processing_summary[key] in (None, 0):
-            processing_summary[key] = value
-
-    return processing_summary
-
-
-def compute_analytics(
-    legacy_results_payload: Dict[str, Any],
-    issues: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    analytics = legacy_results_payload.get("analytics") or {}
-    if not isinstance(analytics, dict):
-        analytics = {}
-
-    compliance_score = analytics.get("lc_compliance_score") or analytics.get("compliance_score")
-    if compliance_score is None:
-        issue_penalty = len(issues) * 5
-        compliance_score = max(0, 100 - issue_penalty)
-
-    default_issue_counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
-    for issue in issues:
-        severity = (issue.get("severity") or "minor").lower()
-        if severity in default_issue_counts:
-            default_issue_counts[severity] += 1
-        else:
-            default_issue_counts["minor"] += 1
-
-    analytics.setdefault("issue_counts", default_issue_counts)
-    analytics.setdefault("compliance_score", compliance_score)
-
-    return analytics

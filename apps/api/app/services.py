@@ -372,27 +372,11 @@ class DocumentProcessingService:
             validation_summary = await self.rules_engine.validate_session(session)
             
             existing_results = session.validation_results or {}
-            structured_version = (
-                existing_results.get("structured_result", {}).get("version")
-                if isinstance(existing_results, dict)
-                else None
-            )
-
-            if structured_version == "structured_result_v1":
+            if isinstance(existing_results, dict) and existing_results.get("version") == "structured_result_v1":
                 logging.getLogger(__name__).info(
-                    "Skipping legacy validation_results overwrite for session %s (structured_result_v1 already present)",
+                    "Structured_result_v1 already persisted for session %s; skipping legacy overwrite",
                     session.id,
                 )
-            else:
-                session.validation_results = {
-                    "summary": {
-                        "total_rules": validation_summary.total_rules,
-                        "passed_rules": validation_summary.passed_rules,
-                        "failed_rules": validation_summary.failed_rules,
-                        "critical_issues": validation_summary.critical_issues
-                    },
-                    "validated_at": validation_summary.validated_at.isoformat()
-                }
             # Mark the job complete when results are persisted so polling can stop
             session.status = SessionStatus.COMPLETED.value
             session.processing_completed_at = datetime.now(timezone.utc)
