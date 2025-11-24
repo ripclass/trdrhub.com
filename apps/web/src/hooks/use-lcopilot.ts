@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
 import type {
@@ -296,6 +297,7 @@ export const useResults = () => {
   const [results, setResults] = useState<ValidationResults | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ValidationError | null>(null);
+  const queryClient = useQueryClient();
 
   const getResults = useCallback(async (jobId: string): Promise<ValidationResults> => {
     console.log('[LCopilot][Results] fetching results', { jobId });
@@ -303,24 +305,38 @@ export const useResults = () => {
     setError(null);
 
     try {
-      const response = await api.get(`/api/results/${jobId}`);
-      const normalized: ValidationResults = buildValidationResponse(response.data);
+      const fetchFn = async (): Promise<ValidationResults> => {
+        const response = await api.get(`/api/results/${jobId}`);
+        const normalized: ValidationResults = buildValidationResponse(response.data);
 
-      if (!normalized.structured_result && response.data?.structured_result) {
-        normalized.structured_result = response.data.structured_result;
-      }
+        if (!normalized.structured_result && response.data?.structured_result) {
+          normalized.structured_result = response.data.structured_result;
+        }
 
-      if (normalized.ai_enrichment && !normalized.aiEnrichment) {
-        normalized.aiEnrichment = normalized.ai_enrichment;
-      }
+        if (normalized.ai_enrichment && !normalized.aiEnrichment) {
+          normalized.aiEnrichment = normalized.ai_enrichment;
+        }
 
-      setResults(normalized);
-      console.log('[LCopilot][Results] fetched results', {
-        jobId,
-        hasStructuredResult: !!normalized.structured_result,
-        hasLcStructured: !!(normalized.structured_result?.lc_structured || normalized.lc_structured),
-        documents: normalized.documents?.length ?? 0,
-        issues: normalized.issues?.length ?? 0,
+        setResults(normalized);
+        console.log('[LCopilot][Results] fetched results', {
+          jobId,
+          hasStructuredResult: !!normalized.structured_result,
+          hasLcStructured: !!(normalized.structured_result?.lc_structured || normalized.lc_structured),
+          documents: normalized.documents?.length ?? 0,
+          issues: normalized.issues?.length ?? 0,
+        });
+        return normalized;
+      };
+
+      await queryClient.invalidateQueries({ queryKey: ['results', jobId] });
+      await queryClient.refetchQueries({ queryKey: ['results', jobId] });
+      console.log('[LCopilot][UI] FORCING REFRESH for job:', jobId);
+
+      const normalized = await queryClient.fetchQuery({
+        queryKey: ['results', jobId],
+        queryFn: fetchFn,
+        staleTime: 0,
+        gcTime: 0,
       });
       return normalized;
     } catch (err: any) {

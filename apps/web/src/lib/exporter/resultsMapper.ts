@@ -235,6 +235,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const documentsPayload = Array.isArray(raw?.structured_result?.documents_structured)
     ? raw.structured_result.documents_structured
     : [];
+  console.log('[DOCS_MAPPER_DEBUG]', documentsPayload);
   const issuesPayload = Array.isArray(structuredResultRaw.issues) ? structuredResultRaw.issues : [];
   const analyticsPayload = structuredResultRaw.analytics as StructuredResultAnalytics | undefined;
   const timelinePayload = structuredResultRaw.timeline;

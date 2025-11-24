@@ -614,7 +614,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
   const structuredResult = resolvedResults?.structured_result;
-  const structuredDocumentsPayload = structuredResult?.documents_structured ?? structuredResult?.documents ?? [];
+  const structuredDocumentsPayload = structuredResult?.documents_structured ?? [];
   const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
   const documents = useMemo(() => {
     return structuredDocumentsPayload.map((doc, index) => {
