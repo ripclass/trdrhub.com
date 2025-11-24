@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import LandingPage from './pages/landing/LandingPage'
 import Index from './pages/Index'
 import TRDRHub from './pages/TRDRHub'
@@ -32,7 +32,6 @@ import BankDashboard from './pages/BankDashboard'
 import BankDashboardV2 from './pages/BankDashboardV2'
 import BankLogin from './pages/bank/BankLogin'
 import ImporterDashboardV2 from './pages/ImporterDashboardV2'
-import ExporterDashboardV2 from './pages/ExporterDashboardV2'
 import ExporterLogin from './pages/exporter/ExporterLogin'
 import ImporterLogin from './pages/importer/ImporterLogin'
 import ClientDashboard from './pages/ClientDashboard'
@@ -92,7 +91,7 @@ function App() {
         } />
         <Route path="/lcopilot/exporter-dashboard" element={
           <ExporterAuthProvider>
-            <ExporterDashboardV2 />
+            <ExporterDashboard />
           </ExporterAuthProvider>
         } />
         <Route path="/lcopilot/combined-dashboard" element={
@@ -100,12 +99,8 @@ function App() {
             <CombinedDashboard />
           </ExporterAuthProvider>
         } />
-        <Route path="/lcopilot/exporter-dashboard/legacy" element={<ExporterDashboard />} />
-        <Route path="/lcopilot/exporter-dashboard/v2" element={
-          <ExporterAuthProvider>
-            <ExporterDashboardV2 />
-          </ExporterAuthProvider>
-        } />
+        <Route path="/lcopilot/exporter-dashboard/legacy" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
+        <Route path="/lcopilot/exporter-dashboard/v2" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
         <Route path="/lcopilot/importer-dashboard/login" element={
           <ImporterAuthProvider>
             <ImporterLogin />

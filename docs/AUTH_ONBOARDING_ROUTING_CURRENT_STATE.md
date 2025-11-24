@@ -93,7 +93,7 @@ return OnboardingStatus(
 * It fetches `getOnboardingStatus()`, inspects `status.role`, `details.business_types`, `details.company.type`, and `details.company.size`, then sets `destination`.
 * The code attempts multiple retries/fallbacks, but ultimately defaults to `/lcopilot/exporter-dashboard`.
 * Separate dashboards also have their own guards:
-  * `ExporterDashboardV2` uses `useExporterAuth`.
+  * `ExporterDashboard` uses `useExporterAuth`.
   * `CombinedDashboard` recently switched from `useExporterAuth` to `useAuth`, but still receives `user` via props in some places.
   * `EnterpriseDashboard` only recently started checking `useAuth`.
   * Bank dashboard uses `useBankAuth`.

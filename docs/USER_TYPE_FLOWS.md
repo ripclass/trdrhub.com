@@ -125,7 +125,7 @@ const roleMap: Record<string, string> = {
 - ✅ Ready to use
 
 #### Post-Onboarding Experience
-- **Dashboard**: ExporterDashboardV2
+- **Dashboard**: ExporterDashboard
 - **Features**: Upload LC, validate documents, view results, analytics
 - **Limitations**: Own data only, no team management
 
@@ -453,7 +453,7 @@ How many employees does your company have?
 
 | User Type | Role | Company Size | Onboarding Required | KYC Required | Approval Required | Dashboard |
 |-----------|------|--------------|---------------------|--------------|-------------------|-----------|
-| SME Exporter | `exporter` | SME (1-20) | No | No | No | ExporterDashboardV2 |
+| SME Exporter | `exporter` | SME (1-20) | No | No | No | ExporterDashboard |
 | SME Importer | `importer` | SME (1-20) | No | No | No | ImporterDashboardV2 |
 | SME (Both) | `exporter` | SME (1-20) | No | No | No | Combined Dashboard ⚠️ (needs unified view) |
 | Medium Enterprise (Both) | `tenant_admin` | Medium (21-50) | Yes (team setup) | No | No | Enterprise Dashboard ⚠️ (combined export/import) |

@@ -318,9 +318,9 @@ const COMPANY_TYPES = [
 - [ ] FI users see KYC wizard (same as bank)
 
 ### Dashboard Tests
-- [ ] SME exporters → ExporterDashboardV2
+- [ ] SME exporters → ExporterDashboard
 - [ ] SME importers → ImporterDashboardV2
-- [ ] SME "both" → ExporterDashboardV2 (can switch views)
+- [ ] SME "both" → ExporterDashboard (can switch views)
 - [ ] Medium/Large Enterprise → Enterprise Dashboard
 - [ ] Banks → BankDashboardV2
 - [ ] FIs → BankDashboardV2
