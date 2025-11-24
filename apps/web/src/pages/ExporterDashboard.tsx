@@ -394,34 +394,36 @@ const AnalyticsSection = () => {
     return <ResultsRequiredCard />;
   }
 
-  const documentStatus = summary.status_counts ?? summary.document_status ?? {};
-  const processingTime = summary.processing_time_display ?? analytics?.processing_time_display ?? "N/A";
-  const complianceScore =
-    analytics?.lc_compliance_score ??
-    analytics?.customs_ready_score ??
-    analytics?.compliance_score ??
-    null;
+  // Derive document status from summary fields
+  const successful = summary.successful_extractions ?? 0;
+  const failed = summary.failed_extractions ?? 0;
+  const total = summary.total_documents ?? documents.length;
+  const warning = Math.max(0, total - successful - failed);
+
+  const complianceScore = analytics?.compliance_score ?? null;
+  const customsRiskScore = (analytics as any)?.customs_risk?.score ?? null;
+  const severityBreakdown = summary.severity_breakdown ?? {};
 
   const metrics = [
     {
       label: "Documents Processed",
-      value: documents.length,
-      helper: `${documentStatus.success ?? 0} success / ${documentStatus.warning ?? 0} warning / ${documentStatus.error ?? 0} error`,
+      value: total,
+      helper: `${successful} success / ${warning} warning / ${failed} error`,
     },
     {
       label: "Compliance Score",
       value: typeof complianceScore === "number" ? `${complianceScore}%` : "N/A",
-      helper: "From structured_result.analytics",
+      helper: "From structured_result.analytics.compliance_score",
     },
     {
-      label: "Customs Ready",
-      value: typeof analytics?.customs_ready_score === "number" ? `${analytics.customs_ready_score}%` : "N/A",
-      helper: "Customs readiness score",
+      label: "Customs Risk",
+      value: typeof customsRiskScore === "number" ? `${customsRiskScore}%` : "N/A",
+      helper: "Customs risk score from analytics.customs_risk",
     },
     {
-      label: "Extraction Accuracy",
-      value: typeof analytics?.extraction_accuracy === "number" ? `${analytics.extraction_accuracy}%` : "N/A",
-      helper: "Structured extraction accuracy",
+      label: "Severity Breakdown",
+      value: `${severityBreakdown.critical ?? 0} critical / ${severityBreakdown.major ?? 0} major / ${severityBreakdown.minor ?? 0} minor`,
+      helper: "Issue severity distribution",
     },
     {
       label: "Total Issues",
@@ -429,9 +431,9 @@ const AnalyticsSection = () => {
       helper: `${issues.length} issues from structured_result.issues`,
     },
     {
-      label: "Processing Time",
-      value: processingTime,
-      helper: "Wall-clock duration",
+      label: "Extraction Success Rate",
+      value: total > 0 ? `${Math.round((successful / total) * 100)}%` : "N/A",
+      helper: `${successful} of ${total} documents extracted successfully`,
     },
   ];
 
