@@ -107,7 +107,7 @@ export default function ExporterResults({
   
   const lcNumberParam = lcNumberProp || searchParams.get('lc') || undefined;
   const tabParamRaw = searchParams.get("tab");
-  const tabParam = isResultsTab(tabParamRaw) - tabParamRaw : null;
+  const tabParam = isResultsTab(tabParamRaw) ? tabParamRaw : null;
 
   const formatExtractedValue = (value: any): string => {
     if (value === null || value === undefined) {
@@ -288,7 +288,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   return (
     <div key={key} className="space-y-2">
       <h3 className="font-semibold text-lg">{label} Data</h3>
-      {rows.length - (
+      {rows.length ? (
         <div className="grid gap-4 md:grid-cols-2">{rows}</div>
       ) : (
         <p className="text-sm text-muted-foreground">No structured fields extracted for this document.</p>
@@ -666,7 +666,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const successExtractions = Number(summary.successful_extractions ?? 0);
     const failedExtractions = Number(summary.failed_extractions ?? 0);
     if (failedExtractions === 0) {
-      return successExtractions > 0 - "success" : "pending";
+      return successExtractions > 0 ? "success" : "pending";
     }
     if (successExtractions > 0 && failedExtractions > 0) {
       return "partial";
@@ -766,11 +766,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         "lc-dates",
       )
     : [];
-  const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) - lcData.goods_items : [];
-  const lcApplicantCard = lcData - renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
-  const lcBeneficiaryCard = lcData - renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
-  const lcPortsCard = lcData - renderPortsCard(lcData.ports) : null;
-  const lcGoodsItemsList = lcData - renderGoodsItemsList(lcGoodsItems) : null;
+  const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) ? lcData.goods_items : [];
+  const lcApplicantCard = lcData ? renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
+  const lcBeneficiaryCard = lcData ? renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
+  const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
+  const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     - (structuredResult?.reference_issues as ReferenceIssue[])
@@ -783,7 +783,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (typeof (rawAiInsights as AIEnrichmentPayload).summary === "string" || Array.isArray((rawAiInsights as AIEnrichmentPayload).suggestions)) {
       return rawAiInsights as AIEnrichmentPayload;
     }
-    const notes = Array.isArray((rawAiInsights as any).notes) - (rawAiInsights as any).notes : [];
+    const notes = Array.isArray((rawAiInsights as any).notes) ? (rawAiInsights as any).notes : [];
     if (!notes.length) {
       return null;
     }
@@ -897,7 +897,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       documents.map((doc) => ({
         document_id: doc.documentId,
         filename: doc.name,
-        risk: doc.issuesCount >= 3 - "high" : doc.issuesCount > 0 - "medium" : "low",
+        risk: doc.issuesCount >= 3 ? "high" : doc.issuesCount > 0 ? "medium" : "low",
       })),
     [analyticsData?.document_risk, documents],
   );
@@ -909,7 +909,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const performanceInsights = useMemo(
     () => [
       successCount + "/" + (totalDocuments || 0) + " documents extracted successfully",
-      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 - "" : "s") + " detected",
+      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
       "Compliance score " + complianceScore + "%",
     ],
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
@@ -1427,7 +1427,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className={cn("grid gap-6", hasTimeline - "md:grid-cols-2" : "md:grid-cols-1")}>
+            <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
                   <CardHeader className="pb-3">
@@ -1492,20 +1492,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
-                      <span className={`font-medium ${successRate >= 90 - 'text-success' : 'text-warning'}`}>
+                      <span className={`font-medium ${successRate >= 90 ? 'text-success' : 'text-warning'}`}>
                         {successRate}%
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Customs Ready:</span>
-                      <span className={`font-medium ${customsReadyScore >= 90 - 'text-success' : 'text-warning'}`}>
-                        {customsReadyScore >= 90 - 'Yes' : 'Review'}
+                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Bank Ready:</span>
-                      <span className={`font-medium ${overallStatus === 'success' - 'text-success' : 'text-warning'}`}>
-                        {overallStatus === 'success' - 'Ready' : 'Review needed'}
+                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
+                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
                       </span>
                     </div>
                   </div>
@@ -1535,8 +1535,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={packGenerated - "success" : "warning"}>
-                        {packGenerated - "Ready" : "Pending"}
+                      <StatusBadge status={packGenerated ? "success" : "warning"}>
+                        {packGenerated ? "Ready" : "Pending"}
                       </StatusBadge>
                       <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
                     </div>
@@ -1565,7 +1565,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         onClick={() => generateCustomsPackMutation.mutate()}
                         disabled={generateCustomsPackMutation.isPending}
                       >
-                        {generateCustomsPackMutation.isPending - "Generating..." : "Generate Customs Pack"}
+                        {generateCustomsPackMutation.isPending ? "Generating..." : "Generate Customs Pack"}
                       </Button>
                       <Button
                         size="sm"
@@ -1574,7 +1574,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         onClick={handleDownloadCustomsPack}
                         disabled={downloadCustomsPackMutation.isPending || generateCustomsPackMutation.isPending}
                       >
-                        {downloadCustomsPackMutation.isPending - "Downloading..." : "Download Pack"}
+                        {downloadCustomsPackMutation.isPending ? "Downloading..." : "Download Pack"}
                       </Button>
                       <Button
                         size="sm"
@@ -1591,7 +1591,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
                 <div className="space-y-3">
                   <p className="text-sm font-semibold">Manifest</p>
-                  {manifestData - (
+                  {manifestData ? (
                     <div className="rounded-lg border border-border/60 p-4 space-y-2">
                       <div className="flex items-center justify-between text-sm text-muted-foreground">
                         <span>LC Number</span>
@@ -1643,9 +1643,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           className={cn(
                             "p-2 rounded-lg",
                             document.status === "success"
-                              - "bg-success/10"
+                              ? "bg-success/10"
                               : document.status === "warning"
-                                - "bg-warning/10"
+                                ? "bg-warning/10"
                                 : "bg-destructive/10",
                           )}
                         >
@@ -1653,9 +1653,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             className={cn(
                               "w-5 h-5",
                               document.status === "success"
-                                - "text-success"
+                                ? "text-success"
                                 : document.status === "warning"
-                                  - "text-warning"
+                                  ? "text-warning"
                                   : "text-destructive",
                             )}
                           />
@@ -1673,9 +1673,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           return (
                             <StatusBadge status={document.status}>
                               {discrepancyCount === 0
-                                - "Verified"
+                                ? "Verified"
                                 : document.status === "warning"
-                                  - "Minor Issues"
+                                  ? "Minor Issues"
                                   : `${discrepancyCount} Issues`}
                             </StatusBadge>
                           );
@@ -1688,13 +1688,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {hasFieldEntries - (
-                      document.typeKey === "letter_of_credit" && lcData - (
+                    {hasFieldEntries ? (
+                      document.typeKey === "letter_of_credit" && lcData ? (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between gap-3 flex-wrap">
                             <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
                             <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                              {showRawLcJson - "Hide raw JSON" : "View raw JSON"}
+                              {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
                             </Button>
                           </div>
                           <div className="rounded-md border bg-card/50 p-4 space-y-4">
@@ -1733,7 +1733,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                                       </TableCell>
                                       <TableCell className="text-sm">
                                         {typeof val === "object" && val !== null
-                                          - JSON.stringify(val, null, 2)
+                                          ? JSON.stringify(val, null, 2)
                                           : String(val || "")}
                                       </TableCell>
                                     </TableRow>
@@ -1804,7 +1804,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <Button
                           key={option.value}
                           size="sm"
-                          variant={issueFilter === option.value - "default" : "outline"}
+                          variant={issueFilter === option.value ? "default" : "outline"}
                           onClick={() => setIssueFilter(option.value as typeof issueFilter)}
                         >
                           {option.label}
@@ -1894,14 +1894,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
 
                 {/* Extracted Data Display */}
-                {lcData || Object.keys(extractedDocumentsMap).length > 0 - (
+                {lcData || Object.keys(extractedDocumentsMap).length > 0 ? (
                   <div className="space-y-4">
                     {lcData && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
                           <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                            {showRawLcJson - "Hide raw JSON" : "View raw JSON"}
+                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
                           </Button>
                         </div>
                         <div className="rounded-md border bg-card/50 p-4 space-y-4">
@@ -1940,7 +1940,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       {typeof val === "object" && val !== null
-                                        - JSON.stringify(val, null, 2)
+                                        ? JSON.stringify(val, null, 2)
                                         : String(val || "")}
                                     </TableCell>
                                   </TableRow>
@@ -2126,7 +2126,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Verified Documents</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {successCount} ({totalDocuments - Math.round((successCount/totalDocuments)*100) : 0}%)
+                            {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -2135,7 +2135,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Minor Issues</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {warningCount} ({totalDocuments - Math.round((warningCount/totalDocuments)*100) : 0}%)
+                            {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -2144,7 +2144,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <span className="text-sm">Critical Issues</span>
                           </div>
                           <span className="text-sm font-medium">
-                            {errorCount} ({totalDocuments - Math.round((errorCount/totalDocuments)*100) : 0}%)
+                            {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
                           </span>
                         </div>
                       </div>
@@ -2409,7 +2409,7 @@ function SubmissionHistoryCard({
           )}
         </div>
         <div className="text-sm text-muted-foreground space-y-1">
-          <div>Submitted: {submission.submitted_at - format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm") : 'N/A'}</div>
+          <div>Submitted: {submission.submitted_at ? format(new Date(submission.submitted_at), "MMM d, yyyy 'at' HH:mm") : 'N/A'}</div>
           {submission.note && (
             <div className="mt-2 p-2 bg-muted rounded text-xs">
               <strong>Note:</strong> {submission.note}
