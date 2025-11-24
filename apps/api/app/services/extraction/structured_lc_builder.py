@@ -79,10 +79,14 @@ def build_unified_structured_result(
         normalized_ai.setdefault("enabled", False)
         normalized_ai.setdefault("notes", [])
 
+    # Ensure structured_result.documents_structured mirrors lc_structured block
+    documents_structured = lc_structured.get("documents_structured") or []
+
     return {
         "version": VERSION,
         **lc_type_details,
         "lc_structured": lc_structured,
+        "documents_structured": documents_structured,
         "issues": issues,
         "processing_summary": processing_summary,
         "analytics": analytics,
