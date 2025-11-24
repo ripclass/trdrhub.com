@@ -46,9 +46,7 @@ import re
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
-from app.services.customs.customs_pack import prepare_customs_pack  # keep metadata-only if needed
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
-from app.services.risk.customs_risk import compute_customs_risk
 from app.services.extraction.lc_extractor import extract_lc_structured
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 
@@ -513,76 +511,40 @@ async def validate_doc(
         processing_duration = time.time() - start_time
         processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
 
-        stored_extracted_data: Dict[str, Any] = {}
-        if "lc" in payload:
-            stored_extracted_data["lc"] = _normalize_lc_payload_structures(payload["lc"])
-        if "invoice" in payload:
-            stored_extracted_data["invoice"] = payload["invoice"]
-        if "bill_of_lading" in payload:
-            stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
-        if payload.get("documents"):
-            stored_extracted_data["documents"] = payload["documents"]
-        if payload.get("documents_presence"):
-            stored_extracted_data["documents_presence"] = payload["documents_presence"]
-        stored_extracted_data["lc_type"] = lc_type
-        stored_extracted_data["lc_type_reason"] = lc_type_reason
-        stored_extracted_data["lc_type_confidence"] = lc_type_confidence
-        stored_extracted_data["lc_type_source"] = lc_type_source
-        stored_extracted_data["lc_structured_output"] = context.get("lc_structured_output")
+        if validation_session and current_user.is_bank_user() and current_user.company_id:
+            try:
+                results = await apply_bank_policy(
+                    validation_results=results,
+                    bank_id=str(current_user.company_id),
+                    document_data=payload,
+                    db_session=db,
+                    validation_session_id=str(validation_session.id),
+                    user_id=str(current_user.id),
+                )
+            except Exception as e:
+                logger.warning("Bank policy application skipped: %s", e)
 
-        if validation_session:
-            validation_session.extracted_data = stored_extracted_data
-
-            if current_user.is_bank_user() and current_user.company_id:
-                try:
-                    results = await apply_bank_policy(
-                        validation_results=results,
-                        bank_id=str(current_user.company_id),
-                        document_data=payload,
-                        db_session=db,
-                        validation_session_id=str(validation_session.id),
-                        user_id=str(current_user.id),
-                    )
-                except Exception as e:
-                    logger.warning("Bank policy application skipped: %s", e)
-
-        legacy_payload = {
-            "issue_cards": issue_cards,
-            "discrepancies": failed_results,
-            "processing_seconds": processing_duration,
-            "lc_type": lc_type,
-            "lc_type_reason": lc_type_reason,
-            "lc_type_confidence": lc_type_confidence,
-            "lc_type_source": lc_type_source,
-            "ai_enrichment": None,
-        }
-
-        option_e_structured = build_unified_structured_result(
+        option_e_payload = build_unified_structured_result(
             session_documents=document_summaries,
             extractor_outputs=context.get("lc_structured_output"),
-            legacy_payload=legacy_payload,
+            legacy_payload=None,
         )
+        structured_result = option_e_payload["structured_result"]
+
+        telemetry_payload = {
+            "UnifiedStructuredResultBuilt": True,
+            "documents": len(structured_result.get("documents_structured", [])),
+            "issues": len(structured_result.get("issues", [])),
+        }
 
         if validation_session:
-            validation_session.validation_results = option_e_structured
+            validation_session.validation_results = {"structured_result": structured_result}
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
             db.commit()
             db.refresh(validation_session)
         else:
             db.commit()
-
-        telemetry_payload = {
-            "UnifiedStructuredResultBuilt": True,
-            "documents": len(option_e_structured.get("documents_structured", [])),
-            "issues": len(option_e_structured.get("issues", [])),
-        }
-
-        customs_risk = compute_customs_risk(option_e_structured)
-        option_e_structured.setdefault("analytics", {}).setdefault("customs_risk", customs_risk)
-        customs_pack = prepare_customs_pack(option_e_structured)
-        telemetry_payload["customs_risk_score"] = customs_risk.get("score")
-        telemetry_payload["customs_risk_tier"] = customs_risk.get("tier")
 
         if request_user_type == "bank" and validation_session:
             duration_ms = int((time.time() - start_time) * 1000)
@@ -626,10 +588,10 @@ async def validate_doc(
         )
 
         return {
+            "job_id": str(job_id),
             "jobId": str(job_id),
-            "structured_result": option_e_structured,
+            "structured_result": structured_result,
             "telemetry": telemetry_payload,
-            "customs_pack": customs_pack,
         }
     except HTTPException:
         raise
@@ -1750,126 +1712,6 @@ def _build_processing_timeline(
     return events
 
 
-class ProcessingSummaryModel(BaseModel):
-    total_documents: int = Field(..., ge=0)
-    successful_extractions: int = Field(..., ge=0)
-    failed_extractions: int = Field(..., ge=0)
-    total_issues: int = Field(..., ge=0)
-    severity_breakdown: Dict[str, int]
-
-
-class StructuredDocumentModel(BaseModel):
-    document_id: str
-    document_type: str
-    filename: str
-    extraction_status: str
-    extracted_fields: Dict[str, Any]
-    issues_count: int = Field(..., ge=0)
-
-
-class StructuredIssueModel(BaseModel):
-    id: str
-    title: str
-    severity: str
-    documents: List[str]
-    expected: str
-    found: str
-    suggested_fix: str
-    description: str = ""
-    ucp_reference: Optional[str] = None
-
-
-class AnalyticsModel(BaseModel):
-    compliance_score: int
-    issue_counts: Dict[str, int]
-    document_risk: List[Dict[str, Any]]
-
-
-class TimelineEntryModel(BaseModel):
-    title: Optional[str] = None
-    label: Optional[str] = None
-    status: str
-    description: Optional[str] = None
-    timestamp: Optional[str] = None
-
-    @model_validator(mode='before')
-    @classmethod
-    def ensure_title(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if isinstance(values, dict):
-            if not values.get("title"):
-                if values.get("label"):
-                    values["title"] = values["label"]
-                else:
-                    raise ValueError("Timeline entry must include a title or label")
-        return values
-
-
-class StructuredResultModel(BaseModel):
-    processing_summary: ProcessingSummaryModel
-    documents: List[StructuredDocumentModel]
-    issues: List[StructuredIssueModel]
-    analytics: AnalyticsModel
-    timeline: List[TimelineEntryModel]
-    extracted_documents: Dict[str, Any] = Field(default_factory=dict)
-
-    model_config = {"extra": "allow"}
-
-
-def _validate_structured_result(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Validate structured_result payload for legacy callers/tests.
-    """
-    model = StructuredResultModel(**payload)
-    return json.loads(model.json())
-
-
-def _build_issue_payload(
-    deterministic_results: List[Dict[str, Any]],
-    documents: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
-    formatted: List[Dict[str, Any]] = []
-    severity_counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
-
-    for result in deterministic_results:
-        formatted.append(_format_deterministic_issue(result))
-
-    doc_meta, key_map = _build_document_lookup(documents)
-    doc_issue_counts: Dict[str, int] = {doc.get("id"): 0 for doc in documents if doc.get("id")}
-
-    for issue in formatted:
-        matched_names, matched_ids = _match_issue_documents(issue, doc_meta, key_map)
-        issue["documents"] = matched_names
-        for doc_id in matched_ids:
-            doc_issue_counts[doc_id] = doc_issue_counts.get(doc_id, 0) + 1
-        severity = issue.get("severity", "minor")
-        if severity not in severity_counts:
-            severity = "minor"
-        severity_counts[severity] += 1
-
-    return formatted, doc_issue_counts, severity_counts
-
-
-def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Collect document excerpts relevant for issue rewriting."""
-    context_snapshot: Dict[str, Any] = {}
-    for key in (
-        "lc",
-        "invoice",
-        "bill_of_lading",
-        "billOfLading",
-        "packing_list",
-        "packingList",
-        "insurance_certificate",
-        "insurance",
-        "documents",
-        "lc_text",
-        "lc_type",
-    ):
-        if payload.get(key) is not None:
-            context_snapshot[key] = payload.get(key)
-    return context_snapshot
-
-
 async def _rewrite_failed_results(
     issues: List[Dict[str, Any]],
     context_snapshot: Dict[str, Any],
@@ -2080,23 +1922,6 @@ def _build_documents_section(
             }
         )
     return section
-
-
-def _build_extracted_documents_snapshot(extracted_data: Dict[str, Any]) -> Dict[str, Any]:
-    if not extracted_data:
-        return {}
-
-    mapping = {
-        "letter_of_credit": extracted_data.get("lc"),
-        "commercial_invoice": extracted_data.get("invoice"),
-        "bill_of_lading": extracted_data.get("bill_of_lading") or extracted_data.get("billOfLading"),
-        "packing_list": extracted_data.get("packing_list") or extracted_data.get("packingList"),
-        "insurance_certificate": extracted_data.get("insurance_certificate"),
-        "certificate_of_origin": extracted_data.get("certificate_of_origin"),
-        "inspection_certificate": extracted_data.get("inspection_certificate"),
-        "supporting_documents": extracted_data.get("documents"),
-    }
-    return {key: value for key, value in mapping.items() if value}
 
 
 def _compose_processing_summary(

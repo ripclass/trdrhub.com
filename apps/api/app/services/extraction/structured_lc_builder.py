@@ -159,5 +159,5 @@ def build_unified_structured_result(
         "ai_enrichment": {"enabled": False, "notes": []},
     }
 
-    return structured_result
+    return {"structured_result": structured_result}
 

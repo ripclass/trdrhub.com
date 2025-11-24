@@ -73,82 +73,6 @@ def _extract_lc_number(session: ValidationSession) -> str | None:
     )
 
 
-def _serialize_documents(session: ValidationSession, discrepancies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    discrepancy_map: Dict[str, List[Dict[str, Any]]] = {}
-    for entry in discrepancies:
-        doc_ids = entry.get("document_ids") or entry.get("document_id")
-        if isinstance(doc_ids, list):
-            for doc_id in doc_ids:
-                discrepancy_map.setdefault(str(doc_id), []).append(entry)
-        elif doc_ids:
-            discrepancy_map.setdefault(str(doc_ids), []).append(entry)
-
-    documents_payload: List[Dict[str, Any]] = []
-    if session.documents:
-        logger.info("Using DB-backed documents: %d found", len(session.documents))
-        for document in session.documents:
-            doc_id = str(document.id)
-            doc_discrepancies = discrepancy_map.get(doc_id, [])
-            status_hint = "success"
-            if any(d.get("severity") in {"critical", "major"} for d in doc_discrepancies):
-                status_hint = "error"
-            elif doc_discrepancies:
-                status_hint = "warning"
-
-            documents_payload.append(
-                {
-                    "id": doc_id,
-                    "name": document.original_filename,
-                    "type": document.document_type,
-                    "status": status_hint,
-                    "discrepancyCount": len(doc_discrepancies),
-                    "discrepancies": doc_discrepancies,
-                    "extractedFields": document.extracted_fields or {},
-                    "ocrConfidence": document.ocr_confidence,
-                }
-            )
-
-    if documents_payload:
-        logger.info("Returning %d documents from DB-backed sources", len(documents_payload))
-        return documents_payload
-
-    # Fallback to summaries stored in validation_results when no DB-backed docs
-    validation_results = session.validation_results or {}
-    fallback_docs = validation_results.get("documents") or []
-    logger.info(
-        "No DB-backed documents, checking validation_results: has_results=%s documents_count=%d",
-        bool(validation_results),
-        len(fallback_docs),
-    )
-    
-    if not fallback_docs:
-        logger.warning(
-            "No documents found in validation_results! Keys: %s",
-            list(validation_results.keys()) if validation_results else "None"
-        )
-    
-    for doc in fallback_docs:
-        doc_id = str(doc.get("id") or uuid4())
-        status_hint = doc.get("status") or "warning"
-        documents_payload.append(
-            {
-                "id": doc_id,
-                "name": doc.get("name") or doc.get("original_filename") or "Uploaded Document",
-                "type": doc.get("type") or "supporting_document",
-                "status": status_hint,
-                "discrepancyCount": doc.get("discrepancyCount", 0),
-                "discrepancies": doc.get("discrepancies") or [],
-                "extractedFields": doc.get("extractedFields") or {},
-                "ocrConfidence": doc.get("ocrConfidence"),
-            }
-        )
-
-    return documents_payload
-
-
 def _normalize_party(value: Any) -> Optional[str]:
     if not value:
         return None
@@ -378,18 +302,20 @@ def get_job_results(
 
     stored_payload = session.validation_results or {}
     structured_result = _extract_option_e_payload(stored_payload)
-    if structured_result:
-        logger.info(
-            "UnifiedStructuredResultServed",
-            extra={"job_id": str(session.id), "version": structured_result.get("version")},
-        )
-        return {"structured_result": structured_result}
+    if not structured_result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Results not available yet")
 
-    # Legacy sessions: return payload unchanged for backward compatibility
-    if stored_payload:
-        return stored_payload
+    logger.info(
+        "UnifiedStructuredResultServed",
+        extra={"job_id": str(session.id), "version": structured_result.get("version")},
+    )
 
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Results not available yet")
+    return {
+        "job_id": str(session.id),
+        "jobId": str(session.id),
+        "structured_result": structured_result,
+        "telemetry": {"UnifiedStructuredResultServed": True},
+    }
 
 
 @router.get("/api/jobs")
