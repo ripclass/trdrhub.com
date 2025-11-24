@@ -279,7 +279,6 @@ ssl/
 certificates/
 deployment/secrets/node_modules/
 venv/
-trdrhub-suite/
     
 .vercel
 
