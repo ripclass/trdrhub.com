@@ -50,11 +50,10 @@ class CustomsPackBuilderFull:
 
         docs = self._get_documents(db, session_id)
 
-        # Extract structured_result from validation_results JSON
         validation_results = session.validation_results or {}
-        structured_result = validation_results.get("structured_result", {})
+        structured_result = self._extract_option_e_payload(validation_results) or validation_results.get("structured_result") or {}
         lc_structured = structured_result.get("lc_structured")
-        risk = structured_result.get("risk") or validation_results.get("analytics", {}).get("customs_risk")
+        risk = structured_result.get("analytics", {}).get("customs_risk")
 
         buf, sha256_hex, size_bytes, missing = self._build_zip(
             session_id=session_id,
@@ -217,6 +216,15 @@ class CustomsPackBuilderFull:
             Params={"Bucket": bucket_name, "Key": key},
             ExpiresIn=ttl_seconds,
         )
+
+    def _extract_option_e_payload(self, payload: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(payload, dict):
+            if payload.get("version") == "structured_result_v1":
+                return payload
+            nested = payload.get("structured_result")
+            if isinstance(nested, dict) and nested.get("version") == "structured_result_v1":
+                return nested
+        return None
 
     def _get_s3_client(self):
         """Get S3 client, handling stub mode."""

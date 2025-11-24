@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
 from app.services.customs.customs_pack import prepare_customs_pack  # keep metadata-only if needed
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
+from app.services.risk.customs_risk import compute_customs_risk
 from app.services.extraction.lc_extractor import extract_lc_structured
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 
@@ -511,24 +512,55 @@ async def validate_doc(
         
         processing_duration = time.time() - start_time
         processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
-        analytics_payload = _build_document_processing_analytics(document_summaries, processing_summary)
-        timeline_events = _build_processing_timeline(document_summaries, processing_summary)
-        document_status_counts = processing_summary.pop("status_counts", _summarize_document_statuses(document_summaries))
-        overall_status = "error" if document_status_counts.get("error") else "warning" if document_status_counts.get("warning") else "success"
+
+        stored_extracted_data: Dict[str, Any] = {}
+        if "lc" in payload:
+            stored_extracted_data["lc"] = _normalize_lc_payload_structures(payload["lc"])
+        if "invoice" in payload:
+            stored_extracted_data["invoice"] = payload["invoice"]
+        if "bill_of_lading" in payload:
+            stored_extracted_data["bill_of_lading"] = payload["bill_of_lading"]
+        if payload.get("documents"):
+            stored_extracted_data["documents"] = payload["documents"]
+        if payload.get("documents_presence"):
+            stored_extracted_data["documents_presence"] = payload["documents_presence"]
+        stored_extracted_data["lc_type"] = lc_type
+        stored_extracted_data["lc_type_reason"] = lc_type_reason
+        stored_extracted_data["lc_type_confidence"] = lc_type_confidence
+        stored_extracted_data["lc_type_source"] = lc_type_source
+        stored_extracted_data["lc_structured_output"] = context.get("lc_structured_output")
+
+        if validation_session:
+            validation_session.extracted_data = stored_extracted_data
+
+            if current_user.is_bank_user() and current_user.company_id:
+                try:
+                    results = await apply_bank_policy(
+                        validation_results=results,
+                        bank_id=str(current_user.company_id),
+                        document_data=payload,
+                        db_session=db,
+                        validation_session_id=str(validation_session.id),
+                        user_id=str(current_user.id),
+                    )
+                except Exception as e:
+                    logger.warning("Bank policy application skipped: %s", e)
+
+        legacy_payload = {
+            "issue_cards": issue_cards,
+            "discrepancies": failed_results,
+            "processing_seconds": processing_duration,
+            "lc_type": lc_type,
+            "lc_type_reason": lc_type_reason,
+            "lc_type_confidence": lc_type_confidence,
+            "lc_type_source": lc_type_source,
+            "ai_enrichment": None,
+        }
 
         option_e_structured = build_unified_structured_result(
             session_documents=document_summaries,
-            issue_cards=issue_cards,
-            discrepancies=failed_results,
             extractor_outputs=context.get("lc_structured_output"),
-            lc_type_data={
-                "lc_type": lc_type,
-                "lc_type_reason": lc_type_reason,
-                "lc_type_confidence": lc_type_confidence,
-                "lc_type_source": lc_type_source,
-            },
-            ai_enrichment=None,
-            processing_seconds=processing_duration,
+            legacy_payload=legacy_payload,
         )
 
         if validation_session:
@@ -546,7 +578,40 @@ async def validate_doc(
             "issues": len(option_e_structured.get("issues", [])),
         }
 
+        customs_risk = compute_customs_risk(option_e_structured)
+        option_e_structured.setdefault("analytics", {}).setdefault("customs_risk", customs_risk)
         customs_pack = prepare_customs_pack(option_e_structured)
+        telemetry_payload["customs_risk_score"] = customs_risk.get("score")
+        telemetry_payload["customs_risk_tier"] = customs_risk.get("tier")
+
+        if request_user_type == "bank" and validation_session:
+            duration_ms = int((time.time() - start_time) * 1000)
+            metadata_dict = payload.get("metadata") or {}
+            if isinstance(metadata_dict, str):
+                try:
+                    metadata_dict = json.loads(metadata_dict)
+                except Exception:
+                    metadata_dict = {}
+            audit_service.log_action(
+                action=AuditAction.UPLOAD,
+                user=current_user,
+                correlation_id=audit_context['correlation_id'],
+                resource_type="bank_validation",
+                resource_id=str(validation_session.id),
+                lc_number=metadata_dict.get("lcNumber") or metadata_dict.get("lc_number"),
+                ip_address=audit_context['ip_address'],
+                user_agent=audit_context['user_agent'],
+                endpoint=audit_context['endpoint'],
+                http_method=audit_context['http_method'],
+                result=AuditResult.SUCCESS,
+                duration_ms=duration_ms,
+                audit_metadata={
+                    "client_name": metadata_dict.get("clientName") or metadata_dict.get("client_name"),
+                    "date_received": metadata_dict.get("dateReceived") or metadata_dict.get("date_received"),
+                    "discrepancy_count": len(failed_results),
+                    "document_count": len(payload.get("files", [])) if isinstance(payload.get("files"), list) else 0,
+                },
+            )
 
         logger.info(
             "Validation completed",

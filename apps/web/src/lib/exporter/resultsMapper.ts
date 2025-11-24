@@ -1,5 +1,5 @@
-import type { StructuredResultPayload, StructuredResultAnalytics, TimelineEntry } from '@shared/types';
-import type { IssueCard, ValidationResults, TimelineEvent } from '@/types/lcopilot';
+import type { StructuredResultPayload } from '@shared/types';
+import type { ValidationResults, IssueCard } from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
   letter_of_credit: 'Letter of Credit',
@@ -74,11 +74,11 @@ const normalizeSeverity = (value?: string | null): string => {
   return normalized || 'minor';
 };
 
-const mapDocuments = (docs: any[] = []): ValidationResults['documents'] => {
+const mapDocuments = (docs: any[] = []) => {
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
     const filename = doc?.filename ?? doc?.name ?? `Document ${index + 1}`;
-    const typeKey = doc?.document_type ?? doc?.type ?? 'supporting_document';
+    const typeKey = doc?.document_type ?? 'supporting_document';
     const issuesCount = Number(doc?.issues_count ?? 0);
     const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
 
@@ -92,13 +92,13 @@ const mapDocuments = (docs: any[] = []): ValidationResults['documents'] => {
       extractionStatus,
       status: deriveDocumentStatus(extractionStatus, issuesCount),
       issuesCount,
-      extractedFields: doc?.extracted_fields ?? doc?.extractedFields ?? {},
+      extractedFields: doc?.extracted_fields ?? {},
     };
   });
 };
 
-const buildDocumentLookup = (documents: ValidationResults['documents']) => {
-  const lookup = new Map<string, ValidationResults['documents'][number]>();
+const mapIssues = (issues: any[] = [], documents: ReturnType<typeof mapDocuments>): IssueCard[] => {
+  const lookup = new Map<string, ReturnType<typeof mapDocuments>[number]>();
   documents.forEach((doc) => {
     const candidates = [doc.filename, doc.name, doc.type, doc.typeKey];
     candidates.forEach((candidate) => {
@@ -107,20 +107,13 @@ const buildDocumentLookup = (documents: ValidationResults['documents']) => {
       }
     });
   });
-  return lookup;
-};
-
-const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']): IssueCard[] => {
-  const lookup = buildDocumentLookup(documents);
 
   return issues.map((issue, index) => {
-    const reference = issue?.reference ?? issue?.ucp_reference;
-    const priority = issue?.priority ?? issue?.severity;
-    const list = issue?.documents ?? issue?.document_names ?? [];
-    const normalizedList = Array.isArray(list) ? list : [list];
-    const documentNames = normalizedList
-      .map((name: any) => (typeof name === 'string' ? name : String(name ?? '')))
-      .filter(Boolean);
+    const documentNames = Array.isArray(issue?.documents)
+      ? issue.documents
+      : issue?.documents
+      ? [issue.documents]
+      : [];
     const firstDoc = documentNames[0];
     const docMeta = firstDoc ? lookup.get(firstDoc.toLowerCase()) : undefined;
 
@@ -129,22 +122,22 @@ const mapIssues = (issues: any[] = [], documents: ValidationResults['documents']
       rule: issue?.rule,
       title: issue?.title ?? 'Review Required',
       description: issue?.description ?? issue?.message ?? '',
-      priority,
-      severity: normalizeSeverity(priority),
+      priority: issue?.severity,
+      severity: normalizeSeverity(issue?.severity),
       documentName: firstDoc ?? docMeta?.name,
       documentType: docMeta?.type,
       documents: documentNames,
-      expected: formatTextValue(issue?.expected ?? issue?.expected_value),
-      actual: formatTextValue(issue?.found ?? issue?.actual ?? issue?.actual_value),
-      suggestion: formatTextValue(issue?.suggested_fix ?? issue?.recommendation),
-      field: issue?.field ?? issue?.field_name ?? issue?.metadata?.field,
-      ucpReference: reference ? formatTextValue(reference) : undefined,
+      expected: formatTextValue(issue?.expected),
+      actual: formatTextValue(issue?.found ?? issue?.actual),
+      suggestion: formatTextValue(issue?.suggested_fix),
+      field: issue?.field ?? issue?.metadata?.field,
+      ucpReference: formatTextValue(issue?.ucp_reference) ?? undefined,
     };
   });
 };
 
-const summarizeSeverity = (issues: IssueCard[]): typeof DEFAULT_SEVERITY => {
-  return issues.reduce(
+const summarizeSeverity = (issues: IssueCard[]) =>
+  issues.reduce(
     (acc, issue) => {
       const key = normalizeSeverity(issue.severity);
       if (key in acc) {
@@ -156,13 +149,8 @@ const summarizeSeverity = (issues: IssueCard[]): typeof DEFAULT_SEVERITY => {
     },
     { ...DEFAULT_SEVERITY },
   );
-};
 
-const ensureSummary = (
-  payload: any,
-  documents: ValidationResults['documents'],
-  issues: IssueCard[],
-): ValidationResults['summary'] => {
+const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>, issues: IssueCard[]) => {
   const severity = payload?.severity_breakdown ?? summarizeSeverity(issues);
   const totalDocuments =
     typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
@@ -188,23 +176,16 @@ const ensureSummary = (
 
 const ensureAnalytics = (
   payload: any,
-  summary: ValidationResults['summary'],
-  documents: ValidationResults['documents'],
-): ValidationResults['analytics'] => {
-  const issueCounts = payload?.issue_counts ?? summary.severity_breakdown ?? { ...DEFAULT_SEVERITY };
+  documents: ReturnType<typeof mapDocuments>,
+  issues: IssueCard[],
+) => {
+  const issueCounts = payload?.issue_counts ?? summarizeSeverity(issues);
   const compliance =
     typeof payload?.compliance_score === 'number'
       ? payload.compliance_score
-      : Math.max(
-          0,
-          100 - issueCounts.critical * 30 - issueCounts.major * 20 - issueCounts.minor * 5,
-        );
+      : Math.max(0, 100 - issueCounts.critical * 30 - issueCounts.major * 20 - issueCounts.minor * 5);
   const documentRisk = Array.isArray(payload?.document_risk)
-    ? payload.document_risk.map((entry: any) => ({
-        document_id: entry?.document_id,
-        filename: entry?.filename,
-        risk: entry?.risk ?? 'low',
-      }))
+    ? payload.document_risk
     : documents.map((doc) => ({
         document_id: doc.documentId,
         filename: doc.name,
@@ -218,8 +199,8 @@ const ensureAnalytics = (
   };
 };
 
-const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] => {
-  return entries
+const mapTimeline = (entries: Array<any> = []) =>
+  entries
     .map((entry, index) => ({
       title: entry?.title ?? entry?.label ?? `Step ${index + 1}`,
       status: entry?.status ?? 'pending',
@@ -227,96 +208,28 @@ const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] =>
       timestamp: entry?.timestamp ?? entry?.time,
     }))
     .filter((entry) => Boolean(entry.title));
-};
 
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const structuredResultRaw = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload> & Record<string, any>;
-  const rawExtractedData = (raw?.extracted_data ?? {}) as Record<string, any>;
-  const documentsPayload = Array.isArray(raw?.structured_result?.documents_structured)
-    ? raw.structured_result.documents_structured
-    : [];
-  console.log('[DOCS_MAPPER_DEBUG]', documentsPayload);
-  const issuesPayload = Array.isArray(structuredResultRaw.issues) ? structuredResultRaw.issues : [];
-  const analyticsPayload = structuredResultRaw.analytics as StructuredResultAnalytics | undefined;
-  const timelinePayload = structuredResultRaw.timeline;
-  const extractedDocumentsPayload = structuredResultRaw.extracted_documents ?? {};
-  const lcStructuredPayload =
-    structuredResultRaw.lc_structured ??
-    raw?.lc_structured ??
-    rawExtractedData.lc_structured ??
-    null; // Extract lc_structured from any available source
+  const structured = raw?.structured_result as StructuredResultPayload | null;
+  if (!structured || structured.version !== 'structured_result_v1') {
+    throw new Error('structured_result_v1 payload missing');
+  }
 
-  const structured = structuredResultRaw;
-  const documents = mapDocuments(documentsPayload);
-  const issues = mapIssues(issuesPayload, documents);
+  const documents = mapDocuments(structured.documents_structured ?? []);
+  const issues = mapIssues(structured.issues ?? [], documents);
   const summary = ensureSummary(structured.processing_summary, documents, issues);
-  const analytics = ensureAnalytics(analyticsPayload, summary, documents);
-  const timeline = mapTimeline(timelinePayload);
-  const normalizedStructuredResult: StructuredResultPayload & Record<string, any> = {
-    ...structuredResultRaw,
-    processing_summary: structured.processing_summary
-      ? { ...structured.processing_summary, ...summary }
-      : summary,
-    documents: documentsPayload,
-    issues: structured.issues ?? issuesPayload,
-    analytics: normalizeStructuredAnalytics(analyticsPayload, analytics),
-    timeline: normalizeStructuredTimeline(timelinePayload, timeline),
-    extracted_documents: structuredResultRaw.extracted_documents ?? extractedDocumentsPayload,
-    lc_structured: lcStructuredPayload, // Include lc_structured in normalized result
-  };
+  const analytics = ensureAnalytics(structured.analytics, documents, issues);
+  const timeline = mapTimeline(structured.lc_structured?.timeline ?? []);
 
-  const hasRawExtractedData = rawExtractedData && Object.keys(rawExtractedData).length > 0;
-
-  const normalized: ValidationResults = {
-    ...raw,
-    jobId: raw?.jobId ?? raw?.job_id ?? raw?.request_id ?? '',
+  return {
+    jobId: raw?.jobId ?? raw?.job_id ?? '',
     summary,
     documents,
     issues,
     analytics,
     timeline,
-    processing_summary: summary,
-    issue_cards: issues,
-    structured_result: normalizedStructuredResult,
-    extracted_data: hasRawExtractedData ? rawExtractedData : normalizedStructuredResult.extracted_documents,
-    extraction_status: raw?.extraction_status ?? 'unknown',
-    lc_structured: lcStructuredPayload, // Add lc_structured to top-level for easy access
+    structured_result: structured,
+    lc_structured: structured.lc_structured ?? null,
+    ai_enrichment: structured.ai_enrichment ?? null,
   };
-
-  return normalized;
-};
-
-const normalizeStructuredAnalytics = (
-  analytics: StructuredResultAnalytics | undefined,
-  fallback: ValidationResults['analytics'],
-): StructuredResultAnalytics => {
-  if (!analytics) {
-    return {
-      compliance_score: fallback.compliance_score,
-      issue_counts: fallback.issue_counts,
-      document_risk: fallback.document_risk,
-    };
-  }
-
-  return {
-    compliance_score:
-      typeof analytics.compliance_score === 'number'
-        ? analytics.compliance_score
-        : fallback.compliance_score,
-    issue_counts: analytics.issue_counts ?? fallback.issue_counts,
-    document_risk:
-      Array.isArray(analytics.document_risk) && analytics.document_risk.length > 0
-        ? analytics.document_risk
-        : fallback.document_risk,
-  };
-};
-
-const normalizeStructuredTimeline = (
-  timeline: any,
-  fallback: TimelineEvent[],
-): TimelineEvent[] => {
-  if (!Array.isArray(timeline)) {
-    return fallback;
-  }
-  return mapTimeline(timeline);
 };

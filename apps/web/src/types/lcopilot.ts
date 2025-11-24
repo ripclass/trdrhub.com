@@ -83,34 +83,7 @@ export interface ValidationResults {
   issues: IssueCard[];
   analytics: ValidationAnalytics;
   timeline: TimelineEvent[];
-  results?: any[];
-  discrepancies?: any[];
-  lcNumber?: string;
-  completedAt?: string;
-  status?: string;
-  reference_issues?: ReferenceIssue[];
-  ai_enrichment?: AIEnrichmentPayload;
-  aiEnrichment?: AIEnrichmentPayload;
-  extracted_data?: Record<string, any>;
-  extraction_status?: 'success' | 'partial' | 'empty' | 'error' | 'unknown';
-  lc_type?: string;
-  lc_type_reason?: string;
-  lc_type_confidence?: number;
-  lc_type_source?: string;
-  overallStatus?: 'success' | 'error' | 'warning';
-  packGenerated?: boolean;
-  processingTime?: string;
-  processing_time?: string;
-  processingTimeMinutes?: string;
-  processedAt?: string;
-  processingCompletedAt?: string;
-  processed_at?: string;
-  processing_summary?: ProcessingSummaryPayload;
-  issue_cards?: IssueCard[];
-  overall_status?: string;
-  structured_result?: (StructuredResultPayload & {
-    lc_structured?: Record<string, any> | null;
-    [k: string]: any;
-  }) | null;
-  lc_structured?: Record<string, any> | null; // Structured LC data from extractor (MT700, goods, clauses, etc.)
+  structured_result: StructuredResultPayload;
+  lc_structured?: Record<string, any> | null;
+  ai_enrichment?: AIEnrichmentPayload | null;
 }

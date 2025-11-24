@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -35,25 +34,25 @@ DEFAULT_MT700_BLOCKS = [
 
 
 def build_unified_structured_result(
-    *,
-    session_documents: Optional[List[Dict[str, Any]]],
-    issue_cards: Optional[List[Dict[str, Any]]],
-    discrepancies: Optional[List[Dict[str, Any]]],
+    session_documents: List[Dict[str, Any]],
     extractor_outputs: Optional[Dict[str, Any]],
-    lc_type_data: Optional[Dict[str, Any]],
-    ai_enrichment: Optional[Dict[str, Any]],
-    processing_seconds: float,
+    legacy_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Build the canonical Option-E structured_result payload.
+    Build Option-E structured_result_v1 payload without relying on legacy document merges.
     """
 
+    legacy_payload = legacy_payload or {}
     extractor_outputs = extractor_outputs or {}
+
     documents_structured = _normalize_documents_structured(session_documents or [])
-    issues = _normalize_issues(issue_cards or [], discrepancies or [])
+    issues = _normalize_issues(
+        legacy_payload.get("issue_cards") or [],
+        legacy_payload.get("discrepancies") or [],
+    )
+    processing_seconds = float(legacy_payload.get("processing_seconds") or 0.0)
     processing_summary = _compute_processing_summary(documents_structured, issues, processing_seconds)
     analytics = _compute_analytics(documents_structured, issues)
-    timeline = _build_timeline(processing_summary)
 
     lc_structured = {
         "mt700": _normalize_mt700(extractor_outputs),
@@ -61,20 +60,18 @@ def build_unified_structured_result(
         "clauses": _normalize_clauses(extractor_outputs),
         "timeline": _normalize_lc_timeline(extractor_outputs),
         "documents_structured": documents_structured,
+        "analytics": analytics,
     }
-
-    normalized_ai = _normalize_ai_payload(ai_enrichment)
 
     structured_result = {
         "version": VERSION,
-        **_derive_lc_type(extractor_outputs, lc_type_data),
+        **_derive_lc_type(extractor_outputs, legacy_payload),
         "lc_structured": lc_structured,
         "documents_structured": documents_structured,
         "issues": issues,
         "processing_summary": processing_summary,
         "analytics": analytics,
-        "timeline": timeline,
-        "ai_enrichment": normalized_ai,
+        "ai_enrichment": _normalize_ai_payload(legacy_payload.get("ai_enrichment")),
     }
 
     return structured_result
@@ -82,7 +79,7 @@ def build_unified_structured_result(
 
 def _derive_lc_type(
     extractor_outputs: Dict[str, Any],
-    lc_type_hint: Optional[Dict[str, Any]],
+    legacy_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     details = {
         "lc_type": "unknown",
@@ -92,33 +89,19 @@ def _derive_lc_type(
     }
 
     lc_structured = extractor_outputs or {}
-    candidates = [
-        (lc_type_hint or {}).get("lc_type"),
-        lc_structured.get("lc_type"),
-    ]
+    candidates = [legacy_payload.get("lc_type"), lc_structured.get("lc_type")]
     for candidate in candidates:
         if candidate:
             details["lc_type"] = candidate
             break
 
-    details["lc_type_reason"] = (
-        (lc_type_hint or {}).get("lc_type_reason")
-        or lc_structured.get("lc_type_reason")
-    )
-    details["lc_type_confidence"] = (
-        (lc_type_hint or {}).get("lc_type_confidence")
-        or lc_structured.get("lc_type_confidence")
-        or 0
-    )
-    details["lc_type_source"] = (
-        (lc_type_hint or {}).get("lc_type_source")
-        or lc_structured.get("lc_type_source")
-        or "auto"
-    )
+    details["lc_type_reason"] = legacy_payload.get("lc_type_reason") or lc_structured.get("lc_type_reason")
+    details["lc_type_confidence"] = legacy_payload.get("lc_type_confidence") or lc_structured.get("lc_type_confidence") or 0
+    details["lc_type_source"] = legacy_payload.get("lc_type_source") or lc_structured.get("lc_type_source") or "auto"
     return details
 
 
-def _normalize_documents_structured(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _normalize_documents_structured(documents: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for index, doc in enumerate(documents):
         normalized.append(
@@ -238,33 +221,6 @@ def _compute_analytics(
         "issue_counts": issue_counts,
         "document_risk": document_risk,
     }
-
-
-def _build_timeline(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
-    doc_count = summary.get("total_documents", 0)
-    now = datetime.utcnow()
-    stages = [
-        ("Documents Uploaded", "success", f"{doc_count} document(s) received"),
-        ("LC Terms Extracted", "success", "Structured LC context generated"),
-        ("Document Cross-Check", "success", "Validated trade docs against LC terms"),
-        (
-            "Customs Pack Generated",
-            "warning" if summary.get("severity_breakdown", {}).get("major") else "success",
-            "Bundle prepared for customs clearance",
-        ),
-    ]
-
-    for index, (title, status, description) in enumerate(stages):
-        events.append(
-            {
-                "title": title,
-                "status": status,
-                "description": description,
-                "timestamp": (now - timedelta(seconds=max(5, (len(stages) - index) * 5))).isoformat() + "Z",
-            }
-        )
-    return events
 
 
 def _normalize_mt700(extractor_outputs: Dict[str, Any]) -> Dict[str, Any]:

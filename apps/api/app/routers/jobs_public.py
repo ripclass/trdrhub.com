@@ -12,13 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc
 import logging
-import copy
 
 from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
 from app.core.security import get_current_user
 from app.core.rbac import RBACPolicyEngine, Permission
-from app.services.extraction.structured_lc_builder import build_unified_structured_result
 
 
 router = APIRouter(tags=["validation-jobs"])
@@ -192,7 +190,14 @@ def _extract_invoice_amount(extracted_data: Dict[str, Any]) -> Tuple[Optional[st
 
 
 def _summarize_documents(results_payload: Dict[str, Any]) -> Optional[Dict[str, int]]:
-    documents = results_payload.get("documents") or []
+    documents: List[Dict[str, Any]] = []
+    if isinstance(results_payload, dict):
+        if results_payload.get("version") == "structured_result_v1":
+            documents = results_payload.get("documents_structured") or []
+        elif isinstance(results_payload.get("structured_result"), dict) and results_payload["structured_result"].get("version") == "structured_result_v1":
+            documents = results_payload["structured_result"].get("documents_structured") or []
+        else:
+            documents = results_payload.get("documents") or []
     if not documents:
         return None
 
@@ -205,7 +210,45 @@ def _summarize_documents(results_payload: Dict[str, Any]) -> Optional[Dict[str, 
     return summary
 
 
+def _extract_option_e_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(payload, dict):
+        if payload.get("version") == "structured_result_v1":
+            return payload
+        nested = payload.get("structured_result")
+        if isinstance(nested, dict) and nested.get("version") == "structured_result_v1":
+            return nested
+    return None
+
+
+def _count_option_e_documents(payload: Any) -> int:
+    option_e = _extract_option_e_payload(payload)
+    if option_e:
+        return len(option_e.get("documents_structured") or [])
+    if isinstance(payload, dict):
+        return len(payload.get("documents") or [])
+    return 0
+
+
 def _extract_top_issue(results_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    option_e_source: Optional[Dict[str, Any]] = None
+    if isinstance(results_payload, dict):
+        if results_payload.get("version") == "structured_result_v1":
+            option_e_source = results_payload
+        elif isinstance(results_payload.get("structured_result"), dict) and results_payload["structured_result"].get("version") == "structured_result_v1":
+            option_e_source = results_payload["structured_result"]
+
+    if option_e_source:
+        issues = option_e_source.get("issues") or []
+        if issues:
+            first = issues[0]
+            docs = first.get("documents") or []
+            return {
+                "title": first.get("title"),
+                "severity": first.get("severity"),
+                "documentName": docs[0] if docs else None,
+                "rule": first.get("rule"),
+            }
+
     issue_cards = results_payload.get("issue_cards") or []
     if issue_cards:
         top_card = issue_cards[0]
@@ -227,58 +270,6 @@ def _extract_top_issue(results_payload: Dict[str, Any]) -> Optional[Dict[str, An
         }
 
     return None
-
-
-def _collect_structured_documents(session: ValidationSession, results_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    documents_structured: List[Dict[str, Any]] = []
-    for document in session.documents or []:
-        documents_structured.append(
-            {
-                "id": str(document.id),
-                "document_type": document.document_type,
-                "original_filename": document.original_filename,
-                "extraction_status": getattr(document, "extraction_status", None) or "unknown",
-                "extracted_fields": document.extracted_fields or {},
-            }
-        )
-
-    if not documents_structured:
-        for doc in results_payload.get("documents") or []:
-            documents_structured.append(doc)
-
-    return documents_structured
-
-
-def _build_structured_result_for_response(
-    results_payload: Dict[str, Any],
-    extracted_data: Dict[str, Any],
-    session_documents: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    structured_result = (results_payload.get("structured_result") or {}).copy()
-    if structured_result.get("version") == "structured_result_v1":
-        return structured_result
-
-    lc_type_hint = {
-        "lc_type": results_payload.get("lc_type"),
-        "lc_type_reason": results_payload.get("lc_type_reason"),
-        "lc_type_confidence": results_payload.get("lc_type_confidence"),
-        "lc_type_source": results_payload.get("lc_type_source"),
-    }
-
-    extractor_outputs = structured_result.get("lc_structured") or (extracted_data or {}).get("lc_structured")
-
-    return build_unified_structured_result(
-        extracted_data=extracted_data,
-        documents=results_payload.get("documents"),
-        discrepancies=results_payload.get("discrepancies"),
-        results=results_payload.get("results"),
-        issue_cards=results_payload.get("issue_cards"),
-        lc_type_data=lc_type_hint,
-        ai_enrichment=results_payload.get("ai_enrichment"),
-        legacy_payload=results_payload,
-        session_documents=session_documents,
-        extractor_outputs=extractor_outputs,
-    )
 
 
 def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
@@ -342,7 +333,7 @@ def get_job_status(
         "createdAt": session.created_at,
         "completedAt": session.processing_completed_at,
         "updatedAt": session.updated_at,
-        "documentCount": len(session.documents) or len((session.validation_results or {}).get("documents") or []),
+        "documentCount": len(session.documents) or _count_option_e_documents(session.validation_results or {}),
         "discrepancyCount": len(session.discrepancies) or len((session.validation_results or {}).get("discrepancies") or []),
     }
 
@@ -385,29 +376,20 @@ def get_job_results(
             detail=f"Job is not completed yet (status={session.status})",
         )
 
-    results_payload = copy.deepcopy(session.validation_results or {})
-    extracted_data = results_payload.get("extracted_data") or session.extracted_data or {}
-    session_structured_docs = _collect_structured_documents(session, results_payload)
-
-    try:
-        structured_result = _build_structured_result_for_response(
-            results_payload,
-            extracted_data,
-            session_structured_docs,
-        )
-        results_payload["structured_result"] = structured_result
-        results_payload.setdefault("telemetry", {})["UnifiedStructuredResultServed"] = True
+    stored_payload = session.validation_results or {}
+    structured_result = _extract_option_e_payload(stored_payload)
+    if structured_result:
         logger.info(
             "UnifiedStructuredResultServed",
             extra={"job_id": str(session.id), "version": structured_result.get("version")},
         )
-    except Exception as exc:
-        logger.warning("Unified structured result build failed: %s", exc)
-        telemetry = results_payload.setdefault("telemetry", {})
-        telemetry["UnifiedStructuredResultServed"] = False
-        telemetry["UnifiedStructuredResultError"] = str(exc)
+        return {"structured_result": structured_result}
 
-    return results_payload
+    # Legacy sessions: return payload unchanged for backward compatibility
+    if stored_payload:
+        return stored_payload
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Results not available yet")
 
 
 @router.get("/api/jobs")
@@ -449,7 +431,7 @@ def list_user_jobs(
                 "lcNumber": _extract_lc_number(session),
                 "createdAt": session.created_at.isoformat() if session.created_at else None,
                 "completedAt": session.processing_completed_at.isoformat() if session.processing_completed_at else None,
-                "documentCount": len(session.documents) if session.documents else len((session.validation_results or {}).get("documents") or []),
+                "documentCount": len(session.documents) if session.documents else _count_option_e_documents(session.validation_results or {}),
                 "discrepancyCount": len(session.discrepancies) if session.discrepancies else len((session.validation_results or {}).get("discrepancies") or []),
                 **_summarize_job_overview(session),
             }
