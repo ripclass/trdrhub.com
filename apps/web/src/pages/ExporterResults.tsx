@@ -856,22 +856,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const { successCount, errorCount, warningCount, successRate } = useMemo(() => {
     const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
     const summarySuccessCount =
-      typeof summary?.successful_extractions === "number" - summary.successful_extractions : undefined;
+      typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
     const resolvedSuccessCount =
-      derivedSuccessCount > 0 - derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+      derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
 
     const resolvedErrorCount =
       typeof summary?.failed_extractions === "number"
-        - summary.failed_extractions
+        ? summary.failed_extractions
         : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
 
     const resolvedWarningCount =
       typeof documentStatusCounts.warning === "number"
-        - documentStatusCounts.warning
+        ? documentStatusCounts.warning
         : documents.filter((doc) => doc.status === "warning").length;
 
     const resolvedSuccessRate =
-      totalDocuments > 0 - Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
+      totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
 
     return {
       successCount: resolvedSuccessCount,
@@ -914,7 +914,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
-  const overallStatus = errorCount > 0 - "error" : warningCount > 0 || totalDiscrepancies > 0 - "warning" : "success";
+  const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = customsPack?.ready ?? false;
   const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
@@ -978,7 +978,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }
 
     const statusLabel = jobStatus?.status
-      - jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+      ? jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       : "Processing";
 
     return (
@@ -1125,7 +1125,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
   const hasTimeline = timelineEvents.length > 0;
   const timelineDisplay = hasTimeline
-    - timelineEvents.map((event) => ({
+    ? timelineEvents.map((event) => ({
         ...event,
         title: event.title ?? 'Milestone',
       }))
@@ -1134,7 +1134,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const riskEntry = documentRisk.find(
       (entry) => entry.document_id === doc.documentId || entry.filename === doc.name,
     );
-    const riskLabel = riskEntry?.risk ?? (doc.issuesCount > 0 - 'medium' : 'low');
+    const riskLabel = riskEntry?.risk ?? (doc.issuesCount > 0 ? 'medium' : 'low');
     return {
       name: doc.name,
       type: doc.type,
@@ -1219,11 +1219,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
 
   const containerClass = embedded
-    - "mx-auto w-full max-w-6xl py-4"
+    ? "mx-auto w-full max-w-6xl py-4"
     : "container mx-auto px-4 py-8 max-w-6xl";
 
   return (
-    <div className={embedded - "bg-transparent" : "bg-background min-h-screen"}>
+    <div className={embedded ? "bg-transparent" : "bg-background min-h-screen"}>
       {/* Header */}
       {!embedded && (
         <header className="bg-card border-b border-gray-200">
@@ -1275,15 +1275,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <div
                 className={`w-16 h-16 mx-auto md:mx-0 rounded-full flex items-center justify-center ${
                   overallStatus === 'success'
-                    - 'bg-success/10'
+                    ? 'bg-success/10'
                     : overallStatus === 'error'
-                      - 'bg-destructive/10'
+                      ? 'bg-destructive/10'
                       : 'bg-warning/10'
                 }`}
               >
-                {overallStatus === 'success' - (
+                {overallStatus === 'success' ? (
                   <CheckCircle className="w-8 h-8 text-success" />
-                ) : overallStatus === 'error' - (
+                ) : overallStatus === 'error' ? (
                   <XCircle className="w-8 h-8 text-destructive" />
                 ) : (
                   <AlertTriangle className="w-8 h-8 text-warning" />
@@ -1291,7 +1291,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </div>
               <div className="flex flex-col items-center md:items-start gap-2">
                 <StatusBadge status={overallStatus} className="text-sm font-medium">
-                  {packGenerated - 'Customs Pack Ready' : 'Processing'}
+                  {packGenerated ? 'Customs Pack Ready' : 'Processing'}
                 </StatusBadge>
                 {isReadyToSubmit && (
                   <Badge className="bg-green-600 text-white">
@@ -1300,7 +1300,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </Badge>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {processingTime - `Processed in ${processingTime}` : 'Processing time unavailable'}
+                  {processingTime ? `Processed in ${processingTime}` : 'Processing time unavailable'}
                 </p>
               </div>
             </div>
@@ -1331,7 +1331,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{lcTypeReason}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    Source: {lcTypeSource === 'override' - 'Manual override' : 'Auto-detected'}
+                    Source: {lcTypeSource === 'override' ? 'Manual override' : 'Auto-detected'}
                   </p>
                 </div>
               </div>
@@ -1339,7 +1339,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
             <div className="space-y-3">
               <h3 className="font-semibold text-foreground">Next Actions</h3>
-              {totalDiscrepancies > 0 - (
+              {totalDiscrepancies > 0 ? (
                 <>
                   <Link to="/lcopilot/exporter-dashboard?section=upload">
                     <Button variant="outline" size="sm" className="w-full">
