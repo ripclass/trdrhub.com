@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,11 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
-import ExporterDashboardLayout from "@/components/lcopilot/ExporterDashboardLayout";
+import DashboardNav from "@/components/lcopilot/DashboardNav";
 import LcHeader from "@/components/lcopilot/LcHeader";
 import RiskPanel from "@/components/lcopilot/RiskPanel";
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { useResultsContext, ResultsProvider } from "@/context/ResultsContext";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
+import { useAuth } from "@/hooks/use-auth";
 
 const normalizeDiscrepancySeverity = (
   severity?: string | null
@@ -32,13 +35,61 @@ const sections = ["overview", "upload", "reviews", "documents", "issues", "custo
 type Section = (typeof sections)[number];
 
 const DEFAULT_SECTION: Section = "overview";
+type SidebarSection =
+  | "dashboard"
+  | "workspace"
+  | "templates"
+  | "upload"
+  | "reviews"
+  | "analytics"
+  | "notifications"
+  | "billing"
+  | "billing-usage"
+  | "ai-assistance"
+  | "content-library"
+  | "shipment-timeline"
+  | "settings"
+  | "help";
+
+const sectionToSidebarMap: Record<Section, SidebarSection> = {
+  overview: "dashboard",
+  upload: "upload",
+  reviews: "reviews",
+  documents: "workspace",
+  issues: "notifications",
+  customs: "analytics",
+};
+
+const sidebarToSectionMap: Partial<Record<SidebarSection, Section>> = {
+  dashboard: "overview",
+  upload: "upload",
+  reviews: "reviews",
+  workspace: "documents",
+  analytics: "customs",
+  notifications: "issues",
+};
+
+const sidebarSectionLabels: Record<SidebarSection, string> = {
+  dashboard: "Dashboard",
+  workspace: "Workspace",
+  templates: "Templates",
+  upload: "Upload Documents",
+  reviews: "Review Results",
+  analytics: "Analytics",
+  notifications: "Notifications",
+  billing: "Billing",
+  "billing-usage": "Billing Usage",
+  "ai-assistance": "AI Assistance",
+  "content-library": "Content Library",
+  "shipment-timeline": "Shipment Timeline",
+  settings: "Settings",
+  help: "Help & Support",
+};
 
 export default function ExporterDashboard() {
   return (
     <ResultsProvider>
-      <ExporterDashboardLayout>
-        <DashboardContent />
-      </ExporterDashboardLayout>
+      <DashboardContent />
     </ResultsProvider>
   );
 }
@@ -47,7 +98,10 @@ function DashboardContent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const section = (searchParams.get(SECTION_PARAM) as Section) || DEFAULT_SECTION;
   const urlJobId = searchParams.get(JOB_PARAM);
-  const { jobId, setJobId, results } = useResultsContext();
+  const { jobId, setJobId } = useResultsContext();
+  const { user: currentUser } = useAuth();
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(sectionToSidebarMap[section]);
+  const previousSectionRef = useRef<Section>(section);
 
   useEffect(() => {
     if (urlJobId && urlJobId !== jobId) {
@@ -55,51 +109,85 @@ function DashboardContent() {
     }
   }, [urlJobId, jobId, setJobId]);
 
-  const handleUploadComplete = (payload: { jobId: string; lcNumber: string }) => {
-    const params = new URLSearchParams(searchParams);
-    params.set(SECTION_PARAM, "reviews");
-    params.set(JOB_PARAM, payload.jobId);
-    setSearchParams(params, { replace: true });
-    setJobId(payload.jobId);
-  };
+  useEffect(() => {
+    if (previousSectionRef.current !== section) {
+      previousSectionRef.current = section;
+      setSidebarSection(sectionToSidebarMap[section]);
+    }
+  }, [section]);
 
-  const setSection = (next: Section) => {
+  const setSection = (next: Section, jobOverride?: string | null) => {
     const params = new URLSearchParams(searchParams);
     params.set(SECTION_PARAM, next);
-    if (jobId || urlJobId) {
-      params.set(JOB_PARAM, jobId ?? urlJobId ?? "");
+    const targetJob = jobOverride ?? jobId ?? urlJobId ?? "";
+    if (targetJob) {
+      params.set(JOB_PARAM, targetJob);
     } else {
       params.delete(JOB_PARAM);
     }
     setSearchParams(params, { replace: true });
+    setSidebarSection(sectionToSidebarMap[next]);
   };
 
-  let content: JSX.Element;
-  switch (section) {
-    case "overview":
-      content = <OverviewSection onNavigateUpload={() => setSection("upload")} />;
-      break;
-    case "upload":
-      content = <UploadSection onComplete={handleUploadComplete} />;
-      break;
-    case "reviews":
-      content = <ReviewsSection />;
-      break;
-    case "documents":
-      content = <DocumentsSection />;
-      break;
-    case "issues":
-      content = <IssuesSection />;
-      break;
-    case "customs":
-      content = <CustomsSection />;
-      break;
-    default:
-      content = <OverviewSection onNavigateUpload={() => setSection("upload")} />;
-  }
+  const handleUploadComplete = (payload: { jobId: string; lcNumber: string }) => {
+    setJobId(payload.jobId);
+    setSection("reviews", payload.jobId);
+  };
+
+  const handleSidebarSectionChange = (next: SidebarSection) => {
+    setSidebarSection(next);
+    const mappedSection = sidebarToSectionMap[next];
+    if (mappedSection) {
+      setSection(mappedSection);
+    }
+  };
+
+  const renderSection = (currentSection: Section): JSX.Element => {
+    switch (currentSection) {
+      case "overview":
+        return <OverviewSection onNavigateUpload={() => setSection("upload")} />;
+      case "upload":
+        return <UploadSection onComplete={handleUploadComplete} />;
+      case "reviews":
+        return <ReviewsSection />;
+      case "documents":
+        return <DocumentsSection />;
+      case "issues":
+        return <IssuesSection />;
+      case "customs":
+        return <CustomsSection />;
+      default:
+        return <OverviewSection onNavigateUpload={() => setSection("upload")} />;
+    }
+  };
+
+  const resolvedSection = sidebarToSectionMap[sidebarSection];
+  const content = resolvedSection ? (
+    renderSection(resolvedSection)
+  ) : (
+    <FeaturePlaceholder label={sidebarSectionLabels[sidebarSection]} onNavigateUpload={() => setSection("upload")} />
+  );
 
   return (
-    <div className="space-y-8">{content}</div>
+    <DashboardLayout
+      title="Exporter Dashboard"
+      breadcrumbs={[
+        { label: "LCopilot", href: "/lcopilot" },
+        { label: "Exporter Dashboard" },
+      ]}
+      sidebar={
+        <ExporterSidebar
+          activeSection={sidebarSection}
+          onSectionChange={handleSidebarSectionChange}
+          user={currentUser ?? undefined}
+        />
+      }
+    >
+      <div className="space-y-6 px-6 pb-12">
+        {resolvedSection && <DashboardNav />}
+        <div className="space-y-8">{content}</div>
+      </div>
+    </DashboardLayout>
   );
 }
 
@@ -322,6 +410,25 @@ const ResultsRequiredCard = () => (
   <Card className="border border-dashed">
     <CardContent className="py-8 text-center text-sm text-muted-foreground">
       Upload a package and run validation to unlock this view.
+    </CardContent>
+  </Card>
+);
+
+const FeaturePlaceholder = ({ label, onNavigateUpload }: { label: string; onNavigateUpload: () => void }) => (
+  <Card className="border border-dashed">
+    <CardHeader>
+      <CardTitle>{label} workspace coming soon</CardTitle>
+      <CardDescription>
+        This area will return after the structured_result rollout completes. Use the LC workspace to keep validating documents.
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="space-y-4 text-sm text-muted-foreground">
+      <p>
+        The sidebar still keeps your navigation handy—switch back to the Overview, Upload, or Reviews tabs to continue working with Option-E data.
+      </p>
+      <Button variant="outline" onClick={onNavigateUpload}>
+        Open LC workspace
+      </Button>
     </CardContent>
   </Card>
 );
