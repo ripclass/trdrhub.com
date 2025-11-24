@@ -230,34 +230,35 @@ const mapTimeline = (entries: Array<any> = []): ValidationResults['timeline'] =>
 };
 
 export const buildValidationResponse = (raw: any): ValidationResults => {
-  const structured = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload> & Record<string, any>;
+  const structuredResultRaw = (raw?.structured_result ?? {}) as Partial<StructuredResultPayload> & Record<string, any>;
   const rawExtractedData = (raw?.extracted_data ?? {}) as Record<string, any>;
-  const documentsPayload = Array.isArray(structured.documents) ? structured.documents : [];
-  const issuesPayload = Array.isArray(structured.issues) ? structured.issues : [];
-  const analyticsPayload = structured.analytics as StructuredResultAnalytics | undefined;
-  const timelinePayload = structured.timeline;
-  const extractedDocumentsPayload = structured.extracted_documents ?? {};
+  const documentsPayload = Array.isArray(raw?.structured_result?.documents) ? raw.structured_result.documents : [];
+  const issuesPayload = Array.isArray(structuredResultRaw.issues) ? structuredResultRaw.issues : [];
+  const analyticsPayload = structuredResultRaw.analytics as StructuredResultAnalytics | undefined;
+  const timelinePayload = structuredResultRaw.timeline;
+  const extractedDocumentsPayload = structuredResultRaw.extracted_documents ?? {};
   const lcStructuredPayload =
-    structured.lc_structured ??
+    structuredResultRaw.lc_structured ??
     raw?.lc_structured ??
     rawExtractedData.lc_structured ??
     null; // Extract lc_structured from any available source
 
+  const structured = structuredResultRaw;
   const documents = mapDocuments(documentsPayload);
   const issues = mapIssues(issuesPayload, documents);
   const summary = ensureSummary(structured.processing_summary, documents, issues);
   const analytics = ensureAnalytics(analyticsPayload, summary, documents);
   const timeline = mapTimeline(timelinePayload);
   const normalizedStructuredResult: StructuredResultPayload & Record<string, any> = {
-    ...structured,
+    ...structuredResultRaw,
     processing_summary: structured.processing_summary
       ? { ...structured.processing_summary, ...summary }
       : summary,
-    documents: structured.documents ?? documentsPayload,
+    documents: documentsPayload,
     issues: structured.issues ?? issuesPayload,
     analytics: normalizeStructuredAnalytics(analyticsPayload, analytics),
     timeline: normalizeStructuredTimeline(timelinePayload, timeline),
-    extracted_documents: structured.extracted_documents ?? extractedDocumentsPayload,
+    extracted_documents: structuredResultRaw.extracted_documents ?? extractedDocumentsPayload,
     lc_structured: lcStructuredPayload, // Include lc_structured in normalized result
   };
 

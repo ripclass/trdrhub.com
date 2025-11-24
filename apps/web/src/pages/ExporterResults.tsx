@@ -616,7 +616,36 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const structuredResult = resolvedResults?.structured_result;
   const structuredDocumentsPayload = structuredResult?.documents ?? [];
   const summary = structuredResult?.processing_summary ?? resolvedResults?.summary;
-  const documents = resolvedResults?.documents ?? [];
+  const documents = useMemo(() => {
+    return structuredDocumentsPayload.map((doc, index) => {
+      const documentId = String(doc.document_id ?? doc.id ?? index);
+      const filename = doc.filename ?? doc.name ?? `Document ${index + 1}`;
+      const typeKeyRaw = doc.document_type ?? doc.type ?? "supporting_document";
+      const typeKey = (typeKeyRaw || "supporting_document").toString();
+      const issuesCount = Number(doc.issues_count ?? doc.issues ?? doc.discrepancy_count ?? 0);
+      const extractionStatus = (doc.extraction_status ?? doc.extractionStatus ?? "unknown").toString().toLowerCase();
+      const status: "success" | "warning" | "error" = (() => {
+        if (extractionStatus === "error") return "error";
+        if (extractionStatus === "partial" || extractionStatus === "pending") return "warning";
+        const exempt = ["letter_of_credit", "insurance_certificate"];
+        if (issuesCount > 0 && !exempt.includes(typeKey)) return "warning";
+        return "success";
+      })();
+      return {
+        id: documentId,
+        documentId,
+        name: filename,
+        filename,
+        type: DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey),
+        typeKey,
+        extractionStatus,
+        status,
+        issuesCount,
+        extractedFields: doc.extracted_fields ?? doc.extractedFields ?? {},
+      };
+    });
+  }, [structuredDocumentsPayload]);
+  console.log("[DOCS_DEBUG]", documents);
   const issueCards = resolvedResults?.issues ?? [];
   const analyticsData = structuredResult?.analytics ?? resolvedResults?.analytics;
   const timelineEvents = structuredResult?.timeline ?? resolvedResults?.timeline ?? [];
@@ -628,7 +657,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     medium: 0,
     minor: 0,
   };
-  const extractedDocumentsMap = (structuredResult?.extracted_documents ?? {}) as Record<string, any>;
+  const extractedDocumentsMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    structuredDocumentsPayload.forEach((doc, idx) => {
+      const key = doc.document_type || doc.filename || `doc_${idx}`;
+      map[key] = doc.extracted_fields ?? doc.extractedFields ?? {};
+    });
+    return map;
+  }, [structuredDocumentsPayload]);
   const extractedDocuments = useMemo(
     () =>
       structuredDocumentsPayload.map((doc) => ({
@@ -642,13 +678,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       })),
     [structuredDocumentsPayload],
   );
-  // Prefer lc_structured from structured_result (new format) over extracted_documents (legacy)
+  // Prefer lc_structured (structured_result v1) only
   const lcStructured = resolvedResults?.lc_structured ?? structuredResult?.lc_structured ?? null;
-  const lcData = (lcStructured ??
-    extractedDocumentsMap.letter_of_credit ??
-    extractedDocumentsMap.lc ??
-    extractedDocumentsMap["letter_of_credit"] ??
-    null) as Record<string, any> | null;
+  const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
         [
