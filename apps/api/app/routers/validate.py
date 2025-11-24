@@ -733,6 +733,8 @@ async def validate_doc(
                 lc_type_data=lc_type_hint,
                 ai_enrichment=results_payload.get("ai_enrichment"),
                 legacy_payload=results_payload,
+                session_documents=final_documents,
+                extractor_outputs=extractor_outputs,
             )
             results_payload["structured_result"] = unified_structured_result
             structured_result = unified_structured_result

@@ -229,6 +229,58 @@ def _extract_top_issue(results_payload: Dict[str, Any]) -> Optional[Dict[str, An
     return None
 
 
+def _collect_structured_documents(session: ValidationSession, results_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    documents_structured: List[Dict[str, Any]] = []
+    for document in session.documents or []:
+        documents_structured.append(
+            {
+                "id": str(document.id),
+                "document_type": document.document_type,
+                "original_filename": document.original_filename,
+                "extraction_status": getattr(document, "extraction_status", None) or "unknown",
+                "extracted_fields": document.extracted_fields or {},
+            }
+        )
+
+    if not documents_structured:
+        for doc in results_payload.get("documents") or []:
+            documents_structured.append(doc)
+
+    return documents_structured
+
+
+def _build_structured_result_for_response(
+    results_payload: Dict[str, Any],
+    extracted_data: Dict[str, Any],
+    session_documents: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    structured_result = (results_payload.get("structured_result") or {}).copy()
+    if structured_result.get("version") == "structured_result_v1":
+        return structured_result
+
+    lc_type_hint = {
+        "lc_type": results_payload.get("lc_type"),
+        "lc_type_reason": results_payload.get("lc_type_reason"),
+        "lc_type_confidence": results_payload.get("lc_type_confidence"),
+        "lc_type_source": results_payload.get("lc_type_source"),
+    }
+
+    extractor_outputs = structured_result.get("lc_structured") or (extracted_data or {}).get("lc_structured")
+
+    return build_unified_structured_result(
+        extracted_data=extracted_data,
+        documents=results_payload.get("documents"),
+        discrepancies=results_payload.get("discrepancies"),
+        results=results_payload.get("results"),
+        issue_cards=results_payload.get("issue_cards"),
+        lc_type_data=lc_type_hint,
+        ai_enrichment=results_payload.get("ai_enrichment"),
+        legacy_payload=results_payload,
+        session_documents=session_documents,
+        extractor_outputs=extractor_outputs,
+    )
+
+
 def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
     results_payload = session.validation_results or {}
     extracted_data = (
@@ -333,33 +385,29 @@ def get_job_results(
             detail=f"Job is not completed yet (status={session.status})",
         )
 
-    payload = copy.deepcopy(session.validation_results or {})
-    structured_result = payload.get("structured_result") or {}
-    if structured_result.get("version") != "structured_result_v1":
-        try:
-            payload["structured_result"] = build_unified_structured_result(
-                extracted_data=payload.get("extracted_data"),
-                documents=payload.get("documents"),
-                discrepancies=payload.get("discrepancies"),
-                results=payload.get("results"),
-                issue_cards=payload.get("issue_cards"),
-                lc_type_data={
-                    "lc_type": payload.get("lc_type"),
-                    "lc_type_reason": payload.get("lc_type_reason"),
-                    "lc_type_confidence": payload.get("lc_type_confidence"),
-                    "lc_type_source": payload.get("lc_type_source"),
-                },
-                ai_enrichment=payload.get("ai_enrichment"),
-                legacy_payload=payload,
-            )
-            payload.setdefault("telemetry", {})["UnifiedStructuredResultServed"] = True
-        except Exception as exc:
-            logger.warning("Unified structured result build failed: %s", exc)
-            telemetry = payload.setdefault("telemetry", {})
-            telemetry["UnifiedStructuredResultServed"] = False
-            telemetry["UnifiedStructuredResultError"] = str(exc)
+    results_payload = copy.deepcopy(session.validation_results or {})
+    extracted_data = results_payload.get("extracted_data") or session.extracted_data or {}
+    session_structured_docs = _collect_structured_documents(session, results_payload)
 
-    return payload
+    try:
+        structured_result = _build_structured_result_for_response(
+            results_payload,
+            extracted_data,
+            session_structured_docs,
+        )
+        results_payload["structured_result"] = structured_result
+        results_payload.setdefault("telemetry", {})["UnifiedStructuredResultServed"] = True
+        logger.info(
+            "UnifiedStructuredResultServed",
+            extra={"job_id": str(session.id), "version": structured_result.get("version")},
+        )
+    except Exception as exc:
+        logger.warning("Unified structured result build failed: %s", exc)
+        telemetry = results_payload.setdefault("telemetry", {})
+        telemetry["UnifiedStructuredResultServed"] = False
+        telemetry["UnifiedStructuredResultError"] = str(exc)
+
+    return results_payload
 
 
 @router.get("/api/jobs")
