@@ -12,12 +12,19 @@ const tabs = [
   { id: "reviews", label: "Reviews", requiresJob: true },
   { id: "documents", label: "Documents", requiresJob: true },
   { id: "issues", label: "Issues", requiresJob: true },
+  { id: "analytics", label: "Analytics", requiresJob: true },
   { id: "customs", label: "Customs Pack", requiresJob: true },
 ] as const;
 
+const parseSection = (value: string | null) => {
+  if (!value) return "overview";
+  const normalized = value.toLowerCase();
+  return tabs.some((tab) => tab.id === normalized) ? normalized : "overview";
+};
+
 export default function DashboardNav() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const active = searchParams.get(SECTION_PARAM) ?? "overview";
+  const active = parseSection(searchParams.get(SECTION_PARAM));
   const urlJobId = searchParams.get(JOB_PARAM);
   const { jobId } = useResultsContext();
 

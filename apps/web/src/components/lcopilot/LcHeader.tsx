@@ -8,11 +8,11 @@ type Props = {
 
 const getDisplayValue = (value?: string | null): { text: string; missing: boolean } => {
   if (!value) {
-    return { text: '—', missing: true };
+    return { text: 'N/A', missing: true };
   }
   const normalized = value.toString().trim();
   if (!normalized) {
-    return { text: '—', missing: true };
+    return { text: 'N/A', missing: true };
   }
   return { text: normalized, missing: false };
 };

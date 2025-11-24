@@ -31,8 +31,14 @@ const normalizeDiscrepancySeverity = (
 const SECTION_PARAM = "section";
 const JOB_PARAM = "jobId";
 
-const sections = ["overview", "upload", "reviews", "documents", "issues", "customs"] as const;
+const sections = ["overview", "upload", "reviews", "documents", "issues", "analytics", "customs"] as const;
 type Section = (typeof sections)[number];
+
+const parseSection = (value: string | null): Section => {
+  if (!value) return "overview";
+  const normalized = value.toLowerCase();
+  return sections.includes(normalized as Section) ? (normalized as Section) : "overview";
+};
 
 const DEFAULT_SECTION: Section = "overview";
 type SidebarSection =
@@ -57,6 +63,7 @@ const sectionToSidebarMap: Record<Section, SidebarSection> = {
   reviews: "reviews",
   documents: "workspace",
   issues: "notifications",
+  analytics: "analytics",
   customs: "analytics",
 };
 
@@ -65,7 +72,7 @@ const sidebarToSectionMap: Partial<Record<SidebarSection, Section>> = {
   upload: "upload",
   reviews: "reviews",
   workspace: "documents",
-  analytics: "customs",
+  analytics: "analytics",
   notifications: "issues",
 };
 
@@ -96,11 +103,13 @@ export default function ExporterDashboard() {
 
 function DashboardContent() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const section = (searchParams.get(SECTION_PARAM) as Section) || DEFAULT_SECTION;
+  const section = parseSection(searchParams.get(SECTION_PARAM));
   const urlJobId = searchParams.get(JOB_PARAM);
   const { jobId, setJobId } = useResultsContext();
   const { user: currentUser } = useAuth();
-  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(sectionToSidebarMap[section]);
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(
+    sectionToSidebarMap[section] ?? "dashboard",
+  );
   const previousSectionRef = useRef<Section>(section);
 
   useEffect(() => {
@@ -112,7 +121,7 @@ function DashboardContent() {
   useEffect(() => {
     if (previousSectionRef.current !== section) {
       previousSectionRef.current = section;
-      setSidebarSection(sectionToSidebarMap[section]);
+      setSidebarSection(sectionToSidebarMap[section] ?? "dashboard");
     }
   }, [section]);
 
@@ -126,7 +135,7 @@ function DashboardContent() {
       params.delete(JOB_PARAM);
     }
     setSearchParams(params, { replace: true });
-    setSidebarSection(sectionToSidebarMap[next]);
+    setSidebarSection(sectionToSidebarMap[next] ?? "dashboard");
   };
 
   const handleUploadComplete = (payload: { jobId: string; lcNumber: string }) => {
@@ -154,6 +163,8 @@ function DashboardContent() {
         return <DocumentsSection />;
       case "issues":
         return <IssuesSection />;
+      case "analytics":
+        return <AnalyticsSection />;
       case "customs":
         return <CustomsSection />;
       default:
@@ -161,12 +172,20 @@ function DashboardContent() {
     }
   };
 
-  const resolvedSection = sidebarToSectionMap[sidebarSection];
-  const content = resolvedSection ? (
-    renderSection(resolvedSection)
-  ) : (
-    <FeaturePlaceholder label={sidebarSectionLabels[sidebarSection]} onNavigateUpload={() => setSection("upload")} />
-  );
+  const resolvedSection =
+    sidebarSection === "analytics" && section === "customs"
+      ? "customs"
+      : sidebarToSectionMap[sidebarSection];
+
+  const content =
+    resolvedSection !== undefined ? (
+      renderSection(resolvedSection)
+    ) : (
+      <FeaturePlaceholder
+        label={sidebarSectionLabels[sidebarSection]}
+        onNavigateUpload={() => setSection("upload")}
+      />
+    );
 
   return (
     <DashboardLayout
@@ -362,6 +381,79 @@ const IssuesSection = () => {
   );
 };
 
+const AnalyticsSection = () => {
+  const { results } = useResultsContext();
+  const structured = results?.structured_result;
+  const summary = structured?.processing_summary;
+  const analytics = structured?.analytics;
+  const documents =
+    structured?.documents_structured ?? structured?.lc_structured?.documents_structured ?? [];
+  const issues = structured?.issues ?? results?.issues ?? [];
+
+  if (!structured || !summary) {
+    return <ResultsRequiredCard />;
+  }
+
+  const documentStatus = summary.status_counts ?? summary.document_status ?? {};
+  const processingTime = summary.processing_time_display ?? analytics?.processing_time_display ?? "N/A";
+  const complianceScore =
+    analytics?.lc_compliance_score ??
+    analytics?.customs_ready_score ??
+    analytics?.compliance_score ??
+    null;
+
+  const metrics = [
+    {
+      label: "Documents Processed",
+      value: documents.length,
+      helper: `${documentStatus.success ?? 0} success / ${documentStatus.warning ?? 0} warning / ${documentStatus.error ?? 0} error`,
+    },
+    {
+      label: "Compliance Score",
+      value: typeof complianceScore === "number" ? `${complianceScore}%` : "N/A",
+      helper: "From structured_result.analytics",
+    },
+    {
+      label: "Customs Ready",
+      value: typeof analytics?.customs_ready_score === "number" ? `${analytics.customs_ready_score}%` : "N/A",
+      helper: "Customs readiness score",
+    },
+    {
+      label: "Extraction Accuracy",
+      value: typeof analytics?.extraction_accuracy === "number" ? `${analytics.extraction_accuracy}%` : "N/A",
+      helper: "Structured extraction accuracy",
+    },
+    {
+      label: "Total Issues",
+      value: summary.total_issues ?? issues.length,
+      helper: `${issues.length} issues from structured_result.issues`,
+    },
+    {
+      label: "Processing Time",
+      value: processingTime,
+      helper: "Wall-clock duration",
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Analytics</CardTitle>
+        <CardDescription>Option-E processing summary and readiness signals</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-lg border border-border/60 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{metric.label}</p>
+            <p className="text-xl font-semibold text-foreground mt-1">{metric.value}</p>
+            <p className="text-xs text-muted-foreground mt-1">{metric.helper}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+};
+
 const CustomsSection = () => {
   const { results } = useResultsContext();
   if (!results) {
@@ -396,7 +488,7 @@ const CustomsSection = () => {
           <ul className="text-sm text-muted-foreground space-y-1">
             {(customsPack.manifest ?? []).map((entry, idx) => (
               <li key={`${entry.name ?? "doc"}-${idx}`}>
-                {entry.name ?? `Document ${idx + 1}`} · {entry.tag ?? "supporting_document"}
+                {entry.name ?? `Document ${idx + 1}`} - {entry.tag ?? "supporting_document"}
               </li>
             ))}
           </ul>
@@ -424,7 +516,7 @@ const FeaturePlaceholder = ({ label, onNavigateUpload }: { label: string; onNavi
     </CardHeader>
     <CardContent className="space-y-4 text-sm text-muted-foreground">
       <p>
-        The sidebar still keeps your navigation handy—switch back to the Overview, Upload, or Reviews tabs to continue working with Option-E data.
+        The sidebar still keeps your navigation handy - switch back to the Overview, Upload, or Reviews tabs to continue working with Option-E data.
       </p>
       <Button variant="outline" onClick={onNavigateUpload}>
         Open LC workspace

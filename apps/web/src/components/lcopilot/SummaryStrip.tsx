@@ -21,7 +21,7 @@ export function SummaryStrip({ data }: Props) {
   const statusDistribution = analytics?.document_status_distribution ?? {};
   const severityBreakdown = summary.severity_breakdown ?? {};
   const processingTime =
-    summary.processing_time_display ?? analytics?.processing_time_display ?? '—';
+    summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
 
   const infoBlocks = [
     {
@@ -39,9 +39,9 @@ export function SummaryStrip({ data }: Props) {
     {
       label: 'Issues',
       value: summary.total_issues ?? 0,
-      helper: `${formatNumber(severityBreakdown.critical)} critical · ${formatNumber(
+      helper: `${formatNumber(severityBreakdown.critical)} critical - ${formatNumber(
         severityBreakdown.major,
-      )} major · ${formatNumber(severityBreakdown.medium)} medium`,
+      )} major - ${formatNumber(severityBreakdown.medium)} medium`,
     },
   ];
 
