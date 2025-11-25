@@ -45,6 +45,19 @@ const formatValue = (value?: string) => {
   return value;
 };
 
+// Safely convert any value to string to prevent React Error #31
+const safeString = (value: any): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if ('types' in value && Array.isArray(value.types)) {
+      return value.types.join(', ');
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
 export function ExporterIssueCard({
   issue,
   normalizedSeverity,
@@ -95,7 +108,7 @@ export function ExporterIssueCard({
               const meta = documentStatusMap.get(name);
               return (
                 <Badge key={name} variant="outline" className={cn('text-xs', buildDocumentBadgeClass(meta?.status))}>
-                  {meta?.type ? `${meta.type}: ` : ''}
+                  {meta?.type ? `${safeString(meta.type)}: ` : ''}
                   {name}
                 </Badge>
               );
