@@ -198,7 +198,14 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     if mt_full:
         lc_structured["mt700"] = mt_fields
         lc_structured["mt700_raw"] = mt_full.get("raw", {})
-        lc_structured["lc_type"] = mt_fields.get("lc_classification")
+        # Extract lc_type as string from lc_classification.types array
+        lc_classification = mt_fields.get("lc_classification", {})
+        if isinstance(lc_classification, dict) and "types" in lc_classification:
+            types_list = lc_classification.get("types", [])
+            lc_structured["lc_type"] = ", ".join(types_list) if types_list else "unknown"
+            lc_structured["lc_classification"] = lc_classification  # Keep original for reference
+        else:
+            lc_structured["lc_type"] = lc_classification if isinstance(lc_classification, str) else "unknown"
         
         # Promote commonly-used fields to top-level for compatibility
         if not lc_structured.get("applicant") and mt_fields.get("applicant"):
