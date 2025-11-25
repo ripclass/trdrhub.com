@@ -261,8 +261,8 @@ async def validate_doc(
             if document_details:
                 status_counts: Dict[str, int] = {}
                 for doc in document_details:
-                    status = doc.get("extraction_status") or "unknown"
-                    status_counts[status] = status_counts.get(status, 0) + 1
+                    extraction_stat = doc.get("extraction_status") or "unknown"
+                    status_counts[extraction_stat] = status_counts.get(extraction_stat, 0) + 1
                 logger.info(
                     "Document extraction status summary: total=%d details=%s",
                     len(document_details),
@@ -498,8 +498,8 @@ async def validate_doc(
         if document_summaries:
             doc_status_counts: Dict[str, int] = {}
             for summary in document_summaries:
-                status = summary.get("status") or "unknown"
-                doc_status_counts[status] = doc_status_counts.get(status, 0) + 1
+                doc_status_val = summary.get("status") or "unknown"
+                doc_status_counts[doc_status_val] = doc_status_counts.get(doc_status_val, 0) + 1
             logger.info(
                 "Document summaries built: total=%d status_breakdown=%s",
                 len(document_summaries),
@@ -533,7 +533,7 @@ async def validate_doc(
         try:
             option_e_payload = build_unified_structured_result(
                 session_documents=final_documents,
-                extractor_outputs=context.get("lc_structured_output"),
+                extractor_outputs=payload.get("lc_structured_output") if payload else None,
                 legacy_payload=None,
             )
             structured_result = option_e_payload["structured_result"]
