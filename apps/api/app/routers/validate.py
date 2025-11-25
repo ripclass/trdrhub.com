@@ -986,7 +986,7 @@ async def _build_document_context(
     try:
         from app.rules.extractors import DocumentFieldExtractor, ISO20022ParseError, extract_iso20022_lc
         from app.rules.models import DocumentType
-        from app.services.extraction.lc_extractor import extract_lc
+        from app.services.extraction.lc_extractor import extract_lc_structured as extract_lc
     except ImportError as e:
         logger.warning(f"DocumentFieldExtractor not available; skipping text extraction: {e}")
         return {"extraction_status": "error", "extraction_error": str(e)}
