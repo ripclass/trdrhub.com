@@ -2200,7 +2200,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <tbody className="space-y-2">
                           {documentProcessingList.map((item, index) => (
                             <tr key={item.name ?? index} className="border-b border-gray-200/50">
-                              <td className="py-3 font-medium">{item.type ?? documents[index]?.type}</td>
+                              <td className="py-3 font-medium">{safeString(item.type ?? documents[index]?.type)}</td>
                               <td className="py-3 text-muted-foreground">{item.issues ?? 0}</td>
                               <td className="py-3">
                                 <StatusBadge status={item.status || 'success'}>
