@@ -209,22 +209,45 @@ const mapTimeline = (entries: Array<any> = []) =>
     }))
     .filter((entry) => Boolean(entry.title));
 
+// Ensure value is an array, wrapping if needed or returning empty array
+const ensureArray = (value: unknown): any[] => {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined) return [];
+  // If it's an object with values, try to convert
+  if (typeof value === 'object') {
+    // Check if it's array-like with numeric keys
+    const vals = Object.values(value as Record<string, unknown>);
+    if (vals.length > 0) return vals;
+  }
+  return [];
+};
+
 export const buildValidationResponse = (raw: any): ValidationResults => {
   const structured = raw?.structured_result as StructuredResultPayload | null;
   if (!structured || structured.version !== 'structured_result_v1') {
     throw new Error('structured_result_v1 payload missing');
   }
 
-  const optionEDocuments =
-    structured.documents_structured ?? structured.lc_structured?.documents_structured ?? [];
+  // Safely extract documents - ensure it's always an array
+  const rawDocs = structured.documents_structured 
+    ?? structured.lc_structured?.documents_structured 
+    ?? [];
+  const optionEDocuments = ensureArray(rawDocs);
 
-  console.log('[DOCS_MAPPER_DEBUG]', optionEDocuments);
+  console.log('[DOCS_MAPPER_DEBUG] rawDocs type:', typeof rawDocs, 'isArray:', Array.isArray(rawDocs), 'optionEDocuments:', optionEDocuments);
 
   const documents = mapDocuments(optionEDocuments);
-  const issues = mapIssues(structured.issues ?? [], documents);
+  
+  // Safely extract issues - ensure it's always an array
+  const rawIssues = structured.issues ?? [];
+  const issues = mapIssues(ensureArray(rawIssues), documents);
+  
   const summary = ensureSummary(structured.processing_summary, documents, issues);
   const analytics = ensureAnalytics(structured.analytics, documents, issues);
-  const timeline = mapTimeline(structured.lc_structured?.timeline ?? structured.timeline ?? []);
+  
+  // Safely extract timeline
+  const rawTimeline = structured.lc_structured?.timeline ?? structured.timeline ?? [];
+  const timeline = mapTimeline(ensureArray(rawTimeline));
 
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
