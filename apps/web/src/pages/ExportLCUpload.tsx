@@ -438,7 +438,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
 
     } catch (error: any) {
-      console.error('❌ Validation error:', error);
+      console.error('❌ [COMPONENT] Validation error caught:', {
+        error,
+        type: error?.type,
+        message: error?.message,
+        statusCode: error?.statusCode,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error), 2),
+      });
       if (error.type === 'quota') {
         toast({
           title: 'Upgrade Required',

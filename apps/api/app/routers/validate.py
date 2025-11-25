@@ -617,6 +617,21 @@ async def validate_doc(
             detail=f"File encoding error: Unable to process uploaded file. Please ensure files are valid PDFs or images. Error: {str(e)}"
         )
     except Exception as e:
+        # Log the full error with stack trace
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(
+            f"Validation endpoint exception: {type(e).__name__}: {str(e)}",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "user_id": current_user.id if current_user else None,
+                "endpoint": "/api/validate",
+                "traceback": error_traceback,
+            },
+            exc_info=True
+        )
+        
         # Log failed validation if bank operation
         user_type = payload.get("userType") or payload.get("user_type") if 'payload' in locals() else None
         if user_type == "bank" and 'validation_session' in locals() and validation_session:

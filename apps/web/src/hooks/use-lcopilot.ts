@@ -122,6 +122,24 @@ export const useValidate = () => {
 
       return response.data;
     } catch (err: any) {
+      // Log full error details for debugging
+      console.error('🔴 [VALIDATION ERROR] Full error object:', {
+        error: err,
+        response: err.response ? {
+          status: err.response.status,
+          statusText: err.response.statusText,
+          data: err.response.data,
+          headers: err.response.headers,
+        } : null,
+        request: err.request ? {
+          url: err.config?.url,
+          method: err.config?.method,
+          baseURL: err.config?.baseURL,
+        } : null,
+        message: err.message,
+        stack: err.stack,
+      });
+      
       let validationError: ValidationError;
 
       if (err.response) {
