@@ -78,7 +78,9 @@ const mapDocuments = (docs: any[] = []) => {
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
     const filename = doc?.filename ?? doc?.name ?? `Document ${index + 1}`;
-    const typeKey = doc?.document_type ?? 'supporting_document';
+    // Ensure typeKey is a string - handle case where backend returns object like {types: [...]}
+    const rawType = doc?.document_type ?? 'supporting_document';
+    const typeKey = typeof rawType === 'string' ? rawType : 'supporting_document';
     const issuesCount = Number(doc?.issues_count ?? 0);
     const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
 
@@ -209,16 +211,11 @@ const mapTimeline = (entries: Array<any> = []) =>
     }))
     .filter((entry) => Boolean(entry.title));
 
-// Ensure value is an array, wrapping if needed or returning empty array
+// Ensure value is an array - returns empty array if not a proper array
 const ensureArray = (value: unknown): any[] => {
   if (Array.isArray(value)) return value;
-  if (value === null || value === undefined) return [];
-  // If it's an object with values, try to convert
-  if (typeof value === 'object') {
-    // Check if it's array-like with numeric keys
-    const vals = Object.values(value as Record<string, unknown>);
-    if (vals.length > 0) return vals;
-  }
+  // Don't try to convert objects - just return empty array
+  // This prevents issues when backend returns unexpected shapes like {types: [...]}
   return [];
 };
 
