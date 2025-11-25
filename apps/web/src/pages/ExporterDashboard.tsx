@@ -1,17 +1,20 @@
-// ExporterDashboard - Section-based dashboard with embedded workflows (ImporterDashboardV2 style)
+// ExporterDashboard - Section-based dashboard with embedded workflows
 import { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
+import { useDrafts, type DraftData } from "@/hooks/use-drafts";
+import { useVersions } from "@/hooks/use-versions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
 import ExporterAnalytics from "./ExporterAnalytics";
@@ -45,12 +48,20 @@ import { getParam } from "@/lib/exporter/url";
 import {
   FileText,
   CheckCircle,
+  XCircle,
   AlertTriangle,
   TrendingUp,
   Clock,
   Upload,
   BarChart3,
   Bell,
+  Plus,
+  Edit3,
+  Trash2,
+  ArrowRight,
+  GitBranch,
+  History,
+  Download,
 } from "lucide-react";
 
 const DASHBOARD_BASE = "/lcopilot/exporter-dashboard";
@@ -335,7 +346,10 @@ function DashboardContent() {
       <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
         {/* Overview Section */}
         {activeSection === "overview" && (
-          <OverviewPanel onNavigate={handleSectionChange} />
+          <OverviewPanel 
+            onNavigate={handleSectionChange} 
+            user={currentUser ?? exporterUser ?? undefined}
+          />
         )}
 
         {/* Upload Section */}
@@ -415,207 +429,491 @@ function DashboardContent() {
   );
 }
 
-// ---------- Overview Panel ----------
+// ---------- Exporter Dashboard Overview (Original Layout) ----------
+
+// Dashboard stats for exporters
+const dashboardStats = {
+  thisMonth: 12,
+  successRate: 94.2,
+  avgProcessingTime: "2.3 minutes",
+  discrepanciesFound: 8,
+  totalChecks: 24,
+  documentsProcessed: 96
+};
+
+const mockHistory = [
+  { id: "BD-2024-001", date: "2024-01-15", company: "Dhaka Exports Ltd", documents: 5, status: "approved" as const, discrepancies: 0 },
+  { id: "BD-2024-002", date: "2024-01-14", company: "Bengal Trade Co", documents: 7, status: "rejected" as const, discrepancies: 3 },
+  { id: "BD-2024-003", date: "2024-01-14", company: "Chittagong Imports", documents: 4, status: "flagged" as const, discrepancies: 1 },
+];
+
+const dashboardNotifications = [
+  {
+    id: 1,
+    title: "New ICC Update Available",
+    message: "UCP 600 guidelines have been updated. Review new discrepancy rules.",
+    type: "info" as const,
+    timestamp: "2 hours ago"
+  },
+  {
+    id: 2,
+    title: "LC Processing Complete", 
+    message: "BD-2024-005 has been processed successfully with no discrepancies.",
+    type: "success" as const,
+    timestamp: "4 hours ago"
+  },
+  {
+    id: 3,
+    title: "Discrepancy Alert",
+    message: "BD-2024-006 has 2 discrepancies that need attention.",
+    type: "warning" as const,
+    timestamp: "1 day ago"
+  }
+];
 
 interface OverviewPanelProps {
   onNavigate: (section: AnySection) => void;
+  user?: { name?: string; email?: string; company?: string } | null;
 }
 
-function OverviewPanel({ onNavigate }: OverviewPanelProps) {
-  // Mock stats - in production these would come from API
-  const stats = {
-    thisMonth: 12,
-    successRate: 94.2,
-    avgProcessingTime: "2.4 min",
-    issuesIdentified: 8,
-    totalValidations: 47,
-    documentsProcessed: 156,
+function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
+  const { toast } = useToast();
+  const { getAllDrafts, removeDraft } = useDrafts();
+  const { getAllAmendedLCs } = useVersions();
+  
+  const [drafts, setDrafts] = useState<DraftData[]>([]);
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
+  const [amendedLCs, setAmendedLCs] = useState<Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>>([]);
+  const [isLoadingAmendments, setIsLoadingAmendments] = useState(false);
+  const [activeTab, setActiveTab] = useState("drafts");
+
+  // Load exporter drafts
+  useEffect(() => {
+    const loadDrafts = () => {
+      setIsLoadingDrafts(true);
+      try {
+        const exporterDrafts = getAllDrafts();
+        setDrafts(exporterDrafts);
+      } catch (error) {
+        console.error('Failed to load drafts:', error);
+      } finally {
+        setIsLoadingDrafts(false);
+      }
+    };
+    loadDrafts();
+  }, [getAllDrafts]);
+
+  // Load amended LCs
+  useEffect(() => {
+    const loadAmendedLCs = async () => {
+      setIsLoadingAmendments(true);
+      try {
+        const amended = await getAllAmendedLCs();
+        setAmendedLCs(amended);
+      } catch (error) {
+        console.error('Failed to load amended LCs:', error);
+      } finally {
+        setIsLoadingAmendments(false);
+      }
+    };
+    loadAmendedLCs();
+  }, [getAllAmendedLCs]);
+
+  const handleDeleteDraft = (draftId: string) => {
+    try {
+      removeDraft(draftId);
+      setDrafts(prev => prev.filter(d => d.id !== draftId));
+      toast({
+        title: "Draft Deleted",
+        description: "The saved draft has been removed.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to Delete Draft",
+        description: error.message || "Could not delete the draft. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  const companyName = user?.company || user?.name || "Exporter";
 
   return (
     <>
-      <div>
+      {/* Welcome Section */}
+      <div className="mb-2">
         <h2 className="text-3xl font-bold text-foreground mb-2">
-          Exporter Dashboard
+          Welcome back, {companyName}
         </h2>
         <p className="text-muted-foreground">
-          Monitor your LC validations, document compliance, and customs readiness.
+          Here's what's happening with your LC validations today.
         </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="This Month"
-          value={stats.thisMonth.toString()}
-          sublabel="+25% from last month"
-          icon={<FileText className="h-6 w-6 text-emerald-500" />}
-          iconBg="bg-emerald-500/10"
-        />
-        <StatCard
-          label="Success Rate"
-          value={`${stats.successRate}%`}
-          progress={stats.successRate}
-          icon={<TrendingUp className="h-6 w-6 text-green-500" />}
-          iconBg="bg-green-500/10"
-        />
-        <StatCard
-          label="Avg Processing"
-          value={stats.avgProcessingTime}
-          sublabel="12s faster"
-          icon={<Clock className="h-6 w-6 text-blue-500" />}
-          iconBg="bg-blue-500/10"
-        />
-        <StatCard
-          label="Issues Found"
-          value={stats.issuesIdentified.toString()}
-          sublabel="Review required"
-          icon={<AlertTriangle className="h-6 w-6 text-amber-500" />}
-          iconBg="bg-amber-500/10"
-        />
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-soft border-0">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5" />
-              Quick Actions
-            </CardTitle>
-            <CardDescription>
-              Start a new validation or review existing results
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              onClick={() => onNavigate("upload")}
-              className="w-full justify-start"
-              variant="outline"
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              Upload New LC Package
-            </Button>
-            <Button
-              onClick={() => onNavigate("reviews")}
-              className="w-full justify-start"
-              variant="outline"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              View Recent Results
-            </Button>
-            <Button
-              onClick={() => onNavigate("analytics")}
-              className="w-full justify-start"
-              variant="outline"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              View Analytics
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-soft border-0">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5" />
-              Recent Activity
-            </CardTitle>
-            <CardDescription>Your latest validation results</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[
-                { id: "1", lc: "LC-2024-001", status: "success", issues: 0 },
-                { id: "2", lc: "LC-2024-002", status: "warning", issues: 2 },
-                { id: "3", lc: "LC-2024-003", status: "success", issues: 0 },
-              ].map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    {item.status === "success" ? (
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-amber-500" />
-                    )}
-                    <span className="font-medium">{item.lc}</span>
-                  </div>
-                  <StatusBadge status={item.status as any}>
-                    {item.issues === 0 ? "No issues" : `${item.issues} issues`}
-                  </StatusBadge>
-                </div>
-              ))}
+      {/* Quick Actions - Large Buttons */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-2">
+        <Button 
+          onClick={() => onNavigate("upload")}
+          className="flex-1 h-16 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white text-left justify-start shadow-md group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-lg group-hover:scale-110 transition-transform">
+              <Plus className="w-6 h-6" />
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Summary Stats */}
-      <Card className="shadow-soft border-0">
-        <CardHeader>
-          <CardTitle>Monthly Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="text-center p-4 bg-secondary/20 rounded-lg">
-              <p className="text-3xl font-bold text-foreground">
-                {stats.totalValidations}
-              </p>
-              <p className="text-sm text-muted-foreground">Total Validations</p>
-            </div>
-            <div className="text-center p-4 bg-secondary/20 rounded-lg">
-              <p className="text-3xl font-bold text-foreground">
-                {stats.documentsProcessed}
-              </p>
-              <p className="text-sm text-muted-foreground">Documents Processed</p>
-            </div>
-            <div className="text-center p-4 bg-secondary/20 rounded-lg">
-              <p className="text-3xl font-bold text-foreground">
-                {stats.successRate}%
-              </p>
-              <p className="text-sm text-muted-foreground">Compliance Rate</p>
+            <div>
+              <div className="font-semibold">Upload LC</div>
+              <div className="text-sm opacity-90">Start validation process</div>
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-// ---------- Stat Card Component ----------
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  sublabel?: string;
-  progress?: number;
-  icon: React.ReactNode;
-  iconBg: string;
-}
-
-function StatCard({ label, value, sublabel, progress, icon, iconBg }: StatCardProps) {
-  return (
-    <Card className="shadow-soft border-0">
-      <CardContent className="flex h-full items-start justify-between gap-4 p-6 pt-6">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-muted-foreground mb-2">{label}</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums">{value}</p>
-          {progress !== undefined && (
-            <Progress value={progress} className="mt-2 h-2" />
-          )}
-          {sublabel && (
-            <p className="text-xs text-emerald-600 mt-1">{sublabel}</p>
-          )}
-        </div>
-        <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${iconBg}`}
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => onNavigate("analytics")}
+          className="flex-1 h-16 text-left justify-start"
         >
-          {icon}
+          <div className="flex items-center gap-4">
+            <div className="bg-emerald-500/10 p-3 rounded-lg">
+              <BarChart3 className="w-6 h-6 text-emerald-600" />
+            </div>
+            <div>
+              <div className="font-semibold">View Analytics</div>
+              <div className="text-sm text-muted-foreground">Performance insights</div>
+            </div>
+          </div>
+        </Button>
+      </div>
+
+      {/* Drafts and Amendments Tabs */}
+      {((drafts.length > 0 || isLoadingDrafts) || (amendedLCs.length > 0 || isLoadingAmendments)) && (
+        <Card className="shadow-soft border-0 mb-2">
+          <CardHeader>
+            <CardTitle>Your LC Management</CardTitle>
+            <CardDescription>
+              Manage your draft uploads and track amended LCs
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="drafts" className="flex items-center gap-2">
+                  <Edit3 className="w-4 h-4" />
+                  Drafts ({drafts.length})
+                </TabsTrigger>
+                <TabsTrigger value="amendments" className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4" />
+                  Amendments ({amendedLCs.length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="drafts" className="mt-6">
+                {isLoadingDrafts ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
+                    <span className="text-muted-foreground">Loading drafts...</span>
+                  </div>
+                ) : drafts.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Edit3 className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                    <p>No drafts saved</p>
+                    <p className="text-sm">Save drafts while uploading to resume later</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {drafts.map((draft) => (
+                      <div key={draft.id} className="flex items-center justify-between p-4 border rounded-lg bg-secondary/20">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-medium">
+                              {draft.lcNumber || 'Untitled Draft'}
+                            </h4>
+                            <Badge variant="outline" className="text-xs">
+                              Incomplete
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span>{draft.filesMeta?.length || 0} files</span>
+                            <span>•</span>
+                            <span>Updated {formatTimeAgo(draft.updatedAt)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Link to={`/export-lc-upload?draftId=${draft.id}`}>
+                            <Button variant="outline" size="sm">
+                              <ArrowRight className="w-4 h-4 mr-2" />
+                              Resume
+                            </Button>
+                          </Link>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteDraft(draft.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="amendments" className="mt-6">
+                {isLoadingAmendments ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
+                    <span className="text-muted-foreground">Loading amendments...</span>
+                  </div>
+                ) : amendedLCs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <GitBranch className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                    <p>No amended LCs</p>
+                    <p className="text-sm">LCs with multiple versions will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {amendedLCs.map((lc) => (
+                      <div key={lc.lc_number} className="flex items-center justify-between p-4 border rounded-lg bg-secondary/20">
+                        <div className="flex items-center gap-4">
+                          <div className="bg-emerald-500/10 p-3 rounded-lg">
+                            <GitBranch className="w-5 h-5 text-emerald-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-foreground">
+                              LC #{lc.lc_number}
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                              {lc.versions} versions • Latest: {lc.latest_version}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-muted-foreground">
+                                Last updated {formatTimeAgo(lc.last_updated)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Link to={`/lcopilot/results/latest?lc=${lc.lc_number}`}>
+                            <Button variant="outline" size="sm">
+                              <History className="w-4 h-4 mr-2" />
+                              View History
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-2">
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">This Month</p>
+                <p className="text-2xl font-bold text-foreground">{dashboardStats.thisMonth}</p>
+                <p className="text-xs text-emerald-600">+18% from last month</p>
+              </div>
+              <div className="bg-emerald-500/10 p-3 rounded-lg">
+                <FileText className="w-6 h-6 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
+                <p className="text-2xl font-bold text-foreground">{dashboardStats.successRate}%</p>
+                <Progress value={dashboardStats.successRate} className="mt-2 h-2" />
+              </div>
+              <div className="bg-green-500/10 p-3 rounded-lg">
+                <TrendingUp className="w-6 h-6 text-green-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
+                <p className="text-2xl font-bold text-foreground">{dashboardStats.avgProcessingTime}</p>
+                <p className="text-xs text-emerald-600">15s faster</p>
+              </div>
+              <div className="bg-blue-500/10 p-3 rounded-lg">
+                <Clock className="w-6 h-6 text-blue-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
+                <p className="text-2xl font-bold text-foreground">{dashboardStats.discrepanciesFound}</p>
+                <p className="text-xs text-amber-600">Needs attention</p>
+              </div>
+              <div className="bg-amber-500/10 p-3 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Two Column Layout: Recent Validations + Sidebar */}
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* Main Content - Recent LC Validations */}
+        <div className="lg:col-span-2">
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Recent LC Validations
+              </CardTitle>
+              <CardDescription>
+                Your latest document validation results
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {mockHistory.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0">
+                        {item.status === "approved" ? (
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                          </div>
+                        ) : item.status === "rejected" ? (
+                          <div className="bg-red-500/10 p-2 rounded-lg">
+                            <XCircle className="w-5 h-5 text-red-500" />
+                          </div>
+                        ) : (
+                          <div className="bg-amber-500/10 p-2 rounded-lg">
+                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-foreground">{item.id}</h4>
+                        <p className="text-sm text-muted-foreground">{item.company}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-muted-foreground">{item.date}</span>
+                          <span className="text-xs text-muted-foreground">• {item.documents} documents</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <StatusBadge status={
+                          item.status === "approved" ? "success" : 
+                          item.status === "rejected" ? "error" : "warning"
+                        }>
+                          {item.discrepancies === 0 ? "No issues" : 
+                           item.discrepancies === 1 ? "1 issue" : `${item.discrepancies} issues`}
+                        </StatusBadge>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        <Download className="w-4 h-4 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Sidebar - Notifications + Quick Stats */}
+        <div className="space-y-6">
+          {/* Notifications */}
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="w-5 h-5" />
+                Notifications
+              </CardTitle>
+              <CardDescription>
+                Updates and alerts
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {dashboardNotifications.map((notification) => (
+                  <div key={notification.id} className="p-3 rounded-lg border border-gray-200/50">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-1 rounded-full ${
+                        notification.type === "success" ? "bg-green-500/10" :
+                        notification.type === "warning" ? "bg-amber-500/10" : "bg-blue-500/10"
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${
+                          notification.type === "success" ? "bg-green-500" :
+                          notification.type === "warning" ? "bg-amber-500" : "bg-blue-500"
+                        }`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-sm text-foreground">{notification.title}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
+                        <p className="text-xs text-muted-foreground mt-2">{notification.timestamp}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Stats */}
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="text-lg">Quick Stats</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Total Checks</span>
+                  <span className="font-medium">{dashboardStats.totalChecks}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Documents Processed</span>
+                  <span className="font-medium">{dashboardStats.documentsProcessed}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Average Processing</span>
+                  <span className="font-medium">{dashboardStats.avgProcessingTime}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }
 
