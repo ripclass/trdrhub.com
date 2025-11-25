@@ -26,16 +26,23 @@ export function EnvironmentBanner() {
         setIsVisible(!response.data.is_production || response.data.sample_data_mode);
       })
       .catch(() => {
-        // Fallback: assume development if API fails
-        setEnvInfo({
-          environment: "development",
-          is_production: false,
-          is_staging: false,
-          is_development: true,
-          use_stubs: false,
-          sample_data_mode: false,
-        });
-        setIsVisible(true);
+        // If API fails in production, don't show misleading banner
+        // Only show dev banner if we're certain (localhost or explicit env)
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocalhost) {
+          setEnvInfo({
+            environment: "development",
+            is_production: false,
+            is_staging: false,
+            is_development: true,
+            use_stubs: false,
+            sample_data_mode: false,
+          });
+          setIsVisible(true);
+        } else {
+          // On production domain, hide banner if API fails
+          setIsVisible(false);
+        }
       });
   }, []);
 
