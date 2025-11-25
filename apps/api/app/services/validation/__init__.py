@@ -50,6 +50,17 @@ from .crossdoc_validator import (
     validate_cross_documents,
 )
 
+from .audit_logger import (
+    ValidationAuditLogger,
+    AuditEvent,
+    AuditTrail,
+    AuditEventType,
+    AuditSeverity,
+    create_audit_logger,
+    get_current_audit_logger,
+    set_current_audit_logger,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -81,5 +92,14 @@ __all__ = [
     "DocumentType",
     "get_crossdoc_validator",
     "validate_cross_documents",
+    # Audit Logger
+    "ValidationAuditLogger",
+    "AuditEvent",
+    "AuditTrail",
+    "AuditEventType",
+    "AuditSeverity",
+    "create_audit_logger",
+    "get_current_audit_logger",
+    "set_current_audit_logger",
 ]
 
