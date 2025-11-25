@@ -8,6 +8,7 @@ This module provides:
 
 Key Components:
 - validation_gate.py: Check if validation can proceed
+- issue_engine.py: Generate issues from missing fields and rules
 - DIAGNOSTIC_AUDIT_PHASE1.md: Root cause analysis documentation
 """
 
@@ -20,12 +21,33 @@ from .validation_gate import (
     create_blocked_response,
 )
 
+from .issue_engine import (
+    IssueEngine,
+    Issue,
+    IssueSeverity,
+    IssueSource,
+    IssueEngineResult,
+    get_issue_engine,
+    generate_issues_from_baseline,
+    generate_all_issues,
+)
+
 __all__ = [
+    # Validation Gate
     "ValidationGate",
     "GateResult",
     "GateStatus",
     "get_validation_gate",
     "check_validation_gate",
     "create_blocked_response",
+    # Issue Engine
+    "IssueEngine",
+    "Issue",
+    "IssueSeverity",
+    "IssueSource",
+    "IssueEngineResult",
+    "get_issue_engine",
+    "generate_issues_from_baseline",
+    "generate_all_issues",
 ]
 
