@@ -331,15 +331,9 @@ export const useResults = () => {
 
     try {
       const fetchFn = async (): Promise<ValidationResults> => {
-        const baseURL = api.defaults.baseURL?.replace(/\/$/, '') ?? '';
-        const url = `${baseURL}/api/results/${jobId}`;
-        const response = await fetch(url, {
-          credentials: 'include',
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch results (${response.status})`);
-        }
-        const payload = await response.json();
+        // Use api client instead of raw fetch to ensure Authorization header is included
+        const response = await api.get(`/api/results/${jobId}`);
+        const payload = response.data;
         const normalized: ValidationResults = buildValidationResponse(payload);
 
         setResults(normalized);
