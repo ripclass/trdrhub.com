@@ -321,12 +321,15 @@ async def validate_doc(
         lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
 
         # =====================================================================
-        # V2 VALIDATION GATE CHECK
-        # This is the core fix for the "100% compliant with N/A fields" bug.
+        # V2 VALIDATION PIPELINE - PRIMARY FLOW
+        # This is the core validation engine. Legacy flow is disabled.
         # If LC extraction fails (missing critical fields), we block validation.
         # =====================================================================
         v2_gate_result = None
         v2_baseline = None
+        v2_issues = []
+        v2_crossdoc_issues = []
+        
         try:
             # Build LCBaseline from extracted context
             v2_baseline = _build_lc_baseline_from_context(lc_context)
@@ -343,16 +346,62 @@ async def validate_doc(
                 v2_gate_result.critical_completeness * 100,
             )
             
-            # If gate blocks, we still continue but will use blocked scoring
+            # =====================================================================
+            # BLOCKED RESPONSE - Return immediately if gate blocks
+            # This is the key fix: NO more "100% compliant with N/A fields"
+            # =====================================================================
             if not v2_gate_result.can_proceed:
                 logger.warning(
                     "V2 Gate BLOCKED: %s. Missing critical: %s",
                     v2_gate_result.block_reason,
                     v2_gate_result.missing_critical,
                 )
+                
+                # Build blocked response
+                processing_duration = time.time() - start_time
+                blocked_result = _build_blocked_structured_result(
+                    v2_gate_result=v2_gate_result,
+                    v2_baseline=v2_baseline,
+                    lc_type=lc_type,
+                    processing_duration=processing_duration,
+                    documents=payload.get("documents") or [],
+                )
+                
+                # Create job_id for blocked response
+                blocked_job_id = payload.get("job_id") or f"job_{uuid4()}"
+                
+                return {
+                    "job_id": str(blocked_job_id),
+                    "jobId": str(blocked_job_id),
+                    "structured_result": blocked_result,
+                    "telemetry": {"validation_blocked": True, "block_reason": v2_gate_result.block_reason},
+                }
+            # =====================================================================
+            
+            # Gate passed - run v2 IssueEngine
+            from app.services.validation.issue_engine import IssueEngine
+            issue_engine = IssueEngine()
+            v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
+            logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
+            
+            # Run v2 CrossDocValidator
+            from app.services.validation.crossdoc_validator import CrossDocValidator
+            crossdoc_validator = CrossDocValidator()
+            crossdoc_result = crossdoc_validator.validate_all(
+                lc_baseline=v2_baseline,
+                invoice=payload.get("invoice"),
+                bill_of_lading=payload.get("bill_of_lading"),
+                insurance=payload.get("insurance"),
+                certificate_of_origin=payload.get("certificate_of_origin"),
+                packing_list=payload.get("packing_list"),
+            )
+            v2_crossdoc_issues = crossdoc_result.issues
+            logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
+            
         except Exception as e:
-            logger.warning("V2 gate check failed (continuing with legacy flow): %s", e)
-            v2_gate_result = None
+            logger.error("V2 pipeline error: %s", e, exc_info=True)
+            # Don't fall back to legacy - just log the error
+            # v2_gate_result remains None, issues remain empty
         # =====================================================================
 
         # Ensure user has a company (demo user will have one)
@@ -447,38 +496,56 @@ async def validate_doc(
         else:
             job_id = payload.get("job_id") or f"job_{uuid4()}"
 
-        from app.services.validator import validate_document_async
-        
-        # Ensure this flag exists; legacy code referenced it without definition
-        should_use_json_rules: bool = True
-        
+        # =====================================================================
+        # V2 VALIDATION - PRIMARY PATH (Legacy disabled)
+        # =====================================================================
         request_user_type = _extract_request_user_type(payload)
-        force_json_rules = _should_force_json_rules(payload)
-        workflow_hint = payload.get("workflow_type") or payload.get("workflowType")
-        if force_json_rules:
-            logger.info(
-                "Exporter flow requesting rules pipeline",
-                extra={
-                    "job_id": str(job_id),
-                    "user_type": request_user_type or "unknown",
-                    "workflow_type": workflow_hint,
-                },
-            )
-
-        if not context_contains_structured_data:
-            logger.warning(
-                "Structured data unavailable; DB-backed rules may have limited context",
-                extra={"job_id": str(job_id)},
-            )
         
+        # Build unified issues list from v2 components
+        results = []  # Legacy results - empty
+        failed_results = []
+        
+        # Convert v2 issues to legacy format for compatibility
+        if v2_issues:
+            for issue in v2_issues:
+                issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                failed_results.append({
+                    "rule": issue_dict.get("rule", "V2-ISSUE"),
+                    "title": issue_dict.get("title", "Validation Issue"),
+                    "passed": False,
+                    "severity": issue_dict.get("severity", "major"),
+                    "message": issue_dict.get("message", ""),
+                    "expected": issue_dict.get("expected", ""),
+                    "found": issue_dict.get("found", issue_dict.get("actual", "")),
+                    "suggested_fix": issue_dict.get("suggested_fix", issue_dict.get("suggestion", "")),
+                    "documents": issue_dict.get("documents", []),
+                    "ucp_reference": issue_dict.get("ucp_reference"),
+                    "display_card": True,
+                    "ruleset_domain": "icc.lcopilot.extraction",
+                })
+        
+        # Add cross-doc issues
+        if v2_crossdoc_issues:
+            for issue in v2_crossdoc_issues:
+                issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                failed_results.append({
+                    "rule": issue_dict.get("rule_id", "CROSSDOC-ISSUE"),
+                    "title": issue_dict.get("title", "Cross-Document Issue"),
+                    "passed": False,
+                    "severity": issue_dict.get("severity", "major"),
+                    "message": issue_dict.get("message", ""),
+                    "expected": issue_dict.get("expected", ""),
+                    "found": issue_dict.get("found", ""),
+                    "suggested_fix": issue_dict.get("suggestion", ""),
+                    "documents": [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
+                    "ucp_reference": issue_dict.get("ucp_article"),
+                    "display_card": True,
+                    "ruleset_domain": "icc.lcopilot.crossdoc",
+                })
+        
+        # Add LC type unknown warning if applicable
         if lc_type_is_unknown:
-            logger.info("LC type unknown - skipping ICC rule evaluation to avoid false positives.")
-            results = []
-        else:
-            results = await validate_document_async(payload, doc_type)
-
-        if lc_type_is_unknown:
-            results.append(
+            failed_results.append(
                 {
                     "rule": "LC-TYPE-UNKNOWN",
                     "title": "LC Type Not Determined",
@@ -495,14 +562,14 @@ async def validate_doc(
                     "not_applicable": False,
                 }
             )
-
-        failed_results = [
-            r for r in results
-            if not r.get("passed", False) and not r.get("not_applicable", False)
-        ]
-        failed_results = filter_informational_issues(failed_results)
-        issue_context = _build_issue_context(payload)
-        failed_results = await _rewrite_failed_results(failed_results, issue_context)
+        
+        logger.info(
+            "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d)",
+            len(failed_results),
+            len(v2_issues) if v2_issues else 0,
+            len(v2_crossdoc_issues) if v2_crossdoc_issues else 0,
+        )
+        
         issue_cards, reference_issues = build_issue_cards(failed_results)
 
         # Record usage - link to session if created (skip for demo user)
@@ -657,13 +724,16 @@ async def validate_doc(
             structured_result["documents_structured"] = lc_structured_docs
 
         # =====================================================================
-        # V2 VALIDATION PIPELINE INTEGRATION
-        # Inject v2 gate results, compliance scoring, and issue enhancements
+        # V2 VALIDATION PIPELINE - FINAL SCORING
+        # Apply v2 compliance scoring and add structured metadata
         # =====================================================================
         try:
+            # Always add v2 fields (gate passed at this point)
+            structured_result["validation_blocked"] = False
+            structured_result["validation_status"] = "processing"
+            
             if v2_gate_result is not None:
-                # Add gate result to structured_result
-                structured_result["validation_blocked"] = not v2_gate_result.can_proceed
+                # Add gate result
                 structured_result["gate_result"] = v2_gate_result.to_dict()
                 
                 # Add extraction summary
@@ -673,59 +743,70 @@ async def validate_doc(
                     "missing_critical": v2_gate_result.missing_critical,
                     "missing_required": v2_gate_result.missing_required,
                 }
-                
-                # Add LC baseline to structured result
-                if v2_baseline:
-                    structured_result["lc_baseline"] = {
-                        "lc_number": v2_baseline.lc_number.value,
-                        "amount": v2_baseline.amount.value,
-                        "currency": v2_baseline.currency.value,
-                        "applicant": v2_baseline.applicant.value,
-                        "beneficiary": v2_baseline.beneficiary.value,
-                        "expiry_date": v2_baseline.expiry_date.value,
-                        "latest_shipment": v2_baseline.latest_shipment.value,
-                        "port_of_loading": v2_baseline.port_of_loading.value,
-                        "port_of_discharge": v2_baseline.port_of_discharge.value,
-                        "extraction_completeness": round(v2_baseline.extraction_completeness * 100, 1),
-                        "critical_completeness": round(v2_baseline.critical_completeness * 100, 1),
-                    }
-                
-                # Calculate v2 compliance score
-                v2_scorer = ComplianceScorer()
-                existing_issues = structured_result.get("issues") or []
-                
-                # Add gate blocking issues to existing issues
-                if not v2_gate_result.can_proceed:
-                    for blocking_issue in v2_gate_result.blocking_issues:
-                        existing_issues.insert(0, blocking_issue)  # Critical issues first
-                
-                # Calculate compliance with v2 scorer
-                extraction_completeness = v2_gate_result.completeness if v2_gate_result else 1.0
-                v2_score = v2_scorer.calculate_from_issues(
-                    existing_issues,
-                    extraction_completeness=extraction_completeness,
-                )
-                
-                # Override compliance rate with v2 calculation
-                if structured_result.get("analytics"):
-                    structured_result["analytics"]["lc_compliance_score"] = int(round(v2_score.score))
-                    structured_result["analytics"]["compliance_level"] = v2_score.level.value
-                    structured_result["analytics"]["compliance_cap_reason"] = v2_score.cap_reason
-                
-                if structured_result.get("processing_summary"):
-                    structured_result["processing_summary"]["compliance_rate"] = int(round(v2_score.score))
-                
-                # Update issues list
-                structured_result["issues"] = existing_issues
-                
-                logger.info(
-                    "V2 compliance scoring applied: score=%.1f%% level=%s blocked=%s",
-                    v2_score.score,
-                    v2_score.level.value,
-                    not v2_gate_result.can_proceed,
-                )
+            
+            # Add LC baseline to structured result
+            if v2_baseline:
+                structured_result["lc_baseline"] = {
+                    "lc_number": v2_baseline.lc_number.value,
+                    "amount": v2_baseline.amount.value,
+                    "currency": v2_baseline.currency.value,
+                    "applicant": v2_baseline.applicant.value,
+                    "beneficiary": v2_baseline.beneficiary.value,
+                    "expiry_date": v2_baseline.expiry_date.value,
+                    "latest_shipment": v2_baseline.latest_shipment.value,
+                    "port_of_loading": v2_baseline.port_of_loading.value,
+                    "port_of_discharge": v2_baseline.port_of_discharge.value,
+                    "goods_description": v2_baseline.goods_description.value,
+                    "incoterm": v2_baseline.incoterm.value,
+                    "extraction_completeness": round(v2_baseline.extraction_completeness * 100, 1),
+                    "critical_completeness": round(v2_baseline.critical_completeness * 100, 1),
+                }
+            
+            # Calculate v2 compliance score
+            v2_scorer = ComplianceScorer()
+            all_issues = structured_result.get("issues") or []
+            
+            # Calculate compliance with v2 scorer
+            extraction_completeness = v2_gate_result.completeness if v2_gate_result else 1.0
+            v2_score = v2_scorer.calculate_from_issues(
+                all_issues,
+                extraction_completeness=extraction_completeness,
+            )
+            
+            # Update validation status based on score
+            structured_result["validation_status"] = v2_score.level.value
+            
+            # Override compliance rate with v2 calculation
+            if structured_result.get("analytics"):
+                structured_result["analytics"]["lc_compliance_score"] = int(round(v2_score.score))
+                structured_result["analytics"]["compliance_level"] = v2_score.level.value
+                structured_result["analytics"]["compliance_cap_reason"] = v2_score.cap_reason
+                structured_result["analytics"]["issue_counts"] = {
+                    "critical": v2_score.critical_count,
+                    "major": v2_score.major_count,
+                    "minor": v2_score.minor_count,
+                }
+            
+            if structured_result.get("processing_summary"):
+                structured_result["processing_summary"]["compliance_rate"] = int(round(v2_score.score))
+                structured_result["processing_summary"]["severity_breakdown"] = {
+                    "critical": v2_score.critical_count,
+                    "major": v2_score.major_count,
+                    "medium": 0,
+                    "minor": v2_score.minor_count,
+                }
+            
+            logger.info(
+                "V2 compliance scoring: score=%.1f%% level=%s issues=%d (critical=%d major=%d minor=%d)",
+                v2_score.score,
+                v2_score.level.value,
+                len(all_issues),
+                v2_score.critical_count,
+                v2_score.major_count,
+                v2_score.minor_count,
+            )
         except Exception as e:
-            logger.warning("V2 pipeline integration failed (continuing with legacy): %s", e, exc_info=True)
+            logger.warning("V2 scoring failed: %s", e, exc_info=True)
         # =====================================================================
 
         telemetry_payload = {
@@ -1938,6 +2019,152 @@ def _humanize_doc_type(doc_type: Optional[str]) -> str:
     if not doc_type:
         return "Supporting Document"
     return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
+
+
+def _build_blocked_structured_result(
+    v2_gate_result,
+    v2_baseline: LCBaseline,
+    lc_type: str,
+    processing_duration: float,
+    documents: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Build a structured_result for blocked validation.
+    
+    This is returned when the validation gate blocks (missing LC, critical fields missing).
+    The response is HTTP 200 with validation_blocked=true.
+    """
+    # Build blocking issues
+    blocking_issues = []
+    for issue in v2_gate_result.blocking_issues:
+        if isinstance(issue, dict):
+            blocking_issues.append(issue)
+        elif hasattr(issue, 'to_dict'):
+            blocking_issues.append(issue.to_dict())
+    
+    # Build document list (empty status)
+    docs_structured = []
+    for i, doc in enumerate(documents):
+        docs_structured.append({
+            "document_id": doc.get("id") or str(uuid4()),
+            "filename": doc.get("filename") or doc.get("name") or f"Document {i+1}",
+            "document_type": doc.get("document_type") or "supporting_document",
+            "extraction_status": "blocked",
+            "extracted_fields": {},
+            "issues_count": 0,
+        })
+    
+    # Processing time display
+    if processing_duration < 1:
+        time_display = f"{int(processing_duration * 1000)}ms"
+    else:
+        time_display = f"{processing_duration:.1f}s"
+    
+    return {
+        "version": "structured_result_v1",
+        
+        # V2 blocked status
+        "validation_blocked": True,
+        "validation_status": "blocked",
+        
+        # Gate result
+        "gate_result": v2_gate_result.to_dict(),
+        
+        # Extraction summary
+        "extraction_summary": {
+            "completeness": round(v2_gate_result.completeness * 100, 1),
+            "critical_completeness": round(v2_gate_result.critical_completeness * 100, 1),
+            "missing_critical": v2_gate_result.missing_critical,
+            "missing_required": v2_gate_result.missing_required,
+        },
+        
+        # LC baseline (partial data)
+        "lc_baseline": {
+            "lc_number": v2_baseline.lc_number.value if v2_baseline else None,
+            "amount": v2_baseline.amount.value if v2_baseline else None,
+            "currency": v2_baseline.currency.value if v2_baseline else None,
+            "applicant": v2_baseline.applicant.value if v2_baseline else None,
+            "beneficiary": v2_baseline.beneficiary.value if v2_baseline else None,
+            "extraction_completeness": round(v2_baseline.extraction_completeness * 100, 1) if v2_baseline else 0,
+            "critical_completeness": round(v2_baseline.critical_completeness * 100, 1) if v2_baseline else 0,
+        },
+        
+        # Issues (blocking issues)
+        "issues": blocking_issues,
+        
+        # Documents
+        "documents_structured": docs_structured,
+        
+        # Processing summary
+        "processing_summary": {
+            "total_documents": len(documents),
+            "successful_extractions": 0,
+            "failed_extractions": len(documents),
+            "total_issues": len(blocking_issues),
+            "compliance_rate": 0,
+            "processing_time_seconds": round(processing_duration, 2),
+            "processing_time_display": time_display,
+            "severity_breakdown": {
+                "critical": len(blocking_issues),
+                "major": 0,
+                "medium": 0,
+                "minor": 0,
+            },
+        },
+        
+        # Analytics
+        "analytics": {
+            "extraction_accuracy": round(v2_gate_result.completeness * 100) if v2_gate_result else 0,
+            "lc_compliance_score": 0,
+            "compliance_level": "blocked",
+            "compliance_cap_reason": v2_gate_result.block_reason,
+            "customs_ready_score": 0,
+            "documents_processed": len(documents),
+            "issue_counts": {
+                "critical": len(blocking_issues),
+                "major": 0,
+                "medium": 0,
+                "minor": 0,
+            },
+            "document_risk": [],
+        },
+        
+        # Timeline
+        "timeline": [
+            {
+                "title": "Documents Uploaded",
+                "status": "completed",
+                "description": f"{len(documents)} documents received",
+            },
+            {
+                "title": "LC Extraction",
+                "status": "error",
+                "description": v2_gate_result.block_reason or "Extraction failed",
+            },
+            {
+                "title": "Validation",
+                "status": "blocked",
+                "description": "Validation blocked due to missing LC data",
+            },
+        ],
+        
+        # LC structured (minimal)
+        "lc_structured": {
+            "mt700": {"blocks": {}, "raw_text": None, "version": "mt700_v1"},
+            "goods": [],
+            "clauses": [],
+            "timeline": [],
+        },
+        
+        # Type info
+        "lc_type": lc_type,
+        "lc_type_reason": "Blocked - LC extraction incomplete",
+        "lc_type_confidence": 0,
+        
+        # Customs (empty)
+        "customs_pack": None,
+        "ai_enrichment": None,
+    }
 
 
 def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
