@@ -568,7 +568,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   return (
     <>
       {/* Welcome Section */}
-      <div className="mb-2">
+      <div className="mb-4">
         <h2 className="text-3xl font-bold text-foreground mb-2">
           Welcome back, {companyName}
         </h2>
@@ -577,8 +577,71 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
         </p>
       </div>
 
-      {/* Drafts and Amendments Tabs - Always visible */}
-      <Card className="shadow-soft border-0 mb-2">
+      {/* Stats Grid - Right below welcome */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">This Month</p>
+                <p className="text-2xl font-bold text-foreground">{thisMonthSessions.length}</p>
+                <p className="text-xs text-muted-foreground">{sessions.length} total validations</p>
+              </div>
+              <div className="bg-emerald-500/10 p-3 rounded-lg">
+                <FileText className="w-6 h-6 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
+                <p className="text-2xl font-bold text-foreground">{successRate}%</p>
+                <Progress value={successRate} className="mt-2 h-2" />
+              </div>
+              <div className="bg-green-500/10 p-3 rounded-lg">
+                <TrendingUp className="w-6 h-6 text-green-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
+                <p className="text-2xl font-bold text-foreground">{avgProcessingTime}</p>
+                <p className="text-xs text-muted-foreground">{completedSessions.length} completed</p>
+              </div>
+              <div className="bg-blue-500/10 p-3 rounded-lg">
+                <Clock className="w-6 h-6 text-blue-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-soft border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
+                <p className="text-2xl font-bold text-foreground">{totalDiscrepancies}</p>
+                <p className="text-xs text-muted-foreground">{totalDocuments} docs processed</p>
+              </div>
+              <div className="bg-amber-500/10 p-3 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Drafts and Amendments Tabs */}
+      <Card className="shadow-soft border-0 mb-6">
           <CardHeader>
             <CardTitle>Your LC Management</CardTitle>
             <CardDescription>
@@ -701,69 +764,6 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             </Tabs>
           </CardContent>
         </Card>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-2">
-        <Card className="shadow-soft border-0">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                <p className="text-2xl font-bold text-foreground">{thisMonthSessions.length}</p>
-                <p className="text-xs text-muted-foreground">{sessions.length} total validations</p>
-              </div>
-              <div className="bg-emerald-500/10 p-3 rounded-lg">
-                <FileText className="w-6 h-6 text-emerald-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-soft border-0">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
-                <p className="text-2xl font-bold text-foreground">{successRate}%</p>
-                <Progress value={successRate} className="mt-2 h-2" />
-              </div>
-              <div className="bg-green-500/10 p-3 rounded-lg">
-                <TrendingUp className="w-6 h-6 text-green-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-soft border-0">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
-                <p className="text-2xl font-bold text-foreground">{avgProcessingTime}</p>
-                <p className="text-xs text-muted-foreground">{completedSessions.length} completed</p>
-              </div>
-              <div className="bg-blue-500/10 p-3 rounded-lg">
-                <Clock className="w-6 h-6 text-blue-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-soft border-0">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
-                <p className="text-2xl font-bold text-foreground">{totalDiscrepancies}</p>
-                <p className="text-xs text-muted-foreground">{totalDocuments} docs processed</p>
-              </div>
-              <div className="bg-amber-500/10 p-3 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-amber-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Two Column Layout: Recent Validations + Sidebar */}
       <div className="grid lg:grid-cols-3 gap-8">
