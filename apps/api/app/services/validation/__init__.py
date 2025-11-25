@@ -68,6 +68,17 @@ from .pipeline import (
     run_validation_pipeline,
 )
 
+from .response_schema import (
+    ValidationResponseSchema,
+    GateResultSchema,
+    ExtractionSummarySchema,
+    LCBaselineSchema,
+    IssueSchema,
+    AnalyticsSchema,
+    ProcessingSummarySchema,
+    build_v2_structured_result,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -113,5 +124,14 @@ __all__ = [
     "ValidationInput",
     "ValidationOutput",
     "run_validation_pipeline",
+    # Response Schema
+    "ValidationResponseSchema",
+    "GateResultSchema",
+    "ExtractionSummarySchema",
+    "LCBaselineSchema",
+    "IssueSchema",
+    "AnalyticsSchema",
+    "ProcessingSummarySchema",
+    "build_v2_structured_result",
 ]
 

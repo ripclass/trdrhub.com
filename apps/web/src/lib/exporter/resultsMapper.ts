@@ -246,6 +246,15 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const rawTimeline = structured.lc_structured?.timeline ?? structured.timeline ?? [];
   const timeline = mapTimeline(ensureArray(rawTimeline));
 
+  // V2 Validation Pipeline fields
+  const validationBlocked = Boolean(structured.validation_blocked);
+  const validationStatus = structured.validation_status ?? (validationBlocked ? 'blocked' : 'non_compliant');
+  const gateResult = structured.gate_result ?? null;
+  const extractionSummary = structured.extraction_summary ?? null;
+  const lcBaseline = structured.lc_baseline ?? null;
+  const complianceLevel = structured.analytics?.compliance_level ?? validationStatus;
+  const complianceCapReason = structured.analytics?.compliance_cap_reason ?? null;
+
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
     summary,
@@ -256,5 +265,14 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     structured_result: structured,
     lc_structured: structured.lc_structured ?? null,
     ai_enrichment: structured.ai_enrichment ?? null,
+    
+    // V2 Validation Pipeline additions
+    validationBlocked,
+    validationStatus,
+    gateResult,
+    extractionSummary,
+    lcBaseline,
+    complianceLevel,
+    complianceCapReason,
   };
 };

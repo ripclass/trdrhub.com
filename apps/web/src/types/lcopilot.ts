@@ -39,8 +39,59 @@ export type OptionELCStructured = {
   };
 };
 
+// V2 Validation Pipeline Types
+export interface GateResult {
+  status: 'passed' | 'blocked' | 'warning';
+  can_proceed: boolean;
+  block_reason?: string | null;
+  completeness: number; // 0-100 percentage
+  critical_completeness: number; // 0-100 percentage
+  missing_critical: string[];
+  missing_required?: string[];
+  blocking_issues?: Array<Record<string, unknown>>;
+  warning_issues?: Array<Record<string, unknown>>;
+}
+
+export interface ExtractionSummary {
+  completeness: number; // 0-100 percentage
+  critical_completeness: number; // 0-100 percentage
+  missing_critical: string[];
+  missing_required?: string[];
+  total_fields?: number;
+  extracted_fields?: number;
+}
+
+export interface LCBaseline {
+  lc_number?: string | null;
+  lc_type?: string | null;
+  applicant?: string | null;
+  beneficiary?: string | null;
+  issuing_bank?: string | null;
+  advising_bank?: string | null;
+  amount?: string | null;
+  currency?: string | null;
+  expiry_date?: string | null;
+  issue_date?: string | null;
+  latest_shipment?: string | null;
+  port_of_loading?: string | null;
+  port_of_discharge?: string | null;
+  goods_description?: string | null;
+  incoterm?: string | null;
+  extraction_completeness: number;
+  critical_completeness: number;
+}
+
 export type OptionEStructuredResult = StructuredResultPayload & {
   version: 'structured_result_v1';
+  
+  // V2 Validation Pipeline fields
+  validation_blocked?: boolean;
+  validation_status?: 'blocked' | 'non_compliant' | 'partial' | 'mostly_compliant' | 'compliant';
+  gate_result?: GateResult | null;
+  extraction_summary?: ExtractionSummary | null;
+  lc_baseline?: LCBaseline | null;
+  
+  // LC Type detection
   lc_type?: string;
   lc_type_reason?: string | null;
   lc_type_confidence?: number | null;
@@ -53,6 +104,8 @@ export type OptionEStructuredResult = StructuredResultPayload & {
       tier: 'low' | 'med' | 'high';
       flags: string[];
     };
+    compliance_level?: string;
+    compliance_cap_reason?: string | null;
   };
   reference_issues?: ReferenceIssue[];
   customs_pack?: {
@@ -64,6 +117,9 @@ export type OptionEStructuredResult = StructuredResultPayload & {
     enabled?: boolean;
     notes?: unknown[];
   };
+  
+  // Audit
+  audit_trail_id?: string | null;
 };
 
 export interface IssueCard {
@@ -145,4 +201,13 @@ export interface ValidationResults {
   ai_enrichment?: AIEnrichmentPayload | null;
   telemetry?: Record<string, unknown>;
   reference_issues?: ReferenceIssue[];
+  
+  // V2 Validation Pipeline additions
+  validationBlocked?: boolean;
+  validationStatus?: string;
+  gateResult?: GateResult | null;
+  extractionSummary?: ExtractionSummary | null;
+  lcBaseline?: LCBaseline | null;
+  complianceLevel?: string;
+  complianceCapReason?: string | null;
 }
