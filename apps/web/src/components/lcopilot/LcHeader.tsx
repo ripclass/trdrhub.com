@@ -37,6 +37,16 @@ const lcTypeLabel: Record<string, string> = {
   unknown: 'Unknown LC',
 };
 
+// Safely convert lc_type to string - handles {types: [...]} objects from backend
+const safeLcType = (value: any): string => {
+  if (!value) return 'unknown';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && 'types' in value && Array.isArray(value.types)) {
+    return value.types.join(', ');
+  }
+  return 'unknown';
+};
+
 export function LcHeader({ data }: Props) {
   const structured = data?.structured_result;
   const blocks = structured?.lc_structured?.mt700?.blocks ?? {};
@@ -45,7 +55,7 @@ export function LcHeader({ data }: Props) {
     return null;
   }
 
-  const lcType = structured.lc_type ?? 'unknown';
+  const lcType = safeLcType(structured.lc_type);
   const typeLabel = lcTypeLabel[lcType] ?? lcType;
 
   const fields = [
