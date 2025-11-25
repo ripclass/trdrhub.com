@@ -1252,6 +1252,69 @@ def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a context snapshot from the validation payload for AI issue rewriting.
+    Extracts key document data that helps the AI produce accurate issue descriptions.
+    """
+    lc = payload.get("lc") or payload.get("lc_data") or {}
+    invoice = payload.get("invoice") or {}
+    bill_of_lading = payload.get("bill_of_lading") or payload.get("billOfLading") or {}
+    certificate_of_origin = payload.get("certificate_of_origin") or payload.get("certificateOfOrigin") or {}
+    insurance = payload.get("insurance") or payload.get("insurance_certificate") or {}
+    packing_list = payload.get("packing_list") or payload.get("packingList") or {}
+    
+    return {
+        "lc": {
+            "goods_description": lc.get("goods_description"),
+            "goods_items": lc.get("goods_items"),
+            "incoterm": lc.get("incoterm"),
+            "ports": lc.get("ports"),
+            "dates": lc.get("dates"),
+            "applicant": lc.get("applicant"),
+            "beneficiary": lc.get("beneficiary"),
+            "amount": lc.get("amount") or lc.get("lc_amount"),
+            "currency": lc.get("currency"),
+        },
+        "invoice": {
+            "goods_description": invoice.get("goods_description") or invoice.get("product_description"),
+            "amount": invoice.get("invoice_amount") or invoice.get("amount"),
+            "currency": invoice.get("currency"),
+            "hs_code": invoice.get("hs_code"),
+            "consignee": invoice.get("consignee"),
+            "shipper": invoice.get("shipper"),
+        },
+        "bill_of_lading": {
+            "goods_description": bill_of_lading.get("goods_description"),
+            "port_of_loading": bill_of_lading.get("port_of_loading"),
+            "port_of_discharge": bill_of_lading.get("port_of_discharge"),
+            "vessel": bill_of_lading.get("vessel"),
+            "on_board_date": bill_of_lading.get("on_board_date"),
+            "consignee": bill_of_lading.get("consignee"),
+            "shipper": bill_of_lading.get("shipper"),
+        },
+        "certificate_of_origin": {
+            "origin_country": certificate_of_origin.get("origin_country") or certificate_of_origin.get("country_of_origin"),
+            "goods_description": certificate_of_origin.get("goods_description"),
+        },
+        "insurance": {
+            "coverage_amount": insurance.get("coverage_amount") or insurance.get("amount"),
+            "currency": insurance.get("currency"),
+            "risks_covered": insurance.get("risks_covered"),
+        },
+        "packing_list": {
+            "total_packages": packing_list.get("total_packages"),
+            "gross_weight": packing_list.get("gross_weight"),
+            "net_weight": packing_list.get("net_weight"),
+        },
+        "metadata": {
+            "lc_number": payload.get("lc_number") or payload.get("lcNumber"),
+            "user_type": payload.get("user_type") or payload.get("userType"),
+            "workflow_type": payload.get("workflow_type") or payload.get("workflowType"),
+        },
+    }
+
+
 def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tuple[str, Decimal]:
     """Infer company size from user/company metadata."""
     size = str(payload.get("company_size") or "").strip().lower()
