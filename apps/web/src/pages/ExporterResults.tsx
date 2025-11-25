@@ -54,6 +54,8 @@ import RiskPanel from "@/components/lcopilot/RiskPanel";
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
+import { ValidationStatusBanner, BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
+import { deriveValidationState } from "@/lib/validation/validationState";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -911,6 +913,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [analyticsData?.compliance_score, successRate],
   );
   const lcComplianceScore = complianceScore;
+  
+  // V2 Validation State Machine
+  const validationState = useMemo(() => {
+    if (!structuredResult) return null;
+    return deriveValidationState(structuredResult as unknown as Record<string, unknown>);
+  }, [structuredResult]);
+  
   const documentRisk = useMemo(
     () =>
       analyticsData?.document_risk ??
@@ -1283,6 +1292,19 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       <div className={containerClass}>
         <div className="space-y-6 mb-8">
           <LcHeader data={resultData ?? null} />
+          
+          {/* V2 Validation Status Banner */}
+          {validationState && (
+            validationState.isBlocked ? (
+              <BlockedValidationCard 
+                state={validationState} 
+                onRetry={() => navigate("/lcopilot/exporter-dashboard?section=upload")}
+              />
+            ) : (
+              <ValidationStatusBanner state={validationState} />
+            )
+          )}
+          
           <div className="grid gap-6 lg:grid-cols-2">
             <RiskPanel data={resultData ?? null} />
             <SummaryStrip data={resultData ?? null} />
