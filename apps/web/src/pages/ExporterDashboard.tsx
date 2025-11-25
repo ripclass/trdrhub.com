@@ -562,42 +562,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
         </p>
       </div>
 
-      {/* Quick Actions - Large Buttons */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-2">
-        <Button 
-          onClick={() => onNavigate("upload")}
-          className="flex-1 h-16 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white text-left justify-start shadow-md group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="bg-white/20 p-3 rounded-lg group-hover:scale-110 transition-transform">
-              <Plus className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="font-semibold">Upload LC</div>
-              <div className="text-sm opacity-90">Start validation process</div>
-            </div>
-          </div>
-        </Button>
-        <Button 
-          variant="outline" 
-          onClick={() => onNavigate("analytics")}
-          className="flex-1 h-16 text-left justify-start"
-        >
-          <div className="flex items-center gap-4">
-            <div className="bg-emerald-500/10 p-3 rounded-lg">
-              <BarChart3 className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <div className="font-semibold">View Analytics</div>
-              <div className="text-sm text-muted-foreground">Performance insights</div>
-            </div>
-          </div>
-        </Button>
-      </div>
-
-      {/* Drafts and Amendments Tabs */}
-      {((drafts.length > 0 || isLoadingDrafts) || (amendedLCs.length > 0 || isLoadingAmendments)) && (
-        <Card className="shadow-soft border-0 mb-2">
+      {/* Drafts and Amendments Tabs - Always visible */}
+      <Card className="shadow-soft border-0 mb-2">
           <CardHeader>
             <CardTitle>Your LC Management</CardTitle>
             <CardDescription>
@@ -720,7 +686,6 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             </Tabs>
           </CardContent>
         </Card>
-      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-2">
