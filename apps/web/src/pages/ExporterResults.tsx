@@ -117,6 +117,10 @@ export default function ExporterResults({
       return value.map((item) => formatExtractedValue(item)).join(", ");
     }
     if (typeof value === "object") {
+      // Handle lc_classification {types: [...]} specifically
+      if ("types" in value && Array.isArray(value.types)) {
+        return value.types.join(", ");
+      }
       try {
         return JSON.stringify(value, null, 2);
       } catch {
@@ -158,6 +162,20 @@ const humanizeLabel = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (match) => match.toUpperCase());
+
+// Safely convert any value to a displayable string - prevents React Error #31
+const safeString = (value: any): string => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    // Handle {types: [...]} from lc_classification
+    if ("types" in value && Array.isArray(value.types)) {
+      return value.types.join(", ");
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
 
 const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: string): ReactElement[] => {
   return fields
@@ -692,12 +710,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         if (issuesCount > 0 && !exempt.includes(typeKey)) return "warning";
         return "success";
       })();
+      // Ensure type is always a string to prevent React Error #31
+      const typeLabel = DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
       return {
         id: documentId,
         documentId,
         name: filename,
         filename,
-        type: DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey),
+        type: safeString(typeLabel),
         typeKey,
         extractionStatus,
         status,
@@ -1609,7 +1629,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           {manifestData.documents.map((doc, idx) => (
                             <li key={`${doc.name}-${idx}`} className="flex items-center justify-between px-3 py-2 text-sm">
                               <span className="font-medium">{doc.name}</span>
-                              <Badge variant="outline">{doc.type}</Badge>
+                              <Badge variant="outline">{safeString(doc.type)}</Badge>
                             </li>
                           ))}
                         </ul>
@@ -1663,7 +1683,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <div>
                           <CardTitle className="text-lg font-semibold">{document.name}</CardTitle>
                           <CardDescription className="text-sm text-muted-foreground">
-                            {document.type}
+                            {safeString(document.type)}
                           </CardDescription>
                         </div>
                       </div>
@@ -2308,7 +2328,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             <FileText className="w-4 h-4 text-muted-foreground" />
                             <span className="font-medium">{doc.name}</span>
                           </div>
-                          <Badge variant="outline">{doc.type}</Badge>
+                          <Badge variant="outline">{safeString(doc.type)}</Badge>
                         </div>
                       ))}
                     </div>
