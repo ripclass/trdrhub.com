@@ -15,6 +15,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
+import { getUserSessions, type ValidationSession } from "@/api/sessions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
 import ExporterAnalytics from "./ExporterAnalytics";
@@ -269,7 +270,7 @@ function DashboardContent() {
    */
   const handleUploadComplete = useCallback(
     (payload: { jobId: string; lcNumber: string }) => {
-      setJobId(payload.jobId);
+    setJobId(payload.jobId);
       handleSectionChange("reviews", {
         jobId: payload.jobId,
         lc: payload.lcNumber,
@@ -431,46 +432,6 @@ function DashboardContent() {
 
 // ---------- Exporter Dashboard Overview (Original Layout) ----------
 
-// Dashboard stats for exporters
-const dashboardStats = {
-  thisMonth: 12,
-  successRate: 94.2,
-  avgProcessingTime: "2.3 minutes",
-  discrepanciesFound: 8,
-  totalChecks: 24,
-  documentsProcessed: 96
-};
-
-const mockHistory = [
-  { id: "BD-2024-001", date: "2024-01-15", company: "Dhaka Exports Ltd", documents: 5, status: "approved" as const, discrepancies: 0 },
-  { id: "BD-2024-002", date: "2024-01-14", company: "Bengal Trade Co", documents: 7, status: "rejected" as const, discrepancies: 3 },
-  { id: "BD-2024-003", date: "2024-01-14", company: "Chittagong Imports", documents: 4, status: "flagged" as const, discrepancies: 1 },
-];
-
-const dashboardNotifications = [
-  {
-    id: 1,
-    title: "New ICC Update Available",
-    message: "UCP 600 guidelines have been updated. Review new discrepancy rules.",
-    type: "info" as const,
-    timestamp: "2 hours ago"
-  },
-  {
-    id: 2,
-    title: "LC Processing Complete", 
-    message: "BD-2024-005 has been processed successfully with no discrepancies.",
-    type: "success" as const,
-    timestamp: "4 hours ago"
-  },
-  {
-    id: 3,
-    title: "Discrepancy Alert",
-    message: "BD-2024-006 has 2 discrepancies that need attention.",
-    type: "warning" as const,
-    timestamp: "1 day ago"
-  }
-];
-
 interface OverviewPanelProps {
   onNavigate: (section: AnySection) => void;
   user?: { name?: string; email?: string; company?: string } | null;
@@ -486,6 +447,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   const [amendedLCs, setAmendedLCs] = useState<Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>>([]);
   const [isLoadingAmendments, setIsLoadingAmendments] = useState(false);
   const [activeTab, setActiveTab] = useState("drafts");
+  
+  // Real validation sessions data
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
 
   // Load exporter drafts
   useEffect(() => {
@@ -519,6 +484,23 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
     loadAmendedLCs();
   }, [getAllAmendedLCs]);
 
+  // Load real validation sessions
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoadingSessions(true);
+      try {
+        const data = await getUserSessions();
+        setSessions(data || []);
+      } catch (error) {
+        console.error('Failed to load validation sessions:', error);
+        setSessions([]);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+    loadSessions();
+  }, []);
+
   const handleDeleteDraft = (draftId: string) => {
     try {
       removeDraft(draftId);
@@ -549,6 +531,39 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   };
 
   const companyName = user?.company || user?.name || "Exporter";
+
+  // Calculate real stats from sessions
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisMonthSessions = sessions.filter(s => new Date(s.created_at) >= thisMonthStart);
+  const completedSessions = sessions.filter(s => s.status === 'completed');
+  const totalDiscrepancies = sessions.reduce((sum, s) => sum + (s.discrepancies?.length || 0), 0);
+  const totalDocuments = sessions.reduce((sum, s) => sum + (s.documents?.length || 0), 0);
+  
+  // Calculate success rate (sessions with 0 discrepancies)
+  const successfulSessions = completedSessions.filter(s => (s.discrepancies?.length || 0) === 0);
+  const successRate = completedSessions.length > 0 
+    ? Math.round((successfulSessions.length / completedSessions.length) * 100 * 10) / 10
+    : 0;
+
+  // Calculate average processing time
+  const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+  const avgProcessingMs = sessionsWithTime.length > 0
+    ? sessionsWithTime.reduce((sum, s) => {
+        const start = new Date(s.processing_started_at!).getTime();
+        const end = new Date(s.processing_completed_at!).getTime();
+        return sum + (end - start);
+      }, 0) / sessionsWithTime.length
+    : 0;
+  const avgProcessingTime = avgProcessingMs > 0 
+    ? `${(avgProcessingMs / 60000).toFixed(1)} min`
+    : "N/A";
+
+  // Get recent validations (last 5 completed)
+  const recentValidations = [...sessions]
+    .filter(s => s.status === 'completed')
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5);
 
   return (
     <>
@@ -694,8 +709,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                <p className="text-2xl font-bold text-foreground">{dashboardStats.thisMonth}</p>
-                <p className="text-xs text-emerald-600">+18% from last month</p>
+                <p className="text-2xl font-bold text-foreground">{thisMonthSessions.length}</p>
+                <p className="text-xs text-muted-foreground">{sessions.length} total validations</p>
               </div>
               <div className="bg-emerald-500/10 p-3 rounded-lg">
                 <FileText className="w-6 h-6 text-emerald-600" />
@@ -709,8 +724,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
-                <p className="text-2xl font-bold text-foreground">{dashboardStats.successRate}%</p>
-                <Progress value={dashboardStats.successRate} className="mt-2 h-2" />
+                <p className="text-2xl font-bold text-foreground">{successRate}%</p>
+                <Progress value={successRate} className="mt-2 h-2" />
               </div>
               <div className="bg-green-500/10 p-3 rounded-lg">
                 <TrendingUp className="w-6 h-6 text-green-500" />
@@ -724,8 +739,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
-                <p className="text-2xl font-bold text-foreground">{dashboardStats.avgProcessingTime}</p>
-                <p className="text-xs text-emerald-600">15s faster</p>
+                <p className="text-2xl font-bold text-foreground">{avgProcessingTime}</p>
+                <p className="text-xs text-muted-foreground">{completedSessions.length} completed</p>
               </div>
               <div className="bg-blue-500/10 p-3 rounded-lg">
                 <Clock className="w-6 h-6 text-blue-500" />
@@ -739,8 +754,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
-                <p className="text-2xl font-bold text-foreground">{dashboardStats.discrepanciesFound}</p>
-                <p className="text-xs text-amber-600">Needs attention</p>
+                <p className="text-2xl font-bold text-foreground">{totalDiscrepancies}</p>
+                <p className="text-xs text-muted-foreground">{totalDocuments} docs processed</p>
               </div>
               <div className="bg-amber-500/10 p-3 rounded-lg">
                 <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -765,115 +780,156 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {mockHistory.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
-                    <div className="flex items-center gap-4">
-                      <div className="flex-shrink-0">
-                        {item.status === "approved" ? (
-                          <div className="bg-green-500/10 p-2 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-green-500" />
+              {isLoadingSessions ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
+                  <span className="text-muted-foreground">Loading validations...</span>
+                </div>
+              ) : recentValidations.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>No validations yet</p>
+                  <p className="text-sm">Upload your first LC package to get started</p>
+                  <Button 
+                    variant="outline" 
+                    className="mt-4"
+                    onClick={() => onNavigate("upload")}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload LC
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recentValidations.map((session) => {
+                    const discrepancyCount = session.discrepancies?.length || 0;
+                    const docCount = session.documents?.length || 0;
+                    const hasIssues = discrepancyCount > 0;
+                    const lcNumber = session.extracted_data?.lc_number || session.id.slice(0, 8).toUpperCase();
+                    
+                    return (
+                      <div key={session.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-shrink-0">
+                            {!hasIssues ? (
+                              <div className="bg-green-500/10 p-2 rounded-lg">
+                                <CheckCircle className="w-5 h-5 text-green-500" />
+                              </div>
+                            ) : discrepancyCount > 2 ? (
+                              <div className="bg-red-500/10 p-2 rounded-lg">
+                                <XCircle className="w-5 h-5 text-red-500" />
+                              </div>
+                            ) : (
+                              <div className="bg-amber-500/10 p-2 rounded-lg">
+                                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                              </div>
+                            )}
                           </div>
-                        ) : item.status === "rejected" ? (
-                          <div className="bg-red-500/10 p-2 rounded-lg">
-                            <XCircle className="w-5 h-5 text-red-500" />
+                          <div>
+                            <h4 className="font-semibold text-foreground">LC-{lcNumber}</h4>
+                            <p className="text-sm text-muted-foreground">Session {session.id.slice(0, 8)}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-muted-foreground">{formatTimeAgo(session.created_at)}</span>
+                              <span className="text-xs text-muted-foreground">• {docCount} documents</span>
+                            </div>
                           </div>
-                        ) : (
-                          <div className="bg-amber-500/10 p-2 rounded-lg">
-                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <StatusBadge status={
+                              !hasIssues ? "success" : 
+                              discrepancyCount > 2 ? "error" : "warning"
+                            }>
+                              {discrepancyCount === 0 ? "No issues" : 
+                               discrepancyCount === 1 ? "1 issue" : `${discrepancyCount} issues`}
+                            </StatusBadge>
                           </div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-foreground">{item.id}</h4>
-                        <p className="text-sm text-muted-foreground">{item.company}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">{item.date}</span>
-                          <span className="text-xs text-muted-foreground">• {item.documents} documents</span>
+                          <Link to={`/lcopilot/exporter-dashboard?section=reviews&jobId=${session.id}`}>
+                            <Button variant="outline" size="sm">
+                              View
+                            </Button>
+                          </Link>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <StatusBadge status={
-                          item.status === "approved" ? "success" : 
-                          item.status === "rejected" ? "error" : "warning"
-                        }>
-                          {item.discrepancies === 0 ? "No issues" : 
-                           item.discrepancies === 1 ? "1 issue" : `${item.discrepancies} issues`}
-                        </StatusBadge>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Sidebar - Notifications + Quick Stats */}
+        {/* Sidebar - Quick Stats */}
         <div className="space-y-6">
-          {/* Notifications */}
+          {/* Quick Stats */}
           <Card className="shadow-soft border-0">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="w-5 h-5" />
-                Notifications
-              </CardTitle>
-              <CardDescription>
-                Updates and alerts
-              </CardDescription>
+              <CardTitle className="text-lg">Summary</CardTitle>
+              <CardDescription>Your validation overview</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {dashboardNotifications.map((notification) => (
-                  <div key={notification.id} className="p-3 rounded-lg border border-gray-200/50">
-                    <div className="flex items-start gap-3">
-                      <div className={`p-1 rounded-full ${
-                        notification.type === "success" ? "bg-green-500/10" :
-                        notification.type === "warning" ? "bg-amber-500/10" : "bg-blue-500/10"
-                      }`}>
-                        <div className={`w-2 h-2 rounded-full ${
-                          notification.type === "success" ? "bg-green-500" :
-                          notification.type === "warning" ? "bg-amber-500" : "bg-blue-500"
-                        }`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-sm text-foreground">{notification.title}</h4>
-                        <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
-                        <p className="text-xs text-muted-foreground mt-2">{notification.timestamp}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Total Validations</span>
+                  <span className="font-medium">{sessions.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Documents Processed</span>
+                  <span className="font-medium">{totalDocuments}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Total Discrepancies</span>
+                  <span className="font-medium">{totalDiscrepancies}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Completed</span>
+                  <span className="font-medium">{completedSessions.length}</span>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Quick Stats */}
+          {/* Recent Activity Summary */}
           <Card className="shadow-soft border-0">
             <CardHeader>
-              <CardTitle className="text-lg">Quick Stats</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Bell className="w-5 h-5" />
+                Activity
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Total Checks</span>
-                  <span className="font-medium">{dashboardStats.totalChecks}</span>
+              {recentValidations.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentValidations.slice(0, 3).map((session) => {
+                    const discrepancyCount = session.discrepancies?.length || 0;
+                    const lcNumber = session.extracted_data?.lc_number || session.id.slice(0, 8);
+                    return (
+                      <div key={session.id} className="p-3 rounded-lg border border-gray-200/50">
+                        <div className="flex items-start gap-3">
+                          <div className={`p-1 rounded-full ${
+                            discrepancyCount === 0 ? "bg-green-500/10" :
+                            discrepancyCount > 2 ? "bg-red-500/10" : "bg-amber-500/10"
+                          }`}>
+                            <div className={`w-2 h-2 rounded-full ${
+                              discrepancyCount === 0 ? "bg-green-500" :
+                              discrepancyCount > 2 ? "bg-red-500" : "bg-amber-500"
+                            }`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm text-foreground">
+                              {discrepancyCount === 0 ? "Validation Passed" : `${discrepancyCount} Issues Found`}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-1">LC-{lcNumber}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{formatTimeAgo(session.created_at)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Documents Processed</span>
-                  <span className="font-medium">{dashboardStats.documentsProcessed}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Average Processing</span>
-                  <span className="font-medium">{dashboardStats.avgProcessingTime}</span>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -956,11 +1012,11 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
 
   return (
     <Card className="shadow-soft border-0">
-      <CardHeader>
+    <CardHeader>
         <CardTitle>Settings</CardTitle>
         <CardDescription>Configure exporter workspace preferences and data retention.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    </CardHeader>
+    <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
@@ -1101,7 +1157,7 @@ function HelpPanel() {
             Book onboarding session
           </Button>
         </div>
-      </CardContent>
-    </Card>
-  );
+    </CardContent>
+  </Card>
+);
 }
