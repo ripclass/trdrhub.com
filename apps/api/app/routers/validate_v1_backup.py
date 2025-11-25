@@ -52,16 +52,6 @@ from app.services.extraction.lc_extractor import extract_lc_structured
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
-# V2 Validation Pipeline imports
-from app.services.validation.pipeline import (
-    ValidationPipeline,
-    ValidationInput,
-    ValidationOutput,
-)
-from app.services.validation.validation_gate import ValidationGate, GateStatus
-from app.services.validation.compliance_scorer import ComplianceScorer
-from app.services.extraction.lc_baseline import LCBaseline, FieldResult, FieldPriority, ExtractionStatus
-
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 logger = logging.getLogger(__name__)
@@ -319,41 +309,6 @@ async def validate_doc(
             lc_type_reason,
         )
         lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
-
-        # =====================================================================
-        # V2 VALIDATION GATE CHECK
-        # This is the core fix for the "100% compliant with N/A fields" bug.
-        # If LC extraction fails (missing critical fields), we block validation.
-        # =====================================================================
-        v2_gate_result = None
-        v2_baseline = None
-        try:
-            # Build LCBaseline from extracted context
-            v2_baseline = _build_lc_baseline_from_context(lc_context)
-            
-            # Run validation gate
-            v2_gate = ValidationGate()
-            v2_gate_result = v2_gate.check_from_baseline(v2_baseline)
-            
-            logger.info(
-                "V2 Validation Gate: status=%s can_proceed=%s completeness=%.1f%% critical=%.1f%%",
-                v2_gate_result.status.value,
-                v2_gate_result.can_proceed,
-                v2_gate_result.completeness * 100,
-                v2_gate_result.critical_completeness * 100,
-            )
-            
-            # If gate blocks, we still continue but will use blocked scoring
-            if not v2_gate_result.can_proceed:
-                logger.warning(
-                    "V2 Gate BLOCKED: %s. Missing critical: %s",
-                    v2_gate_result.block_reason,
-                    v2_gate_result.missing_critical,
-                )
-        except Exception as e:
-            logger.warning("V2 gate check failed (continuing with legacy flow): %s", e)
-            v2_gate_result = None
-        # =====================================================================
 
         # Ensure user has a company (demo user will have one)
         if not current_user.company:
@@ -655,78 +610,6 @@ async def validate_doc(
         lc_structured_docs = (structured_result.get("lc_structured") or {}).get("documents_structured") or []
         if lc_structured_docs and not structured_result.get("documents_structured"):
             structured_result["documents_structured"] = lc_structured_docs
-
-        # =====================================================================
-        # V2 VALIDATION PIPELINE INTEGRATION
-        # Inject v2 gate results, compliance scoring, and issue enhancements
-        # =====================================================================
-        try:
-            if v2_gate_result is not None:
-                # Add gate result to structured_result
-                structured_result["validation_blocked"] = not v2_gate_result.can_proceed
-                structured_result["gate_result"] = v2_gate_result.to_dict()
-                
-                # Add extraction summary
-                structured_result["extraction_summary"] = {
-                    "completeness": round(v2_gate_result.completeness * 100, 1),
-                    "critical_completeness": round(v2_gate_result.critical_completeness * 100, 1),
-                    "missing_critical": v2_gate_result.missing_critical,
-                    "missing_required": v2_gate_result.missing_required,
-                }
-                
-                # Add LC baseline to structured result
-                if v2_baseline:
-                    structured_result["lc_baseline"] = {
-                        "lc_number": v2_baseline.lc_number.value,
-                        "amount": v2_baseline.amount.value,
-                        "currency": v2_baseline.currency.value,
-                        "applicant": v2_baseline.applicant.value,
-                        "beneficiary": v2_baseline.beneficiary.value,
-                        "expiry_date": v2_baseline.expiry_date.value,
-                        "latest_shipment": v2_baseline.latest_shipment.value,
-                        "port_of_loading": v2_baseline.port_of_loading.value,
-                        "port_of_discharge": v2_baseline.port_of_discharge.value,
-                        "extraction_completeness": round(v2_baseline.extraction_completeness * 100, 1),
-                        "critical_completeness": round(v2_baseline.critical_completeness * 100, 1),
-                    }
-                
-                # Calculate v2 compliance score
-                v2_scorer = ComplianceScorer()
-                existing_issues = structured_result.get("issues") or []
-                
-                # Add gate blocking issues to existing issues
-                if not v2_gate_result.can_proceed:
-                    for blocking_issue in v2_gate_result.blocking_issues:
-                        existing_issues.insert(0, blocking_issue)  # Critical issues first
-                
-                # Calculate compliance with v2 scorer
-                extraction_completeness = v2_gate_result.completeness if v2_gate_result else 1.0
-                v2_score = v2_scorer.calculate_from_issues(
-                    existing_issues,
-                    extraction_completeness=extraction_completeness,
-                )
-                
-                # Override compliance rate with v2 calculation
-                if structured_result.get("analytics"):
-                    structured_result["analytics"]["lc_compliance_score"] = int(round(v2_score.score))
-                    structured_result["analytics"]["compliance_level"] = v2_score.level.value
-                    structured_result["analytics"]["compliance_cap_reason"] = v2_score.cap_reason
-                
-                if structured_result.get("processing_summary"):
-                    structured_result["processing_summary"]["compliance_rate"] = int(round(v2_score.score))
-                
-                # Update issues list
-                structured_result["issues"] = existing_issues
-                
-                logger.info(
-                    "V2 compliance scoring applied: score=%.1f%% level=%s blocked=%s",
-                    v2_score.score,
-                    v2_score.level.value,
-                    not v2_gate_result.can_proceed,
-                )
-        except Exception as e:
-            logger.warning("V2 pipeline integration failed (continuing with legacy): %s", e, exc_info=True)
-        # =====================================================================
 
         telemetry_payload = {
             "UnifiedStructuredResultBuilt": True,
@@ -1938,67 +1821,6 @@ def _humanize_doc_type(doc_type: Optional[str]) -> str:
     if not doc_type:
         return "Supporting Document"
     return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
-
-
-def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
-    """
-    Build LCBaseline from extracted LC context.
-    
-    This is the bridge between the legacy extraction and the v2 validation pipeline.
-    """
-    baseline = LCBaseline()
-    
-    # Map context fields to baseline fields
-    field_mapping = {
-        # LC Number
-        ("number", "lc_number", "documentaryCredit", "doc_credit_number"): ("lc_number", FieldPriority.CRITICAL),
-        # Amount
-        ("amount", "credit_amount", "value"): ("amount", FieldPriority.CRITICAL),
-        # Currency
-        ("currency", "ccy"): ("currency", FieldPriority.CRITICAL),
-        # Applicant
-        ("applicant", "applicant_name", "buyer"): ("applicant", FieldPriority.CRITICAL),
-        # Beneficiary
-        ("beneficiary", "beneficiary_name", "seller"): ("beneficiary", FieldPriority.CRITICAL),
-        # Banks
-        ("issuing_bank", "issuer", "issuing_bank_name"): ("issuing_bank", FieldPriority.REQUIRED),
-        ("advising_bank", "advising_bank_name"): ("advising_bank", FieldPriority.REQUIRED),
-        # Dates
-        ("expiry_date", "expiry", "validity_date"): ("expiry_date", FieldPriority.CRITICAL),
-        ("issue_date", "date_of_issue"): ("issue_date", FieldPriority.REQUIRED),
-        ("latest_shipment", "latest_shipment_date", "shipment_date"): ("latest_shipment", FieldPriority.REQUIRED),
-        # Ports
-        ("port_of_loading", "loading_port", "pol"): ("port_of_loading", FieldPriority.REQUIRED),
-        ("port_of_discharge", "discharge_port", "pod"): ("port_of_discharge", FieldPriority.REQUIRED),
-        # Goods
-        ("goods_description", "description", "goods", "merchandise"): ("goods_description", FieldPriority.REQUIRED),
-        # Incoterm
-        ("incoterm", "trade_terms", "delivery_terms"): ("incoterm", FieldPriority.IMPORTANT),
-    }
-    
-    for source_keys, (target_field, priority) in field_mapping.items():
-        # Find value from any of the source keys
-        value = None
-        for key in source_keys:
-            value = lc_context.get(key)
-            if value:
-                break
-        
-        # Set the field on baseline
-        if hasattr(baseline, target_field):
-            field_result = getattr(baseline, target_field)
-            if isinstance(field_result, FieldResult):
-                if value:
-                    field_result.value = value
-                    field_result.is_present = True
-                    field_result.status = ExtractionStatus.EXTRACTED
-                    field_result.priority = priority
-                else:
-                    field_result.is_present = False
-                    field_result.status = ExtractionStatus.MISSING
-                    field_result.priority = priority
-    
-    return baseline
 
 
 def _summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, int]:

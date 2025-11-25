@@ -61,6 +61,13 @@ from .audit_logger import (
     set_current_audit_logger,
 )
 
+from .pipeline import (
+    ValidationPipeline,
+    ValidationInput,
+    ValidationOutput,
+    run_validation_pipeline,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -101,5 +108,10 @@ __all__ = [
     "create_audit_logger",
     "get_current_audit_logger",
     "set_current_audit_logger",
+    # Pipeline
+    "ValidationPipeline",
+    "ValidationInput",
+    "ValidationOutput",
+    "run_validation_pipeline",
 ]
 
