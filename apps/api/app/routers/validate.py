@@ -526,19 +526,65 @@ async def validate_doc(
             except Exception as e:
                 logger.warning("Bank policy application skipped: %s", e)
 
-        option_e_payload = build_unified_structured_result(
-            session_documents=document_summaries,
-            extractor_outputs=context.get("lc_structured_output"),
-            legacy_payload=None,
-        )
-        structured_result = option_e_payload["structured_result"]
+        # Ensure document_summaries is a list (fallback to empty if malformed)
+        final_documents = document_summaries if isinstance(document_summaries, list) else []
+        
+        # Build Option-E structured result with proper error handling
+        try:
+            option_e_payload = build_unified_structured_result(
+                session_documents=final_documents,
+                extractor_outputs=context.get("lc_structured_output"),
+                legacy_payload=None,
+            )
+            structured_result = option_e_payload["structured_result"]
+        except Exception as e:
+            import traceback
+            logger.error(
+                "Option-E builder failed in /api/validate: %s: %s",
+                type(e).__name__,
+                str(e),
+                extra={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "traceback": traceback.format_exc(),
+                    "job_id": str(job_id) if job_id else None,
+                    "document_count": len(final_documents),
+                },
+                exc_info=True
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error_code": "option_e_builder_failed",
+                    "message": f"{type(e).__name__}: {str(e)}"
+                }
+            )
 
-        customs_risk = compute_customs_risk_from_option_e(structured_result)
-        customs_pack = build_customs_manifest_from_option_e(structured_result)
-
+        # Customs risk/pack computation (guarded - skip on error, don't crash endpoint)
         structured_result.setdefault("analytics", {})
-        structured_result["analytics"]["customs_risk"] = customs_risk
-        structured_result["customs_pack"] = customs_pack
+        try:
+            customs_risk = compute_customs_risk_from_option_e(structured_result)
+            structured_result["analytics"]["customs_risk"] = customs_risk
+        except Exception as e:
+            logger.warning(
+                "Customs risk computation skipped: %s: %s",
+                type(e).__name__,
+                str(e),
+                exc_info=True
+            )
+            structured_result["analytics"]["customs_risk"] = None
+
+        try:
+            customs_pack = build_customs_manifest_from_option_e(structured_result)
+            structured_result["customs_pack"] = customs_pack
+        except Exception as e:
+            logger.warning(
+                "Customs pack build skipped: %s: %s",
+                type(e).__name__,
+                str(e),
+                exc_info=True
+            )
+            structured_result["customs_pack"] = None
 
         lc_structured_docs = (structured_result.get("lc_structured") or {}).get("documents_structured") or []
         if lc_structured_docs and not structured_result.get("documents_structured"):

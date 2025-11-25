@@ -438,15 +438,18 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
 
     } catch (error: any) {
+      const errorCode = error?.errorCode || error?.error_code || 'unknown';
       const errorLog = {
         type: error?.type,
         message: error?.message,
         statusCode: error?.statusCode,
+        errorCode,
         quota: error?.quota,
         nextActionUrl: error?.nextActionUrl,
       };
       console.error('❌ [COMPONENT] Validation error caught:', JSON.stringify(errorLog, null, 2));
       console.error('❌ [COMPONENT] Full error object:', error);
+      
       if (error.type === 'quota') {
         toast({
           title: 'Upgrade Required',
@@ -458,9 +461,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       if (error.type === 'rate_limit') {
         setShowRateLimit(true);
       } else {
+        // Include error code in the message if available for debugging
+        const description = errorCode !== 'unknown' 
+          ? `${error.message || 'Validation failed'} (${errorCode})`
+          : error.message || "Something went wrong. Please try again.";
         toast({
           title: "Validation Failed",
-          description: error.message || "Something went wrong. Please try again.",
+          description,
           variant: "destructive",
         });
       }

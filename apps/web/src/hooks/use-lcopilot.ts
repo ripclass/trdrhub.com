@@ -47,6 +47,7 @@ export interface ValidationError {
   message: string;
   type: 'rate_limit' | 'validation' | 'network' | 'server' | 'unknown' | 'quota';
   statusCode?: number;
+  errorCode?: string;  // Backend error_code for actionable errors
   quota?: {
     used: number;
     limit: number | null;
@@ -176,12 +177,14 @@ export const useValidate = () => {
             type: 'validation',
             message: detail?.message || 'Validation request failed.',
             statusCode: status,
+            errorCode: detail?.error_code || detail?.errorCode,
           };
         } else {
           validationError = {
             type: 'server',
             message: detail?.message || 'Server error occurred.',
             statusCode: status,
+            errorCode: detail?.error_code || detail?.errorCode,
           };
         }
       } else if (err.request) {

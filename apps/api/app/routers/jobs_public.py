@@ -303,7 +303,10 @@ def get_job_results(
     stored_payload = session.validation_results or {}
     structured_result = _extract_option_e_payload(stored_payload)
     if not structured_result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Results not available yet")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": "no_structured_result", "message": "Results not available yet"}
+        )
 
     logger.info(
         "UnifiedStructuredResultServed",
