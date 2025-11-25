@@ -352,7 +352,12 @@ async def process_document(
 
 
 def _determine_document_type(filename: Optional[str], index: int) -> str:
-    """Determine document type based on filename or position."""
+    """
+    Determine document type based on filename or position.
+    
+    This is the INITIAL guess before OCR. After OCR, the Document Intelligence
+    Layer will reclassify based on content (see classify_document_from_text).
+    """
     if not filename:
         # Fallback to position-based mapping for uploads that don't specify types
         type_mapping = {
@@ -386,3 +391,157 @@ def _determine_document_type(filename: Optional[str], index: int) -> str:
     else:
         # Default to a generic supporting document if no hints were found
         return DocumentType.SUPPORTING_DOCUMENT.value
+
+
+def classify_document_from_text(
+    ocr_text: str,
+    filename: Optional[str] = None,
+    initial_guess: Optional[str] = None,
+) -> dict:
+    """
+    Classify document type using content-based Document Intelligence Layer.
+    
+    This provides more accurate classification than filename-based guessing
+    by analyzing actual OCR text content for document-specific patterns.
+    
+    Args:
+        ocr_text: OCR extracted text
+        filename: Original filename (for logging)
+        initial_guess: Initial document type guess from filename/position
+        
+    Returns:
+        dict with:
+            - document_type: Classified DocumentType value
+            - confidence: Classification confidence (0.0 to 1.0)
+            - is_reliable: Whether classification is reliable
+            - reasoning: Explanation of classification
+            - reclassified: Whether type changed from initial guess
+    """
+    from app.services.document_intelligence import (
+        DocumentTypeClassifier,
+        get_doc_type_classifier,
+    )
+    
+    classifier = get_doc_type_classifier()
+    
+    # Convert initial_guess string to DocumentType if provided
+    fallback_type = None
+    if initial_guess:
+        try:
+            fallback_type = DocumentType(initial_guess)
+        except ValueError:
+            fallback_type = DocumentType.SUPPORTING_DOCUMENT
+    
+    result = classifier.classify(
+        text=ocr_text,
+        filename=filename,
+        fallback_type=fallback_type,
+    )
+    
+    reclassified = (
+        initial_guess is not None
+        and result.document_type.value != initial_guess
+        and result.is_reliable
+    )
+    
+    if reclassified:
+        logger.info(
+            "Document reclassified: %s -> %s (confidence: %.2f, file: %s)",
+            initial_guess, result.document_type.value, result.confidence, filename
+        )
+    
+    return {
+        "document_type": result.document_type.value,
+        "confidence": result.confidence,
+        "confidence_level": result.confidence_level.value,
+        "is_reliable": result.is_reliable,
+        "reasoning": result.reasoning,
+        "matched_patterns": result.matched_patterns,
+        "reclassified": reclassified,
+        "original_guess": initial_guess,
+    }
+
+
+def assess_ocr_quality(
+    ocr_text: str,
+    ocr_confidence: Optional[float] = None,
+    page_count: int = 1,
+) -> dict:
+    """
+    Assess OCR output quality using the Quality Gate.
+    
+    This determines if the OCR output is of sufficient quality
+    for reliable validation.
+    
+    Args:
+        ocr_text: OCR extracted text
+        ocr_confidence: Confidence from OCR provider
+        page_count: Number of pages in document
+        
+    Returns:
+        dict with quality assessment results
+    """
+    from app.services.document_intelligence import (
+        OCRQualityGate,
+        get_ocr_quality_gate,
+    )
+    
+    quality_gate = get_ocr_quality_gate()
+    
+    assessment = quality_gate.assess(
+        text=ocr_text,
+        ocr_confidence=ocr_confidence,
+        metadata={"page_count": page_count},
+    )
+    
+    return {
+        "overall_score": assessment.overall_score,
+        "quality_level": assessment.quality_level.value,
+        "can_proceed": assessment.can_proceed,
+        "recommendations": assessment.recommendations,
+        "warnings": assessment.warnings,
+        "text_length": assessment.text_length,
+        "word_count": assessment.estimated_word_count,
+        "metrics": [
+            {
+                "name": m.name,
+                "score": m.score,
+                "passed": m.passed,
+                "details": m.details,
+            }
+            for m in assessment.metrics
+        ],
+    }
+
+
+def detect_document_language(ocr_text: str) -> dict:
+    """
+    Detect document language for proper OCR model selection.
+    
+    Args:
+        ocr_text: OCR extracted text
+        
+    Returns:
+        dict with language detection results
+    """
+    from app.services.document_intelligence import (
+        LanguageDetector,
+        get_language_detector,
+    )
+    
+    detector = get_language_detector()
+    result = detector.detect(ocr_text)
+    
+    return {
+        "primary_language": result.primary_language.value,
+        "confidence": result.confidence,
+        "script": result.script.value,
+        "is_english": result.is_english,
+        "requires_special_ocr": result.requires_special_ocr,
+        "ocr_language_code": result.ocr_language_code,
+        "details": result.details,
+        "secondary_languages": [
+            {"language": lang.value, "confidence": conf}
+            for lang, conf in result.secondary_languages
+        ],
+    }
