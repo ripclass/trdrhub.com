@@ -142,8 +142,10 @@ export function sectionToSidebar(section: ExporterSection): SidebarSection {
 
 /**
  * Map sidebar section to ExporterSection (for sidebar click handling).
+ * Returns the sidebar section itself for non-ExporterSection items,
+ * enabling direct routing to auxiliary views.
  */
-export function sidebarToSection(sidebar: SidebarSection): ExporterSection | null {
+export function sidebarToSection(sidebar: SidebarSection): ExporterSection | SidebarSection {
   switch (sidebar) {
     case 'dashboard':
       return 'overview';
@@ -152,13 +154,22 @@ export function sidebarToSection(sidebar: SidebarSection): ExporterSection | nul
     case 'reviews':
       return 'reviews';
     case 'workspace':
-      return 'documents';
+      return 'workspace' as SidebarSection; // Routed directly, not to documents
     case 'analytics':
       return 'analytics';
+    // Non-ExporterSection sidebar items return themselves for direct routing
+    case 'templates':
     case 'notifications':
-      return 'issues';
+    case 'billing':
+    case 'billing-usage':
+    case 'ai-assistance':
+    case 'content-library':
+    case 'shipment-timeline':
+    case 'settings':
+    case 'help':
+      return sidebar;
     default:
-      return null; // Other sidebar items don't map to ExporterSection
+      return 'overview';
   }
 }
 
