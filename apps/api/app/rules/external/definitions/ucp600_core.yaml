@@ -1,0 +1,419 @@
+# UCP600 Core Validation Rules
+# Version: 1.0.0
+# These rules implement fundamental UCP600 compliance checks
+
+ruleset:
+  id: ucp600-core
+  name: UCP600 Core Rules
+  version: "1.0.0"
+  description: Core validation rules based on UCP600 (ICC Publication 600)
+  ucp_version: UCP600
+  enabled: true
+
+rules:
+  # ===========================================================================
+  # AMOUNT VALIDATION
+  # ===========================================================================
+  
+  - id: UCP600-ART-18B-AMOUNT
+    name: Invoice Amount vs LC Amount
+    category: amount
+    severity: critical
+    description: |
+      Per UCP600 Article 18(b), the commercial invoice amount must not exceed 
+      the amount specified in the LC. This is a fundamental compliance requirement.
+    ucp_reference: "UCP600 Article 18(b)"
+    isbp_reference: "ISBP745 Paragraph C1"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice"]
+    requires_fields: ["lc.amount", "invoice.amount"]
+    
+    conditions:
+      - field: "lc.amount"
+        operator: "exists"
+      - field: "invoice.amount"
+        operator: "exists"
+      - field: "invoice.amount"
+        operator: "lte"
+        compare_field: "lc.amount"
+        
+    action:
+      type: "issue"
+      title: "Invoice Amount Exceeds LC Value"
+      message: "The commercial invoice total exceeds the Letter of Credit amount, which violates UCP600 Article 18(b)."
+      suggestion: "Reduce invoice amount to be equal to or less than LC value, or request LC amendment for increased amount."
+      expected_template: "Invoice amount ≤ {lc.amount} {lc.currency}"
+      actual_template: "Invoice amount: {invoice.amount} {invoice.currency}"
+
+  - id: UCP600-ART-18B-TOLERANCE
+    name: LC Amount Tolerance
+    category: amount
+    severity: major
+    description: |
+      If the LC specifies a tolerance (e.g., +/- 10%), the invoice may exceed
+      the nominal LC amount within that tolerance. Without tolerance specification,
+      invoice cannot exceed LC amount at all.
+    ucp_reference: "UCP600 Article 30"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice"]
+    requires_fields: ["lc.amount", "invoice.amount"]
+    optional_fields: ["lc.tolerance"]
+    
+    conditions:
+      - field: "lc.tolerance"
+        operator: "exists"
+      - field: "invoice.amount"
+        operator: "lte"
+        compare_field: "lc.amount_with_tolerance"
+        
+    action:
+      type: "issue"
+      title: "Invoice Exceeds LC Tolerance"
+      message: "Invoice amount exceeds the LC amount even when tolerance is applied."
+      suggestion: "Review the tolerance terms in the LC and ensure invoice is within allowed range."
+      expected_template: "Within tolerance of {lc.amount} ± {lc.tolerance}%"
+      actual_template: "Invoice: {invoice.amount}"
+
+  # ===========================================================================
+  # CURRENCY VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-CURRENCY-MATCH
+    name: Currency Consistency
+    category: amount
+    severity: critical
+    description: |
+      All documents must use the same currency as specified in the LC.
+      Mixed currencies create discrepancies.
+    ucp_reference: "UCP600 Article 18"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice", "bill_of_lading", "insurance"]
+    requires_fields: ["lc.currency"]
+    
+    conditions:
+      - field: "lc.currency"
+        operator: "exists"
+      - field: "invoice.currency"
+        operator: "equals"
+        compare_field: "lc.currency"
+        
+    action:
+      type: "issue"
+      title: "Currency Mismatch"
+      message: "Document currency does not match LC currency."
+      suggestion: "Ensure all documents use the same currency as specified in the LC."
+      expected_template: "{lc.currency}"
+      actual_template: "{document.currency}"
+
+  # ===========================================================================
+  # PARTY VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-ART-20A-SHIPPER
+    name: B/L Shipper Must Match LC Beneficiary
+    category: party
+    severity: major
+    description: |
+      Per UCP600 Article 20(a), the B/L shipper should be the beneficiary named 
+      in the LC or an authorized party.
+    ucp_reference: "UCP600 Article 20(a)"
+    isbp_reference: "ISBP745 Paragraph E2"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["bill_of_lading"]
+    requires_fields: ["lc.beneficiary", "bl.shipper"]
+    
+    conditions:
+      - field: "lc.beneficiary"
+        operator: "exists"
+      - field: "bl.shipper"
+        operator: "exists"
+      - field: "bl.shipper"
+        operator: "similar_to"
+        compare_field: "lc.beneficiary"
+        threshold: 0.85
+        normalize: true
+        
+    action:
+      type: "issue"
+      title: "B/L Shipper Does Not Match LC Beneficiary"
+      message: "The shipper on the Bill of Lading does not match the beneficiary in the Letter of Credit."
+      suggestion: "Verify shipper name matches LC beneficiary exactly, or provide authorization documentation."
+      expected_template: "Shipper: {lc.beneficiary}"
+      actual_template: "B/L shows: {bl.shipper}"
+
+  - id: UCP600-ART-18A-APPLICANT
+    name: Invoice Consignee vs LC Applicant
+    category: party
+    severity: major
+    description: |
+      The commercial invoice should typically name the LC applicant as the 
+      buyer/consignee unless otherwise specified.
+    ucp_reference: "UCP600 Article 18(a)"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice"]
+    requires_fields: ["lc.applicant"]
+    optional_fields: ["invoice.consignee", "invoice.buyer"]
+    
+    conditions:
+      - field: "lc.applicant"
+        operator: "exists"
+      - field: "invoice.consignee"
+        operator: "similar_to"
+        compare_field: "lc.applicant"
+        threshold: 0.85
+        normalize: true
+        
+    action:
+      type: "issue"
+      title: "Invoice Consignee Mismatch"
+      message: "The consignee/buyer on the invoice does not match the LC applicant."
+      suggestion: "Ensure invoice names the LC applicant as buyer unless LC specifies otherwise."
+      expected_template: "Buyer: {lc.applicant}"
+      actual_template: "Invoice shows: {invoice.consignee}"
+
+  # ===========================================================================
+  # GOODS DESCRIPTION VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-ART-18C-GOODS
+    name: Goods Description Match
+    category: goods
+    severity: major
+    description: |
+      Per UCP600 Article 18(c), the description of goods in the invoice must 
+      correspond with that in the LC. Other documents may use general terms.
+    ucp_reference: "UCP600 Article 18(c)"
+    isbp_reference: "ISBP745 Paragraph C3"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice"]
+    requires_fields: ["lc.goods_description", "invoice.goods_description"]
+    
+    conditions:
+      - field: "lc.goods_description"
+        operator: "exists"
+      - field: "invoice.goods_description"
+        operator: "exists"
+      - field: "invoice.goods_description"
+        operator: "similar_to"
+        compare_field: "lc.goods_description"
+        threshold: 0.75
+        normalize: true
+        
+    action:
+      type: "issue"
+      title: "Goods Description Discrepancy"
+      message: "The goods description in the invoice does not adequately match the LC description."
+      suggestion: "Ensure invoice goods description corresponds with LC. Minor variations in wording may be acceptable if the meaning is unchanged."
+      expected_template: "As per LC: {lc.goods_description}"
+      actual_template: "Invoice states: {invoice.goods_description}"
+
+  # ===========================================================================
+  # PORT VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-ART-20-POL
+    name: Port of Loading Match
+    category: port
+    severity: major
+    description: |
+      The port of loading on the B/L must match the port specified in the LC.
+    ucp_reference: "UCP600 Article 20"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["bill_of_lading"]
+    requires_fields: ["lc.port_of_loading", "bl.port_of_loading"]
+    
+    conditions:
+      - field: "lc.port_of_loading"
+        operator: "exists"
+      - field: "bl.port_of_loading"
+        operator: "exists"
+      - field: "bl.port_of_loading"
+        operator: "similar_to"
+        compare_field: "lc.port_of_loading"
+        threshold: 0.85
+        normalize: true
+        
+    action:
+      type: "issue"
+      title: "Port of Loading Mismatch"
+      message: "The port of loading on the B/L does not match the LC requirement."
+      suggestion: "Ensure B/L shows the exact port of loading as specified in the LC."
+      expected_template: "Port of Loading: {lc.port_of_loading}"
+      actual_template: "B/L shows: {bl.port_of_loading}"
+
+  - id: UCP600-ART-20-POD
+    name: Port of Discharge Match
+    category: port
+    severity: major
+    description: |
+      The port of discharge on the B/L must match the port specified in the LC.
+    ucp_reference: "UCP600 Article 20"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["bill_of_lading"]
+    requires_fields: ["lc.port_of_discharge", "bl.port_of_discharge"]
+    
+    conditions:
+      - field: "lc.port_of_discharge"
+        operator: "exists"
+      - field: "bl.port_of_discharge"
+        operator: "exists"
+      - field: "bl.port_of_discharge"
+        operator: "similar_to"
+        compare_field: "lc.port_of_discharge"
+        threshold: 0.85
+        normalize: true
+        
+    action:
+      type: "issue"
+      title: "Port of Discharge Mismatch"
+      message: "The port of discharge on the B/L does not match the LC requirement."
+      suggestion: "Ensure B/L shows the exact port of discharge as specified in the LC."
+      expected_template: "Port of Discharge: {lc.port_of_discharge}"
+      actual_template: "B/L shows: {bl.port_of_discharge}"
+
+  # ===========================================================================
+  # INSURANCE VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-ART-28F-INSURANCE
+    name: Insurance Coverage Amount
+    category: amount
+    severity: critical
+    description: |
+      Per UCP600 Article 28(f)(ii), insurance must cover at least 110% of the 
+      CIF or CIP value (LC amount) unless the LC specifies otherwise.
+    ucp_reference: "UCP600 Article 28(f)(ii)"
+    isbp_reference: "ISBP745 Paragraph K11"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["insurance"]
+    requires_fields: ["lc.amount", "insurance.coverage_amount"]
+    
+    conditions:
+      - field: "lc.amount"
+        operator: "exists"
+      - field: "insurance.coverage_amount"
+        operator: "exists"
+      - field: "insurance.coverage_amount"
+        operator: "gte"
+        compare_field: "lc.amount_110_percent"
+        
+    action:
+      type: "issue"
+      title: "Insurance Coverage Insufficient"
+      message: "Insurance coverage must be at least 110% of LC amount per UCP600 Article 28(f)(ii)."
+      suggestion: "Obtain insurance certificate with coverage of at least 110% of the invoice/LC value."
+      expected_template: "Coverage ≥ {lc.amount_110_percent} (110% of {lc.amount})"
+      actual_template: "Insurance shows: {insurance.coverage_amount}"
+
+  # ===========================================================================
+  # DATE VALIDATION
+  # ===========================================================================
+
+  - id: UCP600-ART-6D-EXPIRY
+    name: Documents Within LC Validity
+    category: timing
+    severity: critical
+    description: |
+      Per UCP600 Article 6(d), all documents must be presented within the 
+      validity period of the LC.
+    ucp_reference: "UCP600 Article 6(d)"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["commercial_invoice", "bill_of_lading", "insurance"]
+    requires_fields: ["lc.expiry_date"]
+    
+    conditions:
+      - field: "lc.expiry_date"
+        operator: "exists"
+      - field: "document.date"
+        operator: "before"
+        compare_field: "lc.expiry_date"
+        
+    action:
+      type: "issue"
+      title: "LC Expired"
+      message: "Documents presented after LC expiry date."
+      suggestion: "Request LC extension or ensure all documents are dated before LC expiry."
+      expected_template: "Document date before {lc.expiry_date}"
+      actual_template: "Document dated: {document.date}"
+
+  - id: UCP600-ART-14C-SHIPMENT
+    name: Late Shipment Check
+    category: timing
+    severity: critical
+    description: |
+      Per UCP600 Article 14(c), shipment must occur on or before the latest 
+      shipment date specified in the LC.
+    ucp_reference: "UCP600 Article 14(c)"
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    target_documents: ["bill_of_lading"]
+    requires_fields: ["lc.latest_shipment", "bl.shipment_date"]
+    
+    conditions:
+      - field: "lc.latest_shipment"
+        operator: "exists"
+      - field: "bl.shipment_date"
+        operator: "exists"
+      - field: "bl.shipment_date"
+        operator: "before"
+        compare_field: "lc.latest_shipment"
+        
+    action:
+      type: "issue"
+      title: "Late Shipment"
+      message: "Shipment occurred after the latest date of shipment specified in the LC."
+      suggestion: "Negotiate LC amendment for extended shipment date, or arrange earlier shipment."
+      expected_template: "Shipment by {lc.latest_shipment}"
+      actual_template: "B/L dated: {bl.shipment_date}"
+
+  - id: UCP600-ART-14C-PRESENTATION
+    name: Presentation Period
+    category: timing
+    severity: major
+    description: |
+      Per UCP600 Article 14(c), documents must be presented within 21 days 
+      after shipment date, unless LC specifies a different period.
+    ucp_reference: "UCP600 Article 14(c)"
+    enabled: true
+    
+    source_documents: ["letter_of_credit", "bill_of_lading"]
+    requires_fields: ["bl.shipment_date"]
+    optional_fields: ["lc.presentation_period"]
+    
+    conditions:
+      - field: "bl.shipment_date"
+        operator: "exists"
+      - field: "presentation_date"
+        operator: "within_days"
+        compare_field: "bl.shipment_date"
+        value: 21
+        
+    action:
+      type: "issue"
+      title: "Late Presentation"
+      message: "Documents presented more than 21 days after shipment date."
+      suggestion: "Ensure documents are presented within the presentation period (21 days unless LC specifies otherwise)."
+      expected_template: "Within 21 days of shipment: {bl.shipment_date}"
+      actual_template: "Presented on: {presentation_date}"
+

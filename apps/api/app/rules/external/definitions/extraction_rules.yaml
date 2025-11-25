@@ -1,0 +1,301 @@
+# LC Extraction Validation Rules
+# Version: 1.0.0
+# These rules validate that required LC fields were successfully extracted
+
+ruleset:
+  id: extraction-validation
+  name: LC Extraction Validation Rules
+  version: "1.0.0"
+  description: Rules to validate LC extraction completeness and quality
+  enabled: true
+
+rules:
+  # ===========================================================================
+  # CRITICAL FIELD EXTRACTION
+  # ===========================================================================
+
+  - id: EXTRACT-LC-NUMBER
+    name: LC Number Required
+    category: extraction
+    severity: critical
+    description: |
+      The LC reference number is required to identify the Letter of Credit.
+      Without this, documents cannot be matched to the LC.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.number"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "LC Number Not Extracted"
+      message: "The Letter of Credit reference number could not be extracted from the document."
+      suggestion: "Verify the uploaded document is a valid LC and contains a reference number. Re-scan if image quality is poor."
+      expected_template: "LC reference number (Field 20)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-AMOUNT
+    name: LC Amount Required
+    category: extraction
+    severity: critical
+    description: |
+      The LC amount is required for validating invoice and insurance amounts.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.amount"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "LC Amount Not Extracted"
+      message: "The Letter of Credit amount could not be extracted from the document."
+      suggestion: "Verify the LC contains a valid amount in Field 32B. Re-scan if image quality is poor."
+      expected_template: "LC amount and currency (Field 32B)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-CURRENCY
+    name: LC Currency Required
+    category: extraction
+    severity: critical
+    description: |
+      The LC currency is required for validating document currencies match.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.currency"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "LC Currency Not Extracted"
+      message: "The Letter of Credit currency could not be extracted from the document."
+      suggestion: "Verify the LC contains a valid currency code (e.g., USD, EUR) in Field 32B."
+      expected_template: "Currency code (e.g., USD, EUR)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-BENEFICIARY
+    name: LC Beneficiary Required
+    category: extraction
+    severity: critical
+    description: |
+      The beneficiary is required for validating shipper and invoice consignee.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.beneficiary"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Beneficiary Not Extracted"
+      message: "The LC beneficiary could not be extracted from the document."
+      suggestion: "Verify the LC contains beneficiary details in Field 59. Re-scan if text is unclear."
+      expected_template: "Beneficiary name and address (Field 59)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-APPLICANT
+    name: LC Applicant Required
+    category: extraction
+    severity: critical
+    description: |
+      The applicant (buyer) is required for validating invoice buyer/consignee.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.applicant"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Applicant Not Extracted"
+      message: "The LC applicant could not be extracted from the document."
+      suggestion: "Verify the LC contains applicant details in Field 50. Re-scan if text is unclear."
+      expected_template: "Applicant name and address (Field 50)"
+      actual_template: "Not found"
+
+  # ===========================================================================
+  # REQUIRED FIELD EXTRACTION
+  # ===========================================================================
+
+  - id: EXTRACT-LC-EXPIRY
+    name: LC Expiry Date Required
+    category: extraction
+    severity: major
+    description: |
+      The expiry date is required for validating document presentation timing.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.expiry_date"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Expiry Date Not Extracted"
+      message: "The LC expiry date could not be extracted from the document."
+      suggestion: "Verify the LC contains expiry date in Field 31D. Re-scan if text is unclear."
+      expected_template: "Expiry date and place (Field 31D)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-SHIPMENT
+    name: Latest Shipment Date Required
+    category: extraction
+    severity: major
+    description: |
+      The latest shipment date is required for validating B/L shipment timing.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.latest_shipment"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Latest Shipment Date Not Extracted"
+      message: "The latest shipment date could not be extracted from the LC."
+      suggestion: "Verify the LC contains latest shipment date in Field 44C. Some LCs may not specify this."
+      expected_template: "Latest date of shipment (Field 44C)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-POL
+    name: Port of Loading Required
+    category: extraction
+    severity: major
+    description: |
+      The port of loading is required for validating B/L port matching.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.port_of_loading"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Port of Loading Not Extracted"
+      message: "The port of loading could not be extracted from the LC."
+      suggestion: "Verify the LC contains port of loading in Field 44E."
+      expected_template: "Port of Loading (Field 44E)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-POD
+    name: Port of Discharge Required
+    category: extraction
+    severity: major
+    description: |
+      The port of discharge is required for validating B/L port matching.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.port_of_discharge"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Port of Discharge Not Extracted"
+      message: "The port of discharge could not be extracted from the LC."
+      suggestion: "Verify the LC contains port of discharge in Field 44F."
+      expected_template: "Port of Discharge (Field 44F)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-GOODS
+    name: Goods Description Required
+    category: extraction
+    severity: major
+    description: |
+      The goods description is required for validating invoice goods matching.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.goods_description"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Goods Description Not Extracted"
+      message: "The goods description could not be extracted from the LC."
+      suggestion: "Verify the LC contains goods description in Field 45A."
+      expected_template: "Description of goods (Field 45A)"
+      actual_template: "Not found"
+
+  # ===========================================================================
+  # IMPORTANT FIELD EXTRACTION
+  # ===========================================================================
+
+  - id: EXTRACT-LC-ISSUING-BANK
+    name: Issuing Bank Extraction
+    category: extraction
+    severity: minor
+    description: |
+      The issuing bank is useful for document routing and verification.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.issuing_bank"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Issuing Bank Not Extracted"
+      message: "The issuing bank could not be extracted from the LC."
+      suggestion: "This is informational - issuing bank details in Field 52A may not be clearly stated."
+      expected_template: "Issuing bank (Field 52A)"
+      actual_template: "Not found"
+
+  - id: EXTRACT-LC-INCOTERM
+    name: Incoterm Extraction
+    category: extraction
+    severity: minor
+    description: |
+      The trade term (Incoterm) is useful for determining responsibility splits.
+    enabled: true
+    
+    source_documents: ["letter_of_credit"]
+    requires_fields: []
+    
+    conditions:
+      - field: "lc.incoterm"
+        operator: "exists"
+        
+    action:
+      type: "issue"
+      title: "Incoterm Not Extracted"
+      message: "The trade terms (Incoterm) could not be extracted from the LC."
+      suggestion: "This is informational - Incoterm may be embedded in goods description (Field 45A)."
+      expected_template: "Incoterm (e.g., FOB, CIF, CFR)"
+      actual_template: "Not found"
+
