@@ -362,11 +362,19 @@ export const useResults = () => {
       let validationError: ValidationError;
 
       if (err.response) {
+        // Axios error with response
         const { status, data } = err.response;
         validationError = {
           type: 'server',
-          message: data.message || 'Failed to get validation results.',
+          message: data?.message || data?.detail || 'Failed to get validation results.',
           statusCode: status,
+          errorCode: data?.detail?.error_code || data?.error_code,
+        };
+      } else if (err instanceof Error) {
+        // JavaScript Error (e.g. from buildValidationResponse)
+        validationError = {
+          type: 'parsing',
+          message: err.message || 'Failed to parse validation results.',
         };
       } else {
         validationError = {
@@ -376,10 +384,12 @@ export const useResults = () => {
       }
 
       setError(validationError);
-      console.warn('[LCopilot][Results] failed to fetch results', {
+      console.error('[LCopilot][Results] failed to fetch results', {
         jobId,
-        error: validationError?.message,
+        errorType: validationError?.type,
+        errorMessage: validationError?.message,
         statusCode: validationError?.statusCode,
+        rawError: err?.message || String(err),
       });
       throw validationError;
     } finally {
