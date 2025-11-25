@@ -529,11 +529,32 @@ async def validate_doc(
         # Ensure document_summaries is a list (fallback to empty if malformed)
         final_documents = document_summaries if isinstance(document_summaries, list) else []
         
+        # GUARANTEE: Always have non-empty documents for Option-E
+        if not final_documents:
+            logger.warning("final_documents empty - using files_list fallback")
+            final_documents = _build_document_summaries(files_list, results, None)
+        
+        # Build extractor outputs from payload or extracted context
+        extractor_outputs = payload.get("lc_structured_output") if payload else None
+        if not extractor_outputs and payload:
+            # Fallback: build from LC detection results
+            extractor_outputs = {
+                "lc_type": payload.get("lc_type", "unknown"),
+                "lc_type_reason": payload.get("lc_type_reason", "Auto-detected"),
+                "lc_type_confidence": payload.get("lc_type_confidence", 0),
+                "lc_type_source": payload.get("lc_type_source", "auto"),
+                "mt700": (payload.get("lc") or {}).get("mt700") or {"blocks": {}, "raw_text": None, "version": "mt700_v1"},
+                "goods": (payload.get("lc") or {}).get("goods") or (payload.get("lc") or {}).get("goods_items") or [],
+                "clauses": (payload.get("lc") or {}).get("clauses") or [],
+                "timeline": [],
+                "issues": [],
+            }
+        
         # Build Option-E structured result with proper error handling
         try:
             option_e_payload = build_unified_structured_result(
                 session_documents=final_documents,
-                extractor_outputs=payload.get("lc_structured_output") if payload else None,
+                extractor_outputs=extractor_outputs,
                 legacy_payload=None,
             )
             structured_result = option_e_payload["structured_result"]
@@ -744,8 +765,21 @@ def _build_document_summaries(
         return [_build_summary_from_detail(detail, index) for index, detail in enumerate(details)]
 
     if not files_list:
-        logger.warning("No document details or files_list available - returning empty summaries")
-        return []
+        # GUARANTEE: Never return empty - create a placeholder document if nothing available
+        logger.warning("No document details or files_list available - creating placeholder document")
+        return [
+            {
+                "id": str(uuid4()),
+                "name": "No documents uploaded",
+                "type": "Supporting Document",
+                "documentType": "supporting_document",
+                "status": "warning",
+                "discrepancyCount": 0,
+                "extractedFields": {},
+                "ocrConfidence": None,
+                "extractionStatus": "unknown",
+            }
+        ]
 
     summaries: List[Dict[str, Any]] = []
     for index, file_obj in enumerate(files_list):
@@ -759,7 +793,7 @@ def _build_document_summaries(
             issue_by_type,
             issue_by_id,
         )
-        status = _severity_to_status(stats.get("max_severity") if stats else None)
+        doc_status = _severity_to_status(stats.get("max_severity") if stats else None)
         discrepancy_count = stats.get("count", 0) if stats else 0
         summaries.append(
             {
@@ -767,13 +801,28 @@ def _build_document_summaries(
                 "name": filename or f"Document {index + 1}",
                 "type": _humanize_doc_type(inferred_type),
                 "documentType": inferred_type,
-                "status": status,
+                "status": doc_status,
                 "discrepancyCount": discrepancy_count,
                 "extractedFields": {},
                 "ocrConfidence": None,
-                "extractionStatus": None,
+                "extractionStatus": "unknown",
             }
         )
+
+    # GUARANTEE: Never return empty list
+    if not summaries:
+        logger.warning("Document summaries still empty after processing - adding placeholder")
+        summaries.append({
+            "id": str(uuid4()),
+            "name": "Document",
+            "type": "Supporting Document",
+            "documentType": "supporting_document",
+            "status": "warning",
+            "discrepancyCount": 0,
+            "extractedFields": {},
+            "ocrConfidence": None,
+            "extractionStatus": "unknown",
+        })
 
     return summaries
 
@@ -1181,6 +1230,22 @@ async def _build_document_context(
     context["documents_summary"] = documents_presence
     if context.get("lc"):
         context["lc"] = _normalize_lc_payload_structures(context["lc"])
+
+    # GUARANTEE: Always provide lc_structured_output for Option-E builder
+    # Even if extraction failed, provide a minimal structure
+    if "lc_structured_output" not in context:
+        lc_data = context.get("lc") or {}
+        context["lc_structured_output"] = {
+            "lc_type": lc_data.get("type") or "unknown",
+            "lc_type_reason": "Extracted from uploaded documents" if lc_data else "No LC data extracted",
+            "lc_type_confidence": 50 if lc_data else 0,
+            "lc_type_source": "auto",
+            "mt700": lc_data.get("mt700") or {"blocks": {}, "raw_text": lc_data.get("raw_text"), "version": "mt700_v1"},
+            "goods": lc_data.get("goods") or lc_data.get("goods_items") or [],
+            "clauses": lc_data.get("clauses") or lc_data.get("additional_conditions") or [],
+            "timeline": [],
+            "issues": [],
+        }
 
     return context
 

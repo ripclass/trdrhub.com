@@ -20,7 +20,7 @@ import ExportLCUpload from './pages/ExportLCUpload'
 import ImportLCUpload from './pages/ImportLCUpload'
 import ImportResults from './pages/ImportResults'
 import ImportResultsSimple from './pages/ImportResultsSimple'
-import ExporterDashboardV2 from './pages/ExporterDashboardV2'
+import ExporterDashboard from './pages/ExporterDashboard'
 import ImporterDashboard from './pages/ImporterDashboard'
 import ExporterResults from './pages/ExporterResults'
 import ExporterAnalytics from './pages/ExporterAnalytics'
@@ -91,7 +91,7 @@ function App() {
         } />
         <Route path="/lcopilot/exporter-dashboard" element={
           <ExporterAuthProvider>
-            <ExporterDashboardV2 />
+            <ExporterDashboard />
           </ExporterAuthProvider>
         } />
         <Route path="/lcopilot/combined-dashboard" element={
