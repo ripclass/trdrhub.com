@@ -41,6 +41,15 @@ from .compliance_scorer import (
     calculate_compliance_rate,
 )
 
+from .crossdoc_validator import (
+    CrossDocValidator,
+    CrossDocIssue,
+    CrossDocResult,
+    DocumentType,
+    get_crossdoc_validator,
+    validate_cross_documents,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -65,5 +74,12 @@ __all__ = [
     "get_compliance_scorer",
     "calculate_compliance_score",
     "calculate_compliance_rate",
+    # Cross-Document Validator
+    "CrossDocValidator",
+    "CrossDocIssue",
+    "CrossDocResult",
+    "DocumentType",
+    "get_crossdoc_validator",
+    "validate_cross_documents",
 ]
 
