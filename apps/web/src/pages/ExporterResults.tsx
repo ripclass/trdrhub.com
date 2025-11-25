@@ -744,7 +744,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcStructured = structuredResult?.lc_structured ?? null;
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
-    - buildFieldRows(
+    ? buildFieldRows(
         [
           { label: "LC Number", value: lcData.number ?? lcData.lc_number },
           { label: "LC Amount", value: formatAmountValue(lcData.amount) },
@@ -756,7 +756,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       )
     : [];
   const lcDateRows = lcData
-    - buildFieldRows(
+    ? buildFieldRows(
         [
           { label: "Issue Date", value: lcData.dates?.issue },
           { label: "Expiry Date", value: lcData.dates?.expiry },
@@ -773,7 +773,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
-    - (structuredResult?.reference_issues as ReferenceIssue[])
+    ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
   const rawAiInsights = structuredResult?.ai_enrichment ?? null;
   const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
@@ -797,7 +797,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcTypeReason = structuredResult?.lc_type_reason ?? "LC type detection details unavailable.";
   const lcTypeConfidenceValue =
     typeof structuredResult?.lc_type_confidence === "number"
-      - Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
+      ? Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
       : null;
   const lcTypeSource = structuredResult?.lc_type_source ?? "auto";
   const lcTypeLabelMap: Record<string, string> = {
@@ -1368,7 +1368,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   onClick={handleSubmitToBank}
                   disabled={createSubmissionMutation.isPending || guardrailsLoading}
                 >
-                  {createSubmissionMutation.isPending - (
+                  {createSubmissionMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Submitting...
@@ -1443,9 +1443,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     {timelineDisplay.map((event, index) => {
                       const statusClass =
                         event.status === "error"
-                          - "bg-destructive"
+                          ? "bg-destructive"
                           : event.status === "warning"
-                          - "bg-warning"
+                          ? "bg-warning"
                           : "bg-success";
                       return (
                         <div
@@ -1455,12 +1455,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
                           <div className="flex-1">
                             <p className="font-medium">{event.title}</p>
-                            {event.timestamp - (
+                            {event.timestamp ? (
                               <p className="text-xs text-muted-foreground">
                                 {format(new Date(event.timestamp), "HH:mm")}
                                 {event.description ? ` - ${event.description}` : ''}
                               </p>
-                            ) : event.description - (
+                            ) : event.description ? (
                               <p className="text-xs text-muted-foreground">{event.description}</p>
                             ) : null}
                           </div>
@@ -1542,7 +1542,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {packGenerated
-                        - "Customs pack generated and ready to download."
+                        ? "Customs pack generated and ready to download."
                         : "Generate your customs pack after resolving issues."}
                     </p>
                   </div>
@@ -1772,7 +1772,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            {hasIssueCards - (
+            {hasIssueCards ? (
               <>
                 <Card className="shadow-soft border border-border/60">
                   <CardContent className="space-y-4">
@@ -1813,7 +1813,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardContent>
                 </Card>
-                {filteredIssueCards.length === 0 - (
+                {filteredIssueCards.length === 0 ? (
                   <Card className="shadow-soft border border-dashed">
                     <CardContent className="py-6 text-center text-sm text-muted-foreground">
                       No issues match this severity filter.
@@ -1866,11 +1866,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <Badge
                     variant={
                       extractionStatus === "success"
-                        - "default"
+                        ? "default"
                         : extractionStatus === "partial"
-                        - "outline"
+                        ? "outline"
                         : extractionStatus === "pending"
-                        - "destructive"
+                        ? "destructive"
                         : "secondary"
                     }
                   >
@@ -1962,7 +1962,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <p className="text-muted-foreground mb-2">No extracted data available</p>
                     <p className="text-sm text-muted-foreground">
                       {extractionStatus === "pending"
-                        - "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
+                        ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
                         : "Data extraction may still be in progress or failed. Please check the extraction status above."}
                     </p>
                   </div>
@@ -1989,9 +1989,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               <Badge
                                 variant={
                                   extractionStatus === "success"
-                                    - "default"
+                                    ? "default"
                                     : extractionStatus === "empty"
-                                    - "destructive"
+                                    ? "destructive"
                                     : "secondary"
                                 }
                               >
@@ -1999,7 +1999,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               </Badge>
                             </div>
 
-                            {fieldEntries.length > 0 - (
+                            {fieldEntries.length > 0 ? (
                               <div className="space-y-2 text-sm">
                                 {fieldEntries.map(([key, value]) => (
                                   <div key={key} className="flex flex-col">
@@ -2040,12 +2040,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {submissionsLoading - (
+                {submissionsLoading ? (
                   <div className="text-center py-12">
                     <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
                     <p className="text-muted-foreground">Loading submission history...</p>
                   </div>
-                ) : !submissionsData || submissionsData.items.length === 0 - (
+                ) : !submissionsData || submissionsData.items.length === 0 ? (
                   <div className="text-center py-12">
                     <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-2">No submissions yet</p>
@@ -2069,7 +2069,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
-            {analyticsAvailable - (
+            {analyticsAvailable ? (
               <>
                 <div className="grid md:grid-cols-2 gap-6">
                   <Card className="shadow-soft border border-border/60">
@@ -2185,9 +2185,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               <td className="py-3">
                                 <StatusBadge status={item.status || 'success'}>
                                   {item.status === 'success'
-                                    - 'Verified'
+                                    ? 'Verified'
                                     : item.status === 'warning'
-                                    - 'Review'
+                                    ? 'Review'
                                     : 'Fix Required'}
                                 </StatusBadge>
                               </td>
@@ -2283,7 +2283,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              {manifestData - (
+              {manifestData ? (
                 <>
                   <div className="p-4 bg-muted rounded-lg space-y-2">
                     <div className="flex justify-between text-sm">
@@ -2340,7 +2340,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 disabled={!manifestConfirmed || !manifestData || createSubmissionMutation.isPending}
                 className="bg-green-600 hover:bg-green-700"
               >
-                {createSubmissionMutation.isPending - (
+                {createSubmissionMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Submitting...
