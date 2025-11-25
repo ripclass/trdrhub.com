@@ -204,6 +204,9 @@ class LCBaseline:
     amount: FieldResult = field(default_factory=lambda: FieldResult(
         "amount", FieldPriority.CRITICAL, ExtractionStatus.MISSING
     ))
+    currency: FieldResult = field(default_factory=lambda: FieldResult(
+        "currency", FieldPriority.CRITICAL, ExtractionStatus.MISSING
+    ))
     
     # Timeline (REQUIRED)
     expiry_date: FieldResult = field(default_factory=lambda: FieldResult(
@@ -267,7 +270,7 @@ class LCBaseline:
         return [
             self.lc_number, self.lc_type,
             self.applicant, self.beneficiary, self.issuing_bank, self.advising_bank,
-            self.amount,
+            self.amount, self.currency,
             self.expiry_date, self.issue_date, self.latest_shipment,
             self.port_of_loading, self.port_of_discharge, self.incoterm,
             self.goods_description, self.documents_required,

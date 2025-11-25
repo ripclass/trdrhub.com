@@ -2172,58 +2172,260 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     Build LCBaseline from extracted LC context.
     
     This is the bridge between the legacy extraction and the v2 validation pipeline.
+    Supports both flat lc_context fields and nested mt700 blocks.
     """
+    from app.services.extraction.lc_baseline import (
+        LCBaseline, FieldResult, FieldPriority, ExtractionStatus,
+        PartyInfo, AmountInfo, PortInfo,
+    )
+    
     baseline = LCBaseline()
     
-    # Map context fields to baseline fields
-    field_mapping = {
-        # LC Number
-        ("number", "lc_number", "documentaryCredit", "doc_credit_number"): ("lc_number", FieldPriority.CRITICAL),
-        # Amount
-        ("amount", "credit_amount", "value"): ("amount", FieldPriority.CRITICAL),
-        # Currency
-        ("currency", "ccy"): ("currency", FieldPriority.CRITICAL),
-        # Applicant
-        ("applicant", "applicant_name", "buyer"): ("applicant", FieldPriority.CRITICAL),
-        # Beneficiary
-        ("beneficiary", "beneficiary_name", "seller"): ("beneficiary", FieldPriority.CRITICAL),
-        # Banks
-        ("issuing_bank", "issuer", "issuing_bank_name"): ("issuing_bank", FieldPriority.REQUIRED),
-        ("advising_bank", "advising_bank_name"): ("advising_bank", FieldPriority.REQUIRED),
-        # Dates
-        ("expiry_date", "expiry", "validity_date"): ("expiry_date", FieldPriority.CRITICAL),
-        ("issue_date", "date_of_issue"): ("issue_date", FieldPriority.REQUIRED),
-        ("latest_shipment", "latest_shipment_date", "shipment_date"): ("latest_shipment", FieldPriority.REQUIRED),
-        # Ports
-        ("port_of_loading", "loading_port", "pol"): ("port_of_loading", FieldPriority.REQUIRED),
-        ("port_of_discharge", "discharge_port", "pod"): ("port_of_discharge", FieldPriority.REQUIRED),
-        # Goods
-        ("goods_description", "description", "goods", "merchandise"): ("goods_description", FieldPriority.REQUIRED),
-        # Incoterm
-        ("incoterm", "trade_terms", "delivery_terms"): ("incoterm", FieldPriority.IMPORTANT),
-    }
+    # Extract MT700 blocks if present
+    mt700 = lc_context.get("mt700", {})
+    blocks = mt700.get("blocks", {}) if isinstance(mt700, dict) else {}
     
-    for source_keys, (target_field, priority) in field_mapping.items():
-        # Find value from any of the source keys
-        value = None
-        for key in source_keys:
-            value = lc_context.get(key)
-            if value:
-                break
-        
-        # Set the field on baseline
-        if hasattr(baseline, target_field):
-            field_result = getattr(baseline, target_field)
-            if isinstance(field_result, FieldResult):
-                if value:
-                    field_result.value = value
-                    field_result.is_present = True
-                    field_result.status = ExtractionStatus.EXTRACTED
-                    field_result.priority = priority
-                else:
-                    field_result.is_present = False
-                    field_result.status = ExtractionStatus.MISSING
-                    field_result.priority = priority
+    # Helper to set field with proper status
+    def set_field(field_result: FieldResult, value: Any, confidence: float = 0.8, source: str = "context"):
+        if value is not None and value != "" and value != {}:
+            field_result.value = value
+            field_result.status = ExtractionStatus.EXTRACTED
+            field_result.confidence = confidence
+            field_result.source = source
+        else:
+            field_result.status = ExtractionStatus.MISSING
+            field_result.confidence = 0.0
+    
+    # Helper to get value from multiple keys
+    def get_value(*keys, from_blocks=False):
+        for key in keys:
+            if from_blocks and key in blocks:
+                return blocks[key]
+            if key in lc_context:
+                val = lc_context[key]
+                if val is not None and val != "":
+                    return val
+        return None
+    
+    # =====================================================================
+    # LC Number (MT700 Field 20)
+    # =====================================================================
+    lc_number = get_value("number", "lc_number", "documentaryCredit", "doc_credit_number")
+    if not lc_number:
+        lc_number = blocks.get("20")  # MT700 field 20
+    set_field(baseline.lc_number, lc_number)
+    
+    # =====================================================================
+    # LC Type
+    # =====================================================================
+    lc_type = get_value("lc_type", "form_of_doc_credit", "type")
+    if not lc_type:
+        lc_type = blocks.get("40A")  # MT700 field 40A - Form of Documentary Credit
+    set_field(baseline.lc_type, lc_type)
+    
+    # =====================================================================
+    # Amount (MT700 Field 32B)
+    # =====================================================================
+    amount_raw = get_value("amount", "credit_amount", "value")
+    currency = get_value("currency", "ccy")
+    
+    if not amount_raw and blocks.get("32B"):
+        # Parse MT700 32B: "USD100000.00"
+        field_32b = blocks["32B"]
+        if isinstance(field_32b, str) and len(field_32b) >= 3:
+            currency = field_32b[:3]
+            try:
+                amount_raw = float(field_32b[3:].replace(",", ""))
+            except ValueError:
+                amount_raw = field_32b[3:]
+    
+    # Parse amount value
+    amount_value = None
+    if amount_raw:
+        if isinstance(amount_raw, dict):
+            amount_value = amount_raw.get("value")
+            if not currency:
+                currency = amount_raw.get("currency")
+        elif isinstance(amount_raw, (int, float)):
+            amount_value = float(amount_raw)
+        elif isinstance(amount_raw, str):
+            try:
+                amount_value = float(amount_raw.replace(",", ""))
+            except ValueError:
+                pass
+    
+    set_field(baseline.amount, amount_value)
+    
+    # Currency field
+    set_field(baseline.currency, currency)
+    
+    # Store structured amount info
+    if amount_value is not None or currency:
+        baseline._amount_info = AmountInfo(value=amount_value, currency=currency)
+    
+    # =====================================================================
+    # Applicant (MT700 Field 50)
+    # =====================================================================
+    applicant = get_value("applicant", "applicant_name", "buyer")
+    if not applicant:
+        applicant = blocks.get("50")  # MT700 field 50
+    
+    if applicant:
+        if isinstance(applicant, dict):
+            baseline._applicant_info = PartyInfo(
+                name=applicant.get("name"),
+                address=applicant.get("address"),
+                country=applicant.get("country"),
+            )
+            applicant = applicant.get("name")
+        elif isinstance(applicant, str):
+            baseline._applicant_info = PartyInfo(name=applicant)
+    set_field(baseline.applicant, applicant)
+    
+    # =====================================================================
+    # Beneficiary (MT700 Field 59)
+    # =====================================================================
+    beneficiary = get_value("beneficiary", "beneficiary_name", "seller")
+    if not beneficiary:
+        beneficiary = blocks.get("59")  # MT700 field 59
+    
+    if beneficiary:
+        if isinstance(beneficiary, dict):
+            baseline._beneficiary_info = PartyInfo(
+                name=beneficiary.get("name"),
+                address=beneficiary.get("address"),
+                country=beneficiary.get("country"),
+            )
+            beneficiary = beneficiary.get("name")
+        elif isinstance(beneficiary, str):
+            baseline._beneficiary_info = PartyInfo(name=beneficiary)
+    set_field(baseline.beneficiary, beneficiary)
+    
+    # =====================================================================
+    # Banks
+    # =====================================================================
+    issuing_bank = get_value("issuing_bank", "issuer", "issuing_bank_name")
+    if not issuing_bank:
+        issuing_bank = blocks.get("52A") or blocks.get("52D")  # MT700 field 52
+    set_field(baseline.issuing_bank, issuing_bank)
+    
+    advising_bank = get_value("advising_bank", "advising_bank_name")
+    if not advising_bank:
+        advising_bank = blocks.get("57A") or blocks.get("57D")  # MT700 field 57
+    set_field(baseline.advising_bank, advising_bank)
+    
+    # =====================================================================
+    # Dates (MT700 Fields 31C, 31D, 44C)
+    # =====================================================================
+    issue_date = get_value("issue_date", "date_of_issue")
+    if not issue_date:
+        issue_date = blocks.get("31C")  # MT700 field 31C - Date of Issue
+    set_field(baseline.issue_date, issue_date)
+    
+    expiry_date = get_value("expiry_date", "expiry", "validity_date")
+    if not expiry_date:
+        expiry_date = blocks.get("31D")  # MT700 field 31D - Date and Place of Expiry
+    set_field(baseline.expiry_date, expiry_date)
+    
+    latest_shipment = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
+    if not latest_shipment:
+        latest_shipment = blocks.get("44C")  # MT700 field 44C - Latest Date of Shipment
+    set_field(baseline.latest_shipment, latest_shipment)
+    
+    # =====================================================================
+    # Ports (MT700 Fields 44E, 44F)
+    # =====================================================================
+    port_of_loading = get_value("port_of_loading", "loading_port", "pol")
+    if not port_of_loading:
+        port_of_loading = blocks.get("44E")  # MT700 field 44E - Port of Loading
+    
+    if port_of_loading:
+        if isinstance(port_of_loading, dict):
+            baseline._port_of_loading_info = PortInfo(
+                name=port_of_loading.get("name") or port_of_loading.get("port"),
+                country=port_of_loading.get("country"),
+            )
+            port_of_loading = baseline._port_of_loading_info.name
+        elif isinstance(port_of_loading, str):
+            baseline._port_of_loading_info = PortInfo(name=port_of_loading)
+    set_field(baseline.port_of_loading, port_of_loading)
+    
+    port_of_discharge = get_value("port_of_discharge", "discharge_port", "pod")
+    if not port_of_discharge:
+        port_of_discharge = blocks.get("44F")  # MT700 field 44F - Port of Discharge
+    
+    if port_of_discharge:
+        if isinstance(port_of_discharge, dict):
+            baseline._port_of_discharge_info = PortInfo(
+                name=port_of_discharge.get("name") or port_of_discharge.get("port"),
+                country=port_of_discharge.get("country"),
+            )
+            port_of_discharge = baseline._port_of_discharge_info.name
+        elif isinstance(port_of_discharge, str):
+            baseline._port_of_discharge_info = PortInfo(name=port_of_discharge)
+    set_field(baseline.port_of_discharge, port_of_discharge)
+    
+    # =====================================================================
+    # Goods Description (MT700 Field 45A)
+    # =====================================================================
+    goods_description = get_value("goods_description", "description", "goods", "merchandise")
+    if not goods_description:
+        goods_description = blocks.get("45A")  # MT700 field 45A - Description of Goods
+    
+    # Handle goods as list or string
+    if isinstance(goods_description, list):
+        goods_description = "\n".join(str(g) for g in goods_description)
+    set_field(baseline.goods_description, goods_description)
+    
+    # =====================================================================
+    # Incoterm (often in goods or separate field)
+    # =====================================================================
+    incoterm = get_value("incoterm", "trade_terms", "delivery_terms")
+    set_field(baseline.incoterm, incoterm, confidence=0.6)
+    
+    # =====================================================================
+    # Documents Required (MT700 Field 46A)
+    # =====================================================================
+    documents_required = get_value("documents_required", "required_documents")
+    if not documents_required:
+        documents_required = blocks.get("46A")  # MT700 field 46A - Documents Required
+    
+    if documents_required:
+        if isinstance(documents_required, list):
+            baseline._documents_list = documents_required
+        elif isinstance(documents_required, str):
+            baseline._documents_list = [documents_required]
+    set_field(baseline.documents_required, documents_required)
+    
+    # =====================================================================
+    # Additional Conditions (MT700 Field 47A)
+    # =====================================================================
+    additional_conditions = get_value("additional_conditions", "conditions")
+    if not additional_conditions:
+        additional_conditions = blocks.get("47A")  # MT700 field 47A - Additional Conditions
+    
+    if additional_conditions:
+        if isinstance(additional_conditions, list):
+            baseline._conditions_list = additional_conditions
+        elif isinstance(additional_conditions, str):
+            baseline._conditions_list = [additional_conditions]
+    set_field(baseline.additional_conditions, additional_conditions)
+    
+    # =====================================================================
+    # UCP Reference
+    # =====================================================================
+    ucp_reference = get_value("ucp_reference", "applicable_rules")
+    if not ucp_reference:
+        ucp_reference = blocks.get("40E")  # MT700 field 40E - Applicable Rules
+    set_field(baseline.ucp_reference, ucp_reference)
+    
+    # Log extraction summary
+    logger.info(
+        "LCBaseline from context: completeness=%.1f%% critical=%.1f%% missing_critical=%s",
+        baseline.extraction_completeness * 100,
+        baseline.critical_completeness * 100,
+        [f.field_name for f in baseline.get_missing_critical()],
+    )
     
     return baseline
 
