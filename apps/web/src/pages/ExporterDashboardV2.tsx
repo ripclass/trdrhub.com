@@ -1,4 +1,5 @@
+// ExporterDashboardV2 - Re-exports the section-based ExporterDashboard
+// This file exists for backwards compatibility with imports that reference V2.
 import ExporterDashboard from './ExporterDashboard';
 
-// V2 entrypoint for the exporter dashboard; re-exports the Option-E safe implementation.
 export default ExporterDashboard;
