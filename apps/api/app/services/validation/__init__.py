@@ -32,6 +32,15 @@ from .issue_engine import (
     generate_all_issues,
 )
 
+from .compliance_scorer import (
+    ComplianceScorer,
+    ComplianceScore,
+    ComplianceLevel,
+    get_compliance_scorer,
+    calculate_compliance_score,
+    calculate_compliance_rate,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -49,5 +58,12 @@ __all__ = [
     "get_issue_engine",
     "generate_issues_from_baseline",
     "generate_all_issues",
+    # Compliance Scorer
+    "ComplianceScorer",
+    "ComplianceScore",
+    "ComplianceLevel",
+    "get_compliance_scorer",
+    "calculate_compliance_score",
+    "calculate_compliance_rate",
 ]
 
