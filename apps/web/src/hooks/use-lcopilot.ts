@@ -330,33 +330,33 @@ export const useResults = () => {
     setError(null);
 
     try {
-      const fetchFn = async (): Promise<ValidationResults> => {
-        // Use api client instead of raw fetch to ensure Authorization header is included
-        const response = await api.get(`/api/results/${jobId}`);
-        const payload = response.data;
-        const normalized: ValidationResults = buildValidationResponse(payload);
-
-        setResults(normalized);
-        console.log('[LCopilot][Results] fetched results', {
-          jobId,
-          hasStructuredResult: !!normalized.structured_result,
-          hasLcStructured: !!normalized.structured_result?.lc_structured,
-          documents: normalized.documents?.length ?? 0,
-          issues: normalized.issues?.length ?? 0,
-        });
-        return normalized;
-      };
-
+      // Invalidate any cached results first
       await queryClient.invalidateQueries({ queryKey: ['results', jobId] });
-      await queryClient.refetchQueries({ queryKey: ['results', jobId] });
-      console.log('[LCopilot][UI] FORCING REFRESH for job:', jobId);
-
-      const normalized = await queryClient.fetchQuery({
-        queryKey: ['results', jobId],
-        queryFn: fetchFn,
-        staleTime: 0,
-        gcTime: 0,
+      
+      // Direct API call with proper auth - no race conditions
+      const response = await api.get(`/api/results/${jobId}`);
+      const payload = response.data;
+      
+      console.log('[LCopilot][Results] API response received', {
+        jobId,
+        hasStructuredResult: !!payload?.structured_result,
+        version: payload?.structured_result?.version,
       });
+      
+      const normalized: ValidationResults = buildValidationResponse(payload);
+
+      setResults(normalized);
+      console.log('[LCopilot][Results] fetched results', {
+        jobId,
+        hasStructuredResult: !!normalized.structured_result,
+        hasLcStructured: !!normalized.structured_result?.lc_structured,
+        documents: normalized.documents?.length ?? 0,
+        issues: normalized.issues?.length ?? 0,
+      });
+      
+      // Update cache with the fetched data
+      queryClient.setQueryData(['results', jobId], normalized);
+      
       return normalized;
     } catch (err: any) {
       let validationError: ValidationError;
