@@ -162,7 +162,9 @@ function DashboardContent() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate("/lcopilot/exporter-dashboard/login");
+      // Redirect to main login with return URL
+      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      navigate(`/login?returnUrl=${returnUrl}`);
     }
   }, [isAuthenticated, authLoading, navigate]);
 

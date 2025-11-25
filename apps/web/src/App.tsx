@@ -84,10 +84,9 @@ function App() {
         <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
         <Route path="/import/results/:jobId" element={<ImportResults />} />
         <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
+        {/* Redirect old exporter login URL to main login */}
         <Route path="/lcopilot/exporter-dashboard/login" element={
-          <ExporterAuthProvider>
-            <ExporterLogin />
-          </ExporterAuthProvider>
+          <Navigate to="/login?returnUrl=/lcopilot/exporter-dashboard" replace />
         } />
         <Route path="/lcopilot/exporter-dashboard" element={
           <ExporterAuthProvider>
