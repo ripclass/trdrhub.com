@@ -123,8 +123,12 @@ export const useValidate = () => {
       return response.data;
     } catch (err: any) {
       // Log full error details for debugging
-      console.error('🔴 [VALIDATION ERROR] Full error object:', {
-        error: err,
+      const errorDetails = {
+        error: {
+          message: err.message,
+          name: err.name,
+          stack: err.stack,
+        },
         response: err.response ? {
           status: err.response.status,
           statusText: err.response.statusText,
@@ -136,9 +140,9 @@ export const useValidate = () => {
           method: err.config?.method,
           baseURL: err.config?.baseURL,
         } : null,
-        message: err.message,
-        stack: err.stack,
-      });
+      };
+      console.error('🔴 [VALIDATION ERROR] Full error object:', JSON.stringify(errorDetails, null, 2));
+      console.error('🔴 [VALIDATION ERROR] Response data:', err.response?.data);
       
       let validationError: ValidationError;
 
