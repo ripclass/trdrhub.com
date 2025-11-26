@@ -64,6 +64,113 @@ from app.services.validation.pipeline import (
 from app.services.validation.validation_gate import ValidationGate, GateStatus
 from app.services.validation.compliance_scorer import ComplianceScorer
 from app.services.extraction.lc_baseline import LCBaseline, FieldResult, FieldPriority, ExtractionStatus
+from app.services.extraction.two_stage_extractor import (
+    TwoStageExtractor,
+    ExtractedField,
+    ExtractionStatus as TwoStageStatus,
+)
+
+# Global two-stage extractor instance
+_two_stage_extractor: Optional[TwoStageExtractor] = None
+
+
+def _get_two_stage_extractor() -> TwoStageExtractor:
+    """Get or create the two-stage extractor singleton."""
+    global _two_stage_extractor
+    if _two_stage_extractor is None:
+        _two_stage_extractor = TwoStageExtractor()
+    return _two_stage_extractor
+
+
+def _apply_two_stage_validation(
+    extracted_fields: Dict[str, Any],
+    document_type: str,
+    filename: str = "",
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Apply two-stage validation to extracted fields.
+    
+    Stage 1: AI extraction (already done - passed as extracted_fields)
+    Stage 2: Deterministic validation using reference data
+    
+    Args:
+        extracted_fields: Dictionary of field_name -> value or {value, confidence}
+        document_type: Type of document (lc, invoice, bl, etc.)
+        filename: Original filename for logging
+        
+    Returns:
+        Tuple of:
+        - validated_fields: Normalized/validated version of extracted_fields
+        - validation_summary: Stats about trusted/review/untrusted fields
+    """
+    if not extracted_fields:
+        return {}, {"total": 0, "trusted": 0, "review": 0, "untrusted": 0}
+    
+    try:
+        extractor = _get_two_stage_extractor()
+        
+        # Convert extracted_fields to format expected by two-stage extractor
+        # If values are already dicts with confidence, use them; otherwise wrap
+        ai_extraction: Dict[str, Any] = {}
+        for field_name, value in extracted_fields.items():
+            if field_name.startswith("_"):  # Skip metadata fields
+                continue
+            if field_name == "raw_text":  # Skip raw text
+                continue
+            if isinstance(value, dict) and "value" in value:
+                ai_extraction[field_name] = value
+            elif isinstance(value, dict) and "confidence" in value:
+                ai_extraction[field_name] = value
+            else:
+                # Wrap raw value with default confidence
+                ai_extraction[field_name] = {"value": value, "confidence": 0.7}
+        
+        if not ai_extraction:
+            return extracted_fields, {"total": 0, "trusted": 0, "review": 0, "untrusted": 0}
+        
+        # Run two-stage validation
+        validated = extractor.process(ai_extraction, document_type)
+        summary = extractor.get_extraction_summary(validated)
+        
+        # Build output with normalized values and validation metadata
+        validated_fields = dict(extracted_fields)  # Keep original structure
+        validation_details: Dict[str, Dict[str, Any]] = {}
+        
+        for field_name, field_result in validated.items():
+            # Use normalized value if available
+            if field_result.normalized_value is not None:
+                validated_fields[field_name] = field_result.normalized_value
+            
+            # Add validation metadata
+            validation_details[field_name] = {
+                "status": field_result.status.value,
+                "ai_confidence": field_result.ai_confidence,
+                "validation_score": field_result.validation_score,
+                "final_confidence": field_result.final_confidence,
+                "issues": field_result.issues,
+            }
+        
+        # Add validation metadata to the fields dict
+        validated_fields["_two_stage_validation"] = {
+            "summary": summary,
+            "fields": validation_details,
+        }
+        
+        logger.info(
+            "Two-stage validation for %s [%s]: total=%d trusted=%d review=%d untrusted=%d",
+            document_type, filename,
+            summary.get("total", 0),
+            summary.get("trusted", 0),
+            summary.get("review", 0),
+            summary.get("untrusted", 0),
+        )
+        
+        return validated_fields, summary
+        
+    except Exception as e:
+        logger.warning("Two-stage validation failed for %s [%s]: %s", document_type, filename, e)
+        # Return original fields on error
+        return extracted_fields, {"total": 0, "trusted": 0, "review": 0, "untrusted": 0, "error": str(e)}
 
 
 router = APIRouter(prefix="/api/validate", tags=["validation"])
@@ -1392,16 +1499,22 @@ async def _build_document_context(
                         )
                         
                         if lc_struct:
-                            lc_payload.update(lc_struct)
-                            context["lc_structured_output"] = lc_struct
+                            # Apply two-stage validation
+                            validated_lc, validation_summary = _apply_two_stage_validation(
+                                lc_struct, "lc", filename
+                            )
+                            
+                            lc_payload.update(validated_lc)
+                            context["lc_structured_output"] = validated_lc
                             has_structured_data = True
                             logger.info(f"LC context keys: {list(lc_payload.keys())}")
-                            if not context.get("lc_number") and lc_struct.get("number"):
-                                context["lc_number"] = lc_struct["number"]
-                            doc_info["extracted_fields"] = lc_struct
+                            if not context.get("lc_number") and validated_lc.get("number"):
+                                context["lc_number"] = validated_lc["number"]
+                            doc_info["extracted_fields"] = validated_lc
                             doc_info["extraction_status"] = "success"
                             doc_info["extraction_method"] = extraction_method
                             doc_info["extraction_confidence"] = extraction_confidence
+                            doc_info["validation_summary"] = validation_summary
                         else:
                             logger.warning(f"No LC structure extracted from {filename}")
                     except Exception as extract_error:
@@ -1412,13 +1525,19 @@ async def _build_document_context(
                             logger.info(f"Fallback: Extracted {len(lc_fields)} fields from LC document {filename}")
                             lc_context = _fields_to_lc_context(lc_fields)
                             if lc_context:
-                                lc_payload.update(lc_context)
+                                # Apply two-stage validation to fallback extraction
+                                validated_lc, validation_summary = _apply_two_stage_validation(
+                                    lc_context, "lc", filename
+                                )
+                                
+                                lc_payload.update(validated_lc)
                                 has_structured_data = True
                                 logger.info(f"LC context keys: {list(lc_payload.keys())}")
-                                if not context.get("lc_number") and lc_context.get("number"):
-                                    context["lc_number"] = lc_context["number"]
-                                doc_info["extracted_fields"] = lc_context
+                                if not context.get("lc_number") and validated_lc.get("number"):
+                                    context["lc_number"] = validated_lc["number"]
+                                doc_info["extracted_fields"] = validated_lc
                                 doc_info["extraction_status"] = "success"
+                                doc_info["validation_summary"] = validation_summary
                             else:
                                 logger.warning(f"No LC context created from {len(lc_fields)} extracted fields")
                         except Exception as fallback_error:
@@ -1430,74 +1549,110 @@ async def _build_document_context(
                 logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
                 invoice_context = _fields_to_flat_context(invoice_fields)
                 if invoice_context:
+                    # Apply two-stage validation
+                    validated_invoice, validation_summary = _apply_two_stage_validation(
+                        invoice_context, "invoice", filename
+                    )
+                    
                     if "invoice" not in context:
                         context["invoice"] = {}
                     context["invoice"]["raw_text"] = extracted_text
-                    context["invoice"].update(invoice_context)
+                    context["invoice"].update(validated_invoice)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = invoice_context
+                    doc_info["extracted_fields"] = validated_invoice
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"Invoice context keys: {list(context['invoice'].keys())}")
             elif document_type == "bill_of_lading":
                 bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
                 logger.info(f"Extracted {len(bl_fields)} fields from B/L {filename}")
                 bl_context = _fields_to_flat_context(bl_fields)
                 if bl_context:
+                    # Apply two-stage validation
+                    validated_bl, validation_summary = _apply_two_stage_validation(
+                        bl_context, "bl", filename
+                    )
+                    
                     if "bill_of_lading" not in context:
                         context["bill_of_lading"] = {}
                     context["bill_of_lading"]["raw_text"] = extracted_text
-                    context["bill_of_lading"].update(bl_context)
+                    context["bill_of_lading"].update(validated_bl)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = bl_context
+                    doc_info["extracted_fields"] = validated_bl
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
             elif document_type == "packing_list":
                 packing_fields = extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
                 logger.info(f"Extracted {len(packing_fields)} fields from packing list {filename}")
                 packing_context = _fields_to_flat_context(packing_fields)
                 if packing_context:
+                    # Apply two-stage validation
+                    validated_packing, validation_summary = _apply_two_stage_validation(
+                        packing_context, "packing_list", filename
+                    )
+                    
                     pkg_ctx = context.setdefault("packing_list", {})
                     pkg_ctx["raw_text"] = extracted_text
-                    pkg_ctx.update(packing_context)
+                    pkg_ctx.update(validated_packing)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = packing_context
+                    doc_info["extracted_fields"] = validated_packing
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"Packing list context keys: {list(pkg_ctx.keys())}")
             elif document_type == "certificate_of_origin":
                 coo_fields = extractor.extract_fields(extracted_text, DocumentType.CERTIFICATE_OF_ORIGIN)
                 logger.info(f"Extracted {len(coo_fields)} fields from certificate of origin {filename}")
                 coo_context = _fields_to_flat_context(coo_fields)
                 if coo_context:
+                    # Apply two-stage validation
+                    validated_coo, validation_summary = _apply_two_stage_validation(
+                        coo_context, "certificate_of_origin", filename
+                    )
+                    
                     coo_ctx = context.setdefault("certificate_of_origin", {})
                     coo_ctx["raw_text"] = extracted_text
-                    coo_ctx.update(coo_context)
+                    coo_ctx.update(validated_coo)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = coo_context
+                    doc_info["extracted_fields"] = validated_coo
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"Certificate of origin context keys: {list(coo_ctx.keys())}")
             elif document_type == "insurance_certificate":
                 insurance_fields = extractor.extract_fields(extracted_text, DocumentType.INSURANCE_CERTIFICATE)
                 logger.info(f"Extracted {len(insurance_fields)} fields from insurance certificate {filename}")
                 insurance_context = _fields_to_flat_context(insurance_fields)
                 if insurance_context:
+                    # Apply two-stage validation
+                    validated_insurance, validation_summary = _apply_two_stage_validation(
+                        insurance_context, "insurance", filename
+                    )
+                    
                     insurance_ctx = context.setdefault("insurance_certificate", {})
                     insurance_ctx["raw_text"] = extracted_text
-                    insurance_ctx.update(insurance_context)
+                    insurance_ctx.update(validated_insurance)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = insurance_context
+                    doc_info["extracted_fields"] = validated_insurance
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"Insurance context keys: {list(insurance_ctx.keys())}")
             elif document_type == "inspection_certificate":
                 inspection_fields = extractor.extract_fields(extracted_text, DocumentType.INSPECTION_CERTIFICATE)
                 logger.info(f"Extracted {len(inspection_fields)} fields from inspection certificate {filename}")
                 inspection_context = _fields_to_flat_context(inspection_fields)
                 if inspection_context:
+                    # Apply two-stage validation
+                    validated_inspection, validation_summary = _apply_two_stage_validation(
+                        inspection_context, "inspection", filename
+                    )
+                    
                     inspection_ctx = context.setdefault("inspection_certificate", {})
                     inspection_ctx["raw_text"] = extracted_text
-                    inspection_ctx.update(inspection_context)
+                    inspection_ctx.update(validated_inspection)
                     has_structured_data = True
-                    doc_info["extracted_fields"] = inspection_context
+                    doc_info["extracted_fields"] = validated_inspection
                     doc_info["extraction_status"] = "success"
+                    doc_info["validation_summary"] = validation_summary
                     logger.info(f"Inspection context keys: {list(inspection_ctx.keys())}")
             else:
                 # For other document types, retain raw text for downstream use
