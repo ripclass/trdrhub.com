@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import UsageAction, User, ValidationSession, SessionStatus, UserRole
+from app.models import UsageAction, User, ValidationSession, SessionStatus, UserRole, Document
 from app.models.company import Company, PlanType, CompanyStatus
 from app.services.entitlements import EntitlementError, EntitlementService
 from app.services.validator import (
@@ -372,6 +372,31 @@ async def validate_doc(
             validation_session.processing_started_at = func.now()
             db.commit()
             job_id = str(validation_session.id)
+            
+            # =====================================================================
+            # PERSIST DOCUMENTS TO DATABASE
+            # This enables customs pack generation and document retrieval
+            # =====================================================================
+            try:
+                document_list = payload.get("documents") or []
+                for idx, doc_info in enumerate(document_list):
+                    doc_record = Document(
+                        validation_session_id=validation_session.id,
+                        document_type=doc_info.get("document_type") or doc_info.get("type") or "unknown",
+                        original_filename=doc_info.get("filename") or doc_info.get("name") or f"document_{idx + 1}.pdf",
+                        s3_key=f"validation/{validation_session.id}/{doc_info.get('filename', f'doc_{idx}')}",  # Placeholder
+                        file_size=doc_info.get("file_size") or doc_info.get("size") or 0,
+                        content_type=doc_info.get("content_type") or "application/pdf",
+                        ocr_text=doc_info.get("raw_text_preview") or doc_info.get("raw_text") or "",
+                        ocr_confidence=doc_info.get("ocr_confidence"),
+                        extracted_fields=doc_info.get("extracted_fields") or {},
+                    )
+                    db.add(doc_record)
+                db.commit()
+                logger.info("Persisted %d documents to database for session %s", len(document_list), job_id)
+            except Exception as doc_persist_error:
+                logger.warning("Failed to persist documents to DB: %s", doc_persist_error)
+                # Don't fail validation if document persistence fails
         else:
             job_id = payload.get("job_id") or str(uuid4())
 

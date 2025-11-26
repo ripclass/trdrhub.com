@@ -293,10 +293,23 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         lc_classification = mt_fields.get("lc_classification", {})
         if isinstance(lc_classification, dict) and "types" in lc_classification:
             types_list = lc_classification.get("types", [])
-            lc_structured["lc_type"] = ", ".join(types_list) if types_list else "unknown"
+            # Filter out "Unknown" if we have other types
+            meaningful_types = [t for t in types_list if t.lower() != "unknown"]
+            if meaningful_types:
+                lc_structured["lc_type"] = meaningful_types[0].lower()  # Use first meaningful type
+                lc_structured["lc_type_confidence"] = 0.85  # High confidence when MT700 parsed
+                lc_structured["lc_type_reason"] = f"Detected {', '.join(meaningful_types)} LC from MT700 payment terms"
+            else:
+                lc_structured["lc_type"] = "unknown"
+                lc_structured["lc_type_confidence"] = 0
+                lc_structured["lc_type_reason"] = "Could not determine LC type from document"
             lc_structured["lc_classification"] = lc_classification  # Keep original for reference
+            lc_structured["lc_type_source"] = "mt700_parser"
         else:
             lc_structured["lc_type"] = lc_classification if isinstance(lc_classification, str) else "unknown"
+            lc_structured["lc_type_confidence"] = 0.5 if lc_classification else 0
+            lc_structured["lc_type_reason"] = "Partial classification available"
+            lc_structured["lc_type_source"] = "fallback"
         
         # Promote commonly-used fields to top-level for compatibility
         if not lc_structured.get("applicant") and mt_fields.get("applicant"):

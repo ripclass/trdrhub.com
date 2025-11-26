@@ -103,6 +103,16 @@ def build_unified_structured_result(
     timeline = extractor_outputs.get("timeline") or _default_timeline(len(docs_structured))
     issues = extractor_outputs.get("issues", [])
 
+    # Build dates object from extractor outputs
+    dates = {
+        "issue": extractor_outputs.get("issue_date") or extractor_outputs.get("timeline", {}).get("issue_date"),
+        "expiry": extractor_outputs.get("expiry_date") or extractor_outputs.get("timeline", {}).get("expiry_date"),
+        "latest_shipment": extractor_outputs.get("latest_shipment") or extractor_outputs.get("timeline", {}).get("latest_shipment"),
+        "place_of_expiry": extractor_outputs.get("place_of_expiry"),
+    }
+    # Filter out None values from dates
+    dates = {k: v for k, v in dates.items() if v is not None}
+    
     lc_structured = {
         "mt700": mt700_block,
         "goods": goods,
@@ -113,6 +123,20 @@ def build_unified_structured_result(
             "compliance_score": 100,
             "issue_counts": {"critical": 0, "major": 0, "medium": 0, "minor": 0},
         },
+        # Add fields that frontend expects for LC Card rendering
+        "number": extractor_outputs.get("number") or extractor_outputs.get("lc_number"),
+        "lc_number": extractor_outputs.get("number") or extractor_outputs.get("lc_number"),
+        "amount": extractor_outputs.get("amount"),
+        "currency": extractor_outputs.get("currency"),
+        "incoterm": extractor_outputs.get("incoterm"),
+        "ucp_reference": extractor_outputs.get("ucp_reference"),
+        "goods_description": extractor_outputs.get("goods_description"),
+        "applicant": extractor_outputs.get("applicant"),
+        "beneficiary": extractor_outputs.get("beneficiary"),
+        "ports": extractor_outputs.get("ports"),
+        "additional_conditions": extractor_outputs.get("clauses_47a"),
+        "hs_codes": extractor_outputs.get("hs_codes"),
+        "dates": dates if dates else None,
     }
 
     processing_summary = {
