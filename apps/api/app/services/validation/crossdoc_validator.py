@@ -1112,8 +1112,19 @@ class CrossDocValidator:
         # Jaccard similarity > 0.5
         return len(intersection) / len(union) > 0.5
     
+    # Port aliases for common spelling variations
+    PORT_ALIASES = {
+        "CHITTAGONG": ["CHATTOGRAM", "CHITAGONG", "CTGN", "CTG"],
+        "CHATTOGRAM": ["CHITTAGONG", "CHITAGONG", "CTGN", "CTG"],
+        "NEW YORK": ["NY", "NEWYORK", "NYC"],
+        "LOS ANGELES": ["LA", "LOSANGELES"],
+        "SHANGHAI": ["SH", "SHANG HAI"],
+        "HONG KONG": ["HK", "HONGKONG"],
+        "SINGAPORE": ["SG", "SINGAPURA"],
+    }
+    
     def _ports_match(self, port1: str, port2: str) -> bool:
-        """Check if two port names match."""
+        """Check if two port names match, including common spelling variations."""
         p1 = self._normalize_port(port1)
         p2 = self._normalize_port(port2)
         
@@ -1123,6 +1134,14 @@ class CrossDocValidator:
         # Check if one contains the other
         if p1 in p2 or p2 in p1:
             return True
+        
+        # Check port aliases
+        for canonical, aliases in self.PORT_ALIASES.items():
+            # If p1 matches canonical or any alias, check if p2 matches too
+            p1_matches = p1 == canonical or any(alias in p1 for alias in aliases) or canonical in p1
+            p2_matches = p2 == canonical or any(alias in p2 for alias in aliases) or canonical in p2
+            if p1_matches and p2_matches:
+                return True
         
         return False
     

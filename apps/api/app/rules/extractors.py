@@ -841,6 +841,34 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.COMMERCIAL_INVOICE
             ))
         
+        # LC Number / LC Reference - critical for crossdoc validation
+        lc_number = self._extract_label_value(
+            text,
+            lines,
+            label_patterns=[
+                r'(?:L/?C|LETTER\s+OF\s+CREDIT)\s*(?:NO\.?|NUMBER|REF\.?|REFERENCE)',
+                r'(?:L/?C)\s*[:#]',
+                r'DOCUMENTARY\s+CREDIT\s*(?:NO\.?|NUMBER)',
+            ],
+            inline_capture=r'(?:L/?C|LETTER\s+OF\s+CREDIT|DOCUMENTARY\s+CREDIT)\s*(?:NO\.?|NUMBER|REF\.?|REFERENCE|[:#])?\s*[:\-]?\s*([A-Z0-9\-\/]+)'
+        )
+        if lc_number:
+            fields.append(ExtractedField(
+                field_name="lc_number",
+                field_type=FieldType.TEXT,
+                value=lc_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+            # Also add as lc_reference for crossdoc compatibility
+            fields.append(ExtractedField(
+                field_name="lc_reference",
+                field_type=FieldType.TEXT,
+                value=lc_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+        
         product_description = self._extract_label_block(
             text,
             [
