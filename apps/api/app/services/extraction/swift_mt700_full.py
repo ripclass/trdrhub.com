@@ -105,6 +105,7 @@ def parse_mt700_full(text: str) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "message_type": "MT700",
         "raw": raw,  # keep raw for traceability
+        "blocks": raw,  # alias for frontend compatibility (LcHeader expects blocks)
         "fields": {},
     }
     

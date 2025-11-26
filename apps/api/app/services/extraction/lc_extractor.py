@@ -281,7 +281,13 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     
     # Add MT700 full fields if available
     if mt_full:
-        lc_structured["mt700"] = mt_fields
+        # Include both fields and blocks for frontend compatibility
+        # Frontend LcHeader expects mt700.blocks['20'], mt700.blocks['32B'], etc.
+        lc_structured["mt700"] = {
+            **mt_fields,
+            "blocks": mt_full.get("blocks", {}),  # Frontend needs this
+            "raw": mt_full.get("raw", {}),
+        }
         lc_structured["mt700_raw"] = mt_full.get("raw", {})
         # Extract lc_type as string from lc_classification.types array
         lc_classification = mt_fields.get("lc_classification", {})
