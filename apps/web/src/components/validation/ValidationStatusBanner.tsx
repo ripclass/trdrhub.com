@@ -31,6 +31,7 @@ interface ValidationStatusBannerProps {
   state: ValidationState;
   showDetails?: boolean;
   className?: string;
+  onViewIssues?: () => void;
 }
 
 /**
@@ -57,8 +58,10 @@ export function ValidationStatusBanner({
   state,
   showDetails = true,
   className = "",
+  onViewIssues,
 }: ValidationStatusBannerProps) {
   const colors = getStatusColorClasses(state.statusColor);
+  const hasIssues = state.totalIssues > 0 && !state.isBlocked;
 
   return (
     <div
@@ -82,9 +85,13 @@ export function ValidationStatusBanner({
             </p>
           )}
 
-          {/* Issue Summary */}
-          {showDetails && state.totalIssues > 0 && !state.isBlocked && (
-            <div className="mt-2 flex flex-wrap gap-2">
+          {/* Issue Summary - clickable to view issues */}
+          {showDetails && hasIssues && (
+            <button
+              onClick={onViewIssues}
+              className="mt-2 flex flex-wrap gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+              title="Click to view issues"
+            >
               {state.criticalCount > 0 && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
                   {state.criticalCount} Critical
@@ -100,7 +107,10 @@ export function ValidationStatusBanner({
                   {state.minorCount} Minor
                 </span>
               )}
-            </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                → View Issues
+              </span>
+            </button>
           )}
 
           {/* Missing Fields (if blocked or low completeness) */}

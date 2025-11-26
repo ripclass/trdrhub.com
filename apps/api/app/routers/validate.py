@@ -753,6 +753,21 @@ async def validate_doc(
         if lc_structured_docs and not structured_result.get("documents_structured"):
             structured_result["documents_structured"] = lc_structured_docs
 
+        # Merge actual processing_summary values into structured_result
+        # This ensures processing_time_display and other fields are populated
+        if structured_result.get("processing_summary") and processing_summary:
+            structured_result["processing_summary"].update({
+                "processing_time_seconds": processing_summary.get("processing_time_seconds"),
+                "processing_time_display": processing_summary.get("processing_time_display"),
+                "processing_time_ms": processing_summary.get("processing_time_ms"),
+                "extraction_quality": processing_summary.get("extraction_quality"),
+                "successful_extractions": processing_summary.get("verified", 0),
+                "failed_extractions": processing_summary.get("errors", 0),
+            })
+        # Also update analytics with processing time
+        if structured_result.get("analytics"):
+            structured_result["analytics"]["processing_time_display"] = processing_summary.get("processing_time_display")
+
         # =====================================================================
         # V2 VALIDATION PIPELINE - FINAL SCORING
         # Apply v2 compliance scoring and add structured metadata

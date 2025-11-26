@@ -1387,7 +1387,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 onRetry={() => navigate("/lcopilot/exporter-dashboard?section=upload")}
               />
             ) : (
-              <ValidationStatusBanner state={validationState} />
+              <ValidationStatusBanner 
+                state={validationState} 
+                onViewIssues={() => setActiveTab("discrepancies")}
+              />
             )
           )}
           

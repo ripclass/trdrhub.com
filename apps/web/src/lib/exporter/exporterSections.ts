@@ -92,9 +92,12 @@ export function resultsTabToSection(tab: string): ExporterSection {
     case 'history':
       return 'history';
     case 'analytics':
-      return 'analytics';
+      // Keep under 'reviews' so user stays on results page with inline Analytics tab
+      // Only the sidebar "Analytics" item should show ExporterAnalytics
+      return 'reviews';
     case 'customs':
-      return 'customs';
+      // Keep under 'reviews' so user stays on results page with inline Customs tab
+      return 'reviews';
     default:
       return 'reviews';
   }
