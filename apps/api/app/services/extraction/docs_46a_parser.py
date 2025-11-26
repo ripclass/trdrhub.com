@@ -5,7 +5,8 @@ import re
 from typing import Dict, Any, List, Optional
 
 BLOCK_RE = re.compile(r"\b46A\b[^\S\r\n]*\–?[^\S\r\n]*Documents Required(.*?)(?:\n\d{2,3}[A-Z]\b|\Z)", re.I | re.S)
-GOODS_RE = re.compile(r"^\s*\d+\)\s*(.+?)\s*(?:HS\s*CODE\s*[: ]\s*([0-9]{6,10}))?.*$", re.I | re.M)
+# Changed (.+?) to (.{3,}) to require at least 3 characters - prevents single-char garbage
+GOODS_RE = re.compile(r"^\s*\d+\)\s*(.{3,}?)\s*(?:HS\s*CODE\s*[: ]\s*([0-9]{6,10}))?.*$", re.I | re.M)
 SHIPMENT_RE = re.compile(r"(?:latest shipment|last date of shipment)\s*[:\-]?\s*([0-9]{6,8}|[0-9]{2}\s*[A-Za-z]{3}\s*[0-9]{2,4})", re.I)
 # For extracting 45A/46A goods description blocks
 _TAG_46A = re.compile(r"\b(?:46A|45A)\b.*?:", re.I)

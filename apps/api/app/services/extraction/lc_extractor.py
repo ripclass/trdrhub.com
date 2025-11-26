@@ -19,6 +19,62 @@ PORT_DISC_RE = re.compile(r"(?:Port of Discharge|POD|Discharge Port|Destination 
 APPLICANT_RE = re.compile(r"\bApplicant\b[^\S\r\n]*[:\-]?\s*(.*?)(?:\n{1,2}|$)", re.I)
 BENEFICIARY_RE = re.compile(r"\bBeneficiary\b[^\S\r\n]*[:\-]?\s*(.*?)(?:\n{1,2}|$)", re.I)
 
+# =====================================================================
+# VALIDATION HELPERS - Reject garbage extraction results
+# =====================================================================
+
+# Common document words that should NOT be LC numbers
+_LC_NUMBER_BLACKLIST = {
+    "tify", "ify", "notify", "certify", "verify", "satisfy", "identify",
+    "the", "and", "for", "from", "this", "that", "with", "document",
+}
+
+# Common document phrases that should NOT be party names
+_PARTY_NAME_BLACKLIST_PATTERNS = [
+    r"\bbl\s+to\s+show\b",  # "BL TO SHOW..."
+    r"\bcertificate\s+confirming\b",  # "CERTIFICATE CONFIRMING..."
+    r"\bdocuments?\s+must\b",  # "DOCUMENTS MUST..."
+    r"\bshipment\b",
+    r"\bpayment\b",
+    r"\bfreight\b",
+    r"\binvoice\b",
+    r"\bbill\s+of\s+lading\b",
+    r"^\s*[\.\,\-]\s*",  # Starts with punctuation
+]
+_PARTY_BLACKLIST_RE = re.compile("|".join(_PARTY_NAME_BLACKLIST_PATTERNS), re.I)
+
+def _is_valid_lc_number(s: Optional[str]) -> bool:
+    """Check if extracted LC number looks valid, not garbage."""
+    if not s or not isinstance(s, str):
+        return False
+    s = s.strip().lower()
+    if len(s) < 3:  # Too short
+        return False
+    if len(s) > 50:  # Too long
+        return False
+    if s in _LC_NUMBER_BLACKLIST:
+        return False
+    # Must have at least one digit (most LC numbers do)
+    if not any(c.isdigit() for c in s):
+        return False
+    return True
+
+def _is_valid_party_name(s: Optional[str]) -> bool:
+    """Check if extracted party name looks valid, not garbage from document text."""
+    if not s or not isinstance(s, str):
+        return False
+    s = s.strip()
+    if len(s) < 3:  # Too short
+        return False
+    if len(s) > 200:  # Too long
+        return False
+    if _PARTY_BLACKLIST_RE.search(s):
+        return False
+    # Must have at least one letter
+    if not any(c.isalpha() for c in s):
+        return False
+    return True
+
 def _strip(s: Optional[str]) -> Optional[str]:
     return s.strip() if isinstance(s, str) else s
 
@@ -64,12 +120,13 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # Extract fields from full parser or fallback to core/generic
     mt_fields = mt_full.get("fields", {}) if mt_full else {}
     
-    # LC number
-    lc_number = (
+    # LC number - with validation to reject garbage
+    lc_number_candidate = (
         mt_fields.get("reference") or 
         (mt_core.get("number") if mt_core else None) or 
         _first(LC_NO_RE, text)
     )
+    lc_number = lc_number_candidate if _is_valid_lc_number(lc_number_candidate) else None
     
     # Amount
     credit_amount = mt_fields.get("credit_amount")
@@ -102,17 +159,33 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         _first(PORT_DISC_RE, text)
     )
     
-    # Applicant / Beneficiary
+    # Applicant / Beneficiary - with validation to reject document text as names
     applicant_raw = mt_fields.get("applicant") or (mt_core.get("applicant") if mt_core else None)
     beneficiary_raw = mt_fields.get("beneficiary") or (mt_core.get("beneficiary") if mt_core else None)
     
     if not applicant_raw or not beneficiary_raw:
         applicant_line, beneficiary_line = _parse_parties(text)
+        # Validate regex-extracted names to avoid garbage
+        if applicant_line and not _is_valid_party_name(applicant_line):
+            applicant_line = None
+        if beneficiary_line and not _is_valid_party_name(beneficiary_line):
+            beneficiary_line = None
         applicant = applicant_raw or ({"name": _strip(applicant_line)} if applicant_line else None)
         beneficiary = beneficiary_raw or ({"name": _strip(beneficiary_line)} if beneficiary_line else None)
     else:
-        applicant = {"name": _strip(applicant_raw)} if isinstance(applicant_raw, str) else applicant_raw
-        beneficiary = {"name": _strip(beneficiary_raw)} if isinstance(beneficiary_raw, str) else beneficiary_raw
+        # Also validate MT700-extracted names (could still be garbage)
+        applicant_name = _strip(applicant_raw) if isinstance(applicant_raw, str) else applicant_raw
+        beneficiary_name = _strip(beneficiary_raw) if isinstance(beneficiary_raw, str) else beneficiary_raw
+        
+        if isinstance(applicant_name, str) and not _is_valid_party_name(applicant_name):
+            applicant = None
+        else:
+            applicant = {"name": applicant_name} if isinstance(applicant_name, str) else applicant_name
+            
+        if isinstance(beneficiary_name, str) and not _is_valid_party_name(beneficiary_name):
+            beneficiary = None
+        else:
+            beneficiary = {"name": beneficiary_name} if isinstance(beneficiary_name, str) else beneficiary_name
 
     # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
     docs46a = parse_46a_block(text)
@@ -131,6 +204,14 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # If enhanced parser returned empty, fallback to simple extraction
     if not goods_items:
         goods_items = docs46a.get("goods", [])
+    
+    # Filter out garbage goods items (single characters, too short, etc.)
+    valid_goods_items = []
+    for g in goods_items:
+        desc = g.get("description", "") or g.get("line", "")
+        if isinstance(desc, str) and len(desc.strip()) >= 5:  # Require at least 5 chars
+            valid_goods_items.append(g)
+    goods_items = valid_goods_items
     
     # Extract HS codes from goods descriptions and full text
     hs_codes = extract_hs_codes("\n".join([
