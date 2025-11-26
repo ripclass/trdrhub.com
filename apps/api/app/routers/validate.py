@@ -2549,11 +2549,14 @@ def _build_processing_summary(
         # --- Document counts ---
         "documents": total_docs,  # backward compatibility
         "documents_found": total_docs,  # Frontend expects this field
+        "total_documents": total_docs,  # Explicit field for frontend
         
         # --- Validation/Extraction ---
         "verified": verified,
         "warnings": warnings,
         "errors": errors,
+        "successful_extractions": verified,  # Frontend checks this field
+        "failed_extractions": errors,  # Frontend checks this field
         "compliance_rate": compliance_rate,
         "processing_time_seconds": round(processing_seconds, 2),
         "processing_time_display": _format_duration(processing_seconds),

@@ -254,8 +254,8 @@ All documents have been validated against LC requirements.
             correlation_id=audit_context.get('correlation_id', ''),
             resource_type="customs_pack",
             resource_id=str(customs_pack.id),
-            details={
-                "lc_number": lc_number,
+            lc_number=lc_number,
+            audit_metadata={
                 "file_name": file_name,
                 "sha256": sha256_hash
             },

@@ -123,6 +123,10 @@ export default function ExporterResults({
       if ("types" in value && Array.isArray(value.types)) {
         return value.types.join(", ");
       }
+      // Handle condition/clause objects {id, text, type}
+      if ("text" in value && typeof value.text === "string") {
+        return value.text;
+      }
       try {
         return JSON.stringify(value, null, 2);
       } catch {
@@ -130,6 +134,15 @@ export default function ExporterResults({
       }
     }
     return String(value);
+  };
+  
+  // Format additional conditions as a readable list
+  const formatConditions = (conditions: any): string[] => {
+    if (!conditions) return [];
+    if (!Array.isArray(conditions)) return [];
+    return conditions
+      .filter((c: any) => c && typeof c.text === "string")
+      .map((c: any) => c.text);
   };
 
 const formatAmountValue = (amount: any): string => {
@@ -815,7 +828,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     };
   }, [rawAiInsights]);
   const hasIssueCards = issueCards.length > 0;
-  const lcType = (structuredResult?.lc_type ?? "unknown") as "export" | "import" | "unknown";
+  // LC Type can be: export, import, sight, usance, deferred, or unknown
+  const rawLcType = structuredResult?.lc_type ?? "unknown";
+  const lcType = rawLcType.toLowerCase() as string;
   const lcTypeReason = structuredResult?.lc_type_reason ?? "LC type detection details unavailable.";
   const lcTypeConfidenceValue =
     typeof structuredResult?.lc_type_confidence === "number"
@@ -825,9 +840,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcTypeLabelMap: Record<string, string> = {
     export: "Export LC",
     import: "Import LC",
+    sight: "Sight LC",
+    usance: "Usance LC",
+    deferred: "Deferred Payment LC",
+    transferable: "Transferable LC",
+    standby: "Standby LC",
+    irrevocable: "Irrevocable LC",
     unknown: "Unknown",
   };
-  const lcTypeLabel = lcTypeLabelMap[lcType] ?? "Unknown";
+  const lcTypeLabel = lcTypeLabelMap[lcType] ?? lcType.charAt(0).toUpperCase() + lcType.slice(1) + " LC";
 
   // All hooks must be called BEFORE any conditional returns
   const documentStatusMap = useMemo(() => {
@@ -1757,10 +1778,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             {lcGoodsItemsList}
                             {lcAdditionalConditions && (
                               <div>
-                                <p className="text-sm font-semibold mb-1">Additional Conditions</p>
-                                <p className="text-sm whitespace-pre-wrap break-words">
-                                  {formatExtractedValue(lcAdditionalConditions)}
-                                </p>
+                                <p className="text-sm font-semibold mb-2">Additional Conditions (47A)</p>
+                                <ul className="text-sm space-y-1.5 list-disc list-inside">
+                                  {formatConditions(lcAdditionalConditions).map((condition, idx) => (
+                                    <li key={idx} className="text-muted-foreground">{condition}</li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                           </div>
@@ -1964,10 +1987,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           {lcGoodsItemsList}
                           {lcAdditionalConditions && (
                             <div>
-                              <p className="text-sm font-semibold mb-1">Additional Conditions</p>
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {formatExtractedValue(lcAdditionalConditions)}
-                              </p>
+                              <p className="text-sm font-semibold mb-2">Additional Conditions (47A)</p>
+                              <ul className="text-sm space-y-1.5 list-disc list-inside">
+                                {formatConditions(lcAdditionalConditions).map((condition, idx) => (
+                                  <li key={idx} className="text-muted-foreground">{condition}</li>
+                                ))}
+                              </ul>
                             </div>
                           )}
                         </div>
