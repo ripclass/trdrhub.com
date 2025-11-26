@@ -13,6 +13,7 @@ from typing import Dict, Any
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 try:
     from mangum import Mangum  # AWS Lambda adapter (optional)  # type: ignore
     MANGUM_AVAILABLE = True
@@ -455,6 +456,59 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content=error_dict,
+        headers={
+            "X-Request-ID": getattr(request.state, "request_id", "unknown"),
+            **cors_headers
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle Pydantic validation errors with a clean, frontend-safe response.
+    
+    This prevents React Error #31 caused by rendering raw Pydantic error objects
+    that have keys like {type, loc, msg, input, ctx, url}.
+    """
+    from datetime import datetime, timezone
+    
+    # Extract human-readable error messages
+    errors = exc.errors()
+    messages = []
+    for err in errors:
+        loc = " -> ".join(str(l) for l in err.get("loc", []))
+        msg = err.get("msg", "Validation error")
+        messages.append(f"{loc}: {msg}" if loc else msg)
+    
+    error_message = "; ".join(messages) if messages else "Request validation failed"
+    
+    # Build CORS headers
+    origin = request.headers.get("origin")
+    cors_headers = {}
+    if origin:
+        allowed_origins = settings.CORS_ALLOW_ORIGINS
+        if settings.is_production() and allowed_origins == ["*"]:
+            allowed_origins = [
+                "https://trdrhub.com",
+                "https://www.trdrhub.com",
+                "https://trdrhub.vercel.app",
+            ]
+        if "*" in allowed_origins or origin in allowed_origins:
+            cors_headers = {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+            }
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "validation_error",
+            "message": error_message,
+            "detail": error_message,  # String, not array of objects
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": str(request.url.path),
+        },
         headers={
             "X-Request-ID": getattr(request.state, "request_id", "unknown"),
             **cors_headers
