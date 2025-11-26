@@ -727,6 +727,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     structuredResult?.lc_structured?.documents_structured ??
     [];
   const summary = structuredResult?.processing_summary;
+  const lcStructured = structuredResult?.lc_structured ?? null;
   const extractionStatus = useMemo(() => {
     // Check document-level extraction statuses first
     const docStatuses = structuredDocumentsPayload.map(
@@ -836,8 +837,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       })),
     [structuredDocumentsPayload],
   );
-  // Prefer lc_structured (structured_result v1) only
-  const lcStructured = structuredResult?.lc_structured ?? null;
+  // lcStructured is already defined above (line ~730) to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
