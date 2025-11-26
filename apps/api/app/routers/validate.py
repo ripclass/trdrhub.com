@@ -2498,9 +2498,26 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     if not goods_description:
         goods_description = blocks.get("45A")  # MT700 field 45A - Description of Goods
     
-    # Handle goods as list or string
+    # Handle goods as list of dicts or strings
     if isinstance(goods_description, list):
-        goods_description = "\n".join(str(g) for g in goods_description)
+        desc_parts = []
+        for g in goods_description:
+            if isinstance(g, dict):
+                # Extract description from goods item dict
+                desc = g.get("description") or g.get("line") or g.get("text") or ""
+                hs = g.get("hs_code", "")
+                qty = g.get("quantity", {})
+                qty_str = ""
+                if isinstance(qty, dict) and qty.get("value"):
+                    qty_str = f", QTY: {qty.get('value')} {qty.get('unit', 'PCS')}"
+                elif qty:
+                    qty_str = f", QTY: {qty}"
+                if desc:
+                    item_desc = f"{desc}{' HS: ' + hs if hs else ''}{qty_str}"
+                    desc_parts.append(item_desc)
+            elif isinstance(g, str) and g.strip():
+                desc_parts.append(g.strip())
+        goods_description = "\n".join(desc_parts) if desc_parts else None
     set_field(baseline.goods_description, goods_description)
     
     # =====================================================================
