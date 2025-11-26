@@ -1,0 +1,155 @@
+{
+  "set_id": "set_001_synthetic_bd",
+  "description": "Synthetic Bangladesh export LC (EXP2026BD001) - 6 documents: LC, Invoice, B/L, Certificate of Origin, Packing List, Insurance Certificate",
+  "version": "1.0",
+  "expected_compliance_rate": 100.0,
+  "compliance_tolerance": 5.0,
+  "expected_status": "success",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD001",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "lc_type",
+      "expected_value": "sight",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "lc_amount",
+      "expected_value": "125000.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "currency",
+      "expected_value": "USD",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "beneficiary_name",
+      "expected_value": "Bangladesh Export Ltd",
+      "match_type": "contains",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "issuing_bank",
+      "expected_value": "Standard Chartered",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "port_of_loading",
+      "expected_value": "Chittagong",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "port_of_discharge",
+      "expected_value": "New York",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "goods_description",
+      "expected_value": "Cotton",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_number",
+      "expected_value": "INV-2026-001",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_amount",
+      "expected_value": "125000.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "lc_reference",
+      "expected_value": "EXP2026BD001",
+      "match_type": "exact",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bl",
+      "field_name": "bl_number",
+      "expected_value": "MSKU",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bl",
+      "field_name": "port_of_loading",
+      "expected_value": "Chittagong",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bl",
+      "field_name": "port_of_discharge",
+      "expected_value": "New York",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-PORT-1",
+      "document_type": "bl",
+      "description": "Chittagong = Chattogram - should not raise port mismatch"
+    },
+    {
+      "rule_id": "CROSSDOC-PORT-2",
+      "document_type": "bl",
+      "description": "Port aliases should be recognized"
+    },
+    {
+      "rule_id": "CROSSDOC-AMOUNT-1",
+      "description": "Invoice exactly matches LC amount - should not raise amount mismatch"
+    },
+    {
+      "rule_id": "CROSSDOC-GOODS-1",
+      "description": "Goods description consistent across documents"
+    },
+    {
+      "rule_id": "LC-TYPE-UNKNOWN",
+      "description": "LC type should be detected as Sight LC"
+    },
+    {
+      "rule_id": "MISSING-ISSUING-BANK",
+      "description": "Issuing bank should be extracted"
+    },
+    {
+      "rule_id": "MISSING-GOODS-DESCRIPTION",
+      "description": "Goods description should be extracted"
+    },
+    {
+      "rule_id": "INVOICE-LC-REFERENCE",
+      "description": "Invoice should have LC reference extracted"
+    }
+  ]
+}
+

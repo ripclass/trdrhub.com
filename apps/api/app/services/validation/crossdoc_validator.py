@@ -22,9 +22,20 @@ from enum import Enum
 
 from app.services.extraction.lc_baseline import LCBaseline
 from app.services.validation.issue_engine import Issue, IssueSeverity, IssueSource
+from app.reference_data.ports import get_port_registry, PortRegistry
 
 
 logger = logging.getLogger(__name__)
+
+# Global port registry instance
+_port_registry: Optional[PortRegistry] = None
+
+def _get_port_registry() -> PortRegistry:
+    """Get or create port registry singleton."""
+    global _port_registry
+    if _port_registry is None:
+        _port_registry = get_port_registry()
+    return _port_registry
 
 
 class DocumentType(str, Enum):
@@ -1124,20 +1135,31 @@ class CrossDocValidator:
     }
     
     def _ports_match(self, port1: str, port2: str) -> bool:
-        """Check if two port names match, including common spelling variations."""
+        """Check if two port names match using UN/LOCODE registry."""
+        if not port1 or not port2:
+            return False
+        
+        # Quick normalized string match first
         p1 = self._normalize_port(port1)
         p2 = self._normalize_port(port2)
         
         if p1 == p2:
             return True
         
-        # Check if one contains the other
+        # Check if one contains the other (e.g., "Port of New York" vs "New York")
         if p1 in p2 or p2 in p1:
             return True
         
-        # Check port aliases
+        # Use UN/LOCODE registry for authoritative matching
+        try:
+            registry = _get_port_registry()
+            if registry.same_port(port1, port2):
+                return True
+        except Exception as e:
+            logger.warning(f"Port registry lookup failed: {e}")
+        
+        # Fallback: check hardcoded aliases
         for canonical, aliases in self.PORT_ALIASES.items():
-            # If p1 matches canonical or any alias, check if p2 matches too
             p1_matches = p1 == canonical or any(alias in p1 for alias in aliases) or canonical in p1
             p2_matches = p2 == canonical or any(alias in p2 for alias in aliases) or canonical in p2
             if p1_matches and p2_matches:
