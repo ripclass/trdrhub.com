@@ -526,10 +526,22 @@ async def create_bank_submission(
         )
 
 
+def _normalize_session_id(session_id_str: Optional[str]) -> Optional[UUID]:
+    """Strip 'job_' prefix if present and parse as UUID."""
+    if not session_id_str:
+        return None
+    if session_id_str.startswith("job_"):
+        session_id_str = session_id_str[4:]
+    try:
+        return UUID(session_id_str)
+    except ValueError:
+        return None
+
+
 @router.get("/bank-submissions", response_model=BankSubmissionListResponse)
 async def list_bank_submissions(
     lc_number: Optional[str] = Query(None),
-    validation_session_id: Optional[UUID] = Query(None),
+    validation_session_id: Optional[str] = Query(None),  # Accept string to handle 'job_' prefix
     status: Optional[SubmissionStatus] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -539,6 +551,9 @@ async def list_bank_submissions(
     """
     List bank submissions for the current exporter.
     """
+    # Normalize session ID (strip 'job_' prefix if present)
+    session_uuid = _normalize_session_id(validation_session_id)
+    
     query = db.query(ExportSubmission).filter(
         and_(
             ExportSubmission.company_id == current_user.company_id,
@@ -548,8 +563,8 @@ async def list_bank_submissions(
     
     if lc_number:
         query = query.filter(ExportSubmission.lc_number.ilike(f"%{lc_number}%"))
-    if validation_session_id:
-        query = query.filter(ExportSubmission.validation_session_id == validation_session_id)
+    if session_uuid:
+        query = query.filter(ExportSubmission.validation_session_id == session_uuid)
     if status:
         query = query.filter(ExportSubmission.status == status.value)
     
@@ -653,5 +668,12 @@ async def check_submission_guardrails(
     """
     Check guardrails before submission (for client-side pre-check).
     """
-    return check_guardrails(db, request.validation_session_id, current_user.company_id)
+    try:
+        session_uuid = request.session_uuid  # Handles 'job_' prefix
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid validation_session_id format: {request.validation_session_id}"
+        )
+    return check_guardrails(db, session_uuid, current_user.company_id)
 

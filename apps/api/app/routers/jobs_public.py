@@ -218,19 +218,30 @@ def _summarize_job_overview(session: ValidationSession) -> Dict[str, Any]:
     }
 
 
+def _normalize_job_id(job_id_str: str) -> UUID:
+    """Strip 'job_' prefix if present and parse as UUID."""
+    if job_id_str.startswith("job_"):
+        job_id_str = job_id_str[4:]
+    return UUID(job_id_str)
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
-    job_id: UUID,
+    job_id: str,  # Accept string to handle 'job_' prefix
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    try:
+        job_uuid = _normalize_job_id(job_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid job ID format: {job_id}")
     session = (
         db.query(ValidationSession)
         .options(
             selectinload(ValidationSession.documents),
             selectinload(ValidationSession.discrepancies),
         )
-        .filter(ValidationSession.id == job_id, ValidationSession.deleted_at.is_(None))
+        .filter(ValidationSession.id == job_uuid, ValidationSession.deleted_at.is_(None))
         .first()
     )
 
@@ -264,18 +275,22 @@ def get_job_status(
 
 @router.get("/api/results/{job_id}")
 def get_job_results(
-    job_id: UUID,
+    job_id: str,  # Accept string to handle 'job_' prefix
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     logger = logging.getLogger(__name__)
+    try:
+        job_uuid = _normalize_job_id(job_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid job ID format: {job_id}")
     session = (
         db.query(ValidationSession)
         .options(
             selectinload(ValidationSession.documents),
             selectinload(ValidationSession.discrepancies),
         )
-        .filter(ValidationSession.id == job_id, ValidationSession.deleted_at.is_(None))
+        .filter(ValidationSession.id == job_uuid, ValidationSession.deleted_at.is_(None))
         .first()
     )
 

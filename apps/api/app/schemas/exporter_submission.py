@@ -96,8 +96,16 @@ class SubmissionEventListResponse(BaseModel):
 
 class GuardrailCheckRequest(BaseModel):
     """Request to check guardrails before submission."""
-    validation_session_id: UUID
+    validation_session_id: str  # Accept string to handle 'job_' prefix
     lc_number: Optional[str] = None
+
+    @property
+    def session_uuid(self) -> UUID:
+        """Get the validation_session_id as a UUID, stripping 'job_' prefix if present."""
+        session_str = self.validation_session_id
+        if session_str.startswith("job_"):
+            session_str = session_str[4:]
+        return UUID(session_str)
 
 
 class GuardrailCheckResponse(BaseModel):
