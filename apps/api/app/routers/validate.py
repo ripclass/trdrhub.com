@@ -414,12 +414,39 @@ async def validate_doc(
 
         lc_context = payload.get("lc") or {}
         shipment_context = _resolve_shipment_context(payload)
-        lc_type_guess = detect_lc_type(lc_context, shipment_context)
+        
+        # First, check if LC type was extracted from the document (from :40A: or AI extraction)
+        extracted_lc_type = (
+            lc_context.get("lc_type") or 
+            lc_context.get("form_of_doc_credit") or
+            (lc_context.get("mt700") or {}).get("form_of_doc_credit")
+        )
+        extracted_lc_type_confidence = lc_context.get("lc_type_confidence", 0)
+        extracted_lc_type_reason = lc_context.get("lc_type_reason", "")
+        
+        # If extracted, use it; otherwise fall back to import/export detection
         override_lc_type = _extract_lc_type_override(payload)
-        lc_type_source = "override" if override_lc_type else "auto"
-        lc_type = override_lc_type or lc_type_guess["lc_type"]
-        lc_type_reason = lc_type_guess["reason"]
-        lc_type_confidence = lc_type_guess["confidence"]
+        
+        if extracted_lc_type and str(extracted_lc_type).lower() not in ["unknown", "none", ""]:
+            # Use extracted LC type from document
+            lc_type = str(extracted_lc_type).lower().replace(" ", "_")
+            lc_type_reason = extracted_lc_type_reason or f"Extracted from LC document: {extracted_lc_type}"
+            lc_type_confidence = extracted_lc_type_confidence if extracted_lc_type_confidence > 0 else 0.85
+            lc_type_source = lc_context.get("lc_type_source", "document_extraction")
+            lc_type_guess = {"lc_type": lc_type, "reason": lc_type_reason, "confidence": lc_type_confidence}
+            logger.info(f"LC type from document extraction: {lc_type} (confidence={lc_type_confidence})")
+        else:
+            # Fall back to import/export detection based on country relationships
+            lc_type_guess = detect_lc_type(lc_context, shipment_context)
+            lc_type_source = "auto"
+            lc_type = lc_type_guess["lc_type"]
+            lc_type_reason = lc_type_guess["reason"]
+            lc_type_confidence = lc_type_guess["confidence"]
+        
+        # Override takes precedence
+        if override_lc_type:
+            lc_type = override_lc_type
+            lc_type_source = "override"
         payload["lc_type"] = lc_type
         payload["lc_type_reason"] = lc_type_reason
         payload["lc_type_confidence"] = lc_type_confidence

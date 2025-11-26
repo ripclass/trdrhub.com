@@ -91,6 +91,11 @@ class AIFirstExtractor:
             "flags": re.I,
             "description": "LC number should be 3-35 alphanumeric chars",
         },
+        "lc_type": {
+            "pattern": r"^(IRREVOCABLE|REVOCABLE|TRANSFERABLE|SIGHT|USANCE|DEFERRED|STANDBY|CONFIRMED|UNCONFIRMED|RED\s*CLAUSE|GREEN\s*CLAUSE).*$",
+            "flags": re.I,
+            "description": "Should be a valid LC type",
+        },
         "amount": {
             "pattern": r"^\d+(?:\.\d{1,4})?$",
             "flags": 0,
@@ -106,6 +111,11 @@ class AIFirstExtractor:
             "flags": 0,
             "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
         },
+        "issue_date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
         "latest_shipment_date": {
             "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
             "flags": 0,
@@ -115,6 +125,11 @@ class AIFirstExtractor:
             "pattern": r"^(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)$",
             "flags": re.I,
             "description": "Should be a valid Incoterm",
+        },
+        "payment_terms": {
+            "pattern": r"^(AT\s*SIGHT|SIGHT|\d+\s*DAYS?\s*(AFTER|FROM)?\s*(B/?L|SHIPMENT|INVOICE|SIGHT)?|DEFERRED|USANCE).*$",
+            "flags": re.I,
+            "description": "Should be a valid payment term",
         },
     }
     

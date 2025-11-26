@@ -46,24 +46,29 @@ LC_EXTRACTION_PROMPT = """Extract the following fields from this Letter of Credi
 
 REQUIRED FIELDS:
 - lc_number: The LC reference number (e.g., "LC1234567", "EXP2026BD001")
+- lc_type: The form of documentary credit (e.g., "IRREVOCABLE", "IRREVOCABLE TRANSFERABLE", "SIGHT", "USANCE", "DEFERRED PAYMENT")
 - amount: The credit amount as a number (e.g., 458750.00)
 - currency: The currency code (e.g., "USD", "EUR", "GBP")
 - applicant: The buyer/importer company name
 - beneficiary: The seller/exporter company name
-- issuing_bank: The bank that issued the LC
+- issuing_bank: The bank that issued the LC (SWIFT field :52A:)
+- advising_bank: The bank advising the LC (SWIFT field :57A:)
 - port_of_loading: The shipment origin port
 - port_of_discharge: The destination port
-- expiry_date: When the LC expires (ISO format if possible)
-- latest_shipment_date: Last allowed shipment date
+- expiry_date: When the LC expires (ISO format YYYY-MM-DD)
+- latest_shipment_date: Last allowed shipment date (ISO format YYYY-MM-DD)
+- issue_date: When the LC was issued (ISO format YYYY-MM-DD, SWIFT field :31C:)
 - incoterm: The trade term (e.g., "FOB", "CIF", "CFR")
 
 OPTIONAL FIELDS:
-- issue_date: When the LC was issued
-- advising_bank: The advising bank name
-- ucp_reference: UCP version (e.g., "UCP 600")
+- confirming_bank: The bank confirming the LC (if any)
+- ucp_reference: UCP version (e.g., "UCP 600", "UCP LATEST VERSION")
 - partial_shipments: "ALLOWED" or "NOT ALLOWED"
 - transshipment: "ALLOWED" or "NOT ALLOWED"
-- goods_description: Brief description of goods
+- goods_description: Full description of goods including HS codes if present
+- documents_required: List of required documents (e.g., "Commercial Invoice", "Bill of Lading", etc.)
+- payment_terms: Payment conditions (e.g., "AT SIGHT", "60 DAYS AFTER B/L DATE")
+- available_with: How the LC is available (e.g., "BY NEGOTIATION", "BY PAYMENT", "BY ACCEPTANCE")
 
 Return a JSON object with these fields. Use null for any field not found.
 
@@ -180,6 +185,7 @@ def _calculate_extraction_confidence(extracted: Dict[str, Any]) -> float:
     # Field weights (higher = more critical)
     field_weights = {
         "lc_number": 15,
+        "lc_type": 10,  # Critical - determines LC classification
         "amount": 15,
         "currency": 10,
         "applicant": 10,
@@ -189,13 +195,17 @@ def _calculate_extraction_confidence(extracted: Dict[str, Any]) -> float:
         "expiry_date": 8,
         "latest_shipment_date": 5,
         "incoterm": 5,
-        "issuing_bank": 5,
-        "issue_date": 3,
-        "advising_bank": 2,
+        "issuing_bank": 8,  # Increased - critical for bank verification
+        "issue_date": 5,  # Increased - needed for validation
+        "advising_bank": 5,  # Increased - important for routing
+        "confirming_bank": 3,
         "ucp_reference": 2,
         "partial_shipments": 2,
         "transshipment": 2,
-        "goods_description": 3,
+        "goods_description": 5,  # Increased - needed for cross-doc matching
+        "documents_required": 5,  # New - critical for checklist
+        "payment_terms": 4,  # New - determines payment type
+        "available_with": 3,  # New - negotiation method
     }
     
     total_weight = sum(field_weights.values())
@@ -251,8 +261,31 @@ def convert_ai_to_lc_structure(ai_result: Dict[str, Any]) -> Dict[str, Any]:
         "latest_shipment": ai_result.get("latest_shipment_date"),
     }
     
+    # Normalize LC type
+    lc_type_raw = ai_result.get("lc_type")
+    lc_type = None
+    lc_type_confidence = 0
+    if lc_type_raw:
+        lc_type = str(lc_type_raw).upper()
+        lc_type_confidence = 0.85
+        # Normalize common variations
+        if "IRREVOCABLE" in lc_type and "TRANSFERABLE" in lc_type:
+            lc_type = "irrevocable_transferable"
+        elif "IRREVOCABLE" in lc_type:
+            lc_type = "irrevocable"
+        elif "SIGHT" in lc_type:
+            lc_type = "sight"
+        elif "USANCE" in lc_type or "DEFERRED" in lc_type:
+            lc_type = "usance"
+        else:
+            lc_type = lc_type.lower().replace(" ", "_")
+    
     return {
         "number": ai_result.get("lc_number"),
+        "lc_type": lc_type,
+        "lc_type_confidence": lc_type_confidence,
+        "lc_type_reason": f"Extracted from LC document: {lc_type_raw}" if lc_type_raw else "Not found in document",
+        "lc_type_source": "ai_extraction",
         "amount": {"value": amount_val, "currency": currency} if amount_val else None,
         "currency": currency,
         "applicant": applicant,
@@ -261,14 +294,18 @@ def convert_ai_to_lc_structure(ai_result: Dict[str, Any]) -> Dict[str, Any]:
         "incoterm": ai_result.get("incoterm"),
         "issuing_bank": ai_result.get("issuing_bank"),
         "advising_bank": ai_result.get("advising_bank"),
+        "confirming_bank": ai_result.get("confirming_bank"),
         "ucp_reference": ai_result.get("ucp_reference"),
         "timeline": timeline,
         "partial_shipments": ai_result.get("partial_shipments"),
         "transshipment": ai_result.get("transshipment"),
         "goods_description": ai_result.get("goods_description"),
+        "documents_required": ai_result.get("documents_required"),
+        "payment_terms": ai_result.get("payment_terms"),
+        "available_with": ai_result.get("available_with"),
         "source": {
             "parsers": ["ai_extraction"],
-            "version": "ai_lc_extractor_v1",
+            "version": "ai_lc_extractor_v2",
         },
         # Mark as AI-extracted for audit
         "_extraction_method": "ai",
