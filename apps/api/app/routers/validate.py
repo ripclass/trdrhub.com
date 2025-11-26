@@ -1262,20 +1262,41 @@ async def _build_document_context(
                 lc_payload["format"] = lc_format
 
                 if lc_format == "iso20022":
+                    # Use enhanced ISO 20022 extractor with AI fallback
                     try:
-                        iso_context = extract_iso20022_lc(extracted_text)
-                    except ISO20022ParseError as exc:
-                        logger.warning(f"ISO20022 LC parse failed for {filename}: {exc}")
-                        doc_info["extraction_status"] = "failed"
-                        doc_info["extraction_error"] = "iso20022_parse_failed"
-                    else:
+                        from app.services.extraction.iso20022_lc_extractor import (
+                            extract_iso20022_with_ai_fallback,
+                            ISO20022ParseError as ISO20022Error,
+                        )
+                        
+                        iso_context = await extract_iso20022_with_ai_fallback(
+                            extracted_text,
+                            ai_threshold=0.5,
+                        )
+                        
+                        extraction_method = iso_context.get("_extraction_method", "iso20022")
+                        extraction_confidence = iso_context.get("_extraction_confidence", 0.0)
+                        
+                        logger.info(
+                            f"ISO 20022 extraction from {filename}: method={extraction_method} "
+                            f"confidence={extraction_confidence:.2f}"
+                        )
+                        
                         lc_payload.update(iso_context)
                         has_structured_data = True
                         doc_info["extracted_fields"] = iso_context
                         doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        
                         logger.info(f"ISO20022 LC context keys: {list(lc_payload.keys())}")
                         if not context.get("lc_number") and iso_context.get("number"):
                             context["lc_number"] = iso_context["number"]
+                            
+                    except Exception as exc:
+                        logger.warning(f"ISO20022 LC extraction failed for {filename}: {exc}", exc_info=True)
+                        doc_info["extraction_status"] = "failed"
+                        doc_info["extraction_error"] = str(exc)
                 else:
                     # Use LC extractor with AI fallback for OCR/plaintext LC documents
                     try:

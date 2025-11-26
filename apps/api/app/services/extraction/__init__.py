@@ -23,6 +23,12 @@ from .ai_lc_extractor import (
     extract_lc_with_ai,
     convert_ai_to_lc_structure,
 )
+from .iso20022_lc_extractor import (
+    extract_iso20022_lc_enhanced,
+    extract_iso20022_with_ai_fallback,
+    detect_iso20022_schema,
+    ISO20022ParseError,
+)
 from .lc_extractor_v2 import (
     extract_lc_with_baseline,
     extract_lc_structured_v2,
@@ -51,6 +57,12 @@ __all__ = [
     "extract_lc_structured_with_ai_fallback",
     "extract_lc_with_ai",
     "convert_ai_to_lc_structure",
+    
+    # ISO 20022 extraction
+    "extract_iso20022_lc_enhanced",
+    "extract_iso20022_with_ai_fallback",
+    "detect_iso20022_schema",
+    "ISO20022ParseError",
     
     # V2 extraction with baseline
     "extract_lc_with_baseline",
