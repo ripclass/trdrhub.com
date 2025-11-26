@@ -52,6 +52,7 @@ from app.services.extraction.lc_extractor import (
     extract_lc_structured,
     extract_lc_structured_with_ai_fallback,
 )
+from app.services.extraction.ai_first_extractor import extract_lc_ai_first
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -1483,23 +1484,23 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "failed"
                         doc_info["extraction_error"] = str(exc)
                 else:
-                    # Use LC extractor with AI fallback for OCR/plaintext LC documents
+                    # Use AI-FIRST extraction for OCR/plaintext LC documents
+                    # This runs AI as PRIMARY, then validates with regex
                     try:
-                        # Try async extraction with AI fallback
-                        lc_struct = await extract_lc_structured_with_ai_fallback(
-                            extracted_text,
-                            ai_threshold=0.5,  # Use AI if confidence < 50%
-                        )
+                        # AI-first extraction (PRIMARY)
+                        lc_struct = await extract_lc_ai_first(extracted_text)
                         extraction_method = lc_struct.get("_extraction_method", "unknown")
                         extraction_confidence = lc_struct.get("_extraction_confidence", 0.0)
+                        extraction_status = lc_struct.get("_status", "unknown")
                         
                         logger.info(
-                            f"Extracted LC from {filename}: method={extraction_method} "
-                            f"confidence={extraction_confidence:.2f} keys={list(lc_struct.keys())}"
+                            f"AI-first extraction from {filename}: method={extraction_method} "
+                            f"confidence={extraction_confidence:.2f} status={extraction_status} "
+                            f"keys={list(lc_struct.keys())}"
                         )
                         
-                        if lc_struct:
-                            # Apply two-stage validation
+                        if lc_struct and extraction_status != "failed":
+                            # AI-first already includes validation, but apply two-stage for normalization
                             validated_lc, validation_summary = _apply_two_stage_validation(
                                 lc_struct, "lc", filename
                             )
@@ -1508,15 +1509,30 @@ async def _build_document_context(
                             context["lc_structured_output"] = validated_lc
                             has_structured_data = True
                             logger.info(f"LC context keys: {list(lc_payload.keys())}")
-                            if not context.get("lc_number") and validated_lc.get("number"):
-                                context["lc_number"] = validated_lc["number"]
+                            
+                            # Get LC number from various possible keys
+                            lc_number = (
+                                validated_lc.get("number") or 
+                                validated_lc.get("lc_number") or
+                                validated_lc.get("reference")
+                            )
+                            if not context.get("lc_number") and lc_number:
+                                context["lc_number"] = lc_number
+                            
                             doc_info["extracted_fields"] = validated_lc
                             doc_info["extraction_status"] = "success"
                             doc_info["extraction_method"] = extraction_method
                             doc_info["extraction_confidence"] = extraction_confidence
                             doc_info["validation_summary"] = validation_summary
+                            doc_info["ai_first_status"] = extraction_status
+                            
+                            # Include field-level details if available
+                            if "_field_details" in lc_struct:
+                                doc_info["field_details"] = lc_struct["_field_details"]
+                            if "_status_counts" in lc_struct:
+                                doc_info["status_counts"] = lc_struct["_status_counts"]
                         else:
-                            logger.warning(f"No LC structure extracted from {filename}")
+                            logger.warning(f"AI-first extraction failed for {filename}, status={extraction_status}")
                     except Exception as extract_error:
                         logger.warning(f"LC extraction (with AI) failed for {filename}: {extract_error}", exc_info=True)
                         # Ultimate fallback to basic field extractor
