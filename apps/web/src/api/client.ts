@@ -1,7 +1,15 @@
 import axios from 'axios'
 import { supabase } from '@/lib/supabase'
-import { clearSupabaseSession } from './auth'
 import { getCsrfToken, requiresCsrfToken } from '@/lib/csrf'
+
+// Inline function to avoid circular dependency with ./auth
+const clearSupabaseSession = async () => {
+  try {
+    await supabase.auth.signOut()
+  } catch (error) {
+    console.error('Failed to clear Supabase session', error)
+  }
+}
 
 const resolveApiBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL
