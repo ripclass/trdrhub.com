@@ -321,6 +321,58 @@ async def validate_doc(
         lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
 
         # =====================================================================
+        # CREATE VALIDATION SESSION EARLY
+        # We need a database record BEFORE gating so blocked validations can be retrieved
+        # =====================================================================
+        user_type = payload.get("userType") or payload.get("user_type")
+        metadata = payload.get("metadata")
+        validation_session = None
+        job_id = None
+        
+        if user_type in ["bank", "exporter", "importer"] or metadata:
+            session_service = ValidationSessionService(db)
+            validation_session = session_service.create_session(current_user)
+            
+            # Set company_id if available
+            if current_user.company_id:
+                validation_session.company_id = current_user.company_id
+            
+            # Store metadata based on user type
+            if metadata:
+                try:
+                    if isinstance(metadata, str):
+                        metadata = json.loads(metadata)
+                    org_id = None
+                    if hasattr(request, 'state') and hasattr(request.state, 'org_id'):
+                        org_id = request.state.org_id
+                    validation_session.extracted_data = {
+                        "bank_metadata": {
+                            "client_name": metadata.get("clientName"),
+                            "lc_number": metadata.get("lcNumber"),
+                            "date_received": metadata.get("dateReceived"),
+                            "org_id": org_id,
+                        }
+                    }
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            elif user_type in ["exporter", "importer"]:
+                lc_number = payload.get("lc_number") or payload.get("lcNumber")
+                workflow_type = payload.get("workflow_type") or payload.get("workflowType")
+                if lc_number or workflow_type:
+                    validation_session.extracted_data = {
+                        "lc_number": lc_number,
+                        "user_type": user_type,
+                        "workflow_type": workflow_type,
+                    }
+            
+            validation_session.status = SessionStatus.PROCESSING.value
+            validation_session.processing_started_at = func.now()
+            db.commit()
+            job_id = str(validation_session.id)
+        else:
+            job_id = payload.get("job_id") or str(uuid4())
+
+        # =====================================================================
         # V2 VALIDATION PIPELINE - PRIMARY FLOW
         # This is the core validation engine. Legacy flow is disabled.
         # If LC extraction fails (missing critical fields), we block validation.
@@ -367,12 +419,20 @@ async def validate_doc(
                     documents=payload.get("documents") or [],
                 )
                 
-                # Create job_id for blocked response
-                blocked_job_id = payload.get("job_id") or f"job_{uuid4()}"
+                # Store blocked result in validation session so it can be retrieved later
+                if validation_session:
+                    validation_session.status = SessionStatus.COMPLETED.value
+                    validation_session.processing_completed_at = func.now()
+                    validation_session.validation_results = {
+                        "structured_result": blocked_result,
+                        "validation_blocked": True,
+                        "block_reason": v2_gate_result.block_reason,
+                    }
+                    db.commit()
                 
                 return {
-                    "job_id": str(blocked_job_id),
-                    "jobId": str(blocked_job_id),
+                    "job_id": str(job_id),
+                    "jobId": str(job_id),
                     "structured_result": blocked_result,
                     "telemetry": {"validation_blocked": True, "block_reason": v2_gate_result.block_reason},
                 }
@@ -437,67 +497,9 @@ async def validate_doc(
                     },
                 ) from exc
 
-        # Check if this is a bank bulk validation request
-        user_type = payload.get("userType") or payload.get("user_type")
-        metadata = payload.get("metadata")
-        
-        # Create ValidationSession for bank operations, exporter/importer, or if metadata is provided
-        validation_session = None
-        if user_type in ["bank", "exporter", "importer"] or metadata:
-            session_service = ValidationSessionService(db)
-            validation_session = session_service.create_session(current_user)
-            
-            # Set company_id if available
-            if current_user.company_id:
-                validation_session.company_id = current_user.company_id
-            
-            # Store metadata based on user type
-            if metadata:
-                try:
-                    # Parse metadata if it's a string
-                    if isinstance(metadata, str):
-                        metadata = json.loads(metadata)
-                    
-                    # Get org_id from request state if available (for multi-org support)
-                    org_id = None
-                    if hasattr(request, 'state') and hasattr(request.state, 'org_id'):
-                        org_id = request.state.org_id
-                    
-                    # Store bank metadata
-                    extracted_data = {
-                        "bank_metadata": {
-                            "client_name": metadata.get("clientName"),
-                            "lc_number": metadata.get("lcNumber"),
-                            "date_received": metadata.get("dateReceived"),
-                            "org_id": org_id,  # Include org_id if available
-                        }
-                    }
-                    validation_session.extracted_data = extracted_data
-                except (json.JSONDecodeError, TypeError):
-                    # If metadata parsing fails, continue without it
-                    pass
-            elif user_type in ["exporter", "importer"]:
-                # Store exporter/importer metadata (LC number from payload)
-                lc_number = payload.get("lc_number") or payload.get("lcNumber")
-                workflow_type = payload.get("workflow_type") or payload.get("workflowType")
-                if lc_number or workflow_type:
-                    validation_session.extracted_data = {
-                        "lc_number": lc_number,
-                        "user_type": user_type,
-                        "workflow_type": workflow_type,
-                    }
-            
-            # Update session status to processing
-            validation_session.status = SessionStatus.PROCESSING.value
-            validation_session.processing_started_at = func.now()
-            db.commit()
-            
-            job_id = str(validation_session.id)
-        else:
-            job_id = payload.get("job_id") or f"job_{uuid4()}"
-
         # =====================================================================
         # V2 VALIDATION - PRIMARY PATH (Legacy disabled)
+        # Note: Session was already created above, before gating check
         # =====================================================================
         request_user_type = _extract_request_user_type(payload)
         
