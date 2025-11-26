@@ -2107,7 +2107,17 @@ def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tupl
 
 def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: Decimal) -> Tuple[Optional[float], Optional[float]]:
     """Compute absolute tolerance amount and allowed invoice limit."""
-    lc_amount_value = (((payload.get("lc") or {}).get("amount") or {}).get("value"))
+    # Handle both formats: {"value": 125000} (legacy) and 125000 (AI-first)
+    lc_data = payload.get("lc") or {}
+    amount_raw = lc_data.get("amount")
+    
+    if isinstance(amount_raw, dict):
+        # Legacy format: {"value": 125000}
+        lc_amount_value = amount_raw.get("value")
+    else:
+        # AI-first format: direct number
+        lc_amount_value = amount_raw
+    
     lc_amount_decimal = _coerce_decimal(lc_amount_value)
     if lc_amount_decimal is None:
         return None, None

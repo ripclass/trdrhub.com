@@ -594,7 +594,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
         try:
             from ..llm_provider import LLMProviderFactory
             
-            provider = LLMProviderFactory.get_provider()
+            provider = LLMProviderFactory.create_provider()
             if not provider:
                 logger.warning("No LLM provider available for invoice extraction")
                 return None, "none"
@@ -787,7 +787,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
         try:
             from ..llm_provider import LLMProviderFactory
             
-            provider = LLMProviderFactory.get_provider()
+            provider = LLMProviderFactory.create_provider()
             if not provider:
                 logger.warning("No LLM provider available for B/L extraction")
                 return None, "none"
