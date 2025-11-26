@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { getCsrfToken, requiresCsrfToken } from '@/lib/csrf'
 
 // Inline function to avoid circular dependency with ./auth
+// This was previously imported from ./auth but caused 'cannot access before initialization' errors
 const clearSupabaseSession = async () => {
   try {
     await supabase.auth.signOut()
