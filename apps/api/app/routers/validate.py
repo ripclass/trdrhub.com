@@ -769,6 +769,44 @@ async def validate_doc(
             structured_result["analytics"]["processing_time_display"] = processing_summary.get("processing_time_display")
 
         # =====================================================================
+        # MERGE ISSUE CARDS INTO STRUCTURED RESULT
+        # issue_cards were built from failed_results at line 603 but need to be
+        # added to structured_result for the frontend to display them
+        # =====================================================================
+        if issue_cards:
+            existing_issues = structured_result.get("issues") or []
+            # Convert issue_cards to dict format if they're not already
+            formatted_issues = []
+            for card in issue_cards:
+                if isinstance(card, dict):
+                    formatted_issues.append(card)
+                elif hasattr(card, 'to_dict'):
+                    formatted_issues.append(card.to_dict())
+                elif hasattr(card, '__dict__'):
+                    formatted_issues.append(card.__dict__)
+                else:
+                    formatted_issues.append({"title": str(card), "severity": "minor"})
+            
+            # Merge with any existing issues (from crossdoc, etc.)
+            structured_result["issues"] = existing_issues + formatted_issues
+            logger.info("Added %d issue cards to structured_result (total issues: %d)", 
+                       len(formatted_issues), len(structured_result["issues"]))
+        
+        # Also add v2 crossdoc issues if available
+        if v2_crossdoc_issues:
+            existing_issues = structured_result.get("issues") or []
+            crossdoc_formatted = []
+            for issue in v2_crossdoc_issues:
+                if isinstance(issue, dict):
+                    crossdoc_formatted.append(issue)
+                elif hasattr(issue, 'to_dict'):
+                    crossdoc_formatted.append(issue.to_dict())
+                elif hasattr(issue, '__dict__'):
+                    crossdoc_formatted.append(issue.__dict__)
+            structured_result["issues"] = existing_issues + crossdoc_formatted
+            logger.info("Added %d crossdoc issues to structured_result", len(crossdoc_formatted))
+
+        # =====================================================================
         # V2 VALIDATION PIPELINE - FINAL SCORING
         # Apply v2 compliance scoring and add structured metadata
         # =====================================================================
