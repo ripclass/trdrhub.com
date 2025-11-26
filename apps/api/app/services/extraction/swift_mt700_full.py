@@ -3,10 +3,14 @@
 import re
 from typing import Dict, Any, List, Tuple, Optional
 
-_TAG = re.compile(r"(?m)^(?=:\d{2}[A-Z]?:)")  # splits on lines that start with :NN[A-Z]?:
-_KV = re.compile(r"^:(?P<tag>\d{2}[A-Z]?):(?P<val>.*)$", re.S)
+# Support BOTH formats:
+# 1. Raw SWIFT: ":20:VALUE" (colon-tag-colon)
+# 2. Formatted:  "20: VALUE" (tag-colon-space) - common in PDF exports
+_TAG = re.compile(r"(?m)^(?=:?\d{2}[A-Z]?:)")  # splits on lines starting with optional : then NN[A-Z]?:
+_KV = re.compile(r"^:?(?P<tag>\d{2}[A-Z]?):[ ]?(?P<val>.*)$", re.S)  # optional leading colon, optional space after
 _DATE = re.compile(r"^(\d{2})(\d{2})(\d{2})$")  # YYMMDD
-_CUR_AMT = re.compile(r"^(?P<cur>[A-Z]{3})(?P<amt>[\d,\.]+)$")
+# Handle both "USD458750.00" and "USD 458,750.00" formats
+_CUR_AMT = re.compile(r"^(?P<cur>[A-Z]{3})[ ]?(?P<amt>[\d,\.]+)$")
 _BIC = re.compile(r"^[A-Z0-9]{8}(?:[A-Z0-9]{3})?$")
 
 # Tags we expect in MT700 (non-exhaustive but industrial-grade coverage)

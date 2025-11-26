@@ -128,12 +128,15 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     )
     lc_number = lc_number_candidate if _is_valid_lc_number(lc_number_candidate) else None
     
-    # Amount
+    # Amount and Currency
     credit_amount = mt_fields.get("credit_amount")
+    currency = None
     if credit_amount and isinstance(credit_amount, dict):
         amount_raw = str(credit_amount.get("amount", ""))
+        currency = credit_amount.get("currency")
     else:
         amount_raw = (mt_core.get("amount") if mt_core else None) or _amount(text)
+        currency = mt_core.get("currency") if mt_core else None
     
     # Incoterm
     incoterm_line = _first(INCOTERM_RE, text)
@@ -232,7 +235,8 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # 4) Compose structured result (NO large narrative blobs here)
     lc_structured: Dict[str, Any] = {
         "number": lc_number,
-        "amount": {"value": amount_raw} if amount_raw else None,
+        "amount": {"value": amount_raw, "currency": currency} if amount_raw else None,
+        "currency": currency,  # Also expose at top level for easy access
         "applicant": applicant,
         "beneficiary": beneficiary,
         "ports": {"loading": _strip(pol), "discharge": _strip(pod)},
