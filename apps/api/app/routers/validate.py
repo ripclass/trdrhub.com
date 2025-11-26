@@ -2044,16 +2044,24 @@ def _build_blocked_structured_result(
         elif hasattr(issue, 'to_dict'):
             blocking_issues.append(issue.to_dict())
     
-    # Build document list (empty status)
+    # Build document list - PRESERVE extraction data even when validation is blocked
+    # The extraction succeeded, we're blocking validation due to missing LC fields
+    # Don't throw away the extraction work!
     docs_structured = []
     for i, doc in enumerate(documents):
+        # Preserve actual extraction status and fields
+        actual_extraction_status = doc.get("extraction_status") or "unknown"
+        actual_extracted_fields = doc.get("extracted_fields") or {}
+        
         docs_structured.append({
             "document_id": doc.get("id") or str(uuid4()),
             "filename": doc.get("filename") or doc.get("name") or f"Document {i+1}",
             "document_type": doc.get("document_type") or "supporting_document",
-            "extraction_status": "blocked",
-            "extracted_fields": {},
+            "extraction_status": actual_extraction_status,  # Keep real status
+            "extracted_fields": actual_extracted_fields,    # Keep real data
             "issues_count": 0,
+            "raw_text_preview": doc.get("raw_text_preview"),  # Keep preview text
+            "ocr_confidence": doc.get("ocr_confidence"),
         })
     
     # Processing time display
@@ -2097,13 +2105,14 @@ def _build_blocked_structured_result(
         # Documents
         "documents_structured": docs_structured,
         
-        # Processing summary
+        # Processing summary - count ACTUAL extraction results
         "processing_summary": {
             "total_documents": len(documents),
-            "successful_extractions": 0,
-            "failed_extractions": len(documents),
+            "successful_extractions": sum(1 for d in documents if d.get("extraction_status") == "success"),
+            "failed_extractions": sum(1 for d in documents if d.get("extraction_status") in ("failed", "error", "empty")),
+            "partial_extractions": sum(1 for d in documents if d.get("extraction_status") in ("text_only", "partial")),
             "total_issues": len(blocking_issues),
-            "compliance_rate": 0,
+            "compliance_rate": 0,  # 0 because validation is blocked
             "processing_time_seconds": round(processing_duration, 2),
             "processing_time_display": time_display,
             "severity_breakdown": {
