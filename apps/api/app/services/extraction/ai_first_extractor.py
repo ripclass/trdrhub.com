@@ -469,3 +469,455 @@ async def extract_lc_ai_first(raw_text: str) -> Dict[str, Any]:
     extractor = get_ai_first_extractor()
     return await extractor.extract_lc(raw_text)
 
+
+# =====================================================================
+# INVOICE AI-FIRST EXTRACTOR
+# =====================================================================
+
+INVOICE_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Commercial Invoices.
+
+Your task is to extract structured data from invoice documents used in international trade.
+These documents may be bank-formatted PDFs, scanned documents, or plain text.
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. If a field is not found, return null - do NOT guess
+3. For amounts, include the full number without currency symbols
+4. For dates, use ISO format (YYYY-MM-DD) when possible
+5. Look for LC/Credit reference numbers - they link the invoice to the LC
+6. Be precise - banks rely on exact data for documentary credit compliance
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+INVOICE_EXTRACTION_PROMPT = """Extract the following fields from this Commercial Invoice:
+
+REQUIRED FIELDS:
+- invoice_number: The invoice reference number
+- invoice_date: The date of the invoice (ISO format if possible)
+- amount: The total invoice amount as a number
+- currency: The currency code (e.g., "USD", "EUR")
+- seller_name: The seller/exporter company name
+- buyer_name: The buyer/importer company name
+- lc_reference: The Letter of Credit number (if mentioned)
+
+OPTIONAL FIELDS:
+- seller_address: Full address of the seller
+- buyer_address: Full address of the buyer
+- goods_description: Description of goods
+- quantity: Quantity of goods
+- unit_price: Price per unit
+- incoterm: Trade term (FOB, CIF, etc.)
+- country_of_origin: Where goods originate
+- port_of_loading: Shipment origin
+- port_of_discharge: Destination port
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class InvoiceAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Commercial Invoices."""
+    
+    VALIDATORS = {
+        "invoice_number": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/\.]{1,30}$",
+            "flags": re.I,
+            "description": "Invoice number should be alphanumeric",
+        },
+        "amount": {
+            "pattern": r"^\d+(?:\.\d{1,4})?$",
+            "flags": 0,
+            "description": "Amount should be a valid number",
+        },
+        "currency": {
+            "pattern": r"^[A-Z]{3}$",
+            "flags": 0,
+            "description": "Currency should be 3-letter ISO code",
+        },
+        "invoice_date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
+        "lc_reference": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/]{2,34}$",
+            "flags": re.I,
+            "description": "LC reference should be alphanumeric",
+        },
+        "incoterm": {
+            "pattern": r"^(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)$",
+            "flags": re.I,
+            "description": "Should be a valid Incoterm",
+        },
+    }
+    
+    async def extract_invoice(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract invoice fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        # Run AI extraction
+        ai_result, ai_provider = await self._run_invoice_ai_extraction(raw_text)
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI invoice extraction failed, using regex fallback")
+            return self._invoice_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        # Process fields
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="invoice")
+    
+    async def _run_invoice_ai_extraction(
+        self,
+        raw_text: str,
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Run AI extraction for invoice."""
+        try:
+            from ..llm_provider import LLMProviderFactory
+            
+            provider = LLMProviderFactory.get_provider()
+            if not provider:
+                logger.warning("No LLM provider available for invoice extraction")
+                return None, "none"
+            
+            prompt = INVOICE_EXTRACTION_PROMPT.format(
+                document_text=raw_text[:12000]
+            )
+            
+            response = await provider.generate(
+                prompt=prompt,
+                system_prompt=INVOICE_EXTRACTION_SYSTEM_PROMPT,
+                temperature=0.1,
+                max_tokens=2000,
+            )
+            
+            if not response:
+                return None, "empty_response"
+            
+            # Parse JSON response
+            import json
+            try:
+                # Clean response
+                clean = response.strip()
+                if clean.startswith("```"):
+                    clean = clean.split("```")[1]
+                    if clean.startswith("json"):
+                        clean = clean[4:]
+                
+                result = json.loads(clean)
+                
+                # Add confidence to each field
+                for key in result:
+                    if result[key] is not None:
+                        result[key] = {"value": result[key], "confidence": 0.75}
+                
+                return result, provider.__class__.__name__
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse AI invoice response: {e}")
+                return None, "parse_error"
+                
+        except Exception as e:
+            logger.error(f"Invoice AI extraction error: {e}", exc_info=True)
+            return None, "error"
+    
+    def _invoice_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for invoice extraction."""
+        result: Dict[str, Any] = {}
+        
+        # Invoice number
+        match = re.search(r"Invoice\s*(?:No\.?|Number|#)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["invoice_number"] = match.group(1).strip()
+        
+        # Amount
+        match = re.search(r"Total\s*[:\-]?\s*([A-Z]{3})?\s*([\d,]+(?:\.\d{2})?)", raw_text, re.I)
+        if match:
+            if match.group(1):
+                result["currency"] = match.group(1)
+            result["amount"] = match.group(2).replace(",", "")
+        
+        # LC Reference
+        match = re.search(r"(?:L/?C|Letter of Credit|Credit)\s*(?:No\.?|Ref|#)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["lc_reference"] = match.group(1).strip()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "invoice",
+    ) -> Dict[str, Any]:
+        """Build output with document type."""
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# BILL OF LADING AI-FIRST EXTRACTOR
+# =====================================================================
+
+BL_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Bills of Lading (B/L).
+
+Your task is to extract structured data from Bill of Lading documents used in international shipping.
+These may be ocean B/Ls, air waybills, or multimodal transport documents.
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. If a field is not found, return null - do NOT guess
+3. For dates, use ISO format (YYYY-MM-DD) when possible
+4. The "shipped on board" date is CRITICAL for LC compliance
+5. Port names should be extracted exactly as written
+6. Be precise - banks rely on exact data
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+BL_EXTRACTION_PROMPT = """Extract the following fields from this Bill of Lading:
+
+REQUIRED FIELDS:
+- bl_number: The B/L reference number
+- shipper: The shipper/exporter name
+- consignee: The consignee (may be "TO ORDER OF [BANK]")
+- notify_party: The party to notify
+- port_of_loading: Where goods are loaded
+- port_of_discharge: Where goods are discharged
+- shipped_on_board_date: The date goods were shipped (CRITICAL)
+- vessel_name: Name of the vessel
+
+OPTIONAL FIELDS:
+- voyage_number: Voyage reference
+- goods_description: Description of goods
+- gross_weight: Total weight
+- number_of_packages: Package count
+- container_number: Container ID
+- seal_number: Seal ID
+- freight_terms: "PREPAID" or "COLLECT"
+- place_of_receipt: Where carrier received goods
+- place_of_delivery: Final delivery location
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class BLAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Bills of Lading."""
+    
+    VALIDATORS = {
+        "bl_number": {
+            "pattern": r"^[A-Z]{2,4}[A-Z0-9\-\/]{4,20}$",
+            "flags": re.I,
+            "description": "B/L number should follow carrier format",
+        },
+        "shipped_on_board_date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
+        "freight_terms": {
+            "pattern": r"^(PREPAID|COLLECT|FREIGHT PREPAID|FREIGHT COLLECT)$",
+            "flags": re.I,
+            "description": "Should be PREPAID or COLLECT",
+        },
+    }
+    
+    async def extract_bl(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract B/L fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        # Run AI extraction
+        ai_result, ai_provider = await self._run_bl_ai_extraction(raw_text)
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI B/L extraction failed, using regex fallback")
+            return self._bl_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        # Process fields
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="bill_of_lading")
+    
+    async def _run_bl_ai_extraction(
+        self,
+        raw_text: str,
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Run AI extraction for B/L."""
+        try:
+            from ..llm_provider import LLMProviderFactory
+            
+            provider = LLMProviderFactory.get_provider()
+            if not provider:
+                logger.warning("No LLM provider available for B/L extraction")
+                return None, "none"
+            
+            prompt = BL_EXTRACTION_PROMPT.format(
+                document_text=raw_text[:12000]
+            )
+            
+            response = await provider.generate(
+                prompt=prompt,
+                system_prompt=BL_EXTRACTION_SYSTEM_PROMPT,
+                temperature=0.1,
+                max_tokens=2000,
+            )
+            
+            if not response:
+                return None, "empty_response"
+            
+            # Parse JSON response
+            import json
+            try:
+                clean = response.strip()
+                if clean.startswith("```"):
+                    clean = clean.split("```")[1]
+                    if clean.startswith("json"):
+                        clean = clean[4:]
+                
+                result = json.loads(clean)
+                
+                # Add confidence to each field
+                for key in result:
+                    if result[key] is not None:
+                        result[key] = {"value": result[key], "confidence": 0.75}
+                
+                return result, provider.__class__.__name__
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse AI B/L response: {e}")
+                return None, "parse_error"
+                
+        except Exception as e:
+            logger.error(f"B/L AI extraction error: {e}", exc_info=True)
+            return None, "error"
+    
+    def _bl_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for B/L extraction."""
+        result: Dict[str, Any] = {}
+        
+        # B/L number
+        match = re.search(r"B/?L\s*(?:No\.?|Number|#)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["bl_number"] = match.group(1).strip()
+        
+        # Shipper
+        match = re.search(r"Shipper\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["shipper"] = match.group(1).strip()
+        
+        # Consignee
+        match = re.search(r"Consignee\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["consignee"] = match.group(1).strip()
+        
+        # Port of Loading
+        match = re.search(r"Port of Loading\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["port_of_loading"] = match.group(1).strip()
+        
+        # Port of Discharge
+        match = re.search(r"Port of Discharge\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["port_of_discharge"] = match.group(1).strip()
+        
+        # Shipped on board date
+        match = re.search(r"(?:Shipped|On Board|Laden)\s*(?:Date)?\s*[:\-]?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2})", raw_text, re.I)
+        if match:
+            result["shipped_on_board_date"] = match.group(1).strip()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "bill_of_lading",
+    ) -> Dict[str, Any]:
+        """Build output with document type."""
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# GLOBAL INSTANCES AND CONVENIENCE FUNCTIONS
+# =====================================================================
+
+_invoice_extractor: Optional[InvoiceAIFirstExtractor] = None
+_bl_extractor: Optional[BLAIFirstExtractor] = None
+
+
+def get_invoice_ai_first_extractor() -> InvoiceAIFirstExtractor:
+    """Get or create the invoice AI-first extractor."""
+    global _invoice_extractor
+    if _invoice_extractor is None:
+        _invoice_extractor = InvoiceAIFirstExtractor()
+    return _invoice_extractor
+
+
+def get_bl_ai_first_extractor() -> BLAIFirstExtractor:
+    """Get or create the B/L AI-first extractor."""
+    global _bl_extractor
+    if _bl_extractor is None:
+        _bl_extractor = BLAIFirstExtractor()
+    return _bl_extractor
+
+
+async def extract_invoice_ai_first(raw_text: str) -> Dict[str, Any]:
+    """
+    Convenience function for AI-first invoice extraction.
+    """
+    extractor = get_invoice_ai_first_extractor()
+    return await extractor.extract_invoice(raw_text)
+
+
+async def extract_bl_ai_first(raw_text: str) -> Dict[str, Any]:
+    """
+    Convenience function for AI-first B/L extraction.
+    """
+    extractor = get_bl_ai_first_extractor()
+    return await extractor.extract_bl(raw_text)
+

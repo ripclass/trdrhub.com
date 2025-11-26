@@ -52,7 +52,11 @@ from app.services.extraction.lc_extractor import (
     extract_lc_structured,
     extract_lc_structured_with_ai_fallback,
 )
-from app.services.extraction.ai_first_extractor import extract_lc_ai_first
+from app.services.extraction.ai_first_extractor import (
+    extract_lc_ai_first,
+    extract_invoice_ai_first,
+    extract_bl_ai_first,
+)
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -1561,43 +1565,119 @@ async def _build_document_context(
                             doc_info["extraction_status"] = "failed"
                             doc_info["extraction_error"] = str(fallback_error)
             elif document_type == "commercial_invoice":
-                invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
-                logger.info(f"Extracted {len(invoice_fields)} fields from invoice {filename}")
-                invoice_context = _fields_to_flat_context(invoice_fields)
-                if invoice_context:
-                    # Apply two-stage validation
-                    validated_invoice, validation_summary = _apply_two_stage_validation(
-                        invoice_context, "invoice", filename
+                # Use AI-FIRST extraction for invoices
+                try:
+                    invoice_struct = await extract_invoice_ai_first(extracted_text)
+                    extraction_method = invoice_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = invoice_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = invoice_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first invoice extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if "invoice" not in context:
-                        context["invoice"] = {}
-                    context["invoice"]["raw_text"] = extracted_text
-                    context["invoice"].update(validated_invoice)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_invoice
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"Invoice context keys: {list(context['invoice'].keys())}")
+                    if invoice_struct and extraction_status != "failed":
+                        # Apply two-stage validation for normalization
+                        validated_invoice, validation_summary = _apply_two_stage_validation(
+                            invoice_struct, "invoice", filename
+                        )
+                        
+                        if "invoice" not in context:
+                            context["invoice"] = {}
+                        context["invoice"]["raw_text"] = extracted_text
+                        context["invoice"].update(validated_invoice)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_invoice
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in invoice_struct:
+                            doc_info["field_details"] = invoice_struct["_field_details"]
+                        if "_status_counts" in invoice_struct:
+                            doc_info["status_counts"] = invoice_struct["_status_counts"]
+                        
+                        logger.info(f"Invoice context keys: {list(context['invoice'].keys())}")
+                    else:
+                        logger.warning(f"AI-first invoice extraction failed for {filename}")
+                except Exception as inv_err:
+                    logger.warning(f"Invoice AI extraction failed for {filename}: {inv_err}", exc_info=True)
+                    # Fallback to regex
+                    invoice_fields = extractor.extract_fields(extracted_text, DocumentType.COMMERCIAL_INVOICE)
+                    invoice_context = _fields_to_flat_context(invoice_fields)
+                    if invoice_context:
+                        validated_invoice, validation_summary = _apply_two_stage_validation(
+                            invoice_context, "invoice", filename
+                        )
+                        if "invoice" not in context:
+                            context["invoice"] = {}
+                        context["invoice"]["raw_text"] = extracted_text
+                        context["invoice"].update(validated_invoice)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_invoice
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             elif document_type == "bill_of_lading":
-                bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
-                logger.info(f"Extracted {len(bl_fields)} fields from B/L {filename}")
-                bl_context = _fields_to_flat_context(bl_fields)
-                if bl_context:
-                    # Apply two-stage validation
-                    validated_bl, validation_summary = _apply_two_stage_validation(
-                        bl_context, "bl", filename
+                # Use AI-FIRST extraction for Bill of Lading
+                try:
+                    bl_struct = await extract_bl_ai_first(extracted_text)
+                    extraction_method = bl_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = bl_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = bl_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first B/L extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if "bill_of_lading" not in context:
-                        context["bill_of_lading"] = {}
-                    context["bill_of_lading"]["raw_text"] = extracted_text
-                    context["bill_of_lading"].update(validated_bl)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_bl
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
+                    if bl_struct and extraction_status != "failed":
+                        # Apply two-stage validation for normalization
+                        validated_bl, validation_summary = _apply_two_stage_validation(
+                            bl_struct, "bl", filename
+                        )
+                        
+                        if "bill_of_lading" not in context:
+                            context["bill_of_lading"] = {}
+                        context["bill_of_lading"]["raw_text"] = extracted_text
+                        context["bill_of_lading"].update(validated_bl)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_bl
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in bl_struct:
+                            doc_info["field_details"] = bl_struct["_field_details"]
+                        if "_status_counts" in bl_struct:
+                            doc_info["status_counts"] = bl_struct["_status_counts"]
+                        
+                        logger.info(f"B/L context keys: {list(context['bill_of_lading'].keys())}")
+                    else:
+                        logger.warning(f"AI-first B/L extraction failed for {filename}")
+                except Exception as bl_err:
+                    logger.warning(f"B/L AI extraction failed for {filename}: {bl_err}", exc_info=True)
+                    # Fallback to regex
+                    bl_fields = extractor.extract_fields(extracted_text, DocumentType.BILL_OF_LADING)
+                    bl_context = _fields_to_flat_context(bl_fields)
+                    if bl_context:
+                        validated_bl, validation_summary = _apply_two_stage_validation(
+                            bl_context, "bl", filename
+                        )
+                        if "bill_of_lading" not in context:
+                            context["bill_of_lading"] = {}
+                        context["bill_of_lading"]["raw_text"] = extracted_text
+                        context["bill_of_lading"].update(validated_bl)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_bl
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             elif document_type == "packing_list":
                 packing_fields = extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
                 logger.info(f"Extracted {len(packing_fields)} fields from packing list {filename}")
