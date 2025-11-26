@@ -50,11 +50,11 @@ import type { ValidationResults, IssueCard, AIEnrichmentPayload, ReferenceIssue 
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import LcHeader from "@/components/lcopilot/LcHeader";
-import RiskPanel from "@/components/lcopilot/RiskPanel";
+// RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
-import { ValidationStatusBanner, BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
+import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { deriveValidationState } from "@/lib/validation/validationState";
 
 type ExporterResultsProps = {
@@ -1379,25 +1379,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         <div className="space-y-6 mb-8">
           <LcHeader data={resultData ?? null} />
           
-          {/* V2 Validation Status Banner */}
-          {validationState && (
-            validationState.isBlocked ? (
-              <BlockedValidationCard 
-                state={validationState} 
-                onRetry={() => navigate("/lcopilot/exporter-dashboard?section=upload")}
-              />
-            ) : (
-              <ValidationStatusBanner 
-                state={validationState} 
-                onViewIssues={() => setActiveTab("discrepancies")}
-              />
-            )
+          {/* Only show BlockedValidationCard when validation is blocked */}
+          {validationState?.isBlocked && (
+            <BlockedValidationCard 
+              state={validationState} 
+              onRetry={() => navigate("/lcopilot/exporter-dashboard?section=upload")}
+            />
           )}
           
-          <div className="grid gap-6 lg:grid-cols-2">
-            <RiskPanel data={resultData ?? null} onViewIssues={() => setActiveTab("discrepancies")} />
-            <SummaryStrip data={resultData ?? null} />
-          </div>
+          {/* Clean summary strip - no duplicate action items */}
+          <SummaryStrip data={resultData ?? null} />
         </div>
 
         <Card className="mb-8 shadow-soft border border-border/60">
@@ -1454,16 +1445,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <Progress value={successRate} className="h-2" />
                 <div className="mt-4 p-3 rounded-lg bg-muted/30">
                   <p className="text-xs uppercase text-muted-foreground tracking-wide">LC Type</p>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap mt-1">
                     <Badge variant="outline">{lcTypeLabel}</Badge>
-                    {lcTypeConfidenceValue !== null && (
-                      <span className="text-xs text-muted-foreground">{lcTypeConfidenceValue}% confidence</span>
+                    {lcTypeConfidenceValue !== null && lcTypeConfidenceValue > 0 && (
+                      <span className="text-xs text-muted-foreground">{lcTypeConfidenceValue}%</span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{lcTypeReason}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Source: {lcTypeSource === 'override' ? 'Manual override' : 'Auto-detected'}
-                  </p>
                 </div>
               </div>
             </div>
@@ -1762,46 +1749,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             {documents.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
-              const hasIssues = (document.issuesCount ?? 0) > 0;
-              const isError = document.status === "error";
-              const isWarning = document.status === "warning";
+              const discrepancyCount = document.issuesCount ?? 0;
               
               return (
                 <Card
                   key={document.id}
-                  className={cn(
-                    "shadow-soft transition duration-200 hover:-translate-y-0.5 overflow-hidden",
-                    // Visual differentiation based on status
-                    hasIssues || isWarning
-                      ? "border-l-4 border-l-amber-500 border-t border-r border-b border-amber-200 bg-amber-50/30 dark:bg-amber-950/10"
-                      : isError
-                        ? "border-l-4 border-l-rose-500 border-t border-r border-b border-rose-200 bg-rose-50/30 dark:bg-rose-950/10"
-                        : "border border-emerald-200 bg-emerald-50/20 dark:bg-emerald-950/10 hover:border-emerald-300"
-                  )}
+                  className="shadow-soft border border-border/60 transition duration-200 hover:-translate-y-0.5 hover:border-primary/40"
                 >
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            "p-2 rounded-lg",
-                            document.status === "success"
-                              ? "bg-emerald-100 dark:bg-emerald-900/30"
-                              : document.status === "warning"
-                                ? "bg-amber-100 dark:bg-amber-900/30"
-                                : "bg-rose-100 dark:bg-rose-900/30",
-                          )}
-                        >
-                          <FileText
-                            className={cn(
-                              "w-5 h-5",
-                              document.status === "success"
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : document.status === "warning"
-                                  ? "text-amber-600 dark:text-amber-400"
-                                  : "text-rose-600 dark:text-rose-400",
-                            )}
-                          />
+                        <div className="p-2 rounded-lg bg-muted/50">
+                          <FileText className="w-5 h-5 text-muted-foreground" />
                         </div>
                         <div>
                           <CardTitle className="text-lg font-semibold">{document.name}</CardTitle>
@@ -1811,31 +1770,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {(() => {
-                          const discrepancyCount = document.issuesCount ?? 0;
-                          if (discrepancyCount === 0) {
-                            return (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                Verified
-                              </span>
-                            );
-                          }
-                          return (
-                            <button
-                              onClick={() => setActiveTab("discrepancies")}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
-                                document.status === "error"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300"
-                                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                              )}
-                            >
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              {discrepancyCount} Issue{discrepancyCount > 1 ? 's' : ''} - View →
-                            </button>
-                          );
-                        })()}
+                        {discrepancyCount === 0 ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Verified
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {discrepancyCount === 1 ? 'Minor Issues' : `${discrepancyCount} Issues`}
+                          </span>
+                        )}
                         <Button variant="outline" size="sm">
                           <Eye className="w-4 h-4 mr-2" />
                           View
