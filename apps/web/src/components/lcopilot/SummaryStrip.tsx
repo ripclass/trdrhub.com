@@ -12,11 +12,13 @@ type Props = {
   lcTypeConfidence?: number | null;
   packGenerated?: boolean;
   overallStatus?: 'success' | 'warning' | 'error';
+  actualIssuesCount?: number;
+  complianceScore?: number;
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
 
-export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus }: Props) {
+export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
   const structured = data?.structured_result;
   const summary = structured?.processing_summary;
   const analytics = structured?.analytics;
@@ -32,9 +34,11 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
   
-  // Get issue counts - check multiple sources
-  const totalIssues = summary.total_issues ?? summary.discrepancies ?? 0;
-  const complianceRate = summary.compliance_rate ?? 100;
+  // Get issue counts - use actual count from parent if available
+  const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
+  // Use passed compliance score, or calculate fallback
+  const complianceRate = complianceScore ?? summary.compliance_rate ?? 
+    (totalIssues === 0 ? 100 : Math.max(0, 100 - (totalIssues * 15)));
   
   // Document status - fallback to calculated values if distribution is empty
   const successFromDist = formatNumber(statusDistribution.success);

@@ -808,7 +808,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
-  const totalDiscrepancies = summary?.total_issues ?? issueCards.length ?? 0;
+  // Use the higher of summary.total_issues or actual issueCards.length
+  // This ensures we show the correct count even if backend summary is stale
+  const totalDiscrepancies = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
     critical: 0,
     major: 0,
@@ -1392,6 +1394,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={packGenerated}
             overallStatus={overallStatus}
+            actualIssuesCount={issueCards.length}
+            complianceScore={complianceScore}
           />
         </div>
 
