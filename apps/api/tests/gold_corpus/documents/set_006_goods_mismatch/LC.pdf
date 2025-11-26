@@ -1,0 +1,43 @@
+
+IRREVOCABLE DOCUMENTARY CREDIT
+MT700 FORMAT
+
+Field 27: Sequence of Total: 1/1
+Field 40A: Form of Documentary Credit: IRREVOCABLE
+Field 20: Documentary Credit Number: EXP2026BD006
+Field 31C: Date of Issue: 2025-11-26
+Field 40E: Applicable Rules: UCP LATEST VERSION
+Field 31D: Date and Place of Expiry: 2026-03-31 New York, USA
+Field 50: Applicant: Global Trade Corp
+         123 Commerce Street, New York, NY 10001, USA
+Field 59: Beneficiary: Bangladesh Export Ltd
+          45 Export Zone, Chittagong, Bangladesh
+Field 32B: Currency Code, Amount: USD 88,000.00
+Field 41D: Available With/By: HSBC Bangladesh BY NEGOTIATION
+Field 42C: Drafts at: SIGHT
+Field 43P: Partial Shipments: ALLOWED
+Field 43T: Transhipment: ALLOWED
+Field 44E: Port of Loading: Chittagong, Bangladesh
+Field 44F: Port of Discharge: New York, USA
+Field 44C: Latest Date of Shipment: 2026-03-15
+Field 45A: Description of Goods:
+    100% Cotton T-Shirts, HS Code 6109.10
+    Quantity: 10,000 pieces
+    Unit Price: USD 12.50
+    Total: USD 88,000.00
+    Terms: FOB Chittagong
+Field 46A: Documents Required:
+    - Commercial Invoice in triplicate
+    - Full set of clean on board Bills of Lading
+    - Packing List
+    - Certificate of Origin
+    - Insurance Certificate for 110% of invoice value
+
+Field 47A: Additional Conditions:
+    - Documents must be presented within 21 days after shipment
+    - All documents must show LC number EXP2026BD006
+Field 71B: Charges: All banking charges outside issuing bank are for beneficiary
+Field 48: Period for Presentation: 21 days
+Field 49: Confirmation Instructions: WITHOUT
+Field 52A: Issuing Bank: Standard Chartered Bank
+          SWIFT: SCBLBDDX

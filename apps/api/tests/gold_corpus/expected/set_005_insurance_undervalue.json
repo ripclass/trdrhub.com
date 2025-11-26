@@ -1,0 +1,28 @@
+{
+  "set_id": "set_005_insurance_undervalue",
+  "description": "Insurance undervalue - less than 110% required by UCP600",
+  "version": "1.0",
+  "expected_compliance_rate": 80.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_amount",
+      "expected_value": "150000.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-INSURANCE-1",
+      "severity": "major",
+      "document_type": "insurance",
+      "title_contains": "coverage",
+      "description": "Insurance coverage insufficient"
+    }
+  ],
+  "false_positive_checks": []
+}

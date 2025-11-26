@@ -1,0 +1,34 @@
+{
+  "set_id": "set_003_port_mismatch",
+  "description": "B/L port of discharge doesn't match LC",
+  "version": "1.0",
+  "expected_compliance_rate": 75.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "port_of_discharge",
+      "expected_value": "Los Angeles",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bl",
+      "field_name": "port_of_discharge",
+      "expected_value": "Long Beach",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-PORT-1",
+      "severity": "major",
+      "document_type": "bl",
+      "title_contains": "port",
+      "description": "Port mismatch"
+    }
+  ],
+  "false_positive_checks": []
+}

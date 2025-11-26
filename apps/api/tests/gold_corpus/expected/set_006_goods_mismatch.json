@@ -1,0 +1,34 @@
+{
+  "set_id": "set_006_goods_mismatch",
+  "description": "Goods description mismatch - Invoice shows different product",
+  "version": "1.0",
+  "expected_compliance_rate": 75.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "goods_description",
+      "expected_value": "Cotton",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "goods_description",
+      "expected_value": "Polyester",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-GOODS-1",
+      "severity": "critical",
+      "document_type": "invoice",
+      "title_contains": "goods",
+      "description": "Goods description mismatch"
+    }
+  ],
+  "false_positive_checks": []
+}

@@ -1,0 +1,43 @@
+{
+  "set_id": "set_002_amount_mismatch",
+  "description": "Invoice amount exceeds LC - UCP600 Article 18(b) violation",
+  "version": "1.0",
+  "expected_compliance_rate": 70.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD002",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "lc",
+      "field_name": "lc_amount",
+      "expected_value": "100000.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_amount",
+      "expected_value": "105000.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-AMOUNT-1",
+      "severity": "critical",
+      "document_type": "invoice",
+      "title_contains": "amount",
+      "description": "Invoice exceeds LC amount"
+    }
+  ],
+  "false_positive_checks": []
+}
