@@ -841,7 +841,9 @@ class CrossDocValidator:
         # Minimum 110% coverage per UCP600 Article 28(f)(ii)
         min_coverage = lc_amount * 1.10
         
-        if ins_amount < min_coverage:
+        # Use small epsilon for floating-point comparison
+        epsilon = 0.01
+        if ins_amount < (min_coverage - epsilon):
             return CrossDocIssue(
                 rule_id="CROSSDOC-INS-001",
                 title="Insufficient Insurance Coverage",
