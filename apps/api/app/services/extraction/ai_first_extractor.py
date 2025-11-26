@@ -883,11 +883,589 @@ class BLAIFirstExtractor(AIFirstExtractor):
 
 
 # =====================================================================
+# PACKING LIST AI-FIRST EXTRACTOR
+# =====================================================================
+
+PACKING_LIST_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Packing Lists.
+
+Your task is to extract structured data from packing list documents used in international trade.
+These documents detail the contents of shipments and must match the commercial invoice and LC requirements.
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. If a field is not found, return null - do NOT guess
+3. Package counts and weights must be exact
+4. Marks and numbers must be captured exactly as written
+5. Be precise - banks check packing details against LC requirements
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+PACKING_LIST_EXTRACTION_PROMPT = """Extract the following fields from this Packing List:
+
+REQUIRED FIELDS:
+- packing_list_number: The packing list reference number
+- date: The date of the packing list
+- shipper: The shipper/exporter name
+- consignee: The consignee/buyer name
+- total_packages: Total number of packages/cartons
+- gross_weight: Total gross weight with unit
+- net_weight: Total net weight with unit
+
+OPTIONAL FIELDS:
+- invoice_reference: Related invoice number
+- lc_reference: Related LC number
+- goods_description: Description of goods
+- marks_and_numbers: Shipping marks
+- dimensions: Package dimensions
+- container_number: Container ID
+- port_of_loading: Origin port
+- port_of_discharge: Destination port
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class PackingListAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Packing Lists."""
+    
+    VALIDATORS = {
+        "packing_list_number": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/\.]{1,30}$",
+            "flags": re.I,
+            "description": "Packing list number should be alphanumeric",
+        },
+        "total_packages": {
+            "pattern": r"^\d+$",
+            "flags": 0,
+            "description": "Package count should be a number",
+        },
+        "date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
+    }
+    
+    async def extract_packing_list(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract packing list fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        ai_result, ai_provider = await self._run_ai_extraction_generic(
+            raw_text, PACKING_LIST_EXTRACTION_PROMPT, PACKING_LIST_EXTRACTION_SYSTEM_PROMPT
+        )
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI packing list extraction failed, using regex fallback")
+            return self._packing_list_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="packing_list")
+    
+    def _packing_list_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for packing list."""
+        result: Dict[str, Any] = {}
+        
+        match = re.search(r"Packing\s*List\s*(?:No\.?|#)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["packing_list_number"] = match.group(1).strip()
+        
+        match = re.search(r"Total\s*(?:Packages?|Cartons?)\s*[:\-]?\s*(\d+)", raw_text, re.I)
+        if match:
+            result["total_packages"] = match.group(1)
+        
+        match = re.search(r"Gross\s*Weight\s*[:\-]?\s*([\d,\.]+\s*(?:KG|KGS|LBS)?)", raw_text, re.I)
+        if match:
+            result["gross_weight"] = match.group(1).strip()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "packing_list",
+    ) -> Dict[str, Any]:
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# CERTIFICATE OF ORIGIN AI-FIRST EXTRACTOR
+# =====================================================================
+
+COO_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Certificates of Origin.
+
+Your task is to extract structured data from Certificate of Origin documents.
+These documents certify where goods were manufactured/produced and are critical for customs and LC compliance.
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. The country of origin is CRITICAL - extract exactly as stated
+3. Certifying authority/chamber must be captured
+4. If a field is not found, return null - do NOT guess
+5. Be precise - origin certificates affect duty rates and LC compliance
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+COO_EXTRACTION_PROMPT = """Extract the following fields from this Certificate of Origin:
+
+REQUIRED FIELDS:
+- certificate_number: The certificate reference number
+- country_of_origin: The country where goods originated
+- exporter_name: The exporter/manufacturer name
+- importer_name: The importer/consignee name
+- goods_description: Description of goods
+- certifying_authority: Chamber of Commerce or authority name
+
+OPTIONAL FIELDS:
+- issue_date: Date certificate was issued
+- invoice_reference: Related invoice number
+- lc_reference: Related LC number
+- hs_code: Harmonized System code
+- destination_country: Where goods are going
+- transport_details: Shipping information
+- marks_and_numbers: Shipping marks
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class CertificateOfOriginAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Certificate of Origin."""
+    
+    VALIDATORS = {
+        "certificate_number": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/\.]{1,30}$",
+            "flags": re.I,
+            "description": "Certificate number should be alphanumeric",
+        },
+        "issue_date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
+        "hs_code": {
+            "pattern": r"^\d{4,10}$",
+            "flags": 0,
+            "description": "HS code should be 4-10 digits",
+        },
+    }
+    
+    async def extract_coo(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract certificate of origin fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        ai_result, ai_provider = await self._run_ai_extraction_generic(
+            raw_text, COO_EXTRACTION_PROMPT, COO_EXTRACTION_SYSTEM_PROMPT
+        )
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI CoO extraction failed, using regex fallback")
+            return self._coo_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="certificate_of_origin")
+    
+    def _coo_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for certificate of origin."""
+        result: Dict[str, Any] = {}
+        
+        match = re.search(r"Certificate\s*(?:No\.?|#|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["certificate_number"] = match.group(1).strip()
+        
+        match = re.search(r"Country\s*of\s*Origin\s*[:\-]?\s*([A-Za-z\s]+?)(?:\n|$)", raw_text, re.I)
+        if match:
+            result["country_of_origin"] = match.group(1).strip()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "certificate_of_origin",
+    ) -> Dict[str, Any]:
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# INSURANCE CERTIFICATE AI-FIRST EXTRACTOR
+# =====================================================================
+
+INSURANCE_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Insurance Certificates.
+
+Your task is to extract structured data from Marine/Cargo Insurance Certificates.
+These documents prove goods are insured and must meet LC requirements (typically CIF + 10%).
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. Insurance amount and coverage percentage are CRITICAL
+3. The insured value must typically be invoice value + 10% (CIF + 10%)
+4. Risk coverage types (All Risks, ICC-A, etc.) must be captured
+5. If a field is not found, return null - do NOT guess
+6. Be precise - banks verify insurance coverage against LC requirements
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+INSURANCE_EXTRACTION_PROMPT = """Extract the following fields from this Insurance Certificate:
+
+REQUIRED FIELDS:
+- certificate_number: The certificate/policy reference
+- insured_amount: The amount of coverage (number)
+- currency: Currency of coverage
+- insured_party: Who is insured (beneficiary)
+- insurance_company: Name of the insurer
+- coverage_type: Type of coverage (All Risks, ICC-A, ICC-B, ICC-C, etc.)
+
+OPTIONAL FIELDS:
+- issue_date: Date certificate was issued
+- invoice_reference: Related invoice number
+- lc_reference: Related LC number
+- goods_description: Description of insured goods
+- voyage_details: From/to ports
+- vessel_name: Name of carrying vessel
+- claims_payable_at: Where claims are paid
+- survey_agent: Survey/claims agent
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class InsuranceCertificateAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Insurance Certificates."""
+    
+    VALIDATORS = {
+        "certificate_number": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/\.]{1,30}$",
+            "flags": re.I,
+            "description": "Certificate number should be alphanumeric",
+        },
+        "insured_amount": {
+            "pattern": r"^\d+(?:\.\d{1,4})?$",
+            "flags": 0,
+            "description": "Amount should be a valid number",
+        },
+        "currency": {
+            "pattern": r"^[A-Z]{3}$",
+            "flags": 0,
+            "description": "Currency should be 3-letter ISO code",
+        },
+        "coverage_type": {
+            "pattern": r"^(ALL\s*RISKS?|ICC[\-\s]?[ABC]|INSTITUTE\s+CARGO|FPA|WA).*$",
+            "flags": re.I,
+            "description": "Should be a valid coverage type",
+        },
+    }
+    
+    async def extract_insurance(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract insurance certificate fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        ai_result, ai_provider = await self._run_ai_extraction_generic(
+            raw_text, INSURANCE_EXTRACTION_PROMPT, INSURANCE_EXTRACTION_SYSTEM_PROMPT
+        )
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI insurance extraction failed, using regex fallback")
+            return self._insurance_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="insurance_certificate")
+    
+    def _insurance_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for insurance certificate."""
+        result: Dict[str, Any] = {}
+        
+        match = re.search(r"(?:Certificate|Policy)\s*(?:No\.?|#|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["certificate_number"] = match.group(1).strip()
+        
+        match = re.search(r"(?:Sum\s+Insured|Insured\s+(?:Amount|Value))\s*[:\-]?\s*([A-Z]{3})?\s*([\d,]+(?:\.\d{2})?)", raw_text, re.I)
+        if match:
+            if match.group(1):
+                result["currency"] = match.group(1)
+            result["insured_amount"] = match.group(2).replace(",", "")
+        
+        match = re.search(r"(ALL\s*RISKS?|ICC[\-\s]?[ABC]|INSTITUTE\s+CARGO)", raw_text, re.I)
+        if match:
+            result["coverage_type"] = match.group(1).strip().upper()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "insurance_certificate",
+    ) -> Dict[str, Any]:
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# INSPECTION CERTIFICATE AI-FIRST EXTRACTOR
+# =====================================================================
+
+INSPECTION_EXTRACTION_SYSTEM_PROMPT = """You are an expert trade finance document parser specializing in Inspection Certificates.
+
+Your task is to extract structured data from Pre-Shipment Inspection (PSI) and Quality Inspection certificates.
+These documents verify that goods meet quality/quantity standards before shipment.
+
+IMPORTANT RULES:
+1. Extract ONLY what is explicitly stated in the document
+2. Inspection agency/company name is CRITICAL (must be approved agency)
+3. Inspection result (passed/failed) must be captured
+4. If a field is not found, return null - do NOT guess
+5. Be precise - banks verify inspection agency against LC requirements
+
+OUTPUT FORMAT: JSON only, no markdown, no explanation."""
+
+INSPECTION_EXTRACTION_PROMPT = """Extract the following fields from this Inspection Certificate:
+
+REQUIRED FIELDS:
+- certificate_number: The certificate reference number
+- inspection_agency: Name of the inspection company
+- inspection_date: When inspection was performed
+- inspection_result: PASSED, FAILED, or specific finding
+- goods_description: Description of inspected goods
+
+OPTIONAL FIELDS:
+- issue_date: Date certificate was issued
+- invoice_reference: Related invoice number
+- lc_reference: Related LC number
+- quantity_verified: Quantity that was inspected
+- quality_finding: Quality assessment details
+- inspector_name: Name of the inspector
+- inspection_location: Where inspection took place
+
+Return a JSON object with these fields. Use null for any field not found.
+
+---
+DOCUMENT TEXT:
+{document_text}
+---
+
+Return ONLY valid JSON, no other text:"""
+
+
+class InspectionCertificateAIFirstExtractor(AIFirstExtractor):
+    """AI-first extractor for Inspection Certificates."""
+    
+    VALIDATORS = {
+        "certificate_number": {
+            "pattern": r"^[A-Z0-9][A-Z0-9\-\/\.]{1,30}$",
+            "flags": re.I,
+            "description": "Certificate number should be alphanumeric",
+        },
+        "inspection_date": {
+            "pattern": r"^\d{4}-\d{2}-\d{2}$|^\d{2}[\/\-]\d{2}[\/\-]\d{4}$",
+            "flags": 0,
+            "description": "Date should be YYYY-MM-DD or DD/MM/YYYY",
+        },
+        "inspection_result": {
+            "pattern": r"^(PASS(ED)?|FAIL(ED)?|CONFORM(S|ING)?|NON[\-\s]?CONFORM|SATISFACTORY|UNSATISFACTORY)$",
+            "flags": re.I,
+            "description": "Should be a clear pass/fail result",
+        },
+    }
+    
+    async def extract_inspection(
+        self,
+        raw_text: str,
+        use_fallback_on_ai_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """Extract inspection certificate fields using AI-first pattern."""
+        if not raw_text or not raw_text.strip():
+            return self._empty_result("empty_input")
+        
+        ai_result, ai_provider = await self._run_ai_extraction_generic(
+            raw_text, INSPECTION_EXTRACTION_PROMPT, INSPECTION_EXTRACTION_SYSTEM_PROMPT
+        )
+        
+        if not ai_result and use_fallback_on_ai_failure:
+            logger.warning("AI inspection extraction failed, using regex fallback")
+            return self._inspection_regex_fallback(raw_text)
+        
+        if not ai_result:
+            return self._empty_result("ai_failed")
+        
+        fields: Dict[str, ExtractedFieldResult] = {}
+        for field_name, ai_value in ai_result.items():
+            if field_name.startswith("_"):
+                continue
+            field_result = self._process_field(field_name, ai_value, raw_text)
+            fields[field_name] = field_result
+        
+        return self._build_output(fields, ai_provider, doc_type="inspection_certificate")
+    
+    def _inspection_regex_fallback(self, raw_text: str) -> Dict[str, Any]:
+        """Regex fallback for inspection certificate."""
+        result: Dict[str, Any] = {}
+        
+        match = re.search(r"(?:Certificate|Report)\s*(?:No\.?|#|Number)\s*[:\-]?\s*([A-Z0-9\-\/]+)", raw_text, re.I)
+        if match:
+            result["certificate_number"] = match.group(1).strip()
+        
+        match = re.search(r"(?:Inspection|Surveyed)\s*(?:By|Agency)\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["inspection_agency"] = match.group(1).strip()
+        
+        result["_extraction_method"] = "regex_fallback"
+        result["_status"] = "ai_failed_regex_used"
+        return result
+    
+    def _build_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        ai_provider: str,
+        doc_type: str = "inspection_certificate",
+    ) -> Dict[str, Any]:
+        output = super()._build_output(fields, ai_provider)
+        output["_document_type"] = doc_type
+        return output
+
+
+# =====================================================================
+# GENERIC AI EXTRACTION HELPER
+# =====================================================================
+
+async def _run_ai_extraction_generic(
+    self,
+    raw_text: str,
+    prompt_template: str,
+    system_prompt: str,
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Generic AI extraction for any document type."""
+    try:
+        from ..llm_provider import LLMProviderFactory
+        
+        provider = LLMProviderFactory.get_provider()
+        if not provider:
+            logger.warning("No LLM provider available")
+            return None, "none"
+        
+        prompt = prompt_template.format(document_text=raw_text[:12000])
+        
+        response = await provider.generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.1,
+            max_tokens=2000,
+        )
+        
+        if not response:
+            return None, "empty_response"
+        
+        import json
+        try:
+            clean = response.strip()
+            if clean.startswith("```"):
+                clean = clean.split("```")[1]
+                if clean.startswith("json"):
+                    clean = clean[4:]
+            
+            result = json.loads(clean)
+            
+            for key in result:
+                if result[key] is not None:
+                    result[key] = {"value": result[key], "confidence": 0.75}
+            
+            return result, provider.__class__.__name__
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse AI response: {e}")
+            return None, "parse_error"
+            
+    except Exception as e:
+        logger.error(f"AI extraction error: {e}", exc_info=True)
+        return None, "error"
+
+
+# Add the method to base class
+AIFirstExtractor._run_ai_extraction_generic = _run_ai_extraction_generic
+
+
+# =====================================================================
 # GLOBAL INSTANCES AND CONVENIENCE FUNCTIONS
 # =====================================================================
 
 _invoice_extractor: Optional[InvoiceAIFirstExtractor] = None
 _bl_extractor: Optional[BLAIFirstExtractor] = None
+_packing_list_extractor: Optional[PackingListAIFirstExtractor] = None
+_coo_extractor: Optional[CertificateOfOriginAIFirstExtractor] = None
+_insurance_extractor: Optional[InsuranceCertificateAIFirstExtractor] = None
+_inspection_extractor: Optional[InspectionCertificateAIFirstExtractor] = None
 
 
 def get_invoice_ai_first_extractor() -> InvoiceAIFirstExtractor:
@@ -906,18 +1484,70 @@ def get_bl_ai_first_extractor() -> BLAIFirstExtractor:
     return _bl_extractor
 
 
+def get_packing_list_ai_first_extractor() -> PackingListAIFirstExtractor:
+    """Get or create the packing list AI-first extractor."""
+    global _packing_list_extractor
+    if _packing_list_extractor is None:
+        _packing_list_extractor = PackingListAIFirstExtractor()
+    return _packing_list_extractor
+
+
+def get_coo_ai_first_extractor() -> CertificateOfOriginAIFirstExtractor:
+    """Get or create the certificate of origin AI-first extractor."""
+    global _coo_extractor
+    if _coo_extractor is None:
+        _coo_extractor = CertificateOfOriginAIFirstExtractor()
+    return _coo_extractor
+
+
+def get_insurance_ai_first_extractor() -> InsuranceCertificateAIFirstExtractor:
+    """Get or create the insurance certificate AI-first extractor."""
+    global _insurance_extractor
+    if _insurance_extractor is None:
+        _insurance_extractor = InsuranceCertificateAIFirstExtractor()
+    return _insurance_extractor
+
+
+def get_inspection_ai_first_extractor() -> InspectionCertificateAIFirstExtractor:
+    """Get or create the inspection certificate AI-first extractor."""
+    global _inspection_extractor
+    if _inspection_extractor is None:
+        _inspection_extractor = InspectionCertificateAIFirstExtractor()
+    return _inspection_extractor
+
+
 async def extract_invoice_ai_first(raw_text: str) -> Dict[str, Any]:
-    """
-    Convenience function for AI-first invoice extraction.
-    """
+    """Convenience function for AI-first invoice extraction."""
     extractor = get_invoice_ai_first_extractor()
     return await extractor.extract_invoice(raw_text)
 
 
 async def extract_bl_ai_first(raw_text: str) -> Dict[str, Any]:
-    """
-    Convenience function for AI-first B/L extraction.
-    """
+    """Convenience function for AI-first B/L extraction."""
     extractor = get_bl_ai_first_extractor()
     return await extractor.extract_bl(raw_text)
+
+
+async def extract_packing_list_ai_first(raw_text: str) -> Dict[str, Any]:
+    """Convenience function for AI-first packing list extraction."""
+    extractor = get_packing_list_ai_first_extractor()
+    return await extractor.extract_packing_list(raw_text)
+
+
+async def extract_coo_ai_first(raw_text: str) -> Dict[str, Any]:
+    """Convenience function for AI-first certificate of origin extraction."""
+    extractor = get_coo_ai_first_extractor()
+    return await extractor.extract_coo(raw_text)
+
+
+async def extract_insurance_ai_first(raw_text: str) -> Dict[str, Any]:
+    """Convenience function for AI-first insurance certificate extraction."""
+    extractor = get_insurance_ai_first_extractor()
+    return await extractor.extract_insurance(raw_text)
+
+
+async def extract_inspection_ai_first(raw_text: str) -> Dict[str, Any]:
+    """Convenience function for AI-first inspection certificate extraction."""
+    extractor = get_inspection_ai_first_extractor()
+    return await extractor.extract_inspection(raw_text)
 

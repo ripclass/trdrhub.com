@@ -56,6 +56,10 @@ from app.services.extraction.ai_first_extractor import (
     extract_lc_ai_first,
     extract_invoice_ai_first,
     extract_bl_ai_first,
+    extract_packing_list_ai_first,
+    extract_coo_ai_first,
+    extract_insurance_ai_first,
+    extract_inspection_ai_first,
 )
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
@@ -1679,77 +1683,209 @@ async def _build_document_context(
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
             elif document_type == "packing_list":
-                packing_fields = extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
-                logger.info(f"Extracted {len(packing_fields)} fields from packing list {filename}")
-                packing_context = _fields_to_flat_context(packing_fields)
-                if packing_context:
-                    # Apply two-stage validation
-                    validated_packing, validation_summary = _apply_two_stage_validation(
-                        packing_context, "packing_list", filename
+                # Use AI-FIRST extraction for packing list
+                try:
+                    packing_struct = await extract_packing_list_ai_first(extracted_text)
+                    extraction_method = packing_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = packing_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = packing_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first packing list extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    pkg_ctx = context.setdefault("packing_list", {})
-                    pkg_ctx["raw_text"] = extracted_text
-                    pkg_ctx.update(validated_packing)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_packing
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"Packing list context keys: {list(pkg_ctx.keys())}")
+                    if packing_struct and extraction_status != "failed":
+                        validated_packing, validation_summary = _apply_two_stage_validation(
+                            packing_struct, "packing_list", filename
+                        )
+                        
+                        pkg_ctx = context.setdefault("packing_list", {})
+                        pkg_ctx["raw_text"] = extracted_text
+                        pkg_ctx.update(validated_packing)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_packing
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in packing_struct:
+                            doc_info["field_details"] = packing_struct["_field_details"]
+                        
+                        logger.info(f"Packing list context keys: {list(pkg_ctx.keys())}")
+                    else:
+                        logger.warning(f"AI-first packing list extraction failed for {filename}")
+                except Exception as packing_err:
+                    logger.warning(f"Packing list AI extraction failed for {filename}: {packing_err}", exc_info=True)
+                    packing_fields = extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
+                    packing_context = _fields_to_flat_context(packing_fields)
+                    if packing_context:
+                        validated_packing, validation_summary = _apply_two_stage_validation(
+                            packing_context, "packing_list", filename
+                        )
+                        pkg_ctx = context.setdefault("packing_list", {})
+                        pkg_ctx["raw_text"] = extracted_text
+                        pkg_ctx.update(validated_packing)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_packing
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             elif document_type == "certificate_of_origin":
-                coo_fields = extractor.extract_fields(extracted_text, DocumentType.CERTIFICATE_OF_ORIGIN)
-                logger.info(f"Extracted {len(coo_fields)} fields from certificate of origin {filename}")
-                coo_context = _fields_to_flat_context(coo_fields)
-                if coo_context:
-                    # Apply two-stage validation
-                    validated_coo, validation_summary = _apply_two_stage_validation(
-                        coo_context, "certificate_of_origin", filename
+                # Use AI-FIRST extraction for certificate of origin
+                try:
+                    coo_struct = await extract_coo_ai_first(extracted_text)
+                    extraction_method = coo_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = coo_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = coo_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first CoO extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    coo_ctx = context.setdefault("certificate_of_origin", {})
-                    coo_ctx["raw_text"] = extracted_text
-                    coo_ctx.update(validated_coo)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_coo
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"Certificate of origin context keys: {list(coo_ctx.keys())}")
+                    if coo_struct and extraction_status != "failed":
+                        validated_coo, validation_summary = _apply_two_stage_validation(
+                            coo_struct, "certificate_of_origin", filename
+                        )
+                        
+                        coo_ctx = context.setdefault("certificate_of_origin", {})
+                        coo_ctx["raw_text"] = extracted_text
+                        coo_ctx.update(validated_coo)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_coo
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in coo_struct:
+                            doc_info["field_details"] = coo_struct["_field_details"]
+                        
+                        logger.info(f"Certificate of origin context keys: {list(coo_ctx.keys())}")
+                    else:
+                        logger.warning(f"AI-first CoO extraction failed for {filename}")
+                except Exception as coo_err:
+                    logger.warning(f"CoO AI extraction failed for {filename}: {coo_err}", exc_info=True)
+                    coo_fields = extractor.extract_fields(extracted_text, DocumentType.CERTIFICATE_OF_ORIGIN)
+                    coo_context = _fields_to_flat_context(coo_fields)
+                    if coo_context:
+                        validated_coo, validation_summary = _apply_two_stage_validation(
+                            coo_context, "certificate_of_origin", filename
+                        )
+                        coo_ctx = context.setdefault("certificate_of_origin", {})
+                        coo_ctx["raw_text"] = extracted_text
+                        coo_ctx.update(validated_coo)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_coo
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             elif document_type == "insurance_certificate":
-                insurance_fields = extractor.extract_fields(extracted_text, DocumentType.INSURANCE_CERTIFICATE)
-                logger.info(f"Extracted {len(insurance_fields)} fields from insurance certificate {filename}")
-                insurance_context = _fields_to_flat_context(insurance_fields)
-                if insurance_context:
-                    # Apply two-stage validation
-                    validated_insurance, validation_summary = _apply_two_stage_validation(
-                        insurance_context, "insurance", filename
+                # Use AI-FIRST extraction for insurance certificate
+                try:
+                    insurance_struct = await extract_insurance_ai_first(extracted_text)
+                    extraction_method = insurance_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = insurance_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = insurance_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first insurance extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    insurance_ctx = context.setdefault("insurance_certificate", {})
-                    insurance_ctx["raw_text"] = extracted_text
-                    insurance_ctx.update(validated_insurance)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_insurance
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"Insurance context keys: {list(insurance_ctx.keys())}")
+                    if insurance_struct and extraction_status != "failed":
+                        validated_insurance, validation_summary = _apply_two_stage_validation(
+                            insurance_struct, "insurance", filename
+                        )
+                        
+                        insurance_ctx = context.setdefault("insurance_certificate", {})
+                        insurance_ctx["raw_text"] = extracted_text
+                        insurance_ctx.update(validated_insurance)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_insurance
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in insurance_struct:
+                            doc_info["field_details"] = insurance_struct["_field_details"]
+                        
+                        logger.info(f"Insurance context keys: {list(insurance_ctx.keys())}")
+                    else:
+                        logger.warning(f"AI-first insurance extraction failed for {filename}")
+                except Exception as ins_err:
+                    logger.warning(f"Insurance AI extraction failed for {filename}: {ins_err}", exc_info=True)
+                    insurance_fields = extractor.extract_fields(extracted_text, DocumentType.INSURANCE_CERTIFICATE)
+                    insurance_context = _fields_to_flat_context(insurance_fields)
+                    if insurance_context:
+                        validated_insurance, validation_summary = _apply_two_stage_validation(
+                            insurance_context, "insurance", filename
+                        )
+                        insurance_ctx = context.setdefault("insurance_certificate", {})
+                        insurance_ctx["raw_text"] = extracted_text
+                        insurance_ctx.update(validated_insurance)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_insurance
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             elif document_type == "inspection_certificate":
-                inspection_fields = extractor.extract_fields(extracted_text, DocumentType.INSPECTION_CERTIFICATE)
-                logger.info(f"Extracted {len(inspection_fields)} fields from inspection certificate {filename}")
-                inspection_context = _fields_to_flat_context(inspection_fields)
-                if inspection_context:
-                    # Apply two-stage validation
-                    validated_inspection, validation_summary = _apply_two_stage_validation(
-                        inspection_context, "inspection", filename
+                # Use AI-FIRST extraction for inspection certificate
+                try:
+                    inspection_struct = await extract_inspection_ai_first(extracted_text)
+                    extraction_method = inspection_struct.get("_extraction_method", "unknown")
+                    extraction_confidence = inspection_struct.get("_extraction_confidence", 0.0)
+                    extraction_status = inspection_struct.get("_status", "unknown")
+                    
+                    logger.info(
+                        f"AI-first inspection extraction from {filename}: method={extraction_method} "
+                        f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    inspection_ctx = context.setdefault("inspection_certificate", {})
-                    inspection_ctx["raw_text"] = extracted_text
-                    inspection_ctx.update(validated_inspection)
-                    has_structured_data = True
-                    doc_info["extracted_fields"] = validated_inspection
-                    doc_info["extraction_status"] = "success"
-                    doc_info["validation_summary"] = validation_summary
-                    logger.info(f"Inspection context keys: {list(inspection_ctx.keys())}")
+                    if inspection_struct and extraction_status != "failed":
+                        validated_inspection, validation_summary = _apply_two_stage_validation(
+                            inspection_struct, "inspection", filename
+                        )
+                        
+                        inspection_ctx = context.setdefault("inspection_certificate", {})
+                        inspection_ctx["raw_text"] = extracted_text
+                        inspection_ctx.update(validated_inspection)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_inspection
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = extraction_method
+                        doc_info["extraction_confidence"] = extraction_confidence
+                        doc_info["validation_summary"] = validation_summary
+                        doc_info["ai_first_status"] = extraction_status
+                        
+                        if "_field_details" in inspection_struct:
+                            doc_info["field_details"] = inspection_struct["_field_details"]
+                        
+                        logger.info(f"Inspection context keys: {list(inspection_ctx.keys())}")
+                    else:
+                        logger.warning(f"AI-first inspection extraction failed for {filename}")
+                except Exception as insp_err:
+                    logger.warning(f"Inspection AI extraction failed for {filename}: {insp_err}", exc_info=True)
+                    inspection_fields = extractor.extract_fields(extracted_text, DocumentType.INSPECTION_CERTIFICATE)
+                    inspection_context = _fields_to_flat_context(inspection_fields)
+                    if inspection_context:
+                        validated_inspection, validation_summary = _apply_two_stage_validation(
+                            inspection_context, "inspection", filename
+                        )
+                        inspection_ctx = context.setdefault("inspection_certificate", {})
+                        inspection_ctx["raw_text"] = extracted_text
+                        inspection_ctx.update(validated_inspection)
+                        has_structured_data = True
+                        doc_info["extracted_fields"] = validated_inspection
+                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_method"] = "regex_fallback"
+                        doc_info["validation_summary"] = validation_summary
             else:
                 # For other document types, retain raw text for downstream use
                 doc_info["raw_text_preview"] = extracted_text[:500]
