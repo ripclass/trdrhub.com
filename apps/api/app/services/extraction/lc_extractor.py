@@ -301,4 +301,154 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             lc_structured["amount"] = credit_amount
 
     # Cleanup None keys
-    return {k: v for k, v in lc_structured.items() if v not in (None, [], {})}
+    result = {k: v for k, v in lc_structured.items() if v not in (None, [], {})}
+    
+    # Calculate extraction confidence
+    result["_extraction_confidence"] = _calculate_rule_based_confidence(result)
+    result["_extraction_method"] = "rule_based"
+    
+    return result
+
+
+def _calculate_rule_based_confidence(extracted: Dict[str, Any]) -> float:
+    """
+    Calculate confidence score for rule-based extraction.
+    
+    Returns a score between 0.0 and 1.0 based on critical fields extracted.
+    """
+    # Critical fields that MUST be present for a valid LC extraction
+    critical_fields = ["number", "amount"]
+    critical_count = sum(1 for f in critical_fields if extracted.get(f))
+    
+    # Important fields that should be present
+    important_fields = ["applicant", "beneficiary", "currency"]
+    important_count = sum(1 for f in important_fields if extracted.get(f))
+    
+    # Optional but valuable fields
+    optional_fields = ["ports", "incoterm", "timeline", "ucp_reference"]
+    optional_count = sum(1 for f in optional_fields if extracted.get(f))
+    
+    # Weight calculation: critical (50%), important (30%), optional (20%)
+    critical_score = (critical_count / len(critical_fields)) * 0.50
+    important_score = (important_count / len(important_fields)) * 0.30
+    optional_score = (optional_count / len(optional_fields)) * 0.20
+    
+    return round(critical_score + important_score + optional_score, 2)
+
+
+# =====================================================================
+# ASYNC EXTRACTION WITH AI FALLBACK
+# =====================================================================
+
+async def extract_lc_structured_with_ai_fallback(
+    raw_text: str,
+    ai_threshold: float = 0.5,
+    always_try_ai: bool = False,
+) -> Dict[str, Any]:
+    """
+    Extract LC fields using rule-based parsers, with AI fallback.
+    
+    This is the RECOMMENDED extraction function that provides:
+    1. Fast rule-based extraction (MT700, regex)
+    2. AI fallback when confidence is low
+    3. Best-of-both merging when AI improves results
+    
+    Args:
+        raw_text: OCR/document text
+        ai_threshold: Use AI if rule-based confidence is below this
+        always_try_ai: Always run AI extraction (for comparison/merge)
+    
+    Returns:
+        Extracted LC structure with confidence and method metadata
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Step 1: Try rule-based extraction first (fast, cheap)
+    rule_result = extract_lc_structured(raw_text)
+    rule_confidence = rule_result.get("_extraction_confidence", 0.0)
+    
+    logger.info(
+        "LC Extraction (rule-based): confidence=%.2f critical_fields=%s",
+        rule_confidence,
+        bool(rule_result.get("number") and rule_result.get("amount"))
+    )
+    
+    # Step 2: Decide if AI is needed
+    needs_ai = rule_confidence < ai_threshold or always_try_ai
+    
+    if not needs_ai:
+        logger.info("Rule-based extraction sufficient, skipping AI")
+        return rule_result
+    
+    # Step 3: Run AI extraction
+    logger.info("Running AI extraction (rule confidence %.2f < threshold %.2f)", rule_confidence, ai_threshold)
+    
+    try:
+        from .ai_lc_extractor import extract_lc_with_ai, convert_ai_to_lc_structure
+        
+        ai_result, ai_confidence, provider = await extract_lc_with_ai(raw_text)
+        
+        logger.info(
+            "AI extraction complete: provider=%s confidence=%.2f",
+            provider, ai_confidence
+        )
+        
+        if ai_confidence <= 0:
+            # AI also failed, return rule-based result
+            logger.warning("AI extraction also failed, using rule-based result")
+            return rule_result
+        
+        # Convert AI result to standard structure
+        ai_structured = convert_ai_to_lc_structure(ai_result)
+        ai_structured["_extraction_confidence"] = ai_confidence
+        ai_structured["_ai_provider"] = provider
+        
+        # Step 4: Merge or select best result
+        if ai_confidence > rule_confidence:
+            # AI did better - use AI result, merge in any rule-based extras
+            logger.info("Using AI result (%.2f > %.2f)", ai_confidence, rule_confidence)
+            final_result = _merge_extraction_results(ai_structured, rule_result)
+            final_result["_extraction_method"] = "ai_primary"
+        else:
+            # Rule-based did better - use rule result, fill gaps with AI
+            logger.info("Using rule-based result (%.2f >= %.2f)", rule_confidence, ai_confidence)
+            final_result = _merge_extraction_results(rule_result, ai_structured)
+            final_result["_extraction_method"] = "rule_primary_ai_enhanced"
+        
+        return final_result
+        
+    except ImportError as e:
+        logger.warning(f"AI extraction not available: {e}")
+        return rule_result
+    except Exception as e:
+        logger.error(f"AI extraction error: {e}", exc_info=True)
+        return rule_result
+
+
+def _merge_extraction_results(
+    primary: Dict[str, Any],
+    secondary: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Merge two extraction results, using primary values but filling gaps from secondary.
+    """
+    result = dict(primary)
+    
+    # Fields to potentially fill from secondary if missing in primary
+    fill_fields = [
+        "number", "amount", "currency", "applicant", "beneficiary",
+        "ports", "incoterm", "issuing_bank", "advising_bank",
+        "ucp_reference", "timeline", "goods", "goods_summary",
+    ]
+    
+    for field in fill_fields:
+        primary_val = primary.get(field)
+        secondary_val = secondary.get(field)
+        
+        # If primary is missing but secondary has it, use secondary
+        if (primary_val is None or primary_val == "" or primary_val == {}) and secondary_val:
+            result[field] = secondary_val
+            result.setdefault("_filled_from_secondary", []).append(field)
+    
+    return result

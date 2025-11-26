@@ -48,7 +48,10 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
 from app.services.customs.customs_pack import build_customs_manifest_from_option_e
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
-from app.services.extraction.lc_extractor import extract_lc_structured
+from app.services.extraction.lc_extractor import (
+    extract_lc_structured,
+    extract_lc_structured_with_ai_fallback,
+)
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -1274,10 +1277,21 @@ async def _build_document_context(
                         if not context.get("lc_number") and iso_context.get("number"):
                             context["lc_number"] = iso_context["number"]
                 else:
-                    # Use new LC extractor for OCR/plaintext LC documents
+                    # Use LC extractor with AI fallback for OCR/plaintext LC documents
                     try:
-                        lc_struct = extract_lc_structured(extracted_text)
-                        logger.info(f"Extracted LC structure from {filename} with keys: {list(lc_struct.keys())}")
+                        # Try async extraction with AI fallback
+                        lc_struct = await extract_lc_structured_with_ai_fallback(
+                            extracted_text,
+                            ai_threshold=0.5,  # Use AI if confidence < 50%
+                        )
+                        extraction_method = lc_struct.get("_extraction_method", "unknown")
+                        extraction_confidence = lc_struct.get("_extraction_confidence", 0.0)
+                        
+                        logger.info(
+                            f"Extracted LC from {filename}: method={extraction_method} "
+                            f"confidence={extraction_confidence:.2f} keys={list(lc_struct.keys())}"
+                        )
+                        
                         if lc_struct:
                             lc_payload.update(lc_struct)
                             context["lc_structured_output"] = lc_struct
@@ -1287,11 +1301,13 @@ async def _build_document_context(
                                 context["lc_number"] = lc_struct["number"]
                             doc_info["extracted_fields"] = lc_struct
                             doc_info["extraction_status"] = "success"
+                            doc_info["extraction_method"] = extraction_method
+                            doc_info["extraction_confidence"] = extraction_confidence
                         else:
                             logger.warning(f"No LC structure extracted from {filename}")
                     except Exception as extract_error:
-                        logger.warning(f"LC extraction failed for {filename}: {extract_error}", exc_info=True)
-                        # Fallback to old extractor if new one fails
+                        logger.warning(f"LC extraction (with AI) failed for {filename}: {extract_error}", exc_info=True)
+                        # Ultimate fallback to basic field extractor
                         try:
                             lc_fields = extractor.extract_fields(extracted_text, DocumentType.LETTER_OF_CREDIT)
                             logger.info(f"Fallback: Extracted {len(lc_fields)} fields from LC document {filename}")
