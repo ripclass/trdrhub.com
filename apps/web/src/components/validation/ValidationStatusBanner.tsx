@@ -85,32 +85,52 @@ export function ValidationStatusBanner({
             </p>
           )}
 
-          {/* Issue Summary - clickable to view issues */}
+          {/* Business Impact Summary */}
           {showDetails && hasIssues && (
-            <button
-              onClick={onViewIssues}
-              className="mt-2 flex flex-wrap gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-              title="Click to view issues"
-            >
-              {state.criticalCount > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                  {state.criticalCount} Critical
+            <div className="mt-2 space-y-2">
+              {/* What this means for bank submission */}
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                {state.criticalCount > 0 ? (
+                  <span className="font-medium text-red-700 dark:text-red-400">
+                    ⚠️ {state.criticalCount} issue{state.criticalCount > 1 ? 's' : ''} will cause bank rejection
+                  </span>
+                ) : state.majorCount > 0 ? (
+                  <span className="font-medium text-orange-700 dark:text-orange-400">
+                    ⚠️ Bank may issue discrepancy notice for {state.majorCount} item{state.majorCount > 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span className="font-medium text-yellow-700 dark:text-yellow-400">
+                    ✓ Minor items - usually accepted at bank discretion
+                  </span>
+                )}
+              </p>
+              
+              {/* Issue counts - clickable */}
+              <button
+                onClick={onViewIssues}
+                className="flex flex-wrap gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                title="Click to view issues"
+              >
+                {state.criticalCount > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                    {state.criticalCount} Critical
+                  </span>
+                )}
+                {state.majorCount > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                    {state.majorCount} Major
+                  </span>
+                )}
+                {state.minorCount > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                    {state.minorCount} Minor
+                  </span>
+                )}
+                <span className="text-xs text-blue-600 dark:text-blue-400 font-medium ml-1">
+                  View Details →
                 </span>
-              )}
-              {state.majorCount > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-                  {state.majorCount} Major
-                </span>
-              )}
-              {state.minorCount > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                  {state.minorCount} Minor
-                </span>
-              )}
-              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                → View Issues
-              </span>
-            </button>
+              </button>
+            </div>
           )}
 
           {/* Missing Fields (if blocked or low completeness) */}

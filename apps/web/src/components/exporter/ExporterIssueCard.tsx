@@ -1,8 +1,36 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { IssueCard } from '@/types/lcopilot';
-import { AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Business impact mapping - what will the bank do?
+const BUSINESS_IMPACT = {
+  critical: {
+    label: 'Will Cause Rejection',
+    description: 'Bank will refuse documents',
+    color: 'bg-rose-600 text-white',
+    Icon: Ban,
+  },
+  major: {
+    label: 'Likely Discrepancy',
+    description: 'Bank will issue discrepancy notice',
+    color: 'bg-amber-500 text-white',
+    Icon: FileWarning,
+  },
+  medium: {
+    label: 'May Cause Query',
+    description: 'Bank may request clarification',
+    color: 'bg-amber-400 text-amber-900',
+    Icon: AlertTriangle,
+  },
+  minor: {
+    label: 'Bank Discretion',
+    description: 'Usually accepted, depends on bank',
+    color: 'bg-slate-200 text-slate-700',
+    Icon: Lightbulb,
+  },
+} as const;
 
 const severityTokens = {
   critical: {
@@ -74,6 +102,10 @@ export function ExporterIssueCard({
     return 'bg-warning/10 text-warning border-warning/30';
   };
 
+  // Get business impact for this severity
+  const impact = BUSINESS_IMPACT[normalizedSeverity] ?? BUSINESS_IMPACT.minor;
+  const ImpactIcon = impact.Icon;
+
   return (
     <Card
       key={fallbackId}
@@ -83,14 +115,24 @@ export function ExporterIssueCard({
       <CardHeader className="space-y-2 pb-3">
         <div className="flex items-center justify-between gap-4">
           <CardTitle className="text-lg font-semibold text-foreground">{issue.title ?? 'Review Required'}</CardTitle>
-          <Badge
-            data-testid={`severity-${fallbackId}`}
-            data-icon={normalizedSeverity}
-            className={cn('gap-1 border text-xs font-semibold', severity.bg)}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {severity.label}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {/* Business Impact Badge - What will the bank do? */}
+            <Badge
+              className={cn('gap-1 text-xs font-semibold', impact.color)}
+              title={impact.description}
+            >
+              <ImpactIcon className="w-3 h-3" />
+              {impact.label}
+            </Badge>
+            <Badge
+              data-testid={`severity-${fallbackId}`}
+              data-icon={normalizedSeverity}
+              className={cn('gap-1 border text-xs font-semibold', severity.bg)}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {severity.label}
+            </Badge>
+          </div>
         </div>
         {issue.priority && (
           <p className="text-xs font-medium text-muted-foreground">
@@ -130,13 +172,22 @@ export function ExporterIssueCard({
           </div>
         </div>
         {issue.suggestion && issue.suggestion !== '—' && (
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-1">Suggested Fix</p>
-            <p className="text-sm text-foreground">{issue.suggestion}</p>
+          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">
+                  Suggested Solution
+                </p>
+                <p className="text-sm text-blue-800 dark:text-blue-200">{issue.suggestion}</p>
+              </div>
+            </div>
           </div>
         )}
         {issue.ucpReference && (
-          <p className="text-xs text-muted-foreground">Reference: {issue.ucpReference}</p>
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <span className="font-medium">UCP600 Reference:</span> {issue.ucpReference}
+          </p>
         )}
       </CardContent>
     </Card>
