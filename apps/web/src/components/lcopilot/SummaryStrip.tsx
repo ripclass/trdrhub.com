@@ -8,11 +8,15 @@ import type { ValidationResults } from '@/types/lcopilot';
 
 type Props = {
   data: ValidationResults | null;
+  lcTypeLabel?: string;
+  lcTypeConfidence?: number | null;
+  packGenerated?: boolean;
+  overallStatus?: 'success' | 'warning' | 'error';
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
 
-export function SummaryStrip({ data }: Props) {
+export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus }: Props) {
   const structured = data?.structured_result;
   const summary = structured?.processing_summary;
   const analytics = structured?.analytics;
@@ -32,21 +36,55 @@ export function SummaryStrip({ data }: Props) {
   const errors = formatNumber(statusDistribution.error);
   const hasIssues = warnings > 0 || errors > 0;
   
-  // Calculate confidence/compliance rate
+  // Calculate confidence rate
   const confidenceRate = summary.compliance_rate ?? 
     (documentsProcessed > 0 ? Math.round((verified / documentsProcessed) * 100) : 0);
   const progressValue = documentsProcessed > 0 
     ? Math.round(((verified + warnings) / documentsProcessed) * 100) 
     : 0;
 
+  // Status icon and color
+  const statusIcon = overallStatus === 'success' ? (
+    <CheckCircle className="w-12 h-12 text-emerald-500" />
+  ) : overallStatus === 'error' ? (
+    <AlertTriangle className="w-12 h-12 text-rose-500" />
+  ) : (
+    <AlertTriangle className="w-12 h-12 text-amber-500" />
+  );
+
   return (
     <Card className="shadow-soft border border-border/60">
       <CardContent className="p-6">
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="flex flex-col md:flex-row gap-6 md:items-start">
+          {/* Status Icon + Badges */}
+          <div className="flex flex-col items-center gap-3 md:min-w-[140px]">
+            {statusIcon}
+            {packGenerated && (
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-700">
+                <CheckCircle className="w-3 h-3 mr-1" />
+                Customs Pack Ready
+              </Badge>
+            )}
+            {lcTypeLabel && (
+              <div className="text-center">
+                <p className="text-[10px] uppercase text-muted-foreground tracking-wide">LC TYPE</p>
+                <div className="flex items-center gap-1.5 justify-center">
+                  <Badge variant="secondary" className="text-xs">{lcTypeLabel}</Badge>
+                  {lcTypeConfidence != null && lcTypeConfidence > 0 && (
+                    <span className="text-xs text-muted-foreground">{lcTypeConfidence}%</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="hidden md:block w-px bg-border self-stretch" />
+
           {/* Processing Summary */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-foreground">Processing Summary</h3>
-            <div className="space-y-2 text-sm">
+          <div className="flex-1 space-y-2">
+            <h3 className="font-semibold text-foreground text-sm">Processing Summary</h3>
+            <div className="space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Documents:</span>
                 <span className="font-medium">{documentsProcessed}</span>
@@ -64,23 +102,26 @@ export function SummaryStrip({ data }: Props) {
             </div>
           </div>
 
+          {/* Divider */}
+          <div className="hidden md:block w-px bg-border self-stretch" />
+
           {/* Document Status */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-foreground">Document Status</h3>
-            <div className="space-y-2 text-sm">
+          <div className="flex-1 space-y-2">
+            <h3 className="font-semibold text-foreground text-sm">Document Status</h3>
+            <div className="space-y-1.5 text-sm">
               <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span>{verified} documents verified</span>
               </div>
               {warnings > 0 && (
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
                   <span>{warnings} with warnings</span>
                 </div>
               )}
               {errors > 0 && (
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-500" />
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
                   <span>{errors} with errors</span>
                 </div>
               )}
@@ -88,9 +129,12 @@ export function SummaryStrip({ data }: Props) {
             <Progress value={progressValue} className="h-2" />
           </div>
 
+          {/* Divider */}
+          <div className="hidden md:block w-px bg-border self-stretch" />
+
           {/* Next Steps */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-foreground">Next Steps</h3>
+          <div className="flex-1 space-y-2">
+            <h3 className="font-semibold text-foreground text-sm">Next Steps</h3>
             {hasIssues ? (
               <>
                 <Link to="/lcopilot/exporter-dashboard?section=upload">
@@ -104,15 +148,9 @@ export function SummaryStrip({ data }: Props) {
                 </p>
               </>
             ) : (
-              <>
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                  Ready for Submission
-                </Badge>
-                <p className="text-xs text-muted-foreground">
-                  All documents verified successfully
-                </p>
-              </>
+              <p className="text-sm text-muted-foreground">
+                All documents verified successfully
+              </p>
             )}
           </div>
         </div>

@@ -49,7 +49,7 @@ import { useJob, useResults } from "@/hooks/use-lcopilot";
 import type { ValidationResults, IssueCard, AIEnrichmentPayload, ReferenceIssue } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
-import LcHeader from "@/components/lcopilot/LcHeader";
+// LcHeader removed - LC info now shown inline in SummaryStrip
 // RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
@@ -1376,9 +1376,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       )}
 
       <div className={containerClass}>
-        <div className="space-y-6 mb-8">
-          <LcHeader data={resultData ?? null} />
-          
+        <div className="mb-8">
           {/* Only show BlockedValidationCard when validation is blocked */}
           {validationState?.isBlocked && (
             <BlockedValidationCard 
@@ -1387,137 +1385,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             />
           )}
           
-          {/* Clean summary strip - no duplicate action items */}
-          <SummaryStrip data={resultData ?? null} />
+          {/* Single clean summary card - matches reference layout */}
+          <SummaryStrip 
+            data={resultData ?? null} 
+            lcTypeLabel={lcTypeLabel}
+            lcTypeConfidence={lcTypeConfidenceValue}
+            packGenerated={packGenerated}
+            overallStatus={overallStatus}
+          />
         </div>
-
-        <Card className="mb-8 shadow-soft border border-border/60">
-          <CardContent className="p-6 grid gap-6 md:grid-cols-3">
-            <div className="space-y-3 text-center md:text-left">
-              <div
-                className={`w-16 h-16 mx-auto md:mx-0 rounded-full flex items-center justify-center ${
-                  overallStatus === 'success'
-                    ? 'bg-success/10'
-                    : overallStatus === 'error'
-                      ? 'bg-destructive/10'
-                      : 'bg-warning/10'
-                }`}
-              >
-                {overallStatus === 'success' ? (
-                  <CheckCircle className="w-8 h-8 text-success" />
-                ) : overallStatus === 'error' ? (
-                  <XCircle className="w-8 h-8 text-destructive" />
-                ) : (
-                  <AlertTriangle className="w-8 h-8 text-warning" />
-                )}
-              </div>
-              <div className="flex flex-col items-center md:items-start gap-2">
-                <StatusBadge status={overallStatus} className="text-sm font-medium">
-                  {packGenerated ? 'Customs Pack Ready' : 'Processing'}
-                </StatusBadge>
-                {isReadyToSubmit && (
-                  <Badge className="bg-green-600 text-white">
-                    <Send className="w-3 h-3 mr-1" />
-                    Ready to Submit
-                  </Badge>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {processingTime ? `Processed in ${processingTime}` : 'Processing time unavailable'}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold text-foreground">Document Health</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Verified</span>
-                  <span className="font-semibold">{successCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Warnings</span>
-                  <span className="font-semibold text-warning">{warningCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Errors</span>
-                  <span className="font-semibold text-destructive">{errorCount}</span>
-                </div>
-                <Progress value={successRate} className="h-2" />
-                <div className="mt-4 p-3 rounded-lg bg-muted/30">
-                  <p className="text-xs uppercase text-muted-foreground tracking-wide">LC Type</p>
-                  <div className="flex items-center gap-2 flex-wrap mt-1">
-                    <Badge variant="outline">{lcTypeLabel}</Badge>
-                    {lcTypeConfidenceValue !== null && lcTypeConfidenceValue > 0 && (
-                      <span className="text-xs text-muted-foreground">{lcTypeConfidenceValue}%</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="font-semibold text-foreground">Next Actions</h3>
-              {totalDiscrepancies > 0 ? (
-                <>
-                  <Link to="/lcopilot/exporter-dashboard?section=upload">
-                    <Button variant="outline" size="sm" className="w-full">
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Fix & Re-process
-                    </Button>
-                  </Link>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Resolve discrepancies before customs/bank submission.
-                  </p>
-                </>
-              ) : (
-                <Button
-                  className="w-full bg-gradient-primary hover:opacity-90"
-                  size="sm"
-                  onClick={handleDownloadCustomsPack}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Customs Pack
-                </Button>
-              )}
-              {isReadyToSubmit && enableBankSubmission && (
-                <Button
-                  className="w-full bg-green-600 hover:bg-green-700 text-white"
-                  size="sm"
-                  onClick={handleSubmitToBank}
-                  disabled={createSubmissionMutation.isPending || guardrailsLoading}
-                >
-                  {createSubmissionMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Submit to Bank
-                    </>
-                  )}
-                </Button>
-              )}
-              {!isReadyToSubmit && guardrails && guardrails.blocking_issues.length > 0 && (
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-destructive">Cannot submit:</p>
-                  {guardrails.blocking_issues.map((issue, idx) => (
-                    <p key={idx}>- {issue}</p>
-                  ))}
-                </div>
-              )}
-              {invoiceId && (
-                <Link to={`/lcopilot/exporter-dashboard?tab=billing&invoice=${invoiceId}`}>
-                  <Button variant="outline" size="sm" className="w-full">
-                    <Receipt className="w-4 h-4 mr-2" />
-                    View Invoice
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Detailed Results */}
         <Tabs
@@ -1677,26 +1553,49 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
                     <div className="flex flex-col gap-2">
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={() => generateCustomsPackMutation.mutate()}
-                        disabled={generateCustomsPackMutation.isPending}
-                      >
-                        {generateCustomsPackMutation.isPending ? "Generating..." : "Generate Customs Pack"}
-                      </Button>
+                      {packGenerated ? (
+                        <Button
+                          size="sm"
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                          onClick={handleDownloadCustomsPack}
+                          disabled={downloadCustomsPackMutation.isPending}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          {downloadCustomsPackMutation.isPending ? "Downloading..." : "Download Customs Pack"}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          onClick={() => generateCustomsPackMutation.mutate()}
+                          disabled={generateCustomsPackMutation.isPending}
+                        >
+                          {generateCustomsPackMutation.isPending ? "Generating..." : "Generate Customs Pack"}
+                        </Button>
+                      )}
+                      {isReadyToSubmit && enableBankSubmission && (
+                        <Button
+                          size="sm"
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                          onClick={handleSubmitToBank}
+                          disabled={createSubmissionMutation.isPending || guardrailsLoading}
+                        >
+                          {createSubmissionMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-4 h-4 mr-2" />
+                              Submit to Bank
+                            </>
+                          )}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full"
-                        onClick={handleDownloadCustomsPack}
-                        disabled={downloadCustomsPackMutation.isPending || generateCustomsPackMutation.isPending}
-                      >
-                        {downloadCustomsPackMutation.isPending ? "Downloading..." : "Download Pack"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
                         className="w-full"
                         onClick={() => setShowManifestPreview(true)}
                         disabled={!manifestData}
