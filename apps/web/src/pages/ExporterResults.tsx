@@ -1553,7 +1553,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
                     <div className="flex flex-col gap-2">
-                      {packGenerated ? (
+                      {/* Always show Generate button */}
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => generateCustomsPackMutation.mutate()}
+                        disabled={generateCustomsPackMutation.isPending}
+                      >
+                        {generateCustomsPackMutation.isPending ? "Generating..." : packGenerated ? "Re-generate Pack" : "Generate Customs Pack"}
+                      </Button>
+                      {/* Show Download when pack exists */}
+                      {packGenerated && (
                         <Button
                           size="sm"
                           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1562,15 +1572,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         >
                           <Download className="w-4 h-4 mr-2" />
                           {downloadCustomsPackMutation.isPending ? "Downloading..." : "Download Customs Pack"}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="w-full"
-                          onClick={() => generateCustomsPackMutation.mutate()}
-                          disabled={generateCustomsPackMutation.isPending}
-                        >
-                          {generateCustomsPackMutation.isPending ? "Generating..." : "Generate Customs Pack"}
                         </Button>
                       )}
                       {isReadyToSubmit && enableBankSubmission && (
