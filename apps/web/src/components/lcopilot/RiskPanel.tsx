@@ -5,6 +5,7 @@ import type { ValidationResults } from '@/types/lcopilot';
 
 type Props = {
   data: ValidationResults | null;
+  onViewIssues?: () => void;
 };
 
 // Map risk flags to actionable messages with business impact
@@ -108,7 +109,7 @@ function getCustomsStatus(riskTier?: string, flags?: string[]): {
   };
 }
 
-export function RiskPanel({ data }: Props) {
+export function RiskPanel({ data, onViewIssues }: Props) {
   const risk = data?.structured_result?.analytics?.customs_risk;
   const analytics = data?.structured_result?.analytics;
   const issues = data?.structured_result?.issues || [];
@@ -186,20 +187,21 @@ export function RiskPanel({ data }: Props) {
           </div>
         </div>
 
-        {/* Actionable Items */}
+        {/* Actionable Items - Clickable to view issues */}
         {actionableFlags.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-foreground">Action Items</p>
             <div className="space-y-2">
               {actionableFlags.map((item, idx) => (
-                <div
+                <button
                   key={`${item.flag}-${idx}`}
-                  className={`flex items-start gap-2 p-2 rounded-md text-sm ${
+                  onClick={onViewIssues}
+                  className={`w-full flex items-start gap-2 p-2 rounded-md text-sm text-left transition-all hover:shadow-md cursor-pointer ${
                     item.impact === 'blocking'
-                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                       : item.impact === 'warning'
-                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                      : 'bg-slate-50 text-slate-600 border border-slate-200'
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   {item.impact === 'blocking' ? (
@@ -209,20 +211,20 @@ export function RiskPanel({ data }: Props) {
                   ) : (
                     <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   )}
-                  <div>
+                  <div className="flex-1">
                     <span>{item.message}</span>
-                    {item.impact === 'blocking' && (
-                      <span className="ml-2 text-xs font-medium bg-rose-200 px-1.5 py-0.5 rounded">
-                        Must Fix
-                      </span>
-                    )}
-                    {item.impact === 'warning' && (
-                      <span className="ml-2 text-xs font-medium bg-amber-200 px-1.5 py-0.5 rounded">
-                        Review
-                      </span>
-                    )}
                   </div>
-                </div>
+                  {item.impact === 'blocking' && (
+                    <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded hover:bg-rose-700">
+                      Fix Now →
+                    </span>
+                  )}
+                  {item.impact === 'warning' && (
+                    <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded hover:bg-amber-600">
+                      Review →
+                    </span>
+                  )}
+                </button>
               ))}
             </div>
           </div>

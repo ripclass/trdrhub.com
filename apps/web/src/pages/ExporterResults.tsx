@@ -1395,7 +1395,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           )}
           
           <div className="grid gap-6 lg:grid-cols-2">
-            <RiskPanel data={resultData ?? null} />
+            <RiskPanel data={resultData ?? null} onViewIssues={() => setActiveTab("discrepancies")} />
             <SummaryStrip data={resultData ?? null} />
           </div>
         </div>
@@ -1762,10 +1762,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             {documents.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
+              const hasIssues = (document.issuesCount ?? 0) > 0;
+              const isError = document.status === "error";
+              const isWarning = document.status === "warning";
+              
               return (
                 <Card
                   key={document.id}
-                  className="shadow-soft border border-border/60 transition duration-200 hover:-translate-y-0.5 hover:border-primary/40"
+                  className={cn(
+                    "shadow-soft transition duration-200 hover:-translate-y-0.5 overflow-hidden",
+                    // Visual differentiation based on status
+                    hasIssues || isWarning
+                      ? "border-l-4 border-l-amber-500 border-t border-r border-b border-amber-200 bg-amber-50/30 dark:bg-amber-950/10"
+                      : isError
+                        ? "border-l-4 border-l-rose-500 border-t border-r border-b border-rose-200 bg-rose-50/30 dark:bg-rose-950/10"
+                        : "border border-emerald-200 bg-emerald-50/20 dark:bg-emerald-950/10 hover:border-emerald-300"
+                  )}
                 >
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -1774,20 +1786,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           className={cn(
                             "p-2 rounded-lg",
                             document.status === "success"
-                              ? "bg-success/10"
+                              ? "bg-emerald-100 dark:bg-emerald-900/30"
                               : document.status === "warning"
-                                ? "bg-warning/10"
-                                : "bg-destructive/10",
+                                ? "bg-amber-100 dark:bg-amber-900/30"
+                                : "bg-rose-100 dark:bg-rose-900/30",
                           )}
                         >
                           <FileText
                             className={cn(
                               "w-5 h-5",
                               document.status === "success"
-                                ? "text-success"
+                                ? "text-emerald-600 dark:text-emerald-400"
                                 : document.status === "warning"
-                                  ? "text-warning"
-                                  : "text-destructive",
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-rose-600 dark:text-rose-400",
                             )}
                           />
                         </div>
@@ -1801,14 +1813,27 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       <div className="flex items-center gap-3">
                         {(() => {
                           const discrepancyCount = document.issuesCount ?? 0;
+                          if (discrepancyCount === 0) {
+                            return (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Verified
+                              </span>
+                            );
+                          }
                           return (
-                            <StatusBadge status={document.status}>
-                              {discrepancyCount === 0
-                                ? "Verified"
-                                : document.status === "warning"
-                                  ? "Minor Issues"
-                                  : `${discrepancyCount} Issues`}
-                            </StatusBadge>
+                            <button
+                              onClick={() => setActiveTab("discrepancies")}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
+                                document.status === "error"
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                              )}
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              {discrepancyCount} Issue{discrepancyCount > 1 ? 's' : ''} - View →
+                            </button>
                           );
                         })()}
                         <Button variant="outline" size="sm">
