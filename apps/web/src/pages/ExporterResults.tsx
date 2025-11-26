@@ -116,10 +116,14 @@ export default function ExporterResults({
       return "N/A";
     }
     if (Array.isArray(value)) {
-      return value.map((item) => formatExtractedValue(item)).join(", ");
+      // For simple arrays (strings/numbers), join them
+      if (value.every((v) => typeof v === "string" || typeof v === "number")) {
+        return value.join(", ");
+      }
+      return value.map((item) => formatExtractedValue(item)).join("; ");
     }
     if (typeof value === "object") {
-      // Handle lc_classification {types: [...]} specifically
+      // Handle lc_classification {types: [...]}
       if ("types" in value && Array.isArray(value.types)) {
         return value.types.join(", ");
       }
@@ -127,7 +131,36 @@ export default function ExporterResults({
       if ("text" in value && typeof value.text === "string") {
         return value.text;
       }
+      // Handle amount objects {value, currency} or {amount, currency}
+      if (("value" in value || "amount" in value) && "currency" in value) {
+        const amt = value.value ?? value.amount ?? "";
+        const cur = value.currency ?? "";
+        return `${cur} ${Number(amt).toLocaleString()}`.trim();
+      }
+      // Handle party objects {name}
+      if ("name" in value && typeof value.name === "string") {
+        return value.name.replace(/\n+/g, ", ");
+      }
+      // Handle ports objects {loading, discharge}
+      if ("loading" in value || "discharge" in value) {
+        const parts = [];
+        if (value.loading) parts.push(`Loading: ${value.loading}`);
+        if (value.discharge) parts.push(`Discharge: ${value.discharge}`);
+        return parts.join(" → ") || "N/A";
+      }
+      // For other small objects, create a simple key-value display
+      const entries = Object.entries(value).filter(([k, v]) => 
+        v != null && typeof v !== "object" && !k.startsWith("_")
+      );
+      if (entries.length > 0 && entries.length <= 4) {
+        return entries.map(([k, v]) => `${k}: ${v}`).join(", ");
+      }
+      // For large/complex objects, indicate that details are available
       try {
+        const str = JSON.stringify(value);
+        if (str.length > 200) {
+          return `[Complex data - ${Object.keys(value).length} fields]`;
+        }
         return JSON.stringify(value, null, 2);
       } catch {
         return String(value);
@@ -695,20 +728,48 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [];
   const summary = structuredResult?.processing_summary;
   const extractionStatus = useMemo(() => {
-    if (!summary) return "unknown";
-    const successExtractions = Number(summary.successful_extractions ?? 0);
-    const failedExtractions = Number(summary.failed_extractions ?? 0);
-    if (failedExtractions === 0) {
-      return successExtractions > 0 ? "success" : "pending";
+    // Check document-level extraction statuses first
+    const docStatuses = structuredDocumentsPayload.map(
+      (doc) => (doc.extraction_status || "unknown").toLowerCase()
+    );
+    const hasSuccess = docStatuses.some((s) => s === "success");
+    const hasError = docStatuses.some((s) => s === "error" || s === "failed");
+    
+    // If we have document statuses, use them
+    if (docStatuses.length > 0 && (hasSuccess || hasError)) {
+      if (hasError && !hasSuccess) return "error";
+      if (hasSuccess && hasError) return "partial";
+      if (hasSuccess) return "success";
     }
-    if (successExtractions > 0 && failedExtractions > 0) {
-      return "partial";
+    
+    // Fall back to summary counts if available
+    if (summary) {
+      const successExtractions = Number(summary.successful_extractions ?? summary.verified ?? 0);
+      const failedExtractions = Number(summary.failed_extractions ?? summary.errors ?? 0);
+      const totalDocs = Number(summary.total_documents ?? summary.documents ?? 0);
+      
+      // If we have documents processed, assume success
+      if (totalDocs > 0 && failedExtractions === 0) {
+        return "success";
+      }
+      if (successExtractions > 0 && failedExtractions === 0) {
+        return "success";
+      }
+      if (successExtractions > 0 && failedExtractions > 0) {
+        return "partial";
+      }
+      if (successExtractions === 0 && failedExtractions > 0) {
+        return "error";
+      }
     }
-    if (successExtractions === 0 && failedExtractions > 0) {
-      return "error";
+    
+    // If LC data exists, extraction worked
+    if (lcStructured && Object.keys(lcStructured).length > 0) {
+      return "success";
     }
+    
     return "unknown";
-  }, [summary]);
+  }, [summary, structuredDocumentsPayload, lcStructured]);
   const documents = useMemo(() => {
     return structuredDocumentsPayload.map((doc, index) => {
       const docAny = doc as Record<string, any>;
@@ -829,14 +890,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }, [rawAiInsights]);
   const hasIssueCards = issueCards.length > 0;
   // LC Type can be: export, import, sight, usance, deferred, or unknown
-  const rawLcType = structuredResult?.lc_type ?? "unknown";
+  // Check both top-level and lc_structured for these values (backend stores in lc_structured)
+  const lcStructuredData = structuredResult?.lc_structured as Record<string, any> | null;
+  const rawLcType = structuredResult?.lc_type ?? lcStructuredData?.lc_type ?? "unknown";
   const lcType = rawLcType.toLowerCase() as string;
-  const lcTypeReason = structuredResult?.lc_type_reason ?? "LC type detection details unavailable.";
+  const lcTypeReason = structuredResult?.lc_type_reason ?? lcStructuredData?.lc_type_reason ?? "LC type detection details unavailable.";
+  // Get confidence from lc_structured (where backend actually stores it)
+  const rawConfidence = structuredResult?.lc_type_confidence ?? lcStructuredData?.lc_type_confidence;
   const lcTypeConfidenceValue =
-    typeof structuredResult?.lc_type_confidence === "number"
-      ? Math.round((structuredResult?.lc_type_confidence ?? 0) * 100)
+    typeof rawConfidence === "number"
+      ? Math.round(rawConfidence * 100)
       : null;
-  const lcTypeSource = structuredResult?.lc_type_source ?? "auto";
+  const lcTypeSource = structuredResult?.lc_type_source ?? lcStructuredData?.lc_type_source ?? "auto";
   const lcTypeLabelMap: Record<string, string> = {
     export: "Export LC",
     import: "Import LC",
@@ -2068,10 +2133,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
                             {fieldEntries.length > 0 ? (
                               <div className="space-y-2 text-sm">
-                                {fieldEntries.map(([key, value]) => (
+                                {fieldEntries
+                                  // Filter out internal/technical fields that aren't user-friendly
+                                  .filter(([key]) => !['mt700', 'mt700_raw', 'source', 'timeline', 'blocks', 'raw', 
+                                    '_extraction_confidence', '_extraction_method', '_ai_provider', '_ai_confidence',
+                                    'lc_type_source', 'lc_classification'].includes(key))
+                                  .map(([key, value]) => (
                                   <div key={key} className="flex flex-col">
                                     <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                                      {key.replace(/([A-Z])/g, " $1").trim()}
+                                      {key.replace(/([A-Z_])/g, " $1").replace(/_/g, " ").trim()}
                                     </span>
                                     <span className="font-medium whitespace-pre-wrap break-words">
                                       {formatExtractedValue(value)}

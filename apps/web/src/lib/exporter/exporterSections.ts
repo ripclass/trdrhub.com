@@ -119,6 +119,8 @@ export type SidebarSection =
 
 /**
  * Map ExporterSection to the sidebar's section identifier.
+ * Note: analytics and customs tabs WITHIN ExporterResults should stay under 'reviews'
+ * Only the sidebar "Analytics" item should show ExporterAnalytics
  */
 export function sectionToSidebar(section: ExporterSection): SidebarSection {
   switch (section) {
@@ -131,10 +133,9 @@ export function sectionToSidebar(section: ExporterSection): SidebarSection {
     case 'issues':
     case 'extracted-data':
     case 'history':
+    case 'analytics':  // Keep analytics within reviews context
+    case 'customs':    // Keep customs within reviews context
       return 'reviews';
-    case 'analytics':
-    case 'customs':
-      return 'analytics';
     default:
       return 'dashboard';
   }
