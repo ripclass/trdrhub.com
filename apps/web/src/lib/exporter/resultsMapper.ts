@@ -131,7 +131,7 @@ const mapIssues = (issues: any[] = [], documents: ReturnType<typeof mapDocuments
       documents: documentNames,
       expected: formatTextValue(issue?.expected),
       actual: formatTextValue(issue?.found ?? issue?.actual),
-      suggestion: formatTextValue(issue?.suggested_fix),
+      suggestion: formatTextValue(issue?.suggestion ?? issue?.suggested_fix),
       field: issue?.field ?? issue?.metadata?.field,
       ucpReference: formatTextValue(issue?.ucp_reference) ?? undefined,
     };
