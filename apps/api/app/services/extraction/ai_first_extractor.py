@@ -618,7 +618,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
             
-            response = await provider.generate(
+            response, tokens_in, tokens_out = await provider.generate(
                 prompt=prompt,
                 system_prompt=INVOICE_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
@@ -627,6 +627,8 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
             
             if not response:
                 return None, "empty_response"
+            
+            logger.info(f"Invoice AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
             
             # Parse JSON response
             import json
@@ -811,7 +813,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
             
-            response = await provider.generate(
+            response, tokens_in, tokens_out = await provider.generate(
                 prompt=prompt,
                 system_prompt=BL_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
@@ -820,6 +822,8 @@ class BLAIFirstExtractor(AIFirstExtractor):
             
             if not response:
                 return None, "empty_response"
+            
+            logger.info(f"B/L AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
             
             # Parse JSON response
             import json
@@ -1425,14 +1429,14 @@ async def _run_ai_extraction_generic(
     try:
         from ..llm_provider import LLMProviderFactory
         
-        provider = LLMProviderFactory.get_provider()
+        provider = LLMProviderFactory.create_provider()
         if not provider:
             logger.warning("No LLM provider available")
             return None, "none"
         
         prompt = prompt_template.format(document_text=raw_text[:12000])
         
-        response = await provider.generate(
+        response, tokens_in, tokens_out = await provider.generate(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.1,
@@ -1441,6 +1445,8 @@ async def _run_ai_extraction_generic(
         
         if not response:
             return None, "empty_response"
+        
+        logger.info(f"Generic AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
         
         import json
         try:
