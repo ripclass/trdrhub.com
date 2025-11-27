@@ -238,7 +238,7 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
     suggestion = discrepancy.get("suggestion") or _extract_expected_text(
         discrepancy.get("expected_outcome"), "invalid"
     ) or "Align the document with the LC requirement."
-    actual_text = _stringify_issue_value(discrepancy.get("actual"))
+    actual_text = _stringify_issue_value(discrepancy.get("actual") or discrepancy.get("found"))
     if semantic_payload and semantic_payload.get("found"):
         actual_text = semantic_payload.get("found")
     if semantic_payload and semantic_payload.get("documents"):
@@ -326,7 +326,7 @@ def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
         "document_names": discrepancy.get("document_names", []),
         "document_ids": discrepancy.get("document_ids", []),
         "expected": discrepancy.get("expected"),
-        "actual": discrepancy.get("actual"),
+        "actual": discrepancy.get("actual") or discrepancy.get("found"),
         "suggestion": discrepancy.get("suggestion"),
         "ruleset_domain": discrepancy.get("ruleset_domain"),
     }
