@@ -81,13 +81,10 @@ from .response_schema import (
 
 from .ai_validator import (
     run_ai_validation,
-    parse_lc_requirements,
+    parse_lc_requirements_sync,
     check_document_completeness,
-    semantic_goods_match,
-    validate_document_fields,
-    generate_discrepancy_explanation,
+    validate_bl_fields,
     AIValidationIssue,
-    RequiredDocument,
     IssueSeverity as AIIssueSeverity,
 )
 
@@ -147,13 +144,10 @@ __all__ = [
     "build_v2_structured_result",
     # AI Validator
     "run_ai_validation",
-    "parse_lc_requirements",
+    "parse_lc_requirements_sync",
     "check_document_completeness",
-    "semantic_goods_match",
-    "validate_document_fields",
-    "generate_discrepancy_explanation",
+    "validate_bl_fields",
     "AIValidationIssue",
-    "RequiredDocument",
     "AIIssueSeverity",
 ]
 

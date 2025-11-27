@@ -1,18 +1,17 @@
 """
-AI-Powered LC Validation Engine
+AI-Powered LC Validation Engine - FOCUSED VERSION
 
-This module provides comprehensive AI-driven validation for LC document sets:
-1. LC Requirement Parser - Extracts required documents from 46A/47A
-2. Document Completeness Checker - Verifies all required docs are uploaded
-3. Semantic Goods Matching - AI understands meaning, not just strings
-4. Field Requirement Validator - Checks documents have required fields
-5. AI Discrepancy Explainer - Professional, bank-grade explanations
+This module provides TARGETED AI-driven validation:
+1. Document Completeness - Check if required docs are uploaded
+2. B/L Field Validation - Check specific field requirements
+
+NOTE: Goods matching is handled by crossdoc_validator - we skip it here to avoid duplicates.
 """
 
 import logging
 import json
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -24,18 +23,6 @@ class IssueSeverity(str, Enum):
     MAJOR = "major"
     MINOR = "minor"
     INFO = "info"
-
-
-@dataclass
-class RequiredDocument:
-    """A document required by the LC."""
-    doc_type: str
-    display_name: str
-    issuer: Optional[str] = None
-    copies: int = 1
-    must_show: List[str] = field(default_factory=list)
-    must_state: Optional[str] = None
-    lc_clause: str = "46A"
 
 
 @dataclass
@@ -76,180 +63,78 @@ class AIValidationIssue:
 # LC REQUIREMENT PARSER
 # =============================================================================
 
-LC_REQUIREMENT_PROMPT = """You are an expert trade finance document analyst. 
-Parse this Letter of Credit and extract the REQUIRED DOCUMENTS from clause 46A.
-
-For each required document, identify:
-- document_type: One of [commercial_invoice, bill_of_lading, packing_list, certificate_of_origin, inspection_certificate, insurance_certificate, beneficiary_certificate, draft, weight_certificate, other]
-- display_name: Human readable name
-- issuer: Who must issue it (if specified)
-- copies: Number of copies required
-- must_show: List of fields/information it must contain
-- must_state: Specific statement it must include
-
-LC TEXT:
-{lc_text}
-
-Return ONLY valid JSON in this format:
-{
-  "required_documents": [
-    {
-      "document_type": "commercial_invoice",
-      "display_name": "Commercial Invoice",
-      "issuer": null,
-      "copies": 6,
-      "must_show": ["HS code", "qty", "unit price", "total"],
-      "must_state": null
-    }
-  ],
-  "special_conditions": ["list of special conditions from 47A"],
-  "prohibited": ["list of prohibited items"]
-}"""
-
-
-async def parse_lc_requirements(lc_text: str) -> Dict[str, Any]:
+def parse_lc_requirements_sync(lc_text: str) -> Dict[str, Any]:
     """
-    Use AI to parse LC requirements from 46A/47A clauses.
-    
+    Parse LC requirements from 46A clause using regex.
     Returns structured requirements that can be validated against.
     """
     if not lc_text or len(lc_text.strip()) < 50:
-        logger.warning(f"LC text too short for requirement parsing: {len(lc_text) if lc_text else 0} chars")
-        return {"required_documents": [], "special_conditions": [], "prohibited": []}
+        logger.warning(f"LC text too short: {len(lc_text) if lc_text else 0} chars")
+        return {"required_documents": [], "bl_must_show": []}
     
-    logger.info(f"Parsing LC requirements from {len(lc_text)} chars of text")
-    
-    try:
-        from ..llm_provider import LLMProviderFactory
-        
-        prompt = LC_REQUIREMENT_PROMPT.format(lc_text=lc_text[:8000])
-        
-        response, tokens_in, tokens_out = await LLMProviderFactory.create_provider().generate(
-            prompt=prompt,
-            system_prompt="You are an expert LC document analyst. Return only valid JSON.",
-            temperature=0.1,
-            max_tokens=2000,
-        )
-        
-        logger.info(f"LC requirement parsing: tokens_in={tokens_in}, tokens_out={tokens_out}")
-        
-        # Parse JSON response
-        clean = response.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-        if clean.endswith("```"):
-            clean = clean[:-3]
-        
-        result = json.loads(clean.strip())
-        
-        logger.info(f"Parsed {len(result.get('required_documents', []))} required documents from LC")
-        return result
-        
-    except Exception as e:
-        logger.error(f"LC requirement parsing failed: {e}", exc_info=True)
-        # Return default requirements based on common LC patterns
-        return _get_default_requirements(lc_text)
-
-
-def _get_default_requirements(lc_text: str) -> Dict[str, Any]:
-    """Fallback: extract requirements using regex patterns."""
-    docs = []
     text_upper = lc_text.upper()
-    
-    logger.info(f"Using regex fallback for LC requirement parsing ({len(lc_text)} chars)")
-    
-    # Always required for export LCs
-    docs.append({
-        "document_type": "commercial_invoice",
-        "display_name": "Commercial Invoice",
-        "copies": 6 if "6 COPIES" in text_upper else 3,
-    })
-    
-    # B/L with field requirements
+    docs = []
     bl_must_show = []
-    if "VOYAGE" in text_upper:
-        bl_must_show.append("voyage no")
-    if "GROSS" in text_upper and "WEIGHT" in text_upper:
-        bl_must_show.append("gross weight")
-    if "NET" in text_upper and "WEIGHT" in text_upper:
-        bl_must_show.append("net weight")
-    if "CONTAINER" in text_upper:
-        bl_must_show.append("container no")
-    if "SEAL" in text_upper:
-        bl_must_show.append("seal no")
     
-    docs.append({
-        "document_type": "bill_of_lading", 
-        "display_name": "Bill of Lading",
-        "must_show": bl_must_show,
-    })
+    logger.info(f"Parsing LC requirements from {len(lc_text)} chars")
     
-    # Packing List - check for detail requirements
-    if "PACKING LIST" in text_upper or "PACKING-LIST" in text_upper:
-        pl_must_show = []
-        if "CARTON" in text_upper:
-            pl_must_show.append("carton breakdown")
-        if "SIZE" in text_upper:
-            pl_must_show.append("size breakdown")
-        docs.append({
-            "document_type": "packing_list", 
-            "display_name": "Packing List",
-            "must_show": pl_must_show,
-        })
+    # =================================================================
+    # CRITICAL DOCUMENTS TO DETECT
+    # =================================================================
     
-    # Certificate of Origin
-    if "CERTIFICATE OF ORIGIN" in text_upper or "C/O " in text_upper or "GSP" in text_upper:
-        docs.append({"document_type": "certificate_of_origin", "display_name": "Certificate of Origin"})
-    
-    # INSPECTION CERTIFICATE - Critical to catch!
+    # 1. INSPECTION CERTIFICATE (SGS/Intertek)
     if "INSPECTION" in text_upper:
         issuer = None
         if "SGS" in text_upper:
             issuer = "SGS"
         if "INTERTEK" in text_upper:
-            issuer = issuer + "/Intertek" if issuer else "Intertek"
+            issuer = f"{issuer}/Intertek" if issuer else "Intertek"
         if "BUREAU VERITAS" in text_upper:
-            issuer = issuer + "/Bureau Veritas" if issuer else "Bureau Veritas"
+            issuer = f"{issuer}/Bureau Veritas" if issuer else "Bureau Veritas"
         
         docs.append({
             "document_type": "inspection_certificate",
-            "display_name": "Inspection Certificate",
+            "display_name": f"Inspection Certificate{f' ({issuer})' if issuer else ''}",
             "issuer": issuer,
         })
-        logger.info(f"Detected inspection certificate requirement (issuer: {issuer})")
+        logger.info(f"✓ Detected: Inspection Certificate requirement (issuer: {issuer})")
     
-    # BENEFICIARY CERTIFICATE - Critical to catch!
-    if "BENEFICIARY" in text_upper and ("CERTIFICATE" in text_upper or "CERTIFYING" in text_upper or "STATING" in text_upper):
+    # 2. BENEFICIARY CERTIFICATE
+    if "BENEFICIARY" in text_upper and any(x in text_upper for x in ["CERTIFICATE", "CERTIFYING", "STATING"]):
         must_state = None
         if "BRAND NEW" in text_upper:
             must_state = "goods are brand new"
         if "MANUFACTURED" in text_upper:
-            # Extract year if possible
-            import re
             year_match = re.search(r'MANUFACTURED\s*(?:IN\s*)?(\d{4})', text_upper)
-            year = year_match.group(1) if year_match else "current year"
-            must_state = f"goods manufactured in {year}" if must_state is None else f"{must_state}, manufactured in {year}"
+            year = year_match.group(1) if year_match else "2026"
+            must_state = f"{must_state}, manufactured in {year}" if must_state else f"manufactured in {year}"
         
         docs.append({
             "document_type": "beneficiary_certificate",
             "display_name": "Beneficiary Certificate",
             "must_state": must_state,
         })
-        logger.info(f"Detected beneficiary certificate requirement (must_state: {must_state})")
+        logger.info(f"✓ Detected: Beneficiary Certificate requirement")
     
-    # Insurance Certificate
-    if "INSURANCE" in text_upper and ("CERTIFICATE" in text_upper or "POLICY" in text_upper):
-        docs.append({"document_type": "insurance_certificate", "display_name": "Insurance Certificate"})
+    # =================================================================
+    # B/L FIELD REQUIREMENTS
+    # =================================================================
     
-    # Weight Certificate
-    if "WEIGHT CERTIFICATE" in text_upper or "WEIGHT LIST" in text_upper:
-        docs.append({"document_type": "weight_certificate", "display_name": "Weight Certificate"})
+    # Check what B/L must show
+    if "VOYAGE" in text_upper or "VOY" in text_upper:
+        bl_must_show.append("voyage_number")
+    if "GROSS" in text_upper and "WEIGHT" in text_upper:
+        bl_must_show.append("gross_weight")
+    if "NET" in text_upper and "WEIGHT" in text_upper:
+        bl_must_show.append("net_weight")
     
-    logger.info(f"Regex fallback found {len(docs)} required document types: {[d['document_type'] for d in docs]}")
+    if bl_must_show:
+        logger.info(f"✓ B/L must show: {bl_must_show}")
     
-    return {"required_documents": docs, "special_conditions": [], "prohibited": []}
+    return {
+        "required_documents": docs,
+        "bl_must_show": bl_must_show,
+    }
 
 
 # =============================================================================
@@ -261,390 +146,152 @@ def check_document_completeness(
     uploaded_docs: List[Dict[str, Any]],
 ) -> List[AIValidationIssue]:
     """
-    Check if all required documents are present in the uploaded set.
-    
-    Args:
-        required_docs: List of required documents from LC parsing
-        uploaded_docs: List of uploaded document metadata
-        
-    Returns:
-        List of issues for missing documents
+    Check if CRITICAL required documents are present.
+    Only checks: inspection_certificate, beneficiary_certificate
     """
     issues = []
     
-    # Normalize uploaded document types
-    uploaded_types = set()
+    # Build set of uploaded document types from multiple sources
+    uploaded_types: Set[str] = set()
+    uploaded_filenames: List[str] = []
+    
     for doc in uploaded_docs:
-        doc_type = (doc.get("document_type") or doc.get("type") or "").lower()
-        doc_type = _normalize_doc_type(doc_type)
-        uploaded_types.add(doc_type)
+        # Get document type
+        doc_type = (doc.get("document_type") or doc.get("type") or "").lower().replace(" ", "_")
+        if doc_type:
+            uploaded_types.add(doc_type)
         
-        # Also check filename for hints
-        filename = (doc.get("filename") or doc.get("name") or "").lower()
-        if "invoice" in filename:
-            uploaded_types.add("commercial_invoice")
-        if "lading" in filename or "b/l" in filename or "bl" in filename:
-            uploaded_types.add("bill_of_lading")
-        if "packing" in filename:
-            uploaded_types.add("packing_list")
-        if "origin" in filename or "coo" in filename:
-            uploaded_types.add("certificate_of_origin")
+        # Get filename
+        filename = (doc.get("filename") or doc.get("name") or doc.get("original_filename") or "").lower()
+        uploaded_filenames.append(filename)
+        
+        # Infer from filename
         if "inspection" in filename:
             uploaded_types.add("inspection_certificate")
-        if "insurance" in filename:
-            uploaded_types.add("insurance_certificate")
         if "beneficiary" in filename:
             uploaded_types.add("beneficiary_certificate")
     
-    logger.info(f"Uploaded document types detected: {uploaded_types}")
+    logger.info(f"Uploaded types: {uploaded_types}")
+    logger.info(f"Uploaded files: {uploaded_filenames}")
     
-    # Check each required document
+    # Check each CRITICAL required document
     for req in required_docs:
-        req_type = _normalize_doc_type(req.get("document_type", ""))
+        req_type = req.get("document_type", "").lower()
         display_name = req.get("display_name", req_type)
         
+        # Only check critical missing documents
+        if req_type not in ["inspection_certificate", "beneficiary_certificate"]:
+            continue
+        
         if req_type not in uploaded_types:
-            # Determine severity based on document type
-            if req_type in ["inspection_certificate", "beneficiary_certificate"]:
-                severity = IssueSeverity.CRITICAL
-            elif req_type in ["bill_of_lading", "commercial_invoice"]:
-                severity = IssueSeverity.CRITICAL
-            else:
-                severity = IssueSeverity.MAJOR
+            issuer = req.get("issuer")
+            must_state = req.get("must_state")
             
-            issuer_note = ""
-            if req.get("issuer"):
-                issuer_note = f" (issued by {req['issuer']})"
+            expected_text = f"{display_name} as specified in LC clause 46A"
+            if issuer:
+                expected_text = f"{display_name} issued by {issuer}"
+            if must_state:
+                expected_text = f"{display_name} stating: {must_state}"
+            
+            # Build list of what WAS uploaded
+            found_text = f"Not found. Uploaded documents: {', '.join(uploaded_filenames) if uploaded_filenames else 'None'}"
             
             issues.append(AIValidationIssue(
-                rule_id=f"AI-DOC-MISSING-{req_type.upper()}",
+                rule_id=f"AI-MISSING-{req_type.upper()}",
                 title=f"Missing Required Document: {display_name}",
-                severity=severity,
-                message=f"The LC requires a {display_name}{issuer_note} but this document was not uploaded.",
-                expected=f"{display_name} as specified in LC clause 46A",
-                found="Document not found in uploaded set",
-                suggestion=f"Upload the required {display_name} before bank submission. Without this document, the presentation will be discrepant.",
+                severity=IssueSeverity.CRITICAL,
+                message=f"LC clause 46A requires {display_name} but this document was not provided.",
+                expected=expected_text,
+                found=found_text,
+                suggestion=f"Obtain and upload the required {display_name} before bank submission. Without this document, the presentation will be REJECTED.",
                 documents=["Letter of Credit"],
                 ucp_reference="UCP600 Article 14(a)",
+                isbp_reference="ISBP745 A14",
             ))
+            logger.info(f"✗ Missing: {display_name}")
     
     return issues
 
 
-def _normalize_doc_type(doc_type: str) -> str:
-    """Normalize document type to standard form."""
-    doc_type = doc_type.lower().strip()
-    
-    mappings = {
-        "invoice": "commercial_invoice",
-        "commercial invoice": "commercial_invoice",
-        "comm_invoice": "commercial_invoice",
-        "bl": "bill_of_lading",
-        "b/l": "bill_of_lading",
-        "bill of lading": "bill_of_lading",
-        "bol": "bill_of_lading",
-        "packing list": "packing_list",
-        "packinglist": "packing_list",
-        "coo": "certificate_of_origin",
-        "c/o": "certificate_of_origin",
-        "certificate of origin": "certificate_of_origin",
-        "origin": "certificate_of_origin",
-        "inspection": "inspection_certificate",
-        "inspection cert": "inspection_certificate",
-        "insurance": "insurance_certificate",
-        "insurance cert": "insurance_certificate",
-        "beneficiary cert": "beneficiary_certificate",
-        "beneficiary certificate": "beneficiary_certificate",
-    }
-    
-    return mappings.get(doc_type, doc_type.replace(" ", "_"))
-
-
 # =============================================================================
-# SEMANTIC GOODS MATCHING
+# B/L FIELD VALIDATOR
 # =============================================================================
 
-SEMANTIC_MATCH_PROMPT = """You are an expert trade finance analyst comparing goods descriptions.
-
-Compare these two goods descriptions and determine if they refer to the SAME goods:
-
-LC GOODS DESCRIPTION:
-{lc_goods}
-
-DOCUMENT GOODS DESCRIPTION:
-{doc_goods}
-
-Consider:
-1. Are these fundamentally the same products?
-2. Do quantities match (if specified)?
-3. Do HS codes match (if specified)?
-4. Are there any CONFLICTING details?
-
-Per UCP600 Article 18(c), invoices may use general terms but must NOT CONFLICT with LC.
-
-Return ONLY valid JSON:
-{
-  "match": true/false,
-  "confidence": 0.0-1.0,
-  "explanation": "Brief explanation",
-  "conflicts": ["list of specific conflicts if any"],
-  "acceptable_differences": ["differences that are acceptable under UCP600"]
-}"""
-
-
-async def semantic_goods_match(
-    lc_goods: str,
-    doc_goods: str,
-    doc_type: str = "invoice",
-) -> Dict[str, Any]:
-    """
-    Use AI to semantically compare goods descriptions.
-    
-    This understands that "100% Cotton T-Shirts" = "100% COTTON T-SHIRTS"
-    but "Cotton T-shirts" ≠ "100% Polyester T-shirts"
-    """
-    if not lc_goods or not doc_goods:
-        return {"match": True, "confidence": 0.5, "explanation": "Insufficient data for comparison"}
-    
-    # Quick check for obvious matches (case-insensitive, normalized)
-    lc_norm = _normalize_goods_text(lc_goods)
-    doc_norm = _normalize_goods_text(doc_goods)
-    
-    if lc_norm == doc_norm:
-        return {"match": True, "confidence": 1.0, "explanation": "Exact match after normalization"}
-    
-    # Check if one contains the other (general terms acceptable)
-    if doc_norm in lc_norm or lc_norm in doc_norm:
-        return {
-            "match": True, 
-            "confidence": 0.9, 
-            "explanation": "Document uses general terms consistent with LC",
-            "acceptable_differences": ["General description acceptable per UCP600 Art 18(c)"]
-        }
-    
-    try:
-        from ..llm_provider import LLMProviderFactory
-        
-        prompt = SEMANTIC_MATCH_PROMPT.format(
-            lc_goods=lc_goods[:2000],
-            doc_goods=doc_goods[:2000],
-        )
-        
-        response, _, _ = await LLMProviderFactory.create_provider().generate(
-            prompt=prompt,
-            system_prompt="You are an expert trade finance analyst. Return only valid JSON.",
-            temperature=0.1,
-            max_tokens=500,
-        )
-        
-        # Parse response
-        clean = response.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-        if clean.endswith("```"):
-            clean = clean[:-3]
-        
-        return json.loads(clean.strip())
-        
-    except Exception as e:
-        logger.warning(f"Semantic goods matching failed: {e}")
-        # Fallback to simple similarity
-        similarity = _simple_similarity(lc_norm, doc_norm)
-        return {
-            "match": similarity > 0.7,
-            "confidence": similarity,
-            "explanation": f"Fallback similarity check: {similarity:.0%}",
-        }
-
-
-def _normalize_goods_text(text: str) -> str:
-    """Normalize goods text for comparison."""
-    text = text.lower()
-    # Remove punctuation and extra whitespace
-    text = re.sub(r'[^\w\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    # Remove common filler words
-    for word in ['the', 'a', 'an', 'of', 'for', 'and', 'or']:
-        text = re.sub(rf'\b{word}\b', '', text)
-    return text.strip()
-
-
-def _simple_similarity(text1: str, text2: str) -> float:
-    """Simple word overlap similarity."""
-    words1 = set(text1.split())
-    words2 = set(text2.split())
-    if not words1 or not words2:
-        return 0.0
-    intersection = words1 & words2
-    union = words1 | words2
-    return len(intersection) / len(union)
-
-
-# =============================================================================
-# FIELD REQUIREMENT VALIDATOR
-# =============================================================================
-
-FIELD_VALIDATION_PROMPT = """You are an expert trade finance document analyst.
-
-The LC requires the {doc_type} to show these specific fields/information:
-{required_fields}
-
-Here is the extracted data from the actual {doc_type}:
-{doc_data}
-
-Check if each required field is present and correctly shown.
-
-Return ONLY valid JSON:
-{
-  "missing_fields": ["list of fields required but not found"],
-  "present_fields": ["list of required fields that are present"],
-  "issues": [
-    {
-      "field": "field name",
-      "expected": "what LC requires",
-      "found": "what document shows or 'NOT FOUND'",
-      "severity": "critical/major/minor"
-    }
-  ]
-}"""
-
-
-async def validate_document_fields(
-    doc_type: str,
+def validate_bl_fields(
     required_fields: List[str],
-    doc_data: Dict[str, Any],
+    bl_data: Dict[str, Any],
 ) -> List[AIValidationIssue]:
     """
-    Validate that a document contains all required fields.
-    
-    Uses AI to understand field requirements and check against extracted data.
+    Validate B/L has required fields, showing actual extracted values.
     """
     if not required_fields:
         return []
     
     issues = []
     
-    # First, do quick deterministic checks
-    doc_data_lower = {k.lower(): v for k, v in doc_data.items() if v}
+    # Normalize B/L data keys to lowercase
+    bl_lower = {}
+    for k, v in bl_data.items():
+        if v and not k.startswith("_"):  # Skip metadata fields
+            bl_lower[k.lower()] = v
     
-    field_mappings = {
-        "voyage no": ["voyage_number", "voyage", "voyage_no", "voy"],
-        "voyage number": ["voyage_number", "voyage", "voyage_no", "voy"],
-        "gross weight": ["gross_weight", "gw", "gross_wt"],
-        "net weight": ["net_weight", "nw", "net_wt"],
-        "vessel name": ["vessel", "vessel_name", "ship", "carrier"],
-        "container no": ["container_number", "container_no", "container"],
-        "seal no": ["seal_number", "seal_no", "seal"],
-        "hs code": ["hs_code", "hscode", "hs_codes", "tariff"],
-        "qty": ["quantity", "qty", "quantities"],
-        "unit price": ["unit_price", "price", "rate"],
+    logger.info(f"B/L extracted fields: {list(bl_lower.keys())}")
+    
+    # Field mappings - what keys to check for each requirement
+    field_info = {
+        "voyage_number": {
+            "keys": ["voyage_number", "voyage", "voyage_no", "voy_no"],
+            "display": "Voyage Number",
+        },
+        "gross_weight": {
+            "keys": ["gross_weight", "gw", "gross_wt", "total_gross_weight"],
+            "display": "Gross Weight",
+        },
+        "net_weight": {
+            "keys": ["net_weight", "nw", "net_wt", "total_net_weight"],
+            "display": "Net Weight",
+        },
     }
     
+    checked_fields: Set[str] = set()  # Track to avoid duplicates
+    
     for req_field in required_fields:
-        req_lower = req_field.lower()
-        possible_keys = field_mappings.get(req_lower, [req_lower, req_lower.replace(" ", "_")])
+        # Skip if already checked (avoid duplicates)
+        if req_field in checked_fields:
+            continue
+        checked_fields.add(req_field)
         
-        found = False
-        for key in possible_keys:
-            if key in doc_data_lower and doc_data_lower[key]:
-                found = True
+        info = field_info.get(req_field, {"keys": [req_field], "display": req_field.replace("_", " ").title()})
+        
+        # Look for the field in B/L data
+        found_value = None
+        for key in info["keys"]:
+            if key in bl_lower:
+                found_value = bl_lower[key]
                 break
         
-        if not found:
-            severity = IssueSeverity.MAJOR
-            if req_lower in ["voyage no", "voyage number", "gross weight", "net weight"]:
-                severity = IssueSeverity.MAJOR
+        if found_value:
+            logger.info(f"✓ B/L has {info['display']}: {found_value}")
+        else:
+            # Build "Found" text showing what B/L DOES have
+            available_fields = [f"{k}={v}" for k, v in list(bl_lower.items())[:5]]
+            found_text = f"Field not found in B/L. Available: {', '.join(available_fields)}" if available_fields else "No relevant fields extracted from B/L"
             
             issues.append(AIValidationIssue(
-                rule_id=f"AI-FIELD-MISSING-{req_field.upper().replace(' ', '_')}",
-                title=f"{doc_type} Missing Required Field: {req_field}",
-                severity=severity,
-                message=f"The LC requires the {doc_type} to show '{req_field}' but this field was not found.",
-                expected=f"{req_field} as required by LC clause 46A",
-                found="Field not found in document",
-                suggestion=f"Ensure the {doc_type} clearly shows the {req_field}. Request amended document if necessary.",
-                documents=[doc_type],
+                rule_id=f"AI-BL-MISSING-{req_field.upper()}",
+                title=f"B/L Missing Required Field: {info['display']}",
+                severity=IssueSeverity.MAJOR,
+                message=f"LC clause 46A requires B/L to show {info['display']}, but this field was not found.",
+                expected=f"{info['display']} as required by LC clause 46A",
+                found=found_text,
+                suggestion=f"Request amended B/L from carrier showing the {info['display']}. Submit documentary amendment request.",
+                documents=["Bill of Lading"],
                 ucp_reference="UCP600 Article 14(d)",
+                isbp_reference="ISBP745 E12",
             ))
+            logger.info(f"✗ B/L missing: {info['display']}")
     
     return issues
-
-
-# =============================================================================
-# AI DISCREPANCY EXPLAINER
-# =============================================================================
-
-EXPLANATION_PROMPT = """You are an expert trade finance specialist explaining a document discrepancy to an exporter.
-
-DISCREPANCY:
-Title: {title}
-Expected: {expected}
-Found: {found}
-
-Provide a professional, bank-grade explanation that:
-1. Explains why this is a discrepancy under UCP600/ISBP745
-2. What the bank will likely do
-3. Specific actionable steps to resolve it
-4. Any alternative solutions (amendment, waiver request)
-
-Keep it concise but comprehensive (2-3 sentences for explanation, 2-3 bullet points for actions).
-
-Return ONLY valid JSON:
-{
-  "explanation": "Professional explanation of the discrepancy",
-  "bank_action": "What the bank will likely do",
-  "resolution_steps": ["step 1", "step 2"],
-  "alternative": "Alternative solution if primary fix not possible",
-  "risk_level": "high/medium/low"
-}"""
-
-
-async def generate_discrepancy_explanation(
-    title: str,
-    expected: str,
-    found: str,
-    ucp_reference: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Generate a professional, bank-grade explanation for a discrepancy.
-    """
-    try:
-        from ..llm_provider import LLMProviderFactory
-        
-        prompt = EXPLANATION_PROMPT.format(
-            title=title,
-            expected=expected,
-            found=found,
-        )
-        
-        response, _, _ = await LLMProviderFactory.create_provider().generate(
-            prompt=prompt,
-            system_prompt="You are an expert trade finance specialist. Return only valid JSON.",
-            temperature=0.2,
-            max_tokens=600,
-        )
-        
-        # Parse response
-        clean = response.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-        if clean.endswith("```"):
-            clean = clean[:-3]
-        
-        return json.loads(clean.strip())
-        
-    except Exception as e:
-        logger.warning(f"Discrepancy explanation generation failed: {e}")
-        return {
-            "explanation": f"This discrepancy may cause bank rejection. Review and correct before submission.",
-            "bank_action": "Bank will issue discrepancy notice",
-            "resolution_steps": ["Review the specific requirement", "Correct or request amendment"],
-            "risk_level": "medium",
-        }
 
 
 # =============================================================================
@@ -657,15 +304,13 @@ async def run_ai_validation(
     extracted_context: Dict[str, Any],
 ) -> Tuple[List[AIValidationIssue], Dict[str, Any]]:
     """
-    Run comprehensive AI-powered validation on the document set.
+    Run FOCUSED AI-powered validation.
     
-    Args:
-        lc_data: Extracted LC data including raw text
-        documents: List of uploaded document metadata
-        extracted_context: Extracted data from all documents
-        
-    Returns:
-        Tuple of (list of issues, validation metadata)
+    Only checks:
+    1. Missing critical documents (Inspection Cert, Beneficiary Cert)
+    2. B/L field requirements (Voyage No, Gross Weight, Net Weight)
+    
+    NOTE: Goods matching is handled by crossdoc_validator - skipped here.
     """
     all_issues: List[AIValidationIssue] = []
     metadata = {
@@ -673,116 +318,84 @@ async def run_ai_validation(
         "checks_performed": [],
     }
     
-    # Get LC raw text for parsing
+    # Get LC raw text
     lc_text = lc_data.get("raw_text") or ""
-    if not lc_text:
-        # Try to reconstruct from structured data
-        mt700 = lc_data.get("mt700") or {}
-        if mt700.get("raw_text"):
-            lc_text = mt700["raw_text"]
+    logger.info(f"AI Validation starting with {len(lc_text)} chars of LC text")
     
-    # 1. Parse LC Requirements
-    logger.info("AI Validation: Parsing LC requirements...")
+    if not lc_text:
+        logger.warning("No LC text available for AI validation")
+        metadata["error"] = "no_lc_text"
+        return [], metadata
+    
+    # =================================================================
+    # 1. PARSE LC REQUIREMENTS
+    # =================================================================
+    logger.info("Step 1: Parsing LC requirements...")
     metadata["checks_performed"].append("lc_requirement_parsing")
     
-    lc_requirements = await parse_lc_requirements(lc_text)
-    required_docs = lc_requirements.get("required_documents", [])
-    metadata["required_documents"] = [d.get("display_name") for d in required_docs]
+    requirements = parse_lc_requirements_sync(lc_text)
+    required_docs = requirements.get("required_documents", [])
+    bl_must_show = requirements.get("bl_must_show", [])
     
-    # 2. Check Document Completeness
-    logger.info("AI Validation: Checking document completeness...")
-    metadata["checks_performed"].append("document_completeness")
+    metadata["required_critical_docs"] = [d["document_type"] for d in required_docs]
+    metadata["bl_must_show"] = bl_must_show
     
-    completeness_issues = check_document_completeness(required_docs, documents)
-    all_issues.extend(completeness_issues)
-    metadata["missing_documents"] = len(completeness_issues)
-    
-    # 3. Semantic Goods Matching
-    logger.info("AI Validation: Running semantic goods matching...")
-    metadata["checks_performed"].append("semantic_goods_matching")
-    
-    lc_goods = lc_data.get("goods_description") or ""
-    if not lc_goods and lc_data.get("goods"):
-        if isinstance(lc_data["goods"], list):
-            lc_goods = " ".join(str(g) for g in lc_data["goods"])
-        else:
-            lc_goods = str(lc_data["goods"])
-    
-    # Check invoice goods
-    invoice_ctx = extracted_context.get("invoice") or {}
-    invoice_goods = invoice_ctx.get("goods_description") or invoice_ctx.get("description") or ""
-    
-    if lc_goods and invoice_goods:
-        goods_match = await semantic_goods_match(lc_goods, invoice_goods, "invoice")
-        metadata["invoice_goods_match"] = goods_match
+    # =================================================================
+    # 2. CHECK DOCUMENT COMPLETENESS (Critical docs only)
+    # =================================================================
+    if required_docs:
+        logger.info(f"Step 2: Checking {len(required_docs)} critical document requirements...")
+        metadata["checks_performed"].append("document_completeness")
         
-        if not goods_match.get("match", True):
-            conflicts = goods_match.get("conflicts", [])
-            all_issues.append(AIValidationIssue(
-                rule_id="AI-GOODS-MISMATCH-INV",
-                title="Invoice Goods Description Conflict",
-                severity=IssueSeverity.MAJOR,
-                message=goods_match.get("explanation", "Invoice goods may conflict with LC terms."),
-                expected=f"Goods per LC: {lc_goods[:200]}...",
-                found=f"Invoice states: {invoice_goods[:200]}...",
-                suggestion=f"Review goods description. Conflicts: {', '.join(conflicts) if conflicts else 'See explanation'}. Per UCP600 Article 18(c), invoice may use general terms but must not conflict.",
-                documents=["Commercial Invoice", "Letter of Credit"],
-                ucp_reference="UCP600 Article 18(c)",
-                isbp_reference="ISBP745 C6",
-            ))
+        completeness_issues = check_document_completeness(required_docs, documents)
+        all_issues.extend(completeness_issues)
+        
+        metadata["missing_critical_docs"] = len(completeness_issues)
+    else:
+        logger.info("Step 2: No critical documents to check (Inspection/Beneficiary Cert not required)")
+        metadata["missing_critical_docs"] = 0
     
-    # 4. Field Requirement Validation
-    logger.info("AI Validation: Validating required fields...")
-    metadata["checks_performed"].append("field_requirement_validation")
-    
-    # Check B/L required fields
-    bl_requirements = next(
-        (d for d in required_docs if d.get("document_type") == "bill_of_lading"),
-        {}
-    )
-    bl_must_show = bl_requirements.get("must_show", [])
-    
-    # Add common B/L requirements if not specified
-    if not bl_must_show and "VOYAGE" in lc_text.upper():
-        bl_must_show = ["voyage no", "gross weight", "net weight"]
-    
+    # =================================================================
+    # 3. VALIDATE B/L FIELDS
+    # =================================================================
     if bl_must_show:
-        bl_ctx = extracted_context.get("bill_of_lading") or {}
-        bl_field_issues = await validate_document_fields(
-            "Bill of Lading",
-            bl_must_show,
-            bl_ctx,
-        )
-        all_issues.extend(bl_field_issues)
+        logger.info(f"Step 3: Validating B/L has required fields: {bl_must_show}")
+        metadata["checks_performed"].append("bl_field_validation")
+        
+        # Get B/L extracted data
+        bl_data = extracted_context.get("bill_of_lading") or {}
+        
+        bl_issues = validate_bl_fields(bl_must_show, bl_data)
+        all_issues.extend(bl_issues)
+        
+        metadata["bl_missing_fields"] = len(bl_issues)
+    else:
+        logger.info("Step 3: No specific B/L field requirements detected")
+        metadata["bl_missing_fields"] = 0
     
-    # 5. Generate enhanced explanations for all issues
-    logger.info("AI Validation: Generating explanations...")
-    metadata["checks_performed"].append("explanation_generation")
+    # =================================================================
+    # 4. DEDUPLICATE ISSUES
+    # =================================================================
+    seen_rules: Set[str] = set()
+    unique_issues: List[AIValidationIssue] = []
     
-    # For the first few issues, generate detailed explanations
-    for issue in all_issues[:5]:  # Limit to avoid too many API calls
-        try:
-            explanation = await generate_discrepancy_explanation(
-                issue.title,
-                issue.expected,
-                issue.found,
-                issue.ucp_reference,
-            )
-            # Enhance the suggestion with AI-generated content
-            if explanation.get("resolution_steps"):
-                steps = " → ".join(explanation["resolution_steps"])
-                issue.suggestion = f"{issue.suggestion} STEPS: {steps}"
-        except Exception as e:
-            logger.warning(f"Could not enhance explanation for {issue.rule_id}: {e}")
+    for issue in all_issues:
+        if issue.rule_id not in seen_rules:
+            seen_rules.add(issue.rule_id)
+            unique_issues.append(issue)
+        else:
+            logger.info(f"Removing duplicate issue: {issue.rule_id}")
     
-    metadata["total_ai_issues"] = len(all_issues)
-    metadata["critical_issues"] = sum(1 for i in all_issues if i.severity == IssueSeverity.CRITICAL)
-    metadata["major_issues"] = sum(1 for i in all_issues if i.severity == IssueSeverity.MAJOR)
+    # =================================================================
+    # SUMMARY
+    # =================================================================
+    metadata["total_issues"] = len(unique_issues)
+    metadata["critical_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.CRITICAL)
+    metadata["major_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.MAJOR)
     
     logger.info(
-        f"AI Validation complete: {len(all_issues)} issues found "
+        f"AI Validation complete: {len(unique_issues)} issues "
         f"(critical={metadata['critical_issues']}, major={metadata['major_issues']})"
     )
     
-    return all_issues, metadata
-
+    return unique_issues, metadata
