@@ -778,7 +778,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
       const typeKeyRaw = doc.document_type ?? docAny.type ?? "supporting_document";
       const typeKey = (typeKeyRaw || "supporting_document").toString();
-      const issuesCount = Number(doc.issues_count ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
+      // Check multiple keys - backend sends discrepancyCount (camelCase)
+      const issuesCount = Number(doc.discrepancyCount ?? doc.issues_count ?? docAny.discrepancyCount ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
       const extractionStatus = (doc.extraction_status ?? docAny.extractionStatus ?? "unknown").toString().toLowerCase();
       const status: "success" | "warning" | "error" = (() => {
         if (extractionStatus === "error") return "error";

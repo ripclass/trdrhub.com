@@ -81,7 +81,8 @@ const mapDocuments = (docs: any[] = []) => {
     // Ensure typeKey is a string - handle case where backend returns object like {types: [...]}
     const rawType = doc?.document_type ?? 'supporting_document';
     const typeKey = typeof rawType === 'string' ? rawType : 'supporting_document';
-    const issuesCount = Number(doc?.issues_count ?? 0);
+    // Check multiple possible keys for issue count (backend uses discrepancyCount)
+    const issuesCount = Number(doc?.discrepancyCount ?? doc?.issues_count ?? doc?.issuesCount ?? 0);
     const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
 
     return {
