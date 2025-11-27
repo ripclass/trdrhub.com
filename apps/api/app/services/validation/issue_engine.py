@@ -308,7 +308,10 @@ class IssueEngine:
         """
         Generate issues for missing LC fields.
         
-        This ensures every missing critical/required field has an issue.
+        NOTE: Only generates issues for CRITICAL fields now.
+        REQUIRED/IMPORTANT fields (goods_description, documents_required, ucp_reference)
+        often have extraction issues causing false positives.
+        Cross-document validation handles actual compliance checks.
         """
         issues: List[Issue] = []
         
@@ -316,8 +319,10 @@ class IssueEngine:
             if field_result.is_present:
                 continue
             
-            # Skip optional fields
-            if field_result.priority == FieldPriority.OPTIONAL:
+            # Only generate issues for CRITICAL missing fields
+            # Skip REQUIRED/IMPORTANT/OPTIONAL - they cause false positives
+            # Cross-doc validation will catch actual compliance issues
+            if field_result.priority != FieldPriority.CRITICAL:
                 continue
             
             issue = self._create_extraction_issue(field_result)
