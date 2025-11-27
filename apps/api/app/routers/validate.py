@@ -672,13 +672,38 @@ async def validate_doc(
             # =================================================================
             from app.services.validation.ai_validator import run_ai_validation, AIValidationIssue
             
-            lc_data_for_ai = payload.get("letter_of_credit") or extracted_context.get("letter_of_credit") or {}
-            lc_data_for_ai["raw_text"] = lc_data_for_ai.get("raw_text") or ""
+            # Build LC data for AI from multiple potential sources
+            lc_data_for_ai = {}
             
-            # Add goods description if available
-            if not lc_data_for_ai.get("goods_description"):
-                mt700 = lc_data_for_ai.get("mt700") or {}
-                lc_data_for_ai["goods_description"] = mt700.get("goods_description") or mt700.get("45A") or ""
+            # Get raw text from extracted_context (built from uploaded files)
+            # The LC raw text is stored in context["lc"]["raw_text"] or context["lc_text"]
+            lc_context = extracted_context.get("lc") or {}
+            lc_raw_text = (
+                lc_context.get("raw_text") or  # Primary: from lc object in extracted_context
+                extracted_context.get("lc_text") or  # Alternative: direct lc_text
+                (payload.get("lc") or {}).get("raw_text") or  # Fallback: from payload
+                ""
+            )
+            lc_data_for_ai["raw_text"] = lc_raw_text
+            logger.info(f"AI Validation: LC raw_text length = {len(lc_raw_text)} chars")
+            
+            # Get goods description from various locations
+            mt700 = lc_context.get("mt700") or {}
+            lc_data_for_ai["goods_description"] = (
+                lc_context.get("goods_description") or
+                mt700.get("goods_description") or 
+                mt700.get("45A") or
+                ""
+            )
+            logger.info(f"AI Validation: goods_description length = {len(lc_data_for_ai['goods_description'])} chars")
+            
+            # Get goods list
+            lc_data_for_ai["goods"] = (
+                lc_context.get("goods") or 
+                lc_context.get("goods_items") or 
+                mt700.get("goods") or
+                []
+            )
             
             ai_issues, ai_metadata = await run_ai_validation(
                 lc_data=lc_data_for_ai,
