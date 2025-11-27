@@ -79,6 +79,18 @@ from .response_schema import (
     build_v2_structured_result,
 )
 
+from .ai_validator import (
+    run_ai_validation,
+    parse_lc_requirements,
+    check_document_completeness,
+    semantic_goods_match,
+    validate_document_fields,
+    generate_discrepancy_explanation,
+    AIValidationIssue,
+    RequiredDocument,
+    IssueSeverity as AIIssueSeverity,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -133,5 +145,15 @@ __all__ = [
     "AnalyticsSchema",
     "ProcessingSummarySchema",
     "build_v2_structured_result",
+    # AI Validator
+    "run_ai_validation",
+    "parse_lc_requirements",
+    "check_document_completeness",
+    "semantic_goods_match",
+    "validate_document_fields",
+    "generate_discrepancy_explanation",
+    "AIValidationIssue",
+    "RequiredDocument",
+    "AIIssueSeverity",
 ]
 

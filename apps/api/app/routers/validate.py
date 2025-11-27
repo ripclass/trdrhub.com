@@ -667,6 +667,36 @@ async def validate_doc(
             v2_crossdoc_issues = crossdoc_result.issues
             logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
             
+            # =================================================================
+            # AI VALIDATION ENGINE
+            # =================================================================
+            from app.services.validation.ai_validator import run_ai_validation, AIValidationIssue
+            
+            lc_data_for_ai = payload.get("letter_of_credit") or extracted_context.get("letter_of_credit") or {}
+            lc_data_for_ai["raw_text"] = lc_data_for_ai.get("raw_text") or ""
+            
+            # Add goods description if available
+            if not lc_data_for_ai.get("goods_description"):
+                mt700 = lc_data_for_ai.get("mt700") or {}
+                lc_data_for_ai["goods_description"] = mt700.get("goods_description") or mt700.get("45A") or ""
+            
+            ai_issues, ai_metadata = await run_ai_validation(
+                lc_data=lc_data_for_ai,
+                documents=payload.get("documents") or [],  # List of document metadata
+                extracted_context=extracted_context,
+            )
+            
+            logger.info(
+                "AI Validation: found %d issues (critical=%d, major=%d)",
+                len(ai_issues),
+                ai_metadata.get("critical_issues", 0),
+                ai_metadata.get("major_issues", 0),
+            )
+            
+            # Convert AI issues to same format as crossdoc issues
+            for ai_issue in ai_issues:
+                v2_crossdoc_issues.append(ai_issue)
+            
         except Exception as e:
             logger.error("V2 pipeline error: %s", e, exc_info=True)
             # Don't fall back to legacy - just log the error
