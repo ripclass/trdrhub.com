@@ -200,10 +200,20 @@ export function ExporterIssueCard({
             </div>
           </div>
         )}
-        {issue.ucpReference && (
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <span className="font-medium">UCP600 Reference:</span> {issue.ucpReference}
-          </p>
+        {/* Compliance References - only show if they have actual content */}
+        {(issue.ucpReference || issue.isbpReference) && (
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            {issue.ucpReference && (
+              <p className="flex items-center gap-1">
+                <span className="font-medium">UCP600:</span> {issue.ucpReference}
+              </p>
+            )}
+            {issue.isbpReference && (
+              <p className="flex items-center gap-1">
+                <span className="font-medium">ISBP745:</span> {issue.isbpReference}
+              </p>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

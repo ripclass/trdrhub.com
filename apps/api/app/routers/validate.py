@@ -798,23 +798,29 @@ async def validate_doc(
                     "ruleset_domain": "icc.lcopilot.extraction",
                 })
         
-        # Add cross-doc issues
+        # Add cross-doc issues (including AI validator issues)
         if v2_crossdoc_issues:
             for issue in v2_crossdoc_issues:
                 issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                
+                # Handle both CrossDocIssue and AIValidationIssue formats
+                # CrossDocIssue uses: "rule", "ucp_article", "actual"
+                # AIValidationIssue uses: "rule", "ucp_reference", "actual"
                 failed_results.append({
-                    "rule": issue_dict.get("rule_id", "CROSSDOC-ISSUE"),
+                    "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "CROSSDOC-ISSUE",
                     "title": issue_dict.get("title", "Cross-Document Issue"),
                     "passed": False,
                     "severity": issue_dict.get("severity", "major"),
                     "message": issue_dict.get("message", ""),
                     "expected": issue_dict.get("expected", ""),
-                    "found": issue_dict.get("found", ""),
-                    "suggested_fix": issue_dict.get("suggestion", ""),
-                    "documents": [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
-                    "ucp_reference": issue_dict.get("ucp_article"),
+                    "found": issue_dict.get("actual") or issue_dict.get("found") or "",
+                    "suggested_fix": issue_dict.get("suggestion") or issue_dict.get("suggested_fix") or "",
+                    "documents": issue_dict.get("documents") or issue_dict.get("document_names") or [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
+                    "ucp_reference": issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or "",
+                    "isbp_reference": issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or "",
                     "display_card": True,
-                    "ruleset_domain": "icc.lcopilot.crossdoc",
+                    "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
+                    "auto_generated": issue_dict.get("auto_generated", False),
                 })
         
         # Add LC type unknown warning if applicable
@@ -837,14 +843,34 @@ async def validate_doc(
                 }
             )
         
+        # =====================================================================
+        # DEDUPLICATION - Remove duplicate issues by rule ID
+        # =====================================================================
+        seen_rules = set()
+        deduplicated_results = []
+        for issue in failed_results:
+            rule_id = issue.get("rule") or issue.get("title") or str(len(deduplicated_results))
+            if rule_id not in seen_rules:
+                seen_rules.add(rule_id)
+                deduplicated_results.append(issue)
+            else:
+                logger.debug("Removed duplicate issue: %s", rule_id)
+        
+        if len(failed_results) != len(deduplicated_results):
+            logger.warning(
+                "Deduplication removed %d duplicate issues",
+                len(failed_results) - len(deduplicated_results)
+            )
+        
         logger.info(
-            "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d)",
+            "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d) after_dedup=%d",
             len(failed_results),
             len(v2_issues) if v2_issues else 0,
             len(v2_crossdoc_issues) if v2_crossdoc_issues else 0,
+            len(deduplicated_results),
         )
         
-        issue_cards, reference_issues = build_issue_cards(failed_results)
+        issue_cards, reference_issues = build_issue_cards(deduplicated_results)
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
@@ -1036,19 +1062,8 @@ async def validate_doc(
             logger.info("Added %d issue cards to structured_result (total issues: %d)", 
                        len(formatted_issues), len(structured_result["issues"]))
         
-        # Also add v2 crossdoc issues if available
-        if v2_crossdoc_issues:
-            existing_issues = structured_result.get("issues") or []
-            crossdoc_formatted = []
-            for issue in v2_crossdoc_issues:
-                if isinstance(issue, dict):
-                    crossdoc_formatted.append(issue)
-                elif hasattr(issue, 'to_dict'):
-                    crossdoc_formatted.append(issue.to_dict())
-                elif hasattr(issue, '__dict__'):
-                    crossdoc_formatted.append(issue.__dict__)
-            structured_result["issues"] = existing_issues + crossdoc_formatted
-            logger.info("Added %d crossdoc issues to structured_result", len(crossdoc_formatted))
+        # NOTE: v2_crossdoc_issues are already included in issue_cards via failed_results
+        # Do NOT add them again here - that was causing DUPLICATE issues!
 
         # =====================================================================
         # V2 VALIDATION PIPELINE - FINAL SCORING
