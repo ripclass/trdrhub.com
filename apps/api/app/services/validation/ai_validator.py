@@ -113,9 +113,11 @@ async def parse_lc_requirements(lc_text: str) -> Dict[str, Any]:
     
     Returns structured requirements that can be validated against.
     """
-    if not lc_text or len(lc_text.strip()) < 100:
-        logger.warning("LC text too short for requirement parsing")
+    if not lc_text or len(lc_text.strip()) < 50:
+        logger.warning(f"LC text too short for requirement parsing: {len(lc_text) if lc_text else 0} chars")
         return {"required_documents": [], "special_conditions": [], "prohibited": []}
+    
+    logger.info(f"Parsing LC requirements from {len(lc_text)} chars of text")
     
     try:
         from ..llm_provider import LLMProviderFactory
@@ -156,41 +158,96 @@ def _get_default_requirements(lc_text: str) -> Dict[str, Any]:
     docs = []
     text_upper = lc_text.upper()
     
-    # Always required
+    logger.info(f"Using regex fallback for LC requirement parsing ({len(lc_text)} chars)")
+    
+    # Always required for export LCs
     docs.append({
         "document_type": "commercial_invoice",
         "display_name": "Commercial Invoice",
         "copies": 6 if "6 COPIES" in text_upper else 3,
     })
+    
+    # B/L with field requirements
+    bl_must_show = []
+    if "VOYAGE" in text_upper:
+        bl_must_show.append("voyage no")
+    if "GROSS" in text_upper and "WEIGHT" in text_upper:
+        bl_must_show.append("gross weight")
+    if "NET" in text_upper and "WEIGHT" in text_upper:
+        bl_must_show.append("net weight")
+    if "CONTAINER" in text_upper:
+        bl_must_show.append("container no")
+    if "SEAL" in text_upper:
+        bl_must_show.append("seal no")
+    
     docs.append({
         "document_type": "bill_of_lading", 
         "display_name": "Bill of Lading",
-        "must_show": ["vessel name", "voyage no"] if "VOYAGE" in text_upper else [],
+        "must_show": bl_must_show,
     })
     
-    # Conditional
-    if "PACKING LIST" in text_upper:
-        docs.append({"document_type": "packing_list", "display_name": "Packing List"})
-    if "CERTIFICATE OF ORIGIN" in text_upper or "C/O" in text_upper:
+    # Packing List - check for detail requirements
+    if "PACKING LIST" in text_upper or "PACKING-LIST" in text_upper:
+        pl_must_show = []
+        if "CARTON" in text_upper:
+            pl_must_show.append("carton breakdown")
+        if "SIZE" in text_upper:
+            pl_must_show.append("size breakdown")
+        docs.append({
+            "document_type": "packing_list", 
+            "display_name": "Packing List",
+            "must_show": pl_must_show,
+        })
+    
+    # Certificate of Origin
+    if "CERTIFICATE OF ORIGIN" in text_upper or "C/O " in text_upper or "GSP" in text_upper:
         docs.append({"document_type": "certificate_of_origin", "display_name": "Certificate of Origin"})
-    if "INSPECTION" in text_upper and "CERTIFICATE" in text_upper:
+    
+    # INSPECTION CERTIFICATE - Critical to catch!
+    if "INSPECTION" in text_upper:
         issuer = None
         if "SGS" in text_upper:
             issuer = "SGS"
-        elif "INTERTEK" in text_upper:
-            issuer = "Intertek"
+        if "INTERTEK" in text_upper:
+            issuer = issuer + "/Intertek" if issuer else "Intertek"
+        if "BUREAU VERITAS" in text_upper:
+            issuer = issuer + "/Bureau Veritas" if issuer else "Bureau Veritas"
+        
         docs.append({
             "document_type": "inspection_certificate",
             "display_name": "Inspection Certificate",
             "issuer": issuer,
         })
-    if "BENEFICIARY CERTIFICATE" in text_upper or "BENEFICIARY'S CERTIFICATE" in text_upper:
+        logger.info(f"Detected inspection certificate requirement (issuer: {issuer})")
+    
+    # BENEFICIARY CERTIFICATE - Critical to catch!
+    if "BENEFICIARY" in text_upper and ("CERTIFICATE" in text_upper or "CERTIFYING" in text_upper or "STATING" in text_upper):
+        must_state = None
+        if "BRAND NEW" in text_upper:
+            must_state = "goods are brand new"
+        if "MANUFACTURED" in text_upper:
+            # Extract year if possible
+            import re
+            year_match = re.search(r'MANUFACTURED\s*(?:IN\s*)?(\d{4})', text_upper)
+            year = year_match.group(1) if year_match else "current year"
+            must_state = f"goods manufactured in {year}" if must_state is None else f"{must_state}, manufactured in {year}"
+        
         docs.append({
             "document_type": "beneficiary_certificate",
             "display_name": "Beneficiary Certificate",
+            "must_state": must_state,
         })
-    if "INSURANCE" in text_upper and "CERTIFICATE" in text_upper:
+        logger.info(f"Detected beneficiary certificate requirement (must_state: {must_state})")
+    
+    # Insurance Certificate
+    if "INSURANCE" in text_upper and ("CERTIFICATE" in text_upper or "POLICY" in text_upper):
         docs.append({"document_type": "insurance_certificate", "display_name": "Insurance Certificate"})
+    
+    # Weight Certificate
+    if "WEIGHT CERTIFICATE" in text_upper or "WEIGHT LIST" in text_upper:
+        docs.append({"document_type": "weight_certificate", "display_name": "Weight Certificate"})
+    
+    logger.info(f"Regex fallback found {len(docs)} required document types: {[d['document_type'] for d in docs]}")
     
     return {"required_documents": docs, "special_conditions": [], "prohibited": []}
 

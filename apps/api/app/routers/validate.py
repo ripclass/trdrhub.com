@@ -705,9 +705,17 @@ async def validate_doc(
                 []
             )
             
+            # Get documents from both payload and extracted_context
+            documents_for_ai = (
+                extracted_context.get("documents") or  # Primary: from extraction
+                payload.get("documents") or  # Fallback: from payload
+                []
+            )
+            logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
+            
             ai_issues, ai_metadata = await run_ai_validation(
                 lc_data=lc_data_for_ai,
-                documents=payload.get("documents") or [],  # List of document metadata
+                documents=documents_for_ai,
                 extracted_context=extracted_context,
             )
             
