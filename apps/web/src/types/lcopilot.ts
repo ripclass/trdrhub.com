@@ -137,6 +137,9 @@ export interface IssueCard {
   suggestion?: string;
   field?: string;
   ucpReference?: string;
+  ruleset_domain?: string;
+  auto_generated?: boolean;
+  isbpReference?: string;
 }
 
 export interface ReferenceIssue {

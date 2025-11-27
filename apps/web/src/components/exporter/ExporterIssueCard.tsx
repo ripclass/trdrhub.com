@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { IssueCard } from '@/types/lcopilot';
-import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Business impact mapping - what will the bank do?
@@ -105,6 +105,12 @@ export function ExporterIssueCard({
   // Get business impact for this severity
   const impact = BUSINESS_IMPACT[normalizedSeverity] ?? BUSINESS_IMPACT.minor;
   const ImpactIcon = impact.Icon;
+  
+  // Check if this is an AI-detected issue
+  const isAIDetected = 
+    (issue as any).ruleset_domain === 'icc.lcopilot.ai_validation' || 
+    (issue as any).auto_generated === true ||
+    (issue.rule?.startsWith('AI-') ?? false);
 
   return (
     <Card
@@ -116,6 +122,16 @@ export function ExporterIssueCard({
         <div className="flex items-center justify-between gap-4">
           <CardTitle className="text-lg font-semibold text-foreground">{issue.title ?? 'Review Required'}</CardTitle>
           <div className="flex items-center gap-2">
+            {/* AI Detection Badge */}
+            {isAIDetected && (
+              <Badge
+                className="gap-1 text-xs font-semibold bg-gradient-to-r from-violet-500 to-purple-600 text-white"
+                title="Detected by AI Validation Engine"
+              >
+                <Sparkles className="w-3 h-3" />
+                AI Detected
+              </Badge>
+            )}
             {/* Business Impact Badge - What will the bank do? */}
             <Badge
               className={cn('gap-1 text-xs font-semibold', impact.color)}
