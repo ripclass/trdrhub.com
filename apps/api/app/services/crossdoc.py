@@ -247,6 +247,18 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
         suggestion = semantic_payload["suggested_fix"]
     discrepancy_id = discrepancy.get("rule") or f"issue-{index}"
 
+    # Extract UCP/ISBP references - check multiple possible field names
+    ucp_ref = (
+        discrepancy.get("ucp_reference") or 
+        discrepancy.get("ucp_article") or 
+        ""
+    )
+    isbp_ref = (
+        discrepancy.get("isbp_reference") or 
+        discrepancy.get("isbp_paragraph") or 
+        ""
+    )
+
     return {
         "id": str(discrepancy_id),
         "rule": discrepancy.get("rule"),
@@ -259,6 +271,8 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
         "actual": actual_text,
         "suggestion": suggestion,
         "field": _extract_field_name(discrepancy),
+        "ucp_reference": ucp_ref if ucp_ref else None,
+        "isbp_reference": isbp_ref if isbp_ref else None,
     }
 
 
