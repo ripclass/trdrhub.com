@@ -266,10 +266,12 @@ def get_or_create_demo_user(db: Session) -> User:
             demo_company_id = demo_company_row[0]
         
         # Create demo user
-        from app.core.security import hash_password
+        # Use pre-computed bcrypt hash to avoid bcrypt backend initialization issues in production
+        # This is a bcrypt hash of "demo123" - demo users don't need real password security
+        DEMO_PASSWORD_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.GQaEJSdVsqVfkG"
         user = User(
             email=demo_email,
-            hashed_password=hash_password("demo123"),  # Dummy password
+            hashed_password=DEMO_PASSWORD_HASH,  # Pre-computed hash for "demo123"
             full_name="Demo User",
             role=UserRole.EXPORTER,
             is_active=True,
