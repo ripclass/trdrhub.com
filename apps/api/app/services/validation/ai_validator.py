@@ -204,7 +204,9 @@ def check_document_completeness(
                 expected=expected_text,
                 found=found_text,
                 suggestion=f"Obtain and upload the required {display_name} before bank submission. Without this document, the presentation will be REJECTED.",
-                documents=["Letter of Credit"],
+                # Associate with the MISSING document type, not the LC
+                # This prevents the LC from being marked as having critical issues
+                documents=[display_name],
                 ucp_reference="UCP600 Article 14(a)",
                 isbp_reference="ISBP745 A14",
             ))
