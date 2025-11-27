@@ -91,6 +91,44 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
     return _two_stage_extractor
 
 
+def _filter_user_facing_fields(extracted: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Filter extracted fields to only include user-facing data.
+    
+    Removes internal metadata fields that start with underscore (_).
+    These are useful for debugging but shouldn't clutter the user interface.
+    """
+    if not extracted:
+        return {}
+    
+    # Fields to exclude from user display (internal metadata)
+    INTERNAL_FIELDS = {
+        "_extraction_method", "_extraction_confidence", "_ai_provider",
+        "_status", "_field_details", "_status_counts", "_document_type",
+        "_two_stage_validation", "_validation_details", "_raw_ai_response",
+        "_fallback_used", "_failure_reason", "raw_text",
+    }
+    
+    filtered = {}
+    for key, value in extracted.items():
+        # Skip underscore-prefixed fields
+        if key.startswith("_"):
+            continue
+        # Skip known internal fields
+        if key in INTERNAL_FIELDS:
+            continue
+        # Skip None values
+        if value is None:
+            continue
+        # Skip empty strings
+        if isinstance(value, str) and not value.strip():
+            continue
+        # Keep this field
+        filtered[key] = value
+    
+    return filtered
+
+
 def _apply_two_stage_validation(
     extracted_fields: Dict[str, Any],
     document_type: str,
@@ -1004,7 +1042,9 @@ async def validate_doc(
             
             # Override compliance rate with v2 calculation
             if structured_result.get("analytics"):
-                structured_result["analytics"]["lc_compliance_score"] = int(round(v2_score.score))
+                compliance_pct = int(round(v2_score.score))
+                structured_result["analytics"]["lc_compliance_score"] = compliance_pct
+                structured_result["analytics"]["compliance_score"] = compliance_pct  # Frontend alias
                 structured_result["analytics"]["compliance_level"] = v2_score.level.value
                 structured_result["analytics"]["compliance_cap_reason"] = v2_score.cap_reason
                 structured_result["analytics"]["issue_counts"] = {
@@ -1176,7 +1216,7 @@ def _build_document_summaries(
             "documentType": normalized_type,
             "status": status,
             "discrepancyCount": discrepancy_count,
-            "extractedFields": detail.get("extracted_fields") or {},
+            "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
         }
@@ -3296,7 +3336,7 @@ def _build_documents_section(
                 "document_type": _humanize_doc_type(doc.get("documentType") or doc.get("type")),
                 "filename": doc.get("name"),
                 "extraction_status": extraction_status,
-                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+                "extracted_fields": _filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
                 "issues_count": issue_counts.get(doc_id, 0),
             }
         )

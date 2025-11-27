@@ -997,8 +997,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     totalDocuments,
   ]);
   const complianceScore = useMemo(
-    () => analyticsData?.compliance_score ?? successRate,
-    [analyticsData?.compliance_score, successRate],
+    () => analyticsData?.compliance_score ?? analyticsData?.lc_compliance_score ?? summary?.compliance_rate ?? successRate,
+    [analyticsData?.compliance_score, analyticsData?.lc_compliance_score, summary?.compliance_rate, successRate],
   );
   const lcComplianceScore = complianceScore;
   
