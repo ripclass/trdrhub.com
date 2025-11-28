@@ -47,8 +47,14 @@ const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCas
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
 const DEFAULT_TIMEOUT_MS = 30000
-const LONG_REQUEST_TIMEOUT_MS = 180000
-const LONG_REQUEST_PATHS = ['/api/validate', '/api/legacy_validate', '/api/legacy-validate']
+const LONG_REQUEST_TIMEOUT_MS = 300000 // 5 minutes for large uploads
+const LONG_REQUEST_PATHS = [
+  '/api/validate', 
+  '/api/legacy_validate', 
+  '/api/legacy-validate',
+  '/admin/rulesets/upload', // Large ruleset uploads (ISBP745 has 300+ rules)
+  '/admin/rulesets',        // Ruleset operations
+]
 
 const api = axios.create({
   baseURL: API_BASE_URL_VALUE,

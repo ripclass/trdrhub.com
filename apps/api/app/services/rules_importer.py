@@ -61,6 +61,8 @@ class RulesImporter:
         Safe importer:
         - DRAFT upload: Do NOT overwrite existing rules.
         - PUBLISH/ROLLBACK: Update or insert rules, then activate them.
+        
+        OPTIMIZED: Pre-fetch all existing rule_ids in ONE query instead of N queries.
         """
         summary = RulesImportSummary(total_rules=0)
         
@@ -68,6 +70,22 @@ class RulesImporter:
         if not ruleset_id:
             raise ValueError("Ruleset ID is required")
 
+        # OPTIMIZATION: Pre-fetch all rule_ids that exist in the database
+        # This reduces N queries to just 1 query for lookups
+        incoming_rule_ids = [r.get("rule_id") for r in rules_payload if r.get("rule_id")]
+        
+        existing_rules_map: Dict[str, RuleRecord] = {}
+        if incoming_rule_ids:
+            # Batch query - much faster than N individual queries
+            existing_rules = (
+                self.db.query(RuleRecord)
+                .filter(RuleRecord.rule_id.in_(incoming_rule_ids))
+                .all()
+            )
+            existing_rules_map = {r.rule_id: r for r in existing_rules}
+            logger.info(f"Pre-fetched {len(existing_rules_map)} existing rules for comparison")
+
+        # Process rules with O(1) lookups instead of O(N) database queries
         for rule_data in rules_payload:
             summary.total_rules += 1
 
@@ -78,12 +96,8 @@ class RulesImporter:
                 summary.skipped += 1
                 continue
 
-            # Lookup existing rule by rule_id
-            existing = (
-                self.db.query(RuleRecord)
-                .filter(RuleRecord.rule_id == rule_id)
-                .first()
-            )
+            # O(1) lookup from pre-fetched map
+            existing = existing_rules_map.get(rule_id)
 
             # CASE 1 — DRAFT UPLOAD: do NOT overwrite existing
             if not activate:
