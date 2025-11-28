@@ -2433,12 +2433,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         const extractionStatus = doc.extraction_status || "unknown";
                         const fieldEntries = Object.entries(doc.extracted_fields || {});
 
+                        // Check for eBL or source format
+                        const sourceFormat = (doc.extracted_fields as any)?._source_format;
+                        const isElectronicBL = (doc.extracted_fields as any)?._is_electronic_bl;
+                        
                         return (
                           <div key={`${cardTitle}-${index}`} className="border rounded-lg p-4 space-y-3">
                             <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-semibold">{cardTitle}</p>
-                                <p className="text-xs text-muted-foreground capitalize">{docType}</p>
+                              <div className="flex items-center gap-2">
+                                <div>
+                                  <p className="font-semibold">{cardTitle}</p>
+                                  <p className="text-xs text-muted-foreground capitalize">{docType}</p>
+                                </div>
+                                {/* Source Format Badge (eBL indicator) */}
+                                {sourceFormat && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn(
+                                      "text-xs font-medium ml-2",
+                                      isElectronicBL
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                        : sourceFormat.includes("ISO20022")
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                        : sourceFormat.includes("MT")
+                                        ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                                        : "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/30"
+                                    )}
+                                    title={isElectronicBL ? "Electronic Bill of Lading - 100% accuracy" : ""}
+                                  >
+                                    {isElectronicBL ? "🔗 " : ""}{sourceFormat}
+                                  </Badge>
+                                )}
                               </div>
                               <Badge
                                 variant={

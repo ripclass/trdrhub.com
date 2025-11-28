@@ -43,6 +43,23 @@ from .smart_lc_extractor import (
     get_format_display_name,
     get_format_confidence_note,
 )
+from .ebl_parser import (
+    parse_ebl,
+    detect_ebl_format,
+    is_ebl_document,
+    EBLParseResult,
+    DCSAParser,
+    BoleroParser,
+    EssDocsParser,
+    WaveBLParser,
+    get_supported_ebl_formats,
+)
+from .smart_bl_extractor import (
+    extract_bl_smart,
+    detect_bl_format,
+    SmartBLExtractionResult,
+    get_bl_format_display,
+)
 from .lc_extractor_v2 import (
     extract_lc_with_baseline,
     extract_lc_structured_v2,
@@ -91,6 +108,23 @@ __all__ = [
     "SmartExtractionResult",
     "get_format_display_name",
     "get_format_confidence_note",
+    
+    # Electronic Bill of Lading (eBL) parser
+    "parse_ebl",
+    "detect_ebl_format",
+    "is_ebl_document",
+    "EBLParseResult",
+    "DCSAParser",
+    "BoleroParser",
+    "EssDocsParser",
+    "WaveBLParser",
+    "get_supported_ebl_formats",
+    
+    # Smart B/L extractor (auto-detects eBL vs PDF)
+    "extract_bl_smart",
+    "detect_bl_format",
+    "SmartBLExtractionResult",
+    "get_bl_format_display",
     
     # V2 extraction with baseline
     "extract_lc_with_baseline",
