@@ -167,14 +167,101 @@ def _load_ruleset_schema() -> dict:
         return json.load(f)
 
 
-def _validate_ruleset_json(rules_json: list) -> ValidationReport:
+def _normalize_rule(rule: dict, domain: str, jurisdiction: str) -> dict:
+    """
+    Auto-fix common rule format issues:
+    - Add missing domain/jurisdiction from upload params
+    - Rename 'condition' to 'conditions' (plural)
+    - Rename 'text' to 'description'
+    - Map severity values to standard (high→fail, critical→fail, medium→warn, major→warn)
+    - Add default metadata if missing
+    """
+    SEVERITY_MAP = {
+        "critical": "fail",
+        "high": "fail", 
+        "major": "warn",
+        "medium": "warn",
+        "warning": "warn",
+        "low": "info",
+        "minor": "info"
+    }
+    
+    fixed = rule.copy()
+    
+    # Add missing domain/jurisdiction
+    if not fixed.get("domain"):
+        fixed["domain"] = domain
+    if not fixed.get("jurisdiction"):
+        fixed["jurisdiction"] = jurisdiction
+    
+    # Rename 'condition' to 'conditions' (singular to plural)
+    if "condition" in fixed and "conditions" not in fixed:
+        fixed["conditions"] = fixed.pop("condition")
+    elif "condition" in fixed and "conditions" in fixed:
+        # Both exist - prefer conditions, remove condition
+        del fixed["condition"]
+    
+    # Ensure conditions is a list
+    if "conditions" in fixed and not isinstance(fixed["conditions"], list):
+        fixed["conditions"] = [fixed["conditions"]] if fixed["conditions"] else []
+    elif "conditions" not in fixed:
+        fixed["conditions"] = []
+    
+    # Rename 'text' to 'description'
+    if "text" in fixed and not fixed.get("description"):
+        fixed["description"] = fixed.pop("text")
+    elif "text" in fixed:
+        del fixed["text"]  # Remove duplicate
+    
+    # Normalize severity
+    old_severity = str(fixed.get("severity", "warn")).lower()
+    fixed["severity"] = SEVERITY_MAP.get(old_severity, old_severity)
+    
+    # Add document_type if missing
+    if not fixed.get("document_type"):
+        fixed["document_type"] = "lc"
+    
+    # Add rule_version if missing
+    if not fixed.get("rule_version"):
+        fixed["rule_version"] = fixed.get("version", "1.0")
+    
+    # Add metadata if missing
+    if not fixed.get("metadata"):
+        fixed["metadata"] = {
+            "ruleset_source": "RuleEngine Core",
+            "ruleset_version": "v1.0",
+            "effective_from": "2025-01-01",
+            "effective_to": None
+        }
+    
+    # Ensure deterministic has a value
+    if "deterministic" not in fixed:
+        fixed["deterministic"] = True
+    
+    # Ensure requires_llm has a value  
+    if "requires_llm" not in fixed:
+        fixed["requires_llm"] = False
+    
+    return fixed
+
+
+def _normalize_ruleset(rules_json: list, domain: str = "icc", jurisdiction: str = "global") -> list:
+    """Normalize all rules in a ruleset."""
+    return [_normalize_rule(r, domain, jurisdiction) for r in rules_json if isinstance(r, dict)]
+
+
+def _validate_ruleset_json(rules_json: list, domain: str = "icc", jurisdiction: str = "global") -> ValidationReport:
     """
     Validate ruleset JSON against schema.
+    Auto-normalizes rules before validation.
     
     Returns ValidationReport with validation results.
     """
     errors = []
     warnings = []
+    
+    # Auto-normalize rules first
+    rules_json = _normalize_ruleset(rules_json, domain, jurisdiction)
     
     if not jsonschema:
         warnings.append("jsonschema library not installed - skipping schema validation")
@@ -270,8 +357,9 @@ async def upload_ruleset(
             detail=f"Failed to read file: {str(e)}"
         )
     
-    # Validate JSON schema
-    validation = _validate_ruleset_json(rules_json)
+    # Auto-normalize and validate JSON schema
+    rules_json = _normalize_ruleset(rules_json, domain, jurisdiction)
+    validation = _validate_ruleset_json(rules_json, domain, jurisdiction)
     
     if not validation.valid:
         raise HTTPException(
