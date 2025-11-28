@@ -73,6 +73,29 @@ from app.services.validation.pipeline import (
 from app.services.validation.validation_gate import ValidationGate, GateStatus
 from app.services.validation.compliance_scorer import ComplianceScorer
 from app.services.extraction.lc_baseline import LCBaseline, FieldResult, FieldPriority, ExtractionStatus
+
+# Hybrid validation pipeline imports
+from app.services.validation.llm_requirement_parser import (
+    parse_lc_requirements_sync_v2,
+    get_cached_requirements,
+    infer_document_type,
+    RequirementGraph,
+)
+from app.services.validation.party_matcher import parties_match, PartyMatchResult
+from app.services.validation.amendment_generator import (
+    generate_amendments_for_issues,
+    calculate_total_amendment_cost,
+    AmendmentDraft,
+)
+from app.services.validation.bank_profiles import (
+    get_bank_profile,
+    detect_bank_from_lc,
+    BankProfile,
+)
+from app.services.validation.confidence_weighting import (
+    batch_adjust_issues,
+    calculate_overall_extraction_confidence,
+)
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
     ExtractedField,
@@ -732,6 +755,60 @@ async def validate_doc(
             for ai_issue in ai_issues:
                 v2_crossdoc_issues.append(ai_issue)
             
+            # =================================================================
+            # HYBRID VALIDATION ENHANCEMENTS
+            # =================================================================
+            
+            # 1. Bank Profile Detection
+            bank_profile = None
+            try:
+                bank_profile = detect_bank_from_lc({
+                    "issuing_bank": lc_context.get("issuing_bank") or mt700.get("issuing_bank") or "",
+                    "advising_bank": lc_context.get("advising_bank") or mt700.get("advising_bank") or "",
+                    "raw_text": lc_raw_text,
+                })
+                logger.info(f"Bank profile detected: {bank_profile.bank_code} ({bank_profile.strictness.value})")
+            except Exception as e:
+                logger.warning(f"Bank profile detection failed: {e}")
+                bank_profile = get_bank_profile()  # Default profile
+            
+            # 2. Enhanced Requirement Parsing (v2 with caching)
+            requirement_graph = None
+            try:
+                requirement_graph = parse_lc_requirements_sync_v2(lc_raw_text)
+                if requirement_graph:
+                    logger.info(
+                        f"RequirementGraph: {len(requirement_graph.required_documents)} docs, "
+                        f"{len(requirement_graph.tolerances)} tolerances, "
+                        f"{len(requirement_graph.contradictions)} contradictions"
+                    )
+                    # Store tolerances in metadata for downstream use
+                    ai_metadata["tolerances"] = {
+                        k: v.to_dict() if hasattr(v, 'to_dict') else {
+                            "field": v.field,
+                            "tolerance_percent": v.tolerance_percent,
+                            "source": v.source.value,
+                        }
+                        for k, v in requirement_graph.tolerances.items()
+                    }
+                    ai_metadata["contradictions"] = [
+                        {"clause_1": c.clause_1, "clause_2": c.clause_2, "resolution": c.resolution}
+                        for c in requirement_graph.contradictions
+                    ]
+            except Exception as e:
+                logger.warning(f"RequirementGraph parsing failed: {e}")
+            
+            # 3. Calculate overall extraction confidence
+            extraction_confidence_summary = None
+            try:
+                extraction_confidence_summary = calculate_overall_extraction_confidence(extracted_context)
+                logger.info(
+                    f"Extraction confidence: avg={extraction_confidence_summary.get('average_confidence', 0):.2f}, "
+                    f"lowest={extraction_confidence_summary.get('lowest_confidence_document', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(f"Extraction confidence calculation failed: {e}")
+            
         except Exception as e:
             logger.error("V2 pipeline error: %s", e, exc_info=True)
             # Don't fall back to legacy - just log the error
@@ -1172,6 +1249,81 @@ async def validate_doc(
                 bank_verdict.get("verdict"),
                 len(bank_verdict.get("action_items", [])),
             )
+            
+            # =====================================================================
+            # AMENDMENT GENERATION (for fixable discrepancies)
+            # =====================================================================
+            try:
+                lc_number = (
+                    lc_context.get("lc_number") or
+                    mt700.get("20") or
+                    extracted_context.get("lc", {}).get("lc_number") or
+                    "UNKNOWN"
+                )
+                lc_amount = lc_context.get("amount") or mt700.get("32B_amount") or 0
+                lc_currency = lc_context.get("currency") or mt700.get("32B_currency") or "USD"
+                
+                amendments = generate_amendments_for_issues(
+                    issues=all_issues,
+                    lc_data={
+                        "lc_number": lc_number,
+                        "amount": lc_amount,
+                        "currency": lc_currency,
+                    }
+                )
+                
+                if amendments:
+                    amendment_cost = calculate_total_amendment_cost(amendments)
+                    structured_result["amendments_available"] = {
+                        "count": len(amendments),
+                        "total_estimated_fee_usd": amendment_cost.get("total_estimated_fee_usd", 0),
+                        "amendments": [a.to_dict() for a in amendments],
+                    }
+                    logger.info(f"Generated {len(amendments)} amendment drafts")
+            except Exception as e:
+                logger.warning(f"Amendment generation failed: {e}")
+            
+            # =====================================================================
+            # CONFIDENCE WEIGHTING (adjust severity based on OCR confidence)
+            # =====================================================================
+            try:
+                if extraction_confidence_summary:
+                    structured_result["extraction_confidence"] = extraction_confidence_summary
+                    
+                    # Add recommendations if low confidence
+                    if extraction_confidence_summary.get("average_confidence", 1.0) < 0.6:
+                        existing_recommendations = bank_verdict.get("action_items", [])
+                        for rec in extraction_confidence_summary.get("recommendations", []):
+                            existing_recommendations.append({
+                                "priority": "medium",
+                                "issue": "Low OCR Confidence",
+                                "action": rec,
+                            })
+            except Exception as e:
+                logger.warning(f"Confidence metadata failed: {e}")
+            
+            # =====================================================================
+            # BANK PROFILE METADATA
+            # =====================================================================
+            if bank_profile:
+                structured_result["bank_profile"] = {
+                    "bank_code": bank_profile.bank_code,
+                    "bank_name": bank_profile.bank_name,
+                    "strictness": bank_profile.strictness.value,
+                }
+            
+            # =====================================================================
+            # TOLERANCE METADATA (for audit trail)
+            # =====================================================================
+            if requirement_graph and requirement_graph.tolerances:
+                structured_result["tolerances_applied"] = {
+                    k: {
+                        "tolerance_percent": v.tolerance_percent,
+                        "source": v.source.value,
+                        "explicit": v.explicit,
+                    }
+                    for k, v in requirement_graph.tolerances.items()
+                }
             
         except Exception as e:
             logger.warning("V2 scoring failed: %s", e, exc_info=True)
