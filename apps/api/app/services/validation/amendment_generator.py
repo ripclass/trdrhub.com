@@ -1,31 +1,160 @@
 """
 LC Amendment Draft Generator
 
-Generates SWIFT MT707 amendment drafts for common discrepancies.
+Generates SWIFT MT707 and ISO20022 amendment drafts for common discrepancies.
 
 Usage:
     When a discrepancy is detected that can be fixed via LC amendment,
-    this module generates bank-ready SWIFT text.
+    this module generates bank-ready SWIFT text in both formats:
+    - MT707 (legacy FIN format)
+    - ISO20022 XML (trad.002 Documentary Credit Amendment)
 
 Supported Discrepancies:
-- Late shipment (Field 44C)
-- Amount changes (Field 32B)
-- Expiry date extension (Field 31D)
-- Port changes (Field 44E, 44F)
-- Quantity changes (Field 45A)
-- Goods description changes (Field 45A)
-- Document requirement changes (Field 46A)
+- Late shipment (Field 44C / LatestShpmntDt)
+- Amount changes (Field 32B / Amt)
+- Expiry date extension (Field 31D / XpryDt)
+- Port changes (Field 44E, 44F / PlcOfTakngInChrg, FnlDstn)
+- Quantity changes (Field 45A / GoodsDesc)
+- Goods description changes (Field 45A / GoodsDesc)
+- Document requirement changes (Field 46A / DocsReqrd)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
+from xml.etree import ElementTree as ET
+from xml.dom import minidom
 import re
+import uuid
+
+
+def _generate_msg_id() -> str:
+    """Generate a unique message ID for ISO20022."""
+    return f"TRDR{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}"
+
+
+def _generate_iso20022_xml(
+    lc_number: str,
+    field_tag: str,
+    field_name: str,
+    current_value: str,
+    proposed_value: str,
+    discrepancy_type: str,
+    narrative: str,
+    currency: str = "USD",
+    issuing_bank_bic: str = "BANKXXXX",
+    beneficiary_name: str = "BENEFICIARY",
+) -> str:
+    """
+    Generate ISO20022 XML for Documentary Credit Amendment.
+    
+    Uses trad.002.001.02 (Documentary Credit Amendment) message format.
+    """
+    # Create root element with namespaces
+    root = ET.Element("Document")
+    root.set("xmlns", "urn:iso:std:iso:20022:tech:xsd:trad.002.001.02")
+    root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
+    
+    # DocCdtAmdmnt (Documentary Credit Amendment)
+    doc_cdt_amdmnt = ET.SubElement(root, "DocCdtAmdmnt")
+    
+    # Group Header
+    grp_hdr = ET.SubElement(doc_cdt_amdmnt, "GrpHdr")
+    ET.SubElement(grp_hdr, "MsgId").text = _generate_msg_id()
+    ET.SubElement(grp_hdr, "CreDtTm").text = datetime.now().isoformat()
+    ET.SubElement(grp_hdr, "NbOfItms").text = "1"
+    
+    # Initiating Party
+    initg_pty = ET.SubElement(grp_hdr, "InitgPty")
+    nm = ET.SubElement(initg_pty, "Nm")
+    nm.text = beneficiary_name
+    
+    # Amendment
+    amdmnt = ET.SubElement(doc_cdt_amdmnt, "Amdmnt")
+    
+    # Amendment Identification
+    amdmnt_id = ET.SubElement(amdmnt, "AmdmntId")
+    ET.SubElement(amdmnt_id, "Id").text = f"AMD{lc_number}"
+    
+    # Documentary Credit Identification
+    doc_cdt_id = ET.SubElement(amdmnt, "DocCdtId")
+    ET.SubElement(doc_cdt_id, "Id").text = lc_number
+    
+    # Issuing Bank
+    issg_bk = ET.SubElement(amdmnt, "IssgBk")
+    fin_instn_id = ET.SubElement(issg_bk, "FinInstnId")
+    ET.SubElement(fin_instn_id, "BICFI").text = issuing_bank_bic
+    
+    # Amendment Details based on field type
+    amdmnt_dtls = ET.SubElement(amdmnt, "AmdmntDtls")
+    
+    # Map MT707 fields to ISO20022 elements
+    field_mapping = {
+        "44C": ("LatestShpmntDt", "Dt"),
+        "32B": ("Amt", "InstdAmt"),
+        "31D": ("XpryDt", "Dt"),
+        "44E": ("PlcOfTakngInChrg", "Nm"),
+        "44F": ("FnlDstn", "Nm"),
+        "45A": ("GoodsDesc", "Desc"),
+        "46A": ("DocsReqrd", "Desc"),
+    }
+    
+    iso_element, value_element = field_mapping.get(field_tag, ("OthrFld", "Val"))
+    
+    fld_chng = ET.SubElement(amdmnt_dtls, "FldChng")
+    ET.SubElement(fld_chng, "FldNm").text = iso_element
+    ET.SubElement(fld_chng, "FldTp").text = field_name
+    
+    org_val = ET.SubElement(fld_chng, "OrgnlVal")
+    if field_tag == "32B":
+        amt = ET.SubElement(org_val, value_element)
+        amt.text = str(current_value)
+        amt.set("Ccy", currency)
+    elif field_tag in ("44C", "31D"):
+        ET.SubElement(org_val, value_element).text = _convert_to_iso_date(current_value)
+    else:
+        ET.SubElement(org_val, value_element).text = current_value
+    
+    new_val = ET.SubElement(fld_chng, "NewVal")
+    if field_tag == "32B":
+        amt = ET.SubElement(new_val, value_element)
+        amt.text = str(proposed_value)
+        amt.set("Ccy", currency)
+    elif field_tag in ("44C", "31D"):
+        ET.SubElement(new_val, value_element).text = _convert_to_iso_date(proposed_value)
+    else:
+        ET.SubElement(new_val, value_element).text = proposed_value
+    
+    # Narrative / Additional Information
+    addtl_inf = ET.SubElement(amdmnt, "AddtlInf")
+    ET.SubElement(addtl_inf, "Ln").text = narrative
+    ET.SubElement(addtl_inf, "Ln").text = "ALL OTHER TERMS AND CONDITIONS REMAIN UNCHANGED"
+    
+    # Convert to pretty-printed string
+    xml_str = ET.tostring(root, encoding="unicode")
+    dom = minidom.parseString(xml_str)
+    return dom.toprettyxml(indent="  ", encoding=None)
+
+
+def _convert_to_iso_date(date_str: str) -> str:
+    """Convert various date formats to ISO 8601 (YYYY-MM-DD)."""
+    try:
+        if len(date_str) == 6:  # YYMMDD
+            dt = datetime.strptime(date_str, "%y%m%d")
+        elif len(date_str) == 8:  # YYYYMMDD
+            dt = datetime.strptime(date_str, "%Y%m%d")
+        elif "-" in date_str:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        else:
+            return date_str
+        return dt.strftime("%Y-%m-%d")
+    except:
+        return date_str
 
 
 @dataclass
 class AmendmentDraft:
-    """A SWIFT MT707 amendment draft."""
+    """A SWIFT MT707 and ISO20022 amendment draft."""
     discrepancy_type: str
     field_tag: str
     field_name: str
@@ -33,8 +162,25 @@ class AmendmentDraft:
     proposed_value: str
     swift_text: str
     narrative: str
+    iso20022_xml: str = ""
     estimated_fee_usd: float = 75.0
     bank_processing_days: int = 2
+    lc_number: str = ""
+    currency: str = "USD"
+    
+    def __post_init__(self):
+        """Generate ISO20022 XML if not provided."""
+        if not self.iso20022_xml and self.lc_number:
+            self.iso20022_xml = _generate_iso20022_xml(
+                lc_number=self.lc_number,
+                field_tag=self.field_tag,
+                field_name=self.field_name,
+                current_value=self.current_value,
+                proposed_value=self.proposed_value,
+                discrepancy_type=self.discrepancy_type,
+                narrative=self.narrative,
+                currency=self.currency,
+            )
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -46,9 +192,11 @@ class AmendmentDraft:
                 "proposed": self.proposed_value,
             },
             "swift_mt707_text": self.swift_text,
+            "iso20022_xml": self.iso20022_xml,
             "narrative": self.narrative,
             "estimated_fee_usd": self.estimated_fee_usd,
             "bank_processing_days": self.bank_processing_days,
+            "formats_available": ["MT707", "ISO20022"],
         }
 
 
@@ -118,6 +266,7 @@ def generate_late_shipment_amendment(
         swift_text=swift_text,
         narrative=f"Extend latest shipment date from {current_dt.strftime('%d %b %Y')} to {proposed_dt.strftime('%d %b %Y')}",
         estimated_fee_usd=75.0,
+        lc_number=lc_number,
     )
 
 
@@ -163,6 +312,8 @@ def generate_amount_amendment(
         swift_text=swift_text,
         narrative=f"{'Increase' if change > 0 else 'Decrease'} LC amount by {currency} {abs(change):,.2f} ({change_pct:+.1f}%)",
         estimated_fee_usd=100.0,  # Amount amendments typically cost more
+        lc_number=lc_number,
+        currency=currency,
     )
 
 
@@ -221,6 +372,7 @@ def generate_expiry_amendment(
         swift_text=swift_text,
         narrative=f"Extend LC expiry from {current_dt.strftime('%d %b %Y')} to {proposed_dt.strftime('%d %b %Y')}",
         estimated_fee_usd=75.0,
+        lc_number=lc_number,
     )
 
 
@@ -263,6 +415,7 @@ def generate_port_amendment(
         swift_text=swift_text,
         narrative=f"Change {field_name.lower()} from {current_port} to {proposed_port}",
         estimated_fee_usd=75.0,
+        lc_number=lc_number,
     )
 
 
@@ -312,6 +465,7 @@ def generate_document_requirement_amendment(
         swift_text=swift_text,
         narrative=narrative,
         estimated_fee_usd=75.0,
+        lc_number=lc_number,
     )
 
 

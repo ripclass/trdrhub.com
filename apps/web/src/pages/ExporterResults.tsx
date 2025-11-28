@@ -119,9 +119,11 @@ interface Amendment {
   discrepancy_type: string;
   field: AmendmentField;
   swift_mt707_text: string;
+  iso20022_xml?: string;
   narrative: string;
   estimated_fee_usd: number;
   bank_processing_days: number;
+  formats_available?: string[];
 }
 
 interface AmendmentsAvailable {
@@ -328,10 +330,12 @@ function OCRConfidenceWarning({ confidence }: { confidence: ExtractionConfidence
 // Amendment Card Component
 function AmendmentCard({ 
   amendments, 
-  onDownload 
+  onDownloadMT707,
+  onDownloadISO20022,
 }: { 
   amendments: AmendmentsAvailable;
-  onDownload: (amendment: Amendment) => void;
+  onDownloadMT707: (amendment: Amendment) => void;
+  onDownloadISO20022: (amendment: Amendment) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   
@@ -379,17 +383,36 @@ function AmendmentCard({
                     {amendment.narrative} • ~{amendment.bank_processing_days} days • USD {amendment.estimated_fee_usd}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDownload(amendment)}
-                  className="text-blue-400 hover:text-blue-300"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  MT707
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDownloadMT707(amendment)}
+                    className="text-blue-400 hover:text-blue-300"
+                    title="Download legacy SWIFT MT707 format"
+                  >
+                    <Download className="w-4 h-4 mr-1" />
+                    MT707
+                  </Button>
+                  {amendment.iso20022_xml && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDownloadISO20022(amendment)}
+                      className="text-emerald-400 hover:text-emerald-300"
+                      title="Download ISO20022 XML format (modern standard)"
+                    >
+                      <Download className="w-4 h-4 mr-1" />
+                      ISO20022
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
+            <p className="text-xs text-muted-foreground pt-2 border-t border-blue-500/10">
+              <span className="font-medium">MT707:</span> Legacy SWIFT FIN format • 
+              <span className="font-medium ml-2">ISO20022:</span> Modern XML standard (trad.002)
+            </p>
           </div>
         )}
       </CardContent>
@@ -1767,13 +1790,26 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           {structuredResult?.amendments_available && (structuredResult.amendments_available as AmendmentsAvailable).count > 0 && (
             <AmendmentCard 
               amendments={structuredResult.amendments_available as AmendmentsAvailable}
-              onDownload={(amendment) => {
+              onDownloadMT707={(amendment) => {
                 // Download SWIFT MT707 as text file
                 const blob = new Blob([amendment.swift_mt707_text], { type: "text/plain" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
                 a.download = `MT707_Amendment_${amendment.field.tag}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              onDownloadISO20022={(amendment) => {
+                // Download ISO20022 XML file
+                if (!amendment.iso20022_xml) return;
+                const blob = new Blob([amendment.iso20022_xml], { type: "application/xml" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `ISO20022_trad002_Amendment_${amendment.field.tag}.xml`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
