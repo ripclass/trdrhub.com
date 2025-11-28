@@ -18,7 +18,7 @@ from datetime import datetime
 
 import yaml
 
-from .rule_schema import Rule, RuleSet, RuleCategory, RuleSeverity
+from .rule_schema import Rule, RuleSet, RuleCategory, RuleSeverity, RuleCondition, RuleAction, ConditionOperator
 
 
 logger = logging.getLogger(__name__)
@@ -173,11 +173,157 @@ class RuleLoader:
         return all_rules
     
     def _load_from_database(self) -> List[Rule]:
-        """Load custom/overridden rules from database."""
-        # TODO: Implement database rule loading
-        # This would load rules from a rules table that allows
-        # bank-specific customization
-        return []
+        """
+        Load rules from the database (RuleRecord table).
+        
+        This loads all active rules that were uploaded via the admin dashboard.
+        These rules take precedence over YAML rules with the same ID.
+        """
+        db_rules = []
+        
+        if not self.db_session:
+            logger.debug("No database session available, skipping database rule loading")
+            return db_rules
+        
+        try:
+            from app.models.rule_record import RuleRecord
+            
+            # Query all active rules from database
+            records = (
+                self.db_session.query(RuleRecord)
+                .filter(RuleRecord.is_active == True)
+                .all()
+            )
+            
+            logger.info(f"Found {len(records)} active rules in database")
+            
+            for record in records:
+                try:
+                    rule = self._convert_db_record_to_rule(record)
+                    if rule:
+                        db_rules.append(rule)
+                except Exception as e:
+                    logger.warning(f"Failed to convert rule {record.rule_id}: {e}")
+            
+            logger.info(f"Successfully loaded {len(db_rules)} rules from database")
+            
+        except Exception as e:
+            logger.error(f"Failed to load rules from database: {e}", exc_info=True)
+        
+        return db_rules
+    
+    def _convert_db_record_to_rule(self, record) -> Optional[Rule]:
+        """
+        Convert a RuleRecord (database model) to a Rule (execution model).
+        """
+        try:
+            # Map severity
+            severity_map = {
+                "critical": RuleSeverity.CRITICAL,
+                "major": RuleSeverity.MAJOR,
+                "minor": RuleSeverity.MINOR,
+                "info": RuleSeverity.INFO,
+                "fail": RuleSeverity.CRITICAL,  # Legacy mapping
+                "warn": RuleSeverity.MAJOR,
+                "high": RuleSeverity.CRITICAL,
+                "medium": RuleSeverity.MAJOR,
+                "low": RuleSeverity.MINOR,
+            }
+            severity = severity_map.get(
+                (record.severity or "major").lower(), 
+                RuleSeverity.MAJOR
+            )
+            
+            # Map category based on domain or document_type
+            category_map = {
+                "icc": RuleCategory.UCP600,
+                "ucp600": RuleCategory.UCP600,
+                "isbp745": RuleCategory.ISBP745,
+                "crossdoc": RuleCategory.CROSSDOC,
+                "extraction": RuleCategory.EXTRACTION,
+                "document": RuleCategory.DOCUMENT,
+                "amount": RuleCategory.AMOUNT,
+                "party": RuleCategory.PARTY,
+                "port": RuleCategory.PORT,
+                "goods": RuleCategory.GOODS,
+                "timing": RuleCategory.TIMING,
+                "guarantee": RuleCategory.CUSTOM,  # URDG
+                "lc": RuleCategory.UCP600,
+            }
+            
+            # Determine category from domain or document_type
+            domain = (record.domain or "").lower()
+            doc_type = (record.document_type or "").lower()
+            
+            category = RuleCategory.UCP600  # Default
+            if domain in category_map:
+                category = category_map[domain]
+            elif doc_type in category_map:
+                category = category_map[doc_type]
+            
+            # Parse conditions from JSON
+            conditions = []
+            raw_conditions = record.conditions or []
+            for cond_data in raw_conditions:
+                if isinstance(cond_data, dict):
+                    # Handle different condition formats
+                    field = cond_data.get("field") or cond_data.get("path") or ""
+                    operator_str = cond_data.get("operator") or cond_data.get("type") or "exists"
+                    
+                    # Map operator
+                    try:
+                        operator = ConditionOperator(operator_str)
+                    except ValueError:
+                        # Handle custom operators from JSON rules
+                        operator = ConditionOperator.EXISTS
+                    
+                    conditions.append(RuleCondition(
+                        field=field,
+                        operator=operator,
+                        value=cond_data.get("value") or cond_data.get("expected_value"),
+                        compare_field=cond_data.get("compare_field"),
+                        threshold=cond_data.get("threshold"),
+                    ))
+            
+            # Build action from expected_outcome
+            expected_outcome = record.expected_outcome or {}
+            valid_outcomes = expected_outcome.get("valid", [])
+            invalid_outcomes = expected_outcome.get("invalid", [])
+            
+            action = RuleAction(
+                type="issue",
+                title=record.title or record.rule_id,
+                message=record.description or "",
+                suggestion="; ".join(valid_outcomes[:2]) if valid_outcomes else None,
+                expected_template=valid_outcomes[0] if valid_outcomes else None,
+                actual_template=invalid_outcomes[0] if invalid_outcomes else None,
+            )
+            
+            # Create Rule object
+            rule = Rule(
+                id=record.rule_id,
+                name=record.title or record.rule_id,
+                category=category,
+                severity=severity,
+                description=record.description or "",
+                conditions=conditions,
+                action=action,
+                enabled=record.is_active,
+                version=record.version or "1.0.0",
+                ucp_reference=record.reference,
+                isbp_reference=None,
+                source_documents=[],
+                target_documents=[],
+                requires_fields=[],
+                optional_fields=[],
+                can_override=True,
+            )
+            
+            return rule
+            
+        except Exception as e:
+            logger.error(f"Error converting rule {record.rule_id}: {e}", exc_info=True)
+            return None
     
     def _create_default_rules(self):
         """Create default rule files if they don't exist."""
@@ -616,10 +762,40 @@ rules:
 _rule_loader: Optional[RuleLoader] = None
 
 
-def get_rule_loader() -> RuleLoader:
-    """Get the global rule loader instance."""
+def get_rule_loader(db_session: Optional[Any] = None) -> RuleLoader:
+    """
+    Get a rule loader instance.
+    
+    Args:
+        db_session: Optional SQLAlchemy session for loading database rules.
+                    If provided, returns a fresh loader with DB support.
+                    If not provided, returns the cached global loader (YAML only).
+    """
     global _rule_loader
+    
+    # If db_session provided, create a fresh loader with DB support
+    if db_session is not None:
+        return RuleLoader(db_session=db_session)
+    
+    # Otherwise return/create the global cached loader
     if _rule_loader is None:
         _rule_loader = RuleLoader()
     return _rule_loader
+
+
+def get_rule_loader_with_db() -> RuleLoader:
+    """
+    Get a rule loader with database session from the app context.
+    
+    This creates a new database session and returns a loader that can
+    access both YAML and database rules.
+    """
+    try:
+        from app.database import SessionLocal
+        db = SessionLocal()
+        loader = RuleLoader(db_session=db)
+        return loader
+    except Exception as e:
+        logger.warning(f"Could not create DB-backed rule loader: {e}")
+        return get_rule_loader()
 

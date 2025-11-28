@@ -672,11 +672,22 @@ async def validate_doc(
                 }
             # =====================================================================
             
-            # Gate passed - run v2 IssueEngine
+            # Gate passed - run v2 IssueEngine with DB-backed rules
             from app.services.validation.issue_engine import IssueEngine
-            issue_engine = IssueEngine()
+            from app.rules.external.rule_executor import RuleExecutor
+            from app.rules.external.rule_loader import get_rule_loader
+            
+            # Create rule loader with database session to load all rules (YAML + DB)
+            db_rule_loader = get_rule_loader(db_session=db)
+            db_rule_executor = RuleExecutor(rule_loader=db_rule_loader)
+            issue_engine = IssueEngine(rule_executor=db_rule_executor)
+            
             v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
             logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
+            
+            # Log database rules loaded
+            db_rules_count = len([r for r in db_rule_loader.load_all_rules() if hasattr(r, 'id')])
+            logger.info("V2 IssueEngine loaded %d total rules (YAML + Database)", db_rules_count)
             
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
