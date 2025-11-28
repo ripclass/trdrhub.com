@@ -630,6 +630,8 @@ export interface AdminService {
   uploadRuleset(file: File, domain: string, jurisdiction: string, rulesetVersion: string, rulebookVersion: string, effectiveFrom?: string, effectiveTo?: string, notes?: string): Promise<MutationResult<RulesetUploadResult>>;
   publishRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
   rollbackRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
+  archiveRuleset(id: string): Promise<MutationResult<RulesetRecord>>;
+  deleteRuleset(id: string, hard?: boolean): Promise<MutationResult>;
   getActiveRuleset(domain: string, jurisdiction: string, includeContent?: boolean): Promise<ActiveRulesetResult>;
   getAllActiveRulesets(includeContent?: boolean): Promise<ActiveRulesetResult[]>;
   getRulesetAudit(id: string): Promise<RulesetAuditLog[]>;

@@ -28,7 +28,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { useToast } from "@/components/ui/use-toast";
-import { Archive, CheckCircle2, Clock, FileText, MoreVertical, RefreshCw, Upload } from "lucide-react";
+import { Archive, CheckCircle2, Clock, FileText, MoreVertical, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { getAdminService } from "@/lib/admin/services";
 import type { RulesetRecord, RulesetStatus } from "@/lib/admin/types";
@@ -125,6 +125,8 @@ export function RulesList() {
   const [error, setError] = React.useState<string | null>(null);
   const [publishDialogOpen, setPublishDialogOpen] = React.useState(false);
   const [rollbackDialogOpen, setRollbackDialogOpen] = React.useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = React.useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [selectedRuleset, setSelectedRuleset] = React.useState<RulesetRecord | null>(null);
 
   const updateQuery = React.useCallback(
@@ -301,13 +303,36 @@ React.useEffect(() => {
 
   const handleArchive = async (ruleset: RulesetRecord) => {
     setActionRulesetId(ruleset.id);
-    // Note: Archive functionality would need to be added to the service
+    const result = await service.archiveRuleset(ruleset.id);
     setActionRulesetId(null);
+    setArchiveDialogOpen(false);
+    setSelectedRuleset(null);
     toast({
-      title: "Archive not implemented",
-      description: "Archive functionality will be available soon.",
-      variant: "default",
+      title: result.success ? "Ruleset archived" : "Archive failed",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
     });
+    if (result.success) {
+      await audit("archive_ruleset", { entityId: ruleset.id, metadata: { domain: ruleset.domain, jurisdiction: ruleset.jurisdiction } });
+      loadRulesets();
+    }
+  };
+
+  const handleDelete = async (ruleset: RulesetRecord, hard = false) => {
+    setActionRulesetId(ruleset.id);
+    const result = await service.deleteRuleset(ruleset.id, hard);
+    setActionRulesetId(null);
+    setDeleteDialogOpen(false);
+    setSelectedRuleset(null);
+    toast({
+      title: result.success ? "Ruleset deleted" : "Delete failed",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
+    });
+    if (result.success) {
+      await audit("delete_ruleset", { entityId: ruleset.id, metadata: { domain: ruleset.domain, jurisdiction: ruleset.jurisdiction, hard } });
+      loadRulesets();
+    }
   };
 
   const changeDomainFilter = (nextValue: string, resetRulebook = true) => {
@@ -527,7 +552,10 @@ React.useEffect(() => {
                   )}
                   {ruleset.status !== "archived" && (
                     <DropdownMenuItem
-                      onClick={() => handleArchive(ruleset)}
+                      onClick={() => {
+                        setSelectedRuleset(ruleset);
+                        setArchiveDialogOpen(true);
+                      }}
                       disabled={actionRulesetId === ruleset.id}
                     >
                       <Archive className="mr-2 h-4 w-4" /> Archive
@@ -536,7 +564,6 @@ React.useEffect(() => {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={async () => {
-                      // TODO: Navigate to audit log view when implemented
                       const auditLogs = await service.getRulesetAudit(ruleset.id);
                       toast({
                         title: "Audit Log",
@@ -545,6 +572,17 @@ React.useEffect(() => {
                     }}
                   >
                     <FileText className="mr-2 h-4 w-4" /> View Audit Log
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedRuleset(ruleset);
+                      setDeleteDialogOpen(true);
+                    }}
+                    disabled={actionRulesetId === ruleset.id}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -674,6 +712,93 @@ React.useEffect(() => {
               disabled={!selectedRuleset || actionRulesetId === selectedRuleset.id}
             >
               {actionRulesetId === selectedRuleset?.id ? "Rolling back..." : "Rollback"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive Dialog */}
+      <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive Ruleset</DialogTitle>
+            <DialogDescription>
+              Archiving this ruleset will deactivate all its rules. The ruleset will remain in the system and can be
+              restored via rollback.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRuleset && (
+            <div className="space-y-2">
+              <div>
+                <span className="text-sm font-medium">Rulebook:</span> {selectedRuleset.rulebookVersion}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Domain:</span> {selectedRuleset.domain}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Jurisdiction:</span> {selectedRuleset.jurisdiction}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Rules:</span> {selectedRuleset.ruleCount}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedRuleset && handleArchive(selectedRuleset)}
+              disabled={!selectedRuleset || actionRulesetId === selectedRuleset.id}
+            >
+              {actionRulesetId === selectedRuleset?.id ? "Archiving..." : "Archive"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Ruleset</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this ruleset? This will archive the ruleset and deactivate all its rules.
+              For permanent deletion, use the "Delete Permanently" option.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRuleset && (
+            <div className="space-y-2">
+              <div>
+                <span className="text-sm font-medium">Rulebook:</span> {selectedRuleset.rulebookVersion}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Domain:</span> {selectedRuleset.domain}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Jurisdiction:</span> {selectedRuleset.jurisdiction}
+              </div>
+              <div>
+                <span className="text-sm font-medium">Rules:</span> {selectedRuleset.ruleCount}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => selectedRuleset && handleDelete(selectedRuleset, true)}
+              disabled={!selectedRuleset || actionRulesetId === selectedRuleset.id}
+            >
+              {actionRulesetId === selectedRuleset?.id ? "Deleting..." : "Delete Permanently"}
+            </Button>
+            <Button
+              onClick={() => selectedRuleset && handleDelete(selectedRuleset, false)}
+              disabled={!selectedRuleset || actionRulesetId === selectedRuleset.id}
+            >
+              {actionRulesetId === selectedRuleset?.id ? "Archiving..." : "Archive Instead"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -631,6 +631,120 @@ async def rollback_ruleset(
     return RulesetResponse.model_validate(target_ruleset)
 
 
+@router.post("/{ruleset_id}/archive", response_model=RulesetResponse)
+async def archive_ruleset(
+    ruleset_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Archive a ruleset (set status to archived and deactivate its rules).
+    """
+    ruleset = db.query(Ruleset).filter(Ruleset.id == ruleset_id).first()
+    if not ruleset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ruleset not found"
+        )
+    
+    if ruleset.status == RulesetStatus.ARCHIVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ruleset is already archived"
+        )
+    
+    # Archive the ruleset
+    ruleset.status = RulesetStatus.ARCHIVED.value
+    _set_rules_activation(db, ruleset.id, is_active=False)
+    
+    # Create audit log
+    archive_audit = RulesetAudit(
+        ruleset_id=ruleset.id,
+        action=RulesetAuditAction.ARCHIVE.value,
+        actor_id=current_user.id,
+        detail={"reason": "Manual archive via admin"}
+    )
+    db.add(archive_audit)
+    
+    db.commit()
+    db.refresh(ruleset)
+    
+    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+    logger.info(f"Archived ruleset {ruleset_id} by user {current_user.id}")
+    
+    return RulesetResponse.model_validate(ruleset)
+
+
+@router.delete("/{ruleset_id}")
+async def delete_ruleset(
+    ruleset_id: UUID,
+    hard: bool = Query(default=False, description="If true, permanently delete; otherwise soft-delete (archive)"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a ruleset.
+    
+    - soft delete (default): Archives the ruleset and deactivates its rules
+    - hard delete: Permanently removes the ruleset and all associated rules
+    """
+    ruleset = db.query(Ruleset).filter(Ruleset.id == ruleset_id).first()
+    if not ruleset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ruleset not found"
+        )
+    
+    if hard:
+        # Delete all associated rules first
+        deleted_rules = db.query(RuleRecord).filter(RuleRecord.ruleset_id == ruleset_id).delete(synchronize_session=False)
+        
+        # Delete all audit logs
+        db.query(RulesetAudit).filter(RulesetAudit.ruleset_id == ruleset_id).delete(synchronize_session=False)
+        
+        # Try to delete the file from storage
+        try:
+            if ruleset.file_path:
+                storage_service = RulesStorageService()
+                storage_service.delete_ruleset_file(ruleset.file_path)
+        except Exception as exc:
+            logger.warning(f"Failed to delete ruleset file: {exc}")
+        
+        # Delete the ruleset record
+        db.delete(ruleset)
+        db.commit()
+        
+        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+        logger.info(f"Hard deleted ruleset {ruleset_id} ({deleted_rules} rules) by user {current_user.id}")
+        
+        return {"success": True, "message": f"Ruleset permanently deleted ({deleted_rules} rules removed)"}
+    else:
+        # Soft delete = archive
+        if ruleset.status == RulesetStatus.ARCHIVED.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ruleset is already archived"
+            )
+        
+        ruleset.status = RulesetStatus.ARCHIVED.value
+        _set_rules_activation(db, ruleset.id, is_active=False)
+        
+        archive_audit = RulesetAudit(
+            ruleset_id=ruleset.id,
+            action=RulesetAuditAction.ARCHIVE.value,
+            actor_id=current_user.id,
+            detail={"reason": "Soft delete via admin"}
+        )
+        db.add(archive_audit)
+        
+        db.commit()
+        
+        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+        logger.info(f"Soft deleted (archived) ruleset {ruleset_id} by user {current_user.id}")
+        
+        return {"success": True, "message": "Ruleset archived"}
+
+
 @router.get("", response_model=RulesetListResponse)
 async def list_rulesets(
     domain: Optional[str] = Query(None),

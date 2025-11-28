@@ -157,6 +157,41 @@ export class ApiAdminService implements AdminService {
     }
   }
 
+  async archiveRuleset(id: string): Promise<MutationResult<RulesetRecord>> {
+    try {
+      const response = await api.post(`/admin/rulesets/${id}/archive`);
+      return {
+        success: true,
+        data: this.transformRuleset(response.data),
+        message: "Ruleset archived successfully",
+      };
+    } catch (error: any) {
+      console.error("Failed to archive ruleset:", error);
+      return {
+        success: false,
+        message: error?.response?.data?.detail || "Failed to archive ruleset",
+      };
+    }
+  }
+
+  async deleteRuleset(id: string, hard = false): Promise<MutationResult> {
+    try {
+      const response = await api.delete(`/admin/rulesets/${id}`, {
+        params: { hard: hard ? "true" : "false" },
+      });
+      return {
+        success: true,
+        message: response.data?.message || (hard ? "Ruleset permanently deleted" : "Ruleset archived"),
+      };
+    } catch (error: any) {
+      console.error("Failed to delete ruleset:", error);
+      return {
+        success: false,
+        message: error?.response?.data?.detail || "Failed to delete ruleset",
+      };
+    }
+  }
+
   async getActiveRuleset(
     domain: string,
     jurisdiction: string,
