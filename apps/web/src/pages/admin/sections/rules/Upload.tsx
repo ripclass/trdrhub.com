@@ -178,12 +178,24 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       }
 
       // Check for required fields in each rule
+      // Note: domain, jurisdiction, conditions are auto-normalized by backend
+      // so we only show warnings for them, not errors
       json.forEach((rule, index) => {
         if (!rule.rule_id) errors.push(`Rule ${index + 1}: Missing rule_id`);
-        if (!rule.domain) errors.push(`Rule ${index + 1}: Missing domain`);
-        if (!rule.jurisdiction) errors.push(`Rule ${index + 1}: Missing jurisdiction`);
-        if (!rule.conditions || !Array.isArray(rule.conditions)) {
-          errors.push(`Rule ${index + 1}: Missing or invalid conditions array`);
+        
+        // These fields are auto-fixed by backend - just warn
+        if (!rule.domain) {
+          warnings.push(`Rule ${index + 1}: Missing domain (will use upload param)`);
+        }
+        if (!rule.jurisdiction) {
+          warnings.push(`Rule ${index + 1}: Missing jurisdiction (will use upload param)`);
+        }
+        
+        // Handle both 'condition' (singular) and 'conditions' (plural)
+        const hasConditions = rule.conditions && Array.isArray(rule.conditions);
+        const hasCondition = rule.condition && Array.isArray(rule.condition);
+        if (!hasConditions && !hasCondition) {
+          warnings.push(`Rule ${index + 1}: Missing conditions array (will default to empty)`);
         }
       });
 
