@@ -140,6 +140,14 @@ export interface IssueCard {
   ruleset_domain?: string;
   auto_generated?: boolean;
   isbpReference?: string;
+  // Tolerance and confidence metadata
+  tolerance_applied?: {
+    tolerance_percent: number;
+    source: string;
+    explicit: boolean;
+  };
+  extraction_confidence?: number;
+  amendment_available?: boolean;
 }
 
 export interface ReferenceIssue {

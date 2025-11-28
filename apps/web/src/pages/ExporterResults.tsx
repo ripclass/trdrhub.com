@@ -90,6 +90,53 @@ interface BankVerdict {
   action_items_count: number;
 }
 
+// Bank Profile Types
+interface BankProfile {
+  bank_code: string;
+  bank_name: string;
+  strictness: "lenient" | "standard" | "strict";
+}
+
+// Extraction Confidence Types
+interface ExtractionConfidence {
+  average_confidence: number;
+  documents_analyzed: number;
+  lowest_confidence_document: string | null;
+  lowest_confidence_value: number;
+  overall_level: "high" | "medium" | "low" | "very_low";
+  recommendations: string[];
+}
+
+// Amendment Types
+interface AmendmentField {
+  tag: string;
+  name: string;
+  current: string;
+  proposed: string;
+}
+
+interface Amendment {
+  discrepancy_type: string;
+  field: AmendmentField;
+  swift_mt707_text: string;
+  narrative: string;
+  estimated_fee_usd: number;
+  bank_processing_days: number;
+}
+
+interface AmendmentsAvailable {
+  count: number;
+  total_estimated_fee_usd: number;
+  amendments: Amendment[];
+}
+
+// Tolerance Types
+interface ToleranceApplied {
+  tolerance_percent: number;
+  source: string;
+  explicit: boolean;
+}
+
 // Bank Verdict Card Component
 function BankVerdictCard({ verdict }: { verdict: BankVerdict }) {
   const verdictColors = {
@@ -199,6 +246,164 @@ function BankVerdictCard({ verdict }: { verdict: BankVerdict }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Bank Profile Badge Component
+function BankProfileBadge({ profile }: { profile: BankProfile }) {
+  const strictnessColors = {
+    lenient: "bg-green-500/20 text-green-400 border-green-500/30",
+    standard: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    strict: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  };
+  
+  const strictnessLabels = {
+    lenient: "Lenient",
+    standard: "Standard",
+    strict: "Strict",
+  };
+
+  return (
+    <div className={cn(
+      "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium",
+      strictnessColors[profile.strictness]
+    )}>
+      <Building2 className="w-3.5 h-3.5" />
+      <span>{profile.bank_name}</span>
+      <span className="opacity-60">•</span>
+      <span>{strictnessLabels[profile.strictness]}</span>
+    </div>
+  );
+}
+
+// OCR Confidence Warning Banner
+function OCRConfidenceWarning({ confidence }: { confidence: ExtractionConfidence }) {
+  if (confidence.average_confidence >= 0.7) return null;
+  
+  const isLow = confidence.average_confidence < 0.5;
+  
+  return (
+    <Card className={cn(
+      "border-2 mt-4",
+      isLow 
+        ? "bg-red-500/10 border-red-500/30" 
+        : "bg-yellow-500/10 border-yellow-500/30"
+    )}>
+      <CardContent className="pt-4 pb-4">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className={cn(
+            "w-5 h-5 mt-0.5",
+            isLow ? "text-red-400" : "text-yellow-400"
+          )} />
+          <div className="flex-1">
+            <p className={cn(
+              "font-medium text-sm",
+              isLow ? "text-red-400" : "text-yellow-400"
+            )}>
+              {isLow ? "Low OCR Extraction Quality" : "OCR Quality Warning"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Average extraction confidence: <span className="font-semibold">{(confidence.average_confidence * 100).toFixed(0)}%</span>
+              {confidence.lowest_confidence_document && (
+                <> • Lowest: <span className="font-medium">{confidence.lowest_confidence_document}</span> ({(confidence.lowest_confidence_value * 100).toFixed(0)}%)</>
+              )}
+            </p>
+            {confidence.recommendations.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {confidence.recommendations.map((rec, idx) => (
+                  <li key={idx} className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-current" />
+                    {rec}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Amendment Card Component
+function AmendmentCard({ 
+  amendments, 
+  onDownload 
+}: { 
+  amendments: AmendmentsAvailable;
+  onDownload: (amendment: Amendment) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (amendments.count === 0) return null;
+
+  return (
+    <Card className="mt-4 bg-blue-500/5 border-blue-500/20">
+      <CardContent className="pt-4 pb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-blue-500/20">
+              <FileCheck className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="font-medium text-sm text-blue-400">
+                {amendments.count} Amendment{amendments.count > 1 ? "s" : ""} Available
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Some discrepancies can be fixed via LC amendment • Est. fee: USD {amendments.total_estimated_fee_usd.toFixed(2)}
+              </p>
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setExpanded(!expanded)}
+            className="text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+          >
+            {expanded ? "Hide" : "View"} Amendments
+          </Button>
+        </div>
+        
+        {expanded && (
+          <div className="mt-4 pt-4 border-t border-blue-500/20 space-y-3">
+            {amendments.amendments.map((amendment, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-background/50">
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    Field {amendment.field.tag}: {amendment.field.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {amendment.field.current} → {amendment.field.proposed}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {amendment.narrative} • ~{amendment.bank_processing_days} days • USD {amendment.estimated_fee_usd}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDownload(amendment)}
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  MT707
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Tolerance Badge Component (for issue cards)
+function ToleranceBadge({ tolerance }: { tolerance: ToleranceApplied }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30">
+      <CheckCircle className="w-3 h-3" />
+      ±{tolerance.tolerance_percent}% tolerance ({tolerance.source.replace(/_/g, ' ')})
+    </span>
   );
 }
 
@@ -1536,9 +1741,45 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             complianceScore={complianceScore}
           />
           
+          {/* Bank Profile Badge */}
+          {structuredResult?.bank_profile && (
+            <div className="flex items-center gap-2 mt-2">
+              <BankProfileBadge profile={structuredResult.bank_profile as BankProfile} />
+              {structuredResult?.tolerances_applied && Object.keys(structuredResult.tolerances_applied).length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  • Tolerances applied: {Object.keys(structuredResult.tolerances_applied).join(", ")}
+                </span>
+              )}
+            </div>
+          )}
+          
           {/* Bank Submission Verdict Card */}
           {structuredResult?.bank_verdict && (
             <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
+          )}
+          
+          {/* OCR Confidence Warning */}
+          {structuredResult?.extraction_confidence && (
+            <OCRConfidenceWarning confidence={structuredResult.extraction_confidence as ExtractionConfidence} />
+          )}
+          
+          {/* Amendment Availability */}
+          {structuredResult?.amendments_available && (structuredResult.amendments_available as AmendmentsAvailable).count > 0 && (
+            <AmendmentCard 
+              amendments={structuredResult.amendments_available as AmendmentsAvailable}
+              onDownload={(amendment) => {
+                // Download SWIFT MT707 as text file
+                const blob = new Blob([amendment.swift_mt707_text], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `MT707_Amendment_${amendment.field.tag}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+            />
           )}
         </div>
 

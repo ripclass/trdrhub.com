@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { IssueCard } from '@/types/lcopilot';
-import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Business impact mapping - what will the bank do?
@@ -187,6 +187,37 @@ export function ExporterIssueCard({
             </pre>
           </div>
         </div>
+        
+        {/* Tolerance & Confidence Metadata */}
+        {(issue.tolerance_applied || issue.extraction_confidence !== undefined) && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {issue.tolerance_applied && (
+              <Badge 
+                variant="outline" 
+                className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+              >
+                <Scale className="w-3 h-3" />
+                ±{issue.tolerance_applied.tolerance_percent}% tolerance
+                <span className="opacity-60">({issue.tolerance_applied.source.replace(/_/g, ' ')})</span>
+              </Badge>
+            )}
+            {issue.extraction_confidence !== undefined && issue.extraction_confidence < 0.7 && (
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "gap-1 text-xs",
+                  issue.extraction_confidence < 0.5 
+                    ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30"
+                    : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30"
+                )}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                OCR: {(issue.extraction_confidence * 100).toFixed(0)}%
+                {issue.extraction_confidence < 0.5 && " - Verify manually"}
+              </Badge>
+            )}
+          </div>
+        )}
         {issue.suggestion && issue.suggestion !== '—' && (
           <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
             <div className="flex items-start gap-2">
