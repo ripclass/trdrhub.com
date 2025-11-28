@@ -88,6 +88,58 @@ from .ai_validator import (
     IssueSeverity as AIIssueSeverity,
 )
 
+# New hybrid validation components
+from .llm_requirement_parser import (
+    RequirementGraph,
+    DocumentRequirement,
+    NestedObligation,
+    ToleranceRule,
+    ToleranceSource,
+    Contradiction,
+    BLRequirements,
+    parse_lc_requirements_llm,
+    parse_lc_requirements_sync_v2,
+    get_cached_requirements,
+    infer_document_type,
+)
+
+from .party_matcher import (
+    parties_match,
+    normalize_party_name,
+    match_party_to_candidates,
+    PartyMatchResult,
+)
+
+from .amendment_generator import (
+    AmendmentDraft,
+    generate_late_shipment_amendment,
+    generate_amount_amendment,
+    generate_expiry_amendment,
+    generate_port_amendment,
+    generate_amendment_for_discrepancy,
+    generate_amendments_for_issues,
+    calculate_total_amendment_cost,
+)
+
+from .bank_profiles import (
+    BankProfile,
+    BankStrictness,
+    get_bank_profile,
+    detect_bank_from_lc,
+    apply_bank_strictness,
+    BANK_PROFILES,
+    DEFAULT_PROFILE,
+)
+
+from .confidence_weighting import (
+    ConfidenceLevel,
+    ConfidenceAdjustment,
+    adjust_severity_for_confidence,
+    get_field_confidence,
+    batch_adjust_issues,
+    calculate_overall_extraction_confidence,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -149,5 +201,46 @@ __all__ = [
     "validate_bl_fields",
     "AIValidationIssue",
     "AIIssueSeverity",
+    # LLM Requirement Parser (Hybrid Pipeline)
+    "RequirementGraph",
+    "DocumentRequirement",
+    "NestedObligation",
+    "ToleranceRule",
+    "ToleranceSource",
+    "Contradiction",
+    "BLRequirements",
+    "parse_lc_requirements_llm",
+    "parse_lc_requirements_sync_v2",
+    "get_cached_requirements",
+    "infer_document_type",
+    # Party Matcher
+    "parties_match",
+    "normalize_party_name",
+    "match_party_to_candidates",
+    "PartyMatchResult",
+    # Amendment Generator
+    "AmendmentDraft",
+    "generate_late_shipment_amendment",
+    "generate_amount_amendment",
+    "generate_expiry_amendment",
+    "generate_port_amendment",
+    "generate_amendment_for_discrepancy",
+    "generate_amendments_for_issues",
+    "calculate_total_amendment_cost",
+    # Bank Profiles
+    "BankProfile",
+    "BankStrictness",
+    "get_bank_profile",
+    "detect_bank_from_lc",
+    "apply_bank_strictness",
+    "BANK_PROFILES",
+    "DEFAULT_PROFILE",
+    # Confidence Weighting
+    "ConfidenceLevel",
+    "ConfidenceAdjustment",
+    "adjust_severity_for_confidence",
+    "get_field_confidence",
+    "batch_adjust_issues",
+    "calculate_overall_extraction_confidence",
 ]
 
