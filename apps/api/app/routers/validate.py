@@ -1151,6 +1151,28 @@ async def validate_doc(
                 v2_score.major_count,
                 v2_score.minor_count,
             )
+            
+            # =====================================================================
+            # BANK SUBMISSION VERDICT
+            # =====================================================================
+            bank_verdict = _build_bank_submission_verdict(
+                critical_count=v2_score.critical_count,
+                major_count=v2_score.major_count,
+                minor_count=v2_score.minor_count,
+                compliance_score=v2_score.score,
+                all_issues=all_issues,
+            )
+            structured_result["bank_verdict"] = bank_verdict
+            
+            if structured_result.get("processing_summary"):
+                structured_result["processing_summary"]["bank_verdict"] = bank_verdict.get("verdict")
+            
+            logger.info(
+                "Bank verdict: %s (action_required=%d)",
+                bank_verdict.get("verdict"),
+                len(bank_verdict.get("action_items", [])),
+            )
+            
         except Exception as e:
             logger.warning("V2 scoring failed: %s", e, exc_info=True)
         # =====================================================================
@@ -3178,6 +3200,94 @@ def _build_processing_summary(
         "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
         "status_counts": status_counts,
+    }
+
+
+def _build_bank_submission_verdict(
+    critical_count: int,
+    major_count: int,
+    minor_count: int,
+    compliance_score: float,
+    all_issues: List[Any],
+) -> Dict[str, Any]:
+    """
+    Build a bank submission verdict with GO/NO-GO recommendation.
+    
+    This helps exporters understand if their documents are ready
+    for bank submission or what actions are required first.
+    """
+    # Determine verdict
+    if critical_count > 0:
+        verdict = "REJECT"
+        verdict_color = "red"
+        verdict_message = "Documents will be REJECTED by bank"
+        recommendation = "Do NOT submit to bank until critical issues are resolved."
+    elif major_count > 2:
+        verdict = "HOLD"
+        verdict_color = "orange"
+        verdict_message = "High risk of discrepancy notice"
+        recommendation = "Consider resolving major issues before submission to avoid discrepancy fees."
+    elif major_count > 0:
+        verdict = "CAUTION"
+        verdict_color = "yellow"
+        verdict_message = "Minor corrections recommended"
+        recommendation = "Documents may be accepted with discrepancy notice. Consider corrections."
+    else:
+        verdict = "SUBMIT"
+        verdict_color = "green"
+        verdict_message = "Documents appear compliant"
+        recommendation = "Documents are ready for bank submission."
+    
+    # Build action items from critical and major issues
+    action_items = []
+    for issue in all_issues:
+        if hasattr(issue, 'severity'):
+            severity = issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity)
+        elif isinstance(issue, dict):
+            severity = issue.get("severity", "")
+        else:
+            continue
+        
+        if severity in ["critical", "major"]:
+            if hasattr(issue, 'title'):
+                title = issue.title
+            elif isinstance(issue, dict):
+                title = issue.get("title", issue.get("message", "Unknown issue"))
+            else:
+                continue
+            
+            if hasattr(issue, 'suggestion'):
+                action = issue.suggestion
+            elif isinstance(issue, dict):
+                action = issue.get("suggestion", issue.get("suggested_fix", "Review and correct"))
+            else:
+                action = "Review and correct"
+            
+            action_items.append({
+                "priority": "critical" if severity == "critical" else "high",
+                "issue": title,
+                "action": action,
+            })
+    
+    # Calculate estimated fee if discrepant
+    discrepancy_fee = 75.00 if (critical_count + major_count) > 0 else 0.00
+    
+    return {
+        "verdict": verdict,
+        "verdict_color": verdict_color,
+        "verdict_message": verdict_message,
+        "recommendation": recommendation,
+        "can_submit": verdict in ["SUBMIT", "CAUTION"],
+        "will_be_rejected": verdict == "REJECT",
+        "estimated_discrepancy_fee": discrepancy_fee,
+        "issue_summary": {
+            "critical": critical_count,
+            "major": major_count,
+            "minor": minor_count,
+            "total": critical_count + major_count + minor_count,
+        },
+        "action_items": action_items[:5],  # Top 5 action items
+        "action_items_count": len(action_items),
     }
 
 

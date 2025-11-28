@@ -275,9 +275,8 @@ def validate_bl_fields(
         if found_value:
             logger.info(f"✓ B/L has {info['display']}: {found_value}")
         else:
-            # Build "Found" text showing what B/L DOES have
-            available_fields = [f"{k}={v}" for k, v in list(bl_lower.items())[:5]]
-            found_text = f"Field not found in B/L. Available: {', '.join(available_fields)}" if available_fields else "No relevant fields extracted from B/L"
+            # Concise "Found" text - just state the field is missing
+            found_text = f"{info['display']} not found in Bill of Lading"
             
             issues.append(AIValidationIssue(
                 rule_id=f"AI-BL-MISSING-{req_field.upper()}",
@@ -292,6 +291,86 @@ def validate_bl_fields(
                 isbp_reference="ISBP745 E12",
             ))
             logger.info(f"✗ B/L missing: {info['display']}")
+    
+    return issues
+
+
+# =============================================================================
+# PACKING LIST VALIDATOR
+# =============================================================================
+
+def validate_packing_list(
+    lc_text: str,
+    packing_list_data: Dict[str, Any],
+) -> List[AIValidationIssue]:
+    """
+    Validate packing list against LC requirements.
+    Specifically checks for size breakdown if LC requires it.
+    """
+    issues = []
+    
+    if not lc_text:
+        return issues
+    
+    text_upper = lc_text.upper()
+    
+    # Check if LC requires size breakdown in packing list
+    requires_sizes = False
+    if "PACKING" in text_upper and "SIZE" in text_upper:
+        requires_sizes = True
+    # Also check for explicit "SIZE BREAKDOWN" or "SIZES" requirement
+    if "SIZE BREAKDOWN" in text_upper or "SIZE-BREAKDOWN" in text_upper:
+        requires_sizes = True
+    if re.search(r'PACKING\s+LIST.*SIZE', text_upper):
+        requires_sizes = True
+    
+    if not requires_sizes:
+        logger.info("LC does not require size breakdown in packing list")
+        return issues
+    
+    logger.info("LC requires size breakdown in packing list - checking...")
+    
+    # Check if packing list has size information
+    has_sizes = False
+    
+    # Check raw text
+    pl_raw = (packing_list_data.get("raw_text") or "").upper()
+    size_indicators = ["SIZE", "S/M/L", "SMALL", "MEDIUM", "LARGE", "XL", "XXL", 
+                       "SIZE BREAKDOWN", "SIZE DISTRIBUTION", "SIZES PER CARTON"]
+    
+    for indicator in size_indicators:
+        if indicator in pl_raw:
+            has_sizes = True
+            logger.info(f"✓ Packing list has size info: found '{indicator}'")
+            break
+    
+    # Also check extracted fields
+    if not has_sizes:
+        for key, value in packing_list_data.items():
+            if key.startswith("_"):
+                continue
+            key_lower = key.lower()
+            value_str = str(value).upper() if value else ""
+            
+            if "size" in key_lower or any(ind in value_str for ind in size_indicators):
+                has_sizes = True
+                logger.info(f"✓ Packing list has size field: {key}")
+                break
+    
+    if not has_sizes:
+        issues.append(AIValidationIssue(
+            rule_id="AI-PL-MISSING-SIZES",
+            title="Packing List Missing Size Breakdown",
+            severity=IssueSeverity.MAJOR,
+            message="LC clause 46A requires packing list to show size breakdown, but no size information was found.",
+            expected="Detailed size breakdown (S/M/L/XL distribution per carton) as required by LC",
+            found="No size breakdown found in packing list",
+            suggestion="Update packing list to include size-wise breakdown per carton. Show quantities for each size (S, M, L, XL, etc.).",
+            documents=["Packing List"],
+            ucp_reference="UCP600 Article 14(d)",
+            isbp_reference="ISBP745 L3",
+        ))
+        logger.info("✗ Packing list missing required size breakdown")
     
     return issues
 
@@ -376,7 +455,23 @@ async def run_ai_validation(
         metadata["bl_missing_fields"] = 0
     
     # =================================================================
-    # 4. DEDUPLICATE ISSUES
+    # 4. VALIDATE PACKING LIST (Size breakdown)
+    # =================================================================
+    packing_list_data = extracted_context.get("packing_list") or {}
+    if packing_list_data:
+        logger.info("Step 4: Validating packing list requirements...")
+        metadata["checks_performed"].append("packing_list_validation")
+        
+        pl_issues = validate_packing_list(lc_text, packing_list_data)
+        all_issues.extend(pl_issues)
+        
+        metadata["packing_list_issues"] = len(pl_issues)
+    else:
+        logger.info("Step 4: No packing list data to validate")
+        metadata["packing_list_issues"] = 0
+    
+    # =================================================================
+    # 5. DEDUPLICATE ISSUES
     # =================================================================
     seen_rules: Set[str] = set()
     unique_issues: List[AIValidationIssue] = []
@@ -389,7 +484,7 @@ async def run_ai_validation(
             logger.info(f"Removing duplicate issue: {issue.rule_id}")
     
     # =================================================================
-    # SUMMARY
+    # 6. SUMMARY
     # =================================================================
     metadata["total_issues"] = len(unique_issues)
     metadata["critical_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.CRITICAL)

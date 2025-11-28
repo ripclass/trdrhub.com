@@ -375,7 +375,13 @@ class CrossDocValidator:
         invoice: Dict[str, Any],
         lc_data: Dict[str, Any],
     ) -> Optional[CrossDocIssue]:
-        """Check invoice goods description matches LC."""
+        """Check invoice goods description matches LC.
+        
+        Per UCP600 Article 18(c) and ISBP745: 
+        - Invoice goods description must CORRESPOND with LC (not be identical)
+        - Same HS codes with matching quantities = compliant
+        - Case/formatting differences are acceptable
+        """
         inv_goods = self._normalize_text(
             invoice.get("goods_description") or invoice.get("description")
         )
@@ -384,11 +390,28 @@ class CrossDocValidator:
         if not inv_goods or not lc_goods:
             return None
         
-        # Use fuzzy matching for goods description
+        # FIRST: Check HS codes - if they match, goods correspond
+        inv_hs_codes = self._extract_hs_codes(inv_goods)
+        lc_hs_codes = self._extract_hs_codes(lc_goods)
+        
+        if inv_hs_codes and lc_hs_codes:
+            # HS codes present in both - check for match
+            if inv_hs_codes == lc_hs_codes or inv_hs_codes.issubset(lc_hs_codes):
+                logger.info(f"✓ Goods match by HS codes: {inv_hs_codes}")
+                return None  # Compliant - same HS codes
+        
+        # SECOND: Check key product terms (cotton, t-shirt, garment, etc.)
+        key_terms_match = self._check_key_product_terms(inv_goods, lc_goods)
+        if key_terms_match:
+            logger.info("✓ Goods match by key product terms")
+            return None
+        
+        # THIRD: Fuzzy text similarity as fallback
         similarity = self._text_similarity(inv_goods, lc_goods)
         
         # Invoice goods must not conflict with LC (but can be more specific)
-        if similarity < 0.5:  # Very different descriptions
+        # Lowered threshold from 0.5 to 0.35 - UCP600 allows general terms
+        if similarity < 0.35:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-003",
                 title="Invoice Goods Description Mismatch",
@@ -411,6 +434,54 @@ class CrossDocValidator:
             )
         
         return None
+    
+    def _extract_hs_codes(self, text: str) -> Set[str]:
+        """Extract HS codes from text (6-10 digit numbers)."""
+        if not text:
+            return set()
+        # HS codes are typically 6, 8, or 10 digits
+        pattern = r'\b(\d{6,10})\b'
+        matches = re.findall(pattern, text)
+        # Filter to likely HS codes (starting with valid chapters 01-99)
+        hs_codes = set()
+        for m in matches:
+            chapter = int(m[:2])
+            if 1 <= chapter <= 99:
+                hs_codes.add(m)
+        return hs_codes
+    
+    def _check_key_product_terms(self, text1: str, text2: str) -> bool:
+        """Check if key product terms match between two descriptions."""
+        # Common product categories in trade
+        product_keywords = [
+            "cotton", "garment", "t-shirt", "tshirt", "shirt", "trouser", "pant",
+            "dress", "denim", "knit", "woven", "textile", "apparel", "clothing",
+            "fabric", "yarn", "shoes", "leather", "electronic", "machinery",
+            "furniture", "plastic", "chemical", "food", "grain", "rice", "wheat"
+        ]
+        
+        t1_words = set(text1.lower().split())
+        t2_words = set(text2.lower().split())
+        
+        # Find product terms in each text
+        t1_products = {w for w in t1_words if any(kw in w for kw in product_keywords)}
+        t2_products = {w for w in t2_words if any(kw in w for kw in product_keywords)}
+        
+        if not t1_products or not t2_products:
+            return False
+        
+        # Check for overlap
+        overlap = t1_products & t2_products
+        if overlap:
+            return True
+        
+        # Check for related terms (e.g., "t-shirts" in one, "tshirt" in other)
+        for t1_prod in t1_products:
+            for t2_prod in t2_products:
+                if t1_prod in t2_prod or t2_prod in t1_prod:
+                    return True
+        
+        return False
     
     def _check_invoice_date(
         self,
