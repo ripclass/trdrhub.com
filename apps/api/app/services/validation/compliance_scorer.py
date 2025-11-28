@@ -121,15 +121,18 @@ class ComplianceScorer:
     """
     
     # Severity caps: Maximum compliance score with each issue type
-    CAP_CRITICAL = 0.0       # Any critical issue → 0%
-    CAP_MAJOR = 60.0         # Any major issue → max 60%
+    # Changed: Critical now caps at 25% instead of 0% for better UX
+    # This shows "seriously non-compliant but some docs are valid"
+    CAP_CRITICAL = 25.0      # Any critical issue → max 25%
+    CAP_MAJOR = 55.0         # Any major issue → max 55%
     CAP_MINOR = 85.0         # Any minor issue → max 85%
     CAP_INFO = 100.0         # Info doesn't cap
     
     # Severity penalties (percentage points deducted per issue)
-    PENALTY_CRITICAL = 100.0  # One critical = full fail
-    PENALTY_MAJOR = 15.0      # Each major = -15%
-    PENALTY_MINOR = 5.0       # Each minor = -5%
+    # Adjusted to create meaningful differentiation
+    PENALTY_CRITICAL = 20.0   # Each critical = -20% (was 100)
+    PENALTY_MAJOR = 8.0       # Each major = -8% (was 15)
+    PENALTY_MINOR = 3.0       # Each minor = -3% (was 5)
     PENALTY_INFO = 0.0        # Info = no penalty
     
     # Component weights (must sum to 1.0)
@@ -373,11 +376,11 @@ class ComplianceScorer:
     ) -> Tuple[float, Optional[str]]:
         """Determine maximum allowed score based on issues."""
         if critical > 0:
-            return self.cap_critical, f"{critical} critical issue(s) - maximum 0%"
+            return self.cap_critical, f"{critical} critical issue(s) - bank will reject"
         elif major > 0:
-            return self.cap_major, f"{major} major issue(s) - maximum 60%"
+            return self.cap_major, f"{major} major issue(s) - corrections needed"
         elif minor > 0:
-            return self.cap_minor, f"{minor} minor issue(s) - maximum 85%"
+            return self.cap_minor, f"{minor} minor issue(s) - review advised"
         return 100.0, None
     
     def _determine_level(

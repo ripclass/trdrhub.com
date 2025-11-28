@@ -196,16 +196,22 @@ def check_document_completeness(
             # Build list of what WAS uploaded
             found_text = f"Not found. Uploaded documents: {', '.join(uploaded_filenames) if uploaded_filenames else 'None'}"
             
+            # Build specific suggestion based on document type
+            if req_type == "inspection_certificate":
+                suggestion = f"Contact {issuer or 'SGS/Intertek/Bureau Veritas'} to schedule a pre-shipment inspection. Obtain the certificate confirming quality, quantity, and packing before document presentation."
+            elif req_type == "beneficiary_certificate":
+                suggestion = f"Prepare a Beneficiary Certificate on your company letterhead stating: '{must_state or 'goods are brand new and manufactured as specified'}'. Sign, stamp, and date the certificate."
+            else:
+                suggestion = f"Obtain and upload the required {display_name} before bank submission."
+            
             issues.append(AIValidationIssue(
                 rule_id=f"AI-MISSING-{req_type.upper()}",
                 title=f"Missing Required Document: {display_name}",
                 severity=IssueSeverity.CRITICAL,
                 message=f"LC clause 46A requires {display_name} but this document was not provided.",
                 expected=expected_text,
-                found=found_text,
-                suggestion=f"Obtain and upload the required {display_name} before bank submission. Without this document, the presentation will be REJECTED.",
-                # Associate with the MISSING document type, not the LC
-                # This prevents the LC from being marked as having critical issues
+                found="Document not provided in submission",
+                suggestion=suggestion,
                 documents=[display_name],
                 ucp_reference="UCP600 Article 14(a)",
                 isbp_reference="ISBP745 A14",
@@ -278,6 +284,16 @@ def validate_bl_fields(
             # Concise "Found" text - just state the field is missing
             found_text = f"{info['display']} not found in Bill of Lading"
             
+            # Build specific suggestion based on field type
+            if req_field == "voyage_number":
+                suggestion = "Contact your shipping line/carrier to request an amended B/L showing the voyage number. This is typically in format 'VOY. 123E' or similar."
+            elif req_field == "gross_weight":
+                suggestion = "Request the carrier to add gross weight (G.W.) to the B/L. This should match the packing list gross weight (e.g., '20,400 KGS')."
+            elif req_field == "net_weight":
+                suggestion = "Request the carrier to add net weight (N.W.) to the B/L. This should match the packing list net weight (e.g., '18,950 KGS')."
+            else:
+                suggestion = f"Request amended B/L from carrier showing the {info['display']}."
+            
             issues.append(AIValidationIssue(
                 rule_id=f"AI-BL-MISSING-{req_field.upper()}",
                 title=f"B/L Missing Required Field: {info['display']}",
@@ -285,7 +301,7 @@ def validate_bl_fields(
                 message=f"LC clause 46A requires B/L to show {info['display']}, but this field was not found.",
                 expected=f"{info['display']} as required by LC clause 46A",
                 found=found_text,
-                suggestion=f"Request amended B/L from carrier showing the {info['display']}. Submit documentary amendment request.",
+                suggestion=suggestion,
                 documents=["Bill of Lading"],
                 ucp_reference="UCP600 Article 14(d)",
                 isbp_reference="ISBP745 E12",
@@ -365,7 +381,7 @@ def validate_packing_list(
             message="LC clause 46A requires packing list to show size breakdown, but no size information was found.",
             expected="Detailed size breakdown (S/M/L/XL distribution per carton) as required by LC",
             found="No size breakdown found in packing list",
-            suggestion="Update packing list to include size-wise breakdown per carton. Show quantities for each size (S, M, L, XL, etc.).",
+            suggestion="Update packing list to include a size-wise breakdown showing quantity per size per carton. Example: 'Carton 1-100: S-500pcs, M-800pcs, L-600pcs, XL-300pcs'. This is a common LC requirement for garment shipments.",
             documents=["Packing List"],
             ucp_reference="UCP600 Article 14(d)",
             isbp_reference="ISBP745 L3",
