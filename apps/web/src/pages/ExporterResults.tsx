@@ -2326,7 +2326,32 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     {lcData && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
+                            {/* Source Format Badge */}
+                            {(lcData as any)?._source_format && (
+                              <Badge 
+                                variant="outline" 
+                                className={cn(
+                                  "text-xs font-medium",
+                                  (lcData as any)._source_format === "ISO20022" 
+                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                    : (lcData as any)._source_format === "MT700"
+                                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                                    : "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/30"
+                                )}
+                              >
+                                {(lcData as any)._source_format === "ISO20022" ? "📄 ISO 20022" 
+                                  : (lcData as any)._source_format === "MT700" ? "📨 SWIFT MT700" 
+                                  : "📷 PDF/OCR"}
+                              </Badge>
+                            )}
+                            {(lcData as any)?._source_message_type && (
+                              <span className="text-xs text-muted-foreground">
+                                ({(lcData as any)._source_message_type})
+                              </span>
+                            )}
+                          </div>
                           <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
                             {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
                           </Button>

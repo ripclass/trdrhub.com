@@ -29,6 +29,20 @@ from .iso20022_lc_extractor import (
     detect_iso20022_schema,
     ISO20022ParseError,
 )
+from .iso20022_parser import (
+    ISO20022Parser,
+    ISO20022ParseResult,
+    parse_iso20022_lc,
+    is_iso20022_document,
+    get_iso20022_parser,
+)
+from .smart_lc_extractor import (
+    extract_lc_smart,
+    detect_lc_format,
+    SmartExtractionResult,
+    get_format_display_name,
+    get_format_confidence_note,
+)
 from .lc_extractor_v2 import (
     extract_lc_with_baseline,
     extract_lc_structured_v2,
@@ -63,6 +77,20 @@ __all__ = [
     "extract_iso20022_with_ai_fallback",
     "detect_iso20022_schema",
     "ISO20022ParseError",
+    
+    # ISO 20022 trad.001/002 parser
+    "ISO20022Parser",
+    "ISO20022ParseResult",
+    "parse_iso20022_lc",
+    "is_iso20022_document",
+    "get_iso20022_parser",
+    
+    # Smart LC extractor (auto-detects format)
+    "extract_lc_smart",
+    "detect_lc_format",
+    "SmartExtractionResult",
+    "get_format_display_name",
+    "get_format_confidence_note",
     
     # V2 extraction with baseline
     "extract_lc_with_baseline",
