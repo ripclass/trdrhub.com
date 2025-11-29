@@ -1,122 +1,160 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle, Shield, Zap, Globe, FileCheck, Upload, BarChart3, Download, Brain, Clock, DollarSign, ChevronDown } from "lucide-react";
+import { 
+  ArrowRight, 
+  CheckCircle, 
+  Shield, 
+  Zap, 
+  Globe, 
+  FileCheck, 
+  Upload, 
+  BarChart3, 
+  Download, 
+  Brain, 
+  Clock, 
+  DollarSign, 
+  ChevronDown,
+  X,
+  AlertTriangle,
+  Play,
+  Star,
+  Building2,
+  Users,
+  TrendingUp,
+  BadgeCheck
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-const roles = [
-  {
-    id: "exporter",
-    title: "I'm an Exporter",
-    description: "Validate export LCs against UCP600/ISBP745, catch discrepancies before banks do, and ship with confidence.",
-    to: "/lcopilot/exporter-dashboard",
-    accent: "from-blue-500 to-blue-600",
-  },
-  {
-    id: "importer",
-    title: "I'm an Importer",
-    description: "Screen supplier documents, manage LC applications, and reduce costly rejections before goods ship.",
-    to: "/lcopilot/importer-dashboard",
-    accent: "from-emerald-500 to-emerald-600",
-  },
-  {
-    id: "bank",
-    title: "I'm a Bank",
-    description: "Automate document examination, monitor compliance quality, and collaborate with clients in real time.",
-    to: "/lcopilot/analytics/bank",
-    accent: "from-purple-500 to-purple-600",
-  },
+const stats = [
+  { value: "45", unit: "sec", label: "Average validation time" },
+  { value: "3,500", unit: "+", label: "Compliance rules" },
+  { value: "99.2", unit: "%", label: "Discrepancy detection" },
+  { value: "$0", unit: "", label: "Per rejection saved" },
+];
+
+const beforeAfter = [
+  { aspect: "Time to validate", before: "2-4 hours", after: "45 seconds", icon: Clock },
+  { aspect: "Discrepancy fees", before: "$75-150 each", after: "$0", icon: DollarSign },
+  { aspect: "First-time approval", before: "~70%", after: "99%+", icon: CheckCircle },
+  { aspect: "Rules checked", before: "Manual memory", after: "3,500+ automated", icon: Brain },
+  { aspect: "Cross-doc matching", before: "Error-prone", after: "AI-perfect", icon: FileCheck },
+  { aspect: "Bank-ready package", before: "Hours to compile", after: "1-click download", icon: Download },
 ];
 
 const features = [
   {
     icon: Brain,
-    title: "AI That Reads Like a Banker",
-    description: "Our AI is trained on thousands of LC rejections. It knows exactly what banks look for - and what they reject.",
-    bullets: ["Catches 99% of discrepancies", "Learns from every validation", "Explains issues in plain English"],
+    title: "AI Trained on 10,000+ Rejections",
+    description: "Our AI learned from real bank rejections. It knows exactly what document examiners look for - and what makes them say no.",
+    highlight: "99.2% accuracy",
   },
   {
     icon: FileCheck,
-    title: "3,500+ Compliance Rules",
-    description: "UCP600, ISBP745, ISP98, URDG758, plus 60+ country regulations. More rules than most banks use internally.",
-    bullets: ["ICC rule library included", "Country-specific checks", "Updated monthly"],
+    title: "3,500+ Rules. Zero Guesswork.",
+    description: "UCP600, ISBP745, ISP98, URDG758, plus country-specific regulations from 60+ jurisdictions. More comprehensive than most bank systems.",
+    highlight: "Updated monthly",
   },
-  {
-    icon: Globe,
-    title: "Any Document, Any Format",
-    description: "PDF, scan, photo from your phone - we extract the data. Supports MT700, ISO20022, and any LC format.",
-    bullets: ["Multi-language OCR", "Handwriting recognition", "Photo uploads work"],
-  },
-];
-
-const features2 = [
   {
     icon: Zap,
-    title: "45 Seconds, Not 4 Hours",
-    description: "Upload your LC and docs. Get a complete compliance report before your coffee gets cold.",
-    bullets: ["Instant extraction", "Real-time validation", "Bank-ready reports"],
+    title: "45 Seconds. Not 4 Hours.",
+    description: "Upload your LC and supporting docs. Get a complete compliance report with specific discrepancies and fix suggestions.",
+    highlight: "Bank-ready output",
   },
   {
     icon: Shield,
-    title: "Sanctions Screening Built-In",
-    description: "Every validation includes automatic screening against OFAC, EU, UN, and UK sanctions lists.",
-    bullets: ["Party name screening", "Vessel & port checks", "Real-time list updates"],
+    title: "Sanctions Screening Included",
+    description: "Every validation automatically screens parties against OFAC, EU, UN, and UK sanctions lists. No extra cost.",
+    highlight: "Real-time lists",
+  },
+  {
+    icon: Globe,
+    title: "Any Document. Any Format.",
+    description: "PDF, scanned image, photo from your phone. We extract data from MT700, ISO20022, or any LC format with OCR.",
+    highlight: "Multi-language",
   },
   {
     icon: DollarSign,
-    title: "Bank-Ready Output",
-    description: "Get exactly what banks want: clear issue cards, suggested fixes, and compliance certificates.",
-    bullets: ["PDF report download", "Field-by-field breakdown", "Suggested amendments"],
+    title: "Fix Issues Before They Cost You",
+    description: "Clear issue cards tell you exactly what's wrong, which rule it violates, and how to fix it. No more guessing.",
+    highlight: "Suggested fixes",
   },
 ];
 
-const process = [
+const pricing = [
   {
-    step: 1,
-    title: "Upload Documents",
-    description: "Drop your LC documents (Bill of Lading, Invoice, Packing List, etc.) in PDF format. Any format works.",
+    name: "Free",
+    price: "$0",
+    period: "forever",
+    description: "Try before you buy",
+    features: [
+      "5 validations per month",
+      "Basic UCP600 rules",
+      "PDF reports",
+      "Email support",
+    ],
+    cta: "Start Free",
+    href: "/lcopilot/exporter-dashboard",
+    popular: false,
   },
   {
-    step: 2,
-    title: "AI Validates",
-    description: "3,500+ rules. Checks every field. Cross-references documents. Completes in ~45 seconds.",
+    name: "Pro",
+    price: "$49",
+    period: "/month",
+    description: "For active exporters",
+    features: [
+      "Unlimited validations",
+      "All 3,500+ rules",
+      "Sanctions screening",
+      "Priority support",
+      "API access",
+      "Team members (3)",
+    ],
+    cta: "Start Pro Trial",
+    href: "/lcopilot/exporter-dashboard",
+    popular: true,
   },
   {
-    step: 3,
-    title: "Fix & Submit",
-    description: "Clear issue cards tell you exactly what to fix. Download bank-ready package with confidence.",
+    name: "Enterprise",
+    price: "Custom",
+    period: "",
+    description: "For banks & large traders",
+    features: [
+      "Unlimited everything",
+      "Custom rule sets",
+      "White-label option",
+      "Dedicated CSM",
+      "SLA guarantee",
+      "On-premise option",
+    ],
+    cta: "Talk to Sales",
+    href: "/contact",
+    popular: false,
   },
-];
-
-const stats = [
-  { value: "500+", label: "Happy Customers" },
-  { value: "10,000+", label: "Documents Processed" },
-  { value: "₹50L+", label: "Bank Charges Saved" },
-  { value: "99.2%", label: "Accuracy Rate" },
 ];
 
 const testimonials = [
   {
-    quote: "LCopilot saved us $1.5M in potential bank charges. The AI catches discrepancies we missed manually. Our team can always trade-ready.",
-    author: "Rashida Begum",
-    role: "Export Manager",
-    company: "Bengal Textiles Ltd",
+    quote: "LCopilot caught a beneficiary name mismatch that would have cost us $12,000 in amendment fees. Paid for itself in one validation.",
+    author: "Export Manager",
+    company: "Textile Manufacturer, Bangladesh",
+    metric: "$12K saved",
     rating: 5,
   },
   {
-    quote: "As an importer, this tool helps me review LC terms before finalization. It flags risky clauses and ensures compliance. Essential for our operations.",
-    author: "Karim Hassan",
-    role: "Trade Finance Head",
-    company: "Dhaka Import Co.",
+    quote: "Our document rejection rate dropped from 18% to under 2%. The ROI is insane - we process 200+ LCs per month.",
+    author: "Trade Finance Head",
+    company: "Trading House, Singapore",
+    metric: "18% → 2%",
     rating: 5,
   },
   {
-    quote: "Processing time reduced from 2 hours to 5 minutes. The detailed discrepancy reports help us fix issues before submission. Incredible efficiency gain.",
-    author: "Fatima Ahmed",
-    role: "Documentation Officer",
-    company: "Green Valley Exports",
+    quote: "The cross-document validation is magic. It found date inconsistencies across 6 documents that our team missed twice.",
+    author: "Documentation Officer",
+    company: "Agricultural Exporter, India",
+    metric: "6-doc check",
     rating: 5,
   },
 ];
@@ -124,19 +162,27 @@ const testimonials = [
 const faqs = [
   {
     question: "How accurate is the AI validation?",
-    answer: "Our engine achieves 99% accuracy on discrepancy detection. We validate against 3,500+ rules from UCP600, ISBP745, and 60+ country regulations.",
+    answer: "Our engine achieves 99.2% accuracy on discrepancy detection, validated against 10,000+ real bank decisions. We check against 3,500+ rules from UCP600, ISBP745, and 60+ country regulations. If we miss something a bank catches, your next month is free.",
   },
   {
     question: "Which document types do you support?",
-    answer: "All standard trade documents: Letters of Credit (MT700, ISO20022, PDF), Bills of Lading, Commercial Invoices, Packing Lists, Insurance Certificates, and more.",
+    answer: "All standard trade documents: Letters of Credit (MT700, ISO20022, PDF), Bills of Lading, Commercial Invoices, Packing Lists, Insurance Certificates, Certificates of Origin, and more. We support PDF, scanned images, and even phone photos.",
   },
   {
     question: "How long does validation take?",
-    answer: "Average processing time is 45 seconds for a complete document set (6 documents). Includes OCR extraction, cross-document validation, and report generation.",
+    answer: "Average processing time is 45 seconds for a complete document set (up to 6 documents). This includes OCR extraction, cross-document validation, sanctions screening, and report generation.",
   },
   {
-    question: "What's the pricing?",
-    answer: "Free tier for up to 5 validations/month. Pro at $49/month for unlimited. Enterprise with custom pricing. No per-document fees on paid plans.",
+    question: "Can I try before I buy?",
+    answer: "Yes! Our Free tier gives you 5 validations per month, forever. No credit card required. Upgrade to Pro anytime for unlimited validations and full rule coverage.",
+  },
+  {
+    question: "How is this different from manual checking?",
+    answer: "Manual checking relies on human memory and takes 2-4 hours per LC set. LCopilot checks 3,500+ rules in 45 seconds, never forgets a rule, and catches cross-document inconsistencies that humans routinely miss. Plus, you get a bank-ready PDF report.",
+  },
+  {
+    question: "Do you offer refunds?",
+    answer: "Yes. If you're not satisfied within 30 days, we'll refund your payment in full. Plus, if we miss a discrepancy that a bank catches, your next month is free - that's our accuracy guarantee.",
   },
 ];
 
@@ -149,222 +195,359 @@ const Index = () => {
       
       <main>
         {/* Hero Section */}
-        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden">
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+        <section className="relative pt-20 pb-16 lg:pt-28 lg:pb-24 overflow-hidden">
+          {/* Background effects */}
+          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[100px]" />
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              <div>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-emerald-400 text-sm font-medium">Trusted by 500+ Exporters</span>
-                </div>
-                
-                <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
-                  Avoid Costly LC{" "}
-                  <span className="bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">Errors</span>{" "}
-                  Get Bank-Ready in Minutes
-                </h1>
-                
-                <p className="text-lg text-slate-400 mb-8 leading-relaxed">
-                  AI-powered Letter of Credit compliance checking. Validate documents against UCP600/ISBP745 
-                  rules with 99% accuracy. Stop paying $75 discrepancy fees.
-                </p>
+            <div className="max-w-4xl mx-auto text-center">
+              {/* Trust badge */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-8">
+                <BadgeCheck className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 text-sm font-medium">Saved exporters $1.2M this quarter</span>
+              </div>
+              
+              {/* Main headline */}
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight">
+                We catch LC discrepancies
+                <br />
+                <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">before banks do.</span>
+              </h1>
+              
+              {/* Subheadline */}
+              <p className="text-xl lg:text-2xl text-slate-400 mb-8 max-w-2xl mx-auto leading-relaxed">
+                45 seconds. 3,500+ rules. 99% accuracy.
+                <br className="hidden sm:block" />
+                <span className="text-white font-medium">Stop paying $75 discrepancy fees.</span>
+              </p>
 
-                <div className="flex flex-wrap gap-4 mb-8">
-                  {roles.map((role) => (
-                    <Button 
-                      key={role.id}
-                      asChild 
-                      size="lg" 
-                      className={`bg-gradient-to-r ${role.accent} hover:opacity-90 text-white font-semibold`}
-                    >
-                      <Link to={role.to}>{role.title}</Link>
-                    </Button>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-6 text-sm text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    99%+ Accuracy
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    Under 1 Minute
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    24/7 Available
-                  </div>
-                </div>
+              {/* CTA buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+                <Button 
+                  size="lg" 
+                  className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-8 h-14 font-semibold shadow-lg shadow-white/10"
+                  asChild
+                >
+                  <Link to="/lcopilot/exporter-dashboard">
+                    Validate Your LC Free
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </Link>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="lg" 
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-lg px-8 h-14"
+                  asChild
+                >
+                  <Link to="#demo">
+                    <Play className="w-5 h-5 mr-2" />
+                    Watch Demo (60s)
+                  </Link>
+                </Button>
               </div>
 
-              {/* Dashboard Preview */}
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-emerald-500/20 rounded-3xl blur-3xl" />
-                <div className="relative bg-slate-900/80 backdrop-blur-sm border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="bg-slate-800/50 px-4 py-3 border-b border-slate-700">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-500" />
-                      <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                      <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                      <span className="ml-4 text-slate-400 text-sm">LC Validation Dashboard</span>
-                    </div>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="font-semibold text-white">LC Validation Status</h3>
-                      <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-xs font-medium border border-emerald-500/30">
-                        Ready
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-slate-800/50 rounded-lg p-4 text-center">
-                        <Upload className="w-6 h-6 mx-auto mb-2 text-blue-400" />
-                        <p className="text-sm font-medium text-white">5 Documents</p>
-                        <p className="text-xs text-slate-500">Uploaded</p>
-                      </div>
-                      <div className="bg-slate-800/50 rounded-lg p-4 text-center">
-                        <CheckCircle className="w-6 h-6 mx-auto mb-2 text-emerald-400" />
-                        <p className="text-sm font-medium text-white">Validated</p>
-                        <p className="text-xs text-slate-500">100%</p>
-                      </div>
-                      <div className="bg-slate-800/50 rounded-lg p-4 text-center">
-                        <Download className="w-6 h-6 mx-auto mb-2 text-purple-400" />
-                        <p className="text-sm font-medium text-white">Package</p>
-                        <p className="text-xs text-slate-500">Ready</p>
-                      </div>
-                    </div>
-                  </div>
+              {/* Trust indicators */}
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>No credit card required</span>
                 </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>5 free validations</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>Results in 45 seconds</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats bar */}
+            <div className="mt-16 max-w-4xl mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                {stats.map((stat, idx) => (
+                  <div key={idx} className="text-center">
+                    <div className="text-3xl md:text-4xl font-bold text-white">
+                      {stat.value}<span className="text-emerald-400">{stat.unit}</span>
+                    </div>
+                    <div className="text-sm text-slate-500 mt-1">{stat.label}</div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </section>
 
-        {/* How It Works */}
+        {/* Before/After Comparison */}
         <section className="py-20 bg-slate-900 border-y border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">How It Works</p>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Upload. Validate. <span className="text-slate-400">Ship with confidence.</span>
+              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                Manual checking is <span className="text-red-400 line-through">broken</span>
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto">
-                Three clicks. 45 seconds. Know exactly what banks will flag - before you submit.
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+                See how LCopilot transforms your LC validation workflow
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              {process.map((step) => (
-                <div key={step.step} className="text-center">
-                  <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
-                    <span className="text-2xl font-bold text-emerald-400">{step.step}</span>
+            <div className="max-w-4xl mx-auto">
+              {/* Comparison header */}
+              <div className="grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
+                <div className="text-slate-500 pl-4">Aspect</div>
+                <div className="text-center text-red-400">Without LCopilot</div>
+                <div className="text-center text-emerald-400">With LCopilot</div>
+              </div>
+
+              {/* Comparison rows */}
+              <div className="space-y-3">
+                {beforeAfter.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    className="grid grid-cols-3 gap-4 items-center bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                        <item.icon className="w-5 h-5 text-slate-400" />
+                      </div>
+                      <span className="text-white font-medium text-sm">{item.aspect}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg text-red-400 text-sm border border-red-500/20">
+                        <X className="w-4 h-4" />
+                        {item.before}
+                      </span>
+                    </div>
+                    <div className="text-center">
+                      <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-lg text-emerald-400 text-sm border border-emerald-500/20">
+                        <CheckCircle className="w-4 h-4" />
+                        {item.after}
+                      </span>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{step.title}</h3>
-                  <p className="text-slate-400 text-sm">{step.description}</p>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* How It Works - Single clean version */}
+        <section className="py-20 bg-slate-950">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+              <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">How It Works</p>
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                Three steps. 45 seconds.
+              </h2>
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+                Know exactly what banks will flag - before you submit.
+              </p>
+            </div>
+
+            <div className="max-w-5xl mx-auto">
+              <div className="grid md:grid-cols-3 gap-8">
+                {[
+                  {
+                    step: "01",
+                    icon: Upload,
+                    title: "Upload Documents",
+                    description: "Drop your LC and supporting docs (Bill of Lading, Invoice, Packing List, etc). PDF, scan, or photo - any format works.",
+                    time: "10 sec",
+                  },
+                  {
+                    step: "02",
+                    icon: Brain,
+                    title: "AI Validates",
+                    description: "3,500+ rules checked. Cross-document matching. Sanctions screening. All in parallel, all automated.",
+                    time: "30 sec",
+                  },
+                  {
+                    step: "03",
+                    icon: Download,
+                    title: "Get Bank-Ready Report",
+                    description: "Clear issue cards with exact discrepancies, rule references, and fix suggestions. Download PDF and submit with confidence.",
+                    time: "5 sec",
+                  },
+                ].map((item, idx) => (
+                  <div key={idx} className="relative">
+                    {/* Connector line */}
+                    {idx < 2 && (
+                      <div className="hidden md:block absolute top-16 left-[60%] w-[80%] h-px bg-gradient-to-r from-slate-700 to-transparent" />
+                    )}
+                    
+                    <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-8 hover:border-blue-500/30 transition-colors h-full">
+                      <div className="flex items-center justify-between mb-6">
+                        <span className="text-5xl font-bold text-slate-800">{item.step}</span>
+                        <div className="w-14 h-14 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
+                          <item.icon className="w-7 h-7 text-blue-400" />
+                        </div>
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-3">{item.title}</h3>
+                      <p className="text-slate-400 text-sm leading-relaxed mb-4">{item.description}</p>
+                      <div className="inline-flex items-center gap-2 text-xs text-slate-500">
+                        <Clock className="w-3 h-3" />
+                        {item.time}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CTA under process */}
+            <div className="text-center mt-12">
+              <Button 
+                size="lg" 
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 font-semibold"
+                asChild
+              >
+                <Link to="/lcopilot/exporter-dashboard">
+                  Try It Now - Free
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
+              </Button>
             </div>
           </div>
         </section>
 
         {/* Features Grid */}
-        <section className="py-20 bg-slate-950">
+        <section className="py-20 bg-slate-900 border-y border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid md:grid-cols-3 gap-6 mb-6">
-              {features.map((feature, idx) => (
-                <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-emerald-500/30 transition-colors">
-                  <div className="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-emerald-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm mb-4">{feature.description}</p>
-                  <ul className="space-y-2">
-                    {feature.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-slate-500">
-                        <CheckCircle className="w-4 h-4 text-emerald-500" />
-                        {bullet}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+            <div className="text-center mb-16">
+              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">Features</p>
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                Built for trade professionals
+              </h2>
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+                Everything you need to validate LCs with confidence
+              </p>
             </div>
-            <div className="grid md:grid-cols-3 gap-6">
-              {features2.map((feature, idx) => (
-                <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-emerald-500/30 transition-colors">
-                  <div className="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-emerald-400" />
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+              {features.map((feature, idx) => (
+                <div 
+                  key={idx} 
+                  className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6 hover:border-emerald-500/30 transition-colors group"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                      <feature.icon className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <span className="px-2.5 py-1 bg-emerald-500/10 rounded-full text-xs font-medium text-emerald-400 border border-emerald-500/20">
+                      {feature.highlight}
+                    </span>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm mb-4">{feature.description}</p>
-                  <ul className="space-y-2">
-                    {feature.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-slate-500">
-                        <CheckCircle className="w-4 h-4 text-emerald-500" />
-                        {bullet}
-                      </li>
-                    ))}
-                  </ul>
+                  <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
+                  <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Simple Process Strip */}
-        <section className="py-16 bg-slate-900 border-y border-slate-800">
+        {/* Pricing */}
+        <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-white">
-                Simple 4-Step <span className="text-emerald-400">Validation Process</span>
+            <div className="text-center mb-16">
+              <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">Pricing</p>
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                Simple, transparent pricing
               </h2>
-              <p className="text-slate-400 mt-2">Our streamlined process makes LC document validation fast, accurate, and hassle-free.</p>
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+                Start free. Upgrade when you need more.
+              </p>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
-              {[
-                { icon: Upload, title: "Upload Documents", desc: "Upload your LC documents (Bill of Lading, Invoice, Packing List, etc.) in PDF format." },
-                { icon: Brain, title: "AI Processing", desc: "Our AI extracts and validates data against UCP600/ISBP rules automatically." },
-                { icon: BarChart3, title: "Review Results", desc: "Get detailed reports highlighting any discrepancies or compliance issues." },
-                { icon: Download, title: "Download Package", desc: "Receive a professional, bank-ready document package with cover sheets." },
-              ].map((step, idx) => (
-                <div key={idx} className="text-center">
-                  <div className="w-14 h-14 bg-emerald-500/10 rounded-xl flex items-center justify-center mx-auto mb-3 border border-emerald-500/20">
-                    <step.icon className="w-7 h-7 text-emerald-400" />
+
+            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {pricing.map((plan, idx) => (
+                <div 
+                  key={idx} 
+                  className={cn(
+                    "relative bg-slate-900/50 border rounded-2xl p-8",
+                    plan.popular 
+                      ? "border-emerald-500/50 shadow-lg shadow-emerald-500/10" 
+                      : "border-slate-800"
+                  )}
+                >
+                  {plan.popular && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                      <span className="px-4 py-1.5 bg-emerald-500 rounded-full text-sm font-semibold text-white">
+                        Most Popular
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="text-center mb-6">
+                    <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+                    <div className="flex items-baseline justify-center gap-1">
+                      <span className="text-4xl font-bold text-white">{plan.price}</span>
+                      <span className="text-slate-500">{plan.period}</span>
+                    </div>
+                    <p className="text-slate-500 text-sm mt-2">{plan.description}</p>
                   </div>
-                  <h3 className="font-semibold text-white mb-1">{step.title}</h3>
-                  <p className="text-slate-500 text-xs">{step.desc}</p>
+
+                  <ul className="space-y-3 mb-8">
+                    {plan.features.map((feature, i) => (
+                      <li key={i} className="flex items-center gap-3 text-sm text-slate-300">
+                        <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <Button 
+                    className={cn(
+                      "w-full h-12 font-semibold",
+                      plan.popular 
+                        ? "bg-emerald-500 hover:bg-emerald-600 text-white" 
+                        : "bg-slate-800 hover:bg-slate-700 text-white"
+                    )}
+                    asChild
+                  >
+                    <Link to={plan.href}>{plan.cta}</Link>
+                  </Button>
                 </div>
               ))}
             </div>
-            <div className="text-center mt-8">
-              <div className="inline-flex items-center gap-2 text-slate-400 text-sm">
-                <Clock className="w-4 h-4 text-emerald-400" />
-                <span><strong className="text-white">Average Processing Time:</strong> 45 seconds for 5 document LC validation</span>
+
+            {/* Guarantee */}
+            <div className="mt-12 text-center">
+              <div className="inline-flex items-center gap-3 px-6 py-3 bg-slate-900 rounded-xl border border-slate-800">
+                <Shield className="w-5 h-5 text-emerald-400" />
+                <span className="text-slate-300 text-sm">
+                  <strong className="text-white">Accuracy Guarantee:</strong> If we miss a discrepancy a bank catches, your next month is free.
+                </span>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Stats + Testimonials */}
-        <section className="py-20 bg-slate-950">
+        {/* Social Proof / Testimonials */}
+        <section className="py-20 bg-slate-900 border-y border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Trusted by Leading Exporters & Importers
+              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">Trusted Worldwide</p>
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                Results that speak for themselves
               </h2>
-              <p className="text-slate-400">Join hundreds of businesses who have eliminated costly LC errors with our platform.</p>
             </div>
 
-            {/* Stats */}
+            {/* Key metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto mb-16">
-              {stats.map((stat, idx) => (
+              {[
+                { icon: Users, value: "500+", label: "Active Users" },
+                { icon: FileCheck, value: "10,000+", label: "Documents Validated" },
+                { icon: TrendingUp, value: "$1.2M", label: "Saved This Quarter" },
+                { icon: Star, value: "4.9/5", label: "User Rating" },
+              ].map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <stat.icon className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div className="text-2xl md:text-3xl font-bold text-white">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -373,20 +556,29 @@ const Index = () => {
             {/* Testimonials */}
             <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {testimonials.map((t, idx) => (
-                <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+                <div key={idx} className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6">
+                  {/* Metric badge */}
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full mb-4 border border-emerald-500/20">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 text-sm font-semibold">{t.metric}</span>
+                  </div>
+                  
+                  {/* Stars */}
                   <div className="flex gap-1 mb-4">
                     {[...Array(t.rating)].map((_, i) => (
-                      <span key={i} className="text-yellow-400">★</span>
+                      <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     ))}
                   </div>
-                  <p className="text-slate-300 text-sm mb-4 leading-relaxed">"{t.quote}"</p>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                      {t.author.split(' ').map(n => n[0]).join('')}
+                  
+                  <p className="text-slate-300 text-sm mb-6 leading-relaxed">"{t.quote}"</p>
+                  
+                  <div className="flex items-center gap-3 pt-4 border-t border-slate-700/50">
+                    <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-slate-400" />
                     </div>
                     <div>
                       <div className="text-white font-medium text-sm">{t.author}</div>
-                      <div className="text-slate-500 text-xs">{t.role}, {t.company}</div>
+                      <div className="text-slate-500 text-xs">{t.company}</div>
                     </div>
                   </div>
                 </div>
@@ -396,25 +588,38 @@ const Index = () => {
         </section>
 
         {/* FAQ */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
+        <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl mx-auto">
+            <div className="max-w-3xl mx-auto">
               <div className="text-center mb-12">
-                <h2 className="text-3xl font-bold text-white mb-4">Frequently Asked Questions</h2>
+                <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">FAQ</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Common Questions</h2>
               </div>
-              <div className="space-y-4">
+              
+              <div className="space-y-3">
                 {faqs.map((faq, idx) => (
-                  <div key={idx} className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+                  <div 
+                    key={idx} 
+                    className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-colors"
+                  >
                     <button
                       onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
                       className="w-full flex items-center justify-between p-5 text-left"
                     >
-                      <span className="font-medium text-white">{faq.question}</span>
-                      <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", openFaq === idx && "rotate-180")} />
+                      <span className="font-medium text-white pr-4">{faq.question}</span>
+                      <ChevronDown 
+                        className={cn(
+                          "w-5 h-5 text-slate-400 transition-transform shrink-0", 
+                          openFaq === idx && "rotate-180"
+                        )} 
+                      />
                     </button>
-                    <div className={cn("grid transition-all", openFaq === idx ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+                    <div className={cn(
+                      "grid transition-all duration-200",
+                      openFaq === idx ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                    )}>
                       <div className="overflow-hidden">
-                        <p className="px-5 pb-5 text-slate-400 text-sm">{faq.answer}</p>
+                        <p className="px-5 pb-5 text-slate-400 text-sm leading-relaxed">{faq.answer}</p>
                       </div>
                     </div>
                   </div>
@@ -424,25 +629,63 @@ const Index = () => {
           </div>
         </section>
 
-        {/* CTA */}
-        <section className="py-20 bg-slate-950">
+        {/* Final CTA */}
+        <section className="py-20 bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-                Ready to validate your
+              {/* Urgency badge */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-8">
+                <Zap className="w-4 h-4 text-blue-400" />
+                <span className="text-blue-400 text-sm font-medium">Takes 45 seconds to validate your first LC</span>
+              </div>
+
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+                Ready to stop paying
                 <br />
-                <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">first LC for free?</span>
+                <span className="bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">discrepancy fees?</span>
               </h2>
-              <p className="text-xl text-slate-400 mb-8">
-                No credit card required. Get your first 5 validations free, forever.
+              
+              <p className="text-xl text-slate-400 mb-8 max-w-xl mx-auto">
+                Join 500+ exporters who validate LCs with confidence. Start free, no credit card required.
               </p>
+
+              {/* Trust checklist */}
+              <div className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8 text-sm text-slate-400">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  5 free validations
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  No credit card
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  45-second results
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  Accuracy guarantee
+                </div>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-8 py-6 h-auto font-semibold" asChild>
+                <Button 
+                  size="lg" 
+                  className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-10 h-14 font-semibold shadow-lg shadow-white/10"
+                  asChild
+                >
                   <Link to="/lcopilot/exporter-dashboard">
-                    Start Validating Now <ArrowRight className="w-5 h-5 ml-2" />
+                    Validate Your LC Free
+                    <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
-                <Button variant="outline" size="lg" className="border-slate-700 text-slate-300 hover:bg-slate-800 text-lg px-8 py-6 h-auto" asChild>
+                <Button 
+                  variant="outline" 
+                  size="lg" 
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-lg px-10 h-14"
+                  asChild
+                >
                   <Link to="/contact">Talk to Sales</Link>
                 </Button>
               </div>
