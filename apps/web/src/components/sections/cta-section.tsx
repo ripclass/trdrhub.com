@@ -1,24 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, Shield, Users, Zap } from "lucide-react";
+import { ArrowRight, CheckCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const stats = [
-  {
-    icon: Users,
-    value: "500+",
-    label: "Active Exporters"
-  },
-  {
-    icon: Shield,
-    value: "99.2%",
-    label: "Accuracy Rate"
-  },
-  {
-    icon: Zap,
-    value: "45s",
-    label: "Avg. Processing"
-  }
+const guarantees = [
+  "No credit card required",
+  "3 free validations",
+  "Setup in 2 minutes",
+  "Cancel anytime"
 ];
 
 export function CTASection() {
@@ -26,50 +15,69 @@ export function CTASection() {
     <section className="py-20 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-hero opacity-10" />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <Card className="bg-card/50 backdrop-blur-sm border border-primary/20 shadow-strong">
-          <CardContent className="p-12 text-center">
+        <Card className="bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm border border-primary/20 shadow-strong overflow-hidden">
+          <CardContent className="p-12 text-center relative">
+            
+            {/* Urgency badge */}
+            <div className="inline-flex items-center gap-2 bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
+              ⚡ Your next LC could be rejected. Don't risk it.
+            </div>
+            
+            {/* Headline - Future pacing */}
             <h2 className="text-3xl lg:text-5xl font-bold text-foreground mb-6">
-              Ready to ship documents{" "}
+              What if your next LC passed{" "}
               <span className="bg-gradient-primary bg-clip-text text-transparent">
-                without rejects?
+                on the first try?
               </span>
             </h2>
+            
+            {/* Value prop */}
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Join hundreds of exporters who trust our platform for fast, accurate LC validation.
-              Get set up in under 2 minutes.
+              Upload your documents now. In 45 seconds, you'll know exactly what banks will flag — 
+              <strong className="text-foreground"> before you submit.</strong>
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button size="lg" className="bg-gradient-primary hover:opacity-90 shadow-medium group" asChild>
-                <Link to="/register">
-                  Start Free Trial
-                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </Button>
-              <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5" asChild>
-                <Link to="/pricing">
-                  View Pricing
+            {/* Primary CTA - Big and obvious */}
+            <div className="mb-8">
+              <Button 
+                size="lg" 
+                className="bg-gradient-primary hover:opacity-90 shadow-medium group text-lg px-10 py-7 h-auto"
+                asChild
+              >
+                <Link to="/lcopilot">
+                  Validate Your LC Now — Free
+                  <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </Button>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 max-w-2xl mx-auto">
-              {stats.map((stat, index) => (
-                <div key={index} className="text-center">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-3">
-                    <stat.icon className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="text-2xl font-bold text-foreground mb-1">{stat.value}</div>
-                  <div className="text-sm text-muted-foreground">{stat.label}</div>
+            {/* Risk Reversal - Remove objections */}
+            <div className="flex flex-wrap justify-center gap-4 mb-8">
+              {guarantees.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <span>{item}</span>
                 </div>
               ))}
             </div>
 
-            <div className="mt-8 pt-8 border-t border-gray-200/50">
-              <p className="text-sm text-muted-foreground">
-                🚀 <strong>Limited Time:</strong> Free validation for your first 5 LC documents
+            {/* Social proof - Testimonial snippet */}
+            <div className="bg-background/50 rounded-xl p-6 max-w-xl mx-auto">
+              <p className="text-foreground italic mb-3">
+                "We used to spend 4 hours reviewing each LC. Now it's 45 seconds. 
+                The ROI was obvious after the first week."
               </p>
+              <div className="flex items-center justify-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-semibold">
+                  MR
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Mohammad Rahman</p>
+                  <p className="text-xs text-muted-foreground">Export Manager, Dhaka Knitwear Ltd</p>
+                </div>
+              </div>
             </div>
+
           </CardContent>
         </Card>
       </div>

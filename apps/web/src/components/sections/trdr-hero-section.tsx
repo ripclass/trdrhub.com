@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Play } from "lucide-react";
+import { ArrowRight, Play, CheckCircle, XCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function TRDRHeroSection() {
   const scrollToTools = () => {
@@ -20,58 +21,71 @@ export function TRDRHeroSection() {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
-            🚀 15 Tools for Trade Operations
+          
+          {/* Pain Point Badge - Creates instant recognition */}
+          <div className="inline-flex items-center gap-2 bg-red-500/10 text-red-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <XCircle className="w-4 h-4" />
+            Tired of $75 discrepancy fees?
           </div>
           
+          {/* Headline - Outcome focused, not feature focused */}
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-foreground mb-6 leading-tight">
-            Everything Trade.{" "}
+            Stop Losing Money on{" "}
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              One Platform.
+              LC Rejections
             </span>
           </h1>
           
-          <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
-            Validate LCs, screen sanctions, track shipments, generate documents, and manage customs — 
-            all powered by AI. Built for exporters, banks, and trade professionals.
+          {/* Subhead - The transformation */}
+          <p className="text-xl md:text-2xl text-muted-foreground mb-4 max-w-3xl mx-auto">
+            Our AI catches discrepancies <strong className="text-foreground">before banks do.</strong>
+          </p>
+          
+          {/* Value prop in one line */}
+          <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
+            Upload your LC and documents. Get validated in 45 seconds. 
+            Ship with confidence.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
+          {/* CTA - One clear primary action */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <Button 
               size="lg" 
-              className="bg-gradient-primary hover:opacity-90 shadow-medium group"
-              onClick={scrollToTools}
+              className="bg-gradient-primary hover:opacity-90 shadow-medium group text-lg px-8 py-6"
+              asChild
             >
-              Explore Tools
-              <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              <Link to="/lcopilot">
+                Validate Your LC Free
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Link>
             </Button>
-            <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5" asChild>
-              <a href="/register">
-                <Play className="w-4 h-4 mr-2" />
-                Start Free Trial
-              </a>
+            <Button variant="outline" size="lg" className="border-primary/20 hover:bg-primary/5 text-lg px-8 py-6" onClick={scrollToTools}>
+              <Play className="w-4 h-4 mr-2" />
+              See How It Works
             </Button>
           </div>
 
-          {/* Trust indicators */}
-          <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full" />
-              <span>UCP600 / ISBP745 Compliant</span>
+          {/* Risk Reversal - Remove friction */}
+          <p className="text-sm text-muted-foreground mb-10">
+            ✓ No credit card required &nbsp;&nbsp; ✓ 3 free validations &nbsp;&nbsp; ✓ Results in 45 seconds
+          </p>
+
+          {/* Social Proof - Mini version */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex items-center gap-1">
+              {[1,2,3,4,5].map((i) => (
+                <svg key={i} className="w-5 h-5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                  <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
+                </svg>
+              ))}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full" />
-              <span>OFAC / EU / UN Sanctions</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full" />
-              <span>60+ Country Rules</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full" />
-              <span>Bank-Grade Security</span>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">"Saved us $2,400 in discrepancy fees last quarter."</strong>
+              <br />
+              — Trade Finance Manager, Bangladesh Garment Exporter
+            </p>
           </div>
+
         </div>
       </div>
     </section>

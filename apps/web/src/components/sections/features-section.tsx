@@ -4,48 +4,46 @@ import {
   Brain, 
   Shield, 
   Zap, 
-  Globe, 
-  Package,
   CheckCircle,
-  Clock
+  AlertTriangle
 } from "lucide-react";
 
 const features = [
   {
-    icon: FileText,
-    title: "Multi-Format OCR",
-    description: "Extract text from PDFs in both English and Bengali using advanced OCR technology.",
-    benefits: ["PaddleOCR + Tesseract", "99% Accuracy", "Batch Processing"]
-  },
-  {
     icon: Brain,
-    title: "AI Data Extraction",
-    description: "Intelligent field extraction from complex LC documents using advanced LLM models.",
-    benefits: ["Kimi-K2 Integration", "Structured Output", "Smart Validation"]
+    title: "AI That Reads Like a Banker",
+    description: "Our AI is trained on thousands of LC rejections. It knows exactly what banks look for — and what they reject.",
+    benefits: ["Catches 99% of discrepancies", "Learns from every validation", "Explains issues in plain English"]
   },
   {
     icon: Shield,
-    title: "ICC/UCP600 Compliance",
-    description: "Automated validation against international banking rules and regulations.",
-    benefits: ["Rule Engine", "Discrepancy Detection", "Compliance Reports"]
+    title: "3,500+ Compliance Rules",
+    description: "UCP600, ISBP745, ISP98, URDG758, plus 60+ country regulations. More rules than most banks use internally.",
+    benefits: ["ICC rule library included", "Country-specific checks", "Updated monthly"]
+  },
+  {
+    icon: FileText,
+    title: "Any Document, Any Format",
+    description: "PDF, scan, photo from your phone — we extract the data. Bengali, Chinese, Arabic? No problem.",
+    benefits: ["Multi-language OCR", "Handwriting recognition", "Photo uploads work"]
   },
   {
     icon: Zap,
-    title: "Lightning Fast",
-    description: "Process entire LC document sets in under 60 seconds with real-time updates.",
-    benefits: ["< 1 Min Processing", "Real-time Status", "Instant Results"]
+    title: "45 Seconds, Not 4 Hours",
+    description: "Upload your LC and docs. Get a complete compliance report before your coffee gets cold.",
+    benefits: ["Instant extraction", "Real-time validation", "Bank-ready reports"]
   },
   {
-    icon: Globe,
-    title: "Mobile Optimized",
-    description: "Work seamlessly on any device - perfect for exporters on the go.",
-    benefits: ["Responsive Design", "Touch Friendly", "Offline Capable"]
+    icon: AlertTriangle,
+    title: "Sanctions Screening Built-In",
+    description: "Every validation includes automatic screening against OFAC, EU, UN, and UK sanctions lists.",
+    benefits: ["Party name screening", "Vessel & port checks", "Real-time list updates"]
   },
   {
-    icon: Package,
-    title: "Document Packaging",
-    description: "Generate professional, bank-ready document packages with cover sheets.",
-    benefits: ["PDF Merger", "Cover Pages", "Status Reports"]
+    icon: CheckCircle,
+    title: "Bank-Ready Output",
+    description: "Get exactly what banks want: clear issue cards, suggested fixes, and compliance certificates.",
+    benefits: ["PDF export", "Issue-by-issue breakdown", "Suggested amendments"]
   }
 ];
 
@@ -54,19 +52,15 @@ export function FeaturesSection() {
     <section id="features" className="py-20 bg-secondary/30">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 text-sm font-medium text-primary mb-4">
-            <CheckCircle className="w-4 h-4" />
-            Complete Solution
-          </div>
+          <p className="text-primary font-medium mb-4">HOW IT WORKS</p>
           <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
-            Everything You Need for{" "}
+            Upload. Validate.{" "}
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              LC Validation
+              Ship with confidence.
             </span>
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            From document upload to bank-ready packages, our platform handles every step 
-            of the LC validation process with precision and speed.
+            Three clicks. 45 seconds. Know exactly what banks will flag — before you submit.
           </p>
         </div>
 
@@ -82,13 +76,13 @@ export function FeaturesSection() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground mb-4 leading-relaxed">
+                <p className="text-muted-foreground mb-4 leading-relaxed text-sm">
                   {feature.description}
                 </p>
                 <div className="space-y-2">
                   {feature.benefits.map((benefit, benefitIndex) => (
                     <div key={benefitIndex} className="flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-3 h-3 text-success flex-shrink-0" />
+                      <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
                       <span className="text-muted-foreground">{benefit}</span>
                     </div>
                   ))}
@@ -98,20 +92,37 @@ export function FeaturesSection() {
           ))}
         </div>
 
-        <div className="mt-16 text-center">
-          <Card className="inline-block bg-gradient-primary text-primary-foreground border-0 shadow-strong">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <div className="text-left">
-                  <h3 className="font-semibold mb-1">Ready in Minutes</h3>
-                  <p className="text-sm opacity-90">Start validating your LC documents today</p>
-                </div>
+        {/* Simple process steps */}
+        <div className="mt-20 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8 text-center">
+            <div>
+              <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-4 text-xl font-bold">
+                1
               </div>
-            </CardContent>
-          </Card>
+              <h3 className="font-semibold text-foreground mb-2">Upload Documents</h3>
+              <p className="text-sm text-muted-foreground">
+                Drag & drop your LC and supporting docs. Any format works.
+              </p>
+            </div>
+            <div>
+              <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-4 text-xl font-bold">
+                2
+              </div>
+              <h3 className="font-semibold text-foreground mb-2">AI Validates</h3>
+              <p className="text-sm text-muted-foreground">
+                3,500+ rules check every field. 45 seconds to complete report.
+              </p>
+            </div>
+            <div>
+              <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-4 text-xl font-bold">
+                3
+              </div>
+              <h3 className="font-semibold text-foreground mb-2">Fix & Submit</h3>
+              <p className="text-sm text-muted-foreground">
+                Clear issue cards tell you exactly what to fix. Submit with confidence.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
