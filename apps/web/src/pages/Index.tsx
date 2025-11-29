@@ -235,7 +235,7 @@ const Index = () => {
               </div>
               
               {/* Main headline */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight">
                 We catch LC discrepancies
                 <br />
                 <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">before banks do.</span>
@@ -274,31 +274,31 @@ const Index = () => {
               </div>
 
               {/* Trust indicators */}
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span>No credit card required</span>
+              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <span>No credit card</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span>5 free validations</span>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <span>2 free LCs</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span>Results in 45 seconds</span>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <span>45-second results</span>
                 </div>
               </div>
             </div>
 
             {/* Stats bar */}
-            <div className="mt-16 max-w-4xl mx-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="mt-12 sm:mt-16 max-w-4xl mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                 {stats.map((stat, idx) => (
                   <div key={idx} className="text-center">
-                    <div className="text-3xl md:text-4xl font-bold text-white">
+                    <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">
                       {stat.value}<span className="text-emerald-400">{stat.unit}</span>
                     </div>
-                    <div className="text-sm text-slate-500 mt-1">{stat.label}</div>
+                    <div className="text-xs sm:text-sm text-slate-500 mt-1">{stat.label}</div>
                   </div>
                 ))}
               </div>
@@ -311,7 +311,7 @@ const Index = () => {
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
               <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
                 Manual checking is <span className="text-red-400 line-through">broken</span>
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto text-lg">
@@ -320,8 +320,8 @@ const Index = () => {
             </div>
 
             <div className="max-w-4xl mx-auto">
-              {/* Comparison header */}
-              <div className="grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
+              {/* Comparison header - hidden on mobile */}
+              <div className="hidden md:grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
                 <div className="text-slate-500 pl-4">Aspect</div>
                 <div className="text-center text-red-400">Without LCopilot</div>
                 <div className="text-center text-emerald-400">With LCopilot</div>
@@ -332,25 +332,48 @@ const Index = () => {
                 {beforeAfter.map((item, idx) => (
                   <div 
                     key={idx} 
-                    className="grid grid-cols-3 gap-4 items-center bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
+                    className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
-                        <item.icon className="w-5 h-5 text-slate-400" />
+                    {/* Mobile layout */}
+                    <div className="md:hidden">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                          <item.icon className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <span className="text-white font-medium text-sm">{item.aspect}</span>
                       </div>
-                      <span className="text-white font-medium text-sm">{item.aspect}</span>
+                      <div className="flex gap-2">
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500/10 rounded-lg text-red-400 text-xs border border-red-500/20">
+                          <X className="w-3.5 h-3.5" />
+                          {item.before}
+                        </span>
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 rounded-lg text-emerald-400 text-xs border border-emerald-500/20">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {item.after}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg text-red-400 text-sm border border-red-500/20">
-                        <X className="w-4 h-4" />
-                        {item.before}
-                      </span>
-                    </div>
-                    <div className="text-center">
-                      <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-lg text-emerald-400 text-sm border border-emerald-500/20">
-                        <CheckCircle className="w-4 h-4" />
-                        {item.after}
-                      </span>
+                    
+                    {/* Desktop layout */}
+                    <div className="hidden md:grid grid-cols-3 gap-4 items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                          <item.icon className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <span className="text-white font-medium text-sm">{item.aspect}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg text-red-400 text-sm border border-red-500/20">
+                          <X className="w-4 h-4" />
+                          {item.before}
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-lg text-emerald-400 text-sm border border-emerald-500/20">
+                          <CheckCircle className="w-4 h-4" />
+                          {item.after}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -362,12 +385,12 @@ const Index = () => {
         {/* How It Works - Single clean version */}
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">How It Works</p>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <div className="text-center mb-12 sm:mb-16">
+              <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">How It Works</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
                 Three steps. 45 seconds.
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Know exactly what banks will flag - before you submit.
               </p>
             </div>
@@ -441,12 +464,12 @@ const Index = () => {
         {/* Features Grid */}
         <section className="py-20 bg-slate-900 border-y border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">Features</p>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <div className="text-center mb-12 sm:mb-16">
+              <p className="text-emerald-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
                 Built for trade professionals
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Everything you need to validate LCs with confidence
               </p>
             </div>
@@ -476,12 +499,12 @@ const Index = () => {
         {/* Pricing */}
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">Pricing</p>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <div className="text-center mb-10 sm:mb-16">
+              <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Pricing</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
                 Pay per LC. Save with volume.
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Start with 2 free LCs. Scale as you grow.
               </p>
             </div>
@@ -618,9 +641,9 @@ const Index = () => {
         {/* Social Proof / Testimonials */}
         <section className="py-20 bg-slate-900 border-y border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-12">
-              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">Trusted Worldwide</p>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <div className="text-center mb-10 sm:mb-12">
+              <p className="text-emerald-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Trusted Worldwide</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 px-4">
                 Results that speak for themselves
               </h2>
             </div>
@@ -729,7 +752,7 @@ const Index = () => {
                 <span className="text-blue-400 text-sm font-medium">Takes 45 seconds to validate your first LC</span>
               </div>
 
-              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Ready to stop paying
                 <br />
                 <span className="bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">discrepancy fees?</span>
