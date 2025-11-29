@@ -20,16 +20,20 @@ export function TRDRHeroSection() {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-4xl mx-auto">
+          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+            🚀 15 Tools for Trade Operations
+          </div>
+          
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-foreground mb-6 leading-tight">
-            AI‑Powered{" "}
+            Everything Trade.{" "}
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Trade Document Compliance
+              One Platform.
             </span>
           </h1>
           
           <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
-            Validate Letters of Credit and trade documents, eliminate discrepancies, and ship faster.
-            Built for exporters, banks, and compliance teams that need accuracy and speed.
+            Validate LCs, screen sanctions, track shipments, generate documents, and manage customs — 
+            all powered by AI. Built for exporters, banks, and trade professionals.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -50,18 +54,22 @@ export function TRDRHeroSection() {
           </div>
 
           {/* Trust indicators */}
-          <div className="flex flex-wrap justify-center items-center gap-8 text-sm text-muted-foreground">
+          <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
-              <span>ICC/UCP 600 Ready</span>
+              <span>UCP600 / ISBP745 Compliant</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-success rounded-full" />
+              <span>OFAC / EU / UN Sanctions</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-success rounded-full" />
+              <span>60+ Country Rules</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
               <span>Bank-Grade Security</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full" />
-              <span>Avg. Turnaround 45s</span>
             </div>
           </div>
         </div>

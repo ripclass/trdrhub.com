@@ -18,18 +18,20 @@ export function TRDRFooter() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Professional trade risk management platform for SMEs and financial institutions.
+              Everything Trade. One Platform. 15 tools for exporters, banks, and trade professionals.
             </p>
           </div>
 
           {/* Platform */}
           <div>
-            <h4 className="font-semibold text-foreground mb-4">Platform</h4>
+            <h4 className="font-semibold text-foreground mb-4">Tools</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link to="/lcopilot" className="hover:text-foreground transition-colors">LCopilot</Link></li>
-              <li><Link to="/tools" className="hover:text-foreground transition-colors">HS Code Calculator</Link></li>
-              <li><Link to="/tools" className="hover:text-foreground transition-colors">CustomsMate</Link></li>
-              <li><Link to="/tools" className="hover:text-foreground transition-colors">Risk Reconciliation</Link></li>
+              <li><Link to="/lcopilot" className="hover:text-foreground transition-colors">LCopilot <span className="text-xs text-primary">(Live)</span></Link></li>
+              <li><Link to="/#tools" className="hover:text-foreground transition-colors">Sanctions Screener</Link></li>
+              <li><Link to="/#tools" className="hover:text-foreground transition-colors">HS Code Calculator</Link></li>
+              <li><Link to="/#tools" className="hover:text-foreground transition-colors">CustomsMate</Link></li>
+              <li><Link to="/#tools" className="hover:text-foreground transition-colors">eBL Manager</Link></li>
+              <li><Link to="/#tools" className="hover:text-foreground transition-colors text-xs opacity-70">+ 10 more tools</Link></li>
             </ul>
           </div>
 
@@ -67,7 +69,7 @@ export function TRDRFooter() {
         <div className="mt-12 pt-8 border-t border-gray-200">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-muted-foreground">
-              © 2024 TRDR Hub. All rights reserved.
+              © 2025 TRDR Hub. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm text-muted-foreground">
               <Link to="/pricing" className="hover:text-foreground transition-colors">Pricing</Link>

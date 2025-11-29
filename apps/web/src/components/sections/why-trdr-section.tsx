@@ -4,23 +4,23 @@ import { Shield, Zap, Lock, TrendingUp } from "lucide-react";
 const features = [
   {
     icon: Shield,
-    title: "Transactional Risk Control",
-    description: "Comprehensive compliance with ICC/UCP 600 and local regulations. Automated risk assessment and mitigation strategies."
+    title: "Comprehensive Compliance",
+    description: "UCP600, ISBP745, ISP98, URDG758, and 60+ country-specific rules. Sanctions screening against OFAC, EU, UN, and UK lists."
   },
   {
     icon: Zap,
-    title: "Faster Processing",
-    description: "Documents reconciled in minutes, not days. Streamlined workflows that reduce processing time by up to 85%."
+    title: "AI-Powered Speed",
+    description: "Documents validated in under 60 seconds. From extraction to compliance check — automated end-to-end."
   },
   {
     icon: Lock,
-    title: "Secure & Auditable",
-    description: "Bank-grade encryption, comprehensive audit trails, and data integrity. SOC 2 compliant infrastructure."
+    title: "Bank-Grade Security",
+    description: "Enterprise encryption, immutable audit trails, and 7-year document retention. Built for regulated industries."
   },
   {
     icon: TrendingUp,
-    title: "Scalable Tools",
-    description: "From single SMEs to enterprise-level banks. Our platform grows with your business needs."
+    title: "One Platform, All Tools",
+    description: "LCs, customs, sanctions, tracking, analytics — everything connected. No more juggling 10 different systems."
   }
 ];
 
@@ -60,17 +60,21 @@ export function WhyTRDRSection() {
         </div>
 
         {/* Stats section */}
-        <div className="mt-20 grid md:grid-cols-3 gap-8 text-center">
+        <div className="mt-20 grid md:grid-cols-4 gap-8 text-center">
           <div>
-            <div className="text-4xl lg:text-5xl font-bold text-foreground mb-2">99.2%</div>
-            <div className="text-muted-foreground">Accuracy Rate</div>
+            <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">15</div>
+            <div className="text-muted-foreground">Integrated Tools</div>
           </div>
           <div>
-            <div className="text-4xl lg:text-5xl font-bold text-foreground mb-2">500+</div>
-            <div className="text-muted-foreground">Active Users</div>
+            <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">3,500+</div>
+            <div className="text-muted-foreground">Validation Rules</div>
           </div>
           <div>
-            <div className="text-4xl lg:text-5xl font-bold text-foreground mb-2">45s</div>
+            <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">60+</div>
+            <div className="text-muted-foreground">Countries Covered</div>
+          </div>
+          <div>
+            <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">45s</div>
             <div className="text-muted-foreground">Avg. Processing Time</div>
           </div>
         </div>
