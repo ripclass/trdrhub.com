@@ -74,11 +74,9 @@ Data/
 │   ├── lcopilot_crossdoc_v2.json         ← Previous version (72 rules)
 │   └── lcopilot_crossdoc.json            ← Legacy (6 rules)
 │
-├── ⚖️ opinions_docdex/ (4 files)
-│   ├── icc_opinions_key.json             ← 50 key opinions
-│   ├── icc_opinions_additional.json      ← 12 more opinions
-│   ├── docdex_cases_key.json             ← 30 key cases
-│   └── docdex_cases_additional.json      ← 12 more cases
+├── ⚖️ opinions_docdex/ (2 merged files)
+│   ├── icc_opinions_merged.json          ← 60 opinions (merged)
+│   └── docdex_cases_merged.json          ← 42 DOCDEX cases (merged)
 │
 ├── 🏦 bank_profiles/ (10 files)
 │   ├── bank_profiles.json                ← Main profiles
@@ -178,10 +176,10 @@ Data/
 
 | File | Domain | Rulebook | Jurisdiction | Rulebook Ver | Ruleset Ver | Notes |
 |------|--------|----------|--------------|--------------|-------------|-------|
-| `icc_opinions_key.json` | icc | icc.opinions | global | Opinions-2024 | 1.0.0 | 50 key Banking Commission opinions |
-| `icc_opinions_additional.json` | icc | icc.opinions | global | Opinions-2024 | 1.1.0 | 12 additional opinions |
-| `docdex_cases_key.json` | icc | icc.docdex | global | DOCDEX-2024 | 1.0.0 | 30 key DOCDEX decisions |
-| `docdex_cases_additional.json` | icc | icc.docdex | global | DOCDEX-2024 | 1.1.0 | 12 additional decisions |
+| `icc_opinions_merged.json` | icc | icc.opinions | global | Opinions-2024 | 1.0.0 | **60 merged Banking Commission opinions** |
+| `docdex_cases_merged.json` | icc | icc.docdex | global | DOCDEX-2024 | 1.0.0 | **42 merged DOCDEX decisions** |
+
+> ⚠️ **Note:** Key + Additional files have been merged. Upload only the merged files to avoid duplicates.
 
 ### 🔵 PRIORITY 5: BANK PROFILES
 
@@ -341,11 +339,9 @@ Data/
 ### Batch 3: Cross-Document (1 file - use v3!)
 - [ ] `lcopilot_crossdoc_v3.json` - Domain: `icc`, Rulebook: `icc.lcopilot.crossdoc` ← **USE THIS ONE** (100 context-aware rules)
 
-### Batch 4: Opinions/DOCDEX (4 files)
-- [ ] `icc_opinions_key.json` - Domain: `icc`, Rulebook: `icc.opinions`
-- [ ] `icc_opinions_additional.json` - Domain: `icc`, Rulebook: `icc.opinions`
-- [ ] `docdex_cases_key.json` - Domain: `icc`, Rulebook: `icc.docdex`
-- [ ] `docdex_cases_additional.json` - Domain: `icc`, Rulebook: `icc.docdex`
+### Batch 4: Opinions/DOCDEX (2 merged files)
+- [ ] `icc_opinions_merged.json` - Domain: `icc`, Rulebook: `icc.opinions` (60 opinions)
+- [ ] `docdex_cases_merged.json` - Domain: `icc`, Rulebook: `icc.docdex` (42 cases)
 
 ### Batch 5: Bank Profiles (10 files)
 - [ ] `bank_profiles.json` - Domain: `bank.*`, Rulebook: `bank.profiles`
