@@ -41,20 +41,23 @@ export function FAQSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section className="py-24 md:py-32 bg-white">
+    <section className="py-24 md:py-32 bg-slate-950 relative">
+      {/* Top border */}
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+      
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
           {/* Section header */}
           <div className="text-center mb-16">
-            <p className="text-blue-600 font-semibold mb-4 tracking-wide uppercase text-sm">FAQ</p>
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 mb-6 leading-tight">
+            <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">FAQ</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 leading-tight">
               Quick answers to
               <br />
-              <span className="text-slate-400">questions you may have</span>
+              <span className="text-slate-500">questions you may have</span>
             </h2>
-            <p className="text-slate-600">
+            <p className="text-slate-400">
               Can't find what you're looking for? Contact us at{" "}
-              <a href="mailto:support@trdrhub.com" className="text-blue-600 hover:underline">
+              <a href="mailto:support@trdrhub.com" className="text-blue-400 hover:underline">
                 support@trdrhub.com
               </a>
             </p>
@@ -65,13 +68,13 @@ export function FAQSection() {
             {faqs.map((faq, index) => (
               <div
                 key={index}
-                className="border border-slate-200 rounded-xl overflow-hidden"
+                className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/50"
               >
                 <button
                   onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                  className="w-full flex items-center justify-between p-6 text-left hover:bg-slate-50 transition-colors"
+                  className="w-full flex items-center justify-between p-6 text-left hover:bg-slate-800/50 transition-colors"
                 >
-                  <span className="font-semibold text-slate-900 pr-8">
+                  <span className="font-semibold text-white pr-8">
                     {faq.question}
                   </span>
                   <ChevronDown
@@ -88,7 +91,7 @@ export function FAQSection() {
                   )}
                 >
                   <div className="overflow-hidden">
-                    <p className="px-6 pb-6 text-slate-600 leading-relaxed">
+                    <p className="px-6 pb-6 text-slate-400 leading-relaxed">
                       {faq.answer}
                     </p>
                   </div>
@@ -101,4 +104,3 @@ export function FAQSection() {
     </section>
   );
 }
-

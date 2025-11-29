@@ -1,53 +1,44 @@
 export function PartnersSection() {
+  const banks = ["HSBC", "DBS", "Standard Chartered", "Citi", "ICBC", "Deutsche Bank"];
+  const standards = [
+    "ICC Banking Commission",
+    "UCP 600 Certified",
+    "ISBP 745 Compliant",
+    "ISP98 Ready",
+    "SWIFT Partner",
+    "ISO 20022 Enabled",
+  ];
+
   return (
-    <section className="py-16 bg-slate-100">
+    <section className="py-16 bg-slate-900 border-y border-slate-800">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
+        <div className="text-center mb-8">
           <p className="text-slate-500 text-sm font-medium tracking-wide uppercase">
             Trusted by trade professionals worldwide
           </p>
         </div>
 
-        {/* Partner logos - using text placeholders since we don't have actual logos */}
-        <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-8">
-          {[
-            "HSBC",
-            "DBS",
-            "Standard Chartered",
-            "Citi",
-            "ICBC",
-            "Deutsche Bank",
-          ].map((partner) => (
+        {/* Bank logos */}
+        <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 mb-8">
+          {banks.map((bank) => (
             <div
-              key={partner}
-              className="text-slate-400 font-bold text-xl tracking-tight opacity-50 hover:opacity-100 transition-opacity"
+              key={bank}
+              className="text-slate-600 font-bold text-lg tracking-tight hover:text-slate-400 transition-colors cursor-default"
             >
-              {partner}
+              {bank}
             </div>
           ))}
         </div>
 
-        {/* Infinite scroll effect - duplicate for animation */}
-        <div className="mt-8 overflow-hidden">
-          <div className="flex animate-scroll gap-x-12">
-            {[
-              "ICC Banking Commission",
-              "UCP 600 Certified",
-              "ISBP 745 Compliant",
-              "ISP98 Ready",
-              "SWIFT Partner",
-              "ISO 20022 Enabled",
-              "ICC Banking Commission",
-              "UCP 600 Certified",
-              "ISBP 745 Compliant",
-              "ISP98 Ready",
-              "SWIFT Partner",
-              "ISO 20022 Enabled",
-            ].map((item, index) => (
+        {/* Standards ticker */}
+        <div className="overflow-hidden">
+          <div className="flex animate-scroll gap-x-8">
+            {[...standards, ...standards].map((item, index) => (
               <span
                 key={index}
-                className="text-slate-400 text-sm font-medium whitespace-nowrap"
+                className="text-slate-600 text-sm font-medium whitespace-nowrap flex items-center gap-2"
               >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
                 {item}
               </span>
             ))}
@@ -57,4 +48,3 @@ export function PartnersSection() {
     </section>
   );
 }
-
