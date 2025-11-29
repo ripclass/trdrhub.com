@@ -69,18 +69,15 @@ Data/
 │   ├── iso20022_trade.json               ← ISO 20022 LC
 │   └── iso20022_guarantees_standby.json  ← ISO 20022 guarantees
 │
-├── 🔗 crossdoc/ (3 files)
-│   ├── lcopilot_crossdoc_v3.json         ← LATEST! Context-aware (100 rules)
-│   ├── lcopilot_crossdoc_v2.json         ← Previous version (72 rules)
-│   └── lcopilot_crossdoc.json            ← Legacy (6 rules)
+├── 🔗 crossdoc/ (1 file to upload)
+│   └── lcopilot_crossdoc_v3.json         ← USE THIS! Context-aware (98 rules)
 │
 ├── ⚖️ opinions_docdex/ (2 merged files)
 │   ├── icc_opinions_merged.json          ← 60 opinions (merged)
 │   └── docdex_cases_merged.json          ← 42 DOCDEX cases (merged)
 │
-├── 🏦 bank_profiles/ (10 files)
-│   ├── bank_profiles.json                ← Main profiles
-│   ├── additional_bank_profiles.json     ← Extended profiles
+├── 🏦 bank_profiles/ (9 files to upload)
+│   ├── bank_profiles_merged.json         ← 50 merged global profiles
 │   ├── bank_profiles_china.json
 │   ├── bank_profiles_india.json
 │   ├── bank_profiles_canada.json
@@ -169,8 +166,9 @@ Data/
 
 | File | Domain | Rulebook | Jurisdiction | Rulebook Ver | Ruleset Ver | Notes |
 |------|--------|----------|--------------|--------------|-------------|-------|
-| `lcopilot_crossdoc_v3.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 3.0.0 | **100 rules** - Bank/Country/Commodity/FTA/Sanctions aware |
-| `lcopilot_crossdoc_v2.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 2.0.0 | 72 cross-doc rules (superseded by v3) |
+| `lcopilot_crossdoc_v3.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 3.0.0 | **98 rules** - Bank/Country/Commodity/FTA/Sanctions aware |
+
+> ⚠️ **Note:** Only upload v3! Do NOT upload v1 or v2 (they are old versions).
 
 ### 🟢 PRIORITY 4: ICC OPINIONS & DOCDEX
 
@@ -185,8 +183,7 @@ Data/
 
 | File | Domain | Rulebook | Jurisdiction | Rulebook Ver | Ruleset Ver | Notes |
 |------|--------|----------|--------------|--------------|-------------|-------|
-| `bank_profiles.json` | bank | bank.profiles | global | Profiles-2025 | 1.0.0 | HSBC, Citi, ICBC, StanChart, etc. - 27 rules |
-| `additional_bank_profiles.json` | bank | bank.profiles | global | Profiles-2025 | 1.1.0 | MUFG, SMBC, BNP, etc. - 26 rules |
+| `bank_profiles_merged.json` | bank | bank.profiles | global | Profiles-2025 | 1.0.0 | **50 merged global bank profiles** |
 | `bank_profiles_china.json` | bank | bank.china | cn | Profiles-2025 | 1.0.0 | CCB, ABC, BOCOM, CMB - 7 rules |
 | `bank_profiles_india.json` | bank | bank.india | in | Profiles-2025 | 1.0.0 | SBI, ICICI, HDFC, Axis - 7 rules |
 | `bank_profiles_canada.json` | bank | bank.canada | ca | Profiles-2025 | 1.0.0 | RBC, TD, Scotiabank - 6 rules |
@@ -195,6 +192,8 @@ Data/
 | `bank_profiles_latam.json` | bank | bank.latam | latam | Profiles-2025 | 1.0.0 | Bradesco, Banorte, BCP - 8 rules |
 | `bank_profiles_mena.json` | bank | bank.mena | mena | Profiles-2025 | 1.0.0 | FAB, ADCB, CIB Egypt - 8 rules |
 | `bank_profiles_islamic.json` | bank | bank.islamic | global | Profiles-2025 | 1.0.0 | Al Rajhi, Dubai Islamic, QIB - 8 rules |
+
+> ⚠️ **Note:** Use `bank_profiles_merged.json` instead of separate `bank_profiles.json` + `additional_bank_profiles.json`
 
 ### 🟣 PRIORITY 6: FTA/ORIGIN RULES
 
@@ -337,17 +336,22 @@ Data/
 - [ ] `iso20022_guarantees_standby.json` - Domain: `iso20022`, Rulebook: `iso20022.tsrv`
 
 ### Batch 3: Cross-Document (1 file - use v3!)
-- [ ] `lcopilot_crossdoc_v3.json` - Domain: `icc`, Rulebook: `icc.lcopilot.crossdoc` ← **USE THIS ONE** (100 context-aware rules)
+- [ ] `lcopilot_crossdoc_v3.json` - Domain: `icc`, Rulebook: `icc.lcopilot.crossdoc` ← **USE THIS ONE** (98 context-aware rules)
 
 ### Batch 4: Opinions/DOCDEX (2 merged files)
 - [ ] `icc_opinions_merged.json` - Domain: `icc`, Rulebook: `icc.opinions` (60 opinions)
 - [ ] `docdex_cases_merged.json` - Domain: `icc`, Rulebook: `icc.docdex` (42 cases)
 
-### Batch 5: Bank Profiles (10 files)
-- [ ] `bank_profiles.json` - Domain: `bank.*`, Rulebook: `bank.profiles`
-- [ ] `bank_profiles_china.json` - Domain: `bank.china`, Rulebook: `bank.china`
-- [ ] `bank_profiles_india.json` - Domain: `bank.india`, Rulebook: `bank.india`
-- [ ] All regional bank profiles...
+### Batch 5: Bank Profiles (9 files)
+- [ ] `bank_profiles_merged.json` - Domain: `bank`, Rulebook: `bank.profiles` (50 merged)
+- [ ] `bank_profiles_china.json` - Domain: `bank`, Rulebook: `bank.china`
+- [ ] `bank_profiles_india.json` - Domain: `bank`, Rulebook: `bank.india`
+- [ ] `bank_profiles_canada.json` - Domain: `bank`, Rulebook: `bank.canada`
+- [ ] `bank_profiles_europe.json` - Domain: `bank`, Rulebook: `bank.europe`
+- [ ] `bank_profiles_asean.json` - Domain: `bank`, Rulebook: `bank.asean`
+- [ ] `bank_profiles_latam.json` - Domain: `bank`, Rulebook: `bank.latam`
+- [ ] `bank_profiles_mena.json` - Domain: `bank`, Rulebook: `bank.mena`
+- [ ] `bank_profiles_islamic.json` - Domain: `bank`, Rulebook: `bank.islamic`
 
 ### Batch 6: FTAs (10 files)
 - [ ] `fta_rcep_origin.json` - Domain: `fta.rcep`, Rulebook: `fta.rcep`
@@ -368,6 +372,24 @@ Data/
 - [ ] `cn_safe_china.json` - Domain: `regulations.cn`, Rulebook: `regulations.cn`
 - [ ] `in_rbi_rules.json` - Domain: `regulations.in`, Rulebook: `regulations.in`
 - [ ] All country files...
+
+---
+
+## ❌ DO NOT UPLOAD THESE FILES (duplicates/old versions)
+
+| File | Reason |
+|------|--------|
+| `ucp600.json` | Duplicate of `icc.ucp600-2007-v1.0.0.json` |
+| `isbp745.json` | Older version - use `isbp745_v2.json` (308 rules) |
+| `eucp v2.1.json` | Has space in name - use `eucp_v2.1_fixed.json` |
+| `bank_profiles.json` | Use merged version `bank_profiles_merged.json` |
+| `additional_bank_profiles.json` | Use merged version `bank_profiles_merged.json` |
+| `lcopilot_crossdoc.json` | Old v1 - use `lcopilot_crossdoc_v3.json` |
+| `lcopilot_crossdoc_v2.json` | Old v2 - use `lcopilot_crossdoc_v3.json` |
+| `icc_opinions_key.json` | Use merged version `icc_opinions_merged.json` |
+| `icc_opinions_additional.json` | Use merged version `icc_opinions_merged.json` |
+| `docdex_cases_key.json` | Use merged version `docdex_cases_merged.json` |
+| `docdex_cases_additional.json` | Use merged version `docdex_cases_merged.json` |
 
 ---
 
