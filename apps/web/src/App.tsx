@@ -9,6 +9,10 @@ import ToolsPage from './pages/ToolsPage'
 import PricingPage from './pages/PricingPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
+// Tool landing pages
+import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
+import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
+import ComingSoonTool from './pages/tools/ComingSoonTool'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
@@ -65,6 +69,24 @@ function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        
+        {/* Tool Landing Pages - Live */}
+        <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
+        <Route path="/hs-code" element={<HSCodeFinderLanding />} />
+        
+        {/* Tool Landing Pages - Coming Soon */}
+        <Route path="/doc-generator" element={<ComingSoonTool toolSlug="doc-generator" />} />
+        <Route path="/lc-builder" element={<ComingSoonTool toolSlug="lc-builder" />} />
+        <Route path="/risk" element={<ComingSoonTool toolSlug="counterparty-risk" />} />
+        <Route path="/dual-use" element={<ComingSoonTool toolSlug="dual-use" />} />
+        <Route path="/customs" element={<ComingSoonTool toolSlug="customs" />} />
+        <Route path="/duty-calc" element={<ComingSoonTool toolSlug="duty-calc" />} />
+        <Route path="/tracking" element={<ComingSoonTool toolSlug="tracking" />} />
+        <Route path="/routes" element={<ComingSoonTool toolSlug="routes" />} />
+        <Route path="/bank-fees" element={<ComingSoonTool toolSlug="bank-fees" />} />
+        <Route path="/finance" element={<ComingSoonTool toolSlug="finance" />} />
+        <Route path="/insurance" element={<ComingSoonTool toolSlug="insurance" />} />
+        <Route path="/analytics" element={<ComingSoonTool toolSlug="analytics" />} />
         <Route path="/lcopilot" element={<Index />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
