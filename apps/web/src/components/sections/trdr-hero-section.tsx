@@ -22,31 +22,31 @@ export function TRDRHeroSection() {
           
           {/* Backed by badge */}
           <div className="mb-8">
-            <p className="text-slate-400 text-sm mb-4">Backed by industry leaders:</p>
-            <div className="flex items-center justify-center gap-8 opacity-60">
-              <span className="text-slate-300 font-semibold">UCP600</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-300 font-semibold">ISBP745</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-300 font-semibold">ISP98</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-300 font-semibold">60+ Countries</span>
+            <p className="text-slate-400 text-sm mb-4">Powered by international standards:</p>
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 opacity-60">
+              <span className="text-slate-300 font-semibold text-sm">UCP600</span>
+              <span className="text-slate-500 hidden sm:inline">•</span>
+              <span className="text-slate-300 font-semibold text-sm">Incoterms 2020</span>
+              <span className="text-slate-500 hidden sm:inline">•</span>
+              <span className="text-slate-300 font-semibold text-sm">OFAC/EU/UN</span>
+              <span className="text-slate-500 hidden sm:inline">•</span>
+              <span className="text-slate-300 font-semibold text-sm">60+ Countries</span>
             </div>
           </div>
 
           {/* Main headline */}
           <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-8 leading-[0.9] tracking-tight">
-            Zero-Error
+            Everything Trade.
             <br />
             <span className="bg-gradient-to-r from-blue-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent">
-              Trade Documents
+              One Platform.
             </span>
           </h1>
           
           {/* Subheadline */}
           <p className="text-xl md:text-2xl text-slate-400 mb-12 max-w-3xl mx-auto leading-relaxed">
-            We built an AI that validates Letters of Credit faster, cheaper, and more accurately than any human team. 
-            <span className="text-white"> Stop paying $75 discrepancy fees.</span>
+            15 AI-powered tools for document validation, sanctions screening, HS classification, shipment tracking, and more.
+            <span className="text-white"> Stop losing money to errors and delays.</span>
           </p>
 
           {/* CTA Buttons */}
@@ -57,7 +57,7 @@ export function TRDRHeroSection() {
               asChild
             >
               <Link to="/lcopilot">
-                Start Validating Free
+                Start Free
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
@@ -74,16 +74,16 @@ export function TRDRHeroSection() {
           {/* Trust metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">45s</div>
-              <div className="text-sm text-slate-500">Validation Time</div>
+              <div className="text-3xl md:text-4xl font-bold text-white mb-1">15</div>
+              <div className="text-sm text-slate-500">Trade Tools</div>
             </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold text-white mb-1">3,500+</div>
-              <div className="text-sm text-slate-500">Rules Checked</div>
+              <div className="text-sm text-slate-500">Validation Rules</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">99%</div>
-              <div className="text-sm text-slate-500">Accuracy</div>
+              <div className="text-3xl md:text-4xl font-bold text-white mb-1">60+</div>
+              <div className="text-sm text-slate-500">Countries</div>
             </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold text-white mb-1">$0</div>

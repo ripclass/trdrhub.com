@@ -1,35 +1,35 @@
-import { Check, Zap, Shield, Globe, Bot, FileCheck } from "lucide-react";
+import { Check, Zap, Shield, Globe, Bot, Workflow } from "lucide-react";
 
 const solutions = [
   {
     icon: Bot,
-    title: "AI-Powered Validation",
-    description: "Our engine checks documents against 3,500+ rules from UCP600, ISBP745, ISP98, and 60+ country regulations. Instantly.",
+    name: "AI-Powered",
+    description: "Machine learning validates documents, classifies goods, screens parties, and catches errors humans miss.",
   },
   {
-    icon: Shield,
-    title: "Bank-Grade Accuracy",
-    description: "99% accuracy rate. We catch discrepancies that humans miss, every time, before banks do.",
+    icon: Workflow,
+    name: "All-in-One Platform",
+    description: "15 tools for the entire trade lifecycle - from LC application to customs clearance to payment tracking.",
   },
   {
     icon: Zap,
-    title: "45-Second Processing",
-    description: "Upload your documents. Get a full compliance report with actionable fixes in under a minute.",
+    name: "Instant Results",
+    description: "What took hours now takes seconds. Validate documents in 45s. Screen parties in 2s. Generate docs in minutes.",
   },
   {
     icon: Globe,
-    title: "Global Coverage",
-    description: "Built-in rules for Singapore, UAE, Bangladesh, India, EU, US, and 54 more jurisdictions.",
+    name: "Global Coverage",
+    description: "Built-in rules for 60+ countries, all ICC publications, OFAC/EU/UN sanctions, and major trade agreements.",
   },
   {
-    icon: FileCheck,
-    title: "Complete Document Suite",
-    description: "LC, B/L, Invoice, Insurance, CoO, Packing List - we validate them all, cross-checked against each other.",
+    icon: Shield,
+    name: "Compliance Built-In",
+    description: "UCP600, ISBP745, Incoterms 2020, HS classification, sanctions screening - all automated, all up-to-date.",
   },
   {
     icon: Check,
-    title: "Actionable Suggestions",
-    description: "Don't just see problems - get exact fixes with UCP600 references and SWIFT amendment drafts.",
+    name: "Actionable Intelligence",
+    description: "Don't just see problems - get specific fixes, alternative routes, risk scores, and cost comparisons.",
   },
 ];
 
@@ -47,12 +47,12 @@ export function SolutionSection() {
         <div className="text-center mb-16">
           <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">Solution</p>
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
-            Our answer: AI that thinks
+            One platform for
             <br />
-            <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">like a trade finance expert</span>
+            <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">everything trade</span>
           </h2>
           <p className="text-xl text-slate-400 max-w-3xl mx-auto">
-            We're building the document examiner of the 21st century. It reads documents, understands context, and catches discrepancies with superhuman precision.
+            We're building the operating system for international trade. AI-powered tools that automate the boring, catch the risky, and accelerate the slow.
           </p>
         </div>
 
@@ -67,7 +67,7 @@ export function SolutionSection() {
                 <solution.icon className="w-7 h-7 text-blue-400" />
               </div>
               <h3 className="text-xl font-bold text-white mb-3">
-                {solution.title}
+                {solution.name}
               </h3>
               <p className="text-slate-400 leading-relaxed">
                 {solution.description}
@@ -88,7 +88,7 @@ export function SolutionSection() {
               <ul className="space-y-4">
                 <li className="flex items-start gap-3 text-slate-400">
                   <span className="text-red-400 mt-1">✗</span>
-                  <span>2-4 hours per LC validation</span>
+                  <span>Hours per document set validation</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-400">
                   <span className="text-red-400 mt-1">✗</span>
@@ -96,15 +96,15 @@ export function SolutionSection() {
                 </li>
                 <li className="flex items-start gap-3 text-slate-400">
                   <span className="text-red-400 mt-1">✗</span>
-                  <span>$75-150 per discrepancy fee</span>
+                  <span>Manual sanctions checks (or none)</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-400">
                   <span className="text-red-400 mt-1">✗</span>
-                  <span>Manual rule checking, human error</span>
+                  <span>Spreadsheets for shipment tracking</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-400">
                   <span className="text-red-400 mt-1">✗</span>
-                  <span>Vague rejection reasons from banks</span>
+                  <span>Guessing HS codes, hoping they're right</span>
                 </li>
               </ul>
             </div>
@@ -118,23 +118,23 @@ export function SolutionSection() {
               <ul className="space-y-4">
                 <li className="flex items-start gap-3 text-slate-300">
                   <span className="text-emerald-400 mt-1">✓</span>
-                  <span>45 seconds per LC validation</span>
+                  <span>45-second AI validation</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-300">
                   <span className="text-emerald-400 mt-1">✓</span>
-                  <span>95%+ first-time acceptance rate</span>
+                  <span>95%+ first-time acceptance</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-300">
                   <span className="text-emerald-400 mt-1">✓</span>
-                  <span>Near-zero discrepancy fees</span>
+                  <span>Real-time OFAC/EU/UN screening</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-300">
                   <span className="text-emerald-400 mt-1">✓</span>
-                  <span>AI validates against 3,500+ rules</span>
+                  <span>Live container tracking dashboard</span>
                 </li>
                 <li className="flex items-start gap-3 text-slate-300">
                   <span className="text-emerald-400 mt-1">✓</span>
-                  <span>Clear fixes with UCP600 citations</span>
+                  <span>AI-powered HS code classification</span>
                 </li>
               </ul>
             </div>
@@ -144,4 +144,3 @@ export function SolutionSection() {
     </section>
   );
 }
-

@@ -1,35 +1,35 @@
-import { AlertTriangle, Clock, DollarSign, FileX, RefreshCcw, Ban } from "lucide-react";
+import { AlertTriangle, Clock, DollarSign, FileX, Layers, Ban } from "lucide-react";
 
 const problems = [
   {
     icon: DollarSign,
     title: "Not cheap",
-    description: "Every LC discrepancy costs $75-150 in bank fees. With 60% of first submissions rejected, you're bleeding money on every shipment.",
+    description: "Discrepancy fees, compliance penalties, customs delays, rework costs. Every mistake bleeds money from your margins.",
   },
   {
     icon: Clock,
     title: "Not fast",
-    description: "Manual document checking takes 2-4 hours per LC. Your trade finance team is drowning in paperwork instead of closing deals.",
+    description: "Hours spent validating documents, screening parties, classifying goods, tracking shipments. Your team drowns in manual work.",
   },
   {
     icon: AlertTriangle,
     title: "Not reliable",
-    description: "Human checkers miss 20% of discrepancies. Banks catch them. You pay. Again and again.",
+    description: "Human error in document prep causes 60% of LC rejections. One missed field, one wrong code - deal delayed.",
+  },
+  {
+    icon: Layers,
+    title: "Not connected",
+    description: "Data lives in 10 different systems. Excel for docs, email for tracking, PDFs for compliance. Nothing talks to anything.",
   },
   {
     icon: FileX,
     title: "Not standardized",
-    description: "Every bank interprets UCP600 differently. What HSBC accepts, Deutsche Bank rejects. No consistency, only chaos.",
-  },
-  {
-    icon: RefreshCcw,
-    title: "Not scalable",
-    description: "Growing your trade volume means hiring more document checkers. Costs scale linearly with business growth.",
+    description: "Every bank, every country, every shipment has different rules. UCP600, Incoterms, HS codes, sanctions lists - constant complexity.",
   },
   {
     icon: Ban,
     title: "Not transparent",
-    description: "When documents get rejected, you rarely know exactly why until the discrepancy notice arrives. By then, it's too late.",
+    description: "Where's my shipment? Will this pass compliance? What fees will I pay? You're always guessing until it's too late.",
   },
 ];
 
@@ -41,10 +41,13 @@ export function ProblemsSection() {
         <div className="text-center mb-16">
           <p className="text-blue-600 font-semibold mb-4 tracking-wide uppercase text-sm">Problem</p>
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 mb-6 leading-tight">
-            LC processing is broken,
+            International trade is still
             <br />
-            <span className="text-slate-400">and everyone knows it...</span>
+            <span className="text-slate-400">stuck in the 1990s...</span>
           </h2>
+          <p className="text-xl text-slate-600 max-w-2xl mx-auto">
+            $32 trillion in global trade, powered by fax machines, PDFs, and spreadsheets.
+          </p>
         </div>
 
         {/* Problem cards grid */}
@@ -70,4 +73,3 @@ export function ProblemsSection() {
     </section>
   );
 }
-
