@@ -63,11 +63,49 @@ const DOMAIN_FILTER_OPTIONS = [
 
 const JURISDICTION_OPTIONS = [
   { label: "All jurisdictions", value: "all" },
+  // Global & Regional
   { label: "Global", value: "global" },
+  { label: "RCEP", value: "rcep" },
+  { label: "CPTPP", value: "cptpp" },
+  { label: "USMCA", value: "usmca" },
+  { label: "ASEAN", value: "asean" },
+  { label: "Mercosur", value: "mercosur" },
+  { label: "MENA", value: "mena" },
+  { label: "Latin America", value: "latam" },
+  // Europe
   { label: "EU", value: "eu" },
+  { label: "UK", value: "gb" },
+  { label: "Germany", value: "de" },
+  // Americas
   { label: "US", value: "us" },
-  { label: "Bangladesh", value: "bd" },
+  { label: "Canada", value: "ca" },
+  { label: "Mexico", value: "mx" },
+  { label: "Brazil", value: "br" },
+  // Asia-Pacific
+  { label: "China", value: "cn" },
   { label: "India", value: "in" },
+  { label: "Bangladesh", value: "bd" },
+  { label: "Singapore", value: "sg" },
+  { label: "Japan", value: "jp" },
+  { label: "Korea", value: "kr" },
+  { label: "Vietnam", value: "vn" },
+  { label: "Thailand", value: "th" },
+  { label: "Malaysia", value: "my" },
+  { label: "Indonesia", value: "id" },
+  { label: "Australia", value: "au" },
+  { label: "Hong Kong", value: "hk" },
+  { label: "Taiwan", value: "tw" },
+  // Middle East
+  { label: "UAE", value: "ae" },
+  { label: "Saudi Arabia", value: "sa" },
+  { label: "Qatar", value: "qa" },
+  // Africa
+  { label: "South Africa", value: "za" },
+  { label: "Nigeria", value: "ng" },
+  { label: "Kenya", value: "ke" },
+  // Others
+  { label: "Turkey", value: "tr" },
+  { label: "Pakistan", value: "pk" },
 ];
 
 const PRIMARY_DOMAIN_LABEL_MAP = new Map(PRIMARY_DOMAIN_OPTIONS.map((option) => [option.value, option.label]));

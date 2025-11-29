@@ -20,13 +20,78 @@ import type { RulesImportSummary, RulesetRecord } from "@/lib/admin/types";
 const service = getAdminService();
 
 const JURISDICTION_OPTIONS = [
+  // Global
   { value: "global", label: "Global" },
+  
+  // FTA/Regional Blocs
+  { value: "rcep", label: "RCEP (Asia-Pacific)" },
+  { value: "cptpp", label: "CPTPP (Trans-Pacific)" },
+  { value: "usmca", label: "USMCA (North America)" },
+  { value: "africa", label: "Africa (AfCFTA)" },
+  { value: "acfta", label: "ACFTA (ASEAN-China)" },
+  { value: "mercosur", label: "Mercosur (South America)" },
+  { value: "asean", label: "ASEAN" },
+  { value: "eu_gb", label: "EU-UK" },
+  { value: "latam", label: "Latin America" },
+  { value: "mena", label: "MENA (Middle East/N. Africa)" },
+  
+  // Europe
   { value: "eu", label: "European Union" },
+  { value: "gb", label: "United Kingdom" },
+  { value: "de", label: "Germany" },
+  { value: "nl", label: "Netherlands" },
+  
+  // Americas
   { value: "us", label: "United States" },
-  { value: "bd", label: "Bangladesh" },
+  { value: "ca", label: "Canada" },
+  { value: "mx", label: "Mexico" },
+  { value: "br", label: "Brazil" },
+  { value: "ar", label: "Argentina" },
+  { value: "cl", label: "Chile" },
+  { value: "co", label: "Colombia" },
+  { value: "pe", label: "Peru" },
+  { value: "pa", label: "Panama" },
+  
+  // Asia-Pacific
+  { value: "cn", label: "China" },
   { value: "in", label: "India" },
-  { value: "uk", label: "United Kingdom" },
+  { value: "bd", label: "Bangladesh" },
   { value: "sg", label: "Singapore" },
+  { value: "jp", label: "Japan" },
+  { value: "kr", label: "South Korea" },
+  { value: "vn", label: "Vietnam" },
+  { value: "th", label: "Thailand" },
+  { value: "my", label: "Malaysia" },
+  { value: "ph", label: "Philippines" },
+  { value: "id", label: "Indonesia" },
+  { value: "tw", label: "Taiwan" },
+  { value: "hk", label: "Hong Kong" },
+  { value: "au", label: "Australia" },
+  { value: "nz", label: "New Zealand" },
+  { value: "kh", label: "Cambodia" },
+  { value: "pk", label: "Pakistan" },
+  { value: "lk", label: "Sri Lanka" },
+  
+  // Middle East
+  { value: "ae", label: "UAE" },
+  { value: "sa", label: "Saudi Arabia" },
+  { value: "eg", label: "Egypt" },
+  { value: "qa", label: "Qatar" },
+  { value: "kw", label: "Kuwait" },
+  { value: "bh", label: "Bahrain" },
+  { value: "om", label: "Oman" },
+  { value: "jo", label: "Jordan" },
+  
+  // Africa
+  { value: "ma", label: "Morocco" },
+  { value: "za", label: "South Africa" },
+  { value: "ng", label: "Nigeria" },
+  { value: "ke", label: "Kenya" },
+  { value: "gh", label: "Ghana" },
+  
+  // Others
+  { value: "tr", label: "Turkey" },
+  { value: "kz", label: "Kazakhstan" },
 ];
 
 export function RulesUpload() {
