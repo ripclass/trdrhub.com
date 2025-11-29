@@ -15,11 +15,10 @@ import {
   Package,
   Landmark,
   BarChart3,
-  Search,
   Globe,
   DollarSign,
   Sparkles,
-  MessageSquareCode
+  Code2
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -213,7 +212,7 @@ const toolCategories: ToolCategory[] = [
 // Free utility tools
 const utilityTools: Tool[] = [
   {
-    icon: MessageSquareCode,
+    icon: Code2,
     name: "SWIFT Decoder",
     description: "Paste any MT700/MT707/MT760 message and get human-readable breakdown with field explanations.",
     status: "free",
