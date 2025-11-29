@@ -222,7 +222,7 @@ const colorMap: Record<string, { bg: string; border: string; text: string; iconB
 
 export function ToolsSection() {
   return (
-    <section className="py-24 md:py-32 bg-slate-950 relative">
+    <section className="py-16 sm:py-24 md:py-32 bg-slate-950 relative">
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
       <div className="absolute top-1/4 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
@@ -230,35 +230,35 @@ export function ToolsSection() {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section header */}
-        <div className="text-center mb-16">
-          <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">Platform</p>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+        <div className="text-center mb-10 sm:mb-16">
+          <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
+          <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 sm:mb-6 leading-tight">
             15 Tools.
             <br />
             <span className="text-slate-500">One Platform.</span>
           </h2>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-xl text-slate-400 max-w-2xl mx-auto px-4">
             Everything you need for trade operations - from document validation to customs clearance.
           </p>
         </div>
 
         {/* Tools by category */}
-        <div className="max-w-7xl mx-auto space-y-16">
+        <div className="max-w-7xl mx-auto space-y-10 sm:space-y-16">
           {categories.map((category) => {
             const categoryTools = tools.filter(t => t.category === category);
             return (
               <div key={category}>
-                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-8 pl-3 border-l-2 border-blue-500">
+                <h3 className="text-xs sm:text-sm font-semibold text-slate-500 uppercase tracking-wider mb-6 sm:mb-8 pl-3 border-l-2 border-blue-500">
                   {category}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {categoryTools.map((tool, index) => {
                     const colors = colorMap[tool.color] || colorMap.blue;
                     return (
                       <Link
                         key={index}
                         to={tool.href}
-                        className={`group bg-slate-900/50 border border-slate-800 rounded-2xl p-6 hover:bg-slate-900/80 transition-all duration-300 relative flex flex-col min-h-[280px] ${colors.border} ${colors.bg}`}
+                        className={`group bg-slate-900/50 border border-slate-800 rounded-2xl p-5 sm:p-6 hover:bg-slate-900/80 transition-all duration-300 relative flex flex-col min-h-[240px] sm:min-h-[280px] ${colors.border} ${colors.bg}`}
                       >
                         {/* Status badge */}
                         <div className="absolute top-5 right-5">
@@ -274,19 +274,19 @@ export function ToolsSection() {
                         </div>
 
                         {/* Icon */}
-                        <div className={`w-14 h-14 bg-slate-800 rounded-xl flex items-center justify-center mb-5 transition-colors ${colors.iconBg}`}>
-                          <tool.icon className={`w-7 h-7 text-slate-400 transition-colors ${colors.text}`} />
+                        <div className={`w-12 sm:w-14 h-12 sm:h-14 bg-slate-800 rounded-xl flex items-center justify-center mb-4 sm:mb-5 transition-colors ${colors.iconBg}`}>
+                          <tool.icon className={`w-6 sm:w-7 h-6 sm:h-7 text-slate-400 transition-colors ${colors.text}`} />
                         </div>
 
                         {/* Content */}
                         <div className="flex-1">
-                          <h4 className={`text-lg font-bold text-white mb-1 transition-colors ${colors.text}`}>
+                          <h4 className={`text-base sm:text-lg font-bold text-white mb-1 transition-colors ${colors.text}`}>
                             {tool.name}
                           </h4>
-                          <p className="text-sm font-medium text-slate-400 mb-3">
+                          <p className="text-xs sm:text-sm font-medium text-slate-400 mb-2 sm:mb-3">
                             {tool.tagline}
                           </p>
-                          <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                          <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-3 sm:mb-4">
                             {tool.description}
                           </p>
                         </div>

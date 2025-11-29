@@ -35,7 +35,7 @@ export function TRDRHeroSection() {
           </div>
 
           {/* Main headline */}
-          <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-8 leading-[0.9] tracking-tight">
+          <h1 className="text-3xl sm:text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-6 sm:mb-8 leading-[0.95] tracking-tight">
             Everything Trade.
             <br />
             <span className="bg-gradient-to-r from-blue-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent">
@@ -44,7 +44,7 @@ export function TRDRHeroSection() {
           </h1>
           
           {/* Subheadline */}
-          <p className="text-xl md:text-2xl text-slate-400 mb-12 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-xl md:text-2xl text-slate-400 mb-8 sm:mb-12 max-w-3xl mx-auto leading-relaxed px-2">
             15 AI-powered tools for document validation, sanctions screening, HS classification, shipment tracking, and more.
             <span className="text-white"> Stop losing money to errors and delays.</span>
           </p>
@@ -72,22 +72,22 @@ export function TRDRHeroSection() {
           </div>
 
           {/* Trust metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-8 max-w-3xl mx-auto">
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">15</div>
-              <div className="text-sm text-slate-500">Trade Tools</div>
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">15</div>
+              <div className="text-xs sm:text-sm text-slate-500">Trade Tools</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">3,500+</div>
-              <div className="text-sm text-slate-500">Validation Rules</div>
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">3,500+</div>
+              <div className="text-xs sm:text-sm text-slate-500">Validation Rules</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">60+</div>
-              <div className="text-sm text-slate-500">Countries</div>
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">60+</div>
+              <div className="text-xs sm:text-sm text-slate-500">Countries</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">$0</div>
-              <div className="text-sm text-slate-500">To Start</div>
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">$0</div>
+              <div className="text-xs sm:text-sm text-slate-500">To Start</div>
             </div>
           </div>
 
