@@ -16,7 +16,14 @@ import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
-import ComingSoonTool from './pages/tools/ComingSoonTool'
+import CounterpartyRiskLanding from './pages/tools/CounterpartyRiskLanding'
+import DualUseCheckerLanding from './pages/tools/DualUseCheckerLanding'
+import CustomsMateLanding from './pages/tools/CustomsMateLanding'
+import DutyCalculatorLanding from './pages/tools/DutyCalculatorLanding'
+import RouteOptimizerLanding from './pages/tools/RouteOptimizerLanding'
+import BankFeeComparatorLanding from './pages/tools/BankFeeComparatorLanding'
+import TradeFinanceLanding from './pages/tools/TradeFinanceLanding'
+import InsuranceQuoteLanding from './pages/tools/InsuranceQuoteLanding'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
@@ -78,21 +85,19 @@ function App() {
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
         
-        {/* Tool Landing Pages - Full Pages */}
+        {/* Tool Landing Pages - Coming Soon (Full Pages) */}
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
-        
-        {/* Tool Landing Pages - Coming Soon (Generic Template) */}
-        <Route path="/risk" element={<ComingSoonTool toolSlug="counterparty-risk" />} />
-        <Route path="/dual-use" element={<ComingSoonTool toolSlug="dual-use" />} />
-        <Route path="/customs" element={<ComingSoonTool toolSlug="customs" />} />
-        <Route path="/duty-calc" element={<ComingSoonTool toolSlug="duty-calc" />} />
-        <Route path="/routes" element={<ComingSoonTool toolSlug="routes" />} />
-        <Route path="/bank-fees" element={<ComingSoonTool toolSlug="bank-fees" />} />
-        <Route path="/finance" element={<ComingSoonTool toolSlug="finance" />} />
-        <Route path="/insurance" element={<ComingSoonTool toolSlug="insurance" />} />
+        <Route path="/risk" element={<CounterpartyRiskLanding />} />
+        <Route path="/dual-use" element={<DualUseCheckerLanding />} />
+        <Route path="/customs" element={<CustomsMateLanding />} />
+        <Route path="/duty-calc" element={<DutyCalculatorLanding />} />
+        <Route path="/routes" element={<RouteOptimizerLanding />} />
+        <Route path="/bank-fees" element={<BankFeeComparatorLanding />} />
+        <Route path="/finance" element={<TradeFinanceLanding />} />
+        <Route path="/insurance" element={<InsuranceQuoteLanding />} />
         <Route path="/lcopilot" element={<Index />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
