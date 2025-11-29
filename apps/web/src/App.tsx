@@ -12,6 +12,10 @@ import ContactPage from './pages/ContactPage'
 // Tool landing pages
 import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
+import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
+import LCBuilderLanding from './pages/tools/LCBuilderLanding'
+import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
+import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import ComingSoonTool from './pages/tools/ComingSoonTool'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -74,19 +78,21 @@ function App() {
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
         
-        {/* Tool Landing Pages - Coming Soon */}
-        <Route path="/doc-generator" element={<ComingSoonTool toolSlug="doc-generator" />} />
-        <Route path="/lc-builder" element={<ComingSoonTool toolSlug="lc-builder" />} />
+        {/* Tool Landing Pages - Full Pages */}
+        <Route path="/doc-generator" element={<DocGeneratorLanding />} />
+        <Route path="/lc-builder" element={<LCBuilderLanding />} />
+        <Route path="/tracking" element={<ContainerTrackerLanding />} />
+        <Route path="/analytics" element={<TradeAnalyticsLanding />} />
+        
+        {/* Tool Landing Pages - Coming Soon (Generic Template) */}
         <Route path="/risk" element={<ComingSoonTool toolSlug="counterparty-risk" />} />
         <Route path="/dual-use" element={<ComingSoonTool toolSlug="dual-use" />} />
         <Route path="/customs" element={<ComingSoonTool toolSlug="customs" />} />
         <Route path="/duty-calc" element={<ComingSoonTool toolSlug="duty-calc" />} />
-        <Route path="/tracking" element={<ComingSoonTool toolSlug="tracking" />} />
         <Route path="/routes" element={<ComingSoonTool toolSlug="routes" />} />
         <Route path="/bank-fees" element={<ComingSoonTool toolSlug="bank-fees" />} />
         <Route path="/finance" element={<ComingSoonTool toolSlug="finance" />} />
         <Route path="/insurance" element={<ComingSoonTool toolSlug="insurance" />} />
-        <Route path="/analytics" element={<ComingSoonTool toolSlug="analytics" />} />
         <Route path="/lcopilot" element={<Index />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
