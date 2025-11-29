@@ -2,9 +2,22 @@
 
 ## Quick Reference
 
-**Total Files:** 109
-**Total Rules:** ~3,200+
+**Total Files:** 110
+**Total Rules:** ~3,230+
 **Upload Order:** Start with ICC Core → Cross-Doc → Then by priority
+
+---
+
+## 🗂️ ORGANIZE FILES INTO FOLDERS
+
+Run this Python script to organize all JSON files into folders:
+
+```bash
+cd Data
+python organize_rules.py
+```
+
+Or manually create these folders and move files:
 
 ---
 
@@ -12,12 +25,13 @@
 
 ```
 Data/
-├── 📚 ICC CORE PUBLICATIONS (12 files)
+├── 📚 icc_core/ (14 files)
 │   ├── icc.ucp600-2007-v1.0.0.json      ← Main LC rules
 │   ├── ucp600.json                       ← Alternative format
 │   ├── isbp745_v2.json                   ← Banking practice (LARGE!)
 │   ├── isbp745.json                      ← Original version
 │   ├── eucp_v2.1_fixed.json              ← Electronic supplement
+│   ├── eucp v2.1.json                    ← Original eUCP
 │   ├── isp98.json                        ← Standby LCs
 │   ├── urdg758.json                      ← Demand guarantees
 │   ├── urc522.json                       ← Collections
@@ -28,24 +42,25 @@ Data/
 │   ├── urdtt.json                        ← Digital trade
 │   └── incoterms2020.json                ← Trade terms
 │
-├── 📨 MESSAGING STANDARDS (5 files)
+├── 📨 messaging/ (5 files)
 │   ├── swift_mt700.json                  ← Documentary credits
 │   ├── swift_mt400_collections.json      ← Collections
 │   ├── swift_mt760_guarantees.json       ← Guarantees
 │   ├── iso20022_trade.json               ← ISO 20022 LC
 │   └── iso20022_guarantees_standby.json  ← ISO 20022 guarantees
 │
-├── 🔗 CROSS-DOCUMENT (2 files)
-│   ├── lcopilot_crossdoc_v2.json         ← Main cross-doc rules
-│   └── lcopilot_crossdoc.json            ← Legacy
+├── 🔗 crossdoc/ (3 files)
+│   ├── lcopilot_crossdoc_v3.json         ← LATEST! Context-aware (100 rules)
+│   ├── lcopilot_crossdoc_v2.json         ← Previous version (72 rules)
+│   └── lcopilot_crossdoc.json            ← Legacy (6 rules)
 │
-├── ⚖️ ICC OPINIONS & DOCDEX (4 files)
+├── ⚖️ opinions_docdex/ (4 files)
 │   ├── icc_opinions_key.json             ← 50 key opinions
 │   ├── icc_opinions_additional.json      ← 12 more opinions
 │   ├── docdex_cases_key.json             ← 30 key cases
 │   └── docdex_cases_additional.json      ← 12 more cases
 │
-├── 🏦 BANK PROFILES (10 files)
+├── 🏦 bank_profiles/ (10 files)
 │   ├── bank_profiles.json                ← Main profiles
 │   ├── additional_bank_profiles.json     ← Extended profiles
 │   ├── bank_profiles_china.json
@@ -57,10 +72,10 @@ Data/
 │   ├── bank_profiles_mena.json
 │   └── bank_profiles_islamic.json
 │
-├── 🌍 COUNTRY RULES (48 files)
+├── 🌍 country_rules/ (48 files)
 │   ├── [See detailed list below]
 │
-├── 🚢 FTA/ORIGIN RULES (10 files)
+├── 🚢 fta_origin/ (10 files)
 │   ├── fta_rcep_origin.json
 │   ├── fta_cptpp_origin.json
 │   ├── fta_usmca_origin.json
@@ -72,14 +87,14 @@ Data/
 │   ├── fta_us_bilateral.json
 │   └── fta_regional_blocs.json
 │
-├── 🚨 SANCTIONS (5 files)
+├── 🚨 sanctions/ (5 files)
 │   ├── sanctions_screening.json
 │   ├── sanctions_ofac_detailed.json
 │   ├── sanctions_eu_detailed.json
 │   ├── sanctions_un_uk.json
 │   └── sanctions_vessel_shipping.json
 │
-├── 📦 COMMODITIES (13 files)
+├── 📦 commodities/ (13 files)
 │   ├── commodity_agriculture.json
 │   ├── commodity_textiles.json
 │   ├── commodity_chemicals.json
@@ -94,8 +109,11 @@ Data/
 │   ├── commodity_timber_wood.json
 │   └── commodity_seafood.json
 │
-└── 🇺🇸 JURISDICTION MODES (1 file)
-    └── us_mode_isp98.json
+├── 🇺🇸 jurisdiction_modes/ (1 file)
+│   └── us_mode_isp98.json
+│
+├── _UPLOAD_GUIDE.md                      ← This file
+└── organize_rules.py                     ← Run to organize files
 ```
 
 ---
@@ -133,7 +151,8 @@ Data/
 
 | File | Domain | Rulebook | Jurisdiction | Rulebook Ver | Ruleset Ver | Notes |
 |------|--------|----------|--------------|--------------|-------------|-------|
-| `lcopilot_crossdoc_v2.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 2.0.0 | 72 cross-doc validation rules |
+| `lcopilot_crossdoc_v3.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 3.0.0 | **100 rules** - Bank/Country/Commodity/FTA/Sanctions aware |
+| `lcopilot_crossdoc_v2.json` | icc | icc.lcopilot.crossdoc | global | CrossDoc-2025 | 2.0.0 | 72 cross-doc rules (superseded by v3) |
 
 ### 🟢 PRIORITY 4: ICC OPINIONS & DOCDEX
 
@@ -299,8 +318,8 @@ Data/
 - [ ] `iso20022_trade.json` - Domain: `iso20022`, Rulebook: `iso20022.trade`
 - [ ] `iso20022_guarantees_standby.json` - Domain: `iso20022`, Rulebook: `iso20022.tsrv`
 
-### Batch 3: Cross-Document (1 file)
-- [ ] `lcopilot_crossdoc_v2.json` - Domain: `icc`, Rulebook: `icc.lcopilot.crossdoc`
+### Batch 3: Cross-Document (1 file - use v3!)
+- [ ] `lcopilot_crossdoc_v3.json` - Domain: `icc`, Rulebook: `icc.lcopilot.crossdoc` ← **USE THIS ONE** (100 context-aware rules)
 
 ### Batch 4: Opinions/DOCDEX (4 files)
 - [ ] `icc_opinions_key.json` - Domain: `icc`, Rulebook: `icc.opinions`
