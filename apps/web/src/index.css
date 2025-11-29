@@ -393,3 +393,28 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
   border: 1px solid hsl(158 64% 30%) !important;
   color: white !important;
 }
+
+/* Scroll animation for partners section */
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 20s linear infinite;
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Landing page specific - override default container */
+.landing-container {
+  max-width: none;
+  padding: 0;
+}

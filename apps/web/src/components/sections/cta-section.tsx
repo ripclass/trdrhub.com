@@ -1,85 +1,104 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, CheckCircle } from "lucide-react";
+import { ArrowRight, Mail } from "lucide-react";
 import { Link } from "react-router-dom";
-
-const guarantees = [
-  "No credit card required",
-  "3 free validations",
-  "Setup in 2 minutes",
-  "Cancel anytime"
-];
+import { useState } from "react";
 
 export function CTASection() {
+  const [email, setEmail] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+
+  const handleSubscribe = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email) {
+      setSubscribed(true);
+      setEmail("");
+    }
+  };
+
   return (
-    <section className="py-20 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-hero opacity-10" />
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <Card className="bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm border border-primary/20 shadow-strong overflow-hidden">
-          <CardContent className="p-12 text-center relative">
-            
-            {/* Urgency badge */}
-            <div className="inline-flex items-center gap-2 bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
-              ⚡ Your next LC could be rejected. Don't risk it.
-            </div>
-            
-            {/* Headline - Future pacing */}
-            <h2 className="text-3xl lg:text-5xl font-bold text-foreground mb-6">
-              What if your next LC passed{" "}
-              <span className="bg-gradient-primary bg-clip-text text-transparent">
-                on the first try?
-              </span>
-            </h2>
-            
-            {/* Value prop */}
-            <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Upload your documents now. In 45 seconds, you'll know exactly what banks will flag — 
-              <strong className="text-foreground"> before you submit.</strong>
+    <section className="py-24 md:py-32 bg-slate-950 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-slate-950" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div className="max-w-3xl mx-auto text-center">
+          {/* Main CTA */}
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+            Ready to validate your
+            <br />
+            <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+              first LC for free?
+            </span>
+          </h2>
+          <p className="text-xl text-slate-400 mb-10 max-w-xl mx-auto">
+            No credit card required. Get your first 5 validations free, forever.
+          </p>
+          
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+            <Button 
+              size="lg" 
+              className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-8 py-6 h-auto font-semibold group"
+              asChild
+            >
+              <Link to="/lcopilot">
+                Start Validating Now
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+            <Button 
+              variant="outline" 
+              size="lg" 
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white text-lg px-8 py-6 h-auto"
+              asChild
+            >
+              <Link to="/contact">
+                Talk to Sales
+              </Link>
+            </Button>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-4 mb-12">
+            <div className="flex-1 h-px bg-slate-800" />
+            <span className="text-slate-500 text-sm">or stay updated</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+
+          {/* Newsletter signup */}
+          <div className="max-w-md mx-auto">
+            <p className="text-slate-400 mb-4">
+              Want to stay up to date? Sign up for our monthly newsletter.
             </p>
-
-            {/* Primary CTA - Big and obvious */}
-            <div className="mb-8">
-              <Button 
-                size="lg" 
-                className="bg-gradient-primary hover:opacity-90 shadow-medium group text-lg px-10 py-7 h-auto"
-                asChild
-              >
-                <Link to="/lcopilot">
-                  Validate Your LC Now — Free
-                  <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </Button>
-            </div>
-
-            {/* Risk Reversal - Remove objections */}
-            <div className="flex flex-wrap justify-center gap-4 mb-8">
-              {guarantees.map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Social proof - Testimonial snippet */}
-            <div className="bg-background/50 rounded-xl p-6 max-w-xl mx-auto">
-              <p className="text-foreground italic mb-3">
-                "We used to spend 4 hours reviewing each LC. Now it's 45 seconds. 
-                The ROI was obvious after the first week."
-              </p>
-              <div className="flex items-center justify-center gap-3">
-                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-semibold">
-                  MR
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">Mohammad Rahman</p>
-                  <p className="text-xs text-muted-foreground">Export Manager, Dhaka Knitwear Ltd</p>
-                </div>
+            
+            {subscribed ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 text-emerald-400">
+                Thanks for subscribing! We'll keep you posted.
               </div>
-            </div>
-
-          </CardContent>
-        </Card>
+            ) : (
+              <form onSubmit={handleSubscribe} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                  <input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-10 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                    required
+                  />
+                </div>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 px-6">
+                  Subscribe
+                </Button>
+              </form>
+            )}
+            <p className="text-slate-600 text-xs mt-3">
+              No spam. Unsubscribe anytime.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   );

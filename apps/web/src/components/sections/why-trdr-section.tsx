@@ -1,151 +1,73 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Shield, Zap, Lock, TrendingUp, XCircle, CheckCircle } from "lucide-react";
+import { Lock, Cpu, TrendingUp } from "lucide-react";
 
-// Before/After comparison - shows transformation
-const painPoints = [
-  {
-    before: "Manual document checking (4+ hours)",
-    after: "AI validation in 45 seconds"
-  },
-  {
-    before: "$75-150 discrepancy fees per LC",
-    after: "Catch errors before submission"
-  },
-  {
-    before: "Juggling 10 different systems",
-    after: "One platform for everything"
-  },
-  {
-    before: "Missed sanctions = $1M+ fines",
-    after: "Real-time OFAC/EU/UN screening"
-  }
-];
-
-const features = [
-  {
-    icon: Shield,
-    title: "Bank-Level Compliance",
-    description: "UCP600, ISBP745, ISP98, URDG758 — plus 60+ country-specific regulations. The same rules banks use to reject your documents."
-  },
-  {
-    icon: Zap,
-    title: "45-Second Validation",
-    description: "Upload your LC and docs. Get a complete compliance report before your coffee gets cold. No more 4-hour manual reviews."
-  },
+const differentiators = [
   {
     icon: Lock,
-    title: "Sanctions Screening",
-    description: "Check parties, vessels, and goods against OFAC, EU, UN, and UK lists. One click. Zero compliance anxiety."
+    title: "Proprietary Rule Engine",
+    description: "Our rule engine is the result of 2+ years of encoding ICC publications, bank interpretations, and country regulations. No one else has this depth.",
+  },
+  {
+    icon: Cpu,
+    title: "AI That Understands Context",
+    description: "We don't just match strings. Our AI understands that 'Chattogram' and 'Chittagong' are the same port, and 'USD 100,000' and '100,000.00 US$' are the same amount.",
   },
   {
     icon: TrendingUp,
-    title: "Built for Scale",
-    description: "From 1 LC/month to 1,000. Pricing that grows with you. Enterprise-ready from day one."
-  }
+    title: "Designed for Scale",
+    description: "Process 10 LCs or 10,000. Our infrastructure handles volume without compromising speed or accuracy. Pay only for what you use.",
+  },
 ];
 
 export function WhyTRDRSection() {
   return (
-    <section id="about" className="py-20">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Section header - Problem focused */}
+    <section className="py-24 md:py-32 bg-slate-950 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:64px_64px]" />
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        {/* Section header */}
         <div className="text-center mb-16">
-          <p className="text-primary font-medium mb-4">THE PROBLEM</p>
-          <h2 className="text-3xl lg:text-5xl font-bold text-foreground mb-6">
-            Trade Finance is{" "}
-            <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Broken
-            </span>
+          <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">Why Us</p>
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+            Transforming a trillion-dollar
+            <br />
+            <span className="text-slate-400">paper-pushing industry</span>
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Exporters lose millions to discrepancy fees, compliance gaps, and manual processes. 
-            We built TRDR Hub to fix that.
-          </p>
         </div>
 
-        {/* Before/After Comparison - Visual transformation */}
-        <div className="max-w-4xl mx-auto mb-20">
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Before Column */}
-            <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-red-600 mb-6 flex items-center gap-2">
-                <XCircle className="w-5 h-5" />
-                Without TRDR Hub
+        {/* Differentiators */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {differentiators.map((item, index) => (
+            <div
+              key={index}
+              className="text-center p-8"
+            >
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500/20 to-emerald-500/20 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                <item.icon className="w-8 h-8 text-blue-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-4">
+                {item.title}
               </h3>
-              <ul className="space-y-4">
-                {painPoints.map((point, i) => (
-                  <li key={i} className="flex items-start gap-3 text-muted-foreground">
-                    <XCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                    <span>{point.before}</span>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-slate-400 leading-relaxed">
+                {item.description}
+              </p>
             </div>
-            
-            {/* After Column */}
-            <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-green-600 mb-6 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5" />
-                With TRDR Hub
-              </h3>
-              <ul className="space-y-4">
-                {painPoints.map((point, i) => (
-                  <li key={i} className="flex items-start gap-3 text-foreground">
-                    <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span>{point.after}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* Features */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
-          {features.map((feature, index) => (
-            <Card key={index} className="border border-gray-200/50 hover:border-primary/20 transition-all duration-300 hover:shadow-medium group">
-              <CardContent className="p-6 text-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4 group-hover:bg-primary/20 transition-colors">
-                  <feature.icon className="w-8 h-8 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-3">
-                  {feature.title}
-                </h3>
-                <p className="text-muted-foreground leading-relaxed text-sm">
-                  {feature.description}
-                </p>
-              </CardContent>
-            </Card>
           ))}
         </div>
 
-        {/* Stats section - Specific numbers = credibility */}
-        <div className="bg-muted/30 rounded-2xl p-8">
-          <div className="grid md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">3,500+</div>
-              <div className="text-muted-foreground">Validation Rules</div>
-              <div className="text-xs text-muted-foreground mt-1">UCP600, ISBP745, ISP98...</div>
-            </div>
-            <div>
-              <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">60+</div>
-              <div className="text-muted-foreground">Country Rules</div>
-              <div className="text-xs text-muted-foreground mt-1">From Bangladesh to UAE</div>
-            </div>
-            <div>
-              <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">45s</div>
-              <div className="text-muted-foreground">Avg. Validation Time</div>
-              <div className="text-xs text-muted-foreground mt-1">vs 4+ hours manual</div>
-            </div>
-            <div>
-              <div className="text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">$75</div>
-              <div className="text-muted-foreground">Saved Per Discrepancy</div>
-              <div className="text-xs text-muted-foreground mt-1">Average bank fee avoided</div>
-            </div>
+        {/* Quote/Testimonial */}
+        <div className="mt-20 max-w-3xl mx-auto text-center">
+          <blockquote className="text-2xl md:text-3xl text-white font-medium leading-relaxed mb-6">
+            "We validated 247 LCs last quarter with TRDR Hub. Zero discrepancy fees. 
+            <span className="text-blue-400"> That's $18,000 saved.</span>"
+          </blockquote>
+          <div className="text-slate-400">
+            <span className="font-semibold text-slate-300">Sarah Chen</span>
+            <span className="mx-2">•</span>
+            <span>Trade Finance Manager, Singapore</span>
           </div>
         </div>
-        
       </div>
     </section>
   );
