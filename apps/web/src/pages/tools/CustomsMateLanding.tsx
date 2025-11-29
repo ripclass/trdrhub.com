@@ -129,7 +129,7 @@ const CustomsMateLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q2 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Import Requirements for{" "}
                 <span className="bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">Any Country</span>
               </h1>
@@ -169,7 +169,7 @@ const CustomsMateLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -181,7 +181,7 @@ const CustomsMateLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Requirements in Three Steps
               </h2>
             </div>
@@ -204,7 +204,7 @@ const CustomsMateLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Everything for Customs Clearance
               </h2>
             </div>
@@ -235,7 +235,7 @@ const CustomsMateLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Simple Pricing</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">Simple Pricing</h2>
             </div>
 
             <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
@@ -269,7 +269,7 @@ const CustomsMateLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">FAQ</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">FAQ</h2>
               <div className="space-y-4">
                 {faqs.map((faq, idx) => (
                   <div key={idx} className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
@@ -289,7 +289,7 @@ const CustomsMateLanding = () => {
         <section className="py-20 bg-slate-950 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">Clear Customs Without Surprises</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">Clear Customs Without Surprises</h2>
               <p className="text-lg text-slate-400 mb-8">Know the requirements before you ship.</p>
               <Button size="lg" className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold" asChild>
                 <Link to="/waitlist?tool=customs">Join Waitlist <ArrowRight className="w-5 h-5 ml-2" /></Link>

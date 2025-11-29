@@ -276,7 +276,7 @@ const ComingSoonTool = ({ toolSlug }: ComingSoonToolProps) => {
                 <IconComponent className={`w-10 h-10 ${colors.text}`} />
               </div>
 
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 {config.name}
               </h1>
               

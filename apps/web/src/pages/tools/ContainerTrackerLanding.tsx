@@ -126,7 +126,7 @@ const ContainerTrackerLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q2 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Track Every Container,{" "}
                 <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">Every Carrier</span>
               </h1>
@@ -188,7 +188,7 @@ const ContainerTrackerLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -200,7 +200,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Shipment Visibility is{" "}
                 <span className="text-blue-400">Fragmented</span>
               </h2>
@@ -257,7 +257,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Track in Three Steps
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -283,7 +283,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Complete Shipment Visibility
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -317,7 +317,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Simple Pricing
               </h2>
               <p className="text-slate-400">
@@ -361,7 +361,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Frequently Asked Questions
               </h2>
 
@@ -394,7 +394,7 @@ const ContainerTrackerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
                 Never Lose Track of a Shipment Again
               </h2>
               <p className="text-lg text-slate-400 mb-8">

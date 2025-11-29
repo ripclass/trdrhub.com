@@ -54,7 +54,7 @@ const DutyCalculatorLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q2 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Know Your{" "}
                 <span className="bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">Landed Cost</span>{" "}
                 Before You Ship
@@ -79,7 +79,7 @@ const DutyCalculatorLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -90,7 +90,7 @@ const DutyCalculatorLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Complete Landed Cost Breakdown</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">Complete Landed Cost Breakdown</h2>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
               {features.map((feature, idx) => (
@@ -116,7 +116,7 @@ const DutyCalculatorLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Simple Pricing</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">Simple Pricing</h2>
             </div>
             <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
               {pricing.map((plan, idx) => (
@@ -144,7 +144,7 @@ const DutyCalculatorLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">FAQ</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">FAQ</h2>
               <div className="space-y-4">
                 {faqs.map((faq, idx) => (
                   <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
@@ -163,7 +163,7 @@ const DutyCalculatorLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">Stop Guessing Landed Costs</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">Stop Guessing Landed Costs</h2>
               <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white font-semibold" asChild>
                 <Link to="/waitlist?tool=duty-calc">Join Waitlist <ArrowRight className="w-5 h-5 ml-2" /></Link>
               </Button>

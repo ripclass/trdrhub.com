@@ -53,7 +53,7 @@ const RouteOptimizerLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q3 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Find the{" "}
                 <span className="bg-gradient-to-r from-purple-400 to-violet-400 bg-clip-text text-transparent">Best Route</span>{" "}
                 for Every Shipment
@@ -76,7 +76,7 @@ const RouteOptimizerLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}

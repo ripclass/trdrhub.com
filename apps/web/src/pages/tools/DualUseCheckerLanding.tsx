@@ -130,7 +130,7 @@ const DualUseCheckerLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q2 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Know If You Need an{" "}
                 <span className="bg-gradient-to-r from-red-400 to-rose-400 bg-clip-text text-transparent">Export License</span>
               </h1>
@@ -199,7 +199,7 @@ const DualUseCheckerLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -211,7 +211,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Export Violations Mean{" "}
                 <span className="text-red-400">Criminal Penalties</span>
               </h2>
@@ -268,7 +268,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Classification in Three Steps
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -294,7 +294,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Comprehensive Export Control Coverage
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -328,7 +328,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Simple Pricing
               </h2>
               <p className="text-slate-400">
@@ -372,7 +372,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Frequently Asked Questions
               </h2>
 
@@ -405,7 +405,7 @@ const DualUseCheckerLanding = () => {
         <section className="py-20 bg-slate-950 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
                 Export with Confidence
               </h2>
               <p className="text-lg text-slate-400 mb-8">

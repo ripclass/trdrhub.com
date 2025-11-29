@@ -134,7 +134,7 @@ const HSCodeFinderLanding = () => {
                 <span className="text-purple-400 text-sm font-medium">100% Free Tool</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Find the Right{" "}
                 <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">HS Code</span>{" "}
                 in Seconds
@@ -202,7 +202,7 @@ const HSCodeFinderLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -214,7 +214,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 HS Code Classification is{" "}
                 <span className="text-purple-400">Confusing</span>
               </h2>
@@ -284,7 +284,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Classification in Three Steps
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -310,7 +310,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 More Than Just HS Codes
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -344,7 +344,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Free Forever, Upgrade for More
               </h2>
               <p className="text-slate-400">
@@ -388,7 +388,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Frequently Asked Questions
               </h2>
 
@@ -421,7 +421,7 @@ const HSCodeFinderLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
                 Stop Guessing HS Codes
               </h2>
               <p className="text-lg text-slate-400 mb-8">

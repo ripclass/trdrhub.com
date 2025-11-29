@@ -129,7 +129,7 @@ const TradeAnalyticsLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q3 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Turn Trade Data into{" "}
                 <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Actionable Insights</span>
               </h1>
@@ -184,7 +184,7 @@ const TradeAnalyticsLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -196,7 +196,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Trade Operations are a{" "}
                 <span className="text-indigo-400">Black Box</span>
               </h2>
@@ -253,7 +253,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 From Data to Insights in Minutes
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -279,7 +279,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Everything for Trade Intelligence
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -313,7 +313,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Simple Pricing
               </h2>
               <p className="text-slate-400">
@@ -357,7 +357,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Frequently Asked Questions
               </h2>
 
@@ -390,7 +390,7 @@ const TradeAnalyticsLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
                 Make Data-Driven Trade Decisions
               </h2>
               <p className="text-lg text-slate-400 mb-8">

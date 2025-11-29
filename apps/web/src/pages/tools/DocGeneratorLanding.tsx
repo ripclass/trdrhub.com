@@ -129,7 +129,7 @@ const DocGeneratorLanding = () => {
                 <span className="text-amber-400 text-sm font-medium">Coming Q1 2025</span>
               </div>
               
-              <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
                 Generate Trade Docs in{" "}
                 <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Minutes, Not Hours</span>
               </h1>
@@ -191,7 +191,7 @@ const DocGeneratorLanding = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
                   <div className="text-sm text-slate-500">{stat.label}</div>
                 </div>
               ))}
@@ -203,7 +203,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Document Prep is a{" "}
                 <span className="text-blue-400">Time Sink</span>
               </h2>
@@ -260,7 +260,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 From LC to Documents in Three Steps
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -286,7 +286,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Everything You Need for Document Prep
               </h2>
               <p className="text-slate-400 max-w-2xl mx-auto">
@@ -320,7 +320,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
                 Simple Pricing
               </h2>
               <p className="text-slate-400">
@@ -364,7 +364,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-950">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
                 Frequently Asked Questions
               </h2>
 
@@ -397,7 +397,7 @@ const DocGeneratorLanding = () => {
         <section className="py-20 bg-slate-900 border-t border-slate-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
                 Be First to Know When We Launch
               </h2>
               <p className="text-lg text-slate-400 mb-8">
