@@ -2,15 +2,11 @@
 OCR Service Wrapper
 
 Provides a simple interface for text extraction from documents.
-Uses the same OCR factory and adapters as LCopilot.
+Uses the same DocumentAIService as LCopilot for consistent OCR.
 """
 
-import io
 import logging
 from typing import Dict, Any, Optional
-from uuid import uuid4
-
-from app.ocr.factory import get_ocr_factory
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +15,21 @@ class OCRService:
     """
     Simple OCR service wrapper.
     
-    Uses the same DocumentAI/Textract adapters as LCopilot
+    Uses the same DocumentAIService as LCopilot (from app.services)
     for consistent OCR across all TRDR Hub tools.
     """
     
     def __init__(self):
-        self._factory = get_ocr_factory()
-        logger.info(f"OCR Service initialized - Primary: {self._factory.primary_provider}, Fallback: {self._factory.fallback_provider}")
+        self._doc_ai_service = None
+        self._init_error = None
+        
+        try:
+            from app.services import DocumentAIService
+            self._doc_ai_service = DocumentAIService()
+            logger.info("OCR Service initialized using DocumentAIService")
+        except Exception as e:
+            self._init_error = str(e)
+            logger.error(f"Failed to initialize DocumentAIService: {e}")
     
     async def extract_text(
         self,
@@ -46,69 +50,56 @@ class OCRService:
         """
         filename = filename or "document.pdf"
         
+        # Check if service is available
+        if not self._doc_ai_service:
+            return {
+                "text": "",
+                "confidence": 0,
+                "provider": "none",
+                "error": f"DocumentAI service not available: {self._init_error}",
+            }
+        
         # Auto-detect content type if not provided
         if not content_type:
             content_type = self._detect_content_type(content, filename)
         
-        document_id = uuid4()
+        # Map content type to MIME type for DocumentAI
+        mime_type = self._get_mime_type(content_type, filename)
         
         try:
-            # Get OCR adapter (same as LCopilot uses)
-            adapter = await self._factory.get_adapter()
+            logger.info(f"OCR extraction: file={filename}, size={len(content)} bytes, mime={mime_type}")
             
-            logger.info(
-                f"OCR extraction: provider={adapter.provider_name}, "
-                f"file={filename}, size={len(content)} bytes, type={content_type}"
+            # Use DocumentAIService.process_file (same as LCopilot)
+            result = await self._doc_ai_service.process_file(
+                file_content=content,
+                mime_type=mime_type,
             )
             
-            # Use process_file_bytes (implemented by all adapters)
-            result = await adapter.process_file_bytes(
-                file_bytes=content,
-                filename=filename,
-                content_type=content_type,
-                document_id=document_id,
-            )
-            
-            if result.error:
-                logger.warning(f"OCR returned error: {result.error}")
+            if result.get("success") and result.get("extracted_text"):
+                text = result["extracted_text"]
+                confidence = result.get("confidence", 0.85)
+                logger.info(f"OCR extracted {len(text)} chars with {confidence:.2f} confidence")
                 return {
-                    "text": result.full_text or "",
-                    "confidence": result.overall_confidence,
-                    "provider": result.provider,
-                    "error": result.error,
-                }
-            
-            if result.full_text and result.full_text.strip():
-                logger.info(f"OCR extracted {len(result.full_text)} chars with {result.overall_confidence:.2f} confidence")
-                return {
-                    "text": result.full_text,
-                    "confidence": result.overall_confidence,
-                    "provider": result.provider,
+                    "text": text,
+                    "confidence": confidence,
+                    "provider": "google_documentai",
                     "error": None,
                 }
             else:
+                error = result.get("error", "No text extracted")
                 return {
                     "text": "",
                     "confidence": 0,
-                    "provider": result.provider,
-                    "error": "No text extracted from document",
+                    "provider": "google_documentai",
+                    "error": error,
                 }
-                
-        except NotImplementedError as e:
-            logger.error(f"OCR adapter does not support file bytes: {e}")
-            return {
-                "text": "",
-                "confidence": 0,
-                "provider": "unknown",
-                "error": f"OCR method not supported: {str(e)}",
-            }
                 
         except Exception as e:
             logger.error(f"OCR extraction error: {e}", exc_info=True)
             return {
                 "text": "",
                 "confidence": 0,
-                "provider": "unknown",
+                "provider": "google_documentai",
                 "error": f"OCR failed: {str(e)}",
             }
     
@@ -137,13 +128,35 @@ class OCRService:
         
         return extension_map.get(ext, 'application/octet-stream')
     
+    def _get_mime_type(self, content_type: str, filename: str) -> str:
+        """Convert content type to DocumentAI-compatible MIME type."""
+        mime_map = {
+            'application/pdf': 'application/pdf',
+            'image/png': 'image/png',
+            'image/jpeg': 'image/jpeg',
+            'image/jpg': 'image/jpeg',
+            'image/tiff': 'image/tiff',
+        }
+        
+        if content_type in mime_map:
+            return mime_map[content_type]
+        
+        # Fallback based on extension
+        ext = filename.lower().split('.')[-1] if '.' in filename else ''
+        ext_mime_map = {
+            'pdf': 'application/pdf',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'tiff': 'image/tiff',
+            'tif': 'image/tiff',
+        }
+        
+        return ext_mime_map.get(ext, 'application/pdf')
+    
     async def health_check(self) -> bool:
         """Check if OCR service is available."""
-        try:
-            adapter = await self._factory.get_adapter()
-            return await adapter.health_check()
-        except Exception:
-            return False
+        return self._doc_ai_service is not None
 
 
 # Singleton instance
