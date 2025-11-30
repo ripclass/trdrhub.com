@@ -771,10 +771,19 @@ async def extract_prices_from_document(
         )
         
         if not ocr_result.get("text"):
-            raise HTTPException(
-                status_code=422,
-                detail="Could not extract text from document. Please ensure it's not blank or corrupted."
-            )
+            error_detail = ocr_result.get("error", "Unknown OCR error")
+            provider = ocr_result.get("provider", "unknown")
+            
+            # Provide helpful error message
+            if "image-based" in error_detail.lower() or "scanned" in error_detail.lower():
+                detail = "This PDF appears to be scanned/image-based. Please try uploading a text-based PDF or use manual entry."
+            elif "not available" in error_detail.lower():
+                detail = "OCR service is temporarily unavailable. Please try manual entry instead."
+            else:
+                detail = f"Could not extract text from document ({provider}). {error_detail}"
+            
+            logger.warning(f"OCR failed for {file.filename}: {error_detail}")
+            raise HTTPException(status_code=422, detail=detail)
         
         raw_text = ocr_result.get("text", "")
         logger.info(f"OCR extracted {len(raw_text)} characters")
