@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**15 products** across 5 categories, serving the complete trade finance lifecycle.
+**16 products** across 5 categories, serving the complete trade finance lifecycle.
 
 ---
 
@@ -34,9 +34,10 @@
 │  ├── Bank Fee Comparator 🆕                                │
 │  └── VAT & Duty Manager                                    │
 │                                                             │
-│  📊 INTELLIGENCE & REPORTING (3 products)                  │
+│  📊 INTELLIGENCE & REPORTING (4 products)                  │
 │  ├── Trade Analytics 🆕                                    │
 │  ├── RiskRecon (Counterparty Risk)                         │
+│  ├── Price Verification 🆕 ⭐ BANK REQUEST                 │
 │  └── Audit Trail / Digital Locker (Vault)                  │
 │                                                             │
 │  🔧 UTILITIES (2 free tools)                               │
@@ -67,6 +68,7 @@
 | 13 | Container Tracker | `13_container_tracker.md` | 3-4 wks | MEDIUM | Freemium $29-199/mo |
 | 14 | Counterparty Risk | `14_counterparty_risk.md` | 4-5 wks | MEDIUM | Freemium $49-299/mo |
 | 15 | Audit Trail / Vault | `15_audit_trail_locker.md` | 3-4 wks | MEDIUM | Freemium $19-99/mo |
+| 16 | Price Verification | `16_price_verification.md` | 4-6 wks | ⭐ HIGH | Freemium $49-399/mo |
 
 ---
 
