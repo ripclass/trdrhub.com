@@ -1499,7 +1499,9 @@ def _build_document_summaries(
     def _build_summary_from_detail(detail: Dict[str, Any], index: int) -> Dict[str, Any]:
         filename = detail.get("filename") or detail.get("name")
         doc_type = detail.get("document_type") or _infer_document_type_from_name(filename, index)
-        normalized_type = doc_type or "supporting_document"
+        # FIX: Normalize doc_type to canonical form (e.g., "Bill of Lading" -> "bill_of_lading")
+        # This ensures it matches the keys in issue_by_type
+        normalized_type = _normalize_doc_type_key(doc_type) or doc_type or "supporting_document"
         detail_id = detail.get("id") or str(uuid4())
         stats = _resolve_issue_stats(
             detail_id,
