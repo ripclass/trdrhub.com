@@ -177,6 +177,9 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
     { value: "sanctions.un", label: "UN Security Council Sanctions", type: "base", domain: "sanctions" },
     { value: "sanctions.uk", label: "UK OFSI Sanctions", type: "base", domain: "sanctions" },
     
+    // Combined Lists
+    { value: "sanctions.un_uk", label: "UN + UK Sanctions (Combined)", type: "base", domain: "sanctions" },
+    
     // Maritime & Vessels
     { value: "sanctions.vessel", label: "Vessel/Maritime Sanctions", type: "base", domain: "sanctions" },
     { value: "sanctions.port", label: "Port Restrictions", type: "base", domain: "sanctions" },
@@ -186,7 +189,8 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
     { value: "sanctions.ae", label: "UAE Sanctions", type: "base", domain: "sanctions" },
     { value: "sanctions.swiss", label: "Swiss SECO Sanctions", type: "base", domain: "sanctions" },
     
-    // General
+    // General & Screening
+    { value: "sanctions.screening", label: "Sanctions Screening (General)", type: "general", domain: "sanctions" },
     { value: "sanctions.global", label: "Global Sanctions (Combined)", type: "general", domain: "sanctions" },
     { value: "sanctions.checklist", label: "Sanctions Checklist", type: "general", domain: "sanctions" },
     { value: "sanctions", label: "Sanctions (General)", type: "general", domain: "sanctions" },
