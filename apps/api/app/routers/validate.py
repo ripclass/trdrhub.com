@@ -3403,6 +3403,8 @@ def _build_processing_summary(
         "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
         "status_counts": status_counts,
+        # FIX: Also send as document_status for frontend SummaryStrip compatibility
+        "document_status": status_counts,
     }
 
 

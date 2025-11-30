@@ -171,12 +171,27 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   const totalIssues =
     typeof payload?.total_issues === 'number' ? payload.total_issues : issues.length;
 
+  // Get document status from backend or calculate from documents
+  const documentStatus = payload?.status_counts ?? payload?.document_status ?? {
+    success: documents.filter((d) => d.status === 'success').length,
+    warning: documents.filter((d) => d.status === 'warning').length,
+    error: documents.filter((d) => d.status === 'error').length,
+  };
+
   return {
     total_documents: totalDocuments,
     successful_extractions: success,
     failed_extractions: failed,
     total_issues: totalIssues,
     severity_breakdown: severity,
+    // Pass through document status for SummaryStrip
+    document_status: documentStatus,
+    verified: documentStatus.success ?? 0,
+    warnings: documentStatus.warning ?? 0,
+    errors: documentStatus.error ?? 0,
+    // Pass through other useful fields from backend
+    compliance_rate: payload?.compliance_rate ?? 0,
+    processing_time_display: payload?.processing_time_display ?? 'N/A',
   };
 };
 
@@ -198,10 +213,21 @@ const ensureAnalytics = (
         risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount >= 1 ? 'medium' : 'low',
       }));
 
+  // Get document status distribution from backend or calculate from documents
+  const documentStatusDistribution = payload?.document_status_distribution ?? {
+    success: documents.filter((d) => d.status === 'success').length,
+    warning: documents.filter((d) => d.status === 'warning').length,
+    error: documents.filter((d) => d.status === 'error').length,
+  };
+
   return {
     compliance_score: Math.max(0, Math.min(100, compliance)),
     issue_counts: issueCounts,
     document_risk: documentRisk,
+    // Pass through document status distribution for consistent display
+    document_status_distribution: documentStatusDistribution,
+    documents_processed: payload?.documents_processed ?? documents.length,
+    processing_time_display: payload?.processing_time_display ?? 'N/A',
   };
 };
 

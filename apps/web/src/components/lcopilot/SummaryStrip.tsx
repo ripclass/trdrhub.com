@@ -30,7 +30,12 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
   // Get document counts from multiple sources for robustness
   const documentsProcessed =
     analytics?.documents_processed ?? summary.total_documents ?? data?.documents?.length ?? 0;
-  const statusDistribution = analytics?.document_status_distribution ?? summary?.document_status ?? {};
+  // FIX: Backend sends both document_status and status_counts - check both
+  const statusDistribution = 
+    analytics?.document_status_distribution ?? 
+    summary?.document_status ?? 
+    summary?.status_counts ?? 
+    {};
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
   
