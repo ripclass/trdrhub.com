@@ -739,6 +739,29 @@ async def validate_doc(
             logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
             
             # =================================================================
+            # PRICE VERIFICATION (LCopilot Integration)
+            # =================================================================
+            try:
+                from app.services.crossdoc import run_price_verification_checks
+                
+                price_verify_payload = {
+                    "invoice": payload.get("invoice") or {},
+                    "lc": payload.get("lc") or extracted_context.get("lc") or {},
+                    "documents": payload.get("documents") or extracted_context.get("documents") or [],
+                }
+                
+                price_issues = await run_price_verification_checks(
+                    payload=price_verify_payload,
+                    include_tbml_checks=True,
+                )
+                
+                if price_issues:
+                    logger.info("Price verification found %d issues", len(price_issues))
+                    v2_crossdoc_issues.extend(price_issues)
+            except Exception as e:
+                logger.warning(f"Price verification skipped: {e}")
+            
+            # =================================================================
             # AI VALIDATION ENGINE
             # =================================================================
             from app.services.validation.ai_validator import run_ai_validation, AIValidationIssue

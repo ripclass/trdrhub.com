@@ -388,6 +388,60 @@ export default function VerifyPage() {
     });
   };
   
+  // PDF Export Handler
+  const downloadPDF = async () => {
+    if (!result || !commodity || !price) {
+      toast({
+        title: "No Result",
+        description: "Please verify a price first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE}/price-verify/verify/pdf?include_market_details=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commodity,
+          price: parseFloat(price),
+          unit,
+          currency,
+          quantity: quantity ? parseFloat(quantity) : undefined,
+          document_type: documentType || undefined,
+          document_reference: documentRef || undefined,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('PDF generation failed');
+      }
+      
+      // Download the PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `price_verify_${result.commodity.code}_${new Date().toISOString().slice(0,10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "PDF Downloaded",
+        description: "Compliance report saved successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Could not generate PDF. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+  
   const verifySinglePrice = async () => {
     if (!commodity || !price || !unit) {
       toast({
@@ -1025,7 +1079,7 @@ export default function VerifyPage() {
                 
                 {/* Actions */}
                 <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1">
+                  <Button variant="outline" className="flex-1" onClick={downloadPDF}>
                     <Download className="h-4 w-4 mr-2" />
                     Download PDF
                   </Button>

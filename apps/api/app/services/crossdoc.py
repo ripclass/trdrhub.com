@@ -401,3 +401,170 @@ def _resolve_doc_references(
         names = fallback_labels
     return names, ids
 
+
+# =============================================================================
+# PRICE VERIFICATION INTEGRATION (LCopilot)
+# =============================================================================
+
+async def run_price_verification_checks(
+    payload: Dict[str, Any],
+    include_tbml_checks: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Run price verification on goods extracted from invoices/LCs.
+    
+    This integrates Price Verify with LCopilot to automatically check
+    if document prices align with market data.
+    
+    Args:
+        payload: The validation payload with extracted data
+        include_tbml_checks: Whether to flag potential TBML risks
+        
+    Returns:
+        List of price-related issues in crossdoc format
+    """
+    issues: List[Dict[str, Any]] = []
+    
+    try:
+        from app.services.price_verification import get_price_verification_service
+    except ImportError:
+        logger.warning("Price verification service not available")
+        return issues
+    
+    # Extract invoice data
+    invoice_context = payload.get("invoice") or {}
+    lc_context = payload.get("lc") or {}
+    document_lookup = _build_document_lookup(payload.get("documents"))
+    
+    # Get goods description to attempt commodity matching
+    goods_description = (
+        invoice_context.get("goods_description") or
+        invoice_context.get("product_description") or
+        lc_context.get("goods_description") or
+        lc_context.get("description")
+    )
+    
+    # Get price info
+    invoice_amount = invoice_context.get("invoice_amount") or invoice_context.get("amount")
+    if isinstance(invoice_amount, dict):
+        invoice_amount = invoice_amount.get("value")
+    
+    invoice_currency = (
+        invoice_context.get("currency") or
+        invoice_context.get("invoice_currency") or
+        "USD"
+    )
+    
+    # Try to get unit price and quantity
+    unit_price = invoice_context.get("unit_price")
+    quantity = invoice_context.get("quantity")
+    
+    # Skip if no goods description or price
+    if not goods_description or not (invoice_amount or unit_price):
+        logger.debug("No goods or price info for price verification")
+        return issues
+    
+    try:
+        service = get_price_verification_service()
+        
+        # Try to find the commodity
+        commodity = service.find_commodity(goods_description)
+        
+        if not commodity:
+            # Log but don't create an issue - commodity might not be in database
+            logger.debug(f"Commodity not found for price verification: {goods_description[:50]}")
+            return issues
+        
+        # Determine price to verify
+        price_to_verify = unit_price if unit_price else invoice_amount
+        
+        # Default unit if not specified
+        unit = invoice_context.get("unit") or commodity.get("unit", "kg")
+        
+        # Run verification
+        result = await service.verify_price(
+            commodity_input=goods_description,
+            document_price=float(price_to_verify),
+            document_unit=unit,
+            document_currency=invoice_currency,
+            quantity=float(quantity) if quantity else None,
+            document_type="invoice",
+        )
+        
+        if not result.get("success"):
+            return issues
+        
+        verdict = result.get("verdict", "pass")
+        variance = result.get("variance", {})
+        variance_percent = variance.get("percent", 0)
+        risk = result.get("risk", {})
+        
+        # Create issues based on verdict
+        if verdict == "warning":
+            doc_names, doc_ids = _resolve_doc_references(
+                document_lookup,
+                ["commercial_invoice"],
+                ["Commercial Invoice"],
+            )
+            
+            direction = "above" if variance_percent > 0 else "below"
+            issues.append({
+                "rule": "PRICE-VERIFY-1",
+                "title": "Price Variance Detected",
+                "passed": False,
+                "severity": "minor",
+                "message": f"Invoice price for {commodity.get('name')} is {abs(variance_percent):.1f}% {direction} market average. Review may be advisable.",
+                "expected": f"Market price: ${result.get('market_price', {}).get('price', 0):,.2f}/{result.get('market_price', {}).get('unit', unit)}",
+                "actual": f"Document price: ${float(price_to_verify):,.2f}/{unit}",
+                "suggestion": "Compare price against current market data and verify with supplier if needed.",
+                "document_names": doc_names,
+                "document_ids": doc_ids,
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "_price_verify_details": {
+                    "commodity_code": commodity.get("code"),
+                    "variance_percent": variance_percent,
+                    "risk_level": risk.get("risk_level"),
+                },
+            })
+            
+        elif verdict == "fail":
+            doc_names, doc_ids = _resolve_doc_references(
+                document_lookup,
+                ["commercial_invoice"],
+                ["Commercial Invoice"],
+            )
+            
+            direction = "above" if variance_percent > 0 else "below"
+            risk_flags = risk.get("risk_flags", [])
+            
+            # TBML warning
+            tbml_warning = ""
+            if include_tbml_checks and "tbml_risk" in risk_flags:
+                tbml_warning = " This significant variance may indicate Trade-Based Money Laundering (TBML) risk."
+            
+            issues.append({
+                "rule": "PRICE-VERIFY-2",
+                "title": "Significant Price Discrepancy",
+                "passed": False,
+                "severity": "major" if "tbml_risk" not in risk_flags else "critical",
+                "message": f"Invoice price for {commodity.get('name')} is {abs(variance_percent):.1f}% {direction} market average.{tbml_warning}",
+                "expected": f"Market price: ${result.get('market_price', {}).get('price', 0):,.2f}/{result.get('market_price', {}).get('unit', unit)}",
+                "actual": f"Document price: ${float(price_to_verify):,.2f}/{unit}",
+                "suggestion": "Verify price with supplier. Consider requesting justification for pricing deviation. Enhanced due diligence may be required.",
+                "document_names": doc_names,
+                "document_ids": doc_ids,
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "_price_verify_details": {
+                    "commodity_code": commodity.get("code"),
+                    "variance_percent": variance_percent,
+                    "risk_level": risk.get("risk_level"),
+                    "risk_flags": risk_flags,
+                    "tbml_alert": "tbml_risk" in risk_flags,
+                },
+            })
+        
+    except Exception as e:
+        logger.error(f"Price verification integration error: {e}", exc_info=True)
+    
+    return issues
+

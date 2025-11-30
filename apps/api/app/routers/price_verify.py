@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query, Request, File, UploadFile, Form
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.services.price_verification import (
@@ -19,6 +20,7 @@ from app.services.price_verification import (
 )
 from app.services.price_extraction import get_price_extraction_service
 from app.services.ocr_service import get_ocr_service
+from app.services.pdf_export import generate_verification_pdf, generate_batch_verification_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +273,138 @@ async def verify_batch_prices(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# PDF EXPORT
+# =============================================================================
+
+@router.post("/verify/pdf")
+async def verify_and_export_pdf(
+    request: SingleVerificationRequest,
+    company_name: Optional[str] = Query(None, description="Company name for report header"),
+    include_market_details: bool = Query(True, description="Include market data details"),
+):
+    """
+    Verify a price and export the result as a PDF compliance report.
+    
+    Returns a downloadable PDF file with:
+    - Verification verdict and details
+    - Commodity information
+    - Price comparison (document vs market)
+    - Variance analysis
+    - Risk assessment
+    - TBML warnings if applicable
+    """
+    service = get_price_verification_service()
+    
+    try:
+        # First, verify the price
+        result = await service.verify_price(
+            commodity_input=request.commodity,
+            document_price=request.price,
+            document_unit=request.unit,
+            document_currency=request.currency,
+            quantity=request.quantity,
+            document_type=request.document_type,
+            document_reference=request.document_reference,
+            origin_country=request.origin_country,
+            destination_country=request.destination_country,
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Verification failed")
+            )
+        
+        # Generate PDF
+        pdf_bytes = generate_verification_pdf(
+            result,
+            company_name=company_name,
+            include_market_details=include_market_details,
+        )
+        
+        if not pdf_bytes:
+            raise HTTPException(
+                status_code=500,
+                detail="PDF generation failed. ReportLab may not be installed."
+            )
+        
+        # Generate filename
+        commodity_code = result.get("commodity", {}).get("code", "unknown")
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"price_verify_{commodity_code}_{timestamp}.pdf"
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+            },
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PDF export error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/verify/batch/pdf")
+async def verify_batch_and_export_pdf(
+    request: BatchVerificationRequest,
+    company_name: Optional[str] = Query(None, description="Company name for report header"),
+):
+    """
+    Verify multiple prices and export results as a PDF compliance report.
+    
+    Returns a downloadable PDF file with:
+    - Summary of all verifications
+    - Results table with verdicts
+    - Overall compliance assessment
+    """
+    service = get_price_verification_service()
+    
+    try:
+        items = [item.model_dump() for item in request.items]
+        
+        result = await service.verify_batch(
+            items=items,
+            document_type=request.document_type,
+            document_reference=request.document_reference,
+        )
+        
+        # Generate PDF
+        pdf_bytes = generate_batch_verification_pdf(
+            result,
+            company_name=company_name,
+        )
+        
+        if not pdf_bytes:
+            raise HTTPException(
+                status_code=500,
+                detail="PDF generation failed. ReportLab may not be installed."
+            )
+        
+        # Generate filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        item_count = len(request.items)
+        filename = f"price_verify_batch_{item_count}items_{timestamp}.pdf"
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+            },
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Batch PDF export error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/units")
 async def list_supported_units():
     """
@@ -301,6 +435,83 @@ async def list_supported_units():
     }
 
 
+@router.get("/currencies")
+async def list_supported_currencies():
+    """
+    List supported currencies with their exchange rates to USD.
+    
+    Rates are fetched from external APIs when available,
+    falling back to cached values.
+    """
+    from app.services.price_verification import get_fx_rates, FALLBACK_FX_RATES, _fx_rate_cache
+    import httpx
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            rates = await get_fx_rates(client)
+    except Exception:
+        rates = FALLBACK_FX_RATES
+    
+    currencies = []
+    for code, rate in rates.items():
+        currencies.append({
+            "code": code,
+            "rate_to_usd": rate,
+            "usd_to_rate": round(1 / rate, 6) if rate != 0 else 0,
+        })
+    
+    return {
+        "success": True,
+        "base_currency": "USD",
+        "rate_source": _fx_rate_cache.get("source", "fallback"),
+        "last_updated": _fx_rate_cache.get("timestamp").isoformat() if _fx_rate_cache.get("timestamp") else None,
+        "currencies": sorted(currencies, key=lambda x: x["code"]),
+    }
+
+
+@router.get("/convert")
+async def convert_currency_endpoint(
+    amount: float = Query(..., gt=0, description="Amount to convert"),
+    from_currency: str = Query(..., description="Source currency code (e.g., EUR, GBP)"),
+    to_currency: str = Query("USD", description="Target currency code"),
+):
+    """
+    Convert an amount between currencies.
+    
+    Uses real-time exchange rates when available.
+    """
+    from app.services.price_verification import get_fx_rates, convert_currency, _fx_rate_cache
+    import httpx
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            rates = await get_fx_rates(client)
+    except Exception:
+        from app.services.price_verification import FALLBACK_FX_RATES
+        rates = FALLBACK_FX_RATES
+    
+    converted_amount, source = convert_currency(
+        amount,
+        from_currency,
+        to_currency,
+        rates
+    )
+    
+    return {
+        "success": True,
+        "original": {
+            "amount": amount,
+            "currency": from_currency.upper(),
+        },
+        "converted": {
+            "amount": converted_amount,
+            "currency": to_currency.upper(),
+        },
+        "rate_source": source,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
 @router.get("/stats")
 async def get_verification_stats():
     """
@@ -322,13 +533,15 @@ async def get_verification_stats():
     for data in COMMODITIES_DATABASE.values():
         sources.update(data.get("data_sources", []))
     
+    from app.services.price_verification import FALLBACK_FX_RATES
+    
     return {
         "success": True,
         "stats": {
             "total_commodities": len(COMMODITIES_DATABASE),
             "categories": category_counts,
             "data_sources": list(sources),
-            "supported_currencies": ["USD"],  # TODO: Add more
+            "supported_currencies": list(FALLBACK_FX_RATES.keys()),
             "api_status": "operational",
         },
     }

@@ -549,6 +549,136 @@ UNIT_CONVERSIONS = {
     "gross": 144.0,
 }
 
+# =============================================================================
+# CURRENCY CONVERSION
+# =============================================================================
+# Exchange rates to USD (updated periodically)
+# Will attempt to fetch live rates, fallback to these if unavailable
+
+FALLBACK_FX_RATES = {
+    "USD": 1.0,
+    "EUR": 0.92,     # 1 EUR = 1.087 USD
+    "GBP": 0.79,     # 1 GBP = 1.266 USD
+    "JPY": 149.50,   # 1 USD = 149.50 JPY
+    "CNY": 7.24,     # 1 USD = 7.24 CNY
+    "INR": 84.50,    # 1 USD = 84.50 INR
+    "BDT": 119.50,   # 1 USD = 119.50 BDT
+    "AED": 3.67,     # 1 USD = 3.67 AED
+    "SAR": 3.75,     # 1 USD = 3.75 SAR
+    "PKR": 278.50,   # 1 USD = 278.50 PKR
+    "AUD": 1.54,     # 1 USD = 1.54 AUD
+    "CAD": 1.39,     # 1 USD = 1.39 CAD
+    "CHF": 0.88,     # 1 CHF = 1.14 USD
+    "SGD": 1.35,     # 1 USD = 1.35 SGD
+    "HKD": 7.78,     # 1 USD = 7.78 HKD
+    "KRW": 1380.0,   # 1 USD = 1380 KRW
+    "MYR": 4.47,     # 1 USD = 4.47 MYR
+    "THB": 35.50,    # 1 USD = 35.50 THB
+    "VND": 24500.0,  # 1 USD = 24500 VND
+    "IDR": 15850.0,  # 1 USD = 15850 IDR
+    "PHP": 58.50,    # 1 USD = 58.50 PHP
+    "ZAR": 18.50,    # 1 USD = 18.50 ZAR
+    "BRL": 5.85,     # 1 USD = 5.85 BRL
+    "MXN": 17.50,    # 1 USD = 17.50 MXN
+    "TRY": 34.20,    # 1 USD = 34.20 TRY
+    "RUB": 96.50,    # 1 USD = 96.50 RUB
+    "EGP": 49.50,    # 1 USD = 49.50 EGP
+    "NGN": 1550.0,   # 1 USD = 1550 NGN
+    "KES": 154.0,    # 1 USD = 154 KES
+}
+
+# Cache for live FX rates
+_fx_rate_cache: Dict[str, Any] = {
+    "rates": {},
+    "timestamp": None,
+    "source": "fallback",
+}
+
+async def get_fx_rates(http_client: httpx.AsyncClient = None) -> Dict[str, float]:
+    """
+    Get current FX rates to USD.
+    Attempts to fetch from free APIs, falls back to static rates.
+    """
+    global _fx_rate_cache
+    
+    # Check cache (rates valid for 1 hour)
+    if _fx_rate_cache["timestamp"]:
+        cache_age = datetime.now() - _fx_rate_cache["timestamp"]
+        if cache_age.total_seconds() < 3600 and _fx_rate_cache["rates"]:
+            return _fx_rate_cache["rates"]
+    
+    # Try to fetch live rates
+    if http_client:
+        try:
+            # Try exchangerate-api.com (free tier)
+            response = await http_client.get(
+                "https://open.er-api.com/v6/latest/USD",
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("result") == "success":
+                    rates = data.get("rates", {})
+                    _fx_rate_cache = {
+                        "rates": rates,
+                        "timestamp": datetime.now(),
+                        "source": "exchangerate-api",
+                    }
+                    logger.info(f"Fetched {len(rates)} FX rates from API")
+                    return rates
+        except Exception as e:
+            logger.warning(f"Failed to fetch live FX rates: {e}")
+    
+    # Return fallback rates
+    _fx_rate_cache = {
+        "rates": FALLBACK_FX_RATES,
+        "timestamp": datetime.now(),
+        "source": "fallback",
+    }
+    return FALLBACK_FX_RATES
+
+
+def convert_currency(
+    amount: float,
+    from_currency: str,
+    to_currency: str = "USD",
+    fx_rates: Dict[str, float] = None,
+) -> Tuple[float, str]:
+    """
+    Convert amount from one currency to another.
+    
+    Returns:
+        Tuple of (converted_amount, rate_source)
+    """
+    from_currency = from_currency.upper()
+    to_currency = to_currency.upper()
+    
+    if from_currency == to_currency:
+        return amount, "same_currency"
+    
+    rates = fx_rates or FALLBACK_FX_RATES
+    
+    # Convert to USD first (if not already)
+    if from_currency == "USD":
+        usd_amount = amount
+    elif from_currency in rates:
+        usd_amount = amount / rates[from_currency]
+    else:
+        logger.warning(f"Unknown currency: {from_currency}, using 1:1 rate")
+        usd_amount = amount
+    
+    # Convert from USD to target currency
+    if to_currency == "USD":
+        result = usd_amount
+    elif to_currency in rates:
+        result = usd_amount * rates[to_currency]
+    else:
+        logger.warning(f"Unknown currency: {to_currency}, using 1:1 rate")
+        result = usd_amount
+    
+    source = _fx_rate_cache.get("source", "fallback") if fx_rates else "fallback"
+    return round(result, 4), source
+
 
 class PriceVerificationService:
     """
@@ -768,21 +898,56 @@ class PriceVerificationService:
         from_unit: str,
         to_unit: str,
         from_currency: str = "USD",
-        to_currency: str = "USD"
-    ) -> float:
+        to_currency: str = "USD",
+        fx_rates: Dict[str, float] = None
+    ) -> Tuple[float, Dict[str, Any]]:
         """
         Normalize price from one unit/currency to another.
+        
+        Returns:
+            Tuple of (normalized_price, conversion_details)
         """
+        conversion_details = {
+            "original_price": price,
+            "original_unit": from_unit,
+            "original_currency": from_currency,
+            "target_unit": to_unit,
+            "target_currency": to_currency,
+            "unit_conversion_factor": 1.0,
+            "currency_conversion_rate": 1.0,
+            "currency_source": "same_currency",
+        }
+        
         # Unit conversion
         from_factor = UNIT_CONVERSIONS.get(from_unit.lower(), 1.0)
         to_factor = UNIT_CONVERSIONS.get(to_unit.lower(), 1.0)
         
-        normalized = price * (from_factor / to_factor)
+        unit_factor = from_factor / to_factor
+        normalized = price * unit_factor
+        conversion_details["unit_conversion_factor"] = round(unit_factor, 6)
         
-        # TODO: Add currency conversion using exchange rates
-        # For now, assume USD
+        # Currency conversion (using global convert_currency function)
+        if from_currency.upper() != to_currency.upper():
+            normalized, source = convert_currency(
+                normalized,
+                from_currency,
+                to_currency,
+                fx_rates
+            )
+            # Calculate effective rate
+            if from_currency.upper() != "USD":
+                from_rate = (fx_rates or FALLBACK_FX_RATES).get(from_currency.upper(), 1.0)
+            else:
+                from_rate = 1.0
+            if to_currency.upper() != "USD":
+                to_rate = (fx_rates or FALLBACK_FX_RATES).get(to_currency.upper(), 1.0)
+            else:
+                to_rate = 1.0
+            effective_rate = to_rate / from_rate
+            conversion_details["currency_conversion_rate"] = round(effective_rate, 6)
+            conversion_details["currency_source"] = source
         
-        return normalized
+        return round(normalized, 4), conversion_details
     
     def calculate_variance(
         self,
@@ -915,13 +1080,19 @@ class PriceVerificationService:
                 "error": market_data["error"],
             }
         
-        # Normalize document price to commodity's standard unit
-        normalized_price = self.normalize_price(
+        # Fetch FX rates if needed (for currency conversion)
+        fx_rates = None
+        if document_currency.upper() != "USD":
+            fx_rates = await get_fx_rates(self.http_client)
+        
+        # Normalize document price to commodity's standard unit and USD
+        normalized_price, conversion_details = self.normalize_price(
             document_price,
             document_unit,
             commodity["unit"],
             document_currency,
-            "USD"
+            "USD",
+            fx_rates
         )
         
         # Calculate variance
@@ -970,8 +1141,10 @@ class PriceVerificationService:
                 "currency": document_currency,
                 "normalized_price": round(normalized_price, 4),
                 "normalized_unit": commodity["unit"],
+                "normalized_currency": "USD",
                 "quantity": quantity,
                 "total_value": total_value,
+                "conversion": conversion_details,
             },
             
             # Market price
