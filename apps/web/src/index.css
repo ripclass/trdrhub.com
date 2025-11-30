@@ -11,32 +11,32 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
   :root {
     /* Base semantic tokens */
     --background: 0 0% 100%;
-    --foreground: 220 13% 18%;
+    --foreground: 0 0% 3.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 13% 18%;
+    --card-foreground: 0 0% 3.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 13% 18%;
+    --popover-foreground: 0 0% 3.9%;
 
-    --primary: 158 64% 25%;
+    --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 13% 18%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 8.9% 46.1%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
 
-    --accent: 158 64% 25%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 158 64% 25%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
 
     --success: 142 76% 36%;
     --success-foreground: 0 0% 98%;
@@ -97,7 +97,7 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
     --shadow-strong: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 
-    --radius: 0.375rem; /* 6px - tighter for density */
+    --radius: 0.5rem; /* 6px - tighter for density */
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -107,37 +107,42 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
   }
 
   .dark {
     /* Bloomberg-style dark: deep backgrounds, high contrast */
-    --background: 220 13% 6%; /* Darker canvas */
-    --foreground: 220 5% 92%; /* Bright text */
+    --background: 0 0% 3.9%; /* Darker canvas */
+    --foreground: 0 0% 98%; /* Bright text */
 
-    --card: 220 13% 9%; /* Slightly elevated from canvas */
-    --card-foreground: 220 5% 92%;
+    --card: 0 0% 3.9%; /* Slightly elevated from canvas */
+    --card-foreground: 0 0% 98%;
 
-    --popover: 220 13% 11%;
-    --popover-foreground: 220 5% 92%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 158 64% 40%; /* Brighter for dark mode */
-    --primary-foreground: 0 0% 98%;
+    --primary: 0 0% 98%; /* Brighter for dark mode */
+    --primary-foreground: 0 0% 9%;
 
-    --secondary: 220 13% 14%;
-    --secondary-foreground: 220 5% 92%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 220 13% 14%;
-    --muted-foreground: 220 9% 68%; /* Better readability */
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%; /* Better readability */
 
-    --accent: 190 100% 50%; /* Bloomberg cyan for accents */
-    --accent-foreground: 220 13% 6%;
+    --accent: 0 0% 14.9%; /* Bloomberg cyan for accents */
+    --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 72% 55%;
+    --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 220 13% 18%; /* Subtle borders */
-    --input: 220 13% 16%;
-    --ring: 190 100% 50%; /* Match accent for focus */
+    --border: 0 0% 14.9%; /* Subtle borders */
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%; /* Match accent for focus */
 
     --success: 142 76% 42%;
     --success-foreground: 0 0% 98%;
@@ -184,14 +189,19 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
 
     --radius: 0.375rem; /* 6px - consistent */
 
-    --sidebar-background: 220 13% 8%;
-    --sidebar-foreground: 220 5% 90%;
-    --sidebar-primary: 190 100% 50%;
-    --sidebar-primary-foreground: 220 13% 6%;
-    --sidebar-accent: 220 13% 14%;
-    --sidebar-accent-foreground: 220 5% 90%;
-    --sidebar-border: 220 13% 16%;
-    --sidebar-ring: 190 100% 50%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
   }
 }
 

@@ -18,6 +18,7 @@ import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
 import PriceVerify from './pages/tools/PriceVerify'
+import { PriceVerifyDashboard, DashboardOverview, VerifyPage } from './pages/tools/price-verify'
 import CounterpartyRiskLanding from './pages/tools/CounterpartyRiskLanding'
 import DualUseCheckerLanding from './pages/tools/DualUseCheckerLanding'
 import CustomsMateLanding from './pages/tools/CustomsMateLanding'
@@ -94,6 +95,19 @@ function App() {
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
         <Route path="/price-verify" element={<PriceVerifyLanding />} />
         <Route path="/price-verify/tool" element={<PriceVerify />} />
+        {/* Price Verify Dashboard */}
+        <Route path="/price-verify/dashboard" element={<PriceVerifyDashboard />}>
+          <Route index element={<DashboardOverview />} />
+          <Route path="verify" element={<VerifyPage />} />
+          <Route path="batch" element={<VerifyPage />} />
+          <Route path="commodities" element={<DashboardOverview />} />
+          <Route path="prices" element={<DashboardOverview />} />
+          <Route path="history" element={<DashboardOverview />} />
+          <Route path="analytics" element={<DashboardOverview />} />
+          <Route path="reports" element={<DashboardOverview />} />
+          <Route path="settings" element={<DashboardOverview />} />
+          <Route path="help" element={<DashboardOverview />} />
+        </Route>
         <Route path="/risk" element={<CounterpartyRiskLanding />} />
         <Route path="/dual-use" element={<DualUseCheckerLanding />} />
         <Route path="/customs" element={<CustomsMateLanding />} />

@@ -2,24 +2,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { ChevronRight, MoreHorizontal } from "lucide-react"
 
-// Inline cn function to avoid import/bundling issues
-function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
-  return classes
-    .filter(Boolean)
-    .map((cls) => {
-      if (typeof cls === 'string') return cls;
-      if (typeof cls === 'object' && cls !== null) {
-        return Object.entries(cls)
-          .filter(([_, val]) => val)
-          .map(([key]) => key)
-          .join(' ');
-      }
-      return '';
-    })
-    .filter(Boolean)
-    .join(' ');
-}
-
+import { cn } from "@/lib/utils"
 
 const Breadcrumb = React.forwardRef<
   HTMLElement,
@@ -97,7 +80,7 @@ const BreadcrumbSeparator = ({
   <li
     role="presentation"
     aria-hidden="true"
-    className={cn("[&>svg]:size-3.5", className)}
+    className={cn("[&>svg]:w-3.5 [&>svg]:h-3.5", className)}
     {...props}
   >
     {children ?? <ChevronRight />}

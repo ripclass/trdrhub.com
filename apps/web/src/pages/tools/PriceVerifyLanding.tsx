@@ -47,8 +47,8 @@ export default function PriceVerifyLanding() {
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
               <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8 h-12" asChild>
-                <Link to="/price-verify/tool">
-                  Try It Free
+                <Link to="/price-verify/dashboard">
+                  Open Dashboard
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Link>
               </Button>
