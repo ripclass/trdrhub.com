@@ -55,33 +55,46 @@ class OCRFactory:
         try:
             if (settings.GOOGLE_CLOUD_PROJECT and 
                 settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID):
+                print(f"Initializing Google Document AI: project={settings.GOOGLE_CLOUD_PROJECT}, processor={settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID}")
                 google_adapter = GoogleDocumentAIAdapter()
                 self._adapters.append(google_adapter)
                 if not self._primary_adapter:
                     self._primary_adapter = google_adapter
-                    print("Google Document AI configured as primary OCR provider")
+                    print("✓ Google Document AI configured as primary OCR provider")
                 elif not self._fallback_adapter:
                     self._fallback_adapter = google_adapter
-                    print("Google Document AI configured as fallback OCR provider")
+                    print("✓ Google Document AI configured as fallback OCR provider")
+            else:
+                print(f"Google Document AI NOT configured: project={settings.GOOGLE_CLOUD_PROJECT}, processor={settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID}")
         except Exception as e:
-            print(f"Failed to initialize Google Document AI: {e}")
+            print(f"✗ Failed to initialize Google Document AI: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Try to initialize AWS Textract (fallback)
-        try:
-            # AWS credentials are typically available via IAM roles or environment
-            aws_adapter = AWSTextractAdapter()
-            self._adapters.append(aws_adapter)
-            if not self._primary_adapter:
-                self._primary_adapter = aws_adapter
-                print("AWS Textract configured as primary OCR provider")
-            elif not self._fallback_adapter:
-                self._fallback_adapter = aws_adapter
-                print("AWS Textract configured as fallback OCR provider")
-        except Exception as e:
-            print(f"Failed to initialize AWS Textract: {e}")
+        # Only use Textract if DocumentAI is NOT configured (to avoid subscription errors)
+        if not (settings.GOOGLE_CLOUD_PROJECT and settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID):
+            try:
+                # AWS credentials are typically available via IAM roles or environment
+                aws_adapter = AWSTextractAdapter()
+                self._adapters.append(aws_adapter)
+                if not self._primary_adapter:
+                    self._primary_adapter = aws_adapter
+                    print("AWS Textract configured as primary OCR provider")
+                elif not self._fallback_adapter:
+                    self._fallback_adapter = aws_adapter
+                    print("AWS Textract configured as fallback OCR provider")
+            except Exception as e:
+                print(f"Failed to initialize AWS Textract: {e}")
+        else:
+            print("Skipping AWS Textract - Google DocumentAI is configured")
         
         if not self._adapters:
-            raise RuntimeError("No OCR adapters could be initialized")
+            print("ERROR: No OCR adapters initialized!")
+            print(f"  - GOOGLE_CLOUD_PROJECT: {'set' if settings.GOOGLE_CLOUD_PROJECT else 'NOT SET'}")
+            print(f"  - GOOGLE_DOCUMENTAI_PROCESSOR_ID: {'set' if settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID else 'NOT SET'}")
+            print(f"  - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'set' if getattr(settings, 'GOOGLE_APPLICATION_CREDENTIALS_JSON', None) else 'NOT SET'}")
+            raise RuntimeError("No OCR adapters could be initialized - check Google Document AI credentials")
     
     async def get_adapter(self, prefer_fallback: bool = False) -> OCRAdapter:
         """
