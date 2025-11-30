@@ -347,6 +347,7 @@ if not settings.USE_STUBS:
             "/auth/register",
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
             "/api/validate",  # TEMPORARY - Exempt for demo mode (validation works without auth)
+            "/price-verify",  # Price verification API (public tool)
         },
         exempt_methods={"GET", "HEAD", "OPTIONS"},
         token_expiry_seconds=3600,  # 1 hour
