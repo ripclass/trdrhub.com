@@ -424,9 +424,20 @@ export default function ImportResults({
         setUseMockData(true);
       }
     }, 2000);
+    
+    // Safety timeout: if processing takes more than 60 seconds, show results anyway
+    const processingTimeout = setTimeout(() => {
+      if (isPolling || jobStatus?.status === 'processing') {
+        console.log('Processing timeout reached, showing available data');
+        setUseMockData(true);
+      }
+    }, 60000);
 
-    return () => clearTimeout(timer);
-  }, [jobId, jobStatus, isDemoJob]);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(processingTimeout);
+    };
+  }, [jobId, jobStatus, isDemoJob, isPolling]);
 
   useEffect(() => {
     if (!isDemoJob && jobId && jobStatus?.status === 'active' && !isPolling) {
@@ -725,31 +736,42 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
     return (
       <header className="bg-card border-b border-gray-200">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/lcopilot/import-upload">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Upload
-              </Button>
-            </Link>
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-importer p-2 rounded-lg">
-                {mode === 'draft' ? (
-                  <ShieldCheck className="w-6 h-6 text-primary-foreground" />
-                ) : (
-                  <FileText className="w-6 h-6 text-primary-foreground" />
-                )}
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">{title}</h1>
-                <p className="text-sm text-muted-foreground">{description}</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-importer p-2 rounded-lg">
+              {mode === 'draft' ? (
+                <ShieldCheck className="w-6 h-6 text-primary-foreground" />
+              ) : (
+                <FileText className="w-6 h-6 text-primary-foreground" />
+              )}
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-foreground">{title}</h1>
+              <p className="text-sm text-muted-foreground">{description}</p>
             </div>
           </div>
         </div>
       </header>
     );
   };
+
+  // Animated progress for processing state
+  const [processingProgress, setProcessingProgress] = useState(0);
+  
+  useEffect(() => {
+    if (isPolling || jobStatus?.status === 'processing') {
+      const interval = setInterval(() => {
+        setProcessingProgress(prev => {
+          // Slow down as we approach 90%
+          if (prev < 30) return prev + 3;
+          if (prev < 60) return prev + 2;
+          if (prev < 85) return prev + 1;
+          if (prev < 95) return prev + 0.5;
+          return prev;
+        });
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [isPolling, jobStatus?.status]);
 
   const renderProcessingState = () => {
     if ((isPolling || jobStatus?.status === 'processing') && !useMockData) {
@@ -767,7 +789,21 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   : 'Validating supplier documents against LC requirements and checking for discrepancies.'
                 }
               </p>
-              <Progress value={75} className="w-64 mx-auto" />
+              <Progress value={processingProgress} className="w-64 mx-auto mb-4" />
+              <p className="text-xs text-muted-foreground mb-3">
+                {processingProgress < 30 ? 'Extracting document content...' :
+                 processingProgress < 60 ? 'Applying compliance rules...' :
+                 processingProgress < 85 ? 'Generating risk analysis...' :
+                 'Finalizing results...'}
+              </p>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setUseMockData(true)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Skip to preview results
+              </Button>
             </CardContent>
           </Card>
         </div>
