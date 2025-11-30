@@ -18,7 +18,19 @@ import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
 import PriceVerify from './pages/tools/PriceVerify'
-import { PriceVerifyDashboard, DashboardOverview, VerifyPage } from './pages/tools/price-verify'
+import { 
+  PriceVerifyDashboard, 
+  DashboardOverview, 
+  VerifyPage,
+  BatchVerifyPage,
+  CommoditiesPage,
+  MarketPricesPage,
+  HistoryPage,
+  AnalyticsPage as PVAnalyticsPage,
+  ReportsPage,
+  SettingsPage as PVSettingsPage,
+  HelpPage
+} from './pages/tools/price-verify'
 import CounterpartyRiskLanding from './pages/tools/CounterpartyRiskLanding'
 import DualUseCheckerLanding from './pages/tools/DualUseCheckerLanding'
 import CustomsMateLanding from './pages/tools/CustomsMateLanding'
@@ -99,14 +111,14 @@ function App() {
         <Route path="/price-verify/dashboard" element={<PriceVerifyDashboard />}>
           <Route index element={<DashboardOverview />} />
           <Route path="verify" element={<VerifyPage />} />
-          <Route path="batch" element={<VerifyPage />} />
-          <Route path="commodities" element={<DashboardOverview />} />
-          <Route path="prices" element={<DashboardOverview />} />
-          <Route path="history" element={<DashboardOverview />} />
-          <Route path="analytics" element={<DashboardOverview />} />
-          <Route path="reports" element={<DashboardOverview />} />
-          <Route path="settings" element={<DashboardOverview />} />
-          <Route path="help" element={<DashboardOverview />} />
+          <Route path="batch" element={<BatchVerifyPage />} />
+          <Route path="commodities" element={<CommoditiesPage />} />
+          <Route path="prices" element={<MarketPricesPage />} />
+          <Route path="history" element={<HistoryPage />} />
+          <Route path="analytics" element={<PVAnalyticsPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="settings" element={<PVSettingsPage />} />
+          <Route path="help" element={<HelpPage />} />
         </Route>
         <Route path="/risk" element={<CounterpartyRiskLanding />} />
         <Route path="/dual-use" element={<DualUseCheckerLanding />} />

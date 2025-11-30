@@ -1,5 +1,11 @@
-// Price Verify Dashboard Exports
-export { default as PriceVerifyDashboard } from "./PriceVerifyDashboard";
-export { default as DashboardOverview } from "./DashboardOverview";
-export { default as VerifyPage } from "./VerifyPage";
-
+export { default as PriceVerifyDashboard } from './PriceVerifyDashboard';
+export { default as DashboardOverview } from './DashboardOverview';
+export { default as VerifyPage } from './VerifyPage';
+export { default as BatchVerifyPage } from './BatchVerifyPage';
+export { default as CommoditiesPage } from './CommoditiesPage';
+export { default as MarketPricesPage } from './MarketPricesPage';
+export { default as HistoryPage } from './HistoryPage';
+export { default as AnalyticsPage } from './AnalyticsPage';
+export { default as ReportsPage } from './ReportsPage';
+export { default as SettingsPage } from './SettingsPage';
+export { default as HelpPage } from './HelpPage';
