@@ -2,18 +2,23 @@
 Price Verification API Router
 
 Endpoints for verifying trade document prices against market data.
+Includes document upload with OCR extraction.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime
+import io
 import logging
+from datetime import datetime
+from typing import Optional, List
+
+from fastapi import APIRouter, HTTPException, Query, Request, File, UploadFile, Form
+from pydantic import BaseModel, Field
 
 from app.services.price_verification import (
     get_price_verification_service,
     COMMODITIES_DATABASE,
 )
+from app.services.price_extraction import get_price_extraction_service
+from app.services.ocr_service import get_ocr_service
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +331,245 @@ async def get_verification_stats():
             "supported_currencies": ["USD"],  # TODO: Add more
             "api_status": "operational",
         },
+    }
+
+
+# =============================================================================
+# DOCUMENT UPLOAD + OCR EXTRACTION
+# =============================================================================
+
+@router.post("/extract")
+async def extract_prices_from_document(
+    file: UploadFile = File(..., description="Invoice, LC, or contract document"),
+    auto_verify: bool = Form(True, description="Automatically verify extracted prices"),
+):
+    """
+    Upload a trade document and extract commodity prices using OCR + AI.
+    
+    **Supported Documents:**
+    - Commercial Invoices (PDF, JPG, PNG)
+    - Letters of Credit (PDF)
+    - Purchase Contracts (PDF)
+    - Proforma Invoices (PDF)
+    
+    **Process:**
+    1. OCR extracts text from document
+    2. AI identifies commodities, quantities, and prices
+    3. (Optional) Auto-verifies prices against market data
+    
+    **Returns:**
+    - Extracted line items with commodity, price, quantity, unit
+    - Document metadata (seller, buyer, reference)
+    - Verification results if auto_verify=true
+    """
+    # Validate file type
+    allowed_types = {
+        'application/pdf', 
+        'image/jpeg', 
+        'image/png', 
+        'image/tiff',
+    }
+    
+    content_type = file.content_type or ""
+    if content_type not in allowed_types:
+        # Check file extension as fallback
+        filename = file.filename or ""
+        ext = filename.lower().split(".")[-1] if "." in filename else ""
+        if ext not in ["pdf", "jpg", "jpeg", "png", "tiff"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type: {content_type}. Allowed: PDF, JPG, PNG, TIFF"
+            )
+    
+    # Read file content
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:  # 20MB limit
+        raise HTTPException(
+            status_code=400,
+            detail="File too large. Maximum size: 20MB"
+        )
+    
+    logger.info(f"Processing price extraction: file={file.filename}, size={len(content)} bytes")
+    
+    try:
+        # Step 1: OCR extraction
+        ocr_service = get_ocr_service()
+        ocr_result = await ocr_service.extract_text(
+            content=content,
+            filename=file.filename,
+            content_type=content_type,
+        )
+        
+        if not ocr_result.get("text"):
+            raise HTTPException(
+                status_code=422,
+                detail="Could not extract text from document. Please ensure it's not blank or corrupted."
+            )
+        
+        raw_text = ocr_result.get("text", "")
+        logger.info(f"OCR extracted {len(raw_text)} characters")
+        
+        # Step 2: AI price extraction
+        price_service = get_price_extraction_service()
+        extraction_result = await price_service.extract_prices_from_text(
+            raw_text=raw_text,
+            filename=file.filename,
+        )
+        
+        response = {
+            "success": extraction_result.success,
+            "extraction": extraction_result.to_dict(),
+            "ocr_metadata": {
+                "chars_extracted": len(raw_text),
+                "confidence": ocr_result.get("confidence", 0),
+            },
+        }
+        
+        # Step 3: Auto-verify if requested
+        if auto_verify and extraction_result.success and extraction_result.line_items:
+            verification_service = get_price_verification_service()
+            verification_results = []
+            
+            for item in extraction_result.line_items:
+                if item.unit_price and item.commodity_name:
+                    try:
+                        verification = await verification_service.verify_price(
+                            commodity_input=item.commodity_name,
+                            document_price=item.unit_price,
+                            document_unit=item.unit or "kg",
+                            document_currency=item.currency,
+                            quantity=item.quantity,
+                            document_type=extraction_result.document_type,
+                        )
+                        verification_results.append(verification)
+                    except Exception as e:
+                        logger.warning(f"Verification failed for {item.commodity_name}: {e}")
+                        verification_results.append({
+                            "commodity_input": item.commodity_name,
+                            "error": str(e),
+                            "verdict": "UNKNOWN",
+                        })
+            
+            response["verifications"] = verification_results
+            
+            # Summary
+            if verification_results:
+                passed = sum(1 for v in verification_results if v.get("verdict") == "PASS")
+                warnings = sum(1 for v in verification_results if v.get("verdict") == "WARNING")
+                failed = sum(1 for v in verification_results if v.get("verdict") == "FAIL")
+                
+                response["summary"] = {
+                    "total_items": len(verification_results),
+                    "passed": passed,
+                    "warnings": warnings,
+                    "failed": failed,
+                    "tbml_flags": sum(1 for v in verification_results if v.get("tbml_flag")),
+                }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Price extraction error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@router.post("/extract/batch")
+async def extract_batch_documents(
+    files: List[UploadFile] = File(..., description="Multiple trade documents"),
+    auto_verify: bool = Form(True, description="Automatically verify extracted prices"),
+):
+    """
+    Upload multiple documents for batch price extraction.
+    
+    Processes up to 10 documents in a single request.
+    Returns extraction results and optional verification for each document.
+    """
+    if len(files) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 10 documents per batch"
+        )
+    
+    results = []
+    
+    for file in files:
+        try:
+            # Process each file
+            content = await file.read()
+            await file.seek(0)  # Reset for potential reprocessing
+            
+            # Simplified extraction for batch (skip detailed OCR metadata)
+            ocr_service = get_ocr_service()
+            ocr_result = await ocr_service.extract_text(
+                content=content,
+                filename=file.filename,
+                content_type=file.content_type,
+            )
+            
+            raw_text = ocr_result.get("text", "")
+            
+            price_service = get_price_extraction_service()
+            extraction_result = await price_service.extract_prices_from_text(
+                raw_text=raw_text,
+                filename=file.filename,
+            )
+            
+            file_result = {
+                "filename": file.filename,
+                "success": extraction_result.success,
+                "line_items": [item.to_dict() for item in extraction_result.line_items],
+                "document_type": extraction_result.document_type,
+            }
+            
+            # Auto-verify if requested
+            if auto_verify and extraction_result.line_items:
+                verification_service = get_price_verification_service()
+                verifications = []
+                
+                for item in extraction_result.line_items:
+                    if item.unit_price and item.commodity_name:
+                        try:
+                            verification = await verification_service.verify_price(
+                                commodity_input=item.commodity_name,
+                                document_price=item.unit_price,
+                                document_unit=item.unit or "kg",
+                                document_currency=item.currency,
+                            )
+                            verifications.append({
+                                "commodity": item.commodity_name,
+                                "verdict": verification.get("verdict"),
+                                "variance_percent": verification.get("variance", {}).get("percent"),
+                            })
+                        except Exception as e:
+                            logger.warning(f"Batch verification error: {e}")
+                
+                file_result["verifications"] = verifications
+            
+            results.append(file_result)
+            
+        except Exception as e:
+            logger.error(f"Batch extraction error for {file.filename}: {e}")
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e),
+            })
+    
+    # Overall summary
+    total_items = sum(len(r.get("line_items", [])) for r in results if r.get("success"))
+    successful_files = sum(1 for r in results if r.get("success"))
+    
+    return {
+        "success": True,
+        "batch_summary": {
+            "total_files": len(files),
+            "successful_files": successful_files,
+            "failed_files": len(files) - successful_files,
+            "total_line_items_extracted": total_items,
+        },
+        "results": results,
     }
 
 
