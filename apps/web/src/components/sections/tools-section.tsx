@@ -14,7 +14,9 @@ import {
   CreditCard,
   BarChart3,
   AlertTriangle,
-  Umbrella
+  Umbrella,
+  DollarSign,
+  Anchor
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -129,13 +131,14 @@ const tools = [
   {
     icon: Ship,
     name: "Container Tracker",
-    tagline: "Real-Time Visibility",
-    description: "Track containers across 100+ carriers. ML-powered ETAs, delay alerts, and document status in one dashboard.",
-    highlights: ["100+ Carriers", "95% ETA Accuracy", "Proactive Alerts"],
+    tagline: "Track + Vessel Compliance",
+    description: "Track containers across 100+ carriers with vessel sanctions screening, AIS gap detection, and LC expiry alerts. Bank-grade compliance.",
+    highlights: ["Vessel Screening", "AIS Monitoring", "LC Expiry Alerts"],
     status: "coming" as const,
     href: "/tracking",
     category: "Logistics & Tracking",
     color: "blue",
+    badge: "🏦 Bank Requested",
   },
   {
     icon: Truck,
@@ -186,6 +189,18 @@ const tools = [
 
   // Intelligence
   {
+    icon: DollarSign,
+    name: "Price Verify",
+    tagline: "Catch Price Anomalies",
+    description: "Verify trade prices against real-time market data. Detect over/under invoicing and TBML risks. Compliance-ready reports.",
+    highlights: ["50+ Commodities", "TBML Detection", "Market Data"],
+    status: "coming" as const,
+    href: "/price-verify",
+    category: "Intelligence",
+    color: "green",
+    badge: "🏦 Bank Requested",
+  },
+  {
     icon: BarChart3,
     name: "Trade Analytics",
     tagline: "Data-Driven Decisions",
@@ -233,7 +248,7 @@ export function ToolsSection() {
         <div className="text-center mb-10 sm:mb-16">
           <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 sm:mb-6 leading-tight">
-            15 Tools.
+            16 Tools.
             <br />
             <span className="text-slate-500">One Platform.</span>
           </h2>
@@ -261,7 +276,7 @@ export function ToolsSection() {
                         className={`group bg-slate-900/50 border border-slate-800 rounded-2xl p-5 sm:p-6 hover:bg-slate-900/80 transition-all duration-300 relative flex flex-col min-h-[240px] sm:min-h-[280px] ${colors.border} ${colors.bg}`}
                       >
                         {/* Status badge */}
-                        <div className="absolute top-5 right-5">
+                        <div className="absolute top-5 right-5 flex flex-col items-end gap-1">
                           {tool.status === "live" ? (
                             <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                               Live
@@ -269,6 +284,11 @@ export function ToolsSection() {
                           ) : (
                             <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
                               Coming Soon
+                            </span>
+                          )}
+                          {(tool as any).badge && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              {(tool as any).badge}
                             </span>
                           )}
                         </div>
