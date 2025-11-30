@@ -235,9 +235,24 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
     )
     if semantic_payload and semantic_payload.get("expected"):
         expected_text = semantic_payload.get("expected")
-    suggestion = discrepancy.get("suggestion") or _extract_expected_text(
-        discrepancy.get("expected_outcome"), "invalid"
-    ) or "Align the document with the LC requirement."
+    # Check multiple possible field names for suggestion
+    suggestion = (
+        discrepancy.get("suggestion") or 
+        discrepancy.get("suggested_fix") or 
+        _extract_expected_text(discrepancy.get("expected_outcome"), "invalid")
+    )
+    
+    # If still no suggestion, provide context-aware default based on issue type
+    if not suggestion:
+        rule_id = (discrepancy.get("rule") or "").upper()
+        if "BL" in rule_id or "BILL" in rule_id.replace("-", " "):
+            suggestion = "Request an amended Bill of Lading from the carrier/shipping line to correct this discrepancy."
+        elif "INVOICE" in rule_id or "AMOUNT" in rule_id:
+            suggestion = "Issue an amended Commercial Invoice with corrected details matching the LC terms."
+        elif "MISSING" in rule_id:
+            suggestion = "Obtain and upload the missing document before bank submission."
+        else:
+            suggestion = "Review and correct the document to match LC requirements before bank submission."
     actual_text = _stringify_issue_value(discrepancy.get("actual") or discrepancy.get("found"))
     if semantic_payload and semantic_payload.get("found"):
         actual_text = semantic_payload.get("found")

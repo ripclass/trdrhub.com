@@ -689,6 +689,41 @@ async def validate_doc(
             db_rules_count = len([r for r in db_rule_loader.load_all_rules() if hasattr(r, 'id')])
             logger.info("V2 IssueEngine loaded %d total rules (YAML + Database)", db_rules_count)
             
+            # =================================================================
+            # EXECUTE DATABASE RULES
+            # Run the uploaded rules (UCP600, ISBP745, bank profiles, etc.) 
+            # against the validation context
+            # =================================================================
+            try:
+                # Build context for rule execution from all extracted data
+                rule_context = {
+                    "lc": lc_context,
+                    "mt700": lc_context.get("mt700", {}),
+                    "invoice": payload.get("invoice", {}),
+                    "bill_of_lading": payload.get("bill_of_lading", {}),
+                    "packing_list": payload.get("packing_list", {}),
+                    "insurance": payload.get("insurance", {}),
+                    "certificate_of_origin": payload.get("certificate_of_origin", {}),
+                    "documents": payload.get("documents", []),
+                    "documents_presence": payload.get("documents_presence", {}),
+                }
+                
+                # Execute rules and get issues
+                rule_issues = issue_engine.generate_rule_issues(rule_context)
+                if rule_issues:
+                    v2_issues.extend(rule_issues)
+                    logger.info(
+                        "V2 Rule execution generated %d issues from %d database rules",
+                        len(rule_issues),
+                        db_rules_count
+                    )
+            except Exception as rule_exec_err:
+                logger.warning(
+                    "Rule execution failed (non-blocking): %s",
+                    str(rule_exec_err),
+                    exc_info=True
+                )
+            
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
             crossdoc_validator = CrossDocValidator()
@@ -988,13 +1023,16 @@ async def validate_doc(
 
         document_details_for_summaries = payload.get("documents")
         logger.info(
-            "Building document summaries: files_list=%d details=%d",
+            "Building document summaries: files_list=%d details=%d issues=%d",
             len(files_list) if files_list else 0,
             len(document_details_for_summaries) if document_details_for_summaries else 0,
+            len(deduplicated_results) if deduplicated_results else 0,
         )
+        # FIX: Use deduplicated_results (actual issues) instead of empty results list
+        # This ensures document issue counts are correctly linked to each document
         document_summaries = _build_document_summaries(
             files_list,
-            results,
+            deduplicated_results,  # Was 'results' which was always empty!
             document_details_for_summaries,
         )
         if document_summaries:
@@ -3793,8 +3831,18 @@ def _build_document_processing_analytics(
         else:
             accuracy_score = 98 if doc.get("status") == "success" else 90
 
+        # Get issue count from document summary (populated by _build_document_summaries)
+        issue_count = doc.get("discrepancyCount", 0) or 0
+        
+        # Derive risk label from issue count for better accuracy
+        if issue_count >= 3:
+            risk_label = "high"
+        elif issue_count >= 1:
+            risk_label = "medium"
+        else:
+            risk_label = "low"
+        
         compliance_label = "High" if doc.get("status") == "success" else "Medium" if doc.get("status") == "warning" else "Low"
-        risk_label = "Low Risk" if doc.get("status") == "success" else "Medium Risk" if doc.get("status") == "warning" else "High Risk"
 
         document_processing.append(
             {
@@ -3805,13 +3853,19 @@ def _build_document_processing_analytics(
                 "accuracy_score": accuracy_score,
                 "compliance_level": compliance_label,
                 "risk_level": risk_label,
+                "issues": issue_count,  # FIX: Include issue count for frontend
             }
         )
 
+    # Count total issues from documents and discrepancies
+    total_doc_issues = sum(doc.get("discrepancyCount", 0) or 0 for doc in document_summaries)
+    total_discrepancies = processing_summary.get("discrepancies", 0)
+    total_issues = max(total_doc_issues, total_discrepancies)
+    
     performance_insights = [
-        f"{processing_summary.get('documents', 0)} document(s) processed",
-        f"{processing_summary.get('verified', 0)} verified with no issues",
-        f"Runtime: {processing_summary.get('processing_time_display', 'n/a')}",
+        f"{len(document_summaries)}/{processing_summary.get('documents', 0)} documents extracted successfully",
+        f"{total_issues} issues detected",
+        f"Compliance score {processing_summary.get('compliance_rate', 0)}%",
     ]
 
     return {
