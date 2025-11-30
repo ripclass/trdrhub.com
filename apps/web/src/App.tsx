@@ -17,6 +17,7 @@ import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
+import PriceVerify from './pages/tools/PriceVerify'
 import CounterpartyRiskLanding from './pages/tools/CounterpartyRiskLanding'
 import DualUseCheckerLanding from './pages/tools/DualUseCheckerLanding'
 import CustomsMateLanding from './pages/tools/CustomsMateLanding'
@@ -92,6 +93,7 @@ function App() {
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
         <Route path="/price-verify" element={<PriceVerifyLanding />} />
+        <Route path="/price-verify/tool" element={<PriceVerify />} />
         <Route path="/risk" element={<CounterpartyRiskLanding />} />
         <Route path="/dual-use" element={<DualUseCheckerLanding />} />
         <Route path="/customs" element={<CustomsMateLanding />} />

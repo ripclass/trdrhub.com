@@ -46,9 +46,11 @@ export default function PriceVerifyLanding() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8 h-12">
-                Join Waitlist
-                <ArrowRight className="w-4 h-4 ml-2" />
+              <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8 h-12" asChild>
+                <Link to="/price-verify/tool">
+                  Try It Free
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
               </Button>
               <Button size="lg" variant="outline" className="border-slate-700 text-white hover:bg-slate-800 px-8 h-12">
                 View Demo
@@ -330,9 +332,11 @@ export default function PriceVerifyLanding() {
             <p className="text-slate-400 mb-8">
               Join the waitlist for early access and launch pricing.
             </p>
-            <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8 h-12">
-              Join Waitlist
-              <ArrowRight className="w-4 h-4 ml-2" />
+            <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8 h-12" asChild>
+              <Link to="/price-verify/tool">
+                Start Verifying Prices
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Link>
             </Button>
           </div>
         </div>
