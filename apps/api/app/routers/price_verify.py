@@ -123,11 +123,17 @@ async def get_commodity(code: str):
 
 
 @router.post("/commodities/search")
-async def search_commodities(request: CommoditySearchRequest):
+async def search_commodities(
+    request: CommoditySearchRequest,
+    use_ai: bool = Query(True, description="Use AI for typo correction and suggestions"),
+):
     """
     Search for commodities by name, alias, or HS code.
     
-    Supports fuzzy matching and returns best matches.
+    Supports fuzzy matching and AI-powered suggestions for:
+    - Typo correction (e.g., "coton" → "cotton")
+    - Trade name variations (e.g., "black gold" → "crude oil")
+    - Regional names (e.g., "maize" → "corn")
     """
     service = get_price_verification_service()
     
@@ -140,13 +146,22 @@ async def search_commodities(request: CommoditySearchRequest):
             "commodity": exact_match,
         }
     
-    # Get suggestions
+    # Get basic suggestions
     suggestions = service._suggest_commodities(request.query)
+    
+    # If no good suggestions and AI is enabled, try AI suggestion
+    ai_suggestion = None
+    if use_ai and (not suggestions or suggestions[0].get("score", 0) < 0.5):
+        try:
+            ai_suggestion = await service.get_ai_commodity_suggestion(request.query)
+        except Exception as e:
+            logger.warning(f"AI suggestion failed: {e}")
     
     return {
         "success": True,
-        "match_type": "suggestions",
+        "match_type": "ai_suggestion" if ai_suggestion and ai_suggestion.get("matched_commodity") else "suggestions",
         "suggestions": suggestions,
+        "ai_suggestion": ai_suggestion,
     }
 
 
@@ -402,6 +417,148 @@ async def verify_batch_and_export_pdf(
         raise
     except Exception as e:
         logger.error(f"Batch PDF export error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai/explain-variance")
+async def explain_variance_with_ai(request: SingleVerificationRequest):
+    """
+    Get an AI-generated explanation for a price variance.
+    
+    Returns professional compliance-ready explanation including:
+    - Summary assessment
+    - Possible legitimate reasons for variance
+    - Documentation recommendations
+    - Action recommendation (approve/review/escalate)
+    """
+    service = get_price_verification_service()
+    
+    try:
+        # First verify to get variance data
+        result = await service.verify_price(
+            commodity_input=request.commodity,
+            document_price=request.price,
+            document_unit=request.unit,
+            document_currency=request.currency,
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+        # Get AI explanation (already included in result if verdict is warning/fail)
+        ai_explanation = result.get("ai_explanation")
+        
+        if not ai_explanation:
+            # Generate explanation for any result
+            from app.services.price_ai import get_price_ai_service
+            ai_service = get_price_ai_service()
+            
+            ai_explanation = await ai_service.explain_variance(
+                commodity_name=result["commodity"]["name"],
+                commodity_code=result["commodity"]["code"],
+                category=result["commodity"]["category"],
+                doc_price=result["document_price"]["normalized_price"],
+                market_price=result["market_price"]["price"],
+                unit=result["document_price"]["normalized_unit"],
+                variance_percent=result["variance"]["percent"],
+                risk_level=result["risk"]["risk_level"],
+            )
+        
+        return {
+            "success": True,
+            "verification_summary": {
+                "commodity": result["commodity"]["name"],
+                "variance_percent": result["variance"]["percent"],
+                "verdict": result["verdict"],
+                "risk_level": result["risk"]["risk_level"],
+            },
+            "ai_explanation": ai_explanation,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"AI explanation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai/tbml-assessment")
+async def get_tbml_assessment(request: SingleVerificationRequest):
+    """
+    Get an AI-generated TBML (Trade-Based Money Laundering) risk assessment.
+    
+    Returns professional compliance narrative including:
+    - TBML type identification (over/under invoicing)
+    - Risk score (1-10)
+    - Detailed compliance narrative
+    - Red flags identified
+    - Recommended due diligence steps
+    - Regulatory references
+    
+    Note: This is only meaningful for high-variance transactions (>50%).
+    """
+    service = get_price_verification_service()
+    
+    try:
+        # First verify to get variance data
+        result = await service.verify_price(
+            commodity_input=request.commodity,
+            document_price=request.price,
+            document_unit=request.unit,
+            document_currency=request.currency,
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+        variance_percent = result["variance"]["percent"]
+        
+        # Check if TBML assessment is warranted
+        if abs(variance_percent) < 30:
+            return {
+                "success": True,
+                "tbml_assessment_needed": False,
+                "message": f"Variance of {abs(variance_percent):.1f}% is below TBML threshold (30%). No TBML assessment required.",
+                "verification_summary": {
+                    "commodity": result["commodity"]["name"],
+                    "variance_percent": variance_percent,
+                    "verdict": result["verdict"],
+                },
+            }
+        
+        # Get TBML assessment (may already be in result)
+        tbml_assessment = result.get("tbml_assessment")
+        
+        if not tbml_assessment:
+            from app.services.price_ai import get_price_ai_service
+            ai_service = get_price_ai_service()
+            
+            tbml_assessment = await ai_service.generate_tbml_narrative(
+                commodity_name=result["commodity"]["name"],
+                doc_price=result["document_price"]["normalized_price"],
+                market_price=result["market_price"]["price"],
+                unit=result["document_price"]["normalized_unit"],
+                variance_percent=variance_percent,
+                risk_flags=result["risk"].get("risk_flags", []),
+            )
+        
+        return {
+            "success": True,
+            "tbml_assessment_needed": True,
+            "verification_summary": {
+                "commodity": result["commodity"]["name"],
+                "variance_percent": variance_percent,
+                "verdict": result["verdict"],
+                "risk_level": result["risk"]["risk_level"],
+                "risk_flags": result["risk"].get("risk_flags", []),
+            },
+            "tbml_assessment": tbml_assessment,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"TBML assessment error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

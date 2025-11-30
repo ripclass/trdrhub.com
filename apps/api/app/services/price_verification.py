@@ -1181,6 +1181,42 @@ class PriceVerificationService:
             },
         }
         
+        # =================================================================
+        # AI ENHANCEMENTS (async, non-blocking)
+        # =================================================================
+        try:
+            from app.services.price_ai import get_price_ai_service
+            ai_service = get_price_ai_service()
+            
+            # Add AI variance explanation for warnings/failures
+            if verdict in ["warning", "fail"]:
+                ai_explanation = await ai_service.explain_variance(
+                    commodity_name=commodity["name"],
+                    commodity_code=commodity["code"],
+                    category=commodity["category"],
+                    doc_price=normalized_price,
+                    market_price=market_data["price"],
+                    unit=commodity["unit"],
+                    variance_percent=variance_percent,
+                    risk_level=risk_assessment["risk_level"],
+                )
+                result["ai_explanation"] = ai_explanation
+            
+            # Add TBML narrative for critical risk
+            if "tbml_risk" in risk_assessment.get("risk_flags", []):
+                tbml_narrative = await ai_service.generate_tbml_narrative(
+                    commodity_name=commodity["name"],
+                    doc_price=normalized_price,
+                    market_price=market_data["price"],
+                    unit=commodity["unit"],
+                    variance_percent=variance_percent,
+                    risk_flags=risk_assessment.get("risk_flags", []),
+                )
+                result["tbml_assessment"] = tbml_narrative
+                
+        except Exception as e:
+            logger.warning(f"AI enhancement skipped: {e}")
+        
         return result
     
     def _suggest_commodities(self, search_term: str) -> List[Dict]:
@@ -1213,6 +1249,37 @@ class PriceVerificationService:
                 })
         
         return sorted(suggestions, key=lambda x: -x["score"])[:5]
+    
+    async def get_ai_commodity_suggestion(self, search_term: str) -> Optional[Dict]:
+        """
+        Use AI to suggest a commodity when fuzzy matching fails.
+        Useful for typos, regional names, and trade variations.
+        """
+        try:
+            from app.services.price_ai import get_price_ai_service
+            ai_service = get_price_ai_service()
+            
+            suggestion = await ai_service.suggest_commodity(search_term)
+            
+            if suggestion.get("likely_commodity") and suggestion.get("confidence", 0) > 0.5:
+                # Try to find this commodity in our database
+                matched = self.find_commodity(suggestion["likely_commodity"])
+                if matched:
+                    return {
+                        "matched_commodity": matched,
+                        "ai_suggestion": suggestion,
+                        "original_search": search_term,
+                    }
+            
+            return {
+                "matched_commodity": None,
+                "ai_suggestion": suggestion,
+                "original_search": search_term,
+            }
+            
+        except Exception as e:
+            logger.warning(f"AI commodity suggestion failed: {e}")
+            return None
     
     # =========================================================================
     # BATCH VERIFICATION
