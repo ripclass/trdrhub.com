@@ -208,6 +208,149 @@ type ImportResultsProps = {
   mode?: "draft" | "supplier";
 };
 
+// Transform API results to display format for supplier mode
+const transformApiToSupplierFormat = (apiResults: any) => {
+  if (!apiResults) return null;
+  
+  const summary = apiResults.summary || apiResults.structured_result?.processing_summary || {};
+  const docs = apiResults.documents || [];
+  const issues = apiResults.issues || [];
+  const analytics = apiResults.analytics || apiResults.structured_result?.analytics || {};
+  
+  // Calculate compliance rate from summary or analytics
+  const complianceRate = summary.compliance_rate ?? analytics.compliance_score ?? 
+    (issues.length === 0 ? 100 : Math.max(0, 100 - issues.length * 15));
+  
+  // Transform documents to expected format
+  const transformedDocs = docs.map((doc: any, idx: number) => ({
+    id: doc.id || doc.documentId || String(idx + 1),
+    name: doc.name || doc.filename || `Document ${idx + 1}`,
+    type: doc.type || doc.typeKey || 'Supporting Document',
+    status: doc.status || (doc.issuesCount > 0 ? 'warning' : 'success'),
+    issues: doc.issuesCount ?? doc.discrepancyCount ?? 0,
+    complianceScore: doc.issuesCount > 0 ? Math.max(60, 100 - doc.issuesCount * 15) : 100,
+    extractedFields: doc.extractedFields || {}
+  }));
+  
+  // Transform issues to expected format
+  const transformedIssues = issues.map((issue: any, idx: number) => ({
+    id: issue.id || String(idx + 1),
+    severity: issue.severity || 'warning',
+    category: issue.documentType || issue.documentName || 'Document Issue',
+    title: issue.title || 'Review Required',
+    description: issue.description || '',
+    recommendation: issue.suggestion || 'Review and correct this issue before bank submission.',
+    document: issue.documentName || issue.documents?.[0] || 'Document'
+  }));
+  
+  // Determine overall status
+  const criticalIssues = issues.filter((i: any) => i.severity === 'critical' || i.severity === 'error').length;
+  const overallStatus = criticalIssues > 0 ? 'error' : issues.length > 0 ? 'warning' : 'success';
+  
+  return {
+    lcNumber: apiResults.lc_structured?.lc_number || summary.lc_number || 'LC-VALIDATION',
+    status: 'completed',
+    processedAt: new Date().toISOString(),
+    processingTime: summary.processing_time_display || `${(summary.processing_time_seconds || 30).toFixed(1)} seconds`,
+    totalDocuments: transformedDocs.length || summary.total_documents || 0,
+    totalIssues: issues.length,
+    complianceRate: Math.round(complianceRate),
+    overallStatus: overallStatus as 'success' | 'error' | 'warning',
+    customsReady: issues.length === 0,
+    documents: transformedDocs,
+    issues: transformedIssues
+  };
+};
+
+// Transform API results to display format for draft LC mode
+const transformApiToDraftFormat = (apiResults: any) => {
+  if (!apiResults) return null;
+  
+  const summary = apiResults.summary || apiResults.structured_result?.processing_summary || {};
+  const issues = apiResults.issues || [];
+  const lcData = apiResults.lc_structured || apiResults.structured_result?.lc_structured || {};
+  
+  // Calculate risk score (inverse of compliance)
+  const complianceRate = summary.compliance_rate ?? 100;
+  const riskScore = Math.round(100 - complianceRate * 0.65); // Scale to risk perspective
+  
+  // Transform issues to risks
+  const risks = issues.map((issue: any, idx: number) => ({
+    id: String(idx + 1),
+    severity: issue.severity || 'warning',
+    category: issue.documentType || 'LC Terms',
+    title: issue.title || 'Review Required',
+    description: issue.description || '',
+    businessImpact: issue.description || 'May cause document discrepancies.',
+    financialImpact: 'Potential amendment fees and delays.',
+    recommendation: issue.suggestion || 'Review and address before LC issuance.'
+  }));
+  
+  // Create LC clauses from extracted data
+  const lcClauses = [];
+  if (lcData.payment_terms) {
+    lcClauses.push({
+      id: '1',
+      type: 'Payment Terms',
+      text: lcData.payment_terms,
+      riskLevel: 'low' as const,
+      analysis: 'Payment terms extracted from LC.',
+      recommendation: 'Review payment terms for alignment with contract.'
+    });
+  }
+  if (lcData.latest_shipment_date) {
+    const hasTimelineRisk = risks.some((r: any) => r.category?.includes('Timeline') || r.title?.includes('date'));
+    lcClauses.push({
+      id: '2',
+      type: 'Shipment Terms',
+      text: `Latest shipment date: ${lcData.latest_shipment_date}`,
+      riskLevel: hasTimelineRisk ? 'high' as const : 'low' as const,
+      analysis: hasTimelineRisk ? 'Timeline may be tight for fulfillment.' : 'Shipment timeline appears reasonable.',
+      recommendation: hasTimelineRisk ? 'Consider requesting timeline extension.' : 'Acceptable timeline.'
+    });
+  }
+  if (lcData.documents_required) {
+    lcClauses.push({
+      id: '3',
+      type: 'Documentation Requirements',
+      text: lcData.documents_required,
+      riskLevel: risks.length > 0 ? 'medium' as const : 'low' as const,
+      analysis: 'Document requirements extracted from LC.',
+      recommendation: 'Ensure supplier can provide all required documents.'
+    });
+  }
+  
+  // Add default clauses if none extracted
+  if (lcClauses.length === 0) {
+    lcClauses.push({
+      id: '1',
+      type: 'General Terms',
+      text: 'LC terms analyzed for compliance',
+      riskLevel: risks.length > 0 ? 'medium' as const : 'low' as const,
+      analysis: `${issues.length} issues identified during analysis.`,
+      recommendation: issues.length > 0 ? 'Review identified issues before proceeding.' : 'LC terms appear acceptable.'
+    });
+  }
+  
+  const overallStatus = risks.filter((r: any) => r.severity === 'critical' || r.severity === 'high').length > 0 
+    ? 'error' : risks.length > 0 ? 'warning' : 'success';
+  const riskLevel = riskScore > 70 ? 'high' : riskScore > 40 ? 'medium' : 'low';
+  
+  return {
+    lcNumber: lcData.lc_number || summary.lc_number || 'DRAFT-LC-ANALYSIS',
+    status: 'completed',
+    processedAt: new Date().toISOString(),
+    processingTime: summary.processing_time_display || `${(summary.processing_time_seconds || 30).toFixed(1)} seconds`,
+    totalClauses: lcClauses.length,
+    totalRisks: risks.length,
+    overallRiskScore: riskScore,
+    overallStatus: overallStatus as 'success' | 'error' | 'warning',
+    riskLevel: riskLevel as 'low' | 'medium' | 'high',
+    lcClauses,
+    risks
+  };
+};
+
 export default function ImportResults({
   embedded = false,
   jobId: jobIdOverride,
@@ -247,14 +390,24 @@ export default function ImportResults({
   const enableBankPrecheck = isImporterFeatureEnabled("importer_bank_precheck");
   const enableSupplierFixPack = isImporterFeatureEnabled("supplier_fix_pack");
 
-  // Get appropriate mock data based on mode
-  const mockData = mode === 'draft' ? mockDraftLCResults : mockSupplierResults;
+  // Transform API results or use mock data
+  const hasRealResults = results && !isDemoJob;
+  const transformedSupplierData = hasRealResults ? transformApiToSupplierFormat(results) : null;
+  const transformedDraftData = hasRealResults ? transformApiToDraftFormat(results) : null;
+  
+  // Use real data if available, otherwise fall back to mock
+  const supplierData = transformedSupplierData || mockSupplierResults;
+  const draftData = transformedDraftData || mockDraftLCResults;
+  const displayData = mode === 'draft' ? draftData : supplierData;
+  
+  // Legacy alias for backward compatibility
+  const mockData = displayData;
   
   // Determine if ready to submit (only for supplier mode with no issues and feature flag enabled)
-  const isReadyToSubmit = mode === 'supplier' && mockSupplierResults.totalIssues === 0 && enableBankPrecheck;
+  const isReadyToSubmit = mode === 'supplier' && supplierData.totalIssues === 0 && enableBankPrecheck;
   
   // Determine if supplier has issues (for supplier mode)
-  const hasSupplierIssues = mode === 'supplier' && mockSupplierResults.totalIssues > 0;
+  const hasSupplierIssues = mode === 'supplier' && supplierData.totalIssues > 0;
 
   useEffect(() => {
     // For demo job IDs, immediately use mock data
@@ -331,13 +484,13 @@ ${mockData.lcClauses?.map(clause => `
 ` : `
 COMPLIANCE CHECK SUMMARY
 ========================
-Compliance Rate: ${mockSupplierResults.complianceRate}%
-Total Documents: ${mockSupplierResults.totalDocuments}
-Issues Found: ${mockSupplierResults.totalIssues}
-Customs Ready: ${mockSupplierResults.customsReady ? 'YES' : 'NO'}
+Compliance Rate: ${supplierData.complianceRate}%
+Total Documents: ${supplierData.totalDocuments}
+Issues Found: ${supplierData.totalIssues}
+Customs Ready: ${supplierData.customsReady ? 'YES' : 'NO'}
 
 DOCUMENT STATUS:
-${mockSupplierResults.documents.map(doc => `
+${supplierData.documents.map(doc => `
 - ${doc.name} (${doc.type})
   Status: ${doc.status.toUpperCase()}
   Compliance Score: ${doc.complianceScore}%
@@ -345,7 +498,7 @@ ${mockSupplierResults.documents.map(doc => `
 `).join('\n')}
 
 COMPLIANCE ISSUES:
-${mockSupplierResults.issues.map(issue => `
+${supplierData.issues.map(issue => `
 - ${issue.title} (${issue.severity?.toUpperCase()})
   Category: ${issue.category}
   Description: ${issue.description}
@@ -494,7 +647,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
       console.log("Telemetry: supplier_fix_pack_downloaded", { 
         lcNumber, 
         validationSessionId, 
-        issueCount: mockSupplierResults.totalIssues 
+        issueCount: supplierData.totalIssues 
       });
     } catch (error: any) {
       console.error("Fix pack download failed:", error);
@@ -549,7 +702,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
         validationSessionId, 
         supplierEmail, 
         notificationId: response.notification_id,
-        issueCount: mockSupplierResults.totalIssues 
+        issueCount: supplierData.totalIssues 
       });
     } catch (error: any) {
       console.error("Supplier notification failed:", error);
@@ -750,7 +903,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Compliance Rate</p>
-                    <p className="text-2xl font-bold">{mockSupplierResults.complianceRate}%</p>
+                    <p className="text-2xl font-bold">{supplierData.complianceRate}%</p>
                   </div>
                 </div>
               </CardContent>
@@ -764,7 +917,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Issues</p>
-                    <p className="text-2xl font-bold">{mockSupplierResults.totalIssues}</p>
+                    <p className="text-2xl font-bold">{supplierData.totalIssues}</p>
                   </div>
                 </div>
               </CardContent>
@@ -778,7 +931,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Documents</p>
-                    <p className="text-2xl font-bold">{mockSupplierResults.totalDocuments}</p>
+                    <p className="text-2xl font-bold">{supplierData.totalDocuments}</p>
                   </div>
                 </div>
               </CardContent>
@@ -792,7 +945,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Processed In</p>
-                    <p className="text-2xl font-bold">{mockSupplierResults.processingTime}</p>
+                    <p className="text-2xl font-bold">{supplierData.processingTime}</p>
                   </div>
                 </div>
               </CardContent>
@@ -807,7 +960,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {mockSupplierResults.documents.map((doc) => (
+                {supplierData.documents.map((doc) => (
                   <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex items-center gap-3">
                       <div className="flex-shrink-0">
@@ -901,17 +1054,17 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Customs Ready:</span>
-                      <Badge variant={mockSupplierResults.customsReady ? 'default' : 'destructive'}>
-                        {mockSupplierResults.customsReady ? 'YES' : 'NO'}
+                      <Badge variant={supplierData.customsReady ? 'default' : 'destructive'}>
+                        {supplierData.customsReady ? 'YES' : 'NO'}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Documents Processed:</span>
-                      <span>{mockSupplierResults.totalDocuments}</span>
+                      <span>{supplierData.totalDocuments}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Issues Found:</span>
-                      <span>{mockSupplierResults.totalIssues}</span>
+                      <span>{supplierData.totalIssues}</span>
                     </div>
                   </>
                 )}
@@ -978,16 +1131,16 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <p className="text-sm text-muted-foreground">
                     Completed on {new Date(mockData.processedAt).toLocaleDateString()}
                   </p>
-                  {mode === 'supplier' && mockSupplierResults.totalIssues === 0 && (
+                  {mode === 'supplier' && supplierData.totalIssues === 0 && (
                     <Badge className="mt-2 bg-green-600 text-white">
                       <CheckCircle className="w-3 h-3 mr-1" />
                       Bank Ready
                     </Badge>
                   )}
-                  {mode === 'supplier' && mockSupplierResults.totalIssues > 0 && (
+                  {mode === 'supplier' && supplierData.totalIssues > 0 && (
                     <Badge className="mt-2 bg-warning text-white">
                       <AlertTriangle className="w-3 h-3 mr-1" />
-                      {mockSupplierResults.totalIssues} Issue{mockSupplierResults.totalIssues !== 1 ? 's' : ''} Require Correction
+                      {supplierData.totalIssues} Issue{supplierData.totalIssues !== 1 ? 's' : ''} Require Correction
                     </Badge>
                   )}
                   {mode === 'draft' && (
@@ -1151,7 +1304,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {mockSupplierResults.documents.map((doc) => (
+                    {supplierData.documents.map((doc) => (
                       <div key={doc.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -1259,9 +1412,9 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                     ))
                   ) : (
                     // Supplier document mode: Use DiscrepancyGuidance component
-                    mockSupplierResults.issues.map((issue) => {
+                    supplierData.issues.map((issue) => {
                       // Map issue structure to DiscrepancyGuidance format
-                      const document = mockSupplierResults.documents.find(d => d.id === issue.documentId);
+                      const document = supplierData.documents.find(d => d.id === issue.documentId);
                       return (
                         <DiscrepancyGuidance
                           key={issue.id}
@@ -1294,7 +1447,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                               description: "Your corrected document has been uploaded. Click 'Re-validate' to check again.",
                             });
                           }}
-                          validationSessionId={mockSupplierResults.lcNumber}
+                          validationSessionId={supplierData.lcNumber}
                         />
                       );
                     })
@@ -1396,12 +1549,12 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Documents:</span>
-                      <span className="font-medium">{mockSupplierResults.totalDocuments}</span>
+                      <span className="font-medium">{supplierData.totalDocuments}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Compliance Rate:</span>
                       <span className="font-medium text-green-600">
-                        {mockSupplierResults.complianceRate}%
+                        {supplierData.complianceRate}%
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1478,7 +1631,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   <h4 className="font-medium mb-2 text-sm">What will be sent:</h4>
                   <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
                     <li>LC Number: {lcNumber}</li>
-                    <li>{mockSupplierResults.totalIssues} issue(s) requiring correction</li>
+                    <li>{supplierData.totalIssues} issue(s) requiring correction</li>
                     <li>Detailed recommendations for each issue</li>
                     <li>Document status summary</li>
                     <li>Next steps and action items</li>
