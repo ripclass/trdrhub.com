@@ -157,6 +157,11 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
     { value: "fta.eaeu", label: "EAEU (Eurasian Economic Union)", type: "base", domain: "fta" },
     { value: "fta.pacific_alliance", label: "Pacific Alliance", type: "base", domain: "fta" },
     
+    // Collection Rulebooks (multiple FTAs in one file)
+    { value: "fta.eu_bilateral", label: "EU Bilateral FTAs (Collection)", type: "general", domain: "fta" },
+    { value: "fta.us_bilateral", label: "US Bilateral FTAs (Collection)", type: "general", domain: "fta" },
+    { value: "fta.regional", label: "Regional Blocs (Collection)", type: "general", domain: "fta" },
+    
     // General
     { value: "fta", label: "FTA (General)", type: "general", domain: "fta" },
   ],
