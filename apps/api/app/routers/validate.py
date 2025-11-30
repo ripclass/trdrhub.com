@@ -1661,6 +1661,33 @@ DOCUMENT_TYPE_ALIASES: Dict[str, List[str]] = {
         "mt700",
         "lc document",
         "lc_document",
+        "draft lc",
+        "draft_lc",
+    ],
+    # Importer Draft LC document types
+    "swift_message": [
+        "swift",
+        "swift message",
+        "mt 700",
+        "mt700",
+        "mt 710",
+        "mt710",
+        "mt 760",
+        "mt760",
+        "swift mt",
+    ],
+    "lc_application": [
+        "application",
+        "lc application",
+        "lc application form",
+        "application form",
+    ],
+    "proforma_invoice": [
+        "proforma",
+        "proforma invoice",
+        "pi",
+        "pro forma",
+        "pro-forma",
     ],
     "commercial_invoice": [
         "invoice",
@@ -1778,6 +1805,9 @@ async def _build_document_context(
     has_structured_data = False
     known_doc_types = {
         "letter_of_credit",
+        "swift_message",
+        "lc_application",
+        "proforma_invoice",
         "commercial_invoice",
         "bill_of_lading",
         "packing_list",
@@ -1818,11 +1848,16 @@ async def _build_document_context(
         logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
 
         try:
-            if document_type == "letter_of_credit":
+            # Treat LC, SWIFT messages, and LC applications as LC-like documents
+            is_lc_like = document_type in ("letter_of_credit", "swift_message", "lc_application")
+            
+            if is_lc_like:
                 lc_payload = context.setdefault("lc", {})
                 if "raw_text" not in lc_payload:
                     lc_payload["raw_text"] = extracted_text
                     context["lc_text"] = extracted_text
+                    # Track the source document type for importer draft LC analysis
+                    lc_payload["source_type"] = document_type
 
                 lc_format = detect_lc_format(extracted_text)
                 lc_payload["format"] = lc_format
@@ -1940,8 +1975,8 @@ async def _build_document_context(
                             logger.error(f"Both LC extraction methods failed for {filename}: {fallback_error}", exc_info=True)
                             doc_info["extraction_status"] = "failed"
                             doc_info["extraction_error"] = str(fallback_error)
-            elif document_type == "commercial_invoice":
-                # Use AI-FIRST extraction for invoices
+            elif document_type in ("commercial_invoice", "proforma_invoice"):
+                # Use AI-FIRST extraction for invoices (including proforma invoices)
                 try:
                     invoice_struct = await extract_invoice_ai_first(extracted_text)
                     extraction_method = invoice_struct.get("_extraction_method", "unknown")
