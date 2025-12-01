@@ -15,7 +15,8 @@ import {
   Trash2,
   Filter,
   Info,
-  Loader2
+  Loader2,
+  X
 } from "lucide-react";
 import {
   Select,
@@ -24,6 +25,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -49,6 +57,7 @@ export default function HistoryPage() {
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("7d");
+  const [selectedRecord, setSelectedRecord] = useState<VerificationRecord | null>(null);
   
   // Fetch real history data from API
   useEffect(() => {
@@ -311,7 +320,7 @@ export default function HistoryPage() {
                       {record.variance > 0 ? "+" : ""}{record.variance.toFixed(1)}% variance
                     </p>
                   </div>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" onClick={() => setSelectedRecord(record)}>
                     <Eye className="w-4 h-4" />
                   </Button>
                 </div>
@@ -326,6 +335,112 @@ export default function HistoryPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Verification Detail Modal */}
+      <Dialog open={!!selectedRecord} onOpenChange={() => setSelectedRecord(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedRecord?.verdict === "pass" && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+              {selectedRecord?.verdict === "warning" && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
+              {selectedRecord?.verdict === "fail" && <XCircle className="w-5 h-5 text-red-600" />}
+              Verification Details
+            </DialogTitle>
+            <DialogDescription>
+              {selectedRecord?.commodity} - {selectedRecord?.date ? formatDate(selectedRecord.date) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedRecord && (
+            <div className="space-y-4">
+              {/* Verdict Badge */}
+              <div className="flex items-center gap-2">
+                <Badge variant={
+                  selectedRecord.verdict === "pass" ? "default" :
+                  selectedRecord.verdict === "warning" ? "secondary" : "destructive"
+                } className={
+                  selectedRecord.verdict === "pass" ? "bg-green-600" :
+                  selectedRecord.verdict === "warning" ? "bg-yellow-600" : ""
+                }>
+                  {selectedRecord.verdict.toUpperCase()}
+                </Badge>
+                {selectedRecord.tbmlFlag && (
+                  <Badge variant="destructive">⚠️ TBML FLAG</Badge>
+                )}
+              </div>
+
+              {/* Price Comparison */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm text-muted-foreground">Document Price</p>
+                  <p className="text-xl font-bold">${selectedRecord.documentPrice?.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">per {selectedRecord.documentType || "unit"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Market Price</p>
+                  <p className="text-xl font-bold">${selectedRecord.marketPrice?.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">reference</p>
+                </div>
+              </div>
+
+              {/* Variance */}
+              <div className="p-4 border rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Variance</p>
+                <p className={`text-2xl font-bold ${
+                  Math.abs(selectedRecord.variance) > 25 ? "text-red-600" :
+                  Math.abs(selectedRecord.variance) > 10 ? "text-yellow-600" :
+                  "text-green-600"
+                }`}>
+                  {selectedRecord.variance > 0 ? "+" : ""}{selectedRecord.variance?.toFixed(2)}%
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {Math.abs(selectedRecord.variance) > 50 ? "Critical - Potential TBML indicator" :
+                   Math.abs(selectedRecord.variance) > 25 ? "High - Requires investigation" :
+                   Math.abs(selectedRecord.variance) > 10 ? "Medium - Monitor closely" :
+                   "Low - Within acceptable range"}
+                </p>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Commodity Code</span>
+                  <span className="font-mono">{selectedRecord.commodityCode}</span>
+                </div>
+                {selectedRecord.documentRef && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Document Ref</span>
+                    <span>{selectedRecord.documentRef}</span>
+                  </div>
+                )}
+                {selectedRecord.documentType && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Document Type</span>
+                    <span>{selectedRecord.documentType}</span>
+                  </div>
+                )}
+                {selectedRecord.riskLevel && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Risk Level</span>
+                    <Badge variant="outline" className={
+                      selectedRecord.riskLevel === "critical" ? "border-red-500 text-red-500" :
+                      selectedRecord.riskLevel === "high" ? "border-orange-500 text-orange-500" :
+                      selectedRecord.riskLevel === "medium" ? "border-yellow-500 text-yellow-500" :
+                      "border-green-500 text-green-500"
+                    }>
+                      {selectedRecord.riskLevel.toUpperCase()}
+                    </Badge>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Verification ID</span>
+                  <span className="font-mono text-xs">{selectedRecord.id}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
