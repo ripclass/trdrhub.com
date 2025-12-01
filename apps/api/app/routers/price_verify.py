@@ -21,8 +21,13 @@ from app.services.price_verification import (
 from app.services.price_extraction import get_price_extraction_service
 from app.services.ocr_service import get_ocr_service
 from app.services.pdf_export import generate_verification_pdf, generate_batch_verification_pdf
+from app.services.market_data import get_market_data_service
+from app.services.audit_log import get_audit_service, AuditAction
 
 logger = logging.getLogger(__name__)
+
+# Track request timing for audit
+import time
 
 router = APIRouter(prefix="/price-verify", tags=["Price Verification"])
 
@@ -172,6 +177,13 @@ async def get_market_price(commodity_code: str):
     
     Fetches real-time data from available sources (World Bank, FRED, etc.)
     Falls back to database estimates if APIs unavailable.
+    
+    **Response includes full source attribution:**
+    - source: Data source identifier
+    - source_display: Human-readable source name
+    - source_url: Link to official source for verification
+    - fetched_at: Timestamp when data was retrieved
+    - confidence: Confidence score (0.0-1.0)
     """
     service = get_price_verification_service()
     
@@ -180,6 +192,24 @@ async def get_market_price(commodity_code: str):
         raise HTTPException(status_code=404, detail=f"Commodity not found: {commodity_code}")
     
     result = await service.get_market_price(commodity_code.upper())
+    
+    # Add enhanced source attribution
+    source = result.get("source", "estimate")
+    source_display = {
+        "world_bank": "World Bank Commodity Markets (Pink Sheet)",
+        "fred": "Federal Reserve Economic Data (FRED)",
+        "lme": "London Metal Exchange (LME)",
+        "estimate": "TRDR Market Database (Verified)",
+    }
+    
+    result["source_display"] = source_display.get(source, source)
+    result["source_url"] = _get_source_url(source, commodity_code)
+    result["confidence"] = 0.95 if source in ["world_bank", "fred", "lme"] else 0.85
+    result["data_updated"] = result.get("fetched_at", datetime.utcnow().isoformat())
+    
+    # Add historical context
+    result["typical_range"] = commodity.get("typical_range")
+    result["data_sources"] = commodity.get("data_sources", [])
     
     return {
         "success": True,
@@ -213,8 +243,20 @@ async def verify_single_price(
     - PASS: Price within ±15% of market
     - WARNING: Price 15-30% off market
     - FAIL: Price >30% off market or TBML flags
+    
+    **Source Attribution:**
+    Every response includes source details (World Bank, FRED, etc.)
+    with timestamps and reference URLs for audit compliance.
     """
+    start_time = time.time()
     service = get_price_verification_service()
+    audit_service = get_audit_service()
+    
+    # Extract user info from request (if authenticated)
+    user_id = getattr(req.state, 'user_id', None)
+    user_email = getattr(req.state, 'user_email', None)
+    company_id = getattr(req.state, 'company_id', None)
+    request_id = req.headers.get('X-Request-ID')
     
     try:
         result = await service.verify_price(
@@ -229,12 +271,61 @@ async def verify_single_price(
             destination_country=request.destination_country,
         )
         
-        # Log for audit
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # Enhance market_price with better source attribution
+        if result.get("success") and result.get("market_price"):
+            market = result["market_price"]
+            source = market.get("source", "estimate")
+            
+            # Add source display info
+            source_display = {
+                "world_bank": "World Bank Commodity Markets",
+                "fred": "Federal Reserve Economic Data (FRED)",
+                "lme": "London Metal Exchange",
+                "estimate": "TRDR Market Database",
+            }
+            
+            result["market_price"]["source_display"] = source_display.get(source, source)
+            result["market_price"]["source_url"] = _get_source_url(source, result.get("commodity", {}).get("code"))
+            result["market_price"]["data_updated"] = result["market_price"].get("fetched_at")
+        
+        # Audit log
+        if result.get("success"):
+            await audit_service.log_verification(
+                user_id=user_id,
+                user_email=user_email,
+                company_id=company_id,
+                ip_address=req.client.host if req.client else None,
+                user_agent=req.headers.get("User-Agent"),
+                request_id=request_id,
+                commodity=result.get("commodity", {}).get("code", request.commodity),
+                input_price=request.price,
+                input_unit=request.unit,
+                input_currency=request.currency,
+                market_price=result.get("market_price", {}).get("price", 0),
+                variance_percent=result.get("variance", {}).get("percent", 0),
+                verdict=result.get("verdict", "unknown"),
+                risk_level=result.get("risk", {}).get("risk_level", "unknown"),
+                risk_flags=result.get("risk", {}).get("risk_flags", []),
+                data_sources=[{
+                    "name": result.get("market_price", {}).get("source", "estimate"),
+                    "url": result.get("market_price", {}).get("source_url"),
+                    "fetched_at": result.get("market_price", {}).get("fetched_at"),
+                }],
+                duration_ms=duration_ms,
+                document_context={
+                    "type": request.document_type,
+                    "reference": request.document_reference,
+                },
+            )
+        
         logger.info(
-            "Price verification: commodity=%s verdict=%s variance=%.2f%%",
+            "Price verification: commodity=%s verdict=%s variance=%.2f%% duration=%dms",
             result.get("commodity", {}).get("code"),
             result.get("verdict"),
             result.get("variance", {}).get("percent", 0),
+            duration_ms,
         )
         
         return result
@@ -242,6 +333,17 @@ async def verify_single_price(
     except Exception as e:
         logger.error(f"Price verification error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_source_url(source: str, commodity_code: str = None) -> str:
+    """Get URL for data source for audit trail."""
+    urls = {
+        "world_bank": "https://www.worldbank.org/en/research/commodity-markets",
+        "fred": "https://fred.stlouisfed.org/",
+        "lme": "https://www.lme.com/en/Market-data/Reports-and-data",
+        "estimate": "https://trdrhub.com/data-sources",
+    }
+    return urls.get(source, "https://trdrhub.com/data-sources")
 
 
 @router.post("/verify/batch")

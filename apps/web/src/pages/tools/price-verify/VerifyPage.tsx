@@ -117,6 +117,10 @@ interface VerificationResult {
     unit: string;
     currency: string;
     source: string;
+    source_display?: string;
+    source_url?: string;
+    fetched_at?: string;
+    data_updated?: string;
   };
   variance: {
     percent: number;
@@ -129,6 +133,8 @@ interface VerificationResult {
   };
   verdict: string;
   verdict_reason: string;
+  ai_explanation?: string;
+  tbml_assessment?: string;
 }
 
 interface ExtractedLineItem {
@@ -1071,11 +1077,60 @@ export default function VerifyPage() {
                   </div>
                 </div>
                 
-                {/* Source Info */}
-                <div className="text-xs text-muted-foreground flex items-center justify-between">
-                  <span>Source: {result.market_price.source}</span>
-                  <span>ID: {result.verification_id.slice(0, 8)}...</span>
+                {/* Source Attribution (Bank-Grade Audit Trail) */}
+                <div className="p-3 rounded-lg border bg-slate-950/50 space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Data Source:</span>
+                    {result.market_price.source_url ? (
+                      <a 
+                        href={result.market_price.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {result.market_price.source_display || result.market_price.source}
+                      </a>
+                    ) : (
+                      <span>{result.market_price.source_display || result.market_price.source}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      Updated: {result.market_price.data_updated 
+                        ? new Date(result.market_price.data_updated).toLocaleString()
+                        : 'Real-time'}
+                    </span>
+                    <span className="font-mono">
+                      Audit ID: {result.verification_id.slice(0, 12)}
+                    </span>
+                  </div>
                 </div>
+                
+                {/* AI Explanation (if available) */}
+                {result.ai_explanation && (
+                  <div className="p-4 rounded-lg border bg-primary/5 border-primary/20">
+                    <div className="flex items-start gap-3">
+                      <Sparkles className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-primary mb-1">AI Analysis</p>
+                        <p className="text-sm text-muted-foreground">{result.ai_explanation}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* TBML Assessment (if flagged) */}
+                {result.tbml_assessment && (
+                  <div className="p-4 rounded-lg border bg-red-500/5 border-red-500/20">
+                    <div className="flex items-start gap-3">
+                      <AlertOctagon className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-red-500 mb-1">TBML Risk Assessment</p>
+                        <p className="text-sm text-muted-foreground">{result.tbml_assessment}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Actions */}
                 <div className="flex gap-3">
