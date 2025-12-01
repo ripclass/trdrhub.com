@@ -981,6 +981,24 @@ export default function VerifyPage() {
                                     </div>
                                   )}
                                   
+                                  {/* Unverified Commodity Warning */}
+                                  {verification.resolution && !verification.resolution.verified && (
+                                    <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                                      <div className="flex items-start gap-2">
+                                        <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                        <div className="text-sm">
+                                          <div className="font-medium text-amber-500">Commodity Not in Verified Database</div>
+                                          <div className="text-xs text-muted-foreground mt-1">
+                                            Source: {verification.resolution.source} • Confidence: {Math.round((verification.resolution.confidence || 0) * 100)}%
+                                          </div>
+                                          {verification.resolution.warnings?.map((w: string, i: number) => (
+                                            <div key={i} className="text-xs text-muted-foreground">• {w}</div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {/* Risk Level */}
                                   {verification.risk && (
                                     <div className="p-3 rounded-lg border">
@@ -990,12 +1008,13 @@ export default function VerifyPage() {
                                           {verification.risk.risk_level?.toUpperCase() || 'UNKNOWN'}
                                         </Badge>
                                       </div>
-                                      {verification.risk.factors && verification.risk.factors.length > 0 && (
+                                      {/* Use risk_flags from API response */}
+                                      {verification.risk.risk_flags && verification.risk.risk_flags.length > 0 && (
                                         <div className="flex flex-wrap gap-2">
-                                          {verification.risk.factors.map((factor: string, i: number) => (
+                                          {verification.risk.risk_flags.map((flag: string, i: number) => (
                                             <Badge key={i} variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/20">
                                               <AlertTriangle className="h-3 w-3 mr-1" />
-                                              {factor}
+                                              {flag.replace(/_/g, ' ')}
                                             </Badge>
                                           ))}
                                         </div>
@@ -1003,27 +1022,45 @@ export default function VerifyPage() {
                                     </div>
                                   )}
                                   
-                                  {/* AI Explanation */}
-                                  {verification.explanation && (
+                                  {/* AI Explanation - use ai_explanation field */}
+                                  {verification.ai_explanation && (
                                     <div className="p-3 rounded-lg border bg-muted/20">
                                       <div className="flex items-start gap-2">
                                         <Info className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                                        <p className="text-sm">{verification.explanation}</p>
+                                        <p className="text-sm">{verification.ai_explanation}</p>
                                       </div>
                                     </div>
                                   )}
                                   
-                                  {/* Data Source */}
-                                  {verification.source && (
-                                    <div className="p-2 rounded border bg-muted/10 text-xs text-muted-foreground">
-                                      <div className="flex justify-between">
-                                        <span>Data Source: {verification.source.display || verification.source.name || 'Market Data'}</span>
-                                        {verification.audit_id && (
-                                          <span className="font-mono">Audit ID: {verification.audit_id.slice(0, 12)}</span>
-                                        )}
+                                  {/* TBML Assessment if critical */}
+                                  {verification.tbml_assessment && (
+                                    <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+                                      <div className="flex items-start gap-2">
+                                        <AlertOctagon className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="text-sm">
+                                          <div className="font-medium text-red-500 mb-1">TBML Assessment</div>
+                                          <p className="text-muted-foreground">{verification.tbml_assessment}</p>
+                                        </div>
                                       </div>
                                     </div>
                                   )}
+                                  
+                                  {/* Data Source - from market_price */}
+                                  <div className="p-2 rounded border bg-muted/10 text-xs text-muted-foreground">
+                                    <div className="flex justify-between">
+                                      <span>
+                                        Data Source: {verification.market_price?.source_display || verification.market_price?.source || 'Market Data'}
+                                      </span>
+                                      {verification.verification_id && (
+                                        <span className="font-mono">Audit ID: {String(verification.verification_id).slice(0, 12)}</span>
+                                      )}
+                                    </div>
+                                    {verification.market_price?.fetched_at && (
+                                      <div className="mt-1">
+                                        Updated: {new Date(verification.market_price.fetched_at).toLocaleString()}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               {/* Show error if verification failed */}
