@@ -23,7 +23,12 @@ from app.services.price_verification import (
 )
 from app.services.price_extraction import get_price_extraction_service
 from app.services.ocr_service import get_ocr_service
-from app.services.pdf_export import generate_verification_pdf, generate_batch_verification_pdf
+from app.services.pdf_export import (
+    generate_verification_pdf, 
+    generate_batch_verification_pdf,
+    generate_sar_str_report,
+    generate_tbml_compliance_report,
+)
 from app.services.market_data import get_market_data_service
 from app.services.audit_log import get_audit_service, AuditAction
 from app.database import get_db
@@ -1414,6 +1419,187 @@ async def get_monthly_trend(
         
     except Exception as e:
         logger.error(f"Failed to generate monthly trend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# SAR/STR COMPLIANCE REPORTS
+# =============================================================================
+
+class SARReportRequest(BaseModel):
+    """Request model for SAR/STR report generation."""
+    verification_id: str = Field(..., description="Verification ID for the flagged transaction")
+    report_type: str = Field(default="SAR", description="Report type: SAR or STR")
+    company_name: Optional[str] = Field(None, description="Company name for report header")
+    company_id: Optional[str] = Field(None, description="Company identifier")
+    reporter_name: Optional[str] = Field(None, description="Name of person completing report")
+    reporter_email: Optional[str] = Field(None, description="Reporter's email")
+
+
+@router.post("/reports/sar")
+async def generate_sar_report(
+    request: SARReportRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a Suspicious Activity Report (SAR) or Suspicious Transaction Report (STR)
+    for a TBML-flagged verification.
+    
+    This creates a compliance-ready PDF document following standard SAR/STR format.
+    
+    **Use cases:**
+    - Filing with FinCEN (US) or local Financial Intelligence Unit
+    - Internal compliance documentation
+    - Regulatory audit support
+    """
+    try:
+        # Fetch the verification from database
+        verification = db.query(PriceVerification).filter(
+            PriceVerification.id == request.verification_id
+        ).first()
+        
+        if not verification:
+            raise HTTPException(status_code=404, detail="Verification not found")
+        
+        # Convert to dict format expected by report generator
+        verification_data = {
+            "commodity": {
+                "name": verification.commodity_name,
+                "code": verification.commodity_code,
+                "unit": verification.document_unit,
+            },
+            "market_price": {
+                "price": verification.market_price,
+                "source": verification.market_source,
+                "source_display": verification.market_source,
+            },
+            "variance": {
+                "percent": verification.variance_percent,
+                "document_price": verification.document_price,
+            },
+            "risk": {
+                "risk_level": verification.risk_level,
+                "risk_flags": verification.risk_flags or [],
+            },
+            "verdict": verification.verdict,
+            "document_type": verification.document_type,
+            "document_reference": verification.document_reference,
+            "origin_country": verification.origin_country,
+            "destination_country": verification.destination_country,
+        }
+        
+        company_info = {
+            "name": request.company_name,
+            "id": request.company_id,
+        } if request.company_name else None
+        
+        reporter_info = {
+            "name": request.reporter_name,
+            "email": request.reporter_email,
+        } if request.reporter_name else None
+        
+        # Generate the SAR/STR report
+        pdf_bytes = generate_sar_str_report(
+            verification_id=request.verification_id,
+            verification_data=verification_data,
+            company_info=company_info,
+            reporter_info=reporter_info,
+            report_type=request.report_type,
+        )
+        
+        if not pdf_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate report")
+        
+        # Log the SAR generation for audit
+        logger.warning(
+            f"SAR/STR report generated: verification_id={request.verification_id} "
+            f"type={request.report_type} company={request.company_name}"
+        )
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={request.report_type}_{request.verification_id}_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"SAR report generation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/reports/tbml-summary")
+async def get_tbml_summary_report(
+    db: Session = Depends(get_db),
+    days: int = Query(30, ge=1, le=365, description="Number of days to include"),
+    company_name: Optional[str] = Query(None, description="Company name for report header"),
+):
+    """
+    Generate a TBML Compliance Summary Report covering all flagged transactions
+    in the specified period.
+    
+    This is a periodic compliance report for review by Compliance Officers.
+    """
+    try:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Fetch TBML-flagged verifications
+        flagged_verifications = db.query(PriceVerification).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.risk_level.in_(["high", "critical"])
+        ).order_by(desc(PriceVerification.created_at)).all()
+        
+        # Convert to dict format
+        verifications_data = []
+        for v in flagged_verifications:
+            verifications_data.append({
+                "commodity": {
+                    "name": v.commodity_name,
+                    "code": v.commodity_code,
+                    "unit": v.document_unit,
+                },
+                "market_price": {
+                    "price": v.market_price,
+                },
+                "variance": {
+                    "percent": v.variance_percent,
+                    "document_price": v.document_price,
+                },
+                "risk": {
+                    "risk_level": v.risk_level,
+                    "risk_flags": v.risk_flags or [],
+                },
+                "verdict": v.verdict,
+            })
+        
+        company_info = {"name": company_name} if company_name else None
+        
+        # Generate report
+        pdf_bytes = generate_tbml_compliance_report(
+            verifications=verifications_data,
+            company_info=company_info,
+            period_start=since,
+            period_end=datetime.now(timezone.utc),
+        )
+        
+        if not pdf_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate report")
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=TBML_Summary_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"TBML summary report error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

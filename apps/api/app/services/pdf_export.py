@@ -520,3 +520,404 @@ def generate_batch_verification_pdf(
         logger.error(f"Batch PDF generation error: {e}", exc_info=True)
         return None
 
+
+def generate_sar_str_report(
+    verification_id: str,
+    verification_data: Dict[str, Any],
+    company_info: Optional[Dict[str, Any]] = None,
+    reporter_info: Optional[Dict[str, Any]] = None,
+    report_type: str = "SAR",  # SAR or STR
+) -> Optional[bytes]:
+    """
+    Generate a Suspicious Activity Report (SAR) or Suspicious Transaction Report (STR)
+    for TBML (Trade-Based Money Laundering) flagged verifications.
+    
+    This follows standard SAR/STR format for compliance reporting.
+    
+    Args:
+        verification_id: Unique verification reference
+        verification_data: The verification result with TBML flags
+        company_info: Reporting entity information
+        reporter_info: Person completing the report
+        report_type: "SAR" or "STR"
+        
+    Returns:
+        PDF bytes or None if generation fails
+    """
+    if not REPORTLAB_AVAILABLE:
+        logger.error("ReportLab not available for PDF generation")
+        return None
+    
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20*mm,
+            leftMargin=20*mm,
+            topMargin=25*mm,
+            bottomMargin=20*mm,
+        )
+        
+        styles = getSampleStyleSheet()
+        
+        # Custom styles for SAR/STR
+        styles.add(ParagraphStyle(
+            name='SARTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            spaceAfter=12,
+            textColor=colors.HexColor('#dc2626'),  # Red for urgency
+            alignment=TA_CENTER,
+        ))
+        styles.add(ParagraphStyle(
+            name='SARSection',
+            parent=styles['Heading2'],
+            fontSize=12,
+            spaceBefore=15,
+            spaceAfter=8,
+            textColor=colors.HexColor('#1a1a2e'),
+            backColor=colors.HexColor('#f3f4f6'),
+            borderPadding=5,
+        ))
+        styles.add(ParagraphStyle(
+            name='SARField',
+            parent=styles['Normal'],
+            fontSize=10,
+            spaceBefore=3,
+            spaceAfter=3,
+        ))
+        styles.add(ParagraphStyle(
+            name='SARWarning',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.HexColor('#dc2626'),
+            backColor=colors.HexColor('#fef2f2'),
+            borderPadding=10,
+        ))
+        
+        story = []
+        
+        # Header with warning
+        report_title = "SUSPICIOUS ACTIVITY REPORT (SAR)" if report_type == "SAR" else "SUSPICIOUS TRANSACTION REPORT (STR)"
+        story.append(Paragraph(f"<b>⚠️ {report_title}</b>", styles['SARTitle']))
+        story.append(Paragraph(
+            f"<font size=10 color='gray'>Reference: {verification_id} | "
+            f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</font>",
+            ParagraphStyle('Centered', parent=styles['Normal'], alignment=TA_CENTER)
+        ))
+        story.append(Spacer(1, 15))
+        
+        # Warning banner
+        story.append(Paragraph(
+            "<b>CONFIDENTIAL - FOR COMPLIANCE USE ONLY</b><br/>"
+            "This report documents a potential Trade-Based Money Laundering (TBML) indicator. "
+            "Handle in accordance with your institution's AML/CFT policies.",
+            styles['SARWarning']
+        ))
+        story.append(Spacer(1, 20))
+        
+        # Section 1: Transaction Details
+        story.append(Paragraph("1. TRANSACTION DETAILS", styles['SARSection']))
+        
+        commodity = verification_data.get("commodity", {})
+        market = verification_data.get("market_price", {})
+        variance = verification_data.get("variance", {})
+        risk = verification_data.get("risk", {})
+        
+        transaction_data = [
+            ["Field", "Value"],
+            ["Commodity", commodity.get("name", "N/A")],
+            ["Commodity Code", commodity.get("code", "N/A")],
+            ["Document Price", f"${variance.get('document_price', 0):,.2f} / {commodity.get('unit', 'unit')}"],
+            ["Market Price", f"${market.get('price', 0):,.2f} / {commodity.get('unit', 'unit')}"],
+            ["Variance", f"{variance.get('percent', 0):.1f}%"],
+            ["Risk Level", risk.get("risk_level", "N/A").upper()],
+            ["Verdict", verification_data.get("verdict", "N/A").upper()],
+            ["Market Source", market.get("source_display", market.get("source", "N/A"))],
+        ]
+        
+        trans_table = Table(transaction_data, colWidths=[150, 300])
+        trans_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f3f4f6')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(trans_table)
+        story.append(Spacer(1, 15))
+        
+        # Section 2: Risk Indicators
+        story.append(Paragraph("2. RISK INDICATORS (TBML RED FLAGS)", styles['SARSection']))
+        
+        risk_flags = risk.get("risk_flags", [])
+        if risk_flags:
+            for flag in risk_flags:
+                # Map technical flags to human-readable descriptions
+                flag_descriptions = {
+                    "over_invoicing": "Over-invoicing: Document price significantly exceeds market value",
+                    "under_invoicing": "Under-invoicing: Document price significantly below market value",
+                    "tbml_risk": "TBML Risk: Variance exceeds acceptable threshold (>50%)",
+                    "unusual_quantity": "Unusual Quantity: Transaction quantity is abnormal for this commodity",
+                    "high_variance": "High Variance: Price deviation requires investigation",
+                    "critical_variance": "Critical Variance: Extreme price manipulation suspected",
+                }
+                desc = flag_descriptions.get(flag, flag.replace("_", " ").title())
+                story.append(Paragraph(f"• <font color='red'><b>{desc}</b></font>", styles['SARField']))
+        else:
+            story.append(Paragraph("No specific risk flags identified.", styles['SARField']))
+        
+        story.append(Spacer(1, 15))
+        
+        # Section 3: AI Analysis
+        if verification_data.get("ai_explanation"):
+            story.append(Paragraph("3. AI ANALYSIS", styles['SARSection']))
+            story.append(Paragraph(verification_data["ai_explanation"], styles['SARField']))
+            story.append(Spacer(1, 15))
+        
+        # Section 4: Document Context
+        story.append(Paragraph("4. DOCUMENT CONTEXT" if not verification_data.get("ai_explanation") else "4. DOCUMENT CONTEXT", styles['SARSection']))
+        
+        doc_type = verification_data.get("document_type", "Not specified")
+        doc_ref = verification_data.get("document_reference", "Not specified")
+        origin = verification_data.get("origin_country", "N/A")
+        dest = verification_data.get("destination_country", "N/A")
+        
+        context_data = [
+            ["Document Type", doc_type],
+            ["Document Reference", doc_ref],
+            ["Origin Country", origin],
+            ["Destination Country", dest],
+        ]
+        
+        context_table = Table(context_data, colWidths=[150, 300])
+        context_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f4f6')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(context_table)
+        story.append(Spacer(1, 15))
+        
+        # Section 5: Reporting Entity
+        story.append(Paragraph("5. REPORTING ENTITY", styles['SARSection']))
+        
+        company_name = company_info.get("name", "Not specified") if company_info else "Not specified"
+        company_id = company_info.get("id", "N/A") if company_info else "N/A"
+        reporter_name = reporter_info.get("name", "System") if reporter_info else "System"
+        reporter_email = reporter_info.get("email", "N/A") if reporter_info else "N/A"
+        
+        entity_data = [
+            ["Company Name", company_name],
+            ["Company ID", company_id],
+            ["Report Prepared By", reporter_name],
+            ["Contact Email", reporter_email],
+            ["Report Date", datetime.utcnow().strftime('%Y-%m-%d')],
+        ]
+        
+        entity_table = Table(entity_data, colWidths=[150, 300])
+        entity_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f4f6')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(entity_table)
+        story.append(Spacer(1, 20))
+        
+        # Section 6: Recommended Actions
+        story.append(Paragraph("6. RECOMMENDED ACTIONS", styles['SARSection']))
+        
+        actions = [
+            "Review transaction documentation and supporting evidence",
+            "Verify counterparty details and beneficial ownership",
+            "Assess transaction against historical patterns",
+            "Escalate to Compliance Officer if suspicion confirmed",
+            "File regulatory report if required (FinCEN SAR / Local FIU)",
+            "Retain all documentation per retention policy",
+        ]
+        
+        for i, action in enumerate(actions, 1):
+            story.append(Paragraph(f"{i}. {action}", styles['SARField']))
+        
+        story.append(Spacer(1, 30))
+        
+        # Footer with disclaimer
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#dc2626')))
+        story.append(Spacer(1, 10))
+        
+        disclaimer = Paragraph(
+            f"<font size=8 color='gray'>"
+            f"This report is generated for internal compliance review purposes. "
+            f"The automated analysis should be verified by qualified compliance personnel before any regulatory filing. "
+            f"TRDR Price Verify | {report_type} Report | {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+            f"</font>",
+            ParagraphStyle('Footer', parent=styles['Normal'], alignment=TA_CENTER)
+        )
+        story.append(disclaimer)
+        
+        # Build PDF
+        doc.build(story)
+        
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        logger.info(f"Generated {report_type} report for verification {verification_id}: {len(pdf_bytes)} bytes")
+        return pdf_bytes
+        
+    except Exception as e:
+        logger.error(f"SAR/STR generation error: {e}", exc_info=True)
+        return None
+
+
+def generate_tbml_compliance_report(
+    verifications: List[Dict[str, Any]],
+    company_info: Optional[Dict[str, Any]] = None,
+    period_start: Optional[datetime] = None,
+    period_end: Optional[datetime] = None,
+) -> Optional[bytes]:
+    """
+    Generate a TBML Compliance Summary Report for all flagged transactions in a period.
+    
+    This is a periodic summary report for compliance officers.
+    
+    Args:
+        verifications: List of TBML-flagged verification results
+        company_info: Reporting entity information
+        period_start: Report period start date
+        period_end: Report period end date
+        
+    Returns:
+        PDF bytes or None if generation fails
+    """
+    if not REPORTLAB_AVAILABLE:
+        logger.error("ReportLab not available for PDF generation")
+        return None
+    
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20*mm,
+            leftMargin=20*mm,
+            topMargin=25*mm,
+            bottomMargin=20*mm,
+        )
+        
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        story.append(Paragraph(
+            "<b>TBML COMPLIANCE SUMMARY REPORT</b>",
+            ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, alignment=TA_CENTER)
+        ))
+        
+        period_str = ""
+        if period_start and period_end:
+            period_str = f"{period_start.strftime('%Y-%m-%d')} to {period_end.strftime('%Y-%m-%d')}"
+        else:
+            period_str = f"As of {datetime.utcnow().strftime('%Y-%m-%d')}"
+            
+        story.append(Paragraph(
+            f"<font size=10 color='gray'>Period: {period_str}</font>",
+            ParagraphStyle('Period', parent=styles['Normal'], alignment=TA_CENTER)
+        ))
+        story.append(Spacer(1, 20))
+        
+        # Summary Statistics
+        story.append(Paragraph("<b>SUMMARY STATISTICS</b>", styles['Heading2']))
+        
+        total_flagged = len(verifications)
+        critical_count = sum(1 for v in verifications if v.get("risk", {}).get("risk_level") == "critical")
+        high_count = sum(1 for v in verifications if v.get("risk", {}).get("risk_level") == "high")
+        
+        summary_data = [
+            ["Metric", "Count"],
+            ["Total TBML Flagged Transactions", str(total_flagged)],
+            ["Critical Risk Level", str(critical_count)],
+            ["High Risk Level", str(high_count)],
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[250, 100])
+        summary_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dc2626')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+        
+        # Flagged Transactions List
+        if verifications:
+            story.append(Paragraph("<b>FLAGGED TRANSACTIONS</b>", styles['Heading2']))
+            
+            table_data = [["#", "Commodity", "Doc Price", "Market", "Variance", "Risk"]]
+            
+            for i, v in enumerate(verifications[:50], 1):  # Limit to 50
+                commodity = v.get("commodity", {})
+                variance_data = v.get("variance", {})
+                risk = v.get("risk", {})
+                
+                table_data.append([
+                    str(i),
+                    commodity.get("name", "N/A")[:20],
+                    f"${variance_data.get('document_price', 0):,.2f}",
+                    f"${v.get('market_price', {}).get('price', 0):,.2f}",
+                    f"{variance_data.get('percent', 0):.1f}%",
+                    risk.get("risk_level", "N/A").upper(),
+                ])
+            
+            txn_table = Table(table_data, colWidths=[30, 120, 80, 80, 70, 60])
+            txn_table.setStyle(TableStyle([
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                ('ALIGN', (2, 1), (4, -1), 'RIGHT'),
+                ('ALIGN', (5, 1), (5, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(txn_table)
+        
+        story.append(Spacer(1, 30))
+        
+        # Footer
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e5e7eb')))
+        story.append(Spacer(1, 10))
+        
+        story.append(Paragraph(
+            f"<font size=8 color='gray'>"
+            f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | "
+            f"TRDR Price Verify TBML Compliance Report"
+            f"</font>",
+            ParagraphStyle('Footer', parent=styles['Normal'], alignment=TA_CENTER)
+        ))
+        
+        doc.build(story)
+        
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        logger.info(f"Generated TBML compliance report: {len(pdf_bytes)} bytes, {len(verifications)} items")
+        return pdf_bytes
+        
+    except Exception as e:
+        logger.error(f"TBML compliance report generation error: {e}", exc_info=True)
+        return None
+
