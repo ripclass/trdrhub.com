@@ -226,15 +226,17 @@ class PriceExtractionService:
             
             prompt = PRICE_EXTRACTION_PROMPT.format(document_text=text_for_ai)
             
-            response = await self.llm_provider.generate(
+            result = await self.llm_provider.generate(
                 prompt=prompt,
                 system_prompt=PRICE_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
             )
             
-            if response:
-                return self._parse_json_response(response)
+            # LLM provider returns tuple: (output_text, tokens_in, tokens_out)
+            if result:
+                response_text = result[0] if isinstance(result, tuple) else result
+                return self._parse_json_response(response_text)
                 
         except Exception as e:
             logger.error(f"LLM extraction error: {e}", exc_info=True)
