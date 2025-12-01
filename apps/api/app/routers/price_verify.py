@@ -217,6 +217,58 @@ async def get_market_price(commodity_code: str):
     }
 
 
+@router.get("/market-price/{commodity_code}/history")
+async def get_price_history(
+    commodity_code: str,
+    months: int = Query(12, ge=1, le=60, description="Number of months of history"),
+):
+    """
+    Get historical price data for a commodity.
+    
+    Returns monthly price data for charting with:
+    - date: Month in YYYY-MM format
+    - price: Average price for the month
+    - low: Minimum price estimate
+    - high: Maximum price estimate
+    - source: Data source for this observation
+    """
+    commodity = COMMODITIES_DATABASE.get(commodity_code.upper())
+    if not commodity:
+        raise HTTPException(status_code=404, detail=f"Commodity not found: {commodity_code}")
+    
+    market_service = get_market_data_service()
+    
+    try:
+        # Fetch historical data
+        history = await market_service.get_historical_prices(commodity_code.upper(), months)
+        
+        return {
+            "success": True,
+            "commodity_code": commodity_code.upper(),
+            "commodity_name": commodity["name"],
+            "unit": commodity["unit"],
+            "currency": "USD",
+            "months": months,
+            "history": history,
+            "source": "World Bank / FRED Historical",
+            "source_url": "https://www.worldbank.org/en/research/commodity-markets",
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch history for {commodity_code}: {e}")
+        # Return empty history on error
+        return {
+            "success": True,
+            "commodity_code": commodity_code.upper(),
+            "commodity_name": commodity["name"],
+            "unit": commodity["unit"],
+            "currency": "USD",
+            "months": months,
+            "history": [],
+            "source": "unavailable",
+            "error": str(e),
+        }
+
+
 @router.post("/verify")
 async def verify_single_price(
     request: SingleVerificationRequest,

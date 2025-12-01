@@ -3,6 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Search, 
   TrendingUp, 
@@ -11,8 +17,10 @@ import {
   RefreshCw,
   Loader2,
   ExternalLink,
-  Clock
+  Clock,
+  LineChart,
 } from "lucide-react";
+import PriceHistoryChart from "@/components/price-verify/PriceHistoryChart";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -51,6 +59,8 @@ export default function MarketPricesPage() {
   const [isLive, setIsLive] = useState(false);
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [selectedCommodity, setSelectedCommodity] = useState<MarketPrice | null>(null);
+  const [showChart, setShowChart] = useState(false);
 
   // Fetch real commodity data on mount
   useEffect(() => {
@@ -194,6 +204,7 @@ export default function MarketPricesPage() {
                     <th className="text-right p-3 font-medium hidden md:table-cell">Range</th>
                     <th className="text-right p-3 font-medium">24h Change</th>
                     <th className="text-right p-3 font-medium hidden sm:table-cell">Source</th>
+                    <th className="text-right p-3 font-medium w-12"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -250,6 +261,18 @@ export default function MarketPricesPage() {
                           </Badge>
                         </div>
                       </td>
+                      <td className="p-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCommodity(price);
+                            setShowChart(true);
+                          }}
+                        >
+                          <LineChart className="h-4 w-4" />
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -289,6 +312,37 @@ export default function MarketPricesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Price History Chart Modal */}
+      <Dialog open={showChart} onOpenChange={setShowChart}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LineChart className="h-5 w-5 text-primary" />
+              Price History
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCommodity && (
+            <div className="space-y-4">
+              <PriceHistoryChart
+                commodityCode={selectedCommodity.code}
+                commodityName={selectedCommodity.name}
+                currentPrice={selectedCommodity.price}
+                unit={selectedCommodity.unit}
+                currency={selectedCommodity.currency}
+              />
+              <div className="flex items-center justify-between text-sm text-muted-foreground pt-2 border-t">
+                <span>
+                  Current: <strong className="text-foreground">{formatPrice(selectedCommodity.price, selectedCommodity.unit)}/{selectedCommodity.unit}</strong>
+                </span>
+                <span>
+                  Range: {formatPrice(selectedCommodity.price_low, selectedCommodity.unit)} - {formatPrice(selectedCommodity.price_high, selectedCommodity.unit)}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

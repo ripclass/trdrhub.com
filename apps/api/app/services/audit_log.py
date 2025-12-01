@@ -16,8 +16,7 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, String, DateTime, Text, JSON, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import desc
 
 logger = logging.getLogger(__name__)
 
@@ -339,11 +338,10 @@ class AuditLogService:
         """
         Persist audit entry to storage.
         
-        Currently logs to structured logger.
-        In production, would also write to:
-        - PostgreSQL audit_logs table
-        - Append-only file for immutability
-        - External SIEM if configured
+        Writes to:
+        1. Structured logger (always)
+        2. PostgreSQL audit_logs table (if db available)
+        3. External SIEM (if configured)
         """
         # Always log to structured logger
         log_data = entry.to_dict()
@@ -358,8 +356,8 @@ class AuditLogService:
         # Buffer for batch DB writes
         self._buffer.append(entry)
         
-        # Flush if buffer is full
-        if len(self._buffer) >= self._buffer_size:
+        # Flush if buffer is full or critical severity
+        if len(self._buffer) >= self._buffer_size or entry.severity == AuditSeverity.CRITICAL:
             await self._flush_buffer()
     
     async def _flush_buffer(self):
@@ -369,11 +367,37 @@ class AuditLogService:
         
         if self.db:
             try:
-                # In production, batch insert to audit_logs table
-                # For now, just clear buffer
-                pass
+                from app.models.audit_logs import PriceVerifyAuditLog
+                
+                for entry in self._buffer:
+                    db_entry = PriceVerifyAuditLog(
+                        id=uuid4(),
+                        timestamp=entry.timestamp,
+                        action=entry.action.value,
+                        severity=entry.severity.value,
+                        user_id=entry.user_id,
+                        user_email=entry.user_email,
+                        company_id=entry.company_id,
+                        ip_address=entry.ip_address,
+                        user_agent=entry.user_agent,
+                        resource_type=entry.resource_type,
+                        resource_id=entry.resource_id,
+                        request_data=entry.request_data,
+                        response_summary=entry.response_summary,
+                        verdict=entry.verdict,
+                        risk_level=entry.risk_level,
+                        data_sources=entry.data_sources,
+                        session_id=entry.session_id,
+                        request_id=entry.request_id,
+                        duration_ms=entry.duration_ms,
+                    )
+                    self.db.add(db_entry)
+                
+                self.db.commit()
+                logger.debug(f"Flushed {len(self._buffer)} audit entries to database")
             except Exception as e:
                 logger.error(f"Failed to flush audit buffer: {e}")
+                self.db.rollback()
         
         self._buffer = []
     
@@ -387,15 +411,39 @@ class AuditLogService:
         end_date: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[AuditEntry]:
+    ) -> List[Dict[str, Any]]:
         """
         Query audit logs with filters.
         
-        In production, this would query the database.
-        For now, returns empty list.
+        Returns list of audit entries matching the criteria.
         """
-        # TODO: Implement database query
-        return []
+        if not self.db:
+            return []
+        
+        try:
+            from app.models.audit_logs import PriceVerifyAuditLog
+            
+            query = self.db.query(PriceVerifyAuditLog)
+            
+            if user_id:
+                query = query.filter(PriceVerifyAuditLog.user_id == user_id)
+            if company_id:
+                query = query.filter(PriceVerifyAuditLog.company_id == company_id)
+            if action:
+                query = query.filter(PriceVerifyAuditLog.action == action.value)
+            if severity:
+                query = query.filter(PriceVerifyAuditLog.severity == severity.value)
+            if start_date:
+                query = query.filter(PriceVerifyAuditLog.timestamp >= start_date)
+            if end_date:
+                query = query.filter(PriceVerifyAuditLog.timestamp <= end_date)
+            
+            entries = query.order_by(desc(PriceVerifyAuditLog.timestamp)).offset(offset).limit(limit).all()
+            
+            return [entry.to_dict() for entry in entries]
+        except Exception as e:
+            logger.error(f"Failed to query audit logs: {e}")
+            return []
     
     async def get_compliance_report(
         self,
