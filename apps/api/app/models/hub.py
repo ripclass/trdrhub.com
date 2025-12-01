@@ -328,7 +328,7 @@ class HubUsageLog(Base):
     is_overage = Column(Boolean, default=False, nullable=False)
     
     # Context
-    metadata = Column(JSONB, nullable=True)  # {"job_id": "xxx", "document_count": 6, ...}
+    log_data = Column(JSONB, nullable=True)  # {"job_id": "xxx", "document_count": 6, ...}
     description = Column(String(500), nullable=True)
     
     # Timestamp

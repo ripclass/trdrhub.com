@@ -167,7 +167,7 @@ def upgrade():
         sa.Column('is_overage', sa.Boolean, default=False, nullable=False),
         
         # Context
-        sa.Column('metadata', JSONB, nullable=True, comment='{"job_id": "xxx", "document_count": 6, ...}'),
+        sa.Column('log_data', JSONB, nullable=True, comment='{"job_id": "xxx", "document_count": 6, ...}'),
         sa.Column('description', sa.String(500), nullable=True),
         
         # Timestamp
