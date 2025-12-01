@@ -29,40 +29,6 @@ class RiskLevel(str, enum.Enum):
     CRITICAL = "critical" # Variance > 50%
 
 
-class Commodity(Base):
-    """
-    Master table of commodities that can be verified.
-    """
-    __tablename__ = "commodities"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code = Column(String(50), unique=True, nullable=False)  # e.g., "COTTON_RAW", "STEEL_HRC"
-    name = Column(String(200), nullable=False)  # e.g., "Raw Cotton", "Hot Rolled Steel Coils"
-    category = Column(String(50), nullable=False)  # agriculture, energy, metals, etc.
-    
-    # Unit information
-    default_unit = Column(String(50), nullable=False)  # kg, mt, bbl, etc.
-    alternate_units = Column(JSON)  # {"lb": 2.205, "ton": 0.001} conversion factors to default
-    
-    # Data source configuration
-    data_sources = Column(JSON)  # ["world_bank", "fred", "custom"]
-    source_codes = Column(JSON)  # {"world_bank": "COTTON_A_INDEX", "fred": "WPU0131"}
-    
-    # Price thresholds
-    typical_min_price = Column(Float)  # Historical minimum (per default unit)
-    typical_max_price = Column(Float)  # Historical maximum
-    
-    # Metadata
-    description = Column(Text)
-    hs_codes = Column(JSON)  # Related HS codes ["5201", "5201.00"]
-    aliases = Column(JSON)  # ["cotton lint", "raw cotton fiber"]
-    regions = Column(JSON)  # Regions where this commodity is commonly traded
-    is_active = Column(Boolean, default=True)
-    
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
-
-
 class CommodityPrice(Base):
     """
     Historical and current commodity prices from various sources.
