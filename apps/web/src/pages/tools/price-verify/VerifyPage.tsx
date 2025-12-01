@@ -135,6 +135,15 @@ interface VerificationResult {
   verdict_reason: string;
   ai_explanation?: string;
   tbml_assessment?: string;
+  // Resolution metadata for unknown commodities
+  resolution?: {
+    source: string;
+    confidence: number;
+    matched_to?: string;
+    verified: boolean;
+    suggestions: string[];
+    warnings: string[];
+  };
 }
 
 interface ExtractedLineItem {
@@ -993,6 +1002,32 @@ export default function VerifyPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Resolution Warning Banner (for unknown commodities) */}
+                {result.resolution && !result.resolution.verified && (
+                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium text-amber-500">
+                          Commodity Not in Verified Database
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Source: {result.resolution.source.replace(/_/g, ' ')} 
+                          {result.resolution.matched_to && ` (matched to: ${result.resolution.matched_to})`}
+                          {' • '}Confidence: {Math.round(result.resolution.confidence * 100)}%
+                        </div>
+                        {result.resolution.warnings && result.resolution.warnings.length > 0 && (
+                          <ul className="text-xs text-muted-foreground list-disc ml-4 mt-1">
+                            {result.resolution.warnings.map((warning, i) => (
+                              <li key={i}>{warning}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Commodity Info */}
                 <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
                   <Package className="h-5 w-5 text-muted-foreground mt-0.5" />

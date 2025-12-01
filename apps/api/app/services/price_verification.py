@@ -689,18 +689,74 @@ class PriceVerificationService:
         self.db = db_session
         self.commodities = COMMODITIES_DATABASE
         self.http_client = httpx.AsyncClient(timeout=30.0)
+        self._resolution_service = None
     
     async def close(self):
         await self.http_client.aclose()
     
+    def _get_resolution_service(self):
+        """Get or create commodity resolution service."""
+        if self._resolution_service is None:
+            from app.services.commodity_resolution import CommodityResolutionService
+            self._resolution_service = CommodityResolutionService(self.db)
+        return self._resolution_service
+    
     # =========================================================================
-    # COMMODITY LOOKUP
+    # COMMODITY LOOKUP (Enhanced with Resolution Service)
     # =========================================================================
+    
+    async def resolve_commodity(
+        self,
+        search_term: str,
+        hs_code: Optional[str] = None,
+    ) -> Dict:
+        """
+        Resolve a commodity using the full resolution chain.
+        This NEVER returns None - always provides usable data.
+        
+        Resolution chain:
+        1. Exact match in database
+        2. Fuzzy match
+        3. HS code lookup
+        4. AI classification
+        5. Category fallback
+        
+        Returns:
+            Dict with commodity data including resolution metadata
+        """
+        service = self._get_resolution_service()
+        resolved = await service.resolve(search_term, hs_code)
+        
+        # Convert to legacy format for backward compatibility
+        return {
+            "code": resolved.code or search_term.upper().replace(" ", "_"),
+            "name": resolved.name,
+            "category": resolved.category,
+            "unit": resolved.unit,
+            "aliases": [],
+            "hs_codes": [resolved.hs_code] if resolved.hs_code else [],
+            "typical_range": (resolved.price_low, resolved.price_high),
+            "current_estimate": resolved.current_estimate,
+            "data_sources": [],
+            # Resolution metadata (new fields)
+            "_resolution": {
+                "source": resolved.source.value,
+                "confidence": resolved.confidence,
+                "matched_to": resolved.matched_to,
+                "verified": resolved.verified,
+                "has_live_feed": resolved.has_live_feed,
+                "suggestions": resolved.suggestions,
+                "warnings": resolved.warnings,
+            }
+        }
     
     def find_commodity(self, search_term: str) -> Optional[Dict]:
         """
         Find a commodity by name, alias, or HS code.
         Uses fuzzy matching for best results.
+        
+        NOTE: This is the LEGACY method. For new code, use resolve_commodity()
+        which never returns None and provides better results.
         """
         search_lower = search_term.lower().strip()
         
@@ -1086,17 +1142,21 @@ class PriceVerificationService:
         Returns:
             Complete verification result
         """
-        # Find commodity
-        commodity = self.find_commodity(commodity_input)
-        if not commodity:
-            return {
-                "success": False,
-                "error": f"Commodity not found: {commodity_input}",
-                "suggestions": self._suggest_commodities(commodity_input),
-            }
+        # Use resolution service - NEVER fails, always returns usable data
+        commodity = await self.resolve_commodity(commodity_input)
+        resolution_meta = commodity.get("_resolution", {})
         
-        # Get market price
-        market_data = await self.get_market_price(commodity["code"])
+        # Get market price (use estimate if not in database)
+        if commodity.get("current_estimate") and resolution_meta.get("source") in ["category_fallback", "ai_estimate"]:
+            # For unknown commodities, use the estimated price range
+            market_data = {
+                "price": commodity["current_estimate"],
+                "source": resolution_meta.get("source", "estimate"),
+                "unit": commodity.get("unit", "kg"),
+                "typical_range": commodity.get("typical_range"),
+            }
+        else:
+            market_data = await self.get_market_price(commodity["code"])
         if "error" in market_data:
             return {
                 "success": False,
@@ -1201,6 +1261,16 @@ class PriceVerificationService:
                 "document_reference": document_reference,
                 "origin_country": origin_country,
                 "destination_country": destination_country,
+            },
+            
+            # Resolution metadata (for unknown commodities)
+            "resolution": {
+                "source": resolution_meta.get("source", "exact_match"),
+                "confidence": resolution_meta.get("confidence", 1.0),
+                "matched_to": resolution_meta.get("matched_to"),
+                "verified": resolution_meta.get("verified", True),
+                "suggestions": resolution_meta.get("suggestions", []),
+                "warnings": resolution_meta.get("warnings", []),
             },
         }
         

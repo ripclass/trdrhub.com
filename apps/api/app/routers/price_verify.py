@@ -205,42 +205,51 @@ async def get_commodity(code: str):
 async def search_commodities(
     request: CommoditySearchRequest,
     use_ai: bool = Query(True, description="Use AI for typo correction and suggestions"),
+    hs_code: Optional[str] = Query(None, description="HS code from document if available"),
 ):
     """
     Search for commodities by name, alias, or HS code.
     
-    Supports fuzzy matching and AI-powered suggestions for:
-    - Typo correction (e.g., "coton" → "cotton")
-    - Trade name variations (e.g., "black gold" → "crude oil")
-    - Regional names (e.g., "maize" → "corn")
+    Uses the Commodity Resolution Service which NEVER fails:
+    1. Exact match in database
+    2. Fuzzy match against names/aliases
+    3. HS code lookup
+    4. AI classification
+    5. Category-based fallback
+    
+    Always returns usable data - even for unknown commodities.
     """
     service = get_price_verification_service()
     
-    # Try exact match first
-    exact_match = service.find_commodity(request.query)
-    if exact_match:
-        return {
-            "success": True,
-            "match_type": "exact",
-            "commodity": exact_match,
-        }
+    # Use the new resolution service - NEVER returns None
+    resolved = await service.resolve_commodity(request.query, hs_code)
     
-    # Get basic suggestions
-    suggestions = service._suggest_commodities(request.query)
+    resolution_meta = resolved.get("_resolution", {})
+    source = resolution_meta.get("source", "exact_match")
     
-    # If no good suggestions and AI is enabled, try AI suggestion
-    ai_suggestion = None
-    if use_ai and (not suggestions or suggestions[0].get("score", 0) < 0.5):
-        try:
-            ai_suggestion = await service.get_ai_commodity_suggestion(request.query)
-        except Exception as e:
-            logger.warning(f"AI suggestion failed: {e}")
+    # Map resolution source to match_type for backward compatibility
+    match_type_map = {
+        "exact_match": "exact",
+        "fuzzy_match": "fuzzy",
+        "hs_code": "hs_code",
+        "ai_estimate": "ai",
+        "category_fallback": "estimated",
+        "unknown": "unknown",
+    }
     
     return {
         "success": True,
-        "match_type": "ai_suggestion" if ai_suggestion and ai_suggestion.get("matched_commodity") else "suggestions",
-        "suggestions": suggestions,
-        "ai_suggestion": ai_suggestion,
+        "match_type": match_type_map.get(source, "estimated"),
+        "commodity": resolved,
+        "resolution": {
+            "source": source,
+            "confidence": resolution_meta.get("confidence", 0.5),
+            "matched_to": resolution_meta.get("matched_to"),
+            "verified": resolution_meta.get("verified", False),
+            "has_live_feed": resolution_meta.get("has_live_feed", False),
+            "suggestions": resolution_meta.get("suggestions", []),
+            "warnings": resolution_meta.get("warnings", []),
+        },
     }
 
 
@@ -252,6 +261,9 @@ async def get_market_price(commodity_code: str):
     Fetches real-time data from available sources (World Bank, FRED, etc.)
     Falls back to database estimates if APIs unavailable.
     
+    For unknown commodities, uses the Commodity Resolution Service
+    to provide estimated data instead of failing.
+    
     **Response includes full source attribution:**
     - source: Data source identifier
     - source_display: Human-readable source name
@@ -261,9 +273,31 @@ async def get_market_price(commodity_code: str):
     """
     service = get_price_verification_service()
     
+    # Try direct lookup first
     commodity = COMMODITIES_DATABASE.get(commodity_code.upper())
+    
+    # If not found, use resolution service (NEVER fails)
     if not commodity:
-        raise HTTPException(status_code=404, detail=f"Commodity not found: {commodity_code}")
+        resolved = await service.resolve_commodity(commodity_code)
+        resolution_meta = resolved.get("_resolution", {})
+        
+        # Return estimated data instead of 404
+        return {
+            "success": True,
+            "commodity_code": commodity_code,
+            "commodity_name": resolved.get("name"),
+            "price": resolved.get("current_estimate"),
+            "unit": resolved.get("unit", "kg"),
+            "currency": "USD",
+            "source": resolution_meta.get("source", "estimated"),
+            "source_display": "AI/Category Estimate",
+            "source_url": None,
+            "confidence": resolution_meta.get("confidence", 0.3),
+            "typical_range": resolved.get("typical_range"),
+            "warnings": resolution_meta.get("warnings", ["Commodity not in database - using estimated data"]),
+            "suggestions": resolution_meta.get("suggestions", []),
+            "is_estimated": True,
+        }
     
     result = await service.get_market_price(commodity_code.upper())
     
