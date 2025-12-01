@@ -145,7 +145,7 @@ export default function AdminPage() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${API_BASE}/admin/stats`);
+      const response = await fetch(`${API_BASE}/price-verify/admin/stats`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) setStats(data.stats);
@@ -162,7 +162,7 @@ export default function AdminPage() {
       if (searchTerm) params.append("search", searchTerm);
       if (categoryFilter) params.append("category", categoryFilter);
       
-      const response = await fetch(`${API_BASE}/admin/commodities?${params}`);
+      const response = await fetch(`${API_BASE}/price-verify/admin/commodities?${params}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -183,7 +183,7 @@ export default function AdminPage() {
       const params = new URLSearchParams();
       if (requestStatusFilter) params.append("status", requestStatusFilter);
       
-      const response = await fetch(`${API_BASE}/admin/commodity-requests?${params}`);
+      const response = await fetch(`${API_BASE}/price-verify/admin/commodity-requests?${params}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -201,7 +201,7 @@ export default function AdminPage() {
   const fetchAuditLogs = async () => {
     setLogsLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/admin/audit-logs?days=7`);
+      const response = await fetch(`${API_BASE}/price-verify/admin/audit-logs?days=7`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) setAuditLogs(data.logs);
@@ -264,8 +264,8 @@ export default function AdminPage() {
       };
 
       const url = editingCommodity 
-        ? `${API_BASE}/admin/commodities/${editingCommodity.id}`
-        : `${API_BASE}/admin/commodities`;
+        ? `${API_BASE}/price-verify/admin/commodities/${editingCommodity.id}`
+        : `${API_BASE}/price-verify/admin/commodities`;
       
       const response = await fetch(url, {
         method: editingCommodity ? "PUT" : "POST",
@@ -302,7 +302,7 @@ export default function AdminPage() {
     if (!confirm(`Are you sure you want to deactivate "${commodity.name}"?`)) return;
 
     try {
-      const response = await fetch(`${API_BASE}/admin/commodities/${commodity.id}`, {
+      const response = await fetch(`${API_BASE}/price-verify/admin/commodities/${commodity.id}`, {
         method: "DELETE",
       });
 
@@ -327,7 +327,7 @@ export default function AdminPage() {
 
   const reviewRequest = async (requestId: string, action: "approve" | "reject", createCommodity = false) => {
     try {
-      const response = await fetch(`${API_BASE}/admin/commodity-requests/${requestId}/review`, {
+      const response = await fetch(`${API_BASE}/price-verify/admin/commodity-requests/${requestId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, create_commodity: createCommodity }),
