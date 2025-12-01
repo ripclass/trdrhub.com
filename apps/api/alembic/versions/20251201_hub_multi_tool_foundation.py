@@ -8,7 +8,7 @@ Adds infrastructure for multi-tool SaaS architecture:
 - Creates hub_usage_logs for detailed audit
 
 Revision ID: hub_multi_tool_001
-Revises: 20251201_commodity_resolution_system
+Revises: 20251201_commodity_resolution
 Create Date: 2025-12-01
 """
 from alembic import op
@@ -68,7 +68,7 @@ def upgrade():
         
         # Timestamps
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
     
     # =========================================================================
@@ -102,7 +102,7 @@ def upgrade():
         
         # Timestamps
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
     
     # One active subscription per company
@@ -138,7 +138,7 @@ def upgrade():
         
         # Timestamps
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
     
     # One record per company per period
