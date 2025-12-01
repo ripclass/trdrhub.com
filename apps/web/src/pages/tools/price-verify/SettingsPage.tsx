@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,13 @@ import {
   Globe,
   Key,
   Building,
-  Save
+  Save,
+  Mail,
+  Send,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Select,
@@ -24,8 +30,19 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+interface AlertStatus {
+  smtp_configured: boolean;
+  alerts_enabled: boolean;
+  from_email: string;
+}
+
 export default function SettingsPage() {
   const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [testingAlert, setTestingAlert] = useState(false);
+  const [alertStatus, setAlertStatus] = useState<AlertStatus | null>(null);
   
   const [settings, setSettings] = useState({
     // Thresholds
@@ -34,9 +51,11 @@ export default function SettingsPage() {
     tbmlThreshold: 50,
     
     // Notifications
-    emailAlerts: true,
+    alertEmail: "",
     tbmlAlerts: true,
-    weeklyDigest: false,
+    dailyDigest: false,
+    weeklyDigest: true,
+    thresholdAlerts: true,
     
     // Preferences
     defaultCurrency: "USD",
@@ -48,11 +67,104 @@ export default function SettingsPage() {
     department: "",
   });
 
-  const handleSave = () => {
-    toast({
-      title: "Settings Saved",
-      description: "Your preferences have been updated.",
-    });
+  useEffect(() => {
+    fetchAlertStatus();
+  }, []);
+
+  const fetchAlertStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/price-verify/alerts/status`);
+      if (response.ok) {
+        const data = await response.json();
+        setAlertStatus(data.status);
+      }
+    } catch (err) {
+      console.error("Failed to fetch alert status:", err);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Save alert configuration
+      if (settings.alertEmail) {
+        const response = await fetch(`${API_BASE}/price-verify/alerts/configure`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: settings.alertEmail,
+            tbml_alerts: settings.tbmlAlerts,
+            daily_digest: settings.dailyDigest,
+            weekly_digest: settings.weeklyDigest,
+            threshold_alerts: settings.thresholdAlerts,
+            variance_threshold: settings.tbmlThreshold,
+          }),
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to save alert configuration");
+        }
+      }
+      
+      toast({
+        title: "Settings Saved",
+        description: "Your preferences have been updated.",
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testAlert = async (type: string) => {
+    if (!settings.alertEmail) {
+      toast({
+        title: "Email Required",
+        description: "Please enter an email address first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setTestingAlert(true);
+    try {
+      const response = await fetch(`${API_BASE}/price-verify/alerts/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: settings.alertEmail,
+          alert_type: type,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Test Alert Sent",
+          description: `Check ${settings.alertEmail} for the test ${type} alert`,
+        });
+      } else {
+        toast({
+          title: "Alert Not Sent",
+          description: data.message || "SMTP not configured on server",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to send test alert",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingAlert(false);
+    }
   };
 
   return (
@@ -60,7 +172,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
-          Configure your price verification preferences.
+          Configure your price verification preferences and alerts.
         </p>
       </div>
 
@@ -111,47 +223,96 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Notifications */}
+      {/* Email Alerts */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" />
-            Notifications
+            <Mail className="w-5 h-5" />
+            Email Alerts
+            {alertStatus && (
+              <Badge variant="outline" className={alertStatus.smtp_configured ? "text-green-600" : "text-yellow-600"}>
+                {alertStatus.smtp_configured ? (
+                  <><CheckCircle className="w-3 h-3 mr-1" />Configured</>
+                ) : (
+                  <><AlertTriangle className="w-3 h-3 mr-1" />SMTP Not Set</>
+                )}
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
-            Configure how you receive alerts and updates.
+            Receive email notifications for price verification events.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Email Alerts</p>
-              <p className="text-sm text-muted-foreground">Receive email notifications for verifications</p>
+          <div className="space-y-2">
+            <Label htmlFor="alert-email">Alert Email Address</Label>
+            <div className="flex gap-2">
+              <Input
+                id="alert-email"
+                type="email"
+                placeholder="compliance@yourcompany.com"
+                value={settings.alertEmail}
+                onChange={(e) => setSettings({ ...settings, alertEmail: e.target.value })}
+                className="flex-1"
+              />
+              <Button 
+                variant="outline" 
+                onClick={() => testAlert("tbml")}
+                disabled={testingAlert || !settings.alertEmail}
+              >
+                {testingAlert ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
             </div>
-            <Switch
-              checked={settings.emailAlerts}
-              onCheckedChange={(checked) => setSettings({ ...settings, emailAlerts: checked })}
-            />
+            <p className="text-xs text-muted-foreground">
+              Click the send button to test email delivery
+            </p>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">TBML Alerts</p>
-              <p className="text-sm text-muted-foreground">Immediate alerts for TBML-flagged transactions</p>
+          
+          <div className="space-y-4 pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">TBML High-Risk Alerts</p>
+                <p className="text-sm text-muted-foreground">Immediate alerts for TBML-flagged transactions</p>
+              </div>
+              <Switch
+                checked={settings.tbmlAlerts}
+                onCheckedChange={(checked) => setSettings({ ...settings, tbmlAlerts: checked })}
+              />
             </div>
-            <Switch
-              checked={settings.tbmlAlerts}
-              onCheckedChange={(checked) => setSettings({ ...settings, tbmlAlerts: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Weekly Digest</p>
-              <p className="text-sm text-muted-foreground">Summary email of all verifications</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Daily Digest</p>
+                <p className="text-sm text-muted-foreground">Daily summary of all verifications</p>
+              </div>
+              <Switch
+                checked={settings.dailyDigest}
+                onCheckedChange={(checked) => setSettings({ ...settings, dailyDigest: checked })}
+              />
             </div>
-            <Switch
-              checked={settings.weeklyDigest}
-              onCheckedChange={(checked) => setSettings({ ...settings, weeklyDigest: checked })}
-            />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Weekly Digest</p>
+                <p className="text-sm text-muted-foreground">Weekly summary report</p>
+              </div>
+              <Switch
+                checked={settings.weeklyDigest}
+                onCheckedChange={(checked) => setSettings({ ...settings, weeklyDigest: checked })}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Threshold Breach Alerts</p>
+                <p className="text-sm text-muted-foreground">Alert when variance exceeds TBML threshold</p>
+              </div>
+              <Switch
+                checked={settings.thresholdAlerts}
+                onCheckedChange={(checked) => setSettings({ ...settings, thresholdAlerts: checked })}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -282,12 +443,15 @@ export default function SettingsPage() {
 
       {/* Save Button */}
       <div className="flex justify-end">
-        <Button onClick={handleSave}>
-          <Save className="w-4 h-4 mr-2" />
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4 mr-2" />
+          )}
           Save Settings
         </Button>
       </div>
     </div>
   );
 }
-

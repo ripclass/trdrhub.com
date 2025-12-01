@@ -1957,6 +1957,140 @@ async def get_report_stats(
 
 
 # =============================================================================
+# EMAIL ALERTS
+# =============================================================================
+
+class AlertConfigRequest(BaseModel):
+    """Request model for configuring alerts."""
+    email: str = Field(..., description="Email address for alerts")
+    tbml_alerts: bool = Field(default=True, description="Send TBML high-risk alerts")
+    daily_digest: bool = Field(default=False, description="Send daily summary")
+    weekly_digest: bool = Field(default=True, description="Send weekly summary")
+    threshold_alerts: bool = Field(default=True, description="Alert on variance threshold breach")
+    variance_threshold: float = Field(default=30.0, description="Variance % to trigger alert")
+
+
+class TestAlertRequest(BaseModel):
+    """Request model for testing alerts."""
+    email: str = Field(..., description="Email to send test alert to")
+    alert_type: str = Field(default="tbml", description="Type: tbml, daily, weekly")
+
+
+@router.post("/alerts/configure")
+async def configure_alerts(
+    request: AlertConfigRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Configure email alert preferences.
+    
+    Alerts can be triggered for:
+    - TBML high-risk transactions (immediate)
+    - Daily digest summary
+    - Weekly digest summary
+    - Variance threshold breaches
+    """
+    # In production, store this in user preferences table
+    # For now, return configuration acknowledgment
+    return {
+        "success": True,
+        "message": "Alert preferences configured",
+        "config": {
+            "email": request.email,
+            "tbml_alerts": request.tbml_alerts,
+            "daily_digest": request.daily_digest,
+            "weekly_digest": request.weekly_digest,
+            "threshold_alerts": request.threshold_alerts,
+            "variance_threshold": request.variance_threshold,
+        },
+        "note": "Email alerts require SMTP configuration on the server"
+    }
+
+
+@router.post("/alerts/test")
+async def send_test_alert(
+    request: TestAlertRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Send a test alert to verify email configuration.
+    """
+    try:
+        from app.services.price_alerts import get_price_alert_service
+        
+        alert_service = get_price_alert_service(db)
+        
+        if request.alert_type == "daily":
+            success = await alert_service.send_daily_digest(request.email, "Test Company")
+        else:
+            # Create a mock verification for test
+            mock_verification = type('MockVerification', (), {
+                'id': 'test-' + datetime.utcnow().strftime('%Y%m%d%H%M%S'),
+                'commodity_name': 'Raw Cotton',
+                'commodity_code': 'RAW_COTTON',
+                'document_price': 5.00,
+                'market_price': 2.20,
+                'document_unit': 'kg',
+                'variance_percent': 127.3,
+                'risk_level': 'critical',
+                'risk_flags': ['tbml_risk', 'significant_overpricing'],
+                'verdict': 'fail',
+                'created_at': datetime.now(timezone.utc),
+            })()
+            
+            success = await alert_service.send_tbml_alert(
+                mock_verification, 
+                request.email,
+                "Test Company"
+            )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Test {request.alert_type} alert sent to {request.email}",
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Email not sent - check SMTP configuration",
+                "hint": "Ensure SMTP_HOST, SMTP_USER, SMTP_PASSWORD are configured"
+            }
+            
+    except Exception as e:
+        logger.error(f"Test alert error: {e}")
+        return {
+            "success": False,
+            "message": str(e),
+        }
+
+
+@router.get("/alerts/status")
+async def get_alerts_status():
+    """
+    Get current alerts configuration status.
+    """
+    import os
+    
+    smtp_configured = bool(os.getenv("SMTP_USER")) and bool(os.getenv("SMTP_PASSWORD"))
+    alerts_enabled = os.getenv("PRICE_ALERTS_ENABLED", "true").lower() == "true"
+    
+    return {
+        "success": True,
+        "status": {
+            "smtp_configured": smtp_configured,
+            "alerts_enabled": alerts_enabled,
+            "from_email": os.getenv("ALERT_FROM_EMAIL", "alerts@trdrhub.com"),
+        },
+        "available_alerts": [
+            {"type": "tbml", "description": "Immediate TBML high-risk alerts"},
+            {"type": "daily", "description": "Daily verification digest"},
+            {"type": "weekly", "description": "Weekly verification digest"},
+            {"type": "threshold", "description": "Custom variance threshold alerts"},
+        ]
+    }
+
+
+# =============================================================================
 # HEALTH CHECK
 # =============================================================================
 
