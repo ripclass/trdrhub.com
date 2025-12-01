@@ -183,7 +183,7 @@ class HealthChecker:
                 raise Exception("Google Cloud Document AI library not installed. Install with: pip install google-cloud-documentai")
 
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-            location = os.getenv("GOOGLE_DOCUMENTAI_LOCATION", "us")
+            location = os.getenv("GOOGLE_DOCUMENTAI_LOCATION", "eu")
 
             if not project_id:
                 raise Exception("GOOGLE_CLOUD_PROJECT not configured")

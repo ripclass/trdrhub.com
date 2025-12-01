@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     
     # Google Cloud
     GOOGLE_CLOUD_PROJECT: Optional[str] = None
-    GOOGLE_DOCUMENTAI_LOCATION: str = "us"
+    GOOGLE_DOCUMENTAI_LOCATION: str = "eu"
     GOOGLE_DOCUMENTAI_PROCESSOR_ID: Optional[str] = None
     GOOGLE_APPLICATION_CREDENTIALS_JSON: Optional[str] = None  # JSON string for Render deployment
     
