@@ -148,29 +148,47 @@ interface VerificationResult {
 
 interface ExtractedLineItem {
   commodity_name: string;
-  commodity_code?: string;
+  hs_code?: string;
   quantity?: number;
   unit?: string;
   unit_price?: number;
   total_price?: number;
   currency: string;
   confidence: number;
+  needs_price?: boolean;
+  needs_quantity?: boolean;
 }
 
 interface ExtractionResult {
   success: boolean;
   extraction: {
+    success: boolean;
     document_info: {
       document_type?: string;
       document_number?: string;
       document_date?: string;
       seller_name?: string;
       buyer_name?: string;
+      origin_country?: string;
+      destination_country?: string;
+      contract_reference?: string;
+      incoterms?: string;
     };
     line_items: ExtractedLineItem[];
     totals: {
       total_amount?: number;
       currency: string;
+    };
+    extraction_metadata?: {
+      method: string;
+      confidence: number;
+      errors: string[];
+      warnings: string[];
+    };
+    needs_user_input?: {
+      items_need_price: number;
+      items_need_quantity: number;
+      can_verify: boolean;
     };
   };
   verifications?: VerificationResult[];
@@ -701,7 +719,7 @@ export default function VerifyPage() {
                     <CardHeader className="pb-4">
                       <div className="flex items-center justify-between">
                         <CardTitle>Extraction Results</CardTitle>
-                        {extractionResult.summary && (
+                        {extractionResult.summary ? (
                           <div className="flex gap-2">
                             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
                               {extractionResult.summary.passed} Passed
@@ -717,57 +735,191 @@ export default function VerifyPage() {
                               </Badge>
                             )}
                           </div>
+                        ) : (
+                          <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            Ready to Verify
+                          </Badge>
                         )}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {/* Warnings for missing data */}
+                      {extractionResult.extraction.extraction_metadata?.warnings && 
+                       extractionResult.extraction.extraction_metadata.warnings.length > 0 && (
+                        <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div className="text-sm">
+                              <div className="font-medium text-amber-500 mb-1">Action Required</div>
+                              {extractionResult.extraction.extraction_metadata.warnings.map((warning, i) => (
+                                <div key={i} className="text-muted-foreground">{warning}</div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Document Info */}
                       {extractionResult.extraction.document_info.document_number && (
                         <div className="p-3 rounded-lg border bg-muted/30 text-sm">
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <span className="text-muted-foreground">Doc #:</span>{' '}
-                              {extractionResult.extraction.document_info.document_number}
+                              <span className="font-medium">{extractionResult.extraction.document_info.document_number}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Date:</span>{' '}
-                              {extractionResult.extraction.document_info.document_date || 'N/A'}
+                              <span className="font-medium">{extractionResult.extraction.document_info.document_date || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Seller:</span>{' '}
-                              {extractionResult.extraction.document_info.seller_name || 'N/A'}
+                              <span className="font-medium">{extractionResult.extraction.document_info.seller_name || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Buyer:</span>{' '}
-                              {extractionResult.extraction.document_info.buyer_name || 'N/A'}
+                              <span className="font-medium">{extractionResult.extraction.document_info.buyer_name || 'N/A'}</span>
                             </div>
+                            {extractionResult.extraction.document_info.incoterms && (
+                              <div>
+                                <span className="text-muted-foreground">Incoterms:</span>{' '}
+                                <span className="font-medium">{extractionResult.extraction.document_info.incoterms}</span>
+                              </div>
+                            )}
+                            {extractionResult.extraction.document_info.contract_reference && (
+                              <div>
+                                <span className="text-muted-foreground">Contract:</span>{' '}
+                                <span className="font-medium">{extractionResult.extraction.document_info.contract_reference}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
                       
-                      {/* Line Items */}
+                      {/* Line Items - Editable */}
                       <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-muted-foreground">Line Items ({extractionResult.extraction.line_items.length})</h4>
+                        </div>
                         {extractionResult.extraction.line_items.map((item, index) => {
                           const verification = extractionResult.verifications?.[index];
+                          const needsPrice = item.needs_price || item.unit_price === null || item.unit_price === undefined;
+                          const needsQuantity = item.needs_quantity || item.quantity === null || item.quantity === undefined;
+                          
                           return (
-                            <div key={index} className="p-4 rounded-lg border">
-                              <div className="flex items-start justify-between mb-2">
-                                <div>
-                                  <div className="font-medium">{item.commodity_name || 'Unknown'}</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    {item.quantity} {item.unit} @ ${item.unit_price?.toFixed(2)}/{item.unit}
-                                  </div>
+                            <div key={index} className={`p-4 rounded-lg border ${needsPrice ? 'border-amber-500/30 bg-amber-500/5' : ''}`}>
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1">
+                                  <div className="font-medium">{item.commodity_name || 'Unknown Commodity'}</div>
+                                  {item.hs_code && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                      HS Code: <span className="font-mono bg-muted px-1 rounded">{item.hs_code}</span>
+                                    </div>
+                                  )}
                                 </div>
-                                {verification && (
+                                {verification ? (
                                   <Badge variant="outline" className={VERDICT_COLORS[verification.verdict]}>
                                     {renderVerdictIcon(verification.verdict)}
                                     <span className="ml-1 uppercase">{verification.verdict}</span>
                                   </Badge>
-                                )}
+                                ) : needsPrice ? (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Needs Price
+                                  </Badge>
+                                ) : null}
                               </div>
                               
+                              {/* Editable Fields */}
+                              <div className="grid grid-cols-4 gap-2 text-sm">
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">Quantity</Label>
+                                  <Input 
+                                    type="number" 
+                                    placeholder="0" 
+                                    className="h-8 text-sm"
+                                    defaultValue={item.quantity || ''}
+                                    onChange={(e) => {
+                                      const newItems = [...extractionResult.extraction.line_items];
+                                      newItems[index] = {...item, quantity: parseFloat(e.target.value) || undefined};
+                                      setExtractionResult({
+                                        ...extractionResult,
+                                        extraction: {...extractionResult.extraction, line_items: newItems}
+                                      });
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">Unit</Label>
+                                  <Select 
+                                    defaultValue={item.unit || 'pcs'}
+                                    onValueChange={(value) => {
+                                      const newItems = [...extractionResult.extraction.line_items];
+                                      newItems[index] = {...item, unit: value};
+                                      setExtractionResult({
+                                        ...extractionResult,
+                                        extraction: {...extractionResult.extraction, line_items: newItems}
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {UNITS.map(u => (
+                                        <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">Unit Price ($)</Label>
+                                  <Input 
+                                    type="number" 
+                                    step="0.01"
+                                    placeholder="0.00" 
+                                    className={`h-8 text-sm ${needsPrice ? 'border-amber-500 focus:ring-amber-500' : ''}`}
+                                    defaultValue={item.unit_price || ''}
+                                    onChange={(e) => {
+                                      const newItems = [...extractionResult.extraction.line_items];
+                                      newItems[index] = {...item, unit_price: parseFloat(e.target.value) || undefined, needs_price: false};
+                                      setExtractionResult({
+                                        ...extractionResult,
+                                        extraction: {...extractionResult.extraction, line_items: newItems}
+                                      });
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">Currency</Label>
+                                  <Select 
+                                    defaultValue={item.currency || 'USD'}
+                                    onValueChange={(value) => {
+                                      const newItems = [...extractionResult.extraction.line_items];
+                                      newItems[index] = {...item, currency: value};
+                                      setExtractionResult({
+                                        ...extractionResult,
+                                        extraction: {...extractionResult.extraction, line_items: newItems}
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="USD">USD</SelectItem>
+                                      <SelectItem value="EUR">EUR</SelectItem>
+                                      <SelectItem value="GBP">GBP</SelectItem>
+                                      <SelectItem value="BDT">BDT</SelectItem>
+                                      <SelectItem value="CNY">CNY</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              
+                              {/* Verification Results if available */}
                               {verification && (
-                                <div className="flex items-center gap-4 text-sm">
+                                <div className="flex items-center gap-4 text-sm mt-3 pt-3 border-t">
                                   <span className="text-muted-foreground">
                                     Market: ${verification.market_price.price.toFixed(2)}/{verification.market_price.unit}
                                   </span>
@@ -777,14 +929,11 @@ export default function VerifyPage() {
                                   }`}>
                                     {verification.variance.percent > 0 ? "+" : ""}{verification.variance.percent.toFixed(1)}%
                                   </span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="ml-auto"
-                                    onClick={() => useExtractedItem(item)}
-                                  >
-                                    Edit
-                                  </Button>
+                                  {verification.risk.risk_level !== 'low' && (
+                                    <Badge variant="outline" className={RISK_COLORS[verification.risk.risk_level]}>
+                                      {verification.risk.risk_level.toUpperCase()} Risk
+                                    </Badge>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -803,11 +952,85 @@ export default function VerifyPage() {
                       )}
                       
                       {/* Actions */}
+                      <Separator />
                       <div className="flex gap-3">
-                        <Button variant="outline" className="flex-1">
-                          <Download className="h-4 w-4 mr-2" />
-                          Download Report
-                        </Button>
+                        {!extractionResult.verifications ? (
+                          <Button 
+                            className="flex-1 bg-green-600 hover:bg-green-700"
+                            onClick={async () => {
+                              // Verify all items with prices
+                              setIsLoading(true);
+                              try {
+                                const itemsToVerify = extractionResult.extraction.line_items.filter(
+                                  item => item.unit_price && item.commodity_name
+                                );
+                                
+                                if (itemsToVerify.length === 0) {
+                                  toast({
+                                    title: "No prices to verify",
+                                    description: "Please enter unit prices for at least one item",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                
+                                const response = await fetch(`${API_BASE}/price-verify/verify/batch`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    items: itemsToVerify.map(item => ({
+                                      commodity: item.commodity_name,
+                                      price: item.unit_price,
+                                      unit: item.unit || 'pcs',
+                                      quantity: item.quantity,
+                                      currency: item.currency || 'USD',
+                                      hs_code: item.hs_code,
+                                    })),
+                                    document_type: extractionResult.extraction.document_info.document_type,
+                                    document_reference: extractionResult.extraction.document_info.document_number,
+                                  }),
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (data.success) {
+                                  setExtractionResult({
+                                    ...extractionResult,
+                                    verifications: data.results,
+                                    summary: data.summary,
+                                  });
+                                  toast({
+                                    title: "Verification Complete",
+                                    description: `${data.summary.passed} passed, ${data.summary.warnings} warnings, ${data.summary.failed} failed`,
+                                  });
+                                } else {
+                                  throw new Error(data.error || "Verification failed");
+                                }
+                              } catch (error) {
+                                toast({
+                                  title: "Verification Failed",
+                                  description: error instanceof Error ? error.message : "Unknown error",
+                                  variant: "destructive",
+                                });
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            }}
+                            disabled={isLoading}
+                          >
+                            {isLoading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                            )}
+                            Verify Prices Against Market
+                          </Button>
+                        ) : (
+                          <Button variant="outline" className="flex-1">
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Report
+                          </Button>
+                        )}
                         <Button variant="outline" onClick={clearUpload}>
                           <RefreshCw className="h-4 w-4 mr-2" />
                           New Upload
@@ -824,7 +1047,7 @@ export default function VerifyPage() {
                     </div>
                     <h3 className="text-lg font-medium mb-2">Upload a Document</h3>
                     <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-                      Upload an invoice or LC and our AI will extract commodity prices and verify them automatically.
+                      Upload an invoice or LC and our AI will extract commodity prices for verification.
                     </p>
                   </CardContent>
                 </Card>

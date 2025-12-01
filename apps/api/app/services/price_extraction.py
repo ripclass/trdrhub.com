@@ -38,23 +38,27 @@ OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
 PRICE_EXTRACTION_PROMPT = """Extract commodity and price information from this trade document.
 
+IMPORTANT: Extract ALL information that exists. If a field is not found, use null.
+
 For EACH commodity/line item found, extract:
-- commodity_name: Name/description of the goods
-- commodity_code: HS code if present (e.g., "5201.00")
-- quantity: Amount being traded
-- unit: Unit of measure (kg, mt, pcs, etc.)
-- unit_price: Price per unit
-- total_price: Total price for this line item
-- currency: Currency code (USD, EUR, etc.)
+- commodity_name: Name/description of the goods (REQUIRED)
+- hs_code: Harmonized System code if present (e.g., "8204.11.00", "5201.00") - look for patterns like "HS:", "HS Code:", or 4-10 digit codes
+- quantity: Amount being traded (number only, null if not found)
+- unit: Unit of measure (kg, mt, pcs, piece, set, etc.)
+- unit_price: Price per unit (number only, null if not found)
+- total_price: Total price for this line item (null if not found)
+- currency: Currency code (USD, EUR, etc.) - default to USD if not specified
 
 Also extract document-level information:
 - document_type: Type of document (invoice, lc, contract, proforma)
-- document_number: Reference number
-- document_date: Date of document
-- seller_name: Seller/exporter
-- buyer_name: Buyer/importer
-- origin_country: Country of origin
-- destination_country: Destination country
+- document_number: Reference/LC number
+- document_date: Date of document (YYYY-MM-DD format)
+- seller_name: Seller/exporter/beneficiary
+- buyer_name: Buyer/importer/applicant
+- origin_country: Country of origin/loading
+- destination_country: Destination country/discharge
+- contract_reference: Any referenced contract/PO number (e.g., "SC-441986", "PO-12345")
+- incoterms: Trade terms if present (e.g., "CFR", "FOB", "CIF")
 
 Return a JSON object with:
 {{
@@ -65,21 +69,23 @@ Return a JSON object with:
         "seller_name": "...",
         "buyer_name": "...",
         "origin_country": "...",
-        "destination_country": "..."
+        "destination_country": "...",
+        "contract_reference": "...",
+        "incoterms": "..."
     }},
     "line_items": [
         {{
-            "commodity_name": "...",
-            "commodity_code": "...",
-            "quantity": 123.45,
-            "unit": "kg",
-            "unit_price": 2.50,
-            "total_price": 308.63,
+            "commodity_name": "Socket wrench",
+            "hs_code": "8204.11.00",
+            "quantity": null,
+            "unit": "pcs",
+            "unit_price": null,
+            "total_price": null,
             "currency": "USD"
         }}
     ],
     "totals": {{
-        "total_amount": 12345.67,
+        "total_amount": 167176.20,
         "currency": "USD"
     }}
 }}
@@ -95,24 +101,29 @@ DOCUMENT TEXT:
 class ExtractedLineItem:
     """Extracted line item from a trade document."""
     commodity_name: Optional[str] = None
-    commodity_code: Optional[str] = None
+    hs_code: Optional[str] = None  # Harmonized System code
     quantity: Optional[float] = None
     unit: Optional[str] = None
     unit_price: Optional[float] = None
     total_price: Optional[float] = None
     currency: str = "USD"
     confidence: float = 0.0
+    # Flags for UI
+    needs_price: bool = False  # True if price is missing
+    needs_quantity: bool = False  # True if quantity is missing
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "commodity_name": self.commodity_name,
-            "commodity_code": self.commodity_code,
+            "hs_code": self.hs_code,
             "quantity": self.quantity,
             "unit": self.unit,
             "unit_price": self.unit_price,
             "total_price": self.total_price,
             "currency": self.currency,
             "confidence": self.confidence,
+            "needs_price": self.unit_price is None,
+            "needs_quantity": self.quantity is None,
         }
 
 
@@ -127,15 +138,22 @@ class PriceExtractionResult:
     buyer_name: Optional[str] = None
     origin_country: Optional[str] = None
     destination_country: Optional[str] = None
+    contract_reference: Optional[str] = None  # Referenced contract/PO
+    incoterms: Optional[str] = None  # Trade terms (CFR, FOB, etc.)
     line_items: List[ExtractedLineItem] = field(default_factory=list)
     total_amount: Optional[float] = None
     currency: str = "USD"
     extraction_method: str = "ai"
     confidence: float = 0.0
     errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)  # Non-fatal issues
     raw_text_preview: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
+        # Count items needing user input
+        items_need_price = sum(1 for item in self.line_items if item.unit_price is None)
+        items_need_quantity = sum(1 for item in self.line_items if item.quantity is None)
+        
         return {
             "success": self.success,
             "document_info": {
@@ -146,6 +164,8 @@ class PriceExtractionResult:
                 "buyer_name": self.buyer_name,
                 "origin_country": self.origin_country,
                 "destination_country": self.destination_country,
+                "contract_reference": self.contract_reference,
+                "incoterms": self.incoterms,
             },
             "line_items": [item.to_dict() for item in self.line_items],
             "totals": {
@@ -156,6 +176,12 @@ class PriceExtractionResult:
                 "method": self.extraction_method,
                 "confidence": self.confidence,
                 "errors": self.errors,
+                "warnings": self.warnings,
+            },
+            "needs_user_input": {
+                "items_need_price": items_need_price,
+                "items_need_quantity": items_need_quantity,
+                "can_verify": len(self.line_items) > 0,  # Can verify if we have at least commodity names
             },
         }
 
@@ -287,27 +313,51 @@ class PriceExtractionService:
         result.buyer_name = doc_info.get("buyer_name")
         result.origin_country = doc_info.get("origin_country")
         result.destination_country = doc_info.get("destination_country")
+        result.contract_reference = doc_info.get("contract_reference")
+        result.incoterms = doc_info.get("incoterms")
         
         # Line items
         line_items = ai_result.get("line_items", [])
+        items_missing_price = 0
+        items_missing_quantity = 0
+        
         for item_data in line_items:
             if not item_data:
                 continue
-                
+            
+            # Get HS code from either field name
+            hs_code = item_data.get("hs_code") or item_data.get("commodity_code")
+            unit_price = self._safe_float(item_data.get("unit_price"))
+            quantity = self._safe_float(item_data.get("quantity"))
+            
             item = ExtractedLineItem(
                 commodity_name=item_data.get("commodity_name"),
-                commodity_code=item_data.get("commodity_code"),
-                quantity=self._safe_float(item_data.get("quantity")),
+                hs_code=hs_code,
+                quantity=quantity,
                 unit=item_data.get("unit"),
-                unit_price=self._safe_float(item_data.get("unit_price")),
+                unit_price=unit_price,
                 total_price=self._safe_float(item_data.get("total_price")),
                 currency=item_data.get("currency", "USD"),
                 confidence=0.85,
+                needs_price=unit_price is None,
+                needs_quantity=quantity is None,
             )
             
-            # Only add if we have meaningful data
-            if item.commodity_name or item.unit_price:
+            # Track missing data
+            if unit_price is None:
+                items_missing_price += 1
+            if quantity is None:
+                items_missing_quantity += 1
+            
+            # Only add if we have meaningful data (at least commodity name)
+            if item.commodity_name:
                 result.line_items.append(item)
+        
+        # Add warnings for missing data
+        if items_missing_price > 0:
+            result.warnings.append(f"{items_missing_price} item(s) missing unit price - manual entry required for verification")
+        if items_missing_quantity > 0:
+            result.warnings.append(f"{items_missing_quantity} item(s) missing quantity")
         
         # Totals
         totals = ai_result.get("totals", {})
