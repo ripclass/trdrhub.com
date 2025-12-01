@@ -10,7 +10,7 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-from app.services.llm_provider import LLMProvider
+from app.services.llm_provider import LLMProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class PriceExtractionService:
     """
     
     def __init__(self):
-        self.llm_provider = LLMProvider()
+        self.llm_provider = LLMProviderFactory.create_provider()
     
     async def extract_prices_from_text(
         self,
