@@ -90,8 +90,8 @@ class CommodityPrice(Base):
     contract_month = Column(String(10))  # For futures: "2024-03"
     quality_grade = Column(String(50))  # e.g., "A Index", "Grade A"
     
-    # Metadata
-    metadata = Column(JSON)  # Additional source-specific data
+    # Additional data
+    extra_data = Column(JSON)  # Additional source-specific data
 
 
 class PriceVerification(Base):
