@@ -88,6 +88,7 @@ export default function PriceHistoryChart({
   const [historyData, setHistoryData] = useState<PriceDataPoint[]>([]);
   const [timeRange, setTimeRange] = useState<"6m" | "1y" | "2y">("1y");
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<string>("Simulated Data"); // Track actual source
 
   useEffect(() => {
     fetchHistory();
@@ -107,19 +108,24 @@ export default function PriceHistoryChart({
         const data = await response.json();
         if (data.success && data.history?.length > 0) {
           setHistoryData(data.history);
+          // Set the actual source from API response
+          setDataSource(data.source || "World Bank");
         } else {
-          // Use demo data
+          // Use demo data - be honest
           setHistoryData(generateDemoHistory(currentPrice, months));
+          setDataSource("Simulated Data");
         }
       } else {
-        // Fallback to demo data
+        // Fallback to demo data - be honest
         const months = timeRange === "6m" ? 6 : timeRange === "1y" ? 12 : 24;
         setHistoryData(generateDemoHistory(currentPrice, months));
+        setDataSource("Simulated Data");
       }
     } catch (err) {
-      // Use demo data on error
+      // Use demo data on error - be honest
       const months = timeRange === "6m" ? 6 : timeRange === "1y" ? 12 : 24;
       setHistoryData(generateDemoHistory(currentPrice, months));
+      setDataSource("Simulated Data");
     } finally {
       setLoading(false);
     }
@@ -314,20 +320,28 @@ export default function PriceHistoryChart({
           </ResponsiveContainer>
         </div>
         
-        {/* Source Attribution */}
+        {/* Source Attribution - be honest about data source */}
         <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t">
           <span>
-            Data: {historyData[0]?.source === "historical" ? "World Bank / FRED" : "Live Market"}
+            Data: {dataSource}
+            {dataSource === "Simulated Data" && (
+              <span className="ml-1 text-yellow-600">(for demonstration)</span>
+            )}
           </span>
-          <a
-            href="https://www.worldbank.org/en/research/commodity-markets"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 hover:text-primary transition-colors"
-          >
-            View source
-            <ExternalLink className="h-3 w-3" />
-          </a>
+          {dataSource !== "Simulated Data" && (
+            <a
+              href={dataSource === "FRED" 
+                ? "https://fred.stlouisfed.org/" 
+                : "https://www.worldbank.org/en/research/commodity-markets"
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-primary transition-colors"
+            >
+              View source
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </CardContent>
     </Card>

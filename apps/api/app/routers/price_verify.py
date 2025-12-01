@@ -239,9 +239,11 @@ async def get_price_history(
     market_service = get_market_data_service()
     
     try:
-        # Fetch historical data
+        # Fetch historical data (currently simulated - real integration would query FRED/World Bank APIs)
         history = await market_service.get_historical_prices(commodity_code.upper(), months)
         
+        # Be honest - this is simulated historical data based on current prices
+        # Real World Bank/FRED historical data integration would require API subscription
         return {
             "success": True,
             "commodity_code": commodity_code.upper(),
@@ -250,8 +252,8 @@ async def get_price_history(
             "currency": "USD",
             "months": months,
             "history": history,
-            "source": "World Bank / FRED Historical",
-            "source_url": "https://www.worldbank.org/en/research/commodity-markets",
+            "source": "Simulated (based on market estimates)",
+            "source_url": None,
         }
     except Exception as e:
         logger.warning(f"Failed to fetch history for {commodity_code}: {e}")

@@ -763,7 +763,7 @@ class PriceVerificationService:
             price_low = typical_range[0] if typical_range else 0
             price_high = typical_range[1] if typical_range else 0
             
-            # Determine data source display name
+            # Determine data source display name - be honest about sources
             source_codes = data.get("source_codes", {})
             has_live_feed = bool(source_codes)
             if source_codes.get("world_bank"):
@@ -773,7 +773,7 @@ class PriceVerificationService:
             elif source_codes.get("lme"):
                 source_display = "LME"
             else:
-                source_display = "TRDR Database"
+                source_display = "Curated Estimate"  # Honest - not real market data
             
             result.append({
                 "code": code,
