@@ -757,12 +757,22 @@ class PriceVerificationService:
         for code, data in self.commodities.items():
             if category and data.get("category") != category:
                 continue
+            
+            # Get typical range
+            typical_range = data.get("typical_range", (0, 0))
+            price_low = typical_range[0] if typical_range else 0
+            price_high = typical_range[1] if typical_range else 0
+            
             result.append({
                 "code": code,
                 "name": data["name"],
                 "category": data["category"],
                 "unit": data["unit"],
                 "current_estimate": data.get("current_estimate"),
+                "price_low": price_low,
+                "price_high": price_high,
+                "has_live_feed": bool(data.get("source_codes")),
+                "source_note": data.get("source_codes", {}).get("world_bank") or data.get("source_codes", {}).get("fred"),
             })
         return sorted(result, key=lambda x: (x["category"], x["name"]))
     
