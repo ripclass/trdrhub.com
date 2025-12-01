@@ -926,10 +926,22 @@ class PriceVerificationService:
         """
         Get current market price for a commodity from available sources.
         Falls back to database estimates if APIs fail.
+        
+        IMPORTANT: Includes sanity check to ensure API prices are reasonable.
+        Some APIs return index values (like FRED PPI) instead of actual prices.
         """
         commodity = self.commodities.get(commodity_code)
         if not commodity:
             return {"error": "Unknown commodity"}
+        
+        # Get expected price range for sanity checking
+        typical_range = commodity.get("typical_range", (0, 0))
+        price_low, price_high = typical_range
+        estimate = commodity.get("current_estimate", (price_low + price_high) / 2 if price_low else 0)
+        
+        # Define reasonable bounds (5x the typical range allows for market volatility)
+        max_reasonable = price_high * 5 if price_high else estimate * 5
+        min_reasonable = price_low * 0.2 if price_low else estimate * 0.2
         
         # Try live data sources
         live_price = None
@@ -941,19 +953,35 @@ class PriceVerificationService:
         if "world_bank" in source_codes:
             result = await self.fetch_world_bank_price(source_codes["world_bank"])
             if result:
-                live_price = result["price"]
-                source = "world_bank"
+                fetched_price = result["price"]
+                # Sanity check: is this price reasonable?
+                if min_reasonable <= fetched_price <= max_reasonable:
+                    live_price = fetched_price
+                    source = "world_bank"
+                else:
+                    logger.warning(
+                        f"World Bank price {fetched_price} for {commodity_code} outside reasonable range "
+                        f"({min_reasonable:.2f} - {max_reasonable:.2f}), using estimate"
+                    )
         
         # Try FRED if World Bank failed
         if not live_price and "fred" in source_codes:
             result = await self.fetch_fred_price(source_codes["fred"])
             if result:
-                live_price = result["price"]
-                source = "fred"
+                fetched_price = result["price"]
+                # Sanity check: FRED often returns index values, not actual prices!
+                # Index values are typically 50-500, actual commodity prices vary
+                if min_reasonable <= fetched_price <= max_reasonable:
+                    live_price = fetched_price
+                    source = "fred"
+                else:
+                    logger.warning(
+                        f"FRED price {fetched_price} for {commodity_code} looks like an index value "
+                        f"(not in range {min_reasonable:.2f} - {max_reasonable:.2f}), using estimate"
+                    )
         
         # Use database estimate as fallback
-        price = live_price or commodity.get("current_estimate")
-        typical_range = commodity.get("typical_range", (0, 0))
+        price = live_price or estimate
         
         return {
             "commodity_code": commodity_code,
