@@ -932,22 +932,35 @@ export default function VerifyPage() {
                               </div>
                               
                               {/* Verification Results if available */}
-                              {verification && (
-                                <div className="flex items-center gap-4 text-sm mt-3 pt-3 border-t">
-                                  <span className="text-muted-foreground">
-                                    Market: ${verification.market_price.price.toFixed(2)}/{verification.market_price.unit}
-                                  </span>
-                                  <span className={`font-medium ${
-                                    Math.abs(verification.variance.percent) < 15 ? "text-green-500" :
-                                    Math.abs(verification.variance.percent) < 30 ? "text-yellow-500" : "text-red-500"
-                                  }`}>
-                                    {verification.variance.percent > 0 ? "+" : ""}{verification.variance.percent.toFixed(1)}%
-                                  </span>
-                                  {verification.risk.risk_level !== 'low' && (
-                                    <Badge variant="outline" className={RISK_COLORS[verification.risk.risk_level]}>
+                              {verification && verification.market_price && (
+                                <div className="flex flex-wrap items-center gap-4 text-sm mt-3 pt-3 border-t">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">Your Price:</span>
+                                    <span className="font-medium">${item.unit_price?.toFixed(2)}/{item.unit || 'unit'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">Market:</span>
+                                    <span className="font-medium">${verification.market_price.price?.toFixed(2) || '?'}/{verification.market_price.unit || 'unit'}</span>
+                                  </div>
+                                  {verification.variance && (
+                                    <span className={`font-bold ${
+                                      Math.abs(verification.variance.percent || 0) < 15 ? "text-green-500" :
+                                      Math.abs(verification.variance.percent || 0) < 30 ? "text-yellow-500" : "text-red-500"
+                                    }`}>
+                                      {(verification.variance.percent || 0) > 0 ? "+" : ""}{(verification.variance.percent || 0).toFixed(1)}% variance
+                                    </span>
+                                  )}
+                                  {verification.risk?.risk_level && verification.risk.risk_level !== 'low' && (
+                                    <Badge variant="outline" className={RISK_COLORS[verification.risk.risk_level] || ''}>
                                       {verification.risk.risk_level.toUpperCase()} Risk
                                     </Badge>
                                   )}
+                                </div>
+                              )}
+                              {/* Show error if verification failed */}
+                              {verification && verification.error && (
+                                <div className="text-sm mt-3 pt-3 border-t text-amber-500">
+                                  ⚠️ {verification.error}
                                 </div>
                               )}
                             </div>
@@ -1008,9 +1021,16 @@ export default function VerifyPage() {
                                 const data = await response.json();
                                 
                                 if (data.success) {
+                                  // Map results to match expected structure
+                                  // API returns lowercase verdict, we need uppercase for VERDICT_COLORS
+                                  const mappedResults = (data.items || []).map((v: any) => ({
+                                    ...v,
+                                    verdict: v.verdict?.toUpperCase() || 'UNKNOWN',
+                                  }));
+                                  
                                   setExtractionResult({
                                     ...extractionResult,
-                                    verifications: data.results,
+                                    verifications: mappedResults,
                                     summary: data.summary,
                                   });
                                   toast({
