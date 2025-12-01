@@ -12,7 +12,7 @@ import subprocess
 import json
 from pathlib import Path
 
-from app.core.database import get_db
+from app.database import get_db
 from app.models.audit import SecretRotationLog
 from pydantic import BaseModel
 
