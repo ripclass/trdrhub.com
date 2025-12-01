@@ -9,3 +9,4 @@ export { default as AnalyticsPage } from './AnalyticsPage';
 export { default as ReportsPage } from './ReportsPage';
 export { default as SettingsPage } from './SettingsPage';
 export { default as HelpPage } from './HelpPage';
+export { default as AdminPage } from './AdminPage';

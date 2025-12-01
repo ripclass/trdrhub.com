@@ -24,6 +24,7 @@ import {
   Bell,
   Command,
   Keyboard,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -140,6 +141,13 @@ const navItems = {
       icon: HelpCircle,
     },
   ],
+  admin: [
+    {
+      title: "Admin Panel",
+      url: "/price-verify/dashboard/admin",
+      icon: Shield,
+    },
+  ],
 };
 
 export default function PriceVerifyDashboard() {
@@ -151,7 +159,7 @@ export default function PriceVerifyDashboard() {
 
   // Get current page title for breadcrumb
   const getCurrentPageTitle = () => {
-    const allItems = [...navItems.main, ...navItems.data, ...navItems.reports, ...navItems.support];
+    const allItems = [...navItems.main, ...navItems.data, ...navItems.reports, ...navItems.support, ...navItems.admin];
     const currentItem = allItems.find(item => item.url === location.pathname);
     return currentItem?.title || "Dashboard";
   };
@@ -284,6 +292,29 @@ export default function PriceVerifyDashboard() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {navItems.support.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={location.pathname === item.url}
+                      tooltip={item.title}
+                    >
+                      <Link to={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          {/* Admin Navigation */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {navItems.admin.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       asChild 

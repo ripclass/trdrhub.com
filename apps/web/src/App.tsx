@@ -29,7 +29,8 @@ import {
   AnalyticsPage as PVAnalyticsPage,
   ReportsPage,
   SettingsPage as PVSettingsPage,
-  HelpPage
+  HelpPage,
+  AdminPage as PVAdminPage,
 } from './pages/tools/price-verify'
 import CounterpartyRiskLanding from './pages/tools/CounterpartyRiskLanding'
 import DualUseCheckerLanding from './pages/tools/DualUseCheckerLanding'
@@ -119,6 +120,7 @@ function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<PVSettingsPage />} />
           <Route path="help" element={<HelpPage />} />
+          <Route path="admin" element={<PVAdminPage />} />
         </Route>
         <Route path="/risk" element={<CounterpartyRiskLanding />} />
         <Route path="/dual-use" element={<DualUseCheckerLanding />} />
