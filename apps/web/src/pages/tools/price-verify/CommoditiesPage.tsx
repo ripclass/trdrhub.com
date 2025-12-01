@@ -383,7 +383,7 @@ export default function CommoditiesPage() {
                   </Link>
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link to={`/price-verify/dashboard/market-prices`}>
+                  <Link to="/price-verify/dashboard/prices">
                     <LineChart className="w-4 h-4 mr-2" />
                     Market Prices
                   </Link>
