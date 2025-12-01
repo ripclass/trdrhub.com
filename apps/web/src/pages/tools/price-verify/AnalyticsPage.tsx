@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -10,41 +11,73 @@ import {
   BarChart3,
   PieChart,
   Activity,
-  Info
+  Info,
+  Loader2
 } from "lucide-react";
 
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+interface AnalyticsData {
+  total_verifications: number;
+  pass_rate: number;
+  warning_rate: number;
+  fail_rate: number;
+  avg_variance: number;
+  tbml_flags: number;
+  verdict_distribution: { pass: number; warning: number; fail: number };
+  risk_breakdown: { low: number; medium: number; high: number; critical: number };
+  top_commodities: Array<{ name: string; code: string; count: number; pass_rate: number }>;
+}
+
+interface MonthlyData {
+  monthly_trend: Array<{ month: string; year: number; count: number }>;
+}
+
 export default function AnalyticsPage() {
-  // Sample analytics data
-  const stats = {
-    totalVerifications: 247,
-    passRate: 78.5,
-    avgVariance: 8.3,
-    tbmlFlags: 12,
-    topCommodities: [
-      { name: "Cotton", count: 45, passRate: 91 },
-      { name: "Rice", count: 38, passRate: 84 },
-      { name: "Crude Oil", count: 32, passRate: 62 },
-      { name: "Steel", count: 28, passRate: 75 },
-      { name: "Sugar", count: 24, passRate: 88 },
-    ],
-    verdictDistribution: {
-      pass: 194,
-      warning: 41,
-      fail: 12,
-    },
-    monthlyTrend: [
-      { month: "Jul", count: 28 },
-      { month: "Aug", count: 35 },
-      { month: "Sep", count: 42 },
-      { month: "Oct", count: 58 },
-      { month: "Nov", count: 84 },
-    ],
-    riskBreakdown: {
-      low: 165,
-      medium: 52,
-      high: 18,
-      critical: 12,
-    },
+  const [stats, setStats] = useState<AnalyticsData | null>(null);
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyData["monthly_trend"]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+  
+  const fetchAnalytics = async () => {
+    setLoading(true);
+    try {
+      // Fetch analytics and monthly trend in parallel
+      const [analyticsRes, monthlyRes] = await Promise.all([
+        fetch(`${API_BASE}/price-verify/analytics?period_days=30`),
+        fetch(`${API_BASE}/price-verify/analytics/monthly?months=6`)
+      ]);
+      
+      if (analyticsRes.ok) {
+        const data = await analyticsRes.json();
+        setStats(data);
+      }
+      
+      if (monthlyRes.ok) {
+        const data = await monthlyRes.json();
+        setMonthlyTrend(data.monthly_trend || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch analytics:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Default stats when no data
+  const displayStats = stats || {
+    total_verifications: 0,
+    pass_rate: 0,
+    warning_rate: 0,
+    fail_rate: 0,
+    avg_variance: 0,
+    tbml_flags: 0,
+    verdict_distribution: { pass: 0, warning: 0, fail: 0 },
+    risk_breakdown: { low: 0, medium: 0, high: 0, critical: 0 },
+    top_commodities: [],
   };
 
   return (
@@ -52,10 +85,21 @@ export default function AnalyticsPage() {
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Analytics Dashboard</h1>
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            <Info className="w-3 h-3 mr-1" />
-            Sample Data
-          </Badge>
+          {loading ? (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              Loading...
+            </Badge>
+          ) : displayStats.total_verifications === 0 ? (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              <Info className="w-3 h-3 mr-1" />
+              No Data Yet
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs bg-green-500/10 text-green-500 border-green-500/20">
+              Last 30 Days
+            </Badge>
+          )}
         </div>
         <p className="text-muted-foreground">
           Insights and trends from your price verifications.
@@ -69,7 +113,7 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Verifications</p>
-                <p className="text-3xl font-bold">{stats.totalVerifications}</p>
+                <p className="text-3xl font-bold">{displayStats.total_verifications}</p>
               </div>
               <div className="p-3 bg-blue-500/10 rounded-full">
                 <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -77,7 +121,7 @@ export default function AnalyticsPage() {
             </div>
             <div className="flex items-center gap-1 mt-2 text-sm text-green-600">
               <TrendingUp className="w-4 h-4" />
-              <span>+23% this month</span>
+              <span>Last 30 days</span>
             </div>
           </CardContent>
         </Card>
@@ -87,7 +131,7 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Pass Rate</p>
-                <p className="text-3xl font-bold">{stats.passRate}%</p>
+                <p className="text-3xl font-bold">{displayStats.pass_rate}%</p>
               </div>
               <div className="p-3 bg-green-500/10 rounded-full">
                 <Target className="w-6 h-6 text-green-600" />
@@ -105,7 +149,7 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Avg Variance</p>
-                <p className="text-3xl font-bold">{stats.avgVariance}%</p>
+                <p className="text-3xl font-bold">{displayStats.avg_variance}%</p>
               </div>
               <div className="p-3 bg-yellow-500/10 rounded-full">
                 <Activity className="w-6 h-6 text-yellow-600" />
@@ -123,7 +167,7 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">TBML Flags</p>
-                <p className="text-3xl font-bold text-red-600">{stats.tbmlFlags}</p>
+                <p className="text-3xl font-bold text-red-600">{displayStats.tbml_flags}</p>
               </div>
               <div className="p-3 bg-red-500/10 rounded-full">
                 <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -153,11 +197,11 @@ export default function AnalyticsPage() {
                   <span>Passed</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold">{stats.verdictDistribution.pass}</span>
+                  <span className="font-bold">{displayStats.verdict_distribution.pass}</span>
                   <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-green-600 rounded-full" 
-                      style={{ width: `${(stats.verdictDistribution.pass / stats.totalVerifications) * 100}%` }}
+                      style={{ width: `${displayStats.total_verifications > 0 ? (displayStats.verdict_distribution.pass / displayStats.total_verifications) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -168,11 +212,11 @@ export default function AnalyticsPage() {
                   <span>Warnings</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold">{stats.verdictDistribution.warning}</span>
+                  <span className="font-bold">{displayStats.verdict_distribution.warning}</span>
                   <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-yellow-600 rounded-full" 
-                      style={{ width: `${(stats.verdictDistribution.warning / stats.totalVerifications) * 100}%` }}
+                      style={{ width: `${displayStats.total_verifications > 0 ? (displayStats.verdict_distribution.warning / displayStats.total_verifications) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -183,11 +227,11 @@ export default function AnalyticsPage() {
                   <span>Failed</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold">{stats.verdictDistribution.fail}</span>
+                  <span className="font-bold">{displayStats.verdict_distribution.fail}</span>
                   <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-red-600 rounded-full" 
-                      style={{ width: `${(stats.verdictDistribution.fail / stats.totalVerifications) * 100}%` }}
+                      style={{ width: `${displayStats.total_verifications > 0 ? (displayStats.verdict_distribution.fail / displayStats.total_verifications) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -207,22 +251,22 @@ export default function AnalyticsPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                <p className="text-2xl font-bold text-green-600">{stats.riskBreakdown.low}</p>
+                <p className="text-2xl font-bold text-green-600">{displayStats.risk_breakdown.low}</p>
                 <p className="text-sm text-muted-foreground">Low Risk</p>
                 <p className="text-xs text-green-600">≤10% variance</p>
               </div>
               <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                <p className="text-2xl font-bold text-yellow-600">{stats.riskBreakdown.medium}</p>
+                <p className="text-2xl font-bold text-yellow-600">{displayStats.risk_breakdown.medium}</p>
                 <p className="text-sm text-muted-foreground">Medium Risk</p>
                 <p className="text-xs text-yellow-600">10-25% variance</p>
               </div>
               <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                <p className="text-2xl font-bold text-orange-600">{stats.riskBreakdown.high}</p>
+                <p className="text-2xl font-bold text-orange-600">{displayStats.risk_breakdown.high}</p>
                 <p className="text-sm text-muted-foreground">High Risk</p>
                 <p className="text-xs text-orange-600">25-50% variance</p>
               </div>
               <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-                <p className="text-2xl font-bold text-red-600">{stats.riskBreakdown.critical}</p>
+                <p className="text-2xl font-bold text-red-600">{displayStats.risk_breakdown.critical}</p>
                 <p className="text-sm text-muted-foreground">Critical (TBML)</p>
                 <p className="text-xs text-red-600">&gt;50% variance</p>
               </div>
@@ -239,7 +283,9 @@ export default function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {stats.topCommodities.map((commodity, idx) => (
+            {displayStats.top_commodities.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No verifications yet</p>
+            ) : displayStats.top_commodities.map((commodity, idx) => (
               <div key={commodity.name} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-lg font-bold text-muted-foreground w-6">
@@ -253,12 +299,12 @@ export default function AnalyticsPage() {
                 <Badge 
                   variant="outline"
                   className={
-                    commodity.passRate >= 85 ? "text-green-600 border-green-600/30" :
-                    commodity.passRate >= 70 ? "text-yellow-600 border-yellow-600/30" :
+                    commodity.pass_rate >= 85 ? "text-green-600 border-green-600/30" :
+                    commodity.pass_rate >= 70 ? "text-yellow-600 border-yellow-600/30" :
                     "text-red-600 border-red-600/30"
                   }
                 >
-                  {commodity.passRate}% pass rate
+                  {commodity.pass_rate}% pass rate
                 </Badge>
               </div>
             ))}
@@ -274,15 +320,17 @@ export default function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex items-end justify-between h-40 gap-2">
-            {stats.monthlyTrend.map((month) => {
-              const maxCount = Math.max(...stats.monthlyTrend.map(m => m.count));
+            {monthlyTrend.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4 w-full">No data yet</p>
+            ) : monthlyTrend.map((month) => {
+              const maxCount = Math.max(...monthlyTrend.map(m => m.count), 1);
               const height = (month.count / maxCount) * 100;
               return (
                 <div key={month.month} className="flex-1 flex flex-col items-center gap-2">
                   <span className="text-sm font-medium">{month.count}</span>
                   <div 
                     className="w-full bg-primary rounded-t-md transition-all"
-                    style={{ height: `${height}%` }}
+                    style={{ height: `${Math.max(height, 5)}%` }}
                   />
                   <span className="text-xs text-muted-foreground">{month.month}</span>
                 </div>

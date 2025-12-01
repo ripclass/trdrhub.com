@@ -7,12 +7,15 @@ Includes document upload with OCR extraction.
 
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Query, Request, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, Query, Request, File, UploadFile, Form, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import func, desc
 
 from app.services.price_verification import (
     get_price_verification_service,
@@ -23,6 +26,8 @@ from app.services.ocr_service import get_ocr_service
 from app.services.pdf_export import generate_verification_pdf, generate_batch_verification_pdf
 from app.services.market_data import get_market_data_service
 from app.services.audit_log import get_audit_service, AuditAction
+from app.database import get_db
+from app.models.commodity_prices import PriceVerification
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +35,70 @@ logger = logging.getLogger(__name__)
 import time
 
 router = APIRouter(prefix="/price-verify", tags=["Price Verification"])
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+async def save_verification_to_history(
+    db: Session,
+    result: dict,
+    request: "SingleVerificationRequest",
+    user_id: Optional[str],
+    company_id: Optional[str],
+    ip_address: Optional[str],
+    session_id: Optional[str] = None,
+) -> PriceVerification:
+    """
+    Save a verification result to the history table.
+    This enables the History and Analytics pages to show real data.
+    """
+    try:
+        verification = PriceVerification(
+            id=uuid4(),
+            commodity_code=result.get("commodity", {}).get("code", request.commodity),
+            commodity_name=result.get("commodity", {}).get("name", request.commodity),
+            document_price=request.price,
+            document_currency=request.currency,
+            document_unit=request.unit,
+            document_quantity=request.quantity,
+            total_value=(request.price * request.quantity) if request.quantity else None,
+            normalized_price=result.get("variance", {}).get("document_price_normalized"),
+            normalized_unit=result.get("commodity", {}).get("unit"),
+            market_price=result.get("market_price", {}).get("price"),
+            market_price_low=result.get("market_price", {}).get("price_low"),
+            market_price_high=result.get("market_price", {}).get("price_high"),
+            market_source=result.get("market_price", {}).get("source"),
+            market_date=datetime.now(timezone.utc),
+            variance_percent=result.get("variance", {}).get("percent"),
+            variance_absolute=result.get("variance", {}).get("absolute"),
+            risk_level=result.get("risk", {}).get("risk_level"),
+            risk_flags=result.get("risk", {}).get("risk_flags", []),
+            verdict=result.get("verdict"),
+            verdict_reason=result.get("verdict_reason"),
+            document_type=request.document_type,
+            document_reference=request.document_reference,
+            origin_country=request.origin_country,
+            destination_country=request.destination_country,
+            source_type="manual",
+            session_id=session_id,
+            user_id=UUID(user_id) if user_id else None,
+            company_id=UUID(company_id) if company_id else None,
+            ip_address=ip_address,
+        )
+        
+        db.add(verification)
+        db.commit()
+        db.refresh(verification)
+        
+        logger.info(f"Saved verification to history: id={verification.id}")
+        return verification
+        
+    except Exception as e:
+        logger.error(f"Failed to save verification to history: {e}")
+        db.rollback()
+        return None
 
 
 # =============================================================================
@@ -275,6 +344,7 @@ async def get_price_history(
 async def verify_single_price(
     request: SingleVerificationRequest,
     req: Request,
+    db: Session = Depends(get_db),
 ):
     """
     Verify a single commodity price against market data.
@@ -374,12 +444,27 @@ async def verify_single_price(
                 },
             )
         
+        # Save to verification history for History/Analytics pages
+        verification_record = await save_verification_to_history(
+            db=db,
+            result=result,
+            request=request,
+            user_id=user_id,
+            company_id=company_id,
+            ip_address=req.client.host if req.client else None,
+        )
+        
+        # Add verification ID to response for reference
+        if verification_record:
+            result["verification_id"] = str(verification_record.id)
+        
         logger.info(
-            "Price verification: commodity=%s verdict=%s variance=%.2f%% duration=%dms",
+            "Price verification: commodity=%s verdict=%s variance=%.2f%% duration=%dms id=%s",
             result.get("commodity", {}).get("code"),
             result.get("verdict"),
             result.get("variance", {}).get("percent", 0),
             duration_ms,
+            result.get("verification_id"),
         )
         
         return result
@@ -1106,6 +1191,230 @@ async def extract_batch_documents(
         },
         "results": results,
     }
+
+
+# =============================================================================
+# VERIFICATION HISTORY & ANALYTICS
+# =============================================================================
+
+@router.get("/history")
+async def get_verification_history(
+    db: Session = Depends(get_db),
+    verdict: Optional[str] = Query(None, description="Filter by verdict (pass, warning, fail)"),
+    risk_level: Optional[str] = Query(None, description="Filter by risk level"),
+    commodity_code: Optional[str] = Query(None, description="Filter by commodity code"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    limit: int = Query(50, ge=1, le=500, description="Max records to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+):
+    """
+    Get verification history with filters.
+    
+    Returns list of past verifications for the History page.
+    """
+    try:
+        query = db.query(PriceVerification)
+        
+        # Apply filters
+        if verdict:
+            query = query.filter(PriceVerification.verdict == verdict)
+        if risk_level:
+            query = query.filter(PriceVerification.risk_level == risk_level)
+        if commodity_code:
+            query = query.filter(PriceVerification.commodity_code == commodity_code.upper())
+        if start_date:
+            query = query.filter(PriceVerification.created_at >= datetime.fromisoformat(start_date))
+        if end_date:
+            query = query.filter(PriceVerification.created_at <= datetime.fromisoformat(end_date + "T23:59:59"))
+        
+        # Get total count for pagination
+        total_count = query.count()
+        
+        # Apply pagination and ordering
+        records = query.order_by(desc(PriceVerification.created_at)).offset(offset).limit(limit).all()
+        
+        # Transform to dict
+        history = []
+        for r in records:
+            history.append({
+                "id": str(r.id),
+                "commodity": r.commodity_name,
+                "commodity_code": r.commodity_code,
+                "document_price": r.document_price,
+                "document_unit": r.document_unit,
+                "market_price": r.market_price,
+                "variance_percent": r.variance_percent,
+                "verdict": r.verdict,
+                "risk_level": r.risk_level,
+                "risk_flags": r.risk_flags or [],
+                "document_type": r.document_type,
+                "document_reference": r.document_reference,
+                "market_source": r.market_source,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+        
+        return {
+            "success": True,
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
+            "records": history,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch verification history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics")
+async def get_analytics(
+    db: Session = Depends(get_db),
+    period_days: int = Query(30, ge=1, le=365, description="Analysis period in days"),
+):
+    """
+    Get analytics data for the Analytics dashboard.
+    
+    Returns aggregated statistics and trends.
+    """
+    try:
+        since = datetime.now(timezone.utc) - timedelta(days=period_days)
+        
+        # Total verifications
+        total = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= since
+        ).scalar() or 0
+        
+        # Verdict distribution
+        passed = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.verdict == "pass"
+        ).scalar() or 0
+        
+        warnings = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.verdict == "warning"
+        ).scalar() or 0
+        
+        failed = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.verdict == "fail"
+        ).scalar() or 0
+        
+        # Average variance
+        avg_variance = db.query(func.avg(func.abs(PriceVerification.variance_percent))).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.variance_percent.isnot(None)
+        ).scalar() or 0
+        
+        # TBML flags (critical risk level)
+        tbml_count = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= since,
+            PriceVerification.risk_level == "critical"
+        ).scalar() or 0
+        
+        # Top commodities
+        top_commodities_query = db.query(
+            PriceVerification.commodity_name,
+            PriceVerification.commodity_code,
+            func.count(PriceVerification.id).label("count"),
+            func.avg(func.case((PriceVerification.verdict == "pass", 1), else_=0)).label("pass_rate")
+        ).filter(
+            PriceVerification.created_at >= since
+        ).group_by(
+            PriceVerification.commodity_name,
+            PriceVerification.commodity_code
+        ).order_by(desc("count")).limit(10).all()
+        
+        top_commodities = [
+            {
+                "name": t[0],
+                "code": t[1],
+                "count": t[2],
+                "pass_rate": round((t[3] or 0) * 100, 1),
+            }
+            for t in top_commodities_query
+        ]
+        
+        # Risk breakdown
+        risk_counts = {}
+        for level in ["low", "medium", "high", "critical"]:
+            risk_counts[level] = db.query(func.count(PriceVerification.id)).filter(
+                PriceVerification.created_at >= since,
+                PriceVerification.risk_level == level
+            ).scalar() or 0
+        
+        # Calculate rates
+        pass_rate = (passed / total * 100) if total > 0 else 0
+        warning_rate = (warnings / total * 100) if total > 0 else 0
+        fail_rate = (failed / total * 100) if total > 0 else 0
+        
+        return {
+            "success": True,
+            "period_days": period_days,
+            "total_verifications": total,
+            "pass_rate": round(pass_rate, 1),
+            "warning_rate": round(warning_rate, 1),
+            "fail_rate": round(fail_rate, 1),
+            "avg_variance": round(avg_variance, 2),
+            "tbml_flags": tbml_count,
+            "verdict_distribution": {
+                "pass": passed,
+                "warning": warnings,
+                "fail": failed,
+            },
+            "risk_breakdown": risk_counts,
+            "top_commodities": top_commodities,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to generate analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/monthly")
+async def get_monthly_trend(
+    db: Session = Depends(get_db),
+    months: int = Query(6, ge=1, le=24, description="Number of months"),
+):
+    """
+    Get monthly verification trend data for charts.
+    """
+    try:
+        # Generate monthly data points
+        monthly_data = []
+        now = datetime.now(timezone.utc)
+        
+        for i in range(months - 1, -1, -1):
+            # Calculate month start/end
+            month_start = now.replace(day=1) - timedelta(days=30 * i)
+            month_start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            if i > 0:
+                month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(seconds=1)
+            else:
+                month_end = now
+            
+            # Query count for this month
+            count = db.query(func.count(PriceVerification.id)).filter(
+                PriceVerification.created_at >= month_start,
+                PriceVerification.created_at <= month_end
+            ).scalar() or 0
+            
+            monthly_data.append({
+                "month": month_start.strftime("%b"),
+                "year": month_start.year,
+                "count": count,
+            })
+        
+        return {
+            "success": True,
+            "monthly_trend": monthly_data,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to generate monthly trend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

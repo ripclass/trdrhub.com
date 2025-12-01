@@ -187,11 +187,6 @@ export default function PriceVerifyDashboard() {
                       <Link to={item.url}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
-                        {item.title === "History" && (
-                          <Badge variant="outline" className="ml-auto text-xs text-muted-foreground">
-                            Demo
-                          </Badge>
-                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

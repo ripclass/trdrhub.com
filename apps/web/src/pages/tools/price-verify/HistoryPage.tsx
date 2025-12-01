@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,8 @@ import {
   Eye,
   Trash2,
   Filter,
-  Info
+  Info,
+  Loader2
 } from "lucide-react";
 import {
   Select,
@@ -23,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 interface VerificationRecord {
   id: string;
@@ -36,23 +39,72 @@ interface VerificationRecord {
   documentType: string;
   documentRef?: string;
   tbmlFlag: boolean;
+  riskLevel?: string;
 }
 
-// Sample history data
-const sampleHistory: VerificationRecord[] = [
-  { id: "1", date: "2024-11-30T14:30:00Z", commodity: "Cotton", commodityCode: "COTTON", documentPrice: 0.85, marketPrice: 0.82, variance: 3.7, verdict: "pass", documentType: "Invoice", documentRef: "INV-2024-001", tbmlFlag: false },
-  { id: "2", date: "2024-11-30T12:15:00Z", commodity: "Crude Oil (WTI)", commodityCode: "CRUDE_WTI", documentPrice: 95.00, marketPrice: 71.50, variance: 32.9, verdict: "fail", documentType: "LC", documentRef: "LC-BD-2024-789", tbmlFlag: true },
-  { id: "3", date: "2024-11-29T16:45:00Z", commodity: "Rice", commodityCode: "RICE", documentPrice: 550, marketPrice: 520, variance: 5.8, verdict: "pass", documentType: "Invoice", documentRef: "INV-2024-002", tbmlFlag: false },
-  { id: "4", date: "2024-11-29T10:20:00Z", commodity: "Copper", commodityCode: "COPPER", documentPrice: 9800, marketPrice: 8500, variance: 15.3, verdict: "warning", documentType: "Contract", documentRef: "PO-2024-456", tbmlFlag: false },
-  { id: "5", date: "2024-11-28T09:00:00Z", commodity: "Sugar (Raw)", commodityCode: "SUGAR", documentPrice: 0.22, marketPrice: 0.21, variance: 4.8, verdict: "pass", documentType: "Invoice", tbmlFlag: false },
-  { id: "6", date: "2024-11-27T14:30:00Z", commodity: "Gold", commodityCode: "GOLD", documentPrice: 2400, marketPrice: 2650, variance: -9.4, verdict: "warning", documentType: "LC", documentRef: "LC-AE-2024-123", tbmlFlag: false },
-];
-
 export default function HistoryPage() {
-  const [history] = useState<VerificationRecord[]>(sampleHistory);
+  const [history, setHistory] = useState<VerificationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("7d");
+  
+  // Fetch real history data from API
+  useEffect(() => {
+    fetchHistory();
+  }, [verdictFilter, dateRange]);
+  
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (verdictFilter && verdictFilter !== "all") {
+        params.append("verdict", verdictFilter);
+      }
+      
+      // Calculate date range
+      const now = new Date();
+      if (dateRange === "7d") {
+        const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        params.append("start_date", start.toISOString().split("T")[0]);
+      } else if (dateRange === "30d") {
+        const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        params.append("start_date", start.toISOString().split("T")[0]);
+      } else if (dateRange === "90d") {
+        const start = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        params.append("start_date", start.toISOString().split("T")[0]);
+      }
+      
+      const response = await fetch(`${API_BASE}/price-verify/history?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Transform API response to frontend format
+        const records: VerificationRecord[] = (data.records || []).map((r: any) => ({
+          id: r.id,
+          date: r.created_at,
+          commodity: r.commodity || r.commodity_name,
+          commodityCode: r.commodity_code,
+          documentPrice: r.document_price,
+          marketPrice: r.market_price,
+          variance: r.variance_percent,
+          verdict: r.verdict as "pass" | "warning" | "fail",
+          documentType: r.document_type || "Document",
+          documentRef: r.document_reference,
+          tbmlFlag: r.risk_level === "critical" || (r.risk_flags || []).includes("tbml_risk"),
+          riskLevel: r.risk_level,
+        }));
+        
+        setHistory(records);
+        setTotalCount(data.total || records.length);
+      }
+    } catch (err) {
+      console.error("Failed to fetch history:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredHistory = history.filter(record => {
     const matchesSearch = search === "" ||
@@ -106,16 +158,27 @@ export default function HistoryPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">Verification History</h1>
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              <Info className="w-3 h-3 mr-1" />
-              Sample Data
-            </Badge>
+            {loading ? (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Loading...
+              </Badge>
+            ) : history.length === 0 ? (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                <Info className="w-3 h-3 mr-1" />
+                No Data Yet
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-500 border-green-500/20">
+                {totalCount} Records
+              </Badge>
+            )}
           </div>
           <p className="text-muted-foreground">
             View and export your past price verifications.
           </p>
         </div>
-        <Button variant="outline" onClick={downloadHistory}>
+        <Button variant="outline" onClick={downloadHistory} disabled={history.length === 0}>
           <Download className="w-4 h-4 mr-2" />
           Export CSV
         </Button>
