@@ -60,6 +60,15 @@ BankAuditLog = _legacy.BankAuditLog  # type: ignore[attr-defined]
 UserRoleAssignment = _legacy.UserRoleAssignment  # type: ignore[attr-defined]
 SavedView = _legacy.SavedView  # type: ignore[attr-defined]
 
+# Hub multi-tool models
+HubPlan = _legacy.HubPlan  # type: ignore[attr-defined]
+HubSubscription = _legacy.HubSubscription  # type: ignore[attr-defined]
+HubUsage = _legacy.HubUsage  # type: ignore[attr-defined]
+HubUsageLog = _legacy.HubUsageLog  # type: ignore[attr-defined]
+SubscriptionStatus = _legacy.SubscriptionStatus  # type: ignore[attr-defined]
+ToolOperation = _legacy.ToolOperation  # type: ignore[attr-defined]
+Tool = _legacy.Tool  # type: ignore[attr-defined]
+
 __all__ = [
     "User",
     "UserRole",
@@ -87,4 +96,12 @@ __all__ = [
     "BankAuditLog",
     "UserRoleAssignment",
     "SavedView",
+    # Hub multi-tool models
+    "HubPlan",
+    "HubSubscription",
+    "HubUsage",
+    "HubUsageLog",
+    "SubscriptionStatus",
+    "ToolOperation",
+    "Tool",
 ]

@@ -62,6 +62,12 @@ from .models.duplicate_detection import LCFingerprint, LCSimilarity, LCMergeHist
 # Import bank org models
 from .models.bank_orgs import BankOrg, UserOrgAccess, OrgKind, OrgAccessRole
 
+# Import Hub multi-tool models
+from .models.hub import (
+    HubPlan, HubSubscription, HubUsage, HubUsageLog,
+    SubscriptionStatus, ToolOperation, Tool, OPERATION_TO_FIELD
+)
+
 
 class UserRole(str, Enum):
     """User role types for access control."""
