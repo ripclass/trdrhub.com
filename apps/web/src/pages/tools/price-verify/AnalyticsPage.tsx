@@ -9,7 +9,8 @@ import {
   XCircle,
   BarChart3,
   PieChart,
-  Activity
+  Activity,
+  Info
 } from "lucide-react";
 
 export default function AnalyticsPage() {
@@ -49,7 +50,13 @@ export default function AnalyticsPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight">Analytics Dashboard</h1>
+          <Badge variant="outline" className="text-xs text-muted-foreground">
+            <Info className="w-3 h-3 mr-1" />
+            Sample Data
+          </Badge>
+        </div>
         <p className="text-muted-foreground">
           Insights and trends from your price verifications.
         </p>

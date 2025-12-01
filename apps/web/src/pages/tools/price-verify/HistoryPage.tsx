@@ -13,7 +13,8 @@ import {
   FileText,
   Eye,
   Trash2,
-  Filter
+  Filter,
+  Info
 } from "lucide-react";
 import {
   Select,
@@ -103,7 +104,13 @@ export default function HistoryPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Verification History</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight">Verification History</h1>
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              <Info className="w-3 h-3 mr-1" />
+              Sample Data
+            </Badge>
+          </div>
           <p className="text-muted-foreground">
             View and export your past price verifications.
           </p>

@@ -188,8 +188,8 @@ export default function PriceVerifyDashboard() {
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                         {item.title === "History" && (
-                          <Badge variant="secondary" className="ml-auto text-xs">
-                            24
+                          <Badge variant="outline" className="ml-auto text-xs text-muted-foreground">
+                            Demo
                           </Badge>
                         )}
                       </Link>
