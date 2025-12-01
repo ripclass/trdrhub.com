@@ -32,13 +32,14 @@ PyJWT>=2.8.0
 weasyprint>=61.0
 openpyxl>=3.1.5
 stripe>=7.0.0
-# Google Cloud Document AI OCR (upgraded Dec 2025 - fix processor_version field)
-google-cloud-documentai>=2.29.0  # Latest as of Dec 2025
-google-api-core>=2.19.0  # Required by documentai
-grpcio>=1.62.0  # Required for gRPC communication
-proto-plus>=1.25.0  # Required for protobuf handling - must be recent for new API fields
-protobuf>=4.25.0  # Explicit protobuf version for field compatibility
-google-cloud-core>=2.4.1  # Core Google Cloud client library
+# Google Cloud Document AI OCR - PINNED versions to fix processor_version field error
+# The API returns fields the old client doesn't recognize. Force fresh install Dec 2025.
+google-cloud-documentai==2.31.0  # Pin exact version
+google-api-core==2.21.0  # Pin exact version
+grpcio==1.68.0  # Pin exact version
+proto-plus==1.25.0  # Pin exact - handles unknown fields
+protobuf==5.29.1  # Pin exact - latest protobuf
+google-cloud-core==2.4.1  # Core library
 
 # LLM Provider dependencies (for AI enrichment)
 openai>=1.0.0  # OpenAI GPT provider
