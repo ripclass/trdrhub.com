@@ -428,3 +428,175 @@ html {
   max-width: none;
   padding: 0;
 }
+
+/* =====================================================
+   Print Styles for Compliance Reports
+   ===================================================== */
+@media print {
+  /* Hide non-essential elements */
+  header,
+  footer,
+  nav,
+  aside,
+  [data-sidebar],
+  [role="navigation"],
+  .sidebar,
+  .no-print,
+  button:not(.print-button),
+  .dialog-overlay,
+  .dialog-content,
+  .toast,
+  .dropdown-menu,
+  .popover {
+    display: none !important;
+  }
+
+  /* Reset page layout */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 12pt !important;
+    line-height: 1.5 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Main content takes full width */
+  main,
+  .main-content,
+  [data-sidebar-inset],
+  .print-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+
+  /* Page breaks */
+  .page-break {
+    page-break-before: always;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+
+  /* Cards and containers */
+  .card,
+  [data-card] {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    background: white !important;
+    margin-bottom: 16px !important;
+    page-break-inside: avoid;
+  }
+
+  /* Tables */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10pt !important;
+  }
+
+  th, td {
+    border: 1px solid #ddd !important;
+    padding: 8px !important;
+    text-align: left !important;
+  }
+
+  th {
+    background-color: #f5f5f5 !important;
+    font-weight: bold !important;
+  }
+
+  /* Status badges - print in grayscale with text */
+  .badge,
+  [data-badge] {
+    border: 1px solid #333 !important;
+    background: white !important;
+    color: black !important;
+    padding: 2px 8px !important;
+    font-weight: bold !important;
+  }
+
+  /* Charts - hide interactive elements */
+  .recharts-tooltip-wrapper,
+  .recharts-legend-wrapper {
+    display: none !important;
+  }
+
+  /* Links - show URL */
+  a[href]:after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #666;
+  }
+
+  /* Compliance report header */
+  .print-header {
+    text-align: center;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #333;
+    padding-bottom: 16px;
+  }
+
+  .print-header h1 {
+    font-size: 24pt !important;
+    margin: 0 0 8px 0 !important;
+  }
+
+  .print-header .subtitle {
+    font-size: 12pt !important;
+    color: #666 !important;
+  }
+
+  /* Verification result styling */
+  .verification-pass {
+    border-left: 4px solid #10b981 !important;
+  }
+
+  .verification-warning {
+    border-left: 4px solid #f59e0b !important;
+  }
+
+  .verification-fail {
+    border-left: 4px solid #ef4444 !important;
+  }
+
+  /* Risk indicators */
+  .risk-critical {
+    color: #dc2626 !important;
+    font-weight: bold !important;
+  }
+
+  .risk-high {
+    color: #ea580c !important;
+    font-weight: bold !important;
+  }
+
+  /* Footer with page numbers */
+  @page {
+    margin: 2cm;
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 9pt;
+    }
+  }
+
+  /* TBML Warning banner */
+  .tbml-warning {
+    background: #fee2e2 !important;
+    border: 2px solid #dc2626 !important;
+    padding: 16px !important;
+    margin: 16px 0 !important;
+    page-break-inside: avoid;
+  }
+
+  .tbml-warning::before {
+    content: "⚠ TBML ALERT";
+    display: block;
+    font-weight: bold;
+    color: #dc2626;
+    margin-bottom: 8px;
+  }
+}

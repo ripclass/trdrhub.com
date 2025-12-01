@@ -5,8 +5,8 @@
  * Built with shadcn/ui sidebar components.
  */
 
-import { useState } from "react";
-import { Link, useLocation, Outlet } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import {
   DollarSign,
   Search,
@@ -22,6 +22,8 @@ import {
   Plus,
   ListChecks,
   Bell,
+  Command,
+  Keyboard,
 } from "lucide-react";
 import {
   Sidebar,
@@ -59,6 +61,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Command as CommandPrimitive,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
 
 // Navigation items
 const navItems = {
@@ -124,7 +144,10 @@ const navItems = {
 
 export default function PriceVerifyDashboard() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [notifications] = useState(3);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Get current page title for breadcrumb
   const getCurrentPageTitle = () => {
@@ -132,6 +155,44 @@ export default function PriceVerifyDashboard() {
     const currentItem = allItems.find(item => item.url === location.pathname);
     return currentItem?.title || "Dashboard";
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      // Cmd+K or Ctrl+K - Open command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandOpen(open => !open);
+      }
+      // Ctrl+Enter or Cmd+Enter - Go to New Verification
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        navigate("/price-verify/dashboard/verify");
+      }
+      // ? key - Show keyboard shortcuts
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
+          e.preventDefault();
+          setShortcutsOpen(true);
+        }
+      }
+      // Escape - Close dialogs
+      if (e.key === "Escape") {
+        setCommandOpen(false);
+        setShortcutsOpen(false);
+      }
+    };
+    
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, [navigate]);
+
+  // Command palette navigation
+  const runCommand = useCallback((command: () => void) => {
+    setCommandOpen(false);
+    command();
+  }, []);
 
   return (
     <SidebarProvider>
@@ -304,6 +365,34 @@ export default function PriceVerifyDashboard() {
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Search Button with keyboard hint */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="hidden md:flex items-center gap-2 text-muted-foreground"
+              onClick={() => setCommandOpen(true)}
+            >
+              <Search className="h-4 w-4" />
+              <span>Search...</span>
+              <kbd className="pointer-events-none ml-2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                <span className="text-xs">⌘</span>K
+              </kbd>
+            </Button>
+            
+            {/* Keyboard shortcuts button */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setShortcutsOpen(true)}
+              title="Keyboard shortcuts (?)"
+            >
+              <Keyboard className="h-4 w-4" />
+            </Button>
+            
+            {/* Theme toggle */}
+            <ThemeToggle />
+            
+            {/* Notifications */}
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-4 w-4" />
               {notifications > 0 && (
@@ -312,6 +401,8 @@ export default function PriceVerifyDashboard() {
                 </span>
               )}
             </Button>
+            
+            {/* New Verification button */}
             <Button variant="outline" size="sm" asChild>
               <Link to="/price-verify/dashboard/verify">
                 <Plus className="h-4 w-4 mr-2" />
@@ -326,7 +417,129 @@ export default function PriceVerifyDashboard() {
           <Outlet />
         </main>
       </SidebarInset>
+
+      {/* Command Palette */}
+      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
+        <CommandInput placeholder="Type a command or search..." />
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandGroup heading="Navigation">
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard"))}>
+              <Home className="mr-2 h-4 w-4" />
+              <span>Overview</span>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/verify"))}>
+              <Plus className="mr-2 h-4 w-4" />
+              <span>New Verification</span>
+              <kbd className="ml-auto pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                <span className="text-xs">⌘</span>↵
+              </kbd>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/batch"))}>
+              <ListChecks className="mr-2 h-4 w-4" />
+              <span>Batch Verify</span>
+            </CommandItem>
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading="Data">
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/commodities"))}>
+              <Package className="mr-2 h-4 w-4" />
+              <span>Commodities</span>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/prices"))}>
+              <TrendingUp className="mr-2 h-4 w-4" />
+              <span>Market Prices</span>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/history"))}>
+              <History className="mr-2 h-4 w-4" />
+              <span>History</span>
+            </CommandItem>
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading="Reports">
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/analytics"))}>
+              <BarChart3 className="mr-2 h-4 w-4" />
+              <span>Analytics</span>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/reports"))}>
+              <FileText className="mr-2 h-4 w-4" />
+              <span>Reports</span>
+            </CommandItem>
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading="Settings">
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/settings"))}>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => navigate("/price-verify/dashboard/help"))}>
+              <HelpCircle className="mr-2 h-4 w-4" />
+              <span>Help</span>
+            </CommandItem>
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+
+      {/* Keyboard Shortcuts Dialog */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Keyboard className="h-5 w-5" />
+              Keyboard Shortcuts
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-muted-foreground">Global</h4>
+              <div className="space-y-1">
+                <ShortcutRow keys={["⌘", "K"]} description="Open command palette" />
+                <ShortcutRow keys={["⌘", "↵"]} description="New verification" />
+                <ShortcutRow keys={["?"]} description="Show keyboard shortcuts" />
+                <ShortcutRow keys={["Esc"]} description="Close dialogs" />
+              </div>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-muted-foreground">Verification Form</h4>
+              <div className="space-y-1">
+                <ShortcutRow keys={["Tab"]} description="Next field" />
+                <ShortcutRow keys={["Shift", "Tab"]} description="Previous field" />
+                <ShortcutRow keys={["⌘", "↵"]} description="Submit verification" />
+              </div>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-muted-foreground">Tables</h4>
+              <div className="space-y-1">
+                <ShortcutRow keys={["↑", "↓"]} description="Navigate rows" />
+                <ShortcutRow keys={["↵"]} description="View details" />
+                <ShortcutRow keys={["⌘", "E"]} description="Export to CSV" />
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
+  );
+}
+
+// Helper component for keyboard shortcut rows
+function ShortcutRow({ keys, description }: { keys: string[]; description: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm">{description}</span>
+      <div className="flex items-center gap-1">
+        {keys.map((key, i) => (
+          <kbd
+            key={i}
+            className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium"
+          >
+            {key}
+          </kbd>
+        ))}
+      </div>
+    </div>
   );
 }
 

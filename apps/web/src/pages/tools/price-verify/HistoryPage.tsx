@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +16,16 @@ import {
   Filter,
   Info,
   Loader2,
-  X
+  X,
+  FileSpreadsheet,
+  Printer
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -58,6 +66,109 @@ export default function HistoryPage() {
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("7d");
   const [selectedRecord, setSelectedRecord] = useState<VerificationRecord | null>(null);
+
+  // Export to CSV
+  const exportToCSV = useCallback(() => {
+    const headers = [
+      "Date",
+      "Commodity",
+      "Commodity Code",
+      "Document Price (USD)",
+      "Market Price (USD)",
+      "Variance (%)",
+      "Verdict",
+      "Risk Level",
+      "TBML Flag",
+      "Document Type",
+      "Document Ref",
+      "Verification ID"
+    ];
+    
+    const rows = history.map(record => [
+      record.date,
+      record.commodity,
+      record.commodityCode,
+      record.documentPrice.toFixed(2),
+      record.marketPrice.toFixed(2),
+      record.variance.toFixed(2),
+      record.verdict.toUpperCase(),
+      record.riskLevel || "N/A",
+      record.tbmlFlag ? "YES" : "NO",
+      record.documentType || "N/A",
+      record.documentRef || "N/A",
+      record.id
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `price-verifications-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [history]);
+
+  // Export to Excel (XLSX format via CSV)
+  const exportToExcel = useCallback(() => {
+    // For now, use CSV with .xlsx extension - proper XLSX would need a library like xlsx
+    const headers = [
+      "Date",
+      "Commodity",
+      "Commodity Code",
+      "Document Price (USD)",
+      "Market Price (USD)",
+      "Variance (%)",
+      "Verdict",
+      "Risk Level",
+      "TBML Flag",
+      "Document Type",
+      "Document Ref",
+      "Verification ID"
+    ];
+    
+    const rows = history.map(record => [
+      record.date,
+      record.commodity,
+      record.commodityCode,
+      record.documentPrice.toFixed(2),
+      record.marketPrice.toFixed(2),
+      record.variance.toFixed(2),
+      record.verdict.toUpperCase(),
+      record.riskLevel || "N/A",
+      record.tbmlFlag ? "YES" : "NO",
+      record.documentType || "N/A",
+      record.documentRef || "N/A",
+      record.id
+    ]);
+
+    // Tab-separated for better Excel compatibility
+    const tsvContent = [
+      headers.join("\t"),
+      ...rows.map(row => row.join("\t"))
+    ].join("\n");
+
+    const blob = new Blob([tsvContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `price-verifications-${new Date().toISOString().split('T')[0]}.xls`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [history]);
+
+  // Print function
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
   
   // Fetch real history data from API
   useEffect(() => {
@@ -140,27 +251,6 @@ export default function HistoryPage() {
     });
   };
 
-  const downloadHistory = () => {
-    const headers = ["Date", "Commodity", "Doc Price", "Market Price", "Variance", "Verdict", "Document", "TBML"];
-    const rows = filteredHistory.map(r => [
-      new Date(r.date).toISOString(),
-      r.commodity,
-      r.documentPrice,
-      r.marketPrice,
-      `${r.variance}%`,
-      r.verdict,
-      r.documentRef || "-",
-      r.tbmlFlag ? "YES" : "NO",
-    ]);
-    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `verification_history_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-  };
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -187,10 +277,29 @@ export default function HistoryPage() {
             View and export your past price verifications.
           </p>
         </div>
-        <Button variant="outline" onClick={downloadHistory} disabled={history.length === 0}>
-          <Download className="w-4 h-4 mr-2" />
-          Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={handlePrint} title="Print">
+            <Printer className="w-4 h-4" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={history.length === 0}>
+                <Download className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportToCSV}>
+                <FileText className="w-4 h-4 mr-2" />
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportToExcel}>
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export as Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Stats */}
