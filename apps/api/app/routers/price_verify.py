@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, File, UploadFile, 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, case
 
 from app.services.price_verification import (
     get_price_verification_service,
@@ -1323,7 +1323,7 @@ async def get_analytics(
             PriceVerification.commodity_name,
             PriceVerification.commodity_code,
             func.count(PriceVerification.id).label("count"),
-            func.avg(func.case((PriceVerification.verdict == "pass", 1), else_=0)).label("pass_rate")
+            func.avg(case((PriceVerification.verdict == "pass", 1), else_=0)).label("pass_rate")
         ).filter(
             PriceVerification.created_at >= since
         ).group_by(
