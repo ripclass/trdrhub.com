@@ -88,10 +88,10 @@ export default function HistoryPage() {
       record.date,
       record.commodity,
       record.commodityCode,
-      record.documentPrice.toFixed(2),
-      record.marketPrice.toFixed(2),
-      record.variance.toFixed(2),
-      record.verdict.toUpperCase(),
+      (record.documentPrice ?? 0).toFixed(2),
+      (record.marketPrice ?? 0).toFixed(2),
+      (record.variance ?? 0).toFixed(2),
+      (record.verdict || 'unknown').toUpperCase(),
       record.riskLevel || "N/A",
       record.tbmlFlag ? "YES" : "NO",
       record.documentType || "N/A",
@@ -137,10 +137,10 @@ export default function HistoryPage() {
       record.date,
       record.commodity,
       record.commodityCode,
-      record.documentPrice.toFixed(2),
-      record.marketPrice.toFixed(2),
-      record.variance.toFixed(2),
-      record.verdict.toUpperCase(),
+      (record.documentPrice ?? 0).toFixed(2),
+      (record.marketPrice ?? 0).toFixed(2),
+      (record.variance ?? 0).toFixed(2),
+      (record.verdict || 'unknown').toUpperCase(),
       record.riskLevel || "N/A",
       record.tbmlFlag ? "YES" : "NO",
       record.documentType || "N/A",
@@ -419,14 +419,14 @@ export default function HistoryPage() {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="font-mono text-sm">
-                      ${record.documentPrice.toLocaleString()} vs ${record.marketPrice.toLocaleString()}
+                      ${record.documentPrice?.toLocaleString() ?? '?'} vs ${record.marketPrice?.toLocaleString() ?? '?'}
                     </p>
                     <p className={`text-sm ${
-                      record.variance > 15 ? "text-red-600" :
-                      record.variance > 5 ? "text-yellow-600" :
+                      (record.variance ?? 0) > 15 ? "text-red-600" :
+                      (record.variance ?? 0) > 5 ? "text-yellow-600" :
                       "text-green-600"
                     }`}>
-                      {record.variance > 0 ? "+" : ""}{record.variance.toFixed(1)}% variance
+                      {(record.variance ?? 0) > 0 ? "+" : ""}{(record.variance ?? 0).toFixed(1)}% variance
                     </p>
                   </div>
                   <Button variant="ghost" size="icon" onClick={() => setSelectedRecord(record)}>
@@ -496,16 +496,16 @@ export default function HistoryPage() {
               <div className="p-4 border rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">Variance</p>
                 <p className={`text-2xl font-bold ${
-                  Math.abs(selectedRecord.variance) > 25 ? "text-red-600" :
-                  Math.abs(selectedRecord.variance) > 10 ? "text-yellow-600" :
+                  Math.abs(selectedRecord.variance ?? 0) > 25 ? "text-red-600" :
+                  Math.abs(selectedRecord.variance ?? 0) > 10 ? "text-yellow-600" :
                   "text-green-600"
                 }`}>
-                  {selectedRecord.variance > 0 ? "+" : ""}{selectedRecord.variance?.toFixed(2)}%
+                  {(selectedRecord.variance ?? 0) > 0 ? "+" : ""}{(selectedRecord.variance ?? 0).toFixed(2)}%
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {Math.abs(selectedRecord.variance) > 50 ? "Critical - Potential TBML indicator" :
-                   Math.abs(selectedRecord.variance) > 25 ? "High - Requires investigation" :
-                   Math.abs(selectedRecord.variance) > 10 ? "Medium - Monitor closely" :
+                  {Math.abs(selectedRecord.variance ?? 0) > 50 ? "Critical - Potential TBML indicator" :
+                   Math.abs(selectedRecord.variance ?? 0) > 25 ? "High - Requires investigation" :
+                   Math.abs(selectedRecord.variance ?? 0) > 10 ? "Medium - Monitor closely" :
                    "Low - Within acceptable range"}
                 </p>
               </div>
