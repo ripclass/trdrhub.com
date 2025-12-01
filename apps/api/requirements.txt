@@ -32,7 +32,12 @@ PyJWT>=2.8.0
 weasyprint>=61.0
 openpyxl>=3.1.5
 stripe>=7.0.0
-google-cloud-documentai>=2.20.0  # For Google Cloud Document AI OCR
+# Google Cloud Document AI OCR (force reinstall Dec 2025)
+google-cloud-documentai>=2.20.0
+google-api-core>=2.15.0  # Required by documentai
+grpcio>=1.60.0  # Required for gRPC communication
+proto-plus>=1.22.0  # Required for protobuf handling
+google-cloud-core>=2.4.0  # Core Google Cloud client library
 
 # LLM Provider dependencies (for AI enrichment)
 openai>=1.0.0  # OpenAI GPT provider
