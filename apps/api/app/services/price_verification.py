@@ -2867,6 +2867,7 @@ class PriceVerificationService:
         document_reference: Optional[str] = None,
         origin_country: Optional[str] = None,
         destination_country: Optional[str] = None,
+        hs_code: Optional[str] = None,
     ) -> Dict:
         """
         Main verification function.
@@ -2877,6 +2878,7 @@ class PriceVerificationService:
             document_unit: Unit of measure from document
             document_currency: Currency (default USD)
             quantity: Optional quantity
+            hs_code: Optional HS code for better commodity resolution
             document_type: Type of document (invoice, lc, contract)
             document_reference: Reference number
             origin_country: ISO country code
@@ -2886,7 +2888,8 @@ class PriceVerificationService:
             Complete verification result
         """
         # Use resolution service - NEVER fails, always returns usable data
-        commodity = await self.resolve_commodity(commodity_input)
+        # Pass hs_code if available for better matching
+        commodity = await self.resolve_commodity(commodity_input, hs_code)
         resolution_meta = commodity.get("_resolution", {})
         
         # Get market price (use estimate if not in database)

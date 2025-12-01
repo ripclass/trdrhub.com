@@ -467,13 +467,26 @@ async def run_price_verification_checks(
     try:
         service = get_price_verification_service()
         
-        # Try to find the commodity
-        commodity = service.find_commodity(goods_description)
+        # Use resolve_commodity which NEVER fails - always returns usable data
+        # This ensures price verification works even for unknown commodities
+        hs_code = invoice_context.get("hs_code") or lc_context.get("hs_code")
+        resolved = await service.resolve_commodity(goods_description, hs_code)
         
-        if not commodity:
-            # Log but don't create an issue - commodity might not be in database
-            logger.debug(f"Commodity not found for price verification: {goods_description[:50]}")
-            return issues
+        # Get resolution metadata
+        resolution_meta = resolved.get("_resolution", {})
+        confidence = resolution_meta.get("confidence", 0.5)
+        source = resolution_meta.get("source", "unknown")
+        
+        # Use the resolved commodity data
+        commodity = {
+            "code": resolved.get("code", "UNKNOWN"),
+            "name": resolved.get("name", goods_description),
+            "unit": resolved.get("unit", "kg"),
+            "category": resolved.get("category", "general"),
+        }
+        
+        # Log resolution details
+        logger.info(f"Price verification: resolved '{goods_description[:30]}' as '{commodity['name']}' via {source} (confidence: {confidence:.2f})")
         
         # Determine price to verify
         price_to_verify = unit_price if unit_price else invoice_amount
@@ -481,7 +494,7 @@ async def run_price_verification_checks(
         # Default unit if not specified
         unit = invoice_context.get("unit") or commodity.get("unit", "kg")
         
-        # Run verification
+        # Run verification with resolved commodity
         result = await service.verify_price(
             commodity_input=goods_description,
             document_price=float(price_to_verify),
@@ -489,6 +502,7 @@ async def run_price_verification_checks(
             document_currency=invoice_currency,
             quantity=float(quantity) if quantity else None,
             document_type="invoice",
+            hs_code=hs_code,
         )
         
         if not result.get("success"):
