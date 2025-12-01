@@ -6,10 +6,38 @@ Uses the SAME DocumentAIService as LCopilot for guaranteed consistent OCR behavi
 """
 
 import logging
+import os
+import json
+import tempfile
 from typing import Dict, Any, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+def _setup_google_credentials():
+    """
+    Set up Google Cloud credentials from environment variable.
+    
+    On Render, credentials are stored as JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON.
+    This function writes them to a temp file and sets GOOGLE_APPLICATION_CREDENTIALS.
+    """
+    # Skip if already set
+    if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+        return
+    
+    # Check for JSON credentials in env var
+    credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if credentials_json:
+        try:
+            creds_data = json.loads(credentials_json)
+            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
+            json.dump(creds_data, temp_file)
+            temp_file.close()
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
+            logger.info(f"Google credentials set from GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        except Exception as e:
+            logger.warning(f"Failed to parse Google credentials JSON: {e}")
 
 
 class OCRService:
@@ -25,6 +53,9 @@ class OCRService:
         self._init_error = None
         
         try:
+            # Set up Google Cloud credentials first (from Render env var)
+            _setup_google_credentials()
+            
             # Use the EXACT SAME DocumentAIService that LCopilot uses
             # This guarantees identical behavior since LCopilot's OCR works!
             from app.services import DocumentAIService
