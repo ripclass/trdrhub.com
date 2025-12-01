@@ -58,30 +58,18 @@ class GoogleDocumentAIAdapter(OCRAdapter):
         if documentai is None:
             raise ImportError("google-cloud-documentai package not installed")
         
-        # Configure client for regional endpoint using REST transport
-        # REST transport avoids the "Unknown field for ProcessResponse" protobuf error
-        # that occurs with gRPC when the API returns new fields the client doesn't know about
-        from google.api_core.client_options import ClientOptions
-        
-        api_endpoint = f"{self.location}-documentai.googleapis.com" if self.location else "documentai.googleapis.com"
-        client_options = ClientOptions(api_endpoint=api_endpoint)
-        
-        # Use REST transport instead of gRPC to avoid strict protobuf parsing
-        try:
-            from google.cloud.documentai_v1.services.document_processor_service.transports import DocumentProcessorServiceRestTransport
-            self.client = documentai.DocumentProcessorServiceClient(
-                client_options=client_options,
-                transport="rest"  # Use REST instead of gRPC
-            )
-            print(f"✓ Document AI client initialized with REST transport (endpoint: {api_endpoint})")
-        except Exception as e:
-            # Fallback to default transport if REST isn't available
-            print(f"⚠ REST transport not available, using default: {e}")
+        # USE EXACT SAME INITIALIZATION AS LCOPILOT's DocumentAIService (which works!)
+        # Key: Pass client_options as a plain dict, not ClientOptions object
+        # Key: Use default gRPC transport (not REST)
+        # See apps/api/app/services.py:546-550 for the working reference
+        if self.location and self.location != 'us':
+            client_options = {"api_endpoint": f"{self.location}-documentai.googleapis.com"}
             self.client = documentai.DocumentProcessorServiceClient(client_options=client_options)
+        else:
+            self.client = documentai.DocumentProcessorServiceClient()
         
-        self.processor_name = self.client.processor_path(
-            self.project_id, self.location, self.processor_id
-        )
+        # Build processor path the same way as DocumentAIService
+        self.processor_name = f"projects/{self.project_id}/locations/{self.location}/processors/{self.processor_id}"
     
     @property
     def provider_name(self) -> str:
