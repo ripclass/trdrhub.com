@@ -1147,13 +1147,21 @@ class PriceVerificationService:
         resolution_meta = commodity.get("_resolution", {})
         
         # Get market price (use estimate if not in database)
-        if commodity.get("current_estimate") and resolution_meta.get("source") in ["category_fallback", "ai_estimate"]:
+        if commodity.get("current_estimate") and resolution_meta.get("source") in ["category_fallback", "ai_estimate", "hs_code"]:
             # For unknown commodities, use the estimated price range
+            typical_range = commodity.get("typical_range", (None, None))
+            price_low = typical_range[0] if typical_range else None
+            price_high = typical_range[1] if typical_range else None
+            
             market_data = {
                 "price": commodity["current_estimate"],
+                "price_low": price_low,
+                "price_high": price_high,
                 "source": resolution_meta.get("source", "estimate"),
                 "unit": commodity.get("unit", "kg"),
-                "typical_range": commodity.get("typical_range"),
+                "currency": "USD",
+                "fetched_at": datetime.utcnow().isoformat(),
+                "typical_range": typical_range,
             }
         else:
             market_data = await self.get_market_price(commodity["code"])

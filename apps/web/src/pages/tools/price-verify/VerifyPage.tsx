@@ -1032,8 +1032,10 @@ export default function VerifyPage() {
                 <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
                   <Package className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
-                    <div className="font-medium">{result.commodity.name}</div>
-                    <div className="text-sm text-muted-foreground">{result.commodity.code} • {result.commodity.category}</div>
+                    <div className="font-medium">{result.commodity?.name || "Unknown Commodity"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {result.commodity?.code || "N/A"} • {result.commodity?.category || "general"}
+                    </div>
                   </div>
                 </div>
                 
