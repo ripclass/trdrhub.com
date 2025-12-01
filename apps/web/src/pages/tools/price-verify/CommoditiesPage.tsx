@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Search, 
   Wheat, 
@@ -14,8 +22,14 @@ import {
   Cpu,
   FlaskConical,
   ChevronRight,
-  Loader2
+  Loader2,
+  TrendingUp,
+  DollarSign,
+  LineChart,
+  ExternalLink,
+  CheckCircle
 } from "lucide-react";
+import PriceHistoryChart from "@/components/price-verify/PriceHistoryChart";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -26,6 +40,11 @@ interface Commodity {
   unit: string;
   hs_codes?: string[];
   aliases?: string[];
+  current_estimate?: number;
+  price_low?: number;
+  price_high?: number;
+  has_live_feed?: boolean;
+  source_display?: string;
 }
 
 const categoryIcons: Record<string, any> = {
@@ -56,6 +75,8 @@ export default function CommoditiesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCommodity, setSelectedCommodity] = useState<Commodity | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   useEffect(() => {
     fetchCommodities();
@@ -91,6 +112,18 @@ export default function CommoditiesPage() {
     acc[c.category].push(c);
     return acc;
   }, {} as Record<string, Commodity[]>);
+
+  const handleCommodityClick = (commodity: Commodity) => {
+    setSelectedCommodity(commodity);
+    setShowDetailModal(true);
+  };
+
+  const formatPrice = (price?: number) => {
+    if (!price) return "N/A";
+    if (price >= 1000) return `$${price.toLocaleString()}`;
+    if (price >= 1) return `$${price.toFixed(2)}`;
+    return `$${price.toFixed(4)}`;
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -177,7 +210,8 @@ export default function CommoditiesPage() {
                     {items.map(commodity => (
                       <div
                         key={commodity.code}
-                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                        onClick={() => handleCommodityClick(commodity)}
+                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
@@ -185,19 +219,24 @@ export default function CommoditiesPage() {
                             <Badge variant="outline" className="font-mono text-xs">
                               {commodity.code}
                             </Badge>
+                            {commodity.has_live_feed && (
+                              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-500 border-green-500/20">
+                                Live
+                              </Badge>
+                            )}
                           </div>
-                          <div className="flex gap-2 mt-1 flex-wrap">
+                          <div className="flex gap-4 mt-1 flex-wrap items-center">
                             <span className="text-xs text-muted-foreground">
                               Unit: {commodity.unit}
                             </span>
-                            {commodity.hs_codes && commodity.hs_codes.length > 0 && (
-                              <span className="text-xs text-muted-foreground">
-                                HS: {commodity.hs_codes.slice(0, 2).join(", ")}
+                            {commodity.current_estimate && (
+                              <span className="text-xs font-medium text-primary">
+                                {formatPrice(commodity.current_estimate)}/{commodity.unit}
                               </span>
                             )}
-                            {commodity.aliases && commodity.aliases.length > 0 && (
+                            {commodity.source_display && (
                               <span className="text-xs text-muted-foreground">
-                                Also: {commodity.aliases.slice(0, 2).join(", ")}
+                                via {commodity.source_display}
                               </span>
                             )}
                           </div>
@@ -220,6 +259,140 @@ export default function CommoditiesPage() {
           )}
         </div>
       )}
+
+      {/* Commodity Detail Modal */}
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          {selectedCommodity && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  <DialogTitle className="text-xl">{selectedCommodity.name}</DialogTitle>
+                  <Badge variant="outline" className="font-mono">
+                    {selectedCommodity.code}
+                  </Badge>
+                  {selectedCommodity.has_live_feed && (
+                    <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                      Live Data
+                    </Badge>
+                  )}
+                </div>
+                <DialogDescription>
+                  {selectedCommodity.category.replace(/_/g, " ")} • Unit: {selectedCommodity.unit}
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Price Summary */}
+              <div className="grid grid-cols-3 gap-4 py-4">
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <DollarSign className="w-4 h-4" />
+                      <span className="text-xs">Current Price</span>
+                    </div>
+                    <p className="text-2xl font-bold">
+                      {formatPrice(selectedCommodity.current_estimate)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">per {selectedCommodity.unit}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <TrendingUp className="w-4 h-4" />
+                      <span className="text-xs">Price Range</span>
+                    </div>
+                    <p className="text-lg font-semibold">
+                      {formatPrice(selectedCommodity.price_low)} - {formatPrice(selectedCommodity.price_high)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">typical range</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <ExternalLink className="w-4 h-4" />
+                      <span className="text-xs">Data Source</span>
+                    </div>
+                    <p className="text-lg font-semibold">
+                      {selectedCommodity.source_display || "TRDR Database"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedCommodity.has_live_feed ? "real-time" : "curated data"}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Price History Chart */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <LineChart className="w-4 h-4" />
+                    Price History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <PriceHistoryChart 
+                    commodityCode={selectedCommodity.code}
+                    commodityName={selectedCommodity.name}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Additional Info */}
+              {(selectedCommodity.hs_codes?.length || selectedCommodity.aliases?.length) && (
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {selectedCommodity.hs_codes && selectedCommodity.hs_codes.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-2">HS Codes</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedCommodity.hs_codes.map(hs => (
+                              <Badge key={hs} variant="outline" className="font-mono text-xs">
+                                {hs}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedCommodity.aliases && selectedCommodity.aliases.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-2">Also Known As</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedCommodity.aliases.map(alias => (
+                              <Badge key={alias} variant="secondary" className="text-xs">
+                                {alias}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <Button asChild className="flex-1">
+                  <Link to={`/price-verify/dashboard/verify?commodity=${selectedCommodity.code}`}>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Verify Price for {selectedCommodity.name}
+                  </Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link to={`/price-verify/dashboard/market-prices`}>
+                    <LineChart className="w-4 h-4 mr-2" />
+                    Market Prices
+                  </Link>
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
