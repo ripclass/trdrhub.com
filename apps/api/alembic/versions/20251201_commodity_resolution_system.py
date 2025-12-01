@@ -18,7 +18,7 @@ import uuid
 
 # revision identifiers
 revision = '20251201_commodity_resolution'
-down_revision = None
+down_revision = '20251201_audit'  # Fixed: chain after audit_logs
 branch_labels = None
 depends_on = None
 

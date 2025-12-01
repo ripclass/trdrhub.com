@@ -18,7 +18,7 @@ from datetime import datetime
 
 # revision identifiers
 revision = 'hub_multi_tool_001'
-down_revision = '20251201_commodity_resolution_system'
+down_revision = '20251201_commodity_resolution'  # Fixed: use actual revision ID
 branch_labels = None
 depends_on = None
 
