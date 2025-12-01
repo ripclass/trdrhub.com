@@ -415,7 +415,7 @@ class ReportGenerator:
                 ServerSideEncryption='AES256',
                 Metadata={
                     'generated_at': datetime.now(timezone.utc).isoformat(),
-                    'generator': 'lcopilot-api'
+                    'generator': 'trdrhub-api'
                 }
             )
             

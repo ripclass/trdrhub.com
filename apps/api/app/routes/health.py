@@ -395,7 +395,7 @@ async def service_info(request: Request):
     logger.info("Service info requested")
 
     return {
-        "service": "lcopilot-api",
+        "service": "trdrhub-api",
         "version": health_checker.version,
         "environment": health_checker.environment,
         "uptime_seconds": health_checker.get_uptime_seconds(),

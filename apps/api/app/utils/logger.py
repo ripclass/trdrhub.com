@@ -44,7 +44,7 @@ class LCopilotLogger:
     """
 
     def __init__(self):
-        self.service_name = "lcopilot-api"
+        self.service_name = "trdrhub-api"
         self.environment = os.getenv("ENVIRONMENT", "development")
         self.debug_mode = os.getenv("DEBUG", "true").lower() == "true"
 
