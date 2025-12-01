@@ -30,9 +30,21 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. If a field is not found, return null - do NOT guess
 3. For amounts, include the full number without currency symbols
-4. Be precise about units of measure (kg, mt, pieces, etc.)
+4. Be VERY CAREFUL about units of measure - normalize as follows:
+   - "units", "unit", "pcs", "pieces", "pc", "each", "ea" → "pcs"
+   - "kilogram", "kilograms", "kgs" → "kg"
+   - "metric ton", "metric tons", "MT", "tonnes" → "mt"
+   - "pound", "pounds", "lbs" → "lb"
+   - "barrel", "barrels", "bbl" → "barrel"
+   - "liter", "liters", "litres", "L" → "liter"
+   - "set", "sets" → "set"
+   - "carton", "cartons", "ctn" → "carton"
 5. Extract ALL line items if there are multiple commodities
 6. Look for HS codes if present - they help identify commodities
+7. IMPORTANT: Check if the unit makes sense for the commodity:
+   - Industrial chemicals, gases, raw materials → usually kg, mt, barrel
+   - Manufactured goods, tools, electronics → usually pcs, set, unit
+   - If "units" is used for bulk commodities, it might mean something else
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -330,11 +342,15 @@ class PriceExtractionService:
             unit_price = self._safe_float(item_data.get("unit_price"))
             quantity = self._safe_float(item_data.get("quantity"))
             
+            # Normalize units
+            raw_unit = item_data.get("unit") or "pcs"
+            normalized_unit = self._normalize_unit(raw_unit)
+            
             item = ExtractedLineItem(
                 commodity_name=item_data.get("commodity_name"),
                 hs_code=hs_code,
                 quantity=quantity,
-                unit=item_data.get("unit"),
+                unit=normalized_unit,
                 unit_price=unit_price,
                 total_price=self._safe_float(item_data.get("total_price")),
                 currency=item_data.get("currency", "USD"),
@@ -419,6 +435,56 @@ class PriceExtractionService:
         
         result.success = len(result.line_items) > 0
         return result
+    
+    def _normalize_unit(self, unit: str) -> str:
+        """Normalize unit strings to standard format."""
+        if not unit:
+            return "pcs"
+        
+        unit_lower = unit.lower().strip()
+        
+        # Pieces/units
+        if unit_lower in ["unit", "units", "piece", "pieces", "pc", "pcs", "each", "ea", "nos", "no"]:
+            return "pcs"
+        
+        # Weight - kilograms
+        if unit_lower in ["kg", "kgs", "kilogram", "kilograms", "kilo"]:
+            return "kg"
+        
+        # Weight - metric tons
+        if unit_lower in ["mt", "ton", "tons", "tonne", "tonnes", "metric ton", "metric tons"]:
+            return "mt"
+        
+        # Weight - pounds
+        if unit_lower in ["lb", "lbs", "pound", "pounds"]:
+            return "lb"
+        
+        # Volume - barrels
+        if unit_lower in ["barrel", "barrels", "bbl", "bbls"]:
+            return "barrel"
+        
+        # Volume - liters
+        if unit_lower in ["l", "liter", "liters", "litre", "litres"]:
+            return "liter"
+        
+        # Sets
+        if unit_lower in ["set", "sets"]:
+            return "set"
+        
+        # Cartons
+        if unit_lower in ["carton", "cartons", "ctn", "ctns"]:
+            return "carton"
+        
+        # Boxes
+        if unit_lower in ["box", "boxes"]:
+            return "box"
+        
+        # Bags
+        if unit_lower in ["bag", "bags"]:
+            return "bag"
+        
+        # Default: return as-is if not recognized
+        return unit_lower
     
     def _safe_float(self, value: Any) -> Optional[float]:
         """Safely convert value to float."""

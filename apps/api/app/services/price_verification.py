@@ -1141,6 +1141,36 @@ class PriceVerificationService:
         direction = "above" if variance_percent > 0 else "below"
         return ("fail", f"Price is {abs_variance:.1f}% {direction} market average. Significant deviation detected.")
     
+    def _get_unit_type(self, unit: str) -> str:
+        """Categorize unit into types for comparison."""
+        unit_lower = unit.lower().strip()
+        
+        # Weight units
+        if unit_lower in ["kg", "g", "lb", "lbs", "oz", "mt", "ton", "tons", "tonne", "tonnes", "kilogram", "gram", "pound"]:
+            return "weight"
+        
+        # Volume units
+        if unit_lower in ["l", "liter", "liters", "litre", "litres", "ml", "bbl", "barrel", "barrels", "gal", "gallon"]:
+            return "volume"
+        
+        # Piece/count units
+        if unit_lower in ["pcs", "pc", "piece", "pieces", "unit", "units", "ea", "each", "no", "nos", "set", "sets", "pair", "pairs"]:
+            return "count"
+        
+        # Container units
+        if unit_lower in ["carton", "cartons", "box", "boxes", "bag", "bags", "ctn", "case", "cases"]:
+            return "container"
+        
+        # Length units
+        if unit_lower in ["m", "meter", "meters", "ft", "feet", "yard", "yards", "yd"]:
+            return "length"
+        
+        # Area units
+        if unit_lower in ["sqm", "sqft", "square meter", "square feet"]:
+            return "area"
+        
+        return "unknown"
+    
     async def verify_price(
         self,
         commodity_input: str,
@@ -1238,6 +1268,25 @@ class PriceVerificationService:
         total_value = None
         if quantity:
             total_value = document_price * quantity
+        
+        # Check for unit mismatch warning
+        unit_mismatch_warning = None
+        doc_unit_type = self._get_unit_type(document_unit)
+        market_unit_type = self._get_unit_type(commodity["unit"])
+        
+        if doc_unit_type != market_unit_type and doc_unit_type != "unknown" and market_unit_type != "unknown":
+            unit_mismatch_warning = (
+                f"Unit mismatch: Document uses '{document_unit}' ({doc_unit_type}) "
+                f"but market data uses '{commodity['unit']}' ({market_unit_type}). "
+                f"Price comparison may not be accurate."
+            )
+            # Add to risk flags
+            if "unit_mismatch" not in risk_assessment["risk_flags"]:
+                risk_assessment["risk_flags"].append("unit_mismatch")
+            # Add warning to resolution warnings
+            if resolution_meta.get("warnings") is None:
+                resolution_meta["warnings"] = []
+            resolution_meta["warnings"].append(unit_mismatch_warning)
         
         # Build result
         result = {
