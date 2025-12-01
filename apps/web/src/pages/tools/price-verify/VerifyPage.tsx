@@ -931,29 +931,98 @@ export default function VerifyPage() {
                                 </div>
                               </div>
                               
-                              {/* Verification Results if available */}
+                              {/* Rich Verification Results - matching manual entry style */}
                               {verification && verification.market_price && (
-                                <div className="flex flex-wrap items-center gap-4 text-sm mt-3 pt-3 border-t">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">Your Price:</span>
-                                    <span className="font-medium">${item.unit_price?.toFixed(2)}/{item.unit || 'unit'}</span>
+                                <div className="mt-4 pt-4 border-t space-y-4">
+                                  {/* Price Comparison Cards */}
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-3 rounded-lg border bg-muted/30">
+                                      <div className="text-xs text-muted-foreground mb-1">Your Price</div>
+                                      <div className="text-xl font-bold">
+                                        ${item.unit_price?.toFixed(2) || '0.00'}
+                                        <span className="text-sm font-normal text-muted-foreground">/{item.unit || 'unit'}</span>
+                                      </div>
+                                    </div>
+                                    <div className="p-3 rounded-lg border bg-muted/30">
+                                      <div className="text-xs text-muted-foreground mb-1">Market Price</div>
+                                      <div className="text-xl font-bold">
+                                        ${verification.market_price.price?.toFixed(2) || '?'}
+                                        <span className="text-sm font-normal text-muted-foreground">/{verification.market_price.unit || 'unit'}</span>
+                                      </div>
+                                      {verification.market_price.price_low && verification.market_price.price_high && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          Range: ${verification.market_price.price_low?.toFixed(2)} - ${verification.market_price.price_high?.toFixed(2)}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">Market:</span>
-                                    <span className="font-medium">${verification.market_price.price?.toFixed(2) || '?'}/{verification.market_price.unit || 'unit'}</span>
-                                  </div>
+                                  
+                                  {/* Variance Progress Bar */}
                                   {verification.variance && (
-                                    <span className={`font-bold ${
-                                      Math.abs(verification.variance.percent || 0) < 15 ? "text-green-500" :
-                                      Math.abs(verification.variance.percent || 0) < 30 ? "text-yellow-500" : "text-red-500"
-                                    }`}>
-                                      {(verification.variance.percent || 0) > 0 ? "+" : ""}{(verification.variance.percent || 0).toFixed(1)}% variance
-                                    </span>
+                                    <div className="p-3 rounded-lg border">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium">Variance</span>
+                                        <span className={`font-bold ${
+                                          Math.abs(verification.variance.percent || 0) < 15 ? "text-green-500" :
+                                          Math.abs(verification.variance.percent || 0) < 30 ? "text-yellow-500" : "text-red-500"
+                                        }`}>
+                                          <TrendingUp className="h-4 w-4 inline mr-1" />
+                                          {(verification.variance.percent || 0) > 0 ? "+" : ""}{(verification.variance.percent || 0).toFixed(1)}%
+                                        </span>
+                                      </div>
+                                      {/* Visual progress bar */}
+                                      <div className="h-2 w-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 rounded-full mb-2" />
+                                      <div className="flex justify-between text-xs text-muted-foreground">
+                                        <span>0%</span>
+                                        <span>±15% (OK)</span>
+                                        <span>±30% (Warning)</span>
+                                        <span>50%+</span>
+                                      </div>
+                                    </div>
                                   )}
-                                  {verification.risk?.risk_level && verification.risk.risk_level !== 'low' && (
-                                    <Badge variant="outline" className={RISK_COLORS[verification.risk.risk_level] || ''}>
-                                      {verification.risk.risk_level.toUpperCase()} Risk
-                                    </Badge>
+                                  
+                                  {/* Risk Level */}
+                                  {verification.risk && (
+                                    <div className="p-3 rounded-lg border">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium">Risk Level</span>
+                                        <Badge variant="outline" className={RISK_COLORS[verification.risk.risk_level] || ''}>
+                                          {verification.risk.risk_level?.toUpperCase() || 'UNKNOWN'}
+                                        </Badge>
+                                      </div>
+                                      {verification.risk.factors && verification.risk.factors.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                          {verification.risk.factors.map((factor: string, i: number) => (
+                                            <Badge key={i} variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/20">
+                                              <AlertTriangle className="h-3 w-3 mr-1" />
+                                              {factor}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* AI Explanation */}
+                                  {verification.explanation && (
+                                    <div className="p-3 rounded-lg border bg-muted/20">
+                                      <div className="flex items-start gap-2">
+                                        <Info className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                                        <p className="text-sm">{verification.explanation}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Data Source */}
+                                  {verification.source && (
+                                    <div className="p-2 rounded border bg-muted/10 text-xs text-muted-foreground">
+                                      <div className="flex justify-between">
+                                        <span>Data Source: {verification.source.display || verification.source.name || 'Market Data'}</span>
+                                        {verification.audit_id && (
+                                          <span className="font-mono">Audit ID: {verification.audit_id.slice(0, 12)}</span>
+                                        )}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               )}
