@@ -744,21 +744,35 @@ export default function VerifyPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {/* Warnings for missing data */}
-                      {extractionResult.extraction.extraction_metadata?.warnings && 
-                       extractionResult.extraction.extraction_metadata.warnings.length > 0 && (
-                        <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                            <div className="text-sm">
-                              <div className="font-medium text-amber-500 mb-1">Action Required</div>
-                              {extractionResult.extraction.extraction_metadata.warnings.map((warning, i) => (
-                                <div key={i} className="text-muted-foreground">{warning}</div>
-                              ))}
+                      {/* Dynamic warnings based on current state */}
+                      {(() => {
+                        const missingPrice = extractionResult.extraction.line_items.filter(
+                          item => !item.unit_price && item.unit_price !== 0
+                        ).length;
+                        const missingQuantity = extractionResult.extraction.line_items.filter(
+                          item => !item.quantity && item.quantity !== 0
+                        ).length;
+                        
+                        if (missingPrice > 0 || missingQuantity > 0) {
+                          return (
+                            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                  <div className="font-medium text-amber-500 mb-1">Action Required</div>
+                                  {missingPrice > 0 && (
+                                    <div className="text-muted-foreground">{missingPrice} item(s) missing unit price - enter prices below</div>
+                                  )}
+                                  {missingQuantity > 0 && (
+                                    <div className="text-muted-foreground">{missingQuantity} item(s) missing quantity</div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Document Info */}
                       {extractionResult.extraction.document_info.document_number && (
@@ -954,7 +968,7 @@ export default function VerifyPage() {
                       {/* Actions */}
                       <Separator />
                       <div className="flex gap-3">
-                        {!extractionResult.verifications ? (
+                        {!extractionResult.verifications || extractionResult.verifications.length === 0 ? (
                           <Button 
                             className="flex-1 bg-green-600 hover:bg-green-700"
                             onClick={async () => {
