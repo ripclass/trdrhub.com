@@ -1638,6 +1638,325 @@ async def get_tbml_summary_report(
 
 
 # =============================================================================
+# GENERAL COMPLIANCE REPORT
+# =============================================================================
+
+class ComplianceReportRequest(BaseModel):
+    """Request model for compliance report generation."""
+    date_range: str = Field(default="30d", description="Date range: 7d, 30d, 90d, ytd")
+    format: str = Field(default="pdf", description="Output format: pdf, xlsx, csv")
+    company_name: Optional[str] = Field(None, description="Company name for report header")
+    include_passed: bool = Field(default=True, description="Include passed verifications")
+
+
+@router.post("/reports/compliance")
+async def generate_compliance_report(
+    request: ComplianceReportRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a comprehensive compliance report for all verifications.
+    Supports PDF, Excel, and CSV formats.
+    """
+    import csv
+    from io import StringIO, BytesIO
+    
+    try:
+        # Calculate date range
+        now = datetime.now(timezone.utc)
+        if request.date_range == "7d":
+            since = now - timedelta(days=7)
+        elif request.date_range == "90d":
+            since = now - timedelta(days=90)
+        elif request.date_range == "ytd":
+            since = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:  # Default 30d
+            since = now - timedelta(days=30)
+        
+        # Query verifications
+        query = db.query(PriceVerification).filter(
+            PriceVerification.created_at >= since
+        )
+        
+        if not request.include_passed:
+            query = query.filter(PriceVerification.verdict != "pass")
+        
+        verifications = query.order_by(desc(PriceVerification.created_at)).all()
+        
+        # Calculate summary stats
+        total = len(verifications)
+        passed = sum(1 for v in verifications if v.verdict == "pass")
+        warnings = sum(1 for v in verifications if v.verdict == "warning")
+        failed = sum(1 for v in verifications if v.verdict == "fail")
+        high_risk = sum(1 for v in verifications if v.risk_level in ["high", "critical"])
+        
+        if request.format == "csv":
+            # Generate CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow([
+                "Date", "Commodity", "Code", "Document Price", "Market Price",
+                "Variance %", "Verdict", "Risk Level", "Risk Flags",
+                "Document Type", "Reference", "Origin", "Destination"
+            ])
+            for v in verifications:
+                writer.writerow([
+                    v.created_at.strftime("%Y-%m-%d %H:%M") if v.created_at else "",
+                    v.commodity_name or "",
+                    v.commodity_code or "",
+                    f"{v.document_price:.2f}" if v.document_price else "",
+                    f"{v.market_price:.2f}" if v.market_price else "",
+                    f"{v.variance_percent:.1f}" if v.variance_percent else "",
+                    v.verdict or "",
+                    v.risk_level or "",
+                    ", ".join(v.risk_flags) if v.risk_flags else "",
+                    v.document_type or "",
+                    v.document_reference or "",
+                    v.origin_country or "",
+                    v.destination_country or "",
+                ])
+            
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment; filename=compliance_report_{now.strftime('%Y%m%d')}.csv"
+                }
+            )
+        
+        elif request.format == "xlsx":
+            # Generate Excel using openpyxl
+            try:
+                from openpyxl import Workbook
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Verification Report"
+                
+                # Styles
+                header_font = Font(bold=True, color="FFFFFF")
+                header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+                pass_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                warn_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+                fail_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                
+                # Summary section
+                ws.append(["PRICE VERIFICATION COMPLIANCE REPORT"])
+                ws.merge_cells("A1:M1")
+                ws["A1"].font = Font(bold=True, size=14)
+                
+                ws.append([f"Period: {since.strftime('%Y-%m-%d')} to {now.strftime('%Y-%m-%d')}"])
+                ws.append([f"Company: {request.company_name or 'N/A'}"])
+                ws.append([f"Generated: {now.strftime('%Y-%m-%d %H:%M UTC')}"])
+                ws.append([])
+                
+                # Stats row
+                ws.append(["Summary Statistics"])
+                ws.append(["Total Verifications", total])
+                ws.append(["Passed", passed])
+                ws.append(["Warnings", warnings])
+                ws.append(["Failed", failed])
+                ws.append(["High Risk", high_risk])
+                ws.append([])
+                
+                # Headers
+                headers = [
+                    "Date", "Commodity", "Code", "Doc Price", "Market Price",
+                    "Variance %", "Verdict", "Risk", "Risk Flags",
+                    "Doc Type", "Reference", "Origin", "Destination"
+                ]
+                ws.append(headers)
+                header_row = ws.max_row
+                for col, header in enumerate(headers, 1):
+                    cell = ws.cell(row=header_row, column=col)
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = Alignment(horizontal="center")
+                
+                # Data rows
+                for v in verifications:
+                    row_data = [
+                        v.created_at.strftime("%Y-%m-%d %H:%M") if v.created_at else "",
+                        v.commodity_name or "",
+                        v.commodity_code or "",
+                        v.document_price or 0,
+                        v.market_price or 0,
+                        v.variance_percent or 0,
+                        v.verdict or "",
+                        v.risk_level or "",
+                        ", ".join(v.risk_flags) if v.risk_flags else "",
+                        v.document_type or "",
+                        v.document_reference or "",
+                        v.origin_country or "",
+                        v.destination_country or "",
+                    ]
+                    ws.append(row_data)
+                    
+                    # Color verdict cells
+                    verdict_cell = ws.cell(row=ws.max_row, column=7)
+                    if v.verdict == "pass":
+                        verdict_cell.fill = pass_fill
+                    elif v.verdict == "warning":
+                        verdict_cell.fill = warn_fill
+                    elif v.verdict == "fail":
+                        verdict_cell.fill = fail_fill
+                
+                # Adjust column widths
+                for col in ws.columns:
+                    max_length = 0
+                    column = col[0].column_letter
+                    for cell in col:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    ws.column_dimensions[column].width = min(max_length + 2, 40)
+                
+                # Save to bytes
+                output = BytesIO()
+                wb.save(output)
+                output.seek(0)
+                
+                return Response(
+                    content=output.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={
+                        "Content-Disposition": f"attachment; filename=compliance_report_{now.strftime('%Y%m%d')}.xlsx"
+                    }
+                )
+                
+            except ImportError:
+                # Fallback to CSV if openpyxl not available
+                logger.warning("openpyxl not installed, falling back to CSV")
+                # Recursive call with csv format
+                request.format = "csv"
+                return await generate_compliance_report(request, db)
+        
+        else:  # PDF format
+            # Convert verifications to dict format for PDF generator
+            verifications_data = []
+            for v in verifications:
+                verifications_data.append({
+                    "id": str(v.id),
+                    "created_at": v.created_at.isoformat() if v.created_at else None,
+                    "commodity": {
+                        "name": v.commodity_name,
+                        "code": v.commodity_code,
+                        "unit": v.document_unit,
+                    },
+                    "document_price": v.document_price,
+                    "market_price": {
+                        "price": v.market_price,
+                        "source": v.market_source,
+                    },
+                    "variance": {
+                        "percent": v.variance_percent,
+                    },
+                    "risk": {
+                        "risk_level": v.risk_level,
+                        "risk_flags": v.risk_flags or [],
+                    },
+                    "verdict": v.verdict,
+                    "document_type": v.document_type,
+                    "document_reference": v.document_reference,
+                })
+            
+            company_info = {"name": request.company_name} if request.company_name else None
+            
+            pdf_bytes = generate_tbml_compliance_report(
+                verifications=verifications_data,
+                company_info=company_info,
+                period_start=since,
+                period_end=now,
+            )
+            
+            if not pdf_bytes:
+                raise HTTPException(status_code=500, detail="Failed to generate PDF report")
+            
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"attachment; filename=compliance_report_{now.strftime('%Y%m%d')}.pdf"
+                }
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Compliance report error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/reports/list")
+async def list_generated_reports(
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """
+    List recently generated reports (tracked via audit log).
+    This is a placeholder - in production, store report metadata in a reports table.
+    """
+    # For now, return sample structure - in production, query a reports table
+    return {
+        "success": True,
+        "reports": [],
+        "message": "Report tracking coming soon. Use the generate endpoints to create reports.",
+    }
+
+
+@router.get("/reports/stats")
+async def get_report_stats(
+    db: Session = Depends(get_db),
+):
+    """
+    Get statistics for reports generation.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        thirty_days_ago = now - timedelta(days=30)
+        
+        # Count verifications in different periods
+        total_30d = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= thirty_days_ago
+        ).scalar() or 0
+        
+        high_risk_30d = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= thirty_days_ago,
+            PriceVerification.risk_level.in_(["high", "critical"])
+        ).scalar() or 0
+        
+        failed_30d = db.query(func.count(PriceVerification.id)).filter(
+            PriceVerification.created_at >= thirty_days_ago,
+            PriceVerification.verdict == "fail"
+        ).scalar() or 0
+        
+        return {
+            "success": True,
+            "stats": {
+                "total_verifications_30d": total_30d,
+                "high_risk_count": high_risk_30d,
+                "failed_count": failed_30d,
+                "reports_available": True,
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Report stats error: {e}")
+        return {
+            "success": False,
+            "stats": {
+                "total_verifications_30d": 0,
+                "high_risk_count": 0,
+                "failed_count": 0,
+                "reports_available": False,
+            }
+        }
+
+
+# =============================================================================
 # HEALTH CHECK
 # =============================================================================
 
