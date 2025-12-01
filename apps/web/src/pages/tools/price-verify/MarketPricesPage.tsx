@@ -85,7 +85,7 @@ export default function MarketPricesPage() {
             unit: c.unit,
             currency: c.currency || 'USD',
             source: c.has_live_feed ? 'live' : 'curated',
-            source_display: c.source_note || (c.has_live_feed ? 'Live Market Data' : 'TRDR Database'),
+            source_display: c.source_display || (c.has_live_feed ? 'World Bank' : 'TRDR Database'),
             fetched_at: new Date().toISOString(),
             has_live_feed: c.has_live_feed,
           }));

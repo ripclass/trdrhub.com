@@ -181,7 +181,10 @@ export default function DashboardOverview() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalVerifications.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+12.5%</span> from last month
+              {stats.totalVerifications === 0 
+                ? "Start verifying prices to track"
+                : <><span className="text-green-500">+12.5%</span> from last month</>
+              }
             </p>
           </CardContent>
         </Card>
@@ -230,7 +233,14 @@ export default function DashboardOverview() {
         <Card className="lg:col-span-4">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Recent Verifications</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Recent Verifications</CardTitle>
+                {stats.totalVerifications === 0 && (
+                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                    Sample Data
+                  </Badge>
+                )}
+              </div>
               <CardDescription>Your latest price verification results</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
@@ -279,7 +289,14 @@ export default function DashboardOverview() {
         {/* Top Commodities */}
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle>Top Commodities</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>Top Commodities</CardTitle>
+              {stats.totalVerifications === 0 && (
+                <Badge variant="outline" className="text-xs text-muted-foreground">
+                  Sample Data
+                </Badge>
+              )}
+            </div>
             <CardDescription>Most verified commodities this month</CardDescription>
           </CardHeader>
           <CardContent>
@@ -316,7 +333,14 @@ export default function DashboardOverview() {
       {/* Verdict Distribution */}
       <Card>
         <CardHeader>
-          <CardTitle>Verdict Distribution</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle>Verdict Distribution</CardTitle>
+            {stats.totalVerifications === 0 && (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                Sample Data
+              </Badge>
+            )}
+          </div>
           <CardDescription>Breakdown of verification results this month</CardDescription>
         </CardHeader>
         <CardContent>

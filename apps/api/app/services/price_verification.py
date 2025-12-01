@@ -763,6 +763,18 @@ class PriceVerificationService:
             price_low = typical_range[0] if typical_range else 0
             price_high = typical_range[1] if typical_range else 0
             
+            # Determine data source display name
+            source_codes = data.get("source_codes", {})
+            has_live_feed = bool(source_codes)
+            if source_codes.get("world_bank"):
+                source_display = "World Bank"
+            elif source_codes.get("fred"):
+                source_display = "FRED"
+            elif source_codes.get("lme"):
+                source_display = "LME"
+            else:
+                source_display = "TRDR Database"
+            
             result.append({
                 "code": code,
                 "name": data["name"],
@@ -771,8 +783,9 @@ class PriceVerificationService:
                 "current_estimate": data.get("current_estimate"),
                 "price_low": price_low,
                 "price_high": price_high,
-                "has_live_feed": bool(data.get("source_codes")),
-                "source_note": data.get("source_codes", {}).get("world_bank") or data.get("source_codes", {}).get("fred"),
+                "has_live_feed": has_live_feed,
+                "source_display": source_display,
+                "source_code": source_codes.get("world_bank") or source_codes.get("fred") or source_codes.get("lme"),
             })
         return sorted(result, key=lambda x: (x["category"], x["name"]))
     
