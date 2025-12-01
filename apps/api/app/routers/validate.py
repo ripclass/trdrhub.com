@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
 from app.services.customs.customs_pack import build_customs_manifest_from_option_e
 from app.services.customs.customs_pack_full import CustomsPackBuilderFull
+from app.utils.usage_tracker import record_usage_manual
 from app.services.extraction.lc_extractor import (
     extract_lc_structured,
     extract_lc_structured_with_ai_fallback,
@@ -1456,6 +1457,28 @@ async def validate_doc(
                 "json_pipeline": True,
             },
         )
+
+        # Track usage for billing
+        if current_user and hasattr(current_user, 'company_id') and current_user.company_id:
+            try:
+                doc_count = len(payload.get("files", [])) if isinstance(payload.get("files"), list) else len(files_list)
+                await record_usage_manual(
+                    db=db,
+                    company_id=current_user.company_id,
+                    user_id=current_user.id if hasattr(current_user, 'id') else None,
+                    operation="lc_validation",
+                    tool="lcopilot",
+                    quantity=1,  # One validation session
+                    log_data={
+                        "job_id": str(job_id),
+                        "document_count": doc_count,
+                        "rules_evaluated": len(results),
+                        "discrepancies": len(failed_results),
+                    },
+                    description=f"LC validation: {doc_count} documents, {len(failed_results)} issues"
+                )
+            except Exception as usage_err:
+                logger.warning(f"Failed to track usage: {usage_err}")
 
         return {
             "job_id": str(job_id),

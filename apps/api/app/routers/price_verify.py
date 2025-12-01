@@ -33,6 +33,7 @@ from app.services.market_data import get_market_data_service
 from app.services.audit_log import get_audit_service, AuditAction
 from app.database import get_db
 from app.models.commodity_prices import PriceVerification
+from app.utils.usage_tracker import record_usage_manual
 
 logger = logging.getLogger(__name__)
 
@@ -506,6 +507,27 @@ async def verify_single_price(
             result.get("verification_id"),
         )
         
+        # Track usage for billing
+        if company_id:
+            try:
+                await record_usage_manual(
+                    db=db,
+                    company_id=company_id,
+                    user_id=user_id,
+                    operation="price_check",
+                    tool="price_verify",
+                    quantity=1,
+                    log_data={
+                        "verification_id": result.get("verification_id"),
+                        "commodity": result.get("commodity", {}).get("code"),
+                        "verdict": result.get("verdict"),
+                        "variance_percent": result.get("variance", {}).get("percent", 0),
+                    },
+                    description=f"Price check: {result.get('commodity', {}).get('name', 'unknown')}"
+                )
+            except Exception as usage_err:
+                logger.warning(f"Failed to track usage: {usage_err}")
+        
         return result
         
     except Exception as e:
@@ -528,6 +550,7 @@ def _get_source_url(source: str, commodity_code: str = None) -> str:
 async def verify_batch_prices(
     request: BatchVerificationRequest,
     req: Request,
+    db: Session = Depends(get_db),
 ):
     """
     Verify multiple commodity prices in a single request.
@@ -542,6 +565,10 @@ async def verify_batch_prices(
     - Maximum risk level across all items
     """
     service = get_price_verification_service()
+    
+    # Extract user context from request state
+    user_id = getattr(req.state, 'user_id', None)
+    company_id = getattr(req.state, 'company_id', None)
     
     try:
         items = [item.model_dump() for item in request.items]
@@ -560,6 +587,28 @@ async def verify_batch_prices(
             result["summary"]["failed"],
             result["summary"]["overall_variance_percent"],
         )
+        
+        # Track usage for billing (each item counts as 1 price check)
+        if company_id:
+            try:
+                await record_usage_manual(
+                    db=db,
+                    company_id=company_id,
+                    user_id=user_id,
+                    operation="price_check",
+                    tool="price_verify",
+                    quantity=result["summary"]["total_items"],  # Count each item
+                    log_data={
+                        "batch": True,
+                        "total_items": result["summary"]["total_items"],
+                        "passed": result["summary"]["passed"],
+                        "failed": result["summary"]["failed"],
+                        "document_reference": request.document_reference,
+                    },
+                    description=f"Batch price check: {result['summary']['total_items']} items"
+                )
+            except Exception as usage_err:
+                logger.warning(f"Failed to track usage: {usage_err}")
         
         return result
         
