@@ -34,7 +34,8 @@ class GoogleDocumentAIAdapter(OCRAdapter):
     def __init__(self):
         # Use settings from config instead of os.getenv
         self.project_id = settings.GOOGLE_CLOUD_PROJECT
-        self.location = settings.GOOGLE_DOCUMENTAI_LOCATION or "us"
+        # IMPORTANT: Use "eu" as default to match DocumentAIService used by LCopilot
+        self.location = settings.GOOGLE_DOCUMENTAI_LOCATION or "eu"
         self.processor_id = settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID
         
         if not all([self.project_id, self.processor_id]):
@@ -57,7 +58,14 @@ class GoogleDocumentAIAdapter(OCRAdapter):
         if documentai is None:
             raise ImportError("google-cloud-documentai package not installed")
         
-        self.client = documentai.DocumentProcessorServiceClient()
+        # Configure client for regional endpoint (matching DocumentAIService)
+        if self.location and self.location != 'us':
+            from google.api_core.client_options import ClientOptions
+            client_options = ClientOptions(api_endpoint=f"{self.location}-documentai.googleapis.com")
+            self.client = documentai.DocumentProcessorServiceClient(client_options=client_options)
+        else:
+            self.client = documentai.DocumentProcessorServiceClient()
+        
         self.processor_name = self.client.processor_path(
             self.project_id, self.location, self.processor_id
         )
