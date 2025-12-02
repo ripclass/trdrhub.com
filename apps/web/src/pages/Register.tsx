@@ -677,16 +677,17 @@ export default function Register() {
       </div>
 
       {/* Right Column - Feature showcase */}
-      <div className="relative hidden lg:flex flex-col justify-center p-12 overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-center p-12 overflow-hidden bg-slate-900">
         {/* Background image */}
-        <img
-          src="https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?q=80&w=2070&auto=format&fit=crop"
-          alt="Cargo ship at port"
-          className="absolute inset-0 h-full w-full object-cover"
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ 
+            backgroundImage: `url('https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?q=80&w=2070&auto=format&fit=crop')`,
+          }}
         />
         
         {/* Dark overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/90 to-slate-950/85" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/80 via-slate-900/70 to-slate-950/75" />
         
         {/* Background pattern */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px]" />
