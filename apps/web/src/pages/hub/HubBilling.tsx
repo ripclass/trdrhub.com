@@ -7,22 +7,15 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   Check,
   CreditCard,
-  Download,
   ExternalLink,
-  Sparkles,
-  TrendingUp,
-  Zap,
-  Clock,
   AlertCircle,
   Receipt,
   Calendar,
   DollarSign,
   Users,
   Shield,
-  Infinity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -251,23 +244,12 @@ export default function HubBilling() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/hub")}>
-              <ArrowLeft className="w-5 h-5 text-slate-400" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-semibold text-white">Billing & Plans</h1>
-              <p className="text-sm text-slate-400">Manage your subscription and usage</p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8">
+    <div className="p-6 lg:p-8">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-white">Billing & Plans</h1>
+        <p className="text-slate-400">Manage your subscription and usage</p>
+      </div>
         {/* Current Plan Overview */}
         <Card className="mb-8 bg-slate-900/50 border-white/5 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-emerald-500/5" />
@@ -667,7 +649,6 @@ export default function HubBilling() {
             </Card>
           </TabsContent>
         </Tabs>
-      </main>
 
       {/* Upgrade Confirmation Dialog */}
       <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>

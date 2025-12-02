@@ -2,7 +2,7 @@
  * Hub Home - Unified Dashboard for TRDR Hub
  * 
  * The central dashboard showing all user's tools, usage stats, and quick actions.
- * This replaces individual tool dashboards as the main entry point after login.
+ * Works inside HubLayout with sidebar.
  */
 
 import { useState, useEffect } from "react";
@@ -14,17 +14,11 @@ import {
   Shield, 
   Ship, 
   TrendingUp,
-  Settings,
-  CreditCard,
-  Users,
-  BarChart3,
   ChevronRight,
   Zap,
   Lock,
   Clock,
   AlertCircle,
-  CheckCircle2,
-  Sparkles,
   ArrowUpRight,
   Activity
 } from "lucide-react";
@@ -33,7 +27,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -146,7 +139,6 @@ export default function HubHome() {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [userName, setUserName] = useState("User");
-  const [companyName, setCompanyName] = useState("");
 
   useEffect(() => {
     fetchDashboardData();
@@ -255,342 +247,285 @@ export default function HubHome() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
+    <div className="p-6 lg:p-8">
+      {/* Welcome Section */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white mb-2">
+          Welcome back{userName !== "User" ? `, ${userName}` : ""}! 👋
+        </h1>
+        <p className="text-slate-400">
+          Your trade compliance toolkit • {subscription?.plan?.name || "Pay-as-you-go"} Plan
+        </p>
+      </div>
+
+      {/* Usage Overview Card */}
+      <Card className="mb-8 bg-slate-900/50 border-white/5 overflow-hidden">
+        <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/" className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-xl font-bold text-white">TRDR Hub</span>
-              </Link>
-              <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 text-xs">
-                {subscription?.plan?.name || "Pay-as-you-go"}
-              </Badge>
+            <div>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-emerald-400" />
+                Usage This Month
+              </CardTitle>
+              <CardDescription className="text-slate-400">
+                {usage?.period_start && usage?.period_end 
+                  ? `${formatDate(usage.period_start)} - ${formatDate(usage.period_end)}`
+                  : "Current billing period"
+                }
+              </CardDescription>
             </div>
-            
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" asChild>
-                <Link to="/hub/billing">
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Billing
-                </Link>
-              </Button>
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" asChild>
-                <Link to="/hub/team">
-                  <Users className="w-4 h-4 mr-2" />
-                  Team
-                </Link>
-              </Button>
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" asChild>
-                <Link to="/hub/settings">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </Link>
-              </Button>
-              <Avatar className="h-8 w-8 cursor-pointer">
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-emerald-500 text-white text-sm">
-                  {userName.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Welcome back{userName !== "User" ? `, ${userName}` : ""}! 👋
-          </h1>
-          <p className="text-slate-400">
-            Your trade compliance toolkit • {subscription?.plan?.name || "Pay-as-you-go"} Plan
-          </p>
-        </div>
-
-        {/* Usage Overview Card */}
-        <Card className="mb-8 bg-slate-900/50 border-white/5 overflow-hidden">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-emerald-400" />
-                  Usage This Month
-                </CardTitle>
-                <CardDescription className="text-slate-400">
-                  {usage?.period_start && usage?.period_end 
-                    ? `${formatDate(usage.period_start)} - ${formatDate(usage.period_end)}`
-                    : "Current billing period"
-                  }
-                </CardDescription>
-              </div>
-              <Button variant="outline" size="sm" className="border-white/10 text-slate-300" asChild>
-                <Link to="/hub/usage">
-                  View Details
-                  <ChevronRight className="w-4 h-4 ml-1" />
-                </Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-slate-400">Overall Usage</span>
-                  <span className="text-sm font-medium text-white">{Math.round(getTotalUsagePercent())}%</span>
-                </div>
-                <Progress value={getTotalUsagePercent()} className="h-2 bg-slate-800" />
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-2">
-                {TOOLS.filter(t => !t.comingSoon).map((tool) => {
-                  const usage = getToolUsage(tool.operation);
-                  return (
-                    <div key={tool.id} className="text-center">
-                      <div className="text-2xl font-bold text-white">{usage.used}</div>
-                      <div className="text-xs text-slate-400">
-                        / {usage.limit} {tool.name.split(" ")[0]}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tools Grid */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">Your Tools</h2>
-            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" asChild>
-              <Link to="/tools">
-                Browse All Tools
-                <ArrowUpRight className="w-4 h-4 ml-1" />
+            <Button variant="outline" size="sm" className="border-white/10 text-slate-300" asChild>
+              <Link to="/hub/usage">
+                View Details
+                <ChevronRight className="w-4 h-4 ml-1" />
               </Link>
             </Button>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {TOOLS.map((tool) => {
-              const toolUsage = getToolUsage(tool.operation);
-              const Icon = tool.icon;
-              const isLocked = tool.comingSoon;
-              
-              return (
-                <Card 
-                  key={tool.id}
-                  className={`group relative overflow-hidden transition-all duration-300 ${
-                    isLocked 
-                      ? "bg-slate-900/30 border-white/5 opacity-60" 
-                      : `bg-slate-900/50 border-white/5 hover:border-white/20 hover:shadow-lg hover:shadow-${tool.id === 'lcopilot' ? 'blue' : tool.id === 'price_verify' ? 'emerald' : 'purple'}-500/10 cursor-pointer`
-                  }`}
-                  onClick={() => !isLocked && navigate(tool.href)}
-                >
-                  {/* Gradient overlay on hover */}
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-slate-400">Overall Usage</span>
+                <span className="text-sm font-medium text-white">{Math.round(getTotalUsagePercent())}%</span>
+              </div>
+              <Progress value={getTotalUsagePercent()} className="h-2 bg-slate-800" />
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-2">
+              {TOOLS.filter(t => !t.comingSoon).map((tool) => {
+                const toolUsage = getToolUsage(tool.operation);
+                return (
+                  <div key={tool.id} className="text-center">
+                    <div className="text-2xl font-bold text-white">{toolUsage.used}</div>
+                    <div className="text-xs text-slate-400">
+                      / {toolUsage.limit} {tool.name.split(" ")[0]}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tools Grid */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-white">Your Tools</h2>
+          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" asChild>
+            <Link to="/tools">
+              Browse All Tools
+              <ArrowUpRight className="w-4 h-4 ml-1" />
+            </Link>
+          </Button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {TOOLS.map((tool) => {
+            const toolUsage = getToolUsage(tool.operation);
+            const Icon = tool.icon;
+            const isLocked = tool.comingSoon;
+            
+            return (
+              <Card 
+                key={tool.id}
+                className={`group relative overflow-hidden transition-all duration-300 ${
+                  isLocked 
+                    ? "bg-slate-900/30 border-white/5 opacity-60" 
+                    : `bg-slate-900/50 border-white/5 hover:border-white/20 hover:shadow-lg cursor-pointer`
+                }`}
+                onClick={() => !isLocked && navigate(tool.href)}
+              >
+                {/* Gradient overlay on hover */}
+                {!isLocked && (
+                  <div className={`absolute inset-0 bg-gradient-to-br ${tool.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
+                )}
+                
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`p-3 rounded-xl ${tool.bgColor} ${tool.borderColor} border`}>
+                      <Icon className="w-6 h-6" style={{ color: tool.color.includes('blue') ? '#3b82f6' : tool.color.includes('emerald') ? '#10b981' : tool.color.includes('purple') ? '#a855f7' : tool.color.includes('red') ? '#ef4444' : '#06b6d4' }} />
+                    </div>
+                    {isLocked ? (
+                      <Badge variant="outline" className="border-slate-700 text-slate-500 text-xs">
+                        <Lock className="w-3 h-3 mr-1" />
+                        Coming Soon
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 text-xs">
+                        <Zap className="w-3 h-3 mr-1" />
+                        Active
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  <h3 className="text-lg font-semibold text-white mb-1">{tool.name}</h3>
+                  <p className="text-sm text-slate-400 mb-4">{tool.description}</p>
+                  
                   {!isLocked && (
-                    <div className={`absolute inset-0 bg-gradient-to-br ${tool.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
+                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                      <div className="text-sm">
+                        <span className="text-white font-medium">{toolUsage.used}</span>
+                        <span className="text-slate-500"> / {toolUsage.limit} used</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                    </div>
                   )}
                   
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className={`p-3 rounded-xl ${tool.bgColor} ${tool.borderColor} border`}>
-                        <Icon className={`w-6 h-6 bg-gradient-to-br ${tool.color} bg-clip-text`} style={{ color: tool.color.includes('blue') ? '#3b82f6' : tool.color.includes('emerald') ? '#10b981' : tool.color.includes('purple') ? '#a855f7' : tool.color.includes('red') ? '#ef4444' : '#06b6d4' }} />
+                  {isLocked && (
+                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                      <div className="text-sm text-slate-500">
+                        ${tool.pricePerUnit.toFixed(2)} per use
                       </div>
-                      {isLocked ? (
-                        <Badge variant="outline" className="border-slate-700 text-slate-500 text-xs">
-                          <Lock className="w-3 h-3 mr-1" />
-                          Coming Soon
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 text-xs">
-                          <Zap className="w-3 h-3 mr-1" />
-                          Active
+                      <Button size="sm" variant="ghost" className="text-slate-400 h-7 px-2">
+                        Notify Me
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Bottom Section: Recent Activity + Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Activity */}
+        <Card className="lg:col-span-2 bg-slate-900/50 border-white/5">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-400" />
+              Recent Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.length > 0 ? (
+              <div className="space-y-3">
+                {recentActivity.map((activity) => (
+                  <div 
+                    key={activity.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-white/5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        activity.operation === "lc_validation" ? "bg-blue-500/10" :
+                        activity.operation === "price_check" ? "bg-emerald-500/10" :
+                        "bg-purple-500/10"
+                      }`}>
+                        {activity.operation === "lc_validation" ? (
+                          <FileCheck className="w-4 h-4 text-blue-400" />
+                        ) : activity.operation === "price_check" ? (
+                          <DollarSign className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Package className="w-4 h-4 text-purple-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          {getOperationLabel(activity.operation)}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {activity.description || `via ${activity.tool}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-slate-400">{formatTimeAgo(activity.created_at)}</p>
+                      {activity.is_overage && (
+                        <Badge variant="outline" className="border-amber-500/30 text-amber-400 text-xs mt-1">
+                          Overage
                         </Badge>
                       )}
                     </div>
-                    
-                    <h3 className="text-lg font-semibold text-white mb-1">{tool.name}</h3>
-                    <p className="text-sm text-slate-400 mb-4">{tool.description}</p>
-                    
-                    {!isLocked && (
-                      <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                        <div className="text-sm">
-                          <span className="text-white font-medium">{toolUsage.used}</span>
-                          <span className="text-slate-500"> / {toolUsage.limit} used</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
-                      </div>
-                    )}
-                    
-                    {isLocked && (
-                      <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                        <div className="text-sm text-slate-500">
-                          ${tool.pricePerUnit.toFixed(2)} per use
-                        </div>
-                        <Button size="sm" variant="ghost" className="text-slate-400 h-7 px-2">
-                          Notify Me
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400">No recent activity</p>
+                <p className="text-sm text-slate-500 mt-1">Start using tools to see activity here</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-        {/* Bottom Section: Recent Activity + Quick Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Activity */}
-          <Card className="lg:col-span-2 bg-slate-900/50 border-white/5">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-400" />
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {recentActivity.length > 0 ? (
-                <div className="space-y-3">
-                  {recentActivity.map((activity) => (
-                    <div 
-                      key={activity.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-white/5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${
-                          activity.operation === "lc_validation" ? "bg-blue-500/10" :
-                          activity.operation === "price_check" ? "bg-emerald-500/10" :
-                          "bg-purple-500/10"
-                        }`}>
-                          {activity.operation === "lc_validation" ? (
-                            <FileCheck className="w-4 h-4 text-blue-400" />
-                          ) : activity.operation === "price_check" ? (
-                            <DollarSign className="w-4 h-4 text-emerald-400" />
-                          ) : (
-                            <Package className="w-4 h-4 text-purple-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-white">
-                            {getOperationLabel(activity.operation)}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            {activity.description || `via ${activity.tool}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400">{formatTimeAgo(activity.created_at)}</p>
-                        {activity.is_overage && (
-                          <Badge variant="outline" className="border-amber-500/30 text-amber-400 text-xs mt-1">
-                            Overage
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400">No recent activity</p>
-                  <p className="text-sm text-slate-500 mt-1">Start using tools to see activity here</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {/* Quick Actions */}
+        <Card className="bg-slate-900/50 border-white/5">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-400" />
+              Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button 
+              className="w-full justify-start bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20"
+              variant="outline"
+              onClick={() => navigate("/exporter-dashboard")}
+            >
+              <FileCheck className="w-4 h-4 mr-2" />
+              Validate New LC
+            </Button>
+            
+            <Button 
+              className="w-full justify-start bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
+              variant="outline"
+              onClick={() => navigate("/price-verify/dashboard/verify")}
+            >
+              <DollarSign className="w-4 h-4 mr-2" />
+              Verify Price
+            </Button>
+            
+            <Separator className="bg-white/5" />
+            
+            <Button 
+              className="w-full justify-start text-slate-400 hover:text-white"
+              variant="ghost"
+              onClick={() => navigate("/hub/billing")}
+            >
+              <TrendingUp className="w-4 h-4 mr-2" />
+              Upgrade Plan
+            </Button>
+            
+            <Button 
+              className="w-full justify-start text-slate-400 hover:text-white"
+              variant="ghost"
+              onClick={() => navigate("/support")}
+            >
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Get Support
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
 
-          {/* Quick Actions */}
-          <Card className="bg-slate-900/50 border-white/5">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Zap className="w-5 h-5 text-amber-400" />
-                Quick Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+      {/* Upgrade CTA (for non-enterprise users) */}
+      {subscription?.plan?.slug !== "enterprise" && subscription?.plan?.slug !== "pro" && (
+        <Card className="mt-8 bg-gradient-to-r from-blue-500/10 to-emerald-500/10 border-white/10 overflow-hidden">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-1">
+                  Upgrade to {subscription?.plan?.slug === "starter" ? "Growth" : "Starter"} Plan
+                </h3>
+                <p className="text-slate-400 text-sm">
+                  Get more validations, priority support, and API access
+                </p>
+              </div>
               <Button 
-                className="w-full justify-start bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20"
-                variant="outline"
-                onClick={() => navigate("/exporter-dashboard")}
-              >
-                <FileCheck className="w-4 h-4 mr-2" />
-                Validate New LC
-              </Button>
-              
-              <Button 
-                className="w-full justify-start bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
-                variant="outline"
-                onClick={() => navigate("/price-verify/dashboard/verify")}
-              >
-                <DollarSign className="w-4 h-4 mr-2" />
-                Verify Price
-              </Button>
-              
-              <Separator className="bg-white/5" />
-              
-              <Button 
-                className="w-full justify-start text-slate-400 hover:text-white"
-                variant="ghost"
+                className="bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white"
                 onClick={() => navigate("/hub/billing")}
               >
-                <CreditCard className="w-4 h-4 mr-2" />
-                Manage Subscription
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Upgrade Now
               </Button>
-              
-              <Button 
-                className="w-full justify-start text-slate-400 hover:text-white"
-                variant="ghost"
-                onClick={() => navigate("/hub/team")}
-              >
-                <Users className="w-4 h-4 mr-2" />
-                Invite Team Member
-              </Button>
-              
-              <Button 
-                className="w-full justify-start text-slate-400 hover:text-white"
-                variant="ghost"
-                onClick={() => navigate("/support")}
-              >
-                <AlertCircle className="w-4 h-4 mr-2" />
-                Get Support
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Upgrade CTA (for non-enterprise users) */}
-        {subscription?.plan?.slug !== "enterprise" && subscription?.plan?.slug !== "pro" && (
-          <Card className="mt-8 bg-gradient-to-r from-blue-500/10 to-emerald-500/10 border-white/10 overflow-hidden">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white mb-1">
-                    Upgrade to {subscription?.plan?.slug === "starter" ? "Growth" : "Starter"} Plan
-                  </h3>
-                  <p className="text-slate-400 text-sm">
-                    Get more validations, priority support, and API access
-                  </p>
-                </div>
-                <Button 
-                  className="bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white"
-                  onClick={() => navigate("/hub/billing")}
-                >
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Upgrade Now
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </main>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
-

@@ -7,26 +7,18 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   Bell,
-  Building2,
   Copy,
-  Eye,
-  EyeOff,
   Key,
   Lock,
-  Mail,
   Moon,
   Palette,
   Plus,
-  RefreshCw,
   Save,
   Shield,
   Sun,
   Trash2,
   User,
-  Globe,
-  Clock,
   CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -249,24 +241,14 @@ export default function HubSettings() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/hub")}>
-              <ArrowLeft className="w-5 h-5 text-slate-400" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-semibold text-white">Settings</h1>
-              <p className="text-sm text-slate-400">Manage your account and preferences</p>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="p-6 lg:p-8">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-slate-400">Manage your account and preferences</p>
+      </div>
 
-      <main className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="bg-slate-800/50 border border-white/5">
             <TabsTrigger value="profile" className="data-[state=active]:bg-slate-700">
               <User className="w-4 h-4 mr-2" />
@@ -690,7 +672,6 @@ export default function HubSettings() {
             </div>
           </TabsContent>
         </Tabs>
-      </main>
 
       {/* Create API Key Dialog */}
       <Dialog open={newKeyDialogOpen} onOpenChange={handleCloseNewKeyDialog}>

@@ -83,7 +83,7 @@ import { BankAuthProvider } from './lib/bank/auth'
 import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
-import { HubHome, HubBilling, HubTeam, HubSettings } from './pages/hub'
+import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings } from './pages/hub'
 
 function App() {
   return (
@@ -136,12 +136,14 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/onboarding" element={<Onboarding />} />
         
-        {/* Hub - Unified Dashboard */}
-        <Route path="/hub" element={<HubHome />} />
-        <Route path="/hub/home" element={<HubHome />} />
-        <Route path="/hub/billing" element={<HubBilling />} />
-        <Route path="/hub/team" element={<HubTeam />} />
-        <Route path="/hub/settings" element={<HubSettings />} />
+        {/* Hub - Unified Dashboard with Sidebar */}
+        <Route path="/hub" element={<HubLayout />}>
+          <Route index element={<HubHome />} />
+          <Route path="home" element={<HubHome />} />
+          <Route path="billing" element={<HubBilling />} />
+          <Route path="team" element={<HubTeam />} />
+          <Route path="settings" element={<HubSettings />} />
+        </Route>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/lcopilot/upload" element={<UploadPage />} />
         <Route path="/lcopilot/review/:sessionId" element={<ReviewPage />} />
