@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff, Landmark, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
 
@@ -16,7 +16,7 @@ const COMPANY_TYPES = [
   { value: "exporter", label: "Exporter" },
   { value: "importer", label: "Importer" },
   { value: "both", label: "Both Exporter & Importer" },
-  { value: "bank", label: "Bank" },
+  { value: "logistics", label: "Logistics / Freight Forwarder" },
 ];
 
 const COMPANY_SIZE_OPTIONS = [
@@ -55,7 +55,7 @@ export default function Register() {
     const roleMap: Record<string, string> = {
       exporter: "exporter",
       importer: "importer",
-      bank: "bank_officer",
+      logistics: "exporter", // Logistics uses exporter flow
     };
 
     return roleMap[companyType] || "exporter";
@@ -133,7 +133,6 @@ export default function Register() {
 
       // Update onboarding progress (for additional steps if needed)
       try {
-        const isBank = backendRole === "bank_officer";
         const requiresTeamSetup = backendRole === "tenant_admin";
 
         await updateProgress({
@@ -144,8 +143,8 @@ export default function Register() {
             size: normalizedCompanySize,
           },
           business_types: businessTypes,
-          complete: !(isBank || requiresTeamSetup),
-          onboarding_step: isBank ? "kyc" : requiresTeamSetup ? "team_setup" : null,
+          complete: !requiresTeamSetup,
+          onboarding_step: requiresTeamSetup ? "team_setup" : null,
         });
       } catch (error) {
         console.warn("Failed to sync onboarding progress (non-critical):", error);
@@ -156,12 +155,8 @@ export default function Register() {
         description: "Your account is ready. Let's get started!",
       });
 
-      // Simplified routing: Banks go to bank dashboard, everyone else to Hub
-      const destination = (backendRole === "bank_officer" || backendRole === "bank_admin")
-        ? "/lcopilot/bank-dashboard"
-        : "/hub";
-
-      navigate(destination);
+      // All self-registered users go to Hub
+      navigate("/hub");
 
     } catch (error: any) {
       const message =
@@ -226,7 +221,7 @@ export default function Register() {
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Go live in two minutes</h3>
                     <p className="text-sm text-muted-foreground">
-                      Guided onboarding walks each role through the essentials—exporters, importers, and banks get tailored experiences.
+                      Guided onboarding walks each role through the essentials—exporters, importers, and logistics teams get tailored experiences.
                     </p>
                   </div>
                 </div>
@@ -446,6 +441,30 @@ export default function Register() {
                   </Link>
                 </p>
               </form>
+
+              {/* Financial Institutions CTA */}
+              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-amber-100 dark:bg-amber-900/30 p-2">
+                    <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-amber-900 dark:text-amber-100">
+                      Banks & Financial Institutions
+                    </h4>
+                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                      Get enterprise features, custom SLAs, dedicated support, and white-label options.
+                    </p>
+                    <a 
+                      href="mailto:enterprise@trdrhub.com?subject=Bank%20%2F%20Financial%20Institution%20Inquiry"
+                      className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                    >
+                      Contact our enterprise team
+                      <ArrowRight className="h-4 w-4" />
+                    </a>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
