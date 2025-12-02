@@ -553,18 +553,20 @@ async def accept_invitation(
 
 @router.post("/admin/seed-existing-users")
 async def seed_existing_users(
+    secret: str = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """
     One-time admin endpoint to create company_members records for existing users.
     Makes each user the OWNER of their associated company.
     
-    Requires: System admin role
+    Requires: Secret key (from environment)
     """
-    # Check if user is system admin
-    if current_user.role not in ["system_admin", "admin"]:
-        raise HTTPException(status_code=403, detail="Only system admins can run this")
+    import os
+    expected_secret = os.getenv("ADMIN_SEED_SECRET", "trdr-seed-2024")
+    
+    if secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Invalid secret key")
     
     # Get all users with company_id who don't have a member record
     users_without_membership = db.query(User).filter(
