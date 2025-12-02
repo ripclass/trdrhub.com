@@ -32,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/use-currency";
+import { PRICING_TIERS, getPriceDisplay, getPrice, type CurrencyCode } from "@/lib/pricing";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -135,6 +137,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
 export default function HubBilling() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currency, currencySymbol, formatPrice: formatLocalPrice } = useCurrency();
 
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -143,6 +146,7 @@ export default function HubBilling() {
   const [limits, setLimits] = useState<UsageData | null>(null);
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [selectedTier, setSelectedTier] = useState<typeof PRICING_TIERS[0] | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
   useEffect(() => {
@@ -199,6 +203,9 @@ export default function HubBilling() {
 
   const handleUpgrade = (plan: Plan) => {
     setSelectedPlan(plan);
+    // Find matching tier from our pricing
+    const tier = PRICING_TIERS.find(t => t.id === plan.slug);
+    setSelectedTier(tier || null);
     setUpgradeDialogOpen(true);
   };
 
@@ -228,10 +235,15 @@ export default function HubBilling() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
+    // Use localized currency display
+    return formatLocalPrice(amount);
+  };
+  
+  // Get localized tier price
+  const getTierPrice = (tierId: string, period: "monthly" | "yearly" = "monthly") => {
+    const tier = PRICING_TIERS.find(t => t.id === tierId);
+    if (!tier) return formatLocalPrice(0);
+    return getPriceDisplay(tier, currency as CurrencyCode, period);
   };
 
   const currentPlanSlug = subscription?.plan?.slug || "payg";
@@ -502,22 +514,21 @@ export default function HubBilling() {
               </span>
             </div>
 
-            {/* Plans Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {plans.map((plan) => {
-                const isCurrentPlan = plan.slug === currentPlanSlug;
-                const features = PLAN_FEATURES[plan.slug] || [];
-                const price =
-                  billingPeriod === "yearly" && plan.price_yearly
-                    ? plan.price_yearly / 12
-                    : plan.price_monthly;
+            {/* Plans Grid - Using Localized Pricing */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {PRICING_TIERS.map((tier) => {
+                const isCurrentPlan = tier.id === currentPlanSlug || (tier.id === "free" && currentPlanSlug === "payg");
+                const localPrice = getPrice(tier, currency as CurrencyCode, billingPeriod);
+                const yearlyTotal = getPrice(tier, currency as CurrencyCode, "yearly") * 12;
 
                 return (
                   <Card
-                    key={plan.slug}
+                    key={tier.id}
                     className={`relative overflow-hidden transition-all ${
                       isCurrentPlan
                         ? "bg-gradient-to-br from-blue-500/10 to-emerald-500/10 border-emerald-500/30"
+                        : tier.popular
+                        ? "bg-gradient-to-br from-blue-500/5 to-purple-500/5 border-blue-500/30"
                         : "bg-slate-900/50 border-white/5 hover:border-white/20"
                     }`}
                   >
@@ -528,7 +539,7 @@ export default function HubBilling() {
                         </Badge>
                       </div>
                     )}
-                    {plan.slug === "pro" && !isCurrentPlan && (
+                    {tier.popular && !isCurrentPlan && (
                       <div className="absolute top-0 right-0">
                         <Badge className="rounded-none rounded-bl-lg bg-gradient-to-r from-blue-500 to-emerald-500 text-white">
                           Popular
@@ -537,25 +548,28 @@ export default function HubBilling() {
                     )}
 
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-lg text-white">{plan.name}</CardTitle>
-                      <div className="flex items-baseline gap-1">
+                      <CardTitle className="text-lg text-white">{tier.name}</CardTitle>
+                      <CardDescription className="text-slate-400 text-xs">
+                        {tier.description}
+                      </CardDescription>
+                      <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-3xl font-bold text-white">
-                          {plan.price_monthly === 0 ? "Free" : formatCurrency(price)}
+                          {localPrice === 0 ? "Free" : getPriceDisplay(tier, currency as CurrencyCode, billingPeriod)}
                         </span>
-                        {plan.price_monthly > 0 && (
+                        {localPrice > 0 && (
                           <span className="text-slate-400 text-sm">/mo</span>
                         )}
                       </div>
-                      {billingPeriod === "yearly" && plan.price_yearly && (
+                      {billingPeriod === "yearly" && localPrice > 0 && (
                         <p className="text-xs text-emerald-400">
-                          {formatCurrency(plan.price_yearly)} billed yearly
+                          {formatLocalPrice(yearlyTotal)} billed yearly
                         </p>
                       )}
                     </CardHeader>
 
                     <CardContent className="pt-0">
                       <ul className="space-y-2">
-                        {features.slice(0, 6).map((feature, i) => (
+                        {tier.features.slice(0, 6).map((feature, i) => (
                           <li key={i} className="flex items-start gap-2 text-sm">
                             <Check className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
                             <span className="text-slate-300">{feature}</span>
@@ -569,7 +583,7 @@ export default function HubBilling() {
                         <Button disabled className="w-full bg-slate-800 text-slate-400">
                           Current Plan
                         </Button>
-                      ) : plan.slug === "enterprise" ? (
+                      ) : tier.id === "enterprise" ? (
                         <Button
                           variant="outline"
                           className="w-full border-white/10 text-white hover:bg-white/5"
@@ -582,14 +596,17 @@ export default function HubBilling() {
                       ) : (
                         <Button
                           className={`w-full ${
-                            plan.slug === "pro"
+                            tier.popular
                               ? "bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600"
                               : "bg-slate-800 hover:bg-slate-700"
                           } text-white`}
-                          onClick={() => handleUpgrade(plan)}
+                          onClick={() => {
+                            const plan = plans.find(p => p.slug === tier.id);
+                            if (plan) handleUpgrade(plan);
+                          }}
                         >
-                          {plans.findIndex((p) => p.slug === plan.slug) >
-                          plans.findIndex((p) => p.slug === currentPlanSlug)
+                          {PRICING_TIERS.findIndex((t) => t.id === tier.id) >
+                          PRICING_TIERS.findIndex((t) => t.id === currentPlanSlug || (t.id === "free" && currentPlanSlug === "payg"))
                             ? "Upgrade"
                             : "Switch"}
                         </Button>
@@ -655,12 +672,16 @@ export default function HubBilling() {
         <DialogContent className="bg-slate-900 border-white/10">
           <DialogHeader>
             <DialogTitle className="text-white">
-              Upgrade to {selectedPlan?.name}
+              Upgrade to {selectedTier?.name || selectedPlan?.name}
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              {billingPeriod === "yearly"
-                ? `You'll be charged ${formatCurrency(selectedPlan?.price_yearly || 0)} annually.`
-                : `You'll be charged ${formatCurrency(selectedPlan?.price_monthly || 0)} per month.`}
+              {selectedTier ? (
+                billingPeriod === "yearly"
+                  ? `You'll be charged ${formatLocalPrice(getPrice(selectedTier, currency as CurrencyCode, "yearly") * 12)} annually.`
+                  : `You'll be charged ${getPriceDisplay(selectedTier, currency as CurrencyCode, "monthly")} per month.`
+              ) : (
+                `You'll be charged ${formatCurrency(selectedPlan?.price_monthly || 0)} per month.`
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -668,7 +689,7 @@ export default function HubBilling() {
             <div className="p-4 rounded-lg bg-slate-800/50 border border-white/5">
               <h4 className="text-sm font-medium text-white mb-2">What you'll get:</h4>
               <ul className="space-y-1">
-                {PLAN_FEATURES[selectedPlan?.slug || ""]?.slice(0, 4).map((feature, i) => (
+                {(selectedTier?.features || PLAN_FEATURES[selectedPlan?.slug || ""])?.slice(0, 4).map((feature, i) => (
                   <li key={i} className="flex items-center gap-2 text-sm text-slate-300">
                     <Check className="w-4 h-4 text-emerald-400" />
                     {feature}
