@@ -26,6 +26,9 @@ interface AuthContextType {
       companyType?: string
       companySize?: string
       businessTypes?: string[]
+      country?: string
+      currency?: string
+      paymentGateway?: string
     }
   ) => Promise<User>
   logout: () => Promise<void>
@@ -421,6 +424,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       companyType?: string
       companySize?: string
       businessTypes?: string[]
+      country?: string
+      currency?: string
+      paymentGateway?: string
     }
   ): Promise<User> => {
     setIsLoading(true)
@@ -473,11 +479,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         registerPayload.company_type = companyInfo.companyType
         registerPayload.company_size = companyInfo.companySize
         registerPayload.business_types = companyInfo.businessTypes
+        registerPayload.country = companyInfo.country
+        registerPayload.currency = companyInfo.currency
+        registerPayload.payment_gateway = companyInfo.paymentGateway
         console.log('📝 Registering with company info:', {
           company_name: companyInfo.companyName,
           company_type: companyInfo.companyType,
           company_size: companyInfo.companySize,
-          business_types: companyInfo.businessTypes
+          business_types: companyInfo.businessTypes,
+          country: companyInfo.country,
+          currency: companyInfo.currency,
+          payment_gateway: companyInfo.paymentGateway,
         })
       }
       

@@ -28,6 +28,8 @@ import {
   DollarSign,
   Ship,
   Shield,
+  Globe,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
@@ -115,6 +117,64 @@ const FEATURES = [
   { icon: Shield, label: "Sanctions Check", desc: "OFAC, EU, UN" },
 ];
 
+// Country options with payment gateway mapping
+interface CountryOption {
+  code: string;
+  name: string;
+  flag: string;
+  currency: string;
+  currencySymbol: string;
+  paymentGateway: "stripe" | "sslcommerz" | "razorpay" | "local";
+}
+
+const COUNTRIES: CountryOption[] = [
+  // South Asia (Local gateways)
+  { code: "BD", name: "Bangladesh", flag: "🇧🇩", currency: "BDT", currencySymbol: "৳", paymentGateway: "sslcommerz" },
+  { code: "IN", name: "India", flag: "🇮🇳", currency: "INR", currencySymbol: "₹", paymentGateway: "razorpay" },
+  { code: "PK", name: "Pakistan", flag: "🇵🇰", currency: "PKR", currencySymbol: "Rs", paymentGateway: "local" },
+  { code: "LK", name: "Sri Lanka", flag: "🇱🇰", currency: "LKR", currencySymbol: "Rs", paymentGateway: "local" },
+  { code: "NP", name: "Nepal", flag: "🇳🇵", currency: "NPR", currencySymbol: "Rs", paymentGateway: "local" },
+  // Middle East
+  { code: "AE", name: "United Arab Emirates", flag: "🇦🇪", currency: "AED", currencySymbol: "د.إ", paymentGateway: "stripe" },
+  { code: "SA", name: "Saudi Arabia", flag: "🇸🇦", currency: "SAR", currencySymbol: "﷼", paymentGateway: "stripe" },
+  // Southeast Asia
+  { code: "SG", name: "Singapore", flag: "🇸🇬", currency: "SGD", currencySymbol: "S$", paymentGateway: "stripe" },
+  { code: "MY", name: "Malaysia", flag: "🇲🇾", currency: "MYR", currencySymbol: "RM", paymentGateway: "stripe" },
+  { code: "ID", name: "Indonesia", flag: "🇮🇩", currency: "IDR", currencySymbol: "Rp", paymentGateway: "local" },
+  { code: "TH", name: "Thailand", flag: "🇹🇭", currency: "THB", currencySymbol: "฿", paymentGateway: "stripe" },
+  { code: "VN", name: "Vietnam", flag: "🇻🇳", currency: "VND", currencySymbol: "₫", paymentGateway: "local" },
+  { code: "PH", name: "Philippines", flag: "🇵🇭", currency: "PHP", currencySymbol: "₱", paymentGateway: "stripe" },
+  // East Asia
+  { code: "CN", name: "China", flag: "🇨🇳", currency: "CNY", currencySymbol: "¥", paymentGateway: "local" },
+  { code: "HK", name: "Hong Kong", flag: "🇭🇰", currency: "HKD", currencySymbol: "HK$", paymentGateway: "stripe" },
+  { code: "JP", name: "Japan", flag: "🇯🇵", currency: "JPY", currencySymbol: "¥", paymentGateway: "stripe" },
+  { code: "KR", name: "South Korea", flag: "🇰🇷", currency: "KRW", currencySymbol: "₩", paymentGateway: "stripe" },
+  { code: "TW", name: "Taiwan", flag: "🇹🇼", currency: "TWD", currencySymbol: "NT$", paymentGateway: "stripe" },
+  // Europe
+  { code: "GB", name: "United Kingdom", flag: "🇬🇧", currency: "GBP", currencySymbol: "£", paymentGateway: "stripe" },
+  { code: "DE", name: "Germany", flag: "🇩🇪", currency: "EUR", currencySymbol: "€", paymentGateway: "stripe" },
+  { code: "FR", name: "France", flag: "🇫🇷", currency: "EUR", currencySymbol: "€", paymentGateway: "stripe" },
+  { code: "NL", name: "Netherlands", flag: "🇳🇱", currency: "EUR", currencySymbol: "€", paymentGateway: "stripe" },
+  { code: "IT", name: "Italy", flag: "🇮🇹", currency: "EUR", currencySymbol: "€", paymentGateway: "stripe" },
+  { code: "ES", name: "Spain", flag: "🇪🇸", currency: "EUR", currencySymbol: "€", paymentGateway: "stripe" },
+  { code: "TR", name: "Turkey", flag: "🇹🇷", currency: "TRY", currencySymbol: "₺", paymentGateway: "stripe" },
+  // Americas
+  { code: "US", name: "United States", flag: "🇺🇸", currency: "USD", currencySymbol: "$", paymentGateway: "stripe" },
+  { code: "CA", name: "Canada", flag: "🇨🇦", currency: "CAD", currencySymbol: "C$", paymentGateway: "stripe" },
+  { code: "MX", name: "Mexico", flag: "🇲🇽", currency: "MXN", currencySymbol: "$", paymentGateway: "stripe" },
+  { code: "BR", name: "Brazil", flag: "🇧🇷", currency: "BRL", currencySymbol: "R$", paymentGateway: "stripe" },
+  // Africa
+  { code: "NG", name: "Nigeria", flag: "🇳🇬", currency: "NGN", currencySymbol: "₦", paymentGateway: "local" },
+  { code: "KE", name: "Kenya", flag: "🇰🇪", currency: "KES", currencySymbol: "KSh", paymentGateway: "local" },
+  { code: "ZA", name: "South Africa", flag: "🇿🇦", currency: "ZAR", currencySymbol: "R", paymentGateway: "stripe" },
+  { code: "EG", name: "Egypt", flag: "🇪🇬", currency: "EGP", currencySymbol: "E£", paymentGateway: "local" },
+  // Oceania
+  { code: "AU", name: "Australia", flag: "🇦🇺", currency: "AUD", currencySymbol: "A$", paymentGateway: "stripe" },
+  { code: "NZ", name: "New Zealand", flag: "🇳🇿", currency: "NZD", currencySymbol: "NZ$", paymentGateway: "stripe" },
+  // Other
+  { code: "OTHER", name: "Other Country", flag: "🌍", currency: "USD", currencySymbol: "$", paymentGateway: "stripe" },
+];
+
 // ─────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────
@@ -126,6 +186,8 @@ export default function Register() {
   // Step 1 state
   const [companyType, setCompanyType] = useState<CompanyType>("");
   const [companySize, setCompanySize] = useState<CompanySize>("");
+  const [country, setCountry] = useState<string>("");
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   
   // Step 2 state
   const [formData, setFormData] = useState({
@@ -208,8 +270,19 @@ export default function Register() {
       });
       return;
     }
+    if (!country) {
+      toast({
+        title: "Select your country",
+        description: "Please tell us where your company is based.",
+        variant: "destructive",
+      });
+      return;
+    }
     setStep(2);
   };
+
+  // Get selected country details
+  const selectedCountry = COUNTRIES.find(c => c.code === country);
 
   const handleBack = () => {
     setStep(1);
@@ -259,6 +332,9 @@ export default function Register() {
           companyType: companyType,
           companySize: normalizedSize,
           businessTypes: businessTypes,
+          country: country,
+          currency: selectedCountry?.currency || "USD",
+          paymentGateway: selectedCountry?.paymentGateway || "stripe",
         }
       );
 
@@ -450,6 +526,74 @@ export default function Register() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Country Selection */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-slate-300">
+                      <Globe className="w-4 h-4 inline mr-2" />
+                      Where is your company based?
+                    </Label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left",
+                          country 
+                            ? "border-purple-500 bg-purple-500/10" 
+                            : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
+                        )}
+                      >
+                        {selectedCountry ? (
+                          <span className="flex items-center gap-2">
+                            <span className="text-xl">{selectedCountry.flag}</span>
+                            <span className="text-white">{selectedCountry.name}</span>
+                            <span className="text-slate-500 text-sm">({selectedCountry.currency})</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Select your country</span>
+                        )}
+                        <ChevronDown className={cn(
+                          "w-4 h-4 text-slate-400 transition-transform",
+                          countryDropdownOpen && "rotate-180"
+                        )} />
+                      </button>
+                      
+                      {countryDropdownOpen && (
+                        <div className="absolute z-50 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+                          {COUNTRIES.map((c) => (
+                            <button
+                              key={c.code}
+                              type="button"
+                              onClick={() => {
+                                setCountry(c.code);
+                                setCountryDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-800 transition-colors",
+                                country === c.code && "bg-purple-500/10"
+                              )}
+                            >
+                              <span className="text-xl">{c.flag}</span>
+                              <span className={cn(
+                                "flex-1",
+                                country === c.code ? "text-white" : "text-slate-300"
+                              )}>{c.name}</span>
+                              <span className="text-slate-500 text-sm">{c.currencySymbol}</span>
+                              {country === c.code && (
+                                <Check className="w-4 h-4 text-purple-400" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {selectedCountry && selectedCountry.paymentGateway !== "stripe" && (
+                      <p className="text-xs text-emerald-400">
+                        ✓ Local payment options available in {selectedCountry.currency}
+                      </p>
+                    )}
                   </div>
 
                   {/* Continue Button */}

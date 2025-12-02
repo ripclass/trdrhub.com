@@ -57,6 +57,10 @@ class UserCreate(UserBase):
     company_type: Optional[str] = Field(None, description="Company type: exporter, importer, both, bank")
     company_size: Optional[str] = Field(None, description="Company size: sme, medium, large")
     business_types: Optional[List[str]] = Field(None, description="Business types array")
+    # Billing/Payment localization
+    country: Optional[str] = Field(None, description="ISO 3166-1 alpha-2 country code (BD, IN, US)")
+    currency: Optional[str] = Field(None, description="ISO 4217 currency code (BDT, INR, USD)")
+    payment_gateway: Optional[str] = Field(None, description="Payment gateway: stripe, sslcommerz, razorpay, local")
     auth_user_id: Optional[UUID] = Field(
         None,
         description="Foreign key to auth.users for Supabase-managed identities",

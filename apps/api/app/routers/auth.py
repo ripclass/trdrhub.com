@@ -57,6 +57,9 @@ async def register_user(
         company = Company(
             name=user_data.company_name,
             contact_email=user_data.email,
+            country=user_data.country,
+            currency=user_data.currency or "USD",
+            payment_gateway=user_data.payment_gateway or "stripe",
         )
         
         # Store company type and size in event_metadata

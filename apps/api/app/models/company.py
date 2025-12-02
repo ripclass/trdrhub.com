@@ -57,7 +57,9 @@ class Company(Base):
     legal_name = Column(String(255), nullable=True)
     registration_number = Column(String(128), nullable=True)
     regulator_id = Column(String(128), nullable=True)
-    country = Column(String(128), nullable=True)
+    country = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2 code (BD, IN, US, etc.)
+    currency = Column(String(3), nullable=True, default="USD")  # ISO 4217 currency code
+    payment_gateway = Column(String(20), nullable=True, default="stripe")  # stripe, sslcommerz, razorpay, local
 
     # Billing configuration
     plan = Column(_enum_column(PlanType, "plan_type"), nullable=False, default=PlanType.FREE)
