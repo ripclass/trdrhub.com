@@ -14,6 +14,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./use-auth";
 
+// API base URL - use env var or fallback to production
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
+
 // Types
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
@@ -122,7 +125,7 @@ export function useUserRole(): UseUserRoleReturn {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/members/me/permissions", {
+      const response = await fetch(`${API_BASE}/members/me/permissions`, {
         headers: {
           "Content-Type": "application/json",
         },
