@@ -107,9 +107,13 @@ export default function Register() {
     try {
       const backendRole = getBackendRole(formData.companyType, companySize);
 
+      // Map company type to valid backend business types
+      // Backend only recognizes: exporter, importer, bank
       const businessTypes =
         formData.companyType === "both"
           ? ["exporter", "importer"]
+          : formData.companyType === "logistics"
+          ? ["exporter"]  // Logistics treated as exporter
           : formData.companyType
           ? [formData.companyType]
           : [];
