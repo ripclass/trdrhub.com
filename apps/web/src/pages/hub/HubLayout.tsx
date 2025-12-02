@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useUserRole } from "@/hooks/use-user-role";
 
 interface NavItem {
   id: string;
@@ -47,18 +48,16 @@ interface NavItem {
   badgeVariant?: "default" | "success" | "warning" | "destructive";
   external?: boolean;
   disabled?: boolean;
-}
-
-interface NavSection {
-  title?: string;
-  items: NavItem[];
+  requiresAdmin?: boolean;     // Only show for owner/admin
+  requiresOwner?: boolean;     // Only show for owner
+  toolId?: string;             // Only show if user has access to this tool
 }
 
 const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { id: "home", label: "Home", icon: Home, href: "/hub" },
-      { id: "usage", label: "Usage", icon: BarChart3, href: "/hub/usage" },
+      { id: "usage", label: "Usage", icon: BarChart3, href: "/hub/usage", requiresAdmin: true },
     ],
   },
   {
@@ -71,6 +70,7 @@ const NAV_SECTIONS: NavSection[] = [
         href: "/lcopilot/dashboard",
         badge: "Active",
         badgeVariant: "success",
+        toolId: "lcopilot",
       },
       { 
         id: "price-verify", 
@@ -79,6 +79,7 @@ const NAV_SECTIONS: NavSection[] = [
         href: "/price-verify/dashboard",
         badge: "Active",
         badgeVariant: "success",
+        toolId: "price_verify",
       },
       { 
         id: "hs-code", 
@@ -88,6 +89,7 @@ const NAV_SECTIONS: NavSection[] = [
         badge: "Soon",
         badgeVariant: "default",
         disabled: true,
+        toolId: "hscode",
       },
       { 
         id: "sanctions", 
@@ -97,6 +99,7 @@ const NAV_SECTIONS: NavSection[] = [
         badge: "Soon",
         badgeVariant: "default",
         disabled: true,
+        toolId: "sanctions",
       },
       { 
         id: "tracking", 
@@ -106,14 +109,15 @@ const NAV_SECTIONS: NavSection[] = [
         badge: "Soon",
         badgeVariant: "default",
         disabled: true,
+        toolId: "container_track",
       },
     ],
   },
   {
     title: "Account",
     items: [
-      { id: "billing", label: "Billing", icon: CreditCard, href: "/hub/billing" },
-      { id: "team", label: "Team", icon: Users, href: "/hub/team" },
+      { id: "billing", label: "Billing", icon: CreditCard, href: "/hub/billing", requiresAdmin: true },
+      { id: "team", label: "Team", icon: Users, href: "/hub/team", requiresAdmin: true },
       { id: "settings", label: "Settings", icon: Settings, href: "/hub/settings" },
     ],
   },
@@ -123,6 +127,15 @@ export default function HubLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, isLoading } = useAuth();
+  const { 
+    role,
+    isOwner, 
+    isAdmin, 
+    canAccessTool, 
+    canManageTeam,
+    canViewBilling,
+    isLoading: roleLoading 
+  } = useUserRole();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [planName, setPlanName] = useState("Pay-as-you-go");
@@ -133,6 +146,23 @@ export default function HubLayout() {
       navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
     }
   }, [user, isLoading, navigate, location.pathname]);
+
+  // Filter navigation items based on user role
+  const shouldShowItem = (item: NavItem): boolean => {
+    // Check admin requirement
+    if (item.requiresAdmin && !isAdmin) return false;
+    // Check owner requirement
+    if (item.requiresOwner && !isOwner) return false;
+    // Check tool access
+    if (item.toolId && !isAdmin && !canAccessTool(item.toolId)) return false;
+    return true;
+  };
+
+  // Filter sections
+  const filteredSections = NAV_SECTIONS.map(section => ({
+    ...section,
+    items: section.items.filter(shouldShowItem),
+  })).filter(section => section.items.length > 0);
 
   const isActive = (href: string) => {
     if (href === "/hub") {
@@ -149,8 +179,8 @@ export default function HubLayout() {
     navigate("/login");
   };
 
-  // Show nothing while loading auth
-  if (isLoading) {
+  // Show nothing while loading auth or role
+  if (isLoading || roleLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -160,6 +190,16 @@ export default function HubLayout() {
       </div>
     );
   }
+
+  // Get role display name
+  const getRoleBadge = () => {
+    if (isOwner) return { label: "Owner", color: "bg-purple-500" };
+    if (isAdmin) return { label: "Admin", color: "bg-blue-500" };
+    if (role === "member") return { label: "Member", color: "bg-green-500" };
+    if (role === "viewer") return { label: "Viewer", color: "bg-slate-500" };
+    return null;
+  };
+  const roleBadge = getRoleBadge();
 
   return (
     <TooltipProvider>
@@ -226,7 +266,7 @@ export default function HubLayout() {
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto py-4 px-3">
-              {NAV_SECTIONS.map((section, sectionIdx) => (
+              {filteredSections.map((section, sectionIdx) => (
                 <div key={sectionIdx} className={cn(sectionIdx > 0 && "mt-6")}>
                   {section.title && !collapsed && (
                     <h3 className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -339,7 +379,17 @@ export default function HubLayout() {
                 </Avatar>
                 {!collapsed && (
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{userName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-white truncate">{userName}</p>
+                      {roleBadge && (
+                        <span className={cn(
+                          "px-1.5 py-0.5 text-[10px] font-medium rounded text-white",
+                          roleBadge.color
+                        )}>
+                          {roleBadge.label}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-400 truncate">{planName}</p>
                   </div>
                 )}

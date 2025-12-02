@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/use-user-role";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -133,12 +134,19 @@ interface RecentActivity {
 export default function HubHome() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { role, isOwner, isAdmin, canAccessTool, canViewBilling, isLoading: roleLoading } = useUserRole();
   
   const [loading, setLoading] = useState(true);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [userName, setUserName] = useState("User");
+
+  // Filter tools based on user's access
+  const accessibleTools = TOOLS.filter(tool => {
+    if (isOwner || isAdmin) return true; // Owner/Admin can see all
+    return canAccessTool(tool.id);
+  });
 
   useEffect(() => {
     fetchDashboardData();
@@ -293,7 +301,7 @@ export default function HubHome() {
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-2">
-              {TOOLS.filter(t => !t.comingSoon).map((tool) => {
+              {accessibleTools.filter(t => !t.comingSoon).map((tool) => {
                 const toolUsage = getToolUsage(tool.operation);
                 return (
                   <div key={tool.id} className="text-center">
@@ -322,7 +330,7 @@ export default function HubHome() {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {TOOLS.map((tool) => {
+          {accessibleTools.map((tool) => {
             const toolUsage = getToolUsage(tool.operation);
             const Icon = tool.icon;
             const isLocked = tool.comingSoon;

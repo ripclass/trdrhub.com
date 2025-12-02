@@ -28,6 +28,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useUserRole } from "@/hooks/use-user-role";
 import {
   Sidebar,
   SidebarContent,
@@ -156,6 +157,7 @@ export default function PriceVerifyDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin, canAccessAdminPanels } = useUserRole();
   const [notifications] = useState(3);
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -164,9 +166,12 @@ export default function PriceVerifyDashboard() {
   const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
   const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
 
+  // Filter admin items based on role
+  const adminItems = (isAdmin || canAccessAdminPanels) ? navItems.admin : [];
+
   // Get current page title for breadcrumb
   const getCurrentPageTitle = () => {
-    const allItems = [...navItems.main, ...navItems.data, ...navItems.reports, ...navItems.support, ...navItems.admin];
+    const allItems = [...navItems.main, ...navItems.data, ...navItems.reports, ...navItems.support, ...adminItems];
     const currentItem = allItems.find(item => item.url === location.pathname);
     return currentItem?.title || "Dashboard";
   };
@@ -325,12 +330,13 @@ export default function PriceVerifyDashboard() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {/* Admin Navigation */}
+          {/* Admin Navigation - Only show for admins */}
+          {adminItems.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Admin</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {navItems.admin.map((item) => (
+                {adminItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       asChild 
@@ -347,6 +353,7 @@ export default function PriceVerifyDashboard() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          )}
         </SidebarContent>
 
         <SidebarFooter className="border-t border-sidebar-border">

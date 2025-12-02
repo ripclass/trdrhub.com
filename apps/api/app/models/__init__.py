@@ -69,6 +69,17 @@ SubscriptionStatus = _legacy.SubscriptionStatus  # type: ignore[attr-defined]
 ToolOperation = _legacy.ToolOperation  # type: ignore[attr-defined]
 Tool = _legacy.Tool  # type: ignore[attr-defined]
 
+# RBAC models
+from .rbac import (
+    CompanyMember,
+    CompanyInvitation,
+    MemberRole,
+    MemberStatus,
+    InvitationStatus,
+    DEFAULT_TOOL_ACCESS,
+    get_role_permissions,
+)
+
 __all__ = [
     "User",
     "UserRole",
@@ -104,4 +115,12 @@ __all__ = [
     "SubscriptionStatus",
     "ToolOperation",
     "Tool",
+    # RBAC models
+    "CompanyMember",
+    "CompanyInvitation",
+    "MemberRole",
+    "MemberStatus",
+    "InvitationStatus",
+    "DEFAULT_TOOL_ACCESS",
+    "get_role_permissions",
 ]

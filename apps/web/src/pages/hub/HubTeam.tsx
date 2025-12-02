@@ -48,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/use-user-role";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -87,40 +88,76 @@ const ROLE_COLORS: Record<string, string> = {
 export default function HubTeam() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isOwner, isAdmin, canManageTeam, isLoading: roleLoading } = useUserRole();
 
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [maxUsers, setMaxUsers] = useState(1);
+  const [maxUsers, setMaxUsers] = useState(5);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("member");
   const [inviting, setInviting] = useState(false);
 
   useEffect(() => {
-    fetchTeamData();
-  }, []);
+    if (!roleLoading) {
+      fetchTeamData();
+    }
+  }, [roleLoading]);
 
   const fetchTeamData = async () => {
     setLoading(true);
     try {
-      // For demo, show mock data
-      // In production, this would fetch from /api/team
-      setMembers([
-        {
-          id: "1",
-          email: "owner@company.com",
-          name: "You",
-          role: "owner",
-          status: "active",
-          last_active: new Date().toISOString(),
-        },
-      ]);
-      setInvitations([]);
-      setMaxUsers(5); // From subscription plan
+      // Fetch members
+      const membersRes = await fetch(`${API_BASE}/members/`, {
+        credentials: "include",
+      });
+      if (membersRes.ok) {
+        const membersData = await membersRes.json();
+        setMembers(membersData.map((m: any) => ({
+          id: m.id,
+          email: m.email,
+          name: m.full_name || m.email.split("@")[0],
+          role: m.role,
+          status: m.status === "active" ? "active" : "invited",
+          last_active: m.joined_at,
+        })));
+      }
+
+      // Fetch invitations if admin
+      if (canManageTeam) {
+        const invitesRes = await fetch(`${API_BASE}/members/invitations`, {
+          credentials: "include",
+        });
+        if (invitesRes.ok) {
+          const invitesData = await invitesRes.json();
+          setInvitations(invitesData.map((inv: any) => ({
+            id: inv.id,
+            email: inv.email,
+            role: inv.role,
+            status: inv.status === "pending" ? "pending" : "expired",
+            created_at: inv.created_at,
+            expires_at: inv.expires_at,
+          })));
+        }
+      }
+
+      // Get max users from subscription
+      const subRes = await fetch(`${API_BASE}/usage/subscription`, {
+        credentials: "include",
+      });
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        setMaxUsers(subData.limits?.max_users || 5);
+      }
 
     } catch (error) {
       console.error("Failed to fetch team data:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load team data",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -131,7 +168,24 @@ export default function HubTeam() {
 
     setInviting(true);
     try {
-      // In production, POST to /api/team/invite
+      const response = await fetch(`${API_BASE}/members/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          tool_access: [], // Use default for role
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to send invitation");
+      }
+
+      const newInvitation = await response.json();
+      
       toast({
         title: "Invitation Sent",
         description: `Invitation sent to ${inviteEmail}`,
@@ -140,12 +194,12 @@ export default function HubTeam() {
       setInvitations([
         ...invitations,
         {
-          id: Date.now().toString(),
-          email: inviteEmail,
-          role: inviteRole,
+          id: newInvitation.id,
+          email: newInvitation.email,
+          role: newInvitation.role,
           status: "pending",
-          created_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          created_at: newInvitation.created_at,
+          expires_at: newInvitation.expires_at,
         },
       ]);
 
@@ -154,7 +208,7 @@ export default function HubTeam() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to send invitation",
+        description: error instanceof Error ? error.message : "Failed to send invitation",
         variant: "destructive",
       });
     } finally {
@@ -162,11 +216,63 @@ export default function HubTeam() {
     }
   };
 
+  const handleCancelInvite = async (invitationId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/members/invitations/${invitationId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to cancel invitation");
+      }
+
+      setInvitations(invitations.filter(inv => inv.id !== invitationId));
+      toast({
+        title: "Invitation Cancelled",
+        description: "The invitation has been cancelled",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to cancel invitation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/members/${memberId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to remove member");
+      }
+
+      setMembers(members.filter(m => m.id !== memberId));
+      toast({
+        title: "Member Removed",
+        description: "The member has been removed from the team",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to remove member",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleResendInvite = async (invitation: Invitation) => {
-    toast({
-      title: "Invitation Resent",
-      description: `New invitation sent to ${invitation.email}`,
-    });
+    // Cancel old invitation and create new one
+    await handleCancelInvite(invitation.id);
+    setInviteEmail(invitation.email);
+    setInviteRole(invitation.role);
+    setInviteDialogOpen(true);
   };
 
   const handleCancelInvite = async (invitation: Invitation) => {

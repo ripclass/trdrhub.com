@@ -167,6 +167,7 @@ class User(Base):
     # Relationships
     validation_sessions = relationship("ValidationSession", back_populates="user")
     company = relationship("Company", back_populates="users")
+    company_membership = relationship("CompanyMember", back_populates="user", uselist=False, foreign_keys="CompanyMember.user_id")
 
     def is_system_admin(self) -> bool:
         """Check if the user is a system administrator."""
