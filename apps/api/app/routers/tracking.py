@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.dependencies import get_current_user
+from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
 import logging
 
