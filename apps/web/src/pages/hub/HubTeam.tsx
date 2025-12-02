@@ -275,31 +275,6 @@ export default function HubTeam() {
     setInviteDialogOpen(true);
   };
 
-  const handleCancelInvite = async (invitation: Invitation) => {
-    setInvitations(invitations.filter((i) => i.id !== invitation.id));
-    toast({
-      title: "Invitation Cancelled",
-      description: `Invitation to ${invitation.email} has been cancelled`,
-    });
-  };
-
-  const handleRemoveMember = async (member: TeamMember) => {
-    if (member.role === "owner") {
-      toast({
-        title: "Cannot remove owner",
-        description: "Transfer ownership first before leaving the team",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setMembers(members.filter((m) => m.id !== member.id));
-    toast({
-      title: "Member Removed",
-      description: `${member.name || member.email} has been removed from the team`,
-    });
-  };
-
   const handleChangeRole = async (member: TeamMember, newRole: string) => {
     setMembers(
       members.map((m) =>
@@ -450,7 +425,7 @@ export default function HubTeam() {
                           <DropdownMenuSeparator className="bg-white/10" />
                           <DropdownMenuItem
                             className="text-red-400"
-                            onClick={() => handleRemoveMember(member)}
+                            onClick={() => handleRemoveMember(member.id)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
                             Remove
@@ -512,7 +487,7 @@ export default function HubTeam() {
                         variant="ghost"
                         size="sm"
                         className="text-red-400 hover:text-red-300"
-                        onClick={() => handleCancelInvite(invitation)}
+                        onClick={() => handleCancelInvite(invitation.id)}
                       >
                         <XCircle className="w-4 h-4 mr-1" />
                         Cancel
