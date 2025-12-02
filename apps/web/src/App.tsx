@@ -85,6 +85,7 @@ import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
+import { TrackingDashboard, ContainerTrackPage, VesselTrackPage } from './pages/tools/tracking'
 
 function App() {
   return (
@@ -107,6 +108,9 @@ function App() {
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
+        <Route path="/tracking/dashboard" element={<TrackingDashboard />} />
+        <Route path="/tracking/container/:containerId" element={<ContainerTrackPage />} />
+        <Route path="/tracking/vessel/:vesselId" element={<VesselTrackPage />} />
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
         <Route path="/price-verify" element={<PriceVerifyLanding />} />
         <Route path="/price-verify/tool" element={<PriceVerify />} />

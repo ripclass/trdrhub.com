@@ -121,9 +121,9 @@ const ContainerTrackerLanding = () => {
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-6">
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span className="text-amber-400 text-sm font-medium">Coming Q2 2025</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 text-sm font-medium">Now Available</span>
               </div>
               
               <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
@@ -165,8 +165,9 @@ const ContainerTrackerLanding = () => {
                     className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                   />
                   <Button className="bg-blue-500 hover:bg-blue-600 px-6" asChild>
-                    <Link to="/waitlist?tool=tracking">
-                      <Ship className="w-5 h-5" />
+                    <Link to="/tracking/dashboard">
+                      <Ship className="w-5 h-5 mr-2" />
+                      Track
                     </Link>
                   </Button>
                 </div>
@@ -349,7 +350,7 @@ const ContainerTrackerLanding = () => {
                     "w-full",
                     plan.popular ? "bg-blue-500 hover:bg-blue-600" : "bg-slate-700 hover:bg-slate-600"
                   )} asChild>
-                    <Link to="/waitlist?tool=tracking">Join Waitlist</Link>
+                    <Link to="/tracking/dashboard">{plan.tier === "Free" ? "Get Started" : "Start Free Trial"}</Link>
                   </Button>
                 </div>
               ))}
@@ -401,8 +402,8 @@ const ContainerTrackerLanding = () => {
                 Join the waitlist for early access.
               </p>
               <Button size="lg" className="bg-blue-500 hover:bg-blue-600 text-white font-semibold" asChild>
-                <Link to="/waitlist?tool=tracking">
-                  Join Waitlist <ArrowRight className="w-5 h-5 ml-2" />
+                <Link to="/tracking/dashboard">
+                  Start Tracking <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
               </Button>
             </div>
