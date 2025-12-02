@@ -68,7 +68,7 @@ const NAV_SECTIONS: NavSection[] = [
         id: "lcopilot", 
         label: "LCopilot", 
         icon: FileCheck, 
-        href: "/exporter-dashboard",
+        href: "/lcopilot/dashboard",
         badge: "Active",
         badgeVariant: "success",
       },

@@ -43,6 +43,7 @@ import InsuranceQuoteLanding from './pages/tools/InsuranceQuoteLanding'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
+import LcopilotRouter from './pages/LcopilotRouter'
 import Dashboard from './pages/Dashboard'
 import UploadLC from './pages/UploadLC'
 import DraftLCCorrections from './pages/DraftLCCorrections'
@@ -150,7 +151,7 @@ function App() {
         <Route path="/lcopilot/review/:sessionId" element={<ReviewPage />} />
         <Route path="/lcopilot/report/:sessionId" element={<ReportPage />} />
         <Route path="/lcopilot/demo" element={<DiscrepancyListDemo />} />
-        <Route path="/lcopilot/dashboard" element={<Dashboard />} />
+        <Route path="/lcopilot/dashboard" element={<LcopilotRouter />} />
         <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
         <Route path="/lcopilot/results" element={<ExporterResults />} />
         <Route path="/lcopilot/results/:jobId" element={<ExporterResults />} />
