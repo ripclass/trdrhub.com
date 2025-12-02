@@ -11,7 +11,7 @@
  * {canAccessTool("price_verify") && <ToolCard />}
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from "react";
 import { useAuth } from "./use-auth";
 
 // Types
@@ -226,7 +226,6 @@ export function useUserRole(): UseUserRoleReturn {
 }
 
 // Context for caching role data across components
-import { createContext, useContext, ReactNode } from "react";
 
 interface UserRoleContextValue extends UseUserRoleReturn {}
 
