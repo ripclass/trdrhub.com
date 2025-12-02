@@ -83,7 +83,7 @@ import { BankAuthProvider } from './lib/bank/auth'
 import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
-import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings } from './pages/hub'
+import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 
 function App() {
   return (
@@ -140,6 +140,7 @@ function App() {
         <Route path="/hub" element={<HubLayout />}>
           <Route index element={<HubHome />} />
           <Route path="home" element={<HubHome />} />
+          <Route path="usage" element={<HubUsage />} />
           <Route path="billing" element={<HubBilling />} />
           <Route path="team" element={<HubTeam />} />
           <Route path="settings" element={<HubSettings />} />
