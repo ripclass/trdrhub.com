@@ -11,7 +11,7 @@
  * {canAccessTool("price_verify") && <ToolCard />}
  */
 
-import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./use-auth";
 
 // Types
@@ -225,27 +225,4 @@ export function useUserRole(): UseUserRoleReturn {
   };
 }
 
-// Context for caching role data across components
-
-interface UserRoleContextValue extends UseUserRoleReturn {}
-
-const UserRoleContext = createContext<UserRoleContextValue | null>(null);
-
-export function UserRoleProvider({ children }: { children: ReactNode }) {
-  const roleData = useUserRole();
-  
-  return (
-    <UserRoleContext.Provider value={roleData}>
-      {children}
-    </UserRoleContext.Provider>
-  );
-}
-
-export function useUserRoleContext(): UserRoleContextValue {
-  const context = useContext(UserRoleContext);
-  if (!context) {
-    throw new Error("useUserRoleContext must be used within a UserRoleProvider");
-  }
-  return context;
-}
 
