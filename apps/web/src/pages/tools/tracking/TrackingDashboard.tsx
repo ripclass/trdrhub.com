@@ -36,6 +36,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/ui/use-toast";
+import { Loader2 } from "lucide-react";
+
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
 // Types
 interface TrackedShipment {
@@ -209,25 +213,153 @@ const getAlertIcon = (type: TrackingAlert["type"], severity: TrackingAlert["seve
 
 export default function TrackingDashboard() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState<"container" | "vessel" | "bl">("container");
   const [shipments, setShipments] = useState<TrackedShipment[]>(MOCK_SHIPMENTS);
   const [alerts, setAlerts] = useState<TrackingAlert[]>(MOCK_ALERTS);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [portfolioStats, setPortfolioStats] = useState({
+    active: 0,
+    delivered_30d: 0,
+    delayed: 0,
+    on_time_rate: 92,
+  });
+
+  // Fetch portfolio on mount
+  useEffect(() => {
+    const fetchPortfolio = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/tracking/portfolio`, {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          credentials: "include",
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Transform API response to local format
+          if (data.shipments && data.shipments.length > 0) {
+            const transformed = data.shipments.map((s: any) => ({
+              id: s.id,
+              reference: s.reference,
+              type: s.type,
+              carrier: s.carrier || "Unknown",
+              origin: s.origin,
+              destination: s.destination,
+              status: s.status,
+              eta: s.eta,
+              etaConfidence: 90,
+              lastUpdate: "just now",
+              lastLocation: s.current_location || "In Transit",
+              progress: s.progress || 50,
+              alerts: s.alerts || 0,
+            }));
+            setShipments(transformed);
+          }
+          if (data.stats) {
+            setPortfolioStats(data.stats);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch portfolio:", error);
+        // Keep mock data as fallback
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (session?.access_token) {
+      fetchPortfolio();
+    } else {
+      setIsLoading(false);
+    }
+  }, [session?.access_token]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
-    // Navigate to search results
-    navigate(`/tracking/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`);
+    
+    try {
+      // Determine endpoint based on search type
+      let endpoint = "";
+      if (searchType === "container" || searchType === "bl") {
+        endpoint = `/tracking/container/${encodeURIComponent(searchQuery.toUpperCase())}`;
+      } else {
+        endpoint = `/tracking/vessel/${encodeURIComponent(searchQuery)}?search_type=name`;
+      }
+
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Navigate to detail page with data
+        if (searchType === "vessel") {
+          navigate(`/tracking/vessel/${data.imo || searchQuery}`);
+        } else {
+          navigate(`/tracking/container/${data.container_number || searchQuery}`);
+        }
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Tracking Error",
+          description: error.detail || "Container/vessel not found",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Search Failed",
+        description: "Unable to search. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsLoading(true);
+    // Re-fetch portfolio
+    try {
+      const response = await fetch(`${API_BASE}/tracking/portfolio`, {
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.stats) {
+          setPortfolioStats(data.stats);
+        }
+        toast({
+          title: "Refreshed",
+          description: "Tracking data updated",
+        });
+      }
+    } catch (error) {
+      console.error("Refresh failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const unreadAlerts = alerts.filter((a) => !a.read).length;
-  const activeShipments = shipments.filter((s) => s.status !== "delivered").length;
-  const delayedShipments = shipments.filter((s) => s.status === "delayed").length;
+  const activeShipments = portfolioStats.active || shipments.filter((s) => s.status !== "delivered").length;
+  const delayedShipments = portfolioStats.delayed || shipments.filter((s) => s.status === "delayed").length;
+  const deliveredShipments = portfolioStats.delivered_30d || shipments.filter(s => s.status === "delivered").length;
+  const onTimeRate = portfolioStats.on_time_rate || 92;
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -295,8 +427,19 @@ export default function TrackingDashboard() {
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  <Button type="submit" className="bg-blue-500 hover:bg-blue-600 h-12 px-6">
-                    Track
+                  <Button 
+                    type="submit" 
+                    className="bg-blue-500 hover:bg-blue-600 h-12 px-6"
+                    disabled={isSearching}
+                  >
+                    {isSearching ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      "Track"
+                    )}
                   </Button>
                 </div>
               </div>
@@ -338,7 +481,7 @@ export default function TrackingDashboard() {
                   <CheckCircle className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-white">{shipments.filter(s => s.status === "delivered").length}</p>
+                  <p className="text-2xl font-bold text-white">{deliveredShipments}</p>
                   <p className="text-xs text-slate-500">Delivered (30d)</p>
                 </div>
               </div>
@@ -364,7 +507,7 @@ export default function TrackingDashboard() {
                   <TrendingUp className="w-5 h-5 text-purple-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-white">92%</p>
+                  <p className="text-2xl font-bold text-white">{onTimeRate}%</p>
                   <p className="text-xs text-slate-500">On-Time Rate</p>
                 </div>
               </div>
@@ -381,9 +524,15 @@ export default function TrackingDashboard() {
                   <CardTitle className="text-white">Active Shipments</CardTitle>
                   <CardDescription>Track your containers and vessels in real-time</CardDescription>
                 </div>
-                <Button variant="ghost" size="sm" className="text-slate-400">
-                  <RefreshCw className="w-4 h-4 mr-1" />
-                  Refresh
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-slate-400"
+                  onClick={handleRefresh}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1 ${isLoading ? "animate-spin" : ""}`} />
+                  {isLoading ? "Loading..." : "Refresh"}
                 </Button>
               </CardHeader>
               <CardContent className="p-0">

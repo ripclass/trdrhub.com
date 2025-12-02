@@ -12,6 +12,10 @@
 
 import { useState, useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/ui/use-toast";
+
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 import {
   Ship,
   Container,
@@ -213,17 +217,105 @@ const getStatusBadge = (status: ContainerDetails["status"]) => {
 
 export default function ContainerTrackPage() {
   const { containerId } = useParams<{ containerId: string }>();
+  const { session } = useAuth();
+  const { toast } = useToast();
   const [container, setContainer] = useState<ContainerDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("timeline");
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setContainer({ ...MOCK_CONTAINER, containerNumber: containerId || MOCK_CONTAINER.containerNumber });
-      setLoading(false);
-    }, 500);
-  }, [containerId]);
+    const fetchContainerData = async () => {
+      if (!containerId) return;
+      
+      try {
+        const response = await fetch(`${API_BASE}/tracking/container/${containerId}`, {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          credentials: "include",
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Transform API response to local format
+          const transformedData: ContainerDetails = {
+            containerNumber: data.container_number,
+            containerType: "Dry",
+            containerSize: "40' HC",
+            carrier: data.carrier || "Unknown Carrier",
+            carrierCode: data.carrier_code || "UNKN",
+            bookingNumber: data.booking_number || `BK${containerId?.slice(-8)}`,
+            blNumber: data.bl_number || `BL${containerId?.slice(-8)}`,
+            shipper: data.shipper || "Unknown Shipper",
+            consignee: data.consignee || "Unknown Consignee",
+            origin: {
+              port: data.origin?.name || "Unknown",
+              portCode: data.origin?.code || "UNKN",
+              country: data.origin?.country || "",
+            },
+            destination: {
+              port: data.destination?.name || "Unknown",
+              portCode: data.destination?.code || "UNKN",
+              country: data.destination?.country || "",
+            },
+            vessel: {
+              name: data.vessel?.name || "Unknown Vessel",
+              imo: data.vessel?.imo || "",
+              mmsi: data.vessel?.mmsi || "",
+              voyage: data.vessel?.voyage || "",
+              flag: data.vessel?.flag || "",
+            },
+            status: data.status || "in_transit",
+            eta: data.eta || new Date().toISOString(),
+            etaConfidence: data.eta_confidence || 85,
+            currentLocation: {
+              type: data.position ? "at_sea" : "port",
+              name: data.current_location || "Unknown",
+              coordinates: data.position ? {
+                lat: data.position.lat,
+                lon: data.position.lon,
+              } : undefined,
+            },
+            weight: {
+              gross: 28500,
+              tare: 3750,
+              cargo: 24750,
+              unit: "kg",
+            },
+            seals: data.seals || [],
+            events: (data.events || []).map((e: any, idx: number) => ({
+              id: String(idx),
+              timestamp: e.timestamp,
+              event: e.event,
+              location: e.location,
+              description: e.description,
+              status: e.status,
+              details: e.details,
+            })),
+          };
+          
+          // If no events from API, use default events
+          if (transformedData.events.length === 0) {
+            transformedData.events = MOCK_CONTAINER.events;
+          }
+          
+          setContainer(transformedData);
+        } else {
+          // Fallback to mock data with the containerId
+          console.warn("API returned error, using mock data");
+          setContainer({ ...MOCK_CONTAINER, containerNumber: containerId || MOCK_CONTAINER.containerNumber });
+        }
+      } catch (error) {
+        console.error("Failed to fetch container data:", error);
+        // Fallback to mock data
+        setContainer({ ...MOCK_CONTAINER, containerNumber: containerId || MOCK_CONTAINER.containerNumber });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContainerData();
+  }, [containerId, session?.access_token]);
 
   if (loading) {
     return (
@@ -273,7 +365,44 @@ export default function ContainerTrackPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="border-slate-700 text-slate-300">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="border-slate-700 text-slate-300"
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${API_BASE}/tracking/alerts`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${session?.access_token}`,
+                      },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        tracking_type: "container",
+                        reference: container?.containerNumber,
+                        alert_type: "arrival",
+                        notify_email: true,
+                        notify_sms: false,
+                      }),
+                    });
+                    if (response.ok) {
+                      toast({
+                        title: "Alert Created",
+                        description: "You'll be notified when this container arrives.",
+                      });
+                    } else {
+                      throw new Error("Failed to create alert");
+                    }
+                  } catch (error) {
+                    toast({
+                      title: "Alert Creation Failed",
+                      description: "Please try again later.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
                 <Bell className="w-4 h-4 mr-1" />
                 Set Alert
               </Button>

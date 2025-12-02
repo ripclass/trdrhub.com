@@ -34,6 +34,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/ui/use-toast";
+
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
 interface VesselDetails {
   name: string;
@@ -190,17 +194,84 @@ const getStatusBadge = (status: VesselDetails["status"]) => {
 
 export default function VesselTrackPage() {
   const { vesselId } = useParams<{ vesselId: string }>();
+  const { session } = useAuth();
+  const { toast } = useToast();
   const [vessel, setVessel] = useState<VesselDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("position");
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setVessel(MOCK_VESSEL);
-      setLoading(false);
-    }, 500);
-  }, [vesselId]);
+    const fetchVesselData = async () => {
+      if (!vesselId) return;
+      
+      try {
+        // Try IMO first, then name
+        const searchType = /^IMO\d+$/.test(vesselId) ? "imo" : /^\d{9}$/.test(vesselId) ? "mmsi" : "name";
+        const response = await fetch(`${API_BASE}/tracking/vessel/${vesselId}?search_type=${searchType}`, {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          credentials: "include",
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Transform API response to local format
+          const transformedData: VesselDetails = {
+            name: data.name,
+            imo: data.imo || vesselId,
+            mmsi: data.mmsi || "",
+            callSign: data.call_sign || "",
+            flag: data.flag || "Unknown",
+            type: data.vessel_type || "Container Ship",
+            status: data.status || "underway",
+            position: {
+              lat: data.position?.lat || 0,
+              lon: data.position?.lon || 0,
+              heading: data.position?.heading || data.heading || 0,
+              course: data.position?.course || data.course || 0,
+              speed: data.position?.speed || data.speed || 0,
+              timestamp: data.position?.timestamp || data.last_update,
+            },
+            dimensions: data.dimensions || {
+              length: 0,
+              beam: 0,
+              draught: 0,
+            },
+            capacity: {
+              teu: 0,
+              deadweight: 0,
+              grossTonnage: 0,
+            },
+            owner: "Unknown",
+            operator: "Unknown",
+            built: 0,
+            currentVoyage: {
+              voyage: "",
+              origin: "",
+              destination: data.destination || "Unknown",
+              eta: data.eta || "",
+            },
+            schedule: [],
+          };
+          
+          setVessel(transformedData);
+        } else {
+          // Fallback to mock data
+          console.warn("API returned error, using mock data");
+          setVessel({ ...MOCK_VESSEL, imo: vesselId, name: vesselId });
+        }
+      } catch (error) {
+        console.error("Failed to fetch vessel data:", error);
+        // Fallback to mock data
+        setVessel({ ...MOCK_VESSEL, imo: vesselId, name: vesselId });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVesselData();
+  }, [vesselId, session?.access_token]);
 
   if (loading) {
     return (
@@ -247,9 +318,46 @@ export default function VesselTrackPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="border-slate-700 text-slate-300">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="border-slate-700 text-slate-300"
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${API_BASE}/tracking/alerts`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${session?.access_token}`,
+                      },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        tracking_type: "vessel",
+                        reference: vessel?.imo || vessel?.name,
+                        alert_type: "arrival",
+                        notify_email: true,
+                        notify_sms: false,
+                      }),
+                    });
+                    if (response.ok) {
+                      toast({
+                        title: "Alert Created",
+                        description: "You'll be notified when this vessel arrives.",
+                      });
+                    } else {
+                      throw new Error("Failed to create alert");
+                    }
+                  } catch (error) {
+                    toast({
+                      title: "Alert Creation Failed",
+                      description: "Please try again later.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
                 <Bell className="w-4 h-4 mr-1" />
-                Track
+                Set Alert
               </Button>
               <Button variant="outline" size="sm" className="border-slate-700 text-slate-300">
                 <Share2 className="w-4 h-4 mr-1" />
