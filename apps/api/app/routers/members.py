@@ -546,3 +546,77 @@ async def accept_invitation(
         "role": member.role,
     }
 
+
+# ─────────────────────────────────────────────────────────────
+# Admin: Seed Initial Members (One-time setup)
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/admin/seed-existing-users")
+async def seed_existing_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    One-time admin endpoint to create company_members records for existing users.
+    Makes each user the OWNER of their associated company.
+    
+    Requires: System admin role
+    """
+    # Check if user is system admin
+    if current_user.role not in ["system_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="Only system admins can run this")
+    
+    # Get all users with company_id who don't have a member record
+    users_without_membership = db.query(User).filter(
+        User.company_id.isnot(None),
+        User.is_active == True
+    ).all()
+    
+    created = 0
+    skipped = 0
+    
+    for user in users_without_membership:
+        # Check if member record already exists
+        existing = db.query(CompanyMember).filter(
+            CompanyMember.user_id == user.id,
+            CompanyMember.company_id == user.company_id
+        ).first()
+        
+        if existing:
+            skipped += 1
+            continue
+        
+        # Determine role based on user's role field
+        if user.role in ["system_admin", "admin", "tenant_admin"]:
+            member_role = MemberRole.OWNER.value
+        elif user.role in ["bank_admin"]:
+            member_role = MemberRole.ADMIN.value
+        else:
+            # First user in company becomes owner
+            existing_members = db.query(CompanyMember).filter(
+                CompanyMember.company_id == user.company_id,
+                CompanyMember.role == MemberRole.OWNER.value
+            ).first()
+            
+            member_role = MemberRole.MEMBER.value if existing_members else MemberRole.OWNER.value
+        
+        # Create member record
+        member = CompanyMember(
+            company_id=user.company_id,
+            user_id=user.id,
+            role=member_role,
+            tool_access=DEFAULT_TOOL_ACCESS.get(MemberRole(member_role), []),
+            joined_at=user.created_at or datetime.utcnow(),
+            status=MemberStatus.ACTIVE.value,
+        )
+        db.add(member)
+        created += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"Seeded {created} member records, skipped {skipped} existing",
+        "created": created,
+        "skipped": skipped,
+    }
+
