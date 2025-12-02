@@ -1,4 +1,4 @@
-import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Sparkles, UserCog, LogOut, FolderKanban, Plug } from "lucide-react";
+import { Upload, Clock, CheckCircle, Users, Bell, BarChart3, Settings, HelpCircle, Building2, FileCheck, AlertTriangle, Shield, Gauge, Package, LayoutDashboard, CreditCard, Sparkles, UserCog, LogOut, FolderKanban, Plug, ArrowLeft } from "lucide-react";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 import { Link, useLocation } from "react-router-dom";
@@ -156,6 +156,15 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
+        <div className="px-2 pt-2">
+          <Link 
+            to="/hub" 
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Back to Hub
+          </Link>
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>

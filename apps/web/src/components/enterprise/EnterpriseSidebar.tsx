@@ -10,7 +10,9 @@ import {
   ShieldCheck,
   Layers,
   GitBranch,
+  ArrowLeft,
 } from "lucide-react"
+import { Link } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import {
@@ -65,6 +67,15 @@ export function EnterpriseSidebar({ activeSection, onSectionChange, user, ...pro
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
+        <div className="px-2 pt-2">
+          <Link 
+            to="/hub" 
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Back to Hub
+          </Link>
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>

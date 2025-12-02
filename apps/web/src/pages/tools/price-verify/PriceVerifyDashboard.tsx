@@ -25,7 +25,9 @@ import {
   Command,
   Keyboard,
   Shield,
+  ArrowLeft,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Sidebar,
   SidebarContent,
@@ -153,9 +155,14 @@ const navItems = {
 export default function PriceVerifyDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications] = useState(3);
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // Get user display info
+  const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
+  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
 
   // Get current page title for breadcrumb
   const getCurrentPageTitle = () => {
@@ -206,15 +213,24 @@ export default function PriceVerifyDashboard() {
     <SidebarProvider>
       <Sidebar className="border-r border-sidebar-border">
         <SidebarHeader className="border-b border-sidebar-border">
-          <Link to="/price-verify" className="flex items-center gap-3 px-2 py-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500">
-              <DollarSign className="h-6 w-6 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-semibold text-sidebar-foreground">Price Verify</span>
-              <span className="text-xs text-sidebar-foreground/60">by TRDR Hub</span>
-            </div>
-          </Link>
+          <div className="flex flex-col gap-2 px-2 py-2">
+            <Link 
+              to="/hub" 
+              className="flex items-center gap-2 text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back to Hub
+            </Link>
+            <Link to="/price-verify" className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500">
+                <DollarSign className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold text-sidebar-foreground">Price Verify</span>
+                <span className="text-xs text-sidebar-foreground/60">by TRDR Hub</span>
+              </div>
+            </Link>
+          </div>
         </SidebarHeader>
 
         <SidebarContent>
@@ -340,13 +356,13 @@ export default function PriceVerifyDashboard() {
                 <DropdownMenuTrigger asChild>
                   <SidebarMenuButton size="lg">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-green-500 text-white">
-                        PV
+                      <AvatarFallback className="bg-gradient-to-br from-green-500 to-emerald-600 text-white">
+                        {userInitials}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-1 flex-col text-left text-sm leading-tight">
-                      <span className="truncate font-medium">Guest User</span>
-                      <span className="truncate text-xs text-muted-foreground">Free Plan</span>
+                      <span className="truncate font-medium">{userName}</span>
+                      <span className="truncate text-xs text-muted-foreground">{user?.email || "Not signed in"}</span>
                     </div>
                     <ChevronRight className="ml-auto h-4 w-4" />
                   </SidebarMenuButton>
@@ -354,17 +370,24 @@ export default function PriceVerifyDashboard() {
                 <DropdownMenuContent side="right" align="end" className="w-56">
                   <DropdownMenuLabel>My Account</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
+                  <DropdownMenuItem asChild>
+                    <Link to="/hub/settings">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <TrendingUp className="mr-2 h-4 w-4" />
-                    Upgrade to Pro
+                  <DropdownMenuItem asChild>
+                    <Link to="/hub/billing">
+                      <TrendingUp className="mr-2 h-4 w-4" />
+                      Upgrade Plan
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link to="/">Back to TRDR Hub</Link>
+                    <Link to="/hub">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Back to Hub
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
