@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, ArrowRight, Globe } from "lucide-react";
+import { Check, ArrowRight, Globe, ChevronDown } from "lucide-react";
 import { 
   PRICING_TIERS, 
   getPriceDisplay, 
@@ -13,21 +13,59 @@ import {
   type CurrencyCode 
 } from "@/lib/pricing";
 
+// Currency options for manual selection
+const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = [
+  { code: "BDT", flag: "🇧🇩", label: "Bangladesh (৳)" },
+  { code: "INR", flag: "🇮🇳", label: "India (₹)" },
+  { code: "PKR", flag: "🇵🇰", label: "Pakistan (Rs)" },
+  { code: "USD", flag: "🇺🇸", label: "USD ($)" },
+  { code: "EUR", flag: "🇪🇺", label: "Euro (€)" },
+  { code: "GBP", flag: "🇬🇧", label: "UK (£)" },
+  { code: "AED", flag: "🇦🇪", label: "UAE (د.إ)" },
+  { code: "SGD", flag: "🇸🇬", label: "Singapore (S$)" },
+];
+
 export function TRDRPricingSection() {
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [detectedCountry, setDetectedCountry] = useState<string>("");
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
-  // Auto-detect country/currency on mount
+  // Try to auto-detect country/currency on mount
   useEffect(() => {
     async function detectCurrency() {
       try {
+        // Try geo API first
         const res = await fetch("/api/geo");
-        const data = await res.json();
-        if (data.country) {
-          setDetectedCountry(data.country);
-          setCurrency(getCurrencyFromCountry(data.country));
+        if (res.ok) {
+          const data = await res.json();
+          if (data.country && data.detected) {
+            setCurrency(getCurrencyFromCountry(data.country));
+            return;
+          }
         }
+      } catch {
+        // Geo API failed, try timezone detection as fallback
+      }
+      
+      // Fallback: detect from timezone
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz.includes("Dhaka") || tz.includes("Asia/Dhaka")) {
+          setCurrency("BDT");
+        } else if (tz.includes("Kolkata") || tz.includes("Asia/Kolkata") || tz.includes("Mumbai")) {
+          setCurrency("INR");
+        } else if (tz.includes("Karachi") || tz.includes("Asia/Karachi")) {
+          setCurrency("PKR");
+        } else if (tz.includes("Dubai") || tz.includes("Asia/Dubai")) {
+          setCurrency("AED");
+        } else if (tz.includes("Singapore")) {
+          setCurrency("SGD");
+        } else if (tz.includes("London") || tz.includes("Europe/London")) {
+          setCurrency("GBP");
+        } else if (tz.includes("Europe/")) {
+          setCurrency("EUR");
+        }
+        // else stay USD
       } catch {
         // Default to USD
       }
@@ -38,6 +76,7 @@ export function TRDRPricingSection() {
   const displayPlans = PRICING_TIERS.filter(t => t.id !== "free"); // Hide free tier on landing
 
   const currencyInfo = CURRENCIES[currency];
+  const selectedCurrencyOption = CURRENCY_OPTIONS.find(c => c.code === currency) || CURRENCY_OPTIONS[3];
 
   return (
     <section id="pricing" className="py-20">
@@ -55,6 +94,38 @@ export function TRDRPricingSection() {
 
           {/* Currency & Billing Toggle */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+            {/* Currency Selector */}
+            <div className="relative">
+              <button
+                onClick={() => setShowCurrencyPicker(!showCurrencyPicker)}
+                className="flex items-center gap-2 bg-muted/50 hover:bg-muted/70 rounded-full px-4 py-2 text-sm transition-colors"
+              >
+                <span>{selectedCurrencyOption.flag}</span>
+                <span className="text-foreground">{selectedCurrencyOption.label}</span>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showCurrencyPicker ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showCurrencyPicker && (
+                <div className="absolute top-full left-0 mt-2 bg-card border rounded-lg shadow-lg z-50 min-w-[180px]">
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <button
+                      key={option.code}
+                      onClick={() => {
+                        setCurrency(option.code);
+                        setShowCurrencyPicker(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted/50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                        currency === option.code ? "bg-muted/30 text-primary" : "text-foreground"
+                      }`}
+                    >
+                      <span>{option.flag}</span>
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Billing Period Toggle */}
             <div className="flex items-center gap-3 bg-muted/50 rounded-full px-4 py-2">
               <span className={`text-sm ${billingPeriod === "monthly" ? "text-foreground font-medium" : "text-muted-foreground"}`}>
@@ -77,14 +148,6 @@ export function TRDRPricingSection() {
                 <span className="text-xs text-primary font-medium">Save ~15%</span>
               </span>
             </div>
-
-            {/* Currency Indicator */}
-            {detectedCountry && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-full px-3 py-1">
-                <Globe className="w-4 h-4" />
-                <span>Showing prices in {currencyInfo?.name || "USD"}</span>
-              </div>
-            )}
           </div>
         </div>
 
