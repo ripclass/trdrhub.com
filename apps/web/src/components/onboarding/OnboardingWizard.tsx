@@ -374,15 +374,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
                     onChange={(e) => setCompanyForm((prev) => ({ ...prev, regulator_id: e.target.value }))}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="country">Country</Label>
-                  <Input
-                    id="country"
-                    value={companyForm.country ?? ''}
-                    onChange={(e) => setCompanyForm((prev) => ({ ...prev, country: e.target.value }))}
-                    required
-                  />
-                </div>
+                {/* Country is now captured at registration via IP detection */}
               </div>
             )}
           </div>

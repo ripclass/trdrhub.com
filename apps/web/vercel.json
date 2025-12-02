@@ -6,6 +6,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/geo",
+      "destination": "/api/geo"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "https://trdrhub-api.onrender.com/$1"
     },

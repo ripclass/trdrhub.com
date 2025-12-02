@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,6 +206,36 @@ export default function Register() {
   const navigate = useNavigate();
   const { registerWithEmail } = useAuth();
   const { updateProgress } = useOnboarding();
+
+  // ─────────────────────────────────────────────────────────────
+  // Auto-detect country from IP (Vercel Geo Headers)
+  // ─────────────────────────────────────────────────────────────
+  
+  useEffect(() => {
+    // Only auto-detect if country not already set
+    if (country) return;
+    
+    fetch('/api/geo')
+      .then(res => res.json())
+      .then(data => {
+        if (data.country) {
+          // Check if detected country is in our list
+          const detectedCountry = COUNTRIES.find(c => c.code === data.country);
+          if (detectedCountry) {
+            setCountry(data.country);
+            console.log(`🌍 Auto-detected country: ${detectedCountry.name} (${detectedCountry.currency})`);
+          } else {
+            // If country not in list, default to OTHER
+            setCountry('OTHER');
+            console.log(`🌍 Country ${data.country} not in list, using OTHER`);
+          }
+        }
+      })
+      .catch(err => {
+        // Silently fail - user can still select manually
+        console.log('Geo detection unavailable:', err.message);
+      });
+  }, []); // Run once on mount
 
   // ─────────────────────────────────────────────────────────────
   // Role & Business Logic
