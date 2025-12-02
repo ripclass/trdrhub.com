@@ -133,20 +133,31 @@ export function useUserRole(): UseUserRoleReturn {
       });
 
       if (!response.ok) {
-        // User might not be part of a company yet
-        if (response.status === 403) {
-          // No company membership - treat as basic user
+        // User might not be part of a company yet (legacy user or no RBAC record)
+        if (response.status === 403 || response.status === 404) {
+          // Treat legacy users as OWNERS of their company
+          // This ensures they can see all tabs until RBAC is fully set up
           setRoleData({
             user_id: user.id,
             company_id: "",
-            role: "member",
-            tool_access: [],
-            permissions: DEFAULT_PERMISSIONS,
-            is_owner: false,
-            is_admin: false,
-            can_manage_team: false,
-            can_view_billing: false,
-            can_manage_billing: false,
+            role: "owner",
+            tool_access: ALL_TOOLS as unknown as string[],
+            permissions: {
+              ...DEFAULT_PERMISSIONS,
+              manage_team: true,
+              view_billing: true,
+              manage_billing: true,
+              view_usage: true,
+              view_org_usage: true,
+              access_all_tools: true,
+              admin_panels: true,
+              api_access: true,
+            },
+            is_owner: true,
+            is_admin: true,
+            can_manage_team: true,
+            can_view_billing: true,
+            can_manage_billing: true,
           });
           return;
         }
