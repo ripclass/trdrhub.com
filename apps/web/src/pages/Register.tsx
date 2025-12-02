@@ -4,70 +4,210 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, ShieldCheck, Timer, Sparkles, Building, User, Mail, Lock, Eye, EyeOff, Landmark, ArrowRight } from "lucide-react";
+import { 
+  Package, 
+  PackageOpen, 
+  RefreshCw, 
+  Truck, 
+  Building2,
+  User, 
+  Mail, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Landmark, 
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  Gift,
+  Users,
+  Building,
+  Factory,
+  Sparkles,
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import { cn } from "@/lib/utils";
 
-const COMPANY_TYPES = [
-  { value: "exporter", label: "Exporter" },
-  { value: "importer", label: "Importer" },
-  { value: "both", label: "Both Exporter & Importer" },
-  { value: "logistics", label: "Logistics / Freight Forwarder" },
+// ─────────────────────────────────────────────────────────────
+// Types & Constants
+// ─────────────────────────────────────────────────────────────
+
+type CompanyType = "exporter" | "importer" | "both" | "logistics" | "";
+type CompanySize = "small" | "growing" | "established" | "enterprise" | "";
+
+interface CompanyTypeOption {
+  value: CompanyType;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+}
+
+interface CompanySizeOption {
+  value: CompanySize;
+  label: string;
+  employees: string;
+  icon: React.ElementType;
+}
+
+const COMPANY_TYPES: CompanyTypeOption[] = [
+  { 
+    value: "exporter", 
+    label: "Exporter", 
+    description: "We export goods internationally",
+    icon: Package,
+  },
+  { 
+    value: "importer", 
+    label: "Importer", 
+    description: "We import goods into our country",
+    icon: PackageOpen,
+  },
+  { 
+    value: "both", 
+    label: "Both", 
+    description: "We do import and export",
+    icon: RefreshCw,
+  },
+  { 
+    value: "logistics", 
+    label: "Logistics", 
+    description: "Freight forwarding & logistics",
+    icon: Truck,
+  },
 ];
 
-const COMPANY_SIZE_OPTIONS = [
-  { value: "sme", label: "SME (1-20 employees)" },
-  { value: "medium", label: "Medium Enterprise (21-50 employees)" },
-  { value: "large", label: "Large Enterprise (50+ employees)" },
+const COMPANY_SIZES: CompanySizeOption[] = [
+  { 
+    value: "small", 
+    label: "Small", 
+    employees: "1-20 people",
+    icon: User,
+  },
+  { 
+    value: "growing", 
+    label: "Growing", 
+    employees: "21-100 people",
+    icon: Users,
+  },
+  { 
+    value: "established", 
+    label: "Established", 
+    employees: "100-500 people",
+    icon: Building,
+  },
+  { 
+    value: "enterprise", 
+    label: "Enterprise", 
+    employees: "500+ people",
+    icon: Factory,
+  },
 ];
+
+// ─────────────────────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────────────────────
 
 export default function Register() {
+  // Step state
+  const [step, setStep] = useState(1);
+  
+  // Step 1 state
+  const [companyType, setCompanyType] = useState<CompanyType>("");
+  const [companySize, setCompanySize] = useState<CompanySize>("");
+  
+  // Step 2 state
   const [formData, setFormData] = useState({
     companyName: "",
     contactPerson: "",
     email: "",
     password: "",
     confirmPassword: "",
-    companyType: "",
     agreedToTerms: false,
   });
-  const [companySize, setCompanySize] = useState<string>("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
   const { toast } = useToast();
   const navigate = useNavigate();
   const { registerWithEmail } = useAuth();
   const { updateProgress } = useOnboarding();
 
-  const getBackendRole = (companyType: string, size?: string): string => {
-    if (companyType === "both") {
-      if (size === "medium" || size === "large") {
-        return "tenant_admin";
-      }
-      return "exporter";
-    }
+  // ─────────────────────────────────────────────────────────────
+  // Role & Business Logic
+  // ─────────────────────────────────────────────────────────────
 
+  const getBackendRole = (type: CompanyType, size: CompanySize): string => {
+    // Large companies get tenant_admin regardless of type
+    if (size === "established" || size === "enterprise") {
+      return "tenant_admin";
+    }
+    
+    // Small/growing companies get role based on type
     const roleMap: Record<string, string> = {
       exporter: "exporter",
       importer: "importer",
+      both: "exporter",      // SME "both" defaults to exporter
       logistics: "exporter", // Logistics uses exporter flow
     };
 
-    return roleMap[companyType] || "exporter";
+    return roleMap[type] || "exporter";
+  };
+
+  const getBusinessTypes = (type: CompanyType): string[] => {
+    if (type === "both") {
+      return ["exporter", "importer"];
+    }
+    if (type === "logistics") {
+      return ["exporter"]; // Backend recognizes exporter
+    }
+    return type ? [type] : [];
+  };
+
+  const mapSizeToBackend = (size: CompanySize): string => {
+    const sizeMap: Record<CompanySize, string> = {
+      small: "sme",
+      growing: "medium",
+      established: "large",
+      enterprise: "enterprise",
+      "": "sme",
+    };
+    return sizeMap[size];
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // Handlers
+  // ─────────────────────────────────────────────────────────────
+
+  const handleContinue = () => {
+    if (!companyType) {
+      toast({
+        title: "Select your business type",
+        description: "Please tell us what your company does.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!companySize) {
+      toast({
+        title: "Select your team size",
+        description: "Please tell us how big your team is.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setStep(2);
+  };
+
+  const handleBack = () => {
+    setStep(1);
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-
-    if (field === "companyType") {
-      // Reset company size when switching away from "both"
-      setCompanySize(value === "both" ? companySize : "");
-    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -94,34 +234,12 @@ export default function Register() {
       return;
     }
 
-    if (formData.companyType === "both" && !companySize) {
-      toast({
-        title: "Company size required",
-        description: "Please select your company size to continue.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const backendRole = getBackendRole(formData.companyType, companySize);
+      const backendRole = getBackendRole(companyType, companySize);
+      const businessTypes = getBusinessTypes(companyType);
+      const normalizedSize = mapSizeToBackend(companySize);
 
-      // Map company type to valid backend business types
-      // Backend only recognizes: exporter, importer, bank
-      const businessTypes =
-        formData.companyType === "both"
-          ? ["exporter", "importer"]
-          : formData.companyType === "logistics"
-          ? ["exporter"]  // Logistics treated as exporter
-          : formData.companyType
-          ? [formData.companyType]
-          : [];
-
-      const normalizedCompanySize =
-        formData.companyType === "both" ? companySize || undefined : undefined;
-
-      // Register with company info - this will create Company record in backend
+      // Register with company info
       await registerWithEmail(
         formData.email,
         formData.password,
@@ -129,13 +247,13 @@ export default function Register() {
         backendRole,
         {
           companyName: formData.companyName,
-          companyType: formData.companyType,
-          companySize: normalizedCompanySize,
+          companyType: companyType,
+          companySize: normalizedSize,
           businessTypes: businessTypes,
         }
       );
 
-      // Update onboarding progress (for additional steps if needed)
+      // Update onboarding progress
       try {
         const requiresTeamSetup = backendRole === "tenant_admin";
 
@@ -143,8 +261,8 @@ export default function Register() {
           role: backendRole,
           company: {
             name: formData.companyName,
-            type: formData.companyType,
-            size: normalizedCompanySize,
+            type: companyType,
+            size: normalizedSize,
           },
           business_types: businessTypes,
           complete: !requiresTeamSetup,
@@ -155,11 +273,10 @@ export default function Register() {
       }
 
       toast({
-        title: "Welcome to TRDR Hub",
-        description: "Your account is ready. Let's get started!",
+        title: "Welcome to TRDR Hub! 🎉",
+        description: "Your account is ready. You have $100 in free credits!",
       });
 
-      // All self-registered users go to Hub
       navigate("/hub");
 
     } catch (error: any) {
@@ -177,301 +294,365 @@ export default function Register() {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-primary/5">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-12 lg:px-8">
-        <header className="mb-10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary px-3 py-2 shadow-md">
-              <FileText className="h-7 w-7 text-primary-foreground" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-8 lg:py-12">
+        
+        {/* Header */}
+        <header className="mb-8 text-center">
+          <Link to="/" className="inline-flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-primary">LC Document Copilot</p>
-              <h1 className="text-xl font-semibold text-foreground">Create your LCopilot workspace</h1>
+            <span className="text-xl font-bold text-white">TRDR Hub</span>
+          </Link>
+          
+          {/* Progress Indicator */}
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className={cn(
+              "flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors",
+              step >= 1 ? "bg-blue-500 text-white" : "bg-slate-700 text-slate-400"
+            )}>
+              {step > 1 ? <Check className="w-4 h-4" /> : "1"}
+            </div>
+            <div className={cn(
+              "w-16 h-1 rounded-full transition-colors",
+              step >= 2 ? "bg-blue-500" : "bg-slate-700"
+            )} />
+            <div className={cn(
+              "flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors",
+              step >= 2 ? "bg-blue-500 text-white" : "bg-slate-700 text-slate-400"
+            )}>
+              2
             </div>
           </div>
-          <div className="hidden text-sm text-muted-foreground md:block">
-            Already onboard? {""}
-            <Link to="/login" className="font-medium text-primary hover:underline">
-              Sign in
-            </Link>
-          </div>
+          
+          <p className="text-sm text-slate-400">
+            Step {step} of 2 • {step === 1 ? "Tell us about your business" : "Create your account"}
+          </p>
         </header>
 
-        <div className="grid flex-1 gap-10 lg:grid-cols-12">
-          <div className="flex flex-col justify-between rounded-3xl bg-card/60 p-8 shadow-strong backdrop-blur lg:col-span-5">
-            <div className="space-y-6">
-              <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/70 p-6 text-primary-foreground shadow-lg">
-                <p className="text-sm uppercase tracking-wide opacity-80">Onboarding in minutes</p>
-                <h2 className="mt-2 text-2xl font-semibold">Designed for trade and treasury teams</h2>
-                <p className="mt-3 text-sm opacity-80">
-                  LCopilot connects Supabase authentication with our progressive onboarding flow so you can invite
-                  teams, capture KYC details, and start validating documents without custom integrations.
-                </p>
+        {/* Step 1: Business Context */}
+        {step === 1 && (
+          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
+            <CardHeader className="text-center pb-2">
+              <CardTitle className="text-2xl text-white">What does your company do?</CardTitle>
+              <CardDescription className="text-slate-400">
+                This helps us personalize your experience
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-8">
+              
+              {/* Company Type Selection */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-slate-300">Business Type</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {COMPANY_TYPES.map((option) => {
+                    const Icon = option.icon;
+                    const isSelected = companyType === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setCompanyType(option.value)}
+                        className={cn(
+                          "relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                          isSelected 
+                            ? "border-blue-500 bg-blue-500/10" 
+                            : "border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800"
+                        )}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2">
+                            <Check className="w-4 h-4 text-blue-400" />
+                          </div>
+                        )}
+                        <div className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center",
+                          isSelected ? "bg-blue-500/20" : "bg-slate-700"
+                        )}>
+                          <Icon className={cn(
+                            "w-6 h-6",
+                            isSelected ? "text-blue-400" : "text-slate-400"
+                          )} />
+                        </div>
+                        <div className="text-center">
+                          <p className={cn(
+                            "font-medium",
+                            isSelected ? "text-white" : "text-slate-300"
+                          )}>{option.label}</p>
+                          <p className="text-xs text-slate-500">{option.description}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
-                  <ShieldCheck className="mt-1 h-5 w-5 text-primary" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">Enterprise-grade security</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Supabase Auth manages credentials, while our backend enforces role-based onboarding and KYC checkpoints.
-                    </p>
-                  </div>
+              {/* Company Size Selection */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-slate-300">Team Size</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {COMPANY_SIZES.map((option) => {
+                    const Icon = option.icon;
+                    const isSelected = companySize === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setCompanySize(option.value)}
+                        className={cn(
+                          "relative flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left",
+                          isSelected 
+                            ? "border-emerald-500 bg-emerald-500/10" 
+                            : "border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800"
+                        )}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2">
+                            <Check className="w-4 h-4 text-emerald-400" />
+                          </div>
+                        )}
+                        <div className={cn(
+                          "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+                          isSelected ? "bg-emerald-500/20" : "bg-slate-700"
+                        )}>
+                          <Icon className={cn(
+                            "w-5 h-5",
+                            isSelected ? "text-emerald-400" : "text-slate-400"
+                          )} />
+                        </div>
+                        <div>
+                          <p className={cn(
+                            "font-medium",
+                            isSelected ? "text-white" : "text-slate-300"
+                          )}>{option.label}</p>
+                          <p className="text-xs text-slate-500">{option.employees}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
-                  <Timer className="mt-1 h-5 w-5 text-primary" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">Go live in two minutes</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Guided onboarding walks each role through the essentials—exporters, importers, and logistics teams get tailored experiences.
-                    </p>
+              </div>
+
+              {/* Continue Button */}
+              <Button 
+                onClick={handleContinue}
+                className="w-full h-12 bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white font-medium"
+              >
+                Continue
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+
+              {/* Bank CTA */}
+              <div className="pt-4 border-t border-slate-800">
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Landmark className="w-5 h-5 text-amber-400" />
                   </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-background/70 p-4 shadow-sm">
-                  <Sparkles className="mt-1 h-5 w-5 text-primary" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">Automations built-in</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Your workspace instantly links to verification services, document AI, and compliance reporting.
-                    </p>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-200">Bank or Financial Institution?</p>
+                    <a 
+                      href="mailto:enterprise@trdrhub.com?subject=Bank%20Inquiry"
+                      className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1"
+                    >
+                      Contact our enterprise team <ArrowRight className="w-3 h-3" />
+                    </a>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="mt-8 space-y-2 text-xs text-muted-foreground">
-              <p>Trusted by export houses across APAC</p>
-              <Separator className="opacity-30" />
-              <div className="flex flex-wrap gap-4">
-                <span>✔ Free trial</span>
-                <span>✔ No credit card</span>
-                <span>✔ SOC2-aligned controls</span>
-              </div>
-            </div>
-          </div>
+              {/* Login Link */}
+              <p className="text-center text-sm text-slate-400">
+                Already have an account?{" "}
+                <Link to="/login" className="text-blue-400 hover:text-blue-300 font-medium">
+                  Sign in
+                </Link>
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
-          <Card className="relative border-0 shadow-strong lg:col-span-7">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-xl">Create your account</CardTitle>
-              <CardDescription>
-                Tell us a little about your company so we can personalise onboarding and document validation flows.
+        {/* Step 2: Account Details */}
+        {step === 2 && (
+          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
+            <CardHeader className="text-center pb-2">
+              <CardTitle className="text-2xl text-white">Create your account</CardTitle>
+              <CardDescription className="text-slate-400">
+                {companyType === "both" ? "Exporter & Importer" : COMPANY_TYPES.find(t => t.value === companyType)?.label} • {COMPANY_SIZES.find(s => s.value === companySize)?.label} Team
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleRegister} className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="companyName">Company name</Label>
-                    <div className="relative">
-                      <Building className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="companyName"
-                        placeholder="Your Export Company Ltd."
-                        value={formData.companyName}
-                        onChange={(e) => handleInputChange("companyName", e.target.value)}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="contactPerson">Contact person</Label>
-                    <div className="relative">
-                      <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="contactPerson"
-                        placeholder="Your full name"
-                        value={formData.contactPerson}
-                        onChange={(e) => handleInputChange("contactPerson", e.target.value)}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Business email</Label>
-                    <div className="relative">
-                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="contact@yourcompany.com"
-                        value={formData.email}
-                        onChange={(e) => handleInputChange("email", e.target.value)}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="companyType">Company type</Label>
-                    <Select
-                      value={formData.companyType}
-                      onValueChange={(value) => handleInputChange("companyType", value)}
+              <form onSubmit={handleRegister} className="space-y-5">
+                
+                {/* Company Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="companyName" className="text-slate-300">Company Name</Label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <Input
+                      id="companyName"
+                      placeholder="Your Company Ltd."
+                      value={formData.companyName}
+                      onChange={(e) => handleInputChange("companyName", e.target.value)}
+                      className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
                       required
-                    >
-                      <SelectTrigger className="h-11">
-                        <SelectValue placeholder="Select your business type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COMPANY_TYPES.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
-
-                {formData.companyType === "both" && (
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="companySize">Company size</Label>
-                    <Select
-                      value={companySize}
-                      onValueChange={(value) => setCompanySize(value)}
-                    >
-                      <SelectTrigger className="h-11">
-                        <SelectValue placeholder="Select company size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COMPANY_SIZE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      We use company size to tailor features, quotas, and onboarding.
-                    </p>
-                  </div>
-                )}
                 </div>
 
+                {/* Contact Person */}
+                <div className="space-y-2">
+                  <Label htmlFor="contactPerson" className="text-slate-300">Your Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <Input
+                      id="contactPerson"
+                      placeholder="John Smith"
+                      value={formData.contactPerson}
+                      onChange={(e) => handleInputChange("contactPerson", e.target.value)}
+                      className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-slate-300">Work Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john@company.com"
+                      value={formData.email}
+                      onChange={(e) => handleInputChange("email", e.target.value)}
+                      className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Password Fields */}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password" className="text-slate-300">Password</Label>
                     <div className="relative">
-                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                       <Input
                         id="password"
                         type={showPassword ? "text" : "password"}
-                        placeholder="Create a strong password"
+                        placeholder="••••••••"
                         value={formData.password}
                         onChange={(e) => handleInputChange("password", e.target.value)}
-                        className="pl-10 pr-12"
+                        className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
                         required
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        onClick={() => setShowPassword((prev) => !prev)}
-                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-500 hover:text-slate-300"
                       >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Use 12+ characters with a mix of letters, numbers, and symbols.
-                    </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm password</Label>
+                    <Label htmlFor="confirmPassword" className="text-slate-300">Confirm</Label>
                     <div className="relative">
-                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                       <Input
                         id="confirmPassword"
                         type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Confirm your password"
+                        placeholder="••••••••"
                         value={formData.confirmPassword}
                         onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                        className="pl-10 pr-12"
+                        className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
                         required
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        onClick={() => setShowConfirmPassword((prev) => !prev)}
-                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-500 hover:text-slate-300"
                       >
-                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </Button>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-muted/50 p-4 text-sm">
-                  <h4 className="font-medium text-foreground">What happens next?</h4>
-                  <ul className="mt-2 space-y-1 text-muted-foreground">
-                    <li>• We'll send a verification email through Supabase Auth.</li>
-                    <li>• Complete your role-specific onboarding checklist.</li>
-                    <li>• Invite teammates and connect to Document AI / analytics modules.</li>
-                  </ul>
+                {/* Free Credits Banner */}
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <Gift className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-emerald-200">Start with $100 in free credits</p>
+                    <p className="text-xs text-emerald-400">No credit card required • Use across all tools</p>
+                  </div>
                 </div>
 
+                {/* Terms Checkbox */}
                 <div className="flex items-start gap-3">
                   <Checkbox
                     id="terms"
                     checked={formData.agreedToTerms}
                     onCheckedChange={(checked) => handleInputChange("agreedToTerms", Boolean(checked))}
+                    className="mt-0.5 border-slate-600 data-[state=checked]:bg-blue-500"
                   />
-                  <Label htmlFor="terms" className="text-sm text-muted-foreground">
-                    I agree to the {""}
-                    <a href="/legal/terms" target="_blank" rel="noopener" className="text-primary underline">
+                  <Label htmlFor="terms" className="text-sm text-slate-400 leading-relaxed">
+                    I agree to the{" "}
+                    <a href="/legal/terms" target="_blank" className="text-blue-400 hover:underline">
                       Terms of Service
-                    </a>{" "}and {""}
-                    <a href="/legal/privacy" target="_blank" rel="noopener" className="text-primary underline">
+                    </a>{" "}and{" "}
+                    <a href="/legal/privacy" target="_blank" className="text-blue-400 hover:underline">
                       Privacy Policy
                     </a>
                   </Label>
                 </div>
 
-                <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90" disabled={isLoading}>
-                  {isLoading ? "Creating workspace..." : "Create your workspace"}
-                </Button>
-
-                <p className="text-center text-sm text-muted-foreground lg:hidden">
-                  Already have an account? {""}
-                  <Link to="/login" className="font-medium text-primary hover:underline">
-                    Sign in
-                  </Link>
-                </p>
-              </form>
-
-              {/* Financial Institutions CTA */}
-              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-amber-100 dark:bg-amber-900/30 p-2">
-                    <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-amber-900 dark:text-amber-100">
-                      Banks & Financial Institutions
-                    </h4>
-                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-                      Get enterprise features, custom SLAs, dedicated support, and white-label options.
-                    </p>
-                    <a 
-                      href="mailto:enterprise@trdrhub.com?subject=Bank%20%2F%20Financial%20Institution%20Inquiry"
-                      className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
-                    >
-                      Contact our enterprise team
-                      <ArrowRight className="h-4 w-4" />
-                    </a>
-                  </div>
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleBack}
+                    className="flex-1 h-12 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back
+                  </Button>
+                  <Button 
+                    type="submit"
+                    disabled={isLoading}
+                    className="flex-[2] h-12 bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white font-medium"
+                  >
+                    {isLoading ? "Creating account..." : "Create Free Account"}
+                  </Button>
                 </div>
-              </div>
+              </form>
             </CardContent>
           </Card>
-        </div>
+        )}
+
+        {/* Footer */}
+        <footer className="mt-8 text-center text-xs text-slate-500">
+          <div className="flex items-center justify-center gap-4">
+            <span>✓ SOC2 Aligned</span>
+            <span>✓ 99.9% Uptime</span>
+            <span>✓ Bank Approved</span>
+          </div>
+        </footer>
       </div>
     </div>
   );

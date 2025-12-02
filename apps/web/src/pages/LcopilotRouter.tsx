@@ -1,8 +1,15 @@
 /**
  * LCopilot Smart Router
  * 
- * Redirects users to the appropriate LCopilot dashboard based on their role.
+ * Redirects users to the appropriate LCopilot dashboard based on their role AND company size.
  * This is the entry point when clicking "LCopilot" from the Hub.
+ * 
+ * Routing Logic:
+ * - Banks → Bank Dashboard
+ * - Enterprise/Large companies → Enterprise Dashboard
+ * - Combined (both exporter+importer) SME → Combined Dashboard
+ * - Importer SME → Importer Dashboard
+ * - Exporter/Logistics SME → Exporter Dashboard
  */
 
 import { useEffect, useState } from "react";
@@ -36,30 +43,41 @@ export default function LcopilotRouter() {
                                     companyType === "both_exporter_importer";
           const isCombinedUser = hasBoth || isCompanyTypeBoth;
 
-          // Determine destination based on role
+          // Check if large company (established = large, enterprise = enterprise)
+          const isLargeCompany = companySize === "large" || 
+                                 companySize === "enterprise" || 
+                                 companySize === "established";
+
+          // Determine destination based on role AND size
           let destination = "/lcopilot/exporter-dashboard";
 
+          // 1. Bank users always go to bank dashboard
           if (role === "bank_officer" || role === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
             setStatus("Redirecting to Bank Dashboard...");
-          } else if (role === "tenant_admin") {
+          }
+          // 2. Tenant admins (large companies) go to enterprise dashboard
+          else if (role === "tenant_admin") {
             destination = "/lcopilot/enterprise-dashboard";
             setStatus("Redirecting to Enterprise Dashboard...");
-          } else if (isCombinedUser) {
-            // Combined users routing based on company size
-            if (companySize === "medium" || companySize === "large") {
-              destination = "/lcopilot/enterprise-dashboard";
-              setStatus("Redirecting to Enterprise Dashboard...");
-            } else {
-              // SME or unknown size
-              destination = "/lcopilot/combined-dashboard";
-              setStatus("Redirecting to Combined Dashboard...");
-            }
-          } else if (role === "importer") {
+          }
+          // 3. Large companies (by size) go to enterprise dashboard
+          else if (isLargeCompany) {
+            destination = "/lcopilot/enterprise-dashboard";
+            setStatus("Redirecting to Enterprise Dashboard...");
+          }
+          // 4. Combined users (SME) go to combined dashboard
+          else if (isCombinedUser) {
+            destination = "/lcopilot/combined-dashboard";
+            setStatus("Redirecting to Combined Dashboard...");
+          }
+          // 5. Importers go to importer dashboard
+          else if (role === "importer" || companyType === "importer") {
             destination = "/lcopilot/importer-dashboard";
             setStatus("Redirecting to Importer Dashboard...");
-          } else {
-            // Default to exporter
+          }
+          // 6. Default to exporter dashboard (exporters, logistics, etc.)
+          else {
             setStatus("Redirecting to Exporter Dashboard...");
           }
 
@@ -95,4 +113,3 @@ export default function LcopilotRouter() {
     </div>
   );
 }
-
