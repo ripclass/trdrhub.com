@@ -42,6 +42,7 @@ import { RulesList } from "./sections/rules/List";
 import { RulesGovernance } from "./sections/rules/Governance";
 import { RulesUpload } from "./sections/rules/Upload";
 import { RulesActive } from "./sections/rules/Active";
+import { BankManagement } from "./sections/banks/BankManagement";
 
 // Define all possible sections
 const SECTION_OPTIONS = [
@@ -55,6 +56,7 @@ const SECTION_OPTIONS = [
   "security-users",
   "security-access",
   "security-sessions",
+  "banks-management",
   "billing-overview",
   "billing-invoices-payments",
   "billing-recognition",
@@ -156,6 +158,7 @@ export default function AdminShell() {
           {activeSection === "security-users" && <SecurityUsers />}
           {activeSection === "security-access" && <SecurityAccess />}
           {activeSection === "security-sessions" && <SecuritySessions />}
+          {activeSection === "banks-management" && <BankManagement />}
           {activeSection === "billing-overview" && <BillingOverview />}
           {activeSection === "billing-invoices-payments" && <BillingInvoicesPayments />}
           {activeSection === "billing-recognition" && <BillingRecognition />}

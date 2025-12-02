@@ -41,6 +41,8 @@ import {
   Calculator,
   BookOpen,
   Settings2,
+  Landmark,
+  UserPlus,
 } from 'lucide-react';
 import { useAdminAuth } from '@/lib/admin/auth';
 import { UserMenu } from '@/components/layout/UserMenu';
@@ -56,6 +58,7 @@ type AdminSection =
   | "security-users"
   | "security-access"
   | "security-sessions"
+  | "banks-management"
   | "billing-overview"
   | "billing-invoices-payments"
   | "billing-recognition"
@@ -126,6 +129,12 @@ const navigation: SidebarSection[] = [
       { name: 'Users & Tenants', section: 'security-users', icon: Users, permissions: ['users:read'] },
       { name: 'API Keys', section: 'security-access', icon: Lock, permissions: ['api_keys:read'] },
       { name: 'Sessions', section: 'security-sessions', icon: Clock, permissions: ['sessions:read'] },
+    ],
+  },
+  {
+    title: 'Bank Management',
+    items: [
+      { name: 'Banks', section: 'banks-management', icon: Landmark, permissions: ['banks:read'] },
     ],
   },
   {
