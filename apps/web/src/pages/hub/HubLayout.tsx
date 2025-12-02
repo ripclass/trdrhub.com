@@ -2,7 +2,7 @@
  * Hub Layout - Unified layout with sidebar for all Hub pages
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -19,7 +19,6 @@ import {
   ChevronRight,
   Sparkles,
   LogOut,
-  Bell,
   HelpCircle,
   Menu,
   X,
@@ -37,6 +36,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 interface NavItem {
   id: string;
@@ -122,8 +122,17 @@ const NAV_SECTIONS: NavSection[] = [
 export default function HubLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout, isLoading } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [planName, setPlanName] = useState("Pay-as-you-go");
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !user) {
+      navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+    }
+  }, [user, isLoading, navigate, location.pathname]);
 
   const isActive = (href: string) => {
     if (href === "/hub") {
@@ -132,8 +141,25 @@ export default function HubLayout() {
     return location.pathname.startsWith(href);
   };
 
-  const planName = "Pay-as-you-go"; // TODO: Get from context/API
-  const userName = "User"; // TODO: Get from context/API
+  // Get user name from auth
+  const userName = user?.full_name || user?.email?.split("@")[0] || "User";
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
+  // Show nothing while loading auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -322,7 +348,7 @@ export default function HubLayout() {
                     variant="ghost"
                     size="icon"
                     className="text-slate-400 hover:text-white h-8 w-8"
-                    onClick={() => navigate("/login")}
+                    onClick={handleLogout}
                   >
                     <LogOut className="w-4 h-4" />
                   </Button>
