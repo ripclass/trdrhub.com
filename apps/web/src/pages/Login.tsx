@@ -26,231 +26,38 @@ export default function Login() {
       const profile = await loginWithEmail(email, password);
       toast({
         title: "Login Successful",
-        description: "Welcome back to LCopilot!",
+        description: "Welcome back to TRDR Hub!",
       });
 
-      // Get onboarding status FIRST to determine correct dashboard
-      // This is critical for "both" exporter/importer users who have role "exporter"
-      let destination = "/lcopilot/exporter-dashboard";
-      let status: any = null;
+      // Simplified routing: Most users go to Hub, only banks go to bank dashboard
+      let destination = "/hub";
       
       try {
-        status = await Promise.race([
+        const status = await Promise.race([
           getOnboardingStatus(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
         ]) as any;
         
         if (status) {
           const backendRole = status.role;
-          const details = status.details as Record<string, any> | undefined;
           
-          // Check multiple sources for business types
-          const businessTypes = Array.isArray(details?.business_types) ? details.business_types : [];
-          const companyType = details?.company?.type;
-          const companySize = details?.company?.size;
-          
-          // Check if user is "both" exporter/importer from multiple sources
-          const hasBothBusinessTypes = businessTypes.includes("exporter") && businessTypes.includes("importer");
-          const isCompanyTypeBoth = companyType === "both" || 
-                                    companyType === "Both Exporter & Importer" ||
-                                    companyType === "both_exporter_importer";
-          
-          // More robust check: if company type is "both" but business_types not set, infer it
-          const isCombinedUser = hasBothBusinessTypes || isCompanyTypeBoth;
-          
-          // If company type is "both" but business_types not set, set it for routing
-          if (isCompanyTypeBoth && !hasBothBusinessTypes) {
-            console.log("ℹ️ Detected company_type='both' but business_types not set, inferring combined user");
-          }
-          
-          // CRITICAL: Check isCombinedUser FIRST before checking backendRole
-          // This is because SME "both" users have backendRole="exporter" but should go to combined dashboard
-          // Also check if business_types or company.type indicates combined user
-          const isActuallyCombined = isCombinedUser || 
-            (backendRole === "exporter" && (hasBothBusinessTypes || isCompanyTypeBoth));
-          
-          // Debug logging
-          console.log("🔍 Login routing check:", {
-            backendRole,
-            businessTypes,
-            hasBothBusinessTypes,
-            isCompanyTypeBoth,
-            isCombinedUser,
-            isActuallyCombined, // New check
-            companySize,
-            companyType,
-            company_id: status.company_id,
-            completed: status.completed,
-            profileRole: profile.role,
-            details: details
-          });
-          
-          // Determine destination based on onboarding data
-          // Priority order: Bank > Tenant Admin > Combined (check FIRST) > Importer > Exporter
+          // Only bank users go to bank dashboard, everyone else goes to Hub
           if (backendRole === "bank_officer" || backendRole === "bank_admin") {
             destination = "/lcopilot/bank-dashboard";
-            console.log("✅ Routing to BankDashboard");
-          } else if (backendRole === "tenant_admin") {
-            destination = "/lcopilot/enterprise-dashboard";
-            console.log("✅ Routing to EnterpriseDashboard (tenant_admin)");
-          } else if (isActuallyCombined) {
-            // Combined users routing based on company size
-            // CRITICAL: Check this BEFORE checking backendRole === "importer"
-            // because SME "both" users have backendRole="exporter"
-            if (companySize === "sme" || !companySize) {
-              // SME "both" users OR no size specified → CombinedDashboard (unified view)
-              // Default to SME/CombinedDashboard if size is missing
-              destination = "/lcopilot/combined-dashboard";
-              console.log(`✅ Routing to CombinedDashboard (${companySize || 'default SME'} both user)`);
-            } else if (companySize === "medium" || companySize === "large") {
-              // Medium/Large "both" users → EnterpriseDashboard
-              destination = "/lcopilot/enterprise-dashboard";
-              console.log("✅ Routing to EnterpriseDashboard (Medium/Large both)");
-            } else {
-              // Unknown size, default to CombinedDashboard for SME
-              destination = "/lcopilot/combined-dashboard";
-              console.log("✅ Routing to CombinedDashboard (both user, unknown size - defaulting to SME)");
-            }
-          } else if (backendRole === "importer") {
-            // CRITICAL FIX: Use backendRole, not profile.role
-            destination = "/lcopilot/importer-dashboard";
-            console.log("✅ Routing to ImporterDashboard (backendRole)");
+            console.log("✅ Routing bank user to BankDashboard");
           } else {
-            // Default to exporter dashboard
-            console.log("⚠️ No specific match, defaulting to exporter-dashboard");
+            console.log("✅ Routing to Hub (unified dashboard)");
           }
-          
-          console.log("📍 Final destination:", destination);
         }
       } catch (err) {
-        console.warn("Onboarding status check failed or timed out:", err);
-        console.warn("Error details:", err);
-        
-        // Fallback: Try to check user profile for company info
-        // Sometimes onboarding status might fail but we can still check profile
-        try {
-          const profileCompanyType = (profile as any).company_type || (profile as any).companyType;
-          const profileBusinessTypes = (profile as any).business_types || (profile as any).businessTypes;
-          
-          if (profileCompanyType === "both" || profileCompanyType === "Both Exporter & Importer") {
-            destination = "/lcopilot/combined-dashboard";
-            console.log("✅ Fallback: Routing to CombinedDashboard (from profile company_type)");
-          } else if (Array.isArray(profileBusinessTypes) && 
-                     profileBusinessTypes.includes("exporter") && 
-                     profileBusinessTypes.includes("importer")) {
-            destination = "/lcopilot/combined-dashboard";
-            console.log("✅ Fallback: Routing to CombinedDashboard (from profile business_types)");
-          }
-        } catch (profileErr) {
-          console.warn("Could not check profile for company info:", profileErr);
-        }
-        
-        // Final fallback: Try to get onboarding status one more time with longer timeout
-        // This handles cases where backend is slow to respond
-        if (destination === "/lcopilot/exporter-dashboard") {
-          console.log("⚠️ Onboarding status unavailable, attempting one more fetch...");
-          try {
-            const fallbackStatus = await Promise.race([
-              getOnboardingStatus(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
-            ]) as any;
-            
-            if (fallbackStatus) {
-              const fallbackRole = fallbackStatus.role;
-              const fallbackDetails = fallbackStatus.details as Record<string, any> | undefined;
-              const fallbackBusinessTypes = Array.isArray(fallbackDetails?.business_types) ? fallbackDetails.business_types : [];
-              const fallbackCompanyType = fallbackDetails?.company?.type;
-              const fallbackCompanySize = fallbackDetails?.company?.size;
-              const fallbackHasBoth = fallbackBusinessTypes.includes("exporter") && fallbackBusinessTypes.includes("importer");
-              const fallbackIsCompanyTypeBoth = fallbackCompanyType === "both" || fallbackCompanyType === "Both Exporter & Importer";
-              const fallbackIsCombinedUser = fallbackHasBoth || fallbackIsCompanyTypeBoth;
-              const fallbackIsActuallyCombined = fallbackIsCombinedUser || 
-                (fallbackRole === "exporter" && (fallbackHasBoth || fallbackIsCompanyTypeBoth));
-              
-              // Same priority order as main logic: Bank > Tenant Admin > Combined > Importer
-              if (fallbackRole === "bank_officer" || fallbackRole === "bank_admin") {
-                destination = "/lcopilot/bank-dashboard";
-                console.log("✅ Fallback: Routing to BankDashboard");
-              } else if (fallbackRole === "tenant_admin") {
-                destination = "/lcopilot/enterprise-dashboard";
-                console.log("✅ Fallback: Routing to EnterpriseDashboard");
-              } else if (fallbackIsActuallyCombined) {
-                // Check combined FIRST before importer
-                if (fallbackCompanySize === "sme" || !fallbackCompanySize) {
-                  destination = "/lcopilot/combined-dashboard";
-                  console.log("✅ Fallback: Routing to CombinedDashboard");
-                } else if (fallbackCompanySize === "medium" || fallbackCompanySize === "large") {
-                  destination = "/lcopilot/enterprise-dashboard";
-                  console.log("✅ Fallback: Routing to EnterpriseDashboard (Medium/Large both)");
-                }
-              } else if (fallbackRole === "importer") {
-                destination = "/lcopilot/importer-dashboard";
-                console.log("✅ Fallback: Routing to ImporterDashboard");
-              }
-            }
-          } catch (fallbackErr) {
-            console.warn("Fallback onboarding status check also failed:", fallbackErr);
-            // Last resort: check profile.role (but this is unreliable)
-            if (profile.role === "importer") {
-              destination = "/lcopilot/importer-dashboard";
-              console.log("⚠️ Last resort: Routing to ImporterDashboard (from profile.role - may be incorrect)");
-            }
-          }
+        console.warn("Onboarding status check failed, defaulting to Hub:", err);
+        // Default to Hub for all users if status check fails
+        if (profile.role === "bank_officer" || profile.role === "bank_admin") {
+          destination = "/lcopilot/bank-dashboard";
         }
       }
       
-      // CRITICAL: If onboarding status returned empty details, retry once after a short delay
-      // This gives the backend time to restore data from company record
-      if (status && (!status.details || Object.keys(status.details).length === 0) && !status.company_id) {
-        console.log("⚠️ Onboarding data is empty, retrying status check after delay...");
-        try {
-          // Wait a bit for backend to potentially restore data
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          const retryStatus = await Promise.race([
-            getOnboardingStatus(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-          ]) as any;
-
-          if (retryStatus && (retryStatus.details && Object.keys(retryStatus.details).length > 0 || retryStatus.company_id)) {
-            console.log("✅ Retry successful, re-evaluating routing...");
-            const retryBackendRole = retryStatus.role;
-            const retryDetails = retryStatus.details as Record<string, any> | undefined;
-            const retryBusinessTypes = Array.isArray(retryDetails?.business_types) ? retryDetails.business_types : [];
-            const retryCompanyType = retryDetails?.company?.type;
-            const retryCompanySize = retryDetails?.company?.size;
-            const retryHasBoth = retryBusinessTypes.includes("exporter") && retryBusinessTypes.includes("importer");
-            const retryIsCompanyTypeBoth = retryCompanyType === "both" || retryCompanyType === "Both Exporter & Importer";
-            const retryIsCombinedUser = retryHasBoth || retryIsCompanyTypeBoth;
-            const retryIsActuallyCombined = retryIsCombinedUser || 
-              (retryBackendRole === "exporter" && (retryHasBoth || retryIsCompanyTypeBoth));
-            
-            // Re-evaluate routing with retry data - same priority order as main logic
-            if (retryBackendRole === "bank_officer" || retryBackendRole === "bank_admin") {
-              destination = "/lcopilot/bank-dashboard";
-              console.log("✅ Retry: Routing to BankDashboard");
-            } else if (retryBackendRole === "tenant_admin") {
-              destination = "/lcopilot/enterprise-dashboard";
-              console.log("✅ Retry: Routing to EnterpriseDashboard (tenant_admin)");
-            } else if (retryIsActuallyCombined) {
-              // Check combined FIRST before importer
-              if (retryCompanySize === "sme" || !retryCompanySize) {
-                destination = "/lcopilot/combined-dashboard";
-                console.log("✅ Retry: Routing to CombinedDashboard");
-              } else if (retryCompanySize === "medium" || retryCompanySize === "large") {
-                destination = "/lcopilot/enterprise-dashboard";
-                console.log("✅ Retry: Routing to EnterpriseDashboard");
-              }
-            } else if (retryBackendRole === "importer") {
-              destination = "/lcopilot/importer-dashboard";
-              console.log("✅ Retry: Routing to ImporterDashboard");
-            }
-          }
-        } catch (retryErr) {
-          console.warn("Retry failed:", retryErr);
-        }
-      }
-      
-      setIsLoading(false); // Clear loading state before navigation
+      setIsLoading(false);
       navigate(destination);
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";

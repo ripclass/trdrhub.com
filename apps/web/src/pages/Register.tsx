@@ -152,25 +152,14 @@ export default function Register() {
       }
 
       toast({
-        title: "Welcome to LCopilot",
-        description: "Your account is ready. We're tailoring the workspace for you…",
+        title: "Welcome to TRDR Hub",
+        description: "Your account is ready. Let's get started!",
       });
 
-      const destination = (() => {
-        if (backendRole === "bank_officer" || backendRole === "bank_admin") {
-          return "/lcopilot/bank-dashboard";
-        }
-        if (backendRole === "tenant_admin") {
-          return "/lcopilot/enterprise-dashboard";
-        }
-        if (formData.companyType === "both") {
-          return "/lcopilot/combined-dashboard";
-        }
-        if (backendRole === "importer") {
-          return "/lcopilot/importer-dashboard";
-        }
-        return "/lcopilot/exporter-dashboard";
-      })();
+      // Simplified routing: Banks go to bank dashboard, everyone else to Hub
+      const destination = (backendRole === "bank_officer" || backendRole === "bank_admin")
+        ? "/lcopilot/bank-dashboard"
+        : "/hub";
 
       navigate(destination);
 

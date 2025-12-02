@@ -15,24 +15,11 @@ export default function Onboarding() {
       try {
         const onboardingStatus = await getOnboardingStatus()
         if (onboardingStatus.completed) {
-          // Redirect to appropriate dashboard
+          // Simplified routing: Banks go to bank dashboard, everyone else to Hub
           const role = onboardingStatus.role
-          const details = onboardingStatus.details as Record<string, any> | undefined
-          const businessTypes = Array.isArray(details?.business_types) ? details.business_types : []
-          const hasBoth = businessTypes.includes('exporter') && businessTypes.includes('importer')
-          const companySize = details?.company?.size
-
-          let destination = '/lcopilot/exporter-dashboard'
-          if (role === 'bank_officer' || role === 'bank_admin') {
-            destination = '/lcopilot/bank-dashboard'
-          } else if (role === 'tenant_admin') {
-            destination = '/lcopilot/enterprise-dashboard'
-          } else if (hasBoth && companySize === 'sme') {
-            destination = '/lcopilot/combined-dashboard'
-          } else if (role === 'importer') {
-            destination = '/lcopilot/importer-dashboard'
-          }
-
+          const destination = (role === 'bank_officer' || role === 'bank_admin')
+            ? '/lcopilot/bank-dashboard'
+            : '/hub'
           navigate(destination)
         } else {
           // Show wizard
@@ -50,26 +37,16 @@ export default function Onboarding() {
 
   const handleComplete = () => {
     setWizardOpen(false)
-    // Redirect to appropriate dashboard after completion
+    // Simplified routing: Banks go to bank dashboard, everyone else to Hub
     if (status) {
       const role = status.role
-      const details = status.details as Record<string, any> | undefined
-      const businessTypes = Array.isArray(details?.business_types) ? details.business_types : []
-      const hasBoth = businessTypes.includes('exporter') && businessTypes.includes('importer')
-      const companySize = details?.company?.size
-
-      let destination = '/lcopilot/exporter-dashboard'
-      if (role === 'bank_officer' || role === 'bank_admin') {
-        destination = '/lcopilot/bank-dashboard'
-      } else if (role === 'tenant_admin') {
-        destination = '/lcopilot/enterprise-dashboard'
-      } else if (hasBoth && companySize === 'sme') {
-        destination = '/lcopilot/combined-dashboard'
-      } else if (role === 'importer') {
-        destination = '/lcopilot/importer-dashboard'
-      }
-
+      const destination = (role === 'bank_officer' || role === 'bank_admin')
+        ? '/lcopilot/bank-dashboard'
+        : '/hub'
       navigate(destination)
+    } else {
+      // Default to Hub
+      navigate('/hub')
     }
   }
 

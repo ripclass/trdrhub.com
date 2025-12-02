@@ -91,23 +91,11 @@ export default function AuthCallback() {
               return
             }
             
-            // Otherwise redirect to appropriate dashboard based on role
+            // Simplified routing: Banks go to bank dashboard, everyone else to Hub
             const role = onboardingStatus.role
-            const details = onboardingStatus.details || {}
-            const businessTypes = Array.isArray(details.business_types) ? details.business_types : []
-            const hasBoth = businessTypes.includes('exporter') && businessTypes.includes('importer')
-            const companySize = details?.company?.size
-            
-            let destination = '/lcopilot/exporter-dashboard'
-            if (role === 'bank_officer' || role === 'bank_admin') {
-              destination = '/lcopilot/bank-dashboard'
-            } else if (role === 'tenant_admin') {
-              destination = '/lcopilot/enterprise-dashboard'
-            } else if (hasBoth && companySize === 'sme') {
-              destination = '/lcopilot/combined-dashboard'
-            } else if (role === 'importer') {
-              destination = '/lcopilot/importer-dashboard'
-            }
+            const destination = (role === 'bank_officer' || role === 'bank_admin')
+              ? '/lcopilot/bank-dashboard'
+              : '/hub'
             
             setStatus('Success! Redirecting...')
             setTimeout(() => {
@@ -119,10 +107,10 @@ export default function AuthCallback() {
           console.warn('Failed to check onboarding status:', onboardingError)
         }
         
-        // Fallback: redirect to dashboard
+        // Fallback: redirect to Hub
         setStatus('Success! Redirecting...')
         setTimeout(() => {
-          navigate('/dashboard')
+          navigate('/hub')
         }, 500)
       } catch (err) {
         console.error('Auth callback error:', err)
