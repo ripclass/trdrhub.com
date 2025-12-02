@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
+import { ToolPricingSection } from "@/components/tools/ToolPricingSection";
 
 export default function PriceVerifyLanding() {
   return (
@@ -278,47 +279,18 @@ export default function PriceVerifyLanding() {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section className="py-12 sm:py-20">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="max-w-4xl mx-auto text-center mb-10 sm:mb-16">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="text-slate-400">
-              Start free. Scale as you grow.
-            </p>
-          </div>
-          
-          <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
-            {[
-              { tier: "Free", price: "$0", checks: "10/month", features: ["Basic verification", "3 commodities", "PDF reports"] },
-              { tier: "Starter", price: "$49", checks: "100/month", features: ["All commodities", "Historical data", "Email support"] },
-              { tier: "Professional", price: "$149", checks: "500/month", features: ["API access", "LCopilot integration", "Priority support"], popular: true },
-              { tier: "Enterprise", price: "Custom", checks: "Unlimited", features: ["Custom commodities", "Dedicated support", "On-premise option"] },
-            ].map((plan, i) => (
-              <div key={i} className={`bg-slate-900/50 border rounded-xl p-6 relative ${plan.popular ? 'border-green-500' : 'border-slate-800'}`}>
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-green-500 text-white border-0">Most Popular</Badge>
-                  </div>
-                )}
-                <div className="text-sm text-slate-400 mb-2">{plan.tier}</div>
-                <div className="text-2xl font-bold text-white mb-1">{plan.price}</div>
-                <div className="text-xs text-slate-500 mb-4">{plan.checks}</div>
-                <ul className="space-y-2">
-                  {plan.features.map((feature, j) => (
-                    <li key={j} className="text-sm text-slate-400 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Pricing Section - With Localized Currency */}
+      <ToolPricingSection 
+        title="Simple, Transparent Pricing"
+        subtitle="Start free. Scale as you grow."
+        tiers={[
+          { tier: "Free", price: "$0", checks: "10/month", features: ["Basic verification", "3 commodities", "PDF reports"] },
+          { tier: "Starter", price: "$49/mo", checks: "100/month", features: ["All commodities", "Historical data", "Email support"] },
+          { tier: "Professional", price: "$149/mo", checks: "500/month", features: ["API access", "LCopilot integration", "Priority support"], popular: true },
+          { tier: "Enterprise", price: "Custom", checks: "Unlimited", features: ["Custom commodities", "Dedicated support", "On-premise option"] },
+        ]}
+        toolSlug="price-verify"
+      />
 
       {/* CTA Section */}
       <section className="py-12 sm:py-20 bg-gradient-to-b from-slate-900/50 to-slate-950">
