@@ -346,19 +346,12 @@ def generate_mock_vessel_tracking(identifier: str) -> VesselTrackingResult:
     )
 
 
-# ============== API Endpoints ==============
+# ============== Internal Helper Functions ==============
 
-@router.get("/container/{container_number}", response_model=ContainerTrackingResult)
-async def track_container(
-    container_number: str,
-    current_user: User = Depends(get_current_user),
-):
+async def _track_container_internal(container_number: str) -> ContainerTrackingResult:
     """
-    Track a container by container number.
-    
-    Supports formats:
-    - Standard: MSCU1234567 (4 letters + 7 digits)
-    - With check digit: MSCU123456-7
+    Internal function to track a container (without auth dependency).
+    Used by both endpoints and background tasks.
     """
     # Normalize container number
     container_number = re.sub(r'[^A-Z0-9]', '', container_number.upper())
@@ -436,6 +429,65 @@ async def track_container(
         logger.info(f"Using mock data for container {container_number}")
         result = generate_mock_container_tracking(container_number)
     
+    return result
+
+
+async def _track_vessel_internal(identifier: str, search_type: str = "name") -> VesselTrackingResult:
+    """
+    Internal function to track a vessel (without auth dependency).
+    Used by both endpoints and background tasks.
+    """
+    # Try real AIS data first
+    ais_data = await fetch_vessel_ais(identifier, search_type)
+    
+    if ais_data and ais_data.get("data"):
+        vessel = ais_data["data"]
+        return VesselTrackingResult(
+            name=vessel.get("name", identifier),
+            imo=vessel.get("imo", ""),
+            mmsi=vessel.get("mmsi", ""),
+            call_sign=vessel.get("callsign", ""),
+            flag=vessel.get("flag", "Unknown"),
+            vessel_type=vessel.get("type", "Container Ship"),
+            status=vessel.get("navigational_status", "underway"),
+            position=Position(
+                lat=vessel.get("lat", 0),
+                lon=vessel.get("lon", 0),
+                heading=vessel.get("heading", 0),
+                course=vessel.get("course", 0),
+                speed=vessel.get("speed", 0),
+                timestamp=vessel.get("timestamp", datetime.utcnow().isoformat() + "Z")
+            ),
+            destination=vessel.get("destination", "Unknown"),
+            eta=vessel.get("eta"),
+            speed=vessel.get("speed", 0),
+            heading=vessel.get("heading", 0),
+            course=vessel.get("course", 0),
+            last_update=datetime.utcnow().isoformat() + "Z",
+            data_source="ais"
+        )
+    
+    # Fall back to mock data if no API available
+    logger.info(f"Using mock data for vessel {identifier}")
+    return generate_mock_vessel_tracking(identifier)
+
+
+# ============== API Endpoints ==============
+
+@router.get("/container/{container_number}", response_model=ContainerTrackingResult)
+async def track_container(
+    container_number: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Track a container by container number.
+    
+    Supports formats:
+    - Standard: MSCU1234567 (4 letters + 7 digits)
+    - With check digit: MSCU123456-7
+    """
+    result = await _track_container_internal(container_number)
+    
     # TODO: Log usage for billing
     # await log_tracking_usage(current_user.id, "container", container_number)
     
@@ -454,39 +506,12 @@ async def track_vessel(
     Query params:
     - search_type: "name", "imo", or "mmsi"
     """
-    # Try real AIS data first
-    ais_data = await fetch_vessel_ais(identifier, search_type)
+    result = await _track_vessel_internal(identifier, search_type)
     
-    if ais_data and ais_data.get("data"):
-        vessel = ais_data["data"]
-        return VesselTrackingResult(
-            name=vessel.get("name", identifier),
-            imo=vessel.get("imo"),
-            mmsi=vessel.get("mmsi"),
-            call_sign=vessel.get("callsign"),
-            flag=vessel.get("flag"),
-            vessel_type=vessel.get("type", "Unknown"),
-            status=vessel.get("navigational_status", "unknown"),
-            position=Position(
-                lat=vessel.get("lat", 0),
-                lon=vessel.get("lon", 0),
-                heading=vessel.get("heading"),
-                course=vessel.get("course"),
-                speed=vessel.get("speed"),
-                timestamp=vessel.get("timestamp")
-            ),
-            destination=vessel.get("destination"),
-            eta=vessel.get("eta"),
-            speed=vessel.get("speed"),
-            heading=vessel.get("heading"),
-            course=vessel.get("course"),
-            last_update=datetime.utcnow().isoformat() + "Z",
-            data_source="ais"
-        )
+    # TODO: Log usage for billing
+    # await log_tracking_usage(current_user.id, "vessel", identifier)
     
-    # Fall back to mock data
-    logger.info(f"Using mock data for vessel {identifier}")
-    return generate_mock_vessel_tracking(identifier)
+    return result
 
 
 @router.get("/search")
@@ -684,64 +709,66 @@ async def check_and_send_alerts():
             try:
                 # Get user info for notifications
                 user = db.query(User).filter(User.id == alert.user_id).first()
-            if not user:
-                logger.warning(f"User {alert.user_id} not found for alert {alert.id}")
-                continue
-            
-            user_email = user.email if alert.notify_email else None
-            user_phone = alert.phone_number if alert.notify_sms else None
-            
-            if alert.tracking_type == "container":
-                # Fetch current tracking data
-                container_data = await track_container(alert.reference, user)
+                if not user:
+                    logger.warning(f"User {alert.user_id} not found for alert {alert.id}")
+                    continue
                 
-                # Check for arrival alert
-                if alert.alert_type == "arrival":
-                    if container_data.eta:
-                        eta_date = datetime.fromisoformat(container_data.eta.replace("Z", "+00:00"))
+                user_email = user.email if alert.notify_email else None
+                user_phone = alert.phone_number if alert.notify_sms else None
+                
+                if alert.tracking_type == "container":
+                    # Fetch current tracking data
+                    container_data = await _track_container_internal(alert.reference)
+                    
+                    # Check for arrival alert
+                    if alert.alert_type == "arrival":
+                        if container_data.eta:
+                            eta_date = datetime.fromisoformat(container_data.eta.replace("Z", "+00:00"))
+                            now = datetime.now(eta_date.tzinfo)
+                            hours_until_arrival = (eta_date - now).total_seconds() / 3600
+                            
+                            # Alert if within 24 hours of arrival
+                            if 0 <= hours_until_arrival <= 24:
+                                await notification_service.send_container_arrival_alert(
+                                    container_number=container_data.container_number,
+                                    vessel=container_data.vessel.name if container_data.vessel else "Unknown",
+                                    port=container_data.destination.name,
+                                    eta=container_data.eta,
+                                    user_email=user_email,
+                                    user_phone=user_phone,
+                                    user_name=user.email.split("@")[0] if user.email else "User",
+                                )
+                                logger.info(f"Sent arrival alert for container {alert.reference}")
+                    
+                    # Check for delay alert
+                    elif alert.alert_type == "delay" and alert.threshold:
+                        # Compare current ETA with previous ETA (would need to store previous ETA)
+                        # For now, just log
+                        logger.info(f"Delay check for container {alert.reference}")
+                
+                elif alert.tracking_type == "vessel":
+                    # Determine search type from reference
+                    search_type = "imo" if alert.reference.startswith("IMO") else "mmsi" if alert.reference.isdigit() and len(alert.reference) == 9 else "name"
+                    # Fetch current vessel data
+                    vessel_data = await _track_vessel_internal(alert.reference, search_type)
+                    
+                    # Similar logic for vessel alerts
+                    if alert.alert_type == "arrival" and vessel_data.eta:
+                        eta_date = datetime.fromisoformat(vessel_data.eta.replace("Z", "+00:00"))
                         now = datetime.now(eta_date.tzinfo)
                         hours_until_arrival = (eta_date - now).total_seconds() / 3600
                         
-                        # Alert if within 24 hours of arrival
                         if 0 <= hours_until_arrival <= 24:
                             await notification_service.send_container_arrival_alert(
-                                container_number=container_data.container_number,
-                                vessel=container_data.vessel.name if container_data.vessel else "Unknown",
-                                port=container_data.destination.name,
-                                eta=container_data.eta,
+                                container_number=vessel_data.name,  # Using vessel name as reference
+                                vessel=vessel_data.name,
+                                port=vessel_data.destination or "Unknown",
+                                eta=vessel_data.eta,
                                 user_email=user_email,
                                 user_phone=user_phone,
                                 user_name=user.email.split("@")[0] if user.email else "User",
                             )
-                            logger.info(f"Sent arrival alert for container {alert.reference}")
-                
-                # Check for delay alert
-                elif alert.alert_type == "delay" and alert.threshold:
-                    # Compare current ETA with previous ETA (would need to store previous ETA)
-                    # For now, just log
-                    logger.info(f"Delay check for container {alert.reference}")
-            
-            elif alert.tracking_type == "vessel":
-                # Fetch current vessel data
-                vessel_data = await track_vessel(alert.reference, "name", user)
-                
-                # Similar logic for vessel alerts
-                if alert.alert_type == "arrival" and vessel_data.eta:
-                    eta_date = datetime.fromisoformat(vessel_data.eta.replace("Z", "+00:00"))
-                    now = datetime.now(eta_date.tzinfo)
-                    hours_until_arrival = (eta_date - now).total_seconds() / 3600
-                    
-                    if 0 <= hours_until_arrival <= 24:
-                        await notification_service.send_container_arrival_alert(
-                            container_number=vessel_data.name,  # Using vessel name as reference
-                            vessel=vessel_data.name,
-                            port=vessel_data.destination or "Unknown",
-                            eta=vessel_data.eta,
-                            user_email=user_email,
-                            user_phone=user_phone,
-                            user_name=user.email.split("@")[0] if user.email else "User",
-                        )
-                        logger.info(f"Sent arrival alert for vessel {alert.reference}")
+                            logger.info(f"Sent arrival alert for vessel {alert.reference}")
             
             except Exception as e:
                 logger.error(f"Error processing alert {alert.id}: {e}")
