@@ -371,7 +371,39 @@ export default function VesselSanctionsCard({
             <RefreshCw className="w-4 h-4 mr-1" />
             Re-screen
           </Button>
-          <Button variant="outline" size="sm" className="flex-1">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={async () => {
+              try {
+                const response = await fetch(`${API_BASE}/tracking/compliance-report`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    vessel_name: vesselName,
+                    imo,
+                    mmsi,
+                    flag_state: flagState,
+                  }),
+                });
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `VesselDueDiligence_${vesselName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  window.URL.revokeObjectURL(url);
+                }
+              } catch (e) {
+                console.error('Failed to download report:', e);
+              }
+            }}
+          >
             <FileText className="w-4 h-4 mr-1" />
             PDF Report
           </Button>

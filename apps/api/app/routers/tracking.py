@@ -31,6 +31,7 @@ from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
 from app.services.vessel_sanctions import get_sanctions_service, SanctionsResult
 from app.services.ais_gap_detection import get_ais_service, AISAnalysisResult
+from app.services.compliance_report import get_report_generator
 from app.utils.usage_tracker import track_usage
 import logging
 
@@ -761,6 +762,104 @@ async def analyze_vessel_ais(
     logger.info(f"AIS analysis for {vessel_data.name}: {result.risk_level}")
     
     return result
+
+
+# ============== Compliance Reports ==============
+
+class ComplianceReportRequest(BaseModel):
+    """Request for compliance report generation."""
+    vessel_name: str
+    imo: Optional[str] = None
+    mmsi: Optional[str] = None
+    flag_state: Optional[str] = None
+    include_sanctions: bool = True
+    include_ais: bool = True
+
+
+@router.post("/compliance-report")
+async def generate_compliance_report(
+    request: ComplianceReportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a PDF compliance/due diligence report for a vessel.
+    
+    Includes:
+    - Sanctions screening (OFAC, EU, UN)
+    - AIS gap analysis
+    - Flag state assessment
+    - Risk recommendations
+    
+    Returns downloadable PDF.
+    """
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    generator = get_report_generator()
+    
+    pdf_bytes = await generator.generate_report(
+        vessel_name=request.vessel_name,
+        imo=request.imo,
+        mmsi=request.mmsi,
+        flag_state=request.flag_state,
+        include_sanctions=request.include_sanctions,
+        include_ais=request.include_ais
+    )
+    
+    # Create filename
+    safe_name = "".join(c for c in request.vessel_name if c.isalnum() or c in "_ -").strip()
+    filename = f"VesselDueDiligence_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+    
+    logger.info(f"Generated compliance report for {request.vessel_name}")
+    
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes))
+        }
+    )
+
+
+@router.get("/compliance-report/{identifier}")
+async def generate_compliance_report_by_id(
+    identifier: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate compliance report for a vessel by IMO, MMSI, or name.
+    """
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    # Get vessel details
+    vessel_data = await _track_vessel_internal(identifier, "name")
+    
+    generator = get_report_generator()
+    
+    pdf_bytes = await generator.generate_report(
+        vessel_name=vessel_data.name,
+        imo=vessel_data.imo,
+        mmsi=vessel_data.mmsi,
+        flag_state=vessel_data.flag,
+        include_sanctions=True,
+        include_ais=True
+    )
+    
+    safe_name = "".join(c for c in vessel_data.name if c.isalnum() or c in "_ -").strip()
+    filename = f"VesselDueDiligence_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+    
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes))
+        }
+    )
 
 
 # ============== Alerts Management (Database-backed) ==============
