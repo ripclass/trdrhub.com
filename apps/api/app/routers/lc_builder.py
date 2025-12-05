@@ -1182,3 +1182,194 @@ async def export_pdf(
         }
     )
 
+
+@router.post("/applications/{application_id}/export/word")
+async def export_word(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export LC application as Word document (.docx)"""
+    from fastapi.responses import Response
+    from io import BytesIO
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Create Word document
+    doc = Document()
+    
+    # Set document style
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(10)
+    
+    # Title
+    title = doc.add_heading('DOCUMENTARY CREDIT APPLICATION', level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Reference
+    ref_para = doc.add_paragraph()
+    ref_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    ref_run = ref_para.add_run(f"Reference: {lc.reference_number}")
+    ref_run.bold = True
+    
+    doc.add_paragraph()  # Spacer
+    
+    # Helper function to add section heading
+    def add_section_heading(text):
+        heading = doc.add_heading(text, level=2)
+        for run in heading.runs:
+            run.font.color.rgb = RGBColor(30, 64, 175)  # Blue color
+    
+    # 1. Basic Information
+    add_section_heading("1. BASIC INFORMATION")
+    
+    basic_table = doc.add_table(rows=3, cols=2)
+    basic_table.style = 'Table Grid'
+    
+    basic_data = [
+        ("Type of Credit:", lc.lc_type.value.upper()),
+        ("Currency & Amount:", f"{lc.currency} {lc.amount:,.2f}"),
+        ("Tolerance:", f"+{lc.tolerance_plus}% / -{lc.tolerance_minus}%"),
+    ]
+    
+    for i, (label, value) in enumerate(basic_data):
+        row = basic_table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = str(value)
+        row.cells[0].paragraphs[0].runs[0].bold = True
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 2. Parties
+    add_section_heading("2. PARTIES")
+    
+    parties_table = doc.add_table(rows=4, cols=2)
+    parties_table.style = 'Table Grid'
+    
+    # Headers
+    parties_table.rows[0].cells[0].text = "APPLICANT"
+    parties_table.rows[0].cells[1].text = "BENEFICIARY"
+    parties_table.rows[0].cells[0].paragraphs[0].runs[0].bold = True
+    parties_table.rows[0].cells[1].paragraphs[0].runs[0].bold = True
+    
+    # Data
+    parties_table.rows[1].cells[0].text = lc.applicant_name or ""
+    parties_table.rows[1].cells[1].text = lc.beneficiary_name or ""
+    parties_table.rows[2].cells[0].text = lc.applicant_address or ""
+    parties_table.rows[2].cells[1].text = lc.beneficiary_address or ""
+    parties_table.rows[3].cells[0].text = lc.applicant_country or ""
+    parties_table.rows[3].cells[1].text = lc.beneficiary_country or ""
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 3. Shipment Details
+    add_section_heading("3. SHIPMENT DETAILS")
+    
+    ship_table = doc.add_table(rows=6, cols=2)
+    ship_table.style = 'Table Grid'
+    
+    ship_data = [
+        ("Port of Loading:", lc.port_of_loading or "Any Port"),
+        ("Port of Discharge:", lc.port_of_discharge or ""),
+        ("Latest Shipment:", lc.latest_shipment_date.strftime("%d %B %Y") if lc.latest_shipment_date else ""),
+        ("Incoterms:", f"{lc.incoterms} {lc.incoterms_place or ''}" if lc.incoterms else ""),
+        ("Partial Shipments:", "ALLOWED" if lc.partial_shipments else "NOT ALLOWED"),
+        ("Transhipment:", "ALLOWED" if lc.transhipment else "NOT ALLOWED"),
+    ]
+    
+    for i, (label, value) in enumerate(ship_data):
+        row = ship_table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = str(value)
+        row.cells[0].paragraphs[0].runs[0].bold = True
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 4. Goods Description
+    add_section_heading("4. GOODS DESCRIPTION")
+    doc.add_paragraph(lc.goods_description or "")
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 5. Payment Terms
+    add_section_heading("5. PAYMENT TERMS")
+    
+    payment_text = lc.payment_terms.value.upper()
+    if lc.payment_terms.value == "usance" and lc.usance_days:
+        payment_text = f"{lc.usance_days} DAYS FROM {lc.usance_from or 'B/L DATE'}"
+    
+    pay_table = doc.add_table(rows=5, cols=2)
+    pay_table.style = 'Table Grid'
+    
+    pay_data = [
+        ("Payment:", payment_text),
+        ("Expiry Date:", lc.expiry_date.strftime("%d %B %Y") if lc.expiry_date else ""),
+        ("Expiry Place:", lc.expiry_place or ""),
+        ("Presentation Period:", f"{lc.presentation_period} days after shipment"),
+        ("Confirmation:", lc.confirmation_instructions.value.upper()),
+    ]
+    
+    for i, (label, value) in enumerate(pay_data):
+        row = pay_table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = str(value)
+        row.cells[0].paragraphs[0].runs[0].bold = True
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 6. Documents Required
+    add_section_heading("6. DOCUMENTS REQUIRED")
+    
+    if lc.documents_required:
+        for i, doc_item in enumerate(lc.documents_required, 1):
+            if isinstance(doc_item, dict):
+                doc_text = f"{i}. {doc_item.get('document_type', '')} - {doc_item.get('copies_original', 1)} original(s)"
+                para = doc.add_paragraph(doc_text)
+                if doc_item.get('specific_requirements'):
+                    doc.add_paragraph(f"   {doc_item['specific_requirements']}")
+            else:
+                doc.add_paragraph(f"{i}. {doc_item}")
+    
+    doc.add_paragraph()  # Spacer
+    
+    # 7. Additional Conditions
+    if lc.additional_conditions:
+        add_section_heading("7. ADDITIONAL CONDITIONS")
+        for cond in lc.additional_conditions:
+            doc.add_paragraph(f"• {cond}")
+    
+    # Footer
+    doc.add_paragraph()
+    footer = doc.add_paragraph()
+    footer_run = footer.add_run(
+        f"Generated on {datetime.now().strftime('%d %B %Y at %H:%M')} by TRDR Hub LC Builder"
+    )
+    footer_run.font.size = Pt(8)
+    footer_run.font.color.rgb = RGBColor(128, 128, 128)
+    
+    # Save to buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    docx_bytes = buffer.getvalue()
+    
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename=LC_{lc.reference_number}.docx"
+        }
+    )
+

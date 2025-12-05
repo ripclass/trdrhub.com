@@ -394,6 +394,17 @@ export default function LCBuilderDashboard() {
                             Export PDF
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/lc-builder/applications/${app.id}/export/word`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Export Word (.docx)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-red-400"
                             onClick={() => handleDelete(app.id)}
                           >
