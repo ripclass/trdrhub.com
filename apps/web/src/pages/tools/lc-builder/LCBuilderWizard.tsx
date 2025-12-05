@@ -185,7 +185,7 @@ export default function LCBuilderWizard() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { session, user, loading: authLoading } = useAuth();
+  const { session } = useAuth();
   
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>(initialFormData);
@@ -193,13 +193,6 @@ export default function LCBuilderWizard() {
   const [validation, setValidation] = useState<any>(null);
   const [mt700Preview, setMT700Preview] = useState<any>(null);
   const [showMT700Dialog, setShowMT700Dialog] = useState(false);
-  
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate("/login?redirect=/lc-builder/wizard");
-    }
-  }, [authLoading, user, navigate]);
   
   // Load existing application if editing
   useEffect(() => {
@@ -1012,10 +1005,8 @@ export default function LCBuilderWizard() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" asChild>
-                <Link to="/lc-builder/dashboard">
-                  <ArrowLeft className="h-5 w-5" />
-                </Link>
+              <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+                <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
                 <h1 className="text-xl font-bold text-white">

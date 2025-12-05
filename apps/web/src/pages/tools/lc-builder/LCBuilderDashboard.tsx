@@ -77,19 +77,12 @@ const riskColors = (score: number | null) => {
 export default function LCBuilderDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { session, user, loading: authLoading } = useAuth();
+  const { session } = useAuth();
   
   const [applications, setApplications] = useState<LCApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate("/login?redirect=/lc-builder/dashboard");
-    }
-  }, [authLoading, user, navigate]);
   
   useEffect(() => {
     if (session?.access_token) {
@@ -192,24 +185,17 @@ export default function LCBuilderDashboard() {
     <div className="min-h-screen bg-slate-950">
       {/* Header */}
       <div className="border-b border-slate-800 bg-slate-900/50">
-        <div className="container mx-auto px-4 py-4">
+        <div className="px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" asChild>
-                <Link to="/hub">
-                  <ArrowLeft className="h-5 w-5" />
-                </Link>
-              </Button>
-              <div>
-                <h1 className="text-xl font-bold text-white">LC Builder</h1>
-                <p className="text-sm text-slate-400">
-                  Create and manage LC applications
-                </p>
-              </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">LC Applications</h1>
+              <p className="text-sm text-slate-400">
+                Create and manage LC applications
+              </p>
             </div>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => navigate("/lc-builder/wizard")}
+              onClick={() => navigate("/lc-builder/dashboard/new")}
             >
               <Plus className="h-4 w-4 mr-2" />
               New LC Application
@@ -219,7 +205,7 @@ export default function LCBuilderDashboard() {
       </div>
       
       {/* Filters */}
-      <div className="container mx-auto px-4 py-6">
+      <div className="px-6 py-6">
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -326,7 +312,7 @@ export default function LCBuilderDashboard() {
               </p>
               <Button
                 className="bg-emerald-600 hover:bg-emerald-700"
-                onClick={() => navigate("/lc-builder/wizard")}
+                onClick={() => navigate("/lc-builder/dashboard/new")}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Create LC Application
@@ -387,7 +373,7 @@ export default function LCBuilderDashboard() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => navigate(`/lc-builder/wizard/${app.id}`)}
+                            onClick={() => navigate(`/lc-builder/dashboard/edit/${app.id}`)}
                           >
                             <Eye className="h-4 w-4 mr-2" />
                             View / Edit

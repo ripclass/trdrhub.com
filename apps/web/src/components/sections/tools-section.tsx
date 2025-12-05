@@ -51,7 +51,7 @@ const tools = [
     tagline: "Error-Free LC Applications",
     description: "Guided LC application builder with clause library, real-time validation, and MT700 preview. 80% fewer rejections.",
     highlights: ["500+ Clauses", "Risk Scoring", "MT700 Preview"],
-    status: "coming" as const,
+    status: "live" as const,
     href: "/lc-builder",
     category: "Document & Validation",
     color: "emerald",

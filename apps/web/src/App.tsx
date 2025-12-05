@@ -16,6 +16,7 @@ import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import LCBuilderDashboard from './pages/tools/lc-builder/LCBuilderDashboard'
 import LCBuilderWizard from './pages/tools/lc-builder/LCBuilderWizard'
+import LCBuilderLayout from './pages/tools/lc-builder/LCBuilderLayout'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
@@ -152,7 +153,12 @@ function App() {
           <Route path="certificates" element={<CertificatesPage />} />
         </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
-        <Route path="/lc-builder/dashboard" element={<LCBuilderDashboard />} />
+        {/* LC Builder Dashboard with Sidebar */}
+        <Route path="/lc-builder/dashboard" element={<LCBuilderLayout />}>
+          <Route index element={<LCBuilderDashboard />} />
+          <Route path="new" element={<LCBuilderWizard />} />
+          <Route path="edit/:id" element={<LCBuilderWizard />} />
+        </Route>
         <Route path="/lc-builder/wizard" element={<LCBuilderWizard />} />
         <Route path="/lc-builder/wizard/:id" element={<LCBuilderWizard />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
