@@ -28,6 +28,7 @@ import {
   Bell,
   ChevronRight,
   Waves,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/components/ui/use-toast";
+import { VesselSanctionsCard } from "@/components/tracking";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
@@ -458,6 +460,10 @@ export default function VesselTrackPage() {
               <Ruler className="w-4 h-4 mr-1" />
               Specifications
             </TabsTrigger>
+            <TabsTrigger value="compliance" className="data-[state=active]:bg-emerald-500/20">
+              <Shield className="w-4 h-4 mr-1" />
+              Compliance
+            </TabsTrigger>
           </TabsList>
 
           {/* Position Tab */}
@@ -647,6 +653,65 @@ export default function VesselTrackPage() {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Gross Tonnage</span>
                     <span className="text-white">{vessel.capacity.grossTonnage.toLocaleString()} GT</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Compliance Tab */}
+          <TabsContent value="compliance">
+            <div className="grid md:grid-cols-2 gap-6">
+              <VesselSanctionsCard
+                vesselName={vessel.name}
+                imo={vessel.imo}
+                mmsi={vessel.mmsi}
+                flagState={vessel.flag}
+                className="bg-slate-900/50 border-slate-800"
+              />
+              
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-emerald-400" />
+                    Compliance Overview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <h4 className="font-medium text-emerald-400 mb-2">What We Check</h4>
+                    <ul className="text-sm text-slate-400 space-y-2">
+                      <li className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                        OFAC SDN List (US Treasury)
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                        EU Consolidated Sanctions
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                        UN Security Council Sanctions
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                        Flag State Risk Assessment
+                      </li>
+                    </ul>
+                  </div>
+                  
+                  <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <h4 className="font-medium text-blue-400 mb-2">Why It Matters</h4>
+                    <p className="text-sm text-slate-400">
+                      Banks and trade finance institutions require sanctions screening 
+                      before processing Letters of Credit. Our automated screening helps 
+                      you stay compliant with international regulations.
+                    </p>
+                  </div>
+                  
+                  <div className="text-xs text-slate-500">
+                    <p>Data sources updated daily from official government databases.</p>
+                    <p className="mt-1">This is a screening tool - always consult compliance for final decisions.</p>
                   </div>
                 </CardContent>
               </Card>

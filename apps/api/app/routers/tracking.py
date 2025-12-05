@@ -29,6 +29,7 @@ from app.models.tracking import (
 )
 from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
+from app.services.vessel_sanctions import get_sanctions_service, SanctionsResult
 from app.utils.usage_tracker import track_usage
 import logging
 
@@ -637,6 +638,76 @@ async def search_tracking(
         return {"type": "container", "result": result}
     
     raise HTTPException(status_code=400, detail="Invalid search type")
+
+
+# ============== Vessel Sanctions Screening ==============
+
+class SanctionsScreenRequest(BaseModel):
+    """Request for sanctions screening."""
+    vessel_name: str
+    imo: Optional[str] = None
+    mmsi: Optional[str] = None
+    flag_state: Optional[str] = None
+    flag_code: Optional[str] = None
+
+
+@router.post("/sanctions/screen", response_model=SanctionsResult)
+@track_usage(operation="sanctions_screen", tool="tracking", description="Vessel sanctions screening")
+async def screen_vessel_sanctions(
+    request: SanctionsScreenRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Screen a vessel against international sanctions lists.
+    
+    Checks:
+    - OFAC SDN (US Treasury)
+    - EU Consolidated Sanctions
+    - UN Sanctions List
+    - Flag state risk assessment
+    
+    Returns comprehensive screening result with risk level and recommendation.
+    """
+    service = get_sanctions_service()
+    
+    result = await service.screen_vessel(
+        vessel_name=request.vessel_name,
+        imo=request.imo,
+        mmsi=request.mmsi,
+        flag_state=request.flag_state,
+        flag_code=request.flag_code
+    )
+    
+    logger.info(f"Sanctions screening for {request.vessel_name}: {result.risk_level}")
+    
+    return result
+
+
+@router.get("/sanctions/screen/{identifier}")
+@track_usage(operation="sanctions_screen", tool="tracking", description="Vessel sanctions screening")
+async def screen_vessel_by_identifier(
+    identifier: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Screen a vessel by name or IMO number.
+    Automatically fetches vessel details and performs screening.
+    """
+    # First, get vessel details
+    vessel_data = await _track_vessel_internal(identifier, "name")
+    
+    service = get_sanctions_service()
+    
+    result = await service.screen_vessel(
+        vessel_name=vessel_data.name,
+        imo=vessel_data.imo,
+        mmsi=vessel_data.mmsi,
+        flag_state=vessel_data.flag
+    )
+    
+    return result
 
 
 # ============== Alerts Management (Database-backed) ==============
