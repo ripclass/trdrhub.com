@@ -124,9 +124,9 @@ const LCBuilderLanding = () => {
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-6">
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span className="text-amber-400 text-sm font-medium">Coming Q1 2025</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 text-sm font-medium">Now Available</span>
               </div>
               
               <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
@@ -142,12 +142,12 @@ const LCBuilderLanding = () => {
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                 <Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold" asChild>
-                  <Link to="/waitlist?tool=lc-builder">
-                    Join Waitlist <ArrowRight className="w-5 h-5 ml-2" />
+                  <Link to="/lc-builder/dashboard">
+                    Start Building <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
                 <Button variant="outline" size="lg" className="border-slate-700 text-slate-300 hover:bg-slate-800" asChild>
-                  <Link to="/contact">Request Demo</Link>
+                  <Link to="/lc-builder/wizard">Create New LC</Link>
                 </Button>
               </div>
 
@@ -362,7 +362,7 @@ const LCBuilderLanding = () => {
                     "w-full",
                     plan.popular ? "bg-emerald-500 hover:bg-emerald-600" : "bg-slate-700 hover:bg-slate-600"
                   )} asChild>
-                    <Link to="/waitlist?tool=lc-builder">Join Waitlist</Link>
+                    <Link to="/lc-builder/dashboard">Get Started</Link>
                   </Button>
                 </div>
               ))}
@@ -411,11 +411,11 @@ const LCBuilderLanding = () => {
                 Stop Getting LC Applications Rejected
               </h2>
               <p className="text-lg text-slate-400 mb-8">
-                Join the waitlist for early access and launch pricing.
+                Start drafting bank-ready LC applications in minutes.
               </p>
               <Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold" asChild>
-                <Link to="/waitlist?tool=lc-builder">
-                  Join Waitlist <ArrowRight className="w-5 h-5 ml-2" />
+                <Link to="/lc-builder/wizard">
+                  Create LC Application <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
               </Button>
             </div>

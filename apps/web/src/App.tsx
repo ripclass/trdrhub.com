@@ -14,6 +14,8 @@ import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
 import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
+import LCBuilderDashboard from './pages/tools/lc-builder/LCBuilderDashboard'
+import LCBuilderWizard from './pages/tools/lc-builder/LCBuilderWizard'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
@@ -150,6 +152,9 @@ function App() {
           <Route path="certificates" element={<CertificatesPage />} />
         </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
+        <Route path="/lc-builder/dashboard" element={<PrivateRoute><LCBuilderDashboard /></PrivateRoute>} />
+        <Route path="/lc-builder/wizard" element={<PrivateRoute><LCBuilderWizard /></PrivateRoute>} />
+        <Route path="/lc-builder/wizard/:id" element={<PrivateRoute><LCBuilderWizard /></PrivateRoute>} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
         {/* Tracking Dashboard with Sidebar */}
         <Route path="/tracking/dashboard" element={<TrackingLayout />}>

@@ -55,7 +55,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -265,6 +265,7 @@ app.include_router(tracking.router)  # Container & vessel tracking (real-time AI
 app.include_router(doc_generator.router)  # Shipping document generator (Invoice, Packing List, CoO)
 app.include_router(doc_generator_catalog.router)  # Doc generator templates, products, buyers (Phase 2)
 app.include_router(doc_generator_advanced.router)  # Doc generator signatures, translations, certificates (Phase 3)
+app.include_router(lc_builder.router)  # LC Application Builder (wizard, clauses, MT700 export)
 app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack, bank submissions)
 app.include_router(jobs_public.router)  # Public validation job status/results endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
