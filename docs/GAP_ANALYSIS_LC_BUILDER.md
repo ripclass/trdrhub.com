@@ -69,23 +69,15 @@ After Phase 1 completion, the tool is now much more usable:
 
 ---
 
-## Phase 2: Bank-Ready (1 week) - Next
+## Phase 2: Bank-Ready - COMPLETED ✅
 
-**For System Architect:**
-- [ ] Bank format registry design (like Doc Generator)
-- [ ] Approval workflow schema (draft → review → approved)
-- [ ] Amendment tracking schema (original → amended)
-
-**For Senior Developer:**
-- [ ] Import from Previous LC (reuse existing data)
-- [ ] Bank-specific PDF formats (HSBC, SCB, CITI)
-- [ ] Smart clause suggestions based on:
-  - Origin/destination countries
-  - Goods type (textiles, electronics, commodities)
-  - Payment terms
-- [ ] Version history with diff view
-- [ ] API endpoints for applicant/beneficiary CRUD
-- [ ] Persist templates to database
+### All Tasks Done:
+- [x] **Import from Previous LC** - Select source LC and fields to import (applicant, beneficiary, shipment, goods, documents, payment, conditions)
+- [x] **Bank-specific PDF formats** - SCB, HSBC, Citibank, DBS with branded colors and bank-specific requirements
+- [x] **Smart clause suggestions** - Based on origin/destination country, goods type, payment terms, Incoterms, first-time beneficiary, amount
+- [x] **API endpoints for applicant/beneficiary CRUD** - Full create/read/update/delete with database persistence
+- [ ] Version history with diff view (moved to Phase 3)
+- [ ] Persist templates to database (moved to Phase 3)
 
 ---
 
