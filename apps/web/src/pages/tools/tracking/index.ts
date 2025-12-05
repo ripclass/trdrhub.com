@@ -5,6 +5,10 @@ export { default as TrackingDashboard } from './TrackingDashboard';
 export { default as ContainerTrackPage } from './ContainerTrackPage';
 export { default as VesselTrackPage } from './VesselTrackPage';
 
+// Search pages
+export { default as ContainerSearchPage } from './ContainerSearchPage';
+export { default as VesselSearchPage } from './VesselSearchPage';
+
 // Full feature pages
 export { default as ActiveShipmentsPage } from './ActiveShipmentsPage';
 export { default as AlertsPage } from './AlertsPage';

@@ -91,6 +91,8 @@ import {
   TrackingPlaceholder, 
   ContainerTrackPage, 
   VesselTrackPage,
+  ContainerSearchPage,
+  VesselSearchPage,
   ActiveShipmentsPage,
   AlertsPage,
   HistoryPage,
@@ -127,8 +129,8 @@ function App() {
         {/* Tracking Dashboard with Sidebar */}
         <Route path="/tracking/dashboard" element={<TrackingLayout />}>
           <Route index element={<TrackingOverview />} />
-          <Route path="search" element={<TrackingOverview />} />
-          <Route path="vessel-search" element={<TrackingOverview />} />
+          <Route path="search" element={<ContainerSearchPage />} />
+          <Route path="vessel-search" element={<VesselSearchPage />} />
           <Route path="container/:containerId" element={<ContainerTrackPage />} />
           <Route path="vessel/:vesselId" element={<VesselTrackPage />} />
           {/* Full Feature Pages */}
