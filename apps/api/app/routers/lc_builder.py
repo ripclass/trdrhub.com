@@ -749,7 +749,7 @@ async def list_clauses(
     risk_level: Optional[str] = None,
     bias: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=500, le=1000),
     offset: int = 0
 ):
     """List clauses from the library"""
@@ -764,6 +764,9 @@ async def list_clauses(
         risk_level=risk,
         bias=bi
     )
+    
+    # Get statistics
+    stats = LCClauseLibrary.get_statistics()
     
     total = len(clauses)
     paged = clauses[offset:offset + limit]
@@ -785,7 +788,13 @@ async def list_clauses(
                 "tags": c.tags,
             }
             for c in paged
-        ]
+        ],
+        "statistics": {
+            "total_clauses": stats["total_clauses"],
+            "categories": stats["categories"],
+            "by_risk_level": stats["by_risk_level"],
+            "by_bias": stats["by_bias"],
+        }
     }
 
 
