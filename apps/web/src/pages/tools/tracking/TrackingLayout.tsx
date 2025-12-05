@@ -166,7 +166,7 @@ const navItems = {
 export default function TrackingLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const { isAdmin, canAccessAdminPanels } = useUserRole();
   const [notifications] = useState(2);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -434,6 +434,16 @@ export default function TrackingLayout() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link to="/hub">Back to Hub</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    className="text-red-500 focus:text-red-500"
+                    onClick={async () => {
+                      await logout();
+                      navigate("/login");
+                    }}
+                  >
+                    Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
