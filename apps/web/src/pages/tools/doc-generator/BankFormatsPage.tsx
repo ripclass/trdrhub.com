@@ -149,12 +149,12 @@ export function BankFormatsPage() {
                     className="pl-10 bg-slate-800 border-slate-700"
                   />
                 </div>
-                <Select value={countryFilter} onValueChange={setCountryFilter}>
+                <Select value={countryFilter || "all"} onValueChange={(v) => setCountryFilter(v === "all" ? "" : v)}>
                   <SelectTrigger className="bg-slate-800 border-slate-700">
                     <SelectValue placeholder="All Countries" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Countries</SelectItem>
+                    <SelectItem value="all">All Countries</SelectItem>
                     {countries.map((country) => (
                       <SelectItem key={country} value={country}>{country}</SelectItem>
                     ))}
