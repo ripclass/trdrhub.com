@@ -85,7 +85,23 @@ import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
-import { TrackingLayout, TrackingOverview, TrackingPlaceholder, ContainerTrackPage, VesselTrackPage } from './pages/tools/tracking'
+import { 
+  TrackingLayout, 
+  TrackingOverview, 
+  TrackingPlaceholder, 
+  ContainerTrackPage, 
+  VesselTrackPage,
+  ActiveShipmentsPage,
+  AlertsPage,
+  HistoryPage,
+  AnalyticsPage as TrackingAnalyticsPage,
+  SettingsPage as TrackingSettingsPage,
+  HelpPage as TrackingHelpPage,
+  RouteMapPage,
+  PortSchedulePage,
+  ExceptionsPage,
+  PerformancePage,
+} from './pages/tools/tracking'
 
 function App() {
   return (
@@ -115,17 +131,17 @@ function App() {
           <Route path="vessel-search" element={<TrackingOverview />} />
           <Route path="container/:containerId" element={<ContainerTrackPage />} />
           <Route path="vessel/:vesselId" element={<VesselTrackPage />} />
-          {/* Coming Soon Features */}
-          <Route path="active" element={<TrackingPlaceholder />} />
-          <Route path="map" element={<TrackingPlaceholder />} />
-          <Route path="ports" element={<TrackingPlaceholder />} />
-          <Route path="alerts" element={<TrackingPlaceholder />} />
-          <Route path="exceptions" element={<TrackingPlaceholder />} />
-          <Route path="history" element={<TrackingPlaceholder />} />
-          <Route path="analytics" element={<TrackingPlaceholder />} />
-          <Route path="performance" element={<TrackingPlaceholder />} />
-          <Route path="settings" element={<TrackingPlaceholder />} />
-          <Route path="help" element={<TrackingPlaceholder />} />
+          {/* Full Feature Pages */}
+          <Route path="active" element={<ActiveShipmentsPage />} />
+          <Route path="map" element={<RouteMapPage />} />
+          <Route path="ports" element={<PortSchedulePage />} />
+          <Route path="alerts" element={<AlertsPage />} />
+          <Route path="exceptions" element={<ExceptionsPage />} />
+          <Route path="history" element={<HistoryPage />} />
+          <Route path="analytics" element={<TrackingAnalyticsPage />} />
+          <Route path="performance" element={<PerformancePage />} />
+          <Route path="settings" element={<TrackingSettingsPage />} />
+          <Route path="help" element={<TrackingHelpPage />} />
         </Route>
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
         <Route path="/price-verify" element={<PriceVerifyLanding />} />
