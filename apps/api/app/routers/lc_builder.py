@@ -19,7 +19,7 @@ from app.models.lc_builder import (
     LCClause, LCTemplate, ApplicantProfile, BeneficiaryProfile,
     LCType, LCStatus, PaymentTerms, ConfirmationInstructions
 )
-from app.routers.auth import get_current_user, get_optional_user
+from app.routers.auth import get_current_user
 from app.services.lc_clause_library import (
     LCClauseLibrary, ClauseCategory, RiskLevel, BiasIndicator
 )
@@ -832,25 +832,17 @@ async def get_clause(code: str):
 async def list_templates(
     trade_route: Optional[str] = None,
     industry: Optional[str] = None,
-    current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """List available templates"""
     
     query = db.query(LCTemplate)
     
-    # Include public/system templates and user's own
-    if current_user:
-        query = query.filter(
-            (LCTemplate.is_public == True) |
-            (LCTemplate.is_system == True) |
-            (LCTemplate.user_id == current_user.id)
-        )
-    else:
-        query = query.filter(
-            (LCTemplate.is_public == True) |
-            (LCTemplate.is_system == True)
-        )
+    # Include public/system templates
+    query = query.filter(
+        (LCTemplate.is_public == True) |
+        (LCTemplate.is_system == True)
+    )
     
     if trade_route:
         query = query.filter(LCTemplate.trade_route.ilike(f"%{trade_route}%"))
