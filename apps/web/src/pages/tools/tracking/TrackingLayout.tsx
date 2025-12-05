@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
+import { Link, useLocation, Outlet, useNavigate, Navigate } from "react-router-dom";
 import {
   Ship,
   Search,
@@ -172,16 +172,36 @@ export default function TrackingLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Redirect to login if not authenticated (strict check - not guest mode)
-  useEffect(() => {
-    if (!isLoading) {
-      const isGuest = user?.id === 'guest' || user?.email === 'guest@trdrhub.com';
-      
-      if (!user || isGuest) {
-        navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+  // Check if user is guest
+  const isGuest = user?.id === 'guest' || user?.email === 'guest@trdrhub.com';
+  
+  // Check for stored auth token (synchronous check - runs IMMEDIATELY)
+  const hasStoredToken = (() => {
+    try {
+      const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_REF || '';
+      const storedAuth = localStorage.getItem(`sb-${projectRef}-auth-token`);
+      if (storedAuth) {
+        const parsed = JSON.parse(storedAuth);
+        return !!parsed?.access_token;
       }
+      return false;
+    } catch {
+      return false;
     }
-  }, [user, isLoading, navigate, location.pathname]);
+  })();
+  
+  // IMMEDIATE REDIRECT: If no stored token at all, redirect immediately
+  // Don't wait for auth to finish loading - there's nothing to load
+  if (!hasStoredToken) {
+    const returnUrl = encodeURIComponent(location.pathname);
+    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
+  }
+  
+  // If we have a token but auth finished and no valid user, redirect
+  if (!isLoading && (!user || isGuest)) {
+    const returnUrl = encodeURIComponent(location.pathname);
+    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
+  }
 
   // Get user display info
   const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
