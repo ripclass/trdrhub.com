@@ -81,20 +81,18 @@ After Phase 1 completion, the tool is now much more usable:
 
 ---
 
-## Phase 3: Bank-Grade (1-2 weeks)
+## Phase 3: Bank-Grade - IN PROGRESS ✅
 
-**For System Architect:**
-- [ ] LCopilot integration design (import validated LC data)
-- [ ] Bank portal API integration design
-- [ ] Audit trail schema (who changed what when)
+### Completed:
+- [x] **Version History with Diff View** - Full snapshot storage, diff calculation, restore functionality
+- [x] **Template Persistence** - User templates CRUD, save LC as template, fetch from API
 
-**For Senior Developer:**
+### Remaining:
 - [ ] LCopilot integration (Import from validation session)
-- [ ] Approval workflow UI (submit for review, approve/reject)
 - [ ] Amendment builder (modify existing LC application)
 - [ ] Email notification on status change
+- [ ] Approval workflow UI (submit for review, approve/reject)
 - [ ] Team collaboration (share with colleagues)
-- [ ] Usage analytics dashboard
 
 ---
 
