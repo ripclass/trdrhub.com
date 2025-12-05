@@ -29,6 +29,7 @@ from app.models.tracking import (
 )
 from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
+from app.utils.usage_tracker import track_usage
 import logging
 
 logger = logging.getLogger(__name__)
@@ -590,21 +591,24 @@ async def _track_vessel_internal(identifier: str, search_type: str = "name") -> 
 # ============== API Endpoints ==============
 
 @router.get("/container/{container_number}", response_model=ContainerTrackingResult)
+@track_usage(operation="container_track", tool="tracking", description="Container tracking lookup")
 async def track_container(
     container_number: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Track a container by container number."""
     result = await _track_container_internal(container_number)
-    # TODO: Log usage for billing
     return result
 
 
 @router.get("/vessel/{identifier}", response_model=VesselTrackingResult)
+@track_usage(operation="container_track", tool="tracking", description="Vessel tracking lookup")
 async def track_vessel(
     identifier: str,
     search_type: str = Query("name", regex="^(name|imo|mmsi)$"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Track a vessel by name, IMO, or MMSI number."""
     result = await _track_vessel_internal(identifier, search_type)
@@ -612,10 +616,12 @@ async def track_vessel(
 
 
 @router.get("/search")
+@track_usage(operation="container_track", tool="tracking", description="Tracking search")
 async def search_tracking(
     q: str = Query(..., min_length=3),
     type: str = Query("container", regex="^(container|vessel|bl)$"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Search for containers, vessels, or B/L numbers."""
     q = q.strip().upper()
