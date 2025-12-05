@@ -112,6 +112,9 @@ import {
   TemplatesPage,
   ProductCatalogPage,
   BuyerDirectoryPage,
+  SignaturesPage,
+  BankFormatsPage,
+  CertificatesPage,
 } from './pages/tools/doc-generator'
 
 function App() {
@@ -142,6 +145,9 @@ function App() {
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="products" element={<ProductCatalogPage />} />
           <Route path="buyers" element={<BuyerDirectoryPage />} />
+          <Route path="signatures" element={<SignaturesPage />} />
+          <Route path="bank-formats" element={<BankFormatsPage />} />
+          <Route path="certificates" element={<CertificatesPage />} />
         </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />

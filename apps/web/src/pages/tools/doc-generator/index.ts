@@ -17,3 +17,8 @@ export { default as TemplatesPage } from './TemplatesPage';
 export { default as ProductCatalogPage } from './ProductCatalogPage';
 export { default as BuyerDirectoryPage } from './BuyerDirectoryPage';
 
+// Phase 3 - Industry Standard
+export { default as SignaturesPage } from './SignaturesPage';
+export { default as BankFormatsPage } from './BankFormatsPage';
+export { default as CertificatesPage } from './CertificatesPage';
+

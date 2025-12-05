@@ -23,6 +23,11 @@ import {
   LayoutTemplate,
   Users,
   History,
+  PenTool,
+  Building2,
+  Award,
+  FileDown,
+  Languages,
 } from "lucide-react";
 import {
   Sidebar,
@@ -96,22 +101,22 @@ const navItems = [
     ],
   },
   {
-    title: "Document Types",
+    title: "Advanced",
     items: [
       {
-        title: "Commercial Invoice",
-        href: "/doc-generator/dashboard?type=commercial_invoice",
-        icon: FileText,
+        title: "Digital Signatures",
+        href: "/doc-generator/dashboard/signatures",
+        icon: PenTool,
       },
       {
-        title: "Packing List",
-        href: "/doc-generator/dashboard?type=packing_list",
-        icon: Package,
+        title: "Bank Formats",
+        href: "/doc-generator/dashboard/bank-formats",
+        icon: Building2,
       },
       {
-        title: "Certificate of Origin",
-        href: "/doc-generator/dashboard?type=certificate_of_origin",
-        icon: Scroll,
+        title: "GSP / EUR.1 Certs",
+        href: "/doc-generator/dashboard/certificates",
+        icon: Award,
       },
     ],
   },
