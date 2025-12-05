@@ -172,48 +172,7 @@ export default function TrackingLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Check if user is a real authenticated user (not guest, not null)
-  // Guest users have id='guest', real users have UUIDs
-  const isValidUser = (() => {
-    if (!user) return false;
-    if (user.id === 'guest') return false;
-    if (user.email === 'guest@trdrhub.com') return false;
-    // Check if id looks like a UUID (basic check)
-    if (!user.id || user.id.length < 20) return false;
-    return true;
-  })();
-  
-  // Show loading while auth is being checked
-  // This prevents race conditions after login redirect
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Checking authentication...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // After loading completes, redirect if no valid authenticated user
-  if (!isValidUser) {
-    const returnUrl = encodeURIComponent(location.pathname);
-    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
-  }
-
-  // Get user display info
-  const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
-  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
-
-  // Get current page title for breadcrumb
-  const getCurrentPageTitle = () => {
-    const allItems = [...navItems.main, ...navItems.monitoring, ...navItems.alerts, ...navItems.insights, ...navItems.support];
-    const currentItem = allItems.find(item => item.url === location.pathname);
-    return currentItem?.title || "Dashboard";
-  };
-
-  // Keyboard shortcuts
+  // Keyboard shortcuts - MUST be called before any conditional returns
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       // Cmd+K or Ctrl+K - Open command palette
@@ -245,22 +204,48 @@ export default function TrackingLayout() {
     return () => document.removeEventListener("keydown", down);
   }, [navigate]);
 
-  // Command palette navigation
+  // Command palette navigation - MUST be called before any conditional returns
   const runCommand = useCallback((command: () => void) => {
     setCommandOpen(false);
     command();
   }, []);
 
-  // Show loading while auth is checking
+  // Check if user is a real authenticated user (not guest, not null)
+  const isValidUser = (() => {
+    if (!user) return false;
+    if (user.id === 'guest') return false;
+    if (user.email === 'guest@trdrhub.com') return false;
+    if (!user.id || user.id.length < 20) return false;
+    return true;
+  })();
+
+  // Get user display info
+  const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
+  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
+
+  // Get current page title for breadcrumb
+  const getCurrentPageTitle = () => {
+    const allItems = [...navItems.main, ...navItems.monitoring, ...navItems.alerts, ...navItems.insights, ...navItems.support];
+    const currentItem = allItems.find(item => item.url === location.pathname);
+    return currentItem?.title || "Dashboard";
+  };
+  
+  // Show loading while auth is being checked
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">Checking authentication...</p>
         </div>
       </div>
     );
+  }
+  
+  // Redirect if no valid authenticated user
+  if (!isValidUser) {
+    const returnUrl = encodeURIComponent(location.pathname);
+    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
   }
 
   return (
