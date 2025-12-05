@@ -81,15 +81,15 @@ After Phase 1 completion, the tool is now much more usable:
 
 ---
 
-## Phase 3: Bank-Grade - IN PROGRESS ✅
+## Phase 3: Bank-Grade - COMPLETED ✅
 
-### Completed:
+### All Tasks Done:
 - [x] **Version History with Diff View** - Full snapshot storage, diff calculation, restore functionality
 - [x] **Template Persistence** - User templates CRUD, save LC as template, fetch from API
+- [x] **LCopilot Integration** - Import from validation sessions with preview, one-click import
+- [x] **Amendment Builder** - Create amendments with multiple types, automatic versioning
 
-### Remaining:
-- [ ] LCopilot integration (Import from validation session)
-- [ ] Amendment builder (modify existing LC application)
+### Remaining (Future Enhancements):
 - [ ] Email notification on status change
 - [ ] Approval workflow UI (submit for review, approve/reject)
 - [ ] Team collaboration (share with colleagues)
@@ -125,17 +125,39 @@ After Phase 1 completion, the tool is now much more usable:
 | `DELETE /lc-builder/applications/:id` | ✅ | Delete application |
 | `POST /lc-builder/applications/:id/validate` | ✅ | Validate application |
 | `POST /lc-builder/applications/:id/duplicate` | ✅ | Duplicate application |
+| `POST /lc-builder/applications/:id/import-data` | ✅ | **Phase 2** Import from previous LC |
+| `POST /lc-builder/applications/:id/amend` | ✅ | **Phase 3** Create amendment |
+| `GET /lc-builder/applications/:id/amendment-options` | ✅ | **Phase 3** Get amendment types |
+| `GET /lc-builder/applications/:id/versions` | ✅ | **Phase 3** List versions |
+| `POST /lc-builder/applications/:id/versions` | ✅ | **Phase 3** Create version |
+| `GET /lc-builder/applications/:id/versions/:vid/diff` | ✅ | **Phase 3** Get diff |
+| `POST /lc-builder/applications/:id/versions/:vid/restore` | ✅ | **Phase 3** Restore version |
+| `POST /lc-builder/applications/:id/save-as-template` | ✅ | **Phase 3** Save as template |
 | `POST /lc-builder/applications/:id/export/mt700` | ✅ | MT700 export |
 | `POST /lc-builder/applications/:id/export/pdf` | ✅ | PDF export |
-| `POST /lc-builder/applications/:id/export/word` | ✅ | **NEW - Word export** |
+| `POST /lc-builder/applications/:id/export/pdf/:bank` | ✅ | **Phase 2** Bank-specific PDF |
+| `POST /lc-builder/applications/:id/export/word` | ✅ | **Phase 1** Word export |
 | `GET /lc-builder/clauses` | ✅ | List clauses |
 | `GET /lc-builder/clauses/categories` | ✅ | Clause categories |
+| `GET /lc-builder/clauses/suggest` | ✅ | **Phase 2** Smart suggestions |
 | `GET /lc-builder/clauses/:code` | ✅ | Get clause |
 | `GET /lc-builder/templates` | ✅ | List templates |
+| `GET /lc-builder/templates/mine` | ✅ | **Phase 3** User's templates |
+| `POST /lc-builder/templates` | ✅ | **Phase 3** Create template |
+| `PUT /lc-builder/templates/:id` | ✅ | **Phase 3** Update template |
+| `DELETE /lc-builder/templates/:id` | ✅ | **Phase 3** Delete template |
 | `GET /lc-builder/profiles/applicants` | ✅ | List applicant profiles |
+| `POST /lc-builder/profiles/applicants` | ✅ | **Phase 2** Create applicant |
+| `PUT /lc-builder/profiles/applicants/:id` | ✅ | **Phase 2** Update applicant |
+| `DELETE /lc-builder/profiles/applicants/:id` | ✅ | **Phase 2** Delete applicant |
 | `GET /lc-builder/profiles/beneficiaries` | ✅ | List beneficiary profiles |
-| `POST /lc-builder/profiles/applicants` | ❌ | Phase 2 |
-| `POST /lc-builder/profiles/beneficiaries` | ❌ | Phase 2 |
+| `POST /lc-builder/profiles/beneficiaries` | ✅ | **Phase 2** Create beneficiary |
+| `PUT /lc-builder/profiles/beneficiaries/:id` | ✅ | **Phase 2** Update beneficiary |
+| `DELETE /lc-builder/profiles/beneficiaries/:id` | ✅ | **Phase 2** Delete beneficiary |
+| `GET /lc-builder/lcopilot/sessions` | ✅ | **Phase 3** List LCopilot sessions |
+| `GET /lc-builder/lcopilot/sessions/:id/preview` | ✅ | **Phase 3** Preview session data |
+| `POST /lc-builder/lcopilot/import/:id` | ✅ | **Phase 3** Import from LCopilot |
+| `GET /lc-builder/bank-formats` | ✅ | **Phase 2** List bank formats |
 
 ---
 
@@ -161,15 +183,19 @@ After Phase 1 completion, the tool is now much more usable:
 |---------|-----------------|------------------|----------------|
 | Guided Wizard | ✅ | ✅ | ✅ |
 | Clause Library | ✅ 428 | 300+ | 500+ |
+| Smart Suggestions | ✅ | ❌ | ✅ |
 | MT700 Preview | ✅ | ✅ | ✅ |
 | PDF Export | ✅ | ✅ | ✅ |
 | Word Export | ✅ | ❌ | ✅ |
+| Bank PDF Formats | ✅ 4 banks | ✅ 10 banks | ✅ 20 banks |
 | Risk Scoring | ✅ | ❌ | ✅ |
-| Templates | ✅ | ✅ | ✅ |
-| Applicant Profiles | ✅ | ✅ | ✅ |
-| Bank Formats | ⚠️ Generic | ✅ 10 banks | ✅ 20 banks |
-| Import from LC | ❌ | ✅ | ✅ |
-| Bank Submission | ❌ | ✅ | ✅ |
+| Templates | ✅ Save & Reuse | ✅ | ✅ |
+| Applicant/Beneficiary CRUD | ✅ | ✅ | ✅ |
+| Import from Previous LC | ✅ | ✅ | ✅ |
+| LCopilot Integration | ✅ Unique | ❌ | ❌ |
+| Version History | ✅ With Diff | ❌ | ✅ |
+| Amendment Builder | ✅ | ✅ | ✅ |
+| Bank Submission | ❌ Future | ✅ | ✅ |
 | Price | TBD | $199/mo | $299/mo |
 
 ---
