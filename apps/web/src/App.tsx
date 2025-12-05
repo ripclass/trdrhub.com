@@ -85,7 +85,7 @@ import { ExporterAuthProvider } from './lib/exporter/auth'
 import { ImporterAuthProvider } from './lib/importer/auth'
 import { Toaster } from './components/ui/toaster'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
-import { TrackingDashboard, ContainerTrackPage, VesselTrackPage } from './pages/tools/tracking'
+import { TrackingLayout, TrackingOverview, ContainerTrackPage, VesselTrackPage } from './pages/tools/tracking'
 
 function App() {
   return (
@@ -108,9 +108,24 @@ function App() {
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
-        <Route path="/tracking/dashboard" element={<TrackingDashboard />} />
-        <Route path="/tracking/container/:containerId" element={<ContainerTrackPage />} />
-        <Route path="/tracking/vessel/:vesselId" element={<VesselTrackPage />} />
+        {/* Tracking Dashboard with Sidebar */}
+        <Route path="/tracking/dashboard" element={<TrackingLayout />}>
+          <Route index element={<TrackingOverview />} />
+          <Route path="search" element={<TrackingOverview />} />
+          <Route path="vessel-search" element={<TrackingOverview />} />
+          <Route path="container/:containerId" element={<ContainerTrackPage />} />
+          <Route path="vessel/:vesselId" element={<VesselTrackPage />} />
+          <Route path="active" element={<TrackingOverview />} />
+          <Route path="map" element={<TrackingOverview />} />
+          <Route path="ports" element={<TrackingOverview />} />
+          <Route path="alerts" element={<TrackingOverview />} />
+          <Route path="exceptions" element={<TrackingOverview />} />
+          <Route path="history" element={<TrackingOverview />} />
+          <Route path="analytics" element={<TrackingOverview />} />
+          <Route path="performance" element={<TrackingOverview />} />
+          <Route path="settings" element={<TrackingOverview />} />
+          <Route path="help" element={<TrackingOverview />} />
+        </Route>
         <Route path="/analytics" element={<TradeAnalyticsLanding />} />
         <Route path="/price-verify" element={<PriceVerifyLanding />} />
         <Route path="/price-verify/tool" element={<PriceVerify />} />
