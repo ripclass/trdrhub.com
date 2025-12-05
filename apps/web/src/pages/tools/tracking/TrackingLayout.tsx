@@ -172,8 +172,16 @@ export default function TrackingLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Check if user is guest
-  const isGuest = user?.id === 'guest' || user?.email === 'guest@trdrhub.com';
+  // Check if user is a real authenticated user (not guest, not null)
+  // Guest users have id='guest', real users have UUIDs
+  const isValidUser = (() => {
+    if (!user) return false;
+    if (user.id === 'guest') return false;
+    if (user.email === 'guest@trdrhub.com') return false;
+    // Check if id looks like a UUID (basic check)
+    if (!user.id || user.id.length < 20) return false;
+    return true;
+  })();
   
   // Show loading while auth is being checked
   // This prevents race conditions after login redirect
@@ -182,14 +190,14 @@ export default function TrackingLayout() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">Checking authentication...</p>
         </div>
       </div>
     );
   }
   
-  // After loading completes, redirect if no valid user
-  if (!user || isGuest) {
+  // After loading completes, redirect if no valid authenticated user
+  if (!isValidUser) {
     const returnUrl = encodeURIComponent(location.pathname);
     return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
   }
