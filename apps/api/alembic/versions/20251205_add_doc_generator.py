@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers
 revision = '20251205_doc_gen'
-down_revision = '20251205_add_tracking_tables'
+down_revision = 'tracking_tables_001'
 branch_labels = None
 depends_on = None
 

@@ -16,7 +16,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = 'doc_gen_phase1'
-down_revision = None  # Will be set by Alembic
+down_revision = '20251205_doc_gen'
 branch_labels = None
 depends_on = None
 
