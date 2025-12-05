@@ -30,6 +30,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     this.setState({ hasError: false, message: undefined });
   };
 
+  private handleGoToHub = () => {
+    window.location.href = '/hub';
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -41,9 +45,12 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             </p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={this.handleRetry}>Try again</Button>
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Reload page
+            <Button onClick={this.handleGoToHub}>Go to Hub</Button>
+            <Button variant="outline" onClick={this.handleRetry}>
+              Try again
+            </Button>
+            <Button variant="ghost" onClick={() => window.location.reload()}>
+              Reload
             </Button>
           </div>
         </div>
