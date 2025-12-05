@@ -1096,6 +1096,264 @@ async def refresh_shipment(
     return _shipment_model_to_response(shipment)
 
 
+# ============== Bulk Import ==============
+
+class BulkImportResult(BaseModel):
+    """Result of bulk import operation."""
+    success_count: int
+    error_count: int
+    errors: List[Dict[str, str]]
+    imported: List[str]
+
+
+@router.post("/portfolio/import", response_model=BulkImportResult)
+async def bulk_import_containers(
+    file: bytes = None,
+    data: List[Dict[str, str]] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk import containers from CSV or JSON data.
+    
+    Expected CSV format:
+    container_number,nickname,lc_number,lc_expiry,notes
+    
+    Or JSON format:
+    [{"container_number": "XXX", "nickname": "...", ...}]
+    """
+    import csv
+    import io
+    
+    containers = []
+    
+    # Parse input data
+    if file:
+        # Parse CSV
+        try:
+            content = file.decode('utf-8')
+            reader = csv.DictReader(io.StringIO(content))
+            for row in reader:
+                containers.append({
+                    'reference': row.get('container_number', row.get('reference', '')).upper().strip(),
+                    'nickname': row.get('nickname', ''),
+                    'lc_number': row.get('lc_number', ''),
+                    'lc_expiry': row.get('lc_expiry', ''),
+                    'notes': row.get('notes', ''),
+                })
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid CSV format: {str(e)}")
+    elif data:
+        # Use JSON data directly
+        for item in data:
+            containers.append({
+                'reference': item.get('container_number', item.get('reference', '')).upper().strip(),
+                'nickname': item.get('nickname', ''),
+                'lc_number': item.get('lc_number', ''),
+                'lc_expiry': item.get('lc_expiry', ''),
+                'notes': item.get('notes', ''),
+            })
+    else:
+        raise HTTPException(status_code=400, detail="No data provided")
+    
+    if not containers:
+        raise HTTPException(status_code=400, detail="No containers in import data")
+    
+    if len(containers) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 containers per import")
+    
+    # Process imports
+    success_count = 0
+    error_count = 0
+    errors = []
+    imported = []
+    
+    for container in containers:
+        reference = container.get('reference', '')
+        
+        if not reference:
+            error_count += 1
+            errors.append({"reference": "", "error": "Empty container number"})
+            continue
+        
+        # Validate container number format (basic check)
+        if not re.match(r'^[A-Z]{3,4}[A-Z0-9]{6,7}$', reference):
+            error_count += 1
+            errors.append({"reference": reference, "error": "Invalid container number format"})
+            continue
+        
+        # Check if already exists
+        existing = db.query(TrackedShipment).filter(
+            TrackedShipment.user_id == current_user.id,
+            TrackedShipment.reference == reference,
+            TrackedShipment.tracking_type == "container",
+        ).first()
+        
+        if existing and existing.is_active:
+            error_count += 1
+            errors.append({"reference": reference, "error": "Already in portfolio"})
+            continue
+        
+        try:
+            # Fetch tracking data
+            tracking_data = await _track_container_internal(reference)
+            
+            # Parse LC expiry if provided
+            lc_expiry = None
+            if container.get('lc_expiry'):
+                try:
+                    lc_expiry = datetime.fromisoformat(container['lc_expiry'].replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            if existing:
+                # Re-activate
+                existing.is_active = True
+                existing.nickname = container.get('nickname') or existing.nickname
+                existing.lc_number = container.get('lc_number') or existing.lc_number
+                existing.lc_expiry = lc_expiry or existing.lc_expiry
+                existing.notes = container.get('notes') or existing.notes
+                db.commit()
+            else:
+                # Create new
+                shipment = TrackedShipment(
+                    id=uuid.uuid4(),
+                    user_id=current_user.id,
+                    company_id=current_user.company_id if hasattr(current_user, 'company_id') else None,
+                    reference=reference,
+                    tracking_type="container",
+                    nickname=container.get('nickname'),
+                    carrier=tracking_data.carrier,
+                    carrier_code=tracking_data.carrier_code,
+                    origin_port=tracking_data.origin.name,
+                    origin_code=tracking_data.origin.code,
+                    origin_country=tracking_data.origin.country,
+                    destination_port=tracking_data.destination.name,
+                    destination_code=tracking_data.destination.code,
+                    destination_country=tracking_data.destination.country,
+                    status=tracking_data.status,
+                    current_location=tracking_data.current_location,
+                    latitude=tracking_data.position.lat if tracking_data.position else None,
+                    longitude=tracking_data.position.lon if tracking_data.position else None,
+                    progress=tracking_data.progress,
+                    eta=datetime.fromisoformat(tracking_data.eta.replace("Z", "+00:00")) if tracking_data.eta else None,
+                    eta_confidence=tracking_data.eta_confidence,
+                    vessel_name=tracking_data.vessel.name if tracking_data.vessel else None,
+                    vessel_imo=tracking_data.vessel.imo if tracking_data.vessel else None,
+                    lc_number=container.get('lc_number'),
+                    lc_expiry=lc_expiry,
+                    notes=container.get('notes'),
+                    data_source=tracking_data.data_source,
+                    last_checked=datetime.utcnow(),
+                )
+                db.add(shipment)
+                db.commit()
+            
+            success_count += 1
+            imported.append(reference)
+            
+        except Exception as e:
+            error_count += 1
+            errors.append({"reference": reference, "error": str(e)})
+            logger.error(f"Failed to import container {reference}: {e}")
+            continue
+    
+    logger.info(f"Bulk import completed: {success_count} success, {error_count} errors")
+    
+    return BulkImportResult(
+        success_count=success_count,
+        error_count=error_count,
+        errors=errors[:10],  # Limit error list to 10
+        imported=imported
+    )
+
+
+@router.get("/portfolio/export")
+async def export_portfolio(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    format: str = Query("csv", regex="^(csv|json)$"),
+):
+    """Export portfolio to CSV or JSON."""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    shipments = db.query(TrackedShipment).filter(
+        TrackedShipment.user_id == current_user.id,
+        TrackedShipment.is_active == True
+    ).all()
+    
+    if format == "json":
+        data = []
+        for s in shipments:
+            data.append({
+                "container_number": s.reference,
+                "nickname": s.nickname,
+                "carrier": s.carrier,
+                "origin": s.origin_port,
+                "destination": s.destination_port,
+                "status": s.status,
+                "eta": s.eta.isoformat() + "Z" if s.eta else None,
+                "vessel": s.vessel_name,
+                "lc_number": s.lc_number,
+                "lc_expiry": s.lc_expiry.isoformat() + "Z" if s.lc_expiry else None,
+                "notes": s.notes,
+            })
+        return data
+    
+    # CSV format
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "container_number", "nickname", "carrier", "origin", "destination",
+        "status", "eta", "vessel", "lc_number", "lc_expiry", "notes"
+    ])
+    
+    for s in shipments:
+        writer.writerow([
+            s.reference,
+            s.nickname or "",
+            s.carrier or "",
+            s.origin_port or "",
+            s.destination_port or "",
+            s.status or "",
+            s.eta.isoformat() + "Z" if s.eta else "",
+            s.vessel_name or "",
+            s.lc_number or "",
+            s.lc_expiry.isoformat() + "Z" if s.lc_expiry else "",
+            s.notes or ""
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tracking_portfolio.csv"}
+    )
+
+
+@router.get("/portfolio/template")
+async def get_import_template():
+    """Get a CSV template for bulk import."""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["container_number", "nickname", "lc_number", "lc_expiry", "notes"])
+    writer.writerow(["MSCU1234567", "My Shipment", "LC-2024-001", "2025-02-01", "Sample container"])
+    writer.writerow(["MAEU9876543", "Electronics", "", "", ""])
+    
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=import_template.csv"}
+    )
+
+
 # ============== Background Alert Processing ==============
 
 async def check_and_send_alerts(db: Session):

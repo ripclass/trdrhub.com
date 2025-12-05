@@ -21,6 +21,9 @@ import {
   MoreVertical,
   Download,
   ArrowUpDown,
+  Upload,
+  FileText,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +43,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -93,6 +107,12 @@ export default function ActiveShipmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  
+  // Import dialog state
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importData, setImportData] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; errors: number; messages: string[] } | null>(null);
 
   const fetchShipments = async () => {
     setIsLoading(true);
@@ -150,6 +170,87 @@ export default function ActiveShipmentsPage() {
     }
   };
 
+  const handleBulkImport = async () => {
+    if (!importData.trim()) {
+      toast({ title: "Error", description: "Please enter container numbers", variant: "destructive" });
+      return;
+    }
+    
+    setIsImporting(true);
+    setImportResult(null);
+    
+    try {
+      // Parse input - one container per line
+      const lines = importData.trim().split('\n').filter(l => l.trim());
+      const containers = lines.map(line => {
+        const parts = line.split(',').map(p => p.trim());
+        return {
+          container_number: parts[0] || '',
+          nickname: parts[1] || '',
+          lc_number: parts[2] || '',
+          lc_expiry: parts[3] || '',
+          notes: parts[4] || '',
+        };
+      }).filter(c => c.container_number);
+      
+      if (containers.length === 0) {
+        toast({ title: "Error", description: "No valid container numbers found", variant: "destructive" });
+        setIsImporting(false);
+        return;
+      }
+      
+      const response = await fetch(`${API_BASE}/tracking/portfolio/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ data: containers }),
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setImportResult({
+          success: result.success_count,
+          errors: result.error_count,
+          messages: result.errors?.map((e: any) => `${e.reference}: ${e.error}`) || [],
+        });
+        
+        if (result.success_count > 0) {
+          toast({ 
+            title: "Import Complete", 
+            description: `${result.success_count} containers imported successfully`,
+          });
+          fetchShipments();
+        }
+        
+        if (result.success_count > 0 && result.error_count === 0) {
+          setImportDialogOpen(false);
+          setImportData("");
+          setImportResult(null);
+        }
+      } else {
+        const error = await response.json();
+        toast({ title: "Import Failed", description: error.detail || "Unknown error", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to import containers", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      window.open(`${API_BASE}/tracking/portfolio/export?format=csv`, '_blank');
+      toast({ title: "Export Started", description: "CSV download should begin shortly" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to export", variant: "destructive" });
+    }
+  };
+
+  const downloadTemplate = () => {
+    window.open(`${API_BASE}/tracking/portfolio/template`, '_blank');
+  };
+
   // Filter shipments
   const filteredShipments = shipments.filter(s => {
     const matchesSearch = !searchQuery || 
@@ -177,9 +278,84 @@ export default function ActiveShipmentsPage() {
           <p className="text-muted-foreground">Manage and monitor all your tracked shipments</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchShipments} disabled={isLoading}>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+          <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="w-4 h-4 mr-2" />
+                Import
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Bulk Import Containers</DialogTitle>
+                <DialogDescription>
+                  Enter container numbers, one per line. Optionally add nickname, LC number, LC expiry, and notes separated by commas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Container Numbers</Label>
+                  <Textarea
+                    placeholder="MSCU1234567, My Shipment, LC-2024-001, 2025-02-01, Electronics
+MAEU9876543
+HLCU5678901, Textile Order"
+                    value={importData}
+                    onChange={(e) => setImportData(e.target.value)}
+                    rows={8}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Format: container_number, nickname, lc_number, lc_expiry, notes (only container_number required)
+                  </p>
+                </div>
+                
+                <Button variant="link" className="text-xs p-0 h-auto" onClick={downloadTemplate}>
+                  <FileText className="w-3 h-3 mr-1" />
+                  Download CSV Template
+                </Button>
+                
+                {importResult && (
+                  <div className={`p-3 rounded-lg ${importResult.errors > 0 ? "bg-amber-500/10 border border-amber-500/30" : "bg-emerald-500/10 border border-emerald-500/30"}`}>
+                    <p className="text-sm font-medium">
+                      ✓ {importResult.success} imported, ✗ {importResult.errors} failed
+                    </p>
+                    {importResult.messages.length > 0 && (
+                      <ul className="text-xs text-muted-foreground mt-2 space-y-1">
+                        {importResult.messages.slice(0, 5).map((msg, i) => (
+                          <li key={i}>• {msg}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleBulkImport} disabled={isImporting}>
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button variant="outline" onClick={() => fetchShipments()} disabled={isLoading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh All
+            Refresh
           </Button>
           <Button asChild>
             <Link to="/tracking/dashboard">
