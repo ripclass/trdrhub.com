@@ -12,8 +12,16 @@ export interface User {
   isActive: boolean
 }
 
+interface Session {
+  access_token: string
+  refresh_token?: string
+  expires_at?: number
+  user?: any
+}
+
 interface AuthContextType {
   user: User | null
+  session: Session | null
   isLoading: boolean
   loginWithEmail: (email: string, password: string) => Promise<User>
   registerWithEmail: (
@@ -54,6 +62,7 @@ const mapBackendRole = (backendRole: string): Role => {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null)
+  const [session, setSession] = React.useState<Session | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
   const profileFetchedRef = React.useRef(false)
@@ -261,7 +270,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let initTimeout: NodeJS.Timeout | null = null
 
     // Use onAuthStateChange as primary method (more reliable than getSession on refresh)
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, supabaseSession) => {
       if (!mounted) return
       // Clear any pending timeout since we got auth state change
       if (initTimeout) {
@@ -269,7 +278,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         initTimeout = null
       }
       
-      if (session) {
+      // Update session state
+      if (supabaseSession) {
+        setSession({
+          access_token: supabaseSession.access_token,
+          refresh_token: supabaseSession.refresh_token,
+          expires_at: supabaseSession.expires_at,
+          user: supabaseSession.user
+        })
+      } else {
+        setSession(null)
+      }
+      
+      if (supabaseSession) {
         if (profileFetchedRef.current) {
           if (mounted) setIsLoading(false)
           return
@@ -278,13 +299,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setIsLoading(true)
         try {
-          await fetchUserProfile(session.access_token)
+          await fetchUserProfile(supabaseSession.access_token)
         } finally {
           if (mounted) setIsLoading(false)
         }
       } else {
         profileFetchedRef.current = false
         setUser(null)
+        setSession(null)
         if (mounted) {
           if (GUEST_MODE) setGuest()
           setIsLoading(false)
@@ -593,7 +615,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === role
   }
 
-  const value = { user, isLoading, loginWithEmail, registerWithEmail, logout, hasRole, refreshUser }
+  const value = { user, session, isLoading, loginWithEmail, registerWithEmail, logout, hasRole, refreshUser }
 
   return (
     <AuthContext.Provider value={value}>

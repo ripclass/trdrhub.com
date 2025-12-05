@@ -105,7 +105,13 @@ export default function DocGeneratorDashboard() {
         params.append("status", statusFilter);
       }
       
-      const token = session?.access_token || user?.id;
+      const token = session?.access_token || user?.access_token;
+      if (!token) {
+        console.warn("No auth token available for document sets fetch");
+        setDocumentSets([]);
+        return;
+      }
+      
       const response = await fetch(`${API_BASE}/doc-generator/document-sets?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -113,7 +119,9 @@ export default function DocGeneratorDashboard() {
       });
       
       if (!response.ok) {
-        throw new Error("Failed to fetch document sets");
+        const errorText = await response.text();
+        console.error(`Document sets API error: ${response.status} - ${errorText}`);
+        throw new Error(`API error: ${response.status}`);
       }
       
       const data = await response.json();
@@ -122,9 +130,10 @@ export default function DocGeneratorDashboard() {
       console.error("Error fetching document sets:", error);
       toast({
         title: "Error",
-        description: "Failed to load document sets",
+        description: "Failed to load document sets. Please try again.",
         variant: "destructive",
       });
+      setDocumentSets([]);
     } finally {
       setIsLoading(false);
     }
