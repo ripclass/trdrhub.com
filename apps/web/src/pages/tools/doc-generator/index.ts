@@ -12,3 +12,8 @@ export { default as BrandingSettings } from './BrandingSettings';
 export { default as ValidationDisplay } from './ValidationDisplay';
 export { default as PDFPreview } from './PDFPreview';
 
+// Phase 2 - Bank Ready
+export { default as TemplatesPage } from './TemplatesPage';
+export { default as ProductCatalogPage } from './ProductCatalogPage';
+export { default as BuyerDirectoryPage } from './BuyerDirectoryPage';
+

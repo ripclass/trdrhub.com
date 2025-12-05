@@ -100,6 +100,18 @@ from .doc_generator import (
     DocumentStatus,
     DocumentType as DocGenDocumentType,  # Alias to avoid conflict with legacy DocumentType
     UnitType,
+    CompanyBranding,
+    ValidationStatus,
+)
+
+# Doc Generator Catalog models (Phase 2)
+from .doc_generator_catalog import (
+    DocumentAuditLog,
+    AuditAction as DocGenAuditAction,
+    DocumentTemplate,
+    ProductCatalogItem,
+    BuyerProfile,
+    StoredDocument,
 )
 
 __all__ = [
@@ -161,4 +173,13 @@ __all__ = [
     "DocumentStatus",
     "DocGenDocumentType",
     "UnitType",
+    "CompanyBranding",
+    "ValidationStatus",
+    # Doc Generator Catalog models (Phase 2)
+    "DocumentAuditLog",
+    "DocGenAuditAction",
+    "DocumentTemplate",
+    "ProductCatalogItem",
+    "BuyerProfile",
+    "StoredDocument",
 ]

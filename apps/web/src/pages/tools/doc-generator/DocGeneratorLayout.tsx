@@ -20,6 +20,9 @@ import {
   Package,
   Palette,
   Scroll,
+  LayoutTemplate,
+  Users,
+  History,
 } from "lucide-react";
 import {
   Sidebar,
@@ -73,6 +76,26 @@ const navItems = [
     ],
   },
   {
+    title: "Quick Entry",
+    items: [
+      {
+        title: "Templates",
+        href: "/doc-generator/dashboard/templates",
+        icon: LayoutTemplate,
+      },
+      {
+        title: "Product Catalog",
+        href: "/doc-generator/dashboard/products",
+        icon: Package,
+      },
+      {
+        title: "Buyer Directory",
+        href: "/doc-generator/dashboard/buyers",
+        icon: Users,
+      },
+    ],
+  },
+  {
     title: "Document Types",
     items: [
       {
@@ -84,11 +107,6 @@ const navItems = [
         title: "Packing List",
         href: "/doc-generator/dashboard?type=packing_list",
         icon: Package,
-      },
-      {
-        title: "Beneficiary Cert",
-        href: "/doc-generator/dashboard?type=beneficiary_certificate",
-        icon: FileCheck,
       },
       {
         title: "Certificate of Origin",
@@ -104,11 +122,6 @@ const navItems = [
         title: "Company Branding",
         href: "/doc-generator/dashboard/branding",
         icon: Palette,
-      },
-      {
-        title: "Preferences",
-        href: "/doc-generator/dashboard/settings",
-        icon: Settings,
       },
       {
         title: "Help",
