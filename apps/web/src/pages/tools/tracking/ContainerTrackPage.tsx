@@ -44,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { LCExpiryWarning } from "@/components/tracking";
 
 interface ContainerDetails {
   containerNumber: string;
@@ -90,6 +91,9 @@ interface ContainerDetails {
   seals: string[];
   temperature?: number;
   events: TrackingEvent[];
+  // LC Integration
+  lcNumber?: string;
+  lcExpiry?: string;
 }
 
 interface TrackingEvent {
@@ -145,6 +149,9 @@ const MOCK_CONTAINER: ContainerDetails = {
     unit: "kg",
   },
   seals: ["MSCSL12345", "MSCSL12346"],
+  // LC Integration - Demo with tight deadline
+  lcNumber: "LC-2024-CHN-12345",
+  lcExpiry: "2025-01-20T23:59:59Z", // 5 days after ETA - will show warning
   events: [
     {
       id: "1",
@@ -492,6 +499,17 @@ export default function ContainerTrackPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* LC Expiry Warning - Show if LC is linked */}
+        {(container.lcNumber || container.lcExpiry) && (
+          <LCExpiryWarning
+            eta={container.eta}
+            lcExpiry={container.lcExpiry}
+            lcNumber={container.lcNumber}
+            containerNumber={container.containerNumber}
+            className="mb-6"
+          />
+        )}
 
         {/* Tabs: Timeline, Details, Documents, Vessel */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
