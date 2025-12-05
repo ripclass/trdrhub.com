@@ -108,7 +108,7 @@ export function TemplatesPage() {
 
   const fetchTemplates = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/templates`, {
+      const response = await fetch(`${API_BASE}/doc-generator/catalog/templates`, {
         headers: {
           Authorization: `Bearer ${user?.access_token || ""}`,
         },
@@ -133,8 +133,8 @@ export function TemplatesPage() {
     try {
       const method = editingId ? "PUT" : "POST";
       const url = editingId 
-        ? `${API_BASE}/api/doc-generator/templates/${editingId}`
-        : `${API_BASE}/api/doc-generator/templates`;
+        ? `${API_BASE}/doc-generator/catalog/templates/${editingId}`
+        : `${API_BASE}/doc-generator/catalog/templates`;
 
       const response = await fetch(url, {
         method,
@@ -163,7 +163,7 @@ export function TemplatesPage() {
     if (!confirm("Delete this template?")) return;
     
     try {
-      await fetch(`${API_BASE}/api/doc-generator/templates/${id}`, {
+      await fetch(`${API_BASE}/doc-generator/catalog/templates/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });

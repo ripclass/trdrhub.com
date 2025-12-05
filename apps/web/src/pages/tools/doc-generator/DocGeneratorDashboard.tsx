@@ -209,7 +209,7 @@ export default function DocGeneratorDashboard() {
   const handleDuplicate = async (id: string) => {
     try {
       const token = session?.access_token || user?.id;
-      const response = await fetch(`${API_BASE}/api/doc-generator/document-sets/${id}/duplicate`, {
+      const response = await fetch(`${API_BASE}/doc-generator/document-sets/${id}/duplicate`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

@@ -65,7 +65,7 @@ interface BankProfile {
 
 export function BankFormatsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { session } = useAuth();
   
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,8 +80,8 @@ export function BankFormatsPage() {
 
   const fetchBanks = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/advanced/banks`, {
-        headers: { Authorization: `Bearer ${user?.access_token || ""}` },
+      const response = await fetch(`${API_BASE}/doc-generator/advanced/banks`, {
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
       });
       if (response.ok) {
         const data = await response.json();
@@ -97,8 +97,8 @@ export function BankFormatsPage() {
   const fetchBankProfile = async (code: string) => {
     setLoadingProfile(true);
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/advanced/banks/${code}`, {
-        headers: { Authorization: `Bearer ${user?.access_token || ""}` },
+      const response = await fetch(`${API_BASE}/doc-generator/advanced/banks/${code}`, {
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
       });
       if (response.ok) {
         setSelectedBank(await response.json());

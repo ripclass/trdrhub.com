@@ -60,7 +60,7 @@ export function SignaturesPage() {
 
   const fetchProviders = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/advanced/signatures/providers`, {
+      const response = await fetch(`${API_BASE}/doc-generator/advanced/signatures/providers`, {
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });
       if (response.ok) {

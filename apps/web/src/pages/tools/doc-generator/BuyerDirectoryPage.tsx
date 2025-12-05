@@ -136,7 +136,7 @@ export function BuyerDirectoryPage() {
 
   const fetchBuyers = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/directory/buyers`, {
+      const response = await fetch(`${API_BASE}/doc-generator/catalog/buyers`, {
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });
       if (response.ok) {
@@ -159,8 +159,8 @@ export function BuyerDirectoryPage() {
     try {
       const method = editingId ? "PUT" : "POST";
       const url = editingId 
-        ? `${API_BASE}/api/doc-generator/directory/buyers/${editingId}`
-        : `${API_BASE}/api/doc-generator/directory/buyers`;
+        ? `${API_BASE}/doc-generator/catalog/buyers/${editingId}`
+        : `${API_BASE}/doc-generator/catalog/buyers`;
 
       const response = await fetch(url, {
         method,
@@ -189,7 +189,7 @@ export function BuyerDirectoryPage() {
     if (!confirm("Remove this buyer from directory?")) return;
     
     try {
-      await fetch(`${API_BASE}/api/doc-generator/directory/buyers/${id}`, {
+      await fetch(`${API_BASE}/doc-generator/catalog/buyers/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });

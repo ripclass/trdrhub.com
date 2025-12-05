@@ -86,7 +86,7 @@ export function PDFPreview({
     
     try {
       // Generate URL for preview endpoint
-      const previewUrl = `${API_BASE}/api/doc-generator/document-sets/${docSetId}/preview/${documentType}`;
+      const previewUrl = `${API_BASE}/doc-generator/document-sets/${docSetId}/preview/${documentType}`;
       
       // Fetch PDF blob
       const response = await fetch(previewUrl, {

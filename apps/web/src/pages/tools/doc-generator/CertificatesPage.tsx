@@ -87,7 +87,7 @@ export function CertificatesPage() {
 
   const fetchDocumentSets = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/document-sets`, {
+      const response = await fetch(`${API_BASE}/doc-generator/document-sets`, {
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });
       if (response.ok) {
@@ -113,7 +113,7 @@ export function CertificatesPage() {
 
     setGenerating(true);
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/advanced/certificates/generate`, {
+      const response = await fetch(`${API_BASE}/doc-generator/advanced/certificates/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

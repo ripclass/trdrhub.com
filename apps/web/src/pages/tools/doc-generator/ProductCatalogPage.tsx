@@ -127,7 +127,7 @@ export function ProductCatalogPage() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/catalog/products`, {
+      const response = await fetch(`${API_BASE}/doc-generator/catalog/products`, {
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });
       if (response.ok) {
@@ -150,8 +150,8 @@ export function ProductCatalogPage() {
     try {
       const method = editingId ? "PUT" : "POST";
       const url = editingId 
-        ? `${API_BASE}/api/doc-generator/catalog/products/${editingId}`
-        : `${API_BASE}/api/doc-generator/catalog/products`;
+        ? `${API_BASE}/doc-generator/catalog/products/${editingId}`
+        : `${API_BASE}/doc-generator/catalog/products`;
 
       const payload = {
         ...form,
@@ -188,7 +188,7 @@ export function ProductCatalogPage() {
     if (!confirm("Remove this product from catalog?")) return;
     
     try {
-      await fetch(`${API_BASE}/api/doc-generator/catalog/products/${id}`, {
+      await fetch(`${API_BASE}/doc-generator/catalog/products/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${user?.access_token || ""}` },
       });

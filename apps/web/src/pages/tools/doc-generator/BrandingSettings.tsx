@@ -85,7 +85,7 @@ export function BrandingSettings() {
 
   const fetchBranding = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/branding`, {
+      const response = await fetch(`${API_BASE}/doc-generator/branding`, {
         headers: {
           Authorization: `Bearer ${user?.access_token || ""}`,
         },
@@ -105,7 +105,7 @@ export function BrandingSettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/branding`, {
+      const response = await fetch(`${API_BASE}/doc-generator/branding`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

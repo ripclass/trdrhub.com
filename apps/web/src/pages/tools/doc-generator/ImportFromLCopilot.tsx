@@ -74,7 +74,7 @@ export function ImportFromLCopilot({
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/lcopilot/sessions?limit=20`, {
+      const response = await fetch(`${API_BASE}/lcopilot/sessions?limit=20`, {
         headers: {
           Authorization: `Bearer ${user?.access_token || ""}`,
         },
@@ -119,7 +119,7 @@ export function ImportFromLCopilot({
     
     setImporting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/doc-generator/import-from-lcopilot`, {
+      const response = await fetch(`${API_BASE}/doc-generator/import-from-lcopilot`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
