@@ -35,11 +35,20 @@ import { useAuth } from "@/hooks/use-auth";
 const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
 const DOCUMENT_TYPES = [
+  // Core Documents
   { value: "commercial_invoice", label: "Commercial Invoice" },
   { value: "packing_list", label: "Packing List" },
-  { value: "beneficiary_certificate", label: "Beneficiary Certificate" },
-  { value: "bill_of_exchange", label: "Bill of Exchange" },
   { value: "certificate_of_origin", label: "Certificate of Origin" },
+  // Shipping Documents
+  { value: "bill_of_lading_draft", label: "Bill of Lading Draft" },
+  { value: "shipping_instructions", label: "Shipping Instructions" },
+  // Certificates
+  { value: "weight_certificate", label: "Weight Certificate" },
+  { value: "inspection_certificate", label: "Inspection Certificate" },
+  { value: "beneficiary_certificate", label: "Beneficiary Certificate" },
+  // Finance & Insurance
+  { value: "bill_of_exchange", label: "Bill of Exchange" },
+  { value: "insurance_certificate", label: "Insurance Certificate" },
 ];
 
 interface PDFPreviewProps {

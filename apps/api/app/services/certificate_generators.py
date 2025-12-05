@@ -426,6 +426,237 @@ Signature: _____________________""")
             c.drawString(x + 2*mm, content_y - i*10, line[:50])
 
 
+class RCEPCertificateGenerator:
+    """
+    Generator for RCEP Certificate of Origin.
+    
+    Regional Comprehensive Economic Partnership certificate
+    for trade among ASEAN+5 countries (China, Japan, Korea, Australia, NZ).
+    """
+    
+    def __init__(self):
+        self.page_width, self.page_height = A4
+        self.margin = 15 * mm
+    
+    def generate(self, data: Dict[str, Any]) -> bytes:
+        """
+        Generate RCEP Certificate of Origin PDF.
+        
+        Required data:
+            - exporter_name, exporter_address
+            - producer_name, producer_address (if different from exporter)
+            - importer_name, importer_address
+            - goods_description, hs_code
+            - origin_country
+            - destination_country
+            - invoice_number, invoice_date
+            - rcep_origin_criterion
+        """
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        
+        # Blue header band (RCEP branding)
+        c.setFillColor(colors.HexColor("#1a5276"))
+        c.rect(0, self.page_height - 50*mm, self.page_width, 50*mm, fill=True, stroke=False)
+        
+        # Title
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(self.page_width/2, self.page_height - 20*mm, 
+                          "REGIONAL COMPREHENSIVE ECONOMIC PARTNERSHIP")
+        c.setFont("Helvetica-Bold", 14)
+        c.drawCentredString(self.page_width/2, self.page_height - 30*mm, 
+                          "CERTIFICATE OF ORIGIN")
+        c.setFont("Helvetica", 10)
+        c.drawCentredString(self.page_width/2, self.page_height - 40*mm, 
+                          "(Combined Declaration and Certificate) - FORM RCEP")
+        
+        # Certificate number
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 9)
+        ref_no = data.get('reference_number', f"RCEP-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}")
+        c.drawRightString(self.page_width - 15*mm, self.page_height - 55*mm, f"Reference No: {ref_no}")
+        
+        y_start = self.page_height - 65*mm
+        col_width = (self.page_width - 30*mm) / 2
+        box_height = 30*mm
+        
+        # Box 1: Exporter
+        self._draw_box(c, 15*mm, y_start, col_width, box_height, "1")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm, y_start - 5*mm, "Exporter's Name, Address and Country")
+        c.setFont("Helvetica", 9)
+        exporter = f"{data.get('exporter_name', '')}\n{data.get('exporter_address', '')}"
+        self._draw_multiline(c, 20*mm, y_start - 12*mm, exporter)
+        
+        # Box 2: Producer (if different)
+        self._draw_box(c, 15*mm + col_width, y_start, col_width, box_height, "2")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm + col_width, y_start - 5*mm, "Producer's Name and Address (if known)")
+        c.setFont("Helvetica", 9)
+        producer = data.get('producer_name', 'SAME AS EXPORTER')
+        if data.get('producer_address'):
+            producer += f"\n{data.get('producer_address', '')}"
+        self._draw_multiline(c, 20*mm + col_width, y_start - 12*mm, producer)
+        
+        y_start -= box_height
+        
+        # Box 3: Importer
+        self._draw_box(c, 15*mm, y_start, col_width, box_height, "3")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm, y_start - 5*mm, "Importer's/Consignee's Name, Address and Country")
+        c.setFont("Helvetica", 9)
+        importer = f"{data.get('importer_name', data.get('consignee_name', ''))}\n{data.get('importer_address', data.get('consignee_address', ''))}"
+        self._draw_multiline(c, 20*mm, y_start - 12*mm, importer)
+        
+        # Box 4: Importing Party
+        self._draw_box(c, 15*mm + col_width, y_start, col_width, box_height/2, "4")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm + col_width, y_start - 5*mm, "Importing Party")
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(20*mm + col_width, y_start - 15*mm, data.get('destination_country', ''))
+        
+        # Box 5: Exporting Party
+        self._draw_box(c, 15*mm + col_width, y_start - box_height/2, col_width, box_height/2, "5")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm + col_width, y_start - box_height/2 - 5*mm, "Exporting Party")
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(20*mm + col_width, y_start - box_height/2 - 15*mm, data.get('origin_country', ''))
+        
+        y_start -= box_height
+        
+        # Box 6-10: Goods table
+        table_height = 70*mm
+        c.setStrokeColor(colors.black)
+        c.rect(15*mm, y_start - table_height, self.page_width - 30*mm, table_height)
+        
+        # Table headers
+        headers = [
+            ("6", "Item\nNo.", 15*mm),
+            ("7", "HS Code\n(6-digit)", 35*mm),
+            ("8", "Description of goods", 120*mm),
+            ("9", "RCEP\nCriterion", 30*mm),
+            ("10", "Gross/Net\nWeight", 35*mm),
+            ("11", "Invoice No.\n& Date", 50*mm),
+        ]
+        
+        x_pos = 15*mm
+        for box_num, header, width in headers:
+            c.setStrokeColor(colors.black)
+            c.rect(x_pos, y_start - table_height, width, table_height)
+            c.setFont("Helvetica", 6)
+            c.drawCentredString(x_pos + width/2, y_start - 4*mm, box_num)
+            c.setFont("Helvetica", 7)
+            for i, line in enumerate(header.split('\n')):
+                c.drawCentredString(x_pos + width/2, y_start - 10*mm - i*7, line)
+            x_pos += width
+        
+        # Content row
+        c.setFont("Helvetica", 9)
+        content_y = y_start - 35*mm
+        c.drawCentredString(15*mm + 7.5*mm, content_y, "1")  # Item number
+        c.drawCentredString(15*mm + 15*mm + 17.5*mm, content_y, data.get('hs_code', '')[:6])  # HS Code
+        
+        # Description (wrap text)
+        desc = data.get('goods_description', '')[:100]
+        c.drawString(15*mm + 50*mm + 5*mm, content_y, desc[:50])
+        if len(desc) > 50:
+            c.drawString(15*mm + 50*mm + 5*mm, content_y - 10, desc[50:100])
+        
+        # RCEP Criterion
+        criterion = data.get('rcep_origin_criterion', data.get('origin_criterion', 'WO'))
+        c.drawCentredString(15*mm + 170*mm + 15*mm, content_y, criterion)
+        
+        # Weight
+        weight = f"{data.get('gross_weight', '')} KG"
+        c.drawCentredString(15*mm + 200*mm + 17.5*mm, content_y, weight)
+        
+        # Invoice
+        inv = f"{data.get('invoice_number', '')}\n{data.get('invoice_date', '')}"
+        c.drawCentredString(15*mm + 235*mm + 25*mm, content_y, data.get('invoice_number', ''))
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(15*mm + 235*mm + 25*mm, content_y - 10, str(data.get('invoice_date', '')))
+        
+        y_start -= table_height + 5*mm
+        
+        # Box 12: Declaration
+        decl_height = 40*mm
+        self._draw_box(c, 15*mm, y_start, col_width, decl_height, "12")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm, y_start - 5*mm, "Declaration by the exporter or producer")
+        
+        declaration = """The undersigned hereby declares that the above 
+details and statements are correct, that all the 
+goods were produced in
+
+and that they comply with the origin requirements 
+specified for those goods in RCEP."""
+        c.setFont("Helvetica", 8)
+        for i, line in enumerate(declaration.strip().split('\n')):
+            c.drawString(20*mm, y_start - 12*mm - i*9, line)
+        
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(20*mm, y_start - 30*mm, data.get('origin_country', ''))
+        
+        # Box 13: Certification
+        self._draw_box(c, 15*mm + col_width, y_start, col_width, decl_height, "13")
+        c.setFont("Helvetica", 7)
+        c.drawString(20*mm + col_width, y_start - 5*mm, "Certification")
+        
+        certification = """It is hereby certified, on the basis of control 
+carried out, that the declaration by the exporter 
+or producer is correct."""
+        c.setFont("Helvetica", 8)
+        for i, line in enumerate(certification.strip().split('\n')):
+            c.drawString(20*mm + col_width, y_start - 12*mm - i*9, line)
+        
+        y_start -= decl_height + 5*mm
+        
+        # Signature boxes
+        sig_height = 25*mm
+        
+        # Exporter signature
+        self._draw_box(c, 15*mm, y_start, col_width, sig_height, "")
+        c.setFont("Helvetica", 8)
+        c.drawString(20*mm, y_start - 8*mm, f"Place: {data.get('place', '')}")
+        c.drawString(20*mm, y_start - 15*mm, f"Date: {data.get('date', datetime.now().strftime('%Y-%m-%d'))}")
+        c.drawString(20*mm, y_start - 22*mm, "Signature: _____________________")
+        
+        # Issuing authority
+        self._draw_box(c, 15*mm + col_width, y_start, col_width, sig_height, "")
+        c.setFont("Helvetica", 8)
+        c.drawString(20*mm + col_width, y_start - 8*mm, "Issuing Authority:")
+        c.drawString(20*mm + col_width, y_start - 15*mm, "Date: _____________________")
+        c.drawString(20*mm + col_width, y_start - 22*mm, "Signature & Stamp: _____________")
+        
+        # RCEP member countries footer
+        c.setFont("Helvetica", 6)
+        c.setFillColor(colors.grey)
+        members = "RCEP Members: Australia, Brunei, Cambodia, China, Indonesia, Japan, Korea, Laos, Malaysia, Myanmar, New Zealand, Philippines, Singapore, Thailand, Vietnam"
+        c.drawCentredString(self.page_width/2, 20*mm, members)
+        
+        c.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+    
+    def _draw_box(self, c, x, y, width, height, box_number: str):
+        """Draw a numbered box"""
+        c.setStrokeColor(colors.black)
+        c.setLineWidth(0.5)
+        c.rect(x, y - height, width, height)
+        if box_number:
+            c.setFont("Helvetica", 6)
+            c.setFillColor(colors.grey)
+            c.drawString(x + 1*mm, y - 3*mm, box_number)
+            c.setFillColor(colors.black)
+    
+    def _draw_multiline(self, c, x, y, text, max_width=None, line_height=10):
+        """Draw multiline text"""
+        lines = text.split('\n')
+        for i, line in enumerate(lines[:5]):
+            c.drawString(x, y - i*line_height, line[:55])
+
+
 class DocumentExportService:
     """
     Service for exporting documents to Word/Excel formats.
@@ -578,6 +809,7 @@ class DocumentExportService:
 # Singleton instances
 _gsp_generator: Optional[GSPFormAGenerator] = None
 _eur1_generator: Optional[EUR1CertificateGenerator] = None
+_rcep_generator: Optional[RCEPCertificateGenerator] = None
 _export_service: Optional[DocumentExportService] = None
 
 
@@ -593,6 +825,13 @@ def get_eur1_generator() -> EUR1CertificateGenerator:
     if _eur1_generator is None:
         _eur1_generator = EUR1CertificateGenerator()
     return _eur1_generator
+
+
+def get_rcep_generator() -> RCEPCertificateGenerator:
+    global _rcep_generator
+    if _rcep_generator is None:
+        _rcep_generator = RCEPCertificateGenerator()
+    return _rcep_generator
 
 
 def get_export_service() -> DocumentExportService:

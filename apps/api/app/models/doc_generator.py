@@ -39,15 +39,31 @@ class ValidationStatus(str, Enum):
 
 
 class DocumentType(str, Enum):
-    """Types of shipping documents"""
+    """Types of shipping documents - 15+ types for comprehensive trade documentation"""
+    # Core Documents
     COMMERCIAL_INVOICE = "commercial_invoice"
     PACKING_LIST = "packing_list"
     BENEFICIARY_CERTIFICATE = "beneficiary_certificate"
     BILL_OF_EXCHANGE = "bill_of_exchange"
     CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
+    
+    # Shipping Documents
+    BILL_OF_LADING_DRAFT = "bill_of_lading_draft"
     SHIPPING_INSTRUCTIONS = "shipping_instructions"
+    
+    # Certificates
     WEIGHT_CERTIFICATE = "weight_certificate"
+    INSPECTION_CERTIFICATE = "inspection_certificate"
+    QUALITY_CERTIFICATE = "quality_certificate"
+    HEALTH_CERTIFICATE = "health_certificate"
+    FUMIGATION_CERTIFICATE = "fumigation_certificate"
+    
+    # Insurance & Finance
+    INSURANCE_CERTIFICATE = "insurance_certificate"
     INSURANCE_DECLARATION = "insurance_declaration"
+    
+    # Preferential Origin (handled by certificate_generators.py)
+    # GSP_FORM_A, EUR1, RCEP are in separate service
 
 
 class UnitType(str, Enum):
@@ -206,6 +222,14 @@ class DocumentSet(Base):
     draft_tenor = Column(String(50))  # "AT SIGHT", "30 DAYS", "60 DAYS"
     drawee_name = Column(String(500))  # Usually the issuing bank
     drawee_address = Column(Text)
+    
+    # Company/Signatory Info (override company settings)
+    company_logo_url = Column(String(500))  # Logo for letterhead
+    company_signatory_name = Column(String(200))  # Person signing
+    company_signatory_title = Column(String(200))  # Title of signatory
+    company_contact_email = Column(String(200))  # Contact email
+    company_contact_phone = Column(String(100))  # Contact phone
+    company_stamp_url = Column(String(500))  # Stamp image URL
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -886,6 +886,114 @@ export default function CreateDocumentWizard() {
                 </div>
                 <Badge variant="secondary">Optional</Badge>
               </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("certificate_of_origin")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "certificate_of_origin"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "certificate_of_origin"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Certificate of Origin</p>
+                  <p className="text-slate-400 text-sm">Country of origin certification for customs</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("bill_of_lading_draft")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "bill_of_lading_draft"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "bill_of_lading_draft"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Bill of Lading Draft</p>
+                  <p className="text-slate-400 text-sm">Draft B/L for carrier/shipper review before final issuance</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("weight_certificate")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "weight_certificate"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "weight_certificate"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Weight Certificate</p>
+                  <p className="text-slate-400 text-sm">Auto-calculated from packing details with certification</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("insurance_certificate")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "insurance_certificate"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "insurance_certificate"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Insurance Certificate</p>
+                  <p className="text-slate-400 text-sm">Marine cargo insurance certificate (110% CIF value)</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("inspection_certificate")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "inspection_certificate"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "inspection_certificate"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Inspection Certificate</p>
+                  <p className="text-slate-400 text-sm">Pre-shipment inspection report (PSI)</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+                <Checkbox
+                  checked={selectedDocTypes.includes("shipping_instructions")}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedDocTypes([...selectedDocTypes, "shipping_instructions"]);
+                    } else {
+                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "shipping_instructions"));
+                    }
+                  }}
+                />
+                <div className="flex-1">
+                  <p className="text-white font-medium">Shipping Instructions</p>
+                  <p className="text-slate-400 text-sm">Instructions for freight forwarder/carrier</p>
+                </div>
+                <Badge variant="secondary">Optional</Badge>
+              </div>
             </div>
 
             <Separator className="bg-slate-800" />

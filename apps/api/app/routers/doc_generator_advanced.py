@@ -34,6 +34,7 @@ from app.services.document_translation import get_translation_service
 from app.services.certificate_generators import (
     get_gsp_generator,
     get_eur1_generator,
+    get_rcep_generator,
     get_export_service,
 )
 
@@ -419,8 +420,14 @@ async def generate_certificate(
         cert_data["certificate_number"] = f"EUR1-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
         pdf_bytes = generator.generate(cert_data)
         filename = f"EUR1_{cert_data['certificate_number']}.pdf"
+    elif request.certificate_type == "rcep":
+        generator = get_rcep_generator()
+        cert_data["reference_number"] = f"RCEP-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+        cert_data["rcep_origin_criterion"] = request.additional_data.get("rcep_criterion", "WO") if request.additional_data else "WO"
+        pdf_bytes = generator.generate(cert_data)
+        filename = f"RCEP_{cert_data['reference_number']}.pdf"
     else:
-        raise HTTPException(status_code=400, detail="Invalid certificate type. Use 'gsp_form_a' or 'eur1'")
+        raise HTTPException(status_code=400, detail="Invalid certificate type. Use 'gsp_form_a', 'eur1', or 'rcep'")
     
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

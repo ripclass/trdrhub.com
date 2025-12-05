@@ -57,6 +57,14 @@ const CERTIFICATE_TYPES = [
     color: "blue",
     acceptedBy: ["EU Member States", "Turkey", "Switzerland", "EFTA Countries", "Mediterranean Partners"],
   },
+  {
+    id: "rcep",
+    name: "RCEP",
+    fullName: "Regional Comprehensive Economic Partnership Certificate of Origin",
+    description: "For trade among ASEAN+5 countries (China, Japan, Korea, Australia, NZ)",
+    color: "purple",
+    acceptedBy: ["China", "Japan", "Korea", "Australia", "New Zealand", "ASEAN Members (10 countries)"],
+  },
 ];
 
 export function CertificatesPage() {

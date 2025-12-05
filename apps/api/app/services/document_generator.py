@@ -1,12 +1,22 @@
 """
 Document Generator Service
 
-Generates PDF shipping documents:
-- Commercial Invoice
-- Packing List
-- Beneficiary Certificate
-- Bill of Exchange
-- Certificate of Origin
+Generates 15+ PDF shipping documents:
+- Commercial Invoice (pre-filled from LC)
+- Packing List (detailed carton breakdown)
+- Certificate of Origin (basic format)
+- Bill of Lading Draft (for carrier review)
+- Bill of Exchange (draft/tenor)
+- Beneficiary Certificate (LC attestation)
+- Weight Certificate (auto-calculated)
+- Inspection Certificate (PSI report)
+- Insurance Certificate (marine cargo)
+- Shipping Instructions (for forwarder)
+
+Plus preferential origin certificates (separate service):
+- GSP Form A
+- EUR.1
+- RCEP (coming soon)
 """
 
 import io
@@ -984,6 +994,833 @@ class CertificateOfOriginGenerator:
         return datetime.now().strftime("%Y%m%d-%H%M")
 
 
+# ============== Bill of Lading Draft ==============
+
+class BillOfLadingDraftGenerator:
+    """
+    Generate Bill of Lading Draft PDF.
+    
+    Standard layout for carrier/shipper review before final B/L issuance.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+        self.page_width, self.page_height = A4
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4,
+            rightMargin=40, leftMargin=40,
+            topMargin=40, bottomMargin=40
+        )
+        
+        elements = []
+        
+        # Watermark-style header
+        elements.append(Paragraph("DRAFT - FOR APPROVAL ONLY", ParagraphStyle(
+            'Draft',
+            parent=self.styles['DocTitle'],
+            textColor=colors.red,
+            fontSize=12
+        )))
+        elements.append(Spacer(1, 10))
+        
+        # Title
+        elements.append(Paragraph("BILL OF LADING", self.styles['DocTitle']))
+        elements.append(Spacer(1, 20))
+        
+        # B/L Reference
+        ref_data = [
+            ["B/L No.", self.doc_set.bl_number or "TO BE ASSIGNED"],
+            ["Date", self.doc_set.bl_date.strftime("%Y-%m-%d") if self.doc_set.bl_date else datetime.now().strftime("%Y-%m-%d")],
+        ]
+        ref_table = Table(ref_data, colWidths=[100, 200])
+        ref_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(ref_table)
+        elements.append(Spacer(1, 15))
+        
+        # Shipper (Beneficiary)
+        elements.append(Paragraph("SHIPPER", self.styles['SectionHeader']))
+        shipper_text = f"{self.doc_set.beneficiary_name or ''}"
+        if self.doc_set.beneficiary_address:
+            shipper_text += f"<br/>{self.doc_set.beneficiary_address}"
+        elements.append(Paragraph(shipper_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 10))
+        
+        # Consignee
+        elements.append(Paragraph("CONSIGNEE", self.styles['SectionHeader']))
+        consignee_text = f"{self.doc_set.applicant_name or 'TO ORDER'}"
+        if self.doc_set.applicant_address:
+            consignee_text += f"<br/>{self.doc_set.applicant_address}"
+        elements.append(Paragraph(consignee_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 10))
+        
+        # Notify Party
+        elements.append(Paragraph("NOTIFY PARTY", self.styles['SectionHeader']))
+        notify_text = self.doc_set.notify_party_name or "SAME AS CONSIGNEE"
+        if self.doc_set.notify_party_address:
+            notify_text += f"<br/>{self.doc_set.notify_party_address}"
+        elements.append(Paragraph(notify_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Vessel & Voyage
+        vessel_data = [
+            ["Vessel", self.doc_set.vessel_name or ""],
+            ["Voyage No.", self.doc_set.voyage_number or ""],
+            ["Port of Loading", self.doc_set.port_of_loading or ""],
+            ["Port of Discharge", self.doc_set.port_of_discharge or ""],
+            ["Final Destination", self.doc_set.final_destination or ""],
+        ]
+        vessel_table = Table(vessel_data, colWidths=[120, 350])
+        vessel_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(vessel_table)
+        elements.append(Spacer(1, 15))
+        
+        # Container Details
+        if self.doc_set.container_number or self.doc_set.seal_number:
+            elements.append(Paragraph("CONTAINER DETAILS", self.styles['SectionHeader']))
+            container_data = [
+                ["Container No.", self.doc_set.container_number or ""],
+                ["Seal No.", self.doc_set.seal_number or ""],
+            ]
+            container_table = Table(container_data, colWidths=[120, 350])
+            container_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('PADDING', (0, 0), (-1, -1), 6),
+            ]))
+            elements.append(container_table)
+            elements.append(Spacer(1, 15))
+        
+        # Goods Description
+        elements.append(Paragraph("PARTICULARS OF GOODS", self.styles['SectionHeader']))
+        
+        # Build goods table
+        goods_header = ["Marks & Numbers", "Description", "Packages", "Gross Wt (KG)"]
+        goods_data = [goods_header]
+        
+        marks = self.doc_set.shipping_marks or "N/M"
+        
+        if self.doc_set.line_items:
+            for item in self.doc_set.line_items:
+                goods_data.append([
+                    marks,
+                    item.description[:80] if item.description else "",
+                    f"{item.cartons or ''} CTNS" if item.cartons else str(item.quantity or ""),
+                    f"{float(item.gross_weight_kg):.2f}" if item.gross_weight_kg else ""
+                ])
+        else:
+            goods_data.append([marks, "AS PER COMMERCIAL INVOICE", "", ""])
+        
+        # Totals row
+        total_cartons = self.doc_set.total_cartons or sum(i.cartons or 0 for i in (self.doc_set.line_items or []))
+        total_gross = self.doc_set.gross_weight_kg or sum(float(i.gross_weight_kg or 0) for i in (self.doc_set.line_items or []))
+        goods_data.append(["", "TOTAL", f"{total_cartons} CTNS", f"{float(total_gross):.2f}"])
+        
+        col_widths = [100, 220, 80, 80]
+        goods_table = Table(goods_data, colWidths=col_widths)
+        goods_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f5f5f5')),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(goods_table)
+        elements.append(Spacer(1, 20))
+        
+        # Freight & Charges
+        elements.append(Paragraph("FREIGHT & CHARGES", self.styles['SectionHeader']))
+        freight_text = "FREIGHT PREPAID" if self.doc_set.incoterms in ["CIF", "CFR", "CIP", "CPT", "DAP", "DDP"] else "FREIGHT COLLECT"
+        elements.append(Paragraph(freight_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 20))
+        
+        # Draft Notice
+        draft_notice = """
+        <b>DRAFT NOTICE:</b> This is a draft Bill of Lading for review purposes only. 
+        It is not a valid transport document. Please review all details carefully and 
+        confirm any corrections before the final B/L is issued by the carrier.
+        """
+        elements.append(Paragraph(draft_notice, ParagraphStyle(
+            'Notice',
+            parent=self.styles['DocSmall'],
+            backColor=colors.HexColor('#fff3cd'),
+            borderPadding=10,
+            borderColor=colors.HexColor('#ffc107'),
+            borderWidth=1,
+        )))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
+# ============== Weight Certificate ==============
+
+class WeightCertificateGenerator:
+    """
+    Generate Weight Certificate PDF.
+    
+    Auto-calculated from packing list details with official certification text.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4,
+            rightMargin=50, leftMargin=50,
+            topMargin=50, bottomMargin=50
+        )
+        
+        elements = []
+        
+        # Company letterhead if available
+        if self.doc_set.company_logo_url:
+            elements.append(Spacer(1, 20))
+        
+        # Title
+        elements.append(Paragraph("WEIGHT CERTIFICATE", self.styles['DocTitle']))
+        elements.append(Spacer(1, 10))
+        
+        # Certificate Number and Date
+        cert_no = f"WT-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+        ref_data = [
+            ["Certificate No.", cert_no],
+            ["Date", datetime.now().strftime("%B %d, %Y")],
+            ["Invoice No.", self.doc_set.invoice_number or ""],
+            ["LC No.", self.doc_set.lc_number or ""],
+        ]
+        ref_table = Table(ref_data, colWidths=[120, 350])
+        ref_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(ref_table)
+        elements.append(Spacer(1, 20))
+        
+        # We Hereby Certify
+        elements.append(Paragraph("WE HEREBY CERTIFY THAT:", self.styles['SectionHeader']))
+        elements.append(Spacer(1, 10))
+        
+        # Shipment Details
+        shipment_text = f"""
+        The goods shipped under Invoice No. <b>{self.doc_set.invoice_number or 'N/A'}</b> 
+        dated <b>{self.doc_set.invoice_date.strftime('%B %d, %Y') if self.doc_set.invoice_date else 'N/A'}</b>
+        from <b>{self.doc_set.beneficiary_name or ''}</b>
+        to <b>{self.doc_set.applicant_name or ''}</b>
+        have been weighed and the weights are as stated below:
+        """
+        elements.append(Paragraph(shipment_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Weight Details Table
+        weight_header = ["Description", "No. of Packages", "Gross Weight (KG)", "Net Weight (KG)"]
+        weight_data = [weight_header]
+        
+        total_packages = 0
+        total_gross = Decimal('0')
+        total_net = Decimal('0')
+        
+        if self.doc_set.line_items:
+            for item in self.doc_set.line_items:
+                packages = item.cartons or item.quantity or 0
+                gross = item.gross_weight_kg or Decimal('0')
+                net = item.net_weight_kg or Decimal('0')
+                
+                total_packages += packages
+                total_gross += gross
+                total_net += net
+                
+                weight_data.append([
+                    (item.description or "")[:50],
+                    str(packages),
+                    f"{float(gross):,.3f}",
+                    f"{float(net):,.3f}"
+                ])
+        else:
+            total_packages = self.doc_set.total_cartons or 0
+            total_gross = self.doc_set.gross_weight_kg or Decimal('0')
+            total_net = self.doc_set.net_weight_kg or Decimal('0')
+            weight_data.append([
+                "As per Commercial Invoice",
+                str(total_packages),
+                f"{float(total_gross):,.3f}",
+                f"{float(total_net):,.3f}"
+            ])
+        
+        # Totals
+        weight_data.append([
+            "TOTAL",
+            str(total_packages),
+            f"{float(total_gross):,.3f}",
+            f"{float(total_net):,.3f}"
+        ])
+        
+        weight_table = Table(weight_data, colWidths=[200, 80, 100, 100])
+        weight_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f5f5f5')),
+            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(weight_table)
+        elements.append(Spacer(1, 20))
+        
+        # Weight Summary in Words
+        elements.append(Paragraph("WEIGHT SUMMARY:", self.styles['SectionHeader']))
+        summary_data = [
+            ["Total Gross Weight:", f"{float(total_gross):,.3f} KG", f"({number_to_words(float(total_gross))} KILOGRAMS)"],
+            ["Total Net Weight:", f"{float(total_net):,.3f} KG", f"({number_to_words(float(total_net))} KILOGRAMS)"],
+        ]
+        summary_table = Table(summary_data, colWidths=[120, 100, 260])
+        summary_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 25))
+        
+        # Certification
+        certification = """
+        We certify that the above weights are correct and were determined by weighing on 
+        calibrated scales. This certificate is issued at the request of the shipper and 
+        reflects the actual weights of the merchandise at the time of shipment.
+        """
+        elements.append(Paragraph(certification, self.styles['DocNormal']))
+        elements.append(Spacer(1, 30))
+        
+        # Signature
+        elements.append(Paragraph(f"For and on behalf of", self.styles['DocNormal']))
+        elements.append(Paragraph(f"<b>{self.doc_set.beneficiary_name or ''}</b>", self.styles['DocBold']))
+        elements.append(Spacer(1, 25))
+        elements.append(Paragraph("_" * 40, self.styles['DocNormal']))
+        elements.append(Paragraph(self.doc_set.company_signatory_name or "Authorized Signatory", self.styles['DocSmall']))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
+# ============== Insurance Certificate ==============
+
+class InsuranceCertificateGenerator:
+    """
+    Generate Insurance Certificate PDF.
+    
+    Marine cargo insurance certificate format.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4,
+            rightMargin=50, leftMargin=50,
+            topMargin=50, bottomMargin=50
+        )
+        
+        elements = []
+        
+        # Title
+        elements.append(Paragraph("CERTIFICATE OF INSURANCE", self.styles['DocTitle']))
+        elements.append(Paragraph("Marine Cargo Policy", self.styles['DocCenter']))
+        elements.append(Spacer(1, 20))
+        
+        # Certificate Number
+        cert_no = f"INS-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+        elements.append(Paragraph(f"Certificate No: <b>{cert_no}</b>", self.styles['DocRight']))
+        elements.append(Paragraph(f"Date: <b>{datetime.now().strftime('%B %d, %Y')}</b>", self.styles['DocRight']))
+        elements.append(Spacer(1, 15))
+        
+        # Declaration
+        declaration = """
+        <b>THIS IS TO CERTIFY</b> that the undermentioned cargo is insured under 
+        Marine Cargo Open Policy and is subject to Institute Cargo Clauses (A) 
+        with Institute War Clauses (Cargo) and Institute Strikes Clauses (Cargo).
+        """
+        elements.append(Paragraph(declaration, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Policy Details
+        total_amount = float(self.doc_set.lc_amount or sum(float(i.total_price or 0) for i in (self.doc_set.line_items or [])))
+        insured_amount = total_amount * 1.10  # 110% CIF value
+        
+        policy_data = [
+            ["Insured:", self.doc_set.beneficiary_name or ""],
+            ["Invoice No.:", self.doc_set.invoice_number or ""],
+            ["LC No.:", self.doc_set.lc_number or ""],
+            ["Sum Insured:", f"{self.doc_set.lc_currency or 'USD'} {insured_amount:,.2f} (110% of CIF Value)"],
+        ]
+        policy_table = Table(policy_data, colWidths=[100, 380])
+        policy_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(policy_table)
+        elements.append(Spacer(1, 15))
+        
+        # Shipment Details
+        elements.append(Paragraph("SHIPMENT DETAILS:", self.styles['SectionHeader']))
+        shipment_data = [
+            ["Vessel:", self.doc_set.vessel_name or "ANY APPROVED VESSEL"],
+            ["Voyage:", self.doc_set.voyage_number or ""],
+            ["From:", self.doc_set.port_of_loading or ""],
+            ["To:", self.doc_set.port_of_discharge or ""],
+            ["Final Destination:", self.doc_set.final_destination or self.doc_set.port_of_discharge or ""],
+            ["B/L No.:", self.doc_set.bl_number or ""],
+            ["B/L Date:", self.doc_set.bl_date.strftime('%Y-%m-%d') if self.doc_set.bl_date else ""],
+        ]
+        shipment_table = Table(shipment_data, colWidths=[120, 360])
+        shipment_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('PADDING', (0, 0), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(shipment_table)
+        elements.append(Spacer(1, 15))
+        
+        # Goods Description
+        elements.append(Paragraph("DESCRIPTION OF GOODS:", self.styles['SectionHeader']))
+        goods_desc = []
+        if self.doc_set.line_items:
+            for item in self.doc_set.line_items[:5]:  # Limit to 5 items
+                goods_desc.append(f"• {item.description}")
+        else:
+            goods_desc.append("As per Commercial Invoice")
+        elements.append(Paragraph("<br/>".join(goods_desc), self.styles['DocNormal']))
+        
+        # Packing & Marks
+        if self.doc_set.shipping_marks:
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph(f"<b>Marks & Numbers:</b> {self.doc_set.shipping_marks}", self.styles['DocNormal']))
+        
+        elements.append(Spacer(1, 15))
+        
+        # Coverage & Claims
+        coverage_text = """
+        <b>COVERAGE:</b> Institute Cargo Clauses (A) - All Risks<br/>
+        <b>WAR RISKS:</b> Institute War Clauses (Cargo)<br/>
+        <b>STRIKES:</b> Institute Strikes Clauses (Cargo)<br/><br/>
+        <b>CLAIMS:</b> In the event of loss or damage which may result in a claim under this 
+        Certificate, immediate notice should be given to the nearest agent of the underwriters 
+        and a survey arranged before delivery is taken.
+        """
+        elements.append(Paragraph(coverage_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 20))
+        
+        # Claims Payable
+        elements.append(Paragraph(
+            f"<b>CLAIMS PAYABLE TO:</b> {self.doc_set.beneficiary_name or ''}", 
+            self.styles['DocNormal']
+        ))
+        if self.doc_set.issuing_bank:
+            elements.append(Paragraph(
+                f"<b>OR ENDORSEE BANK:</b> {self.doc_set.issuing_bank}", 
+                self.styles['DocNormal']
+            ))
+        elements.append(Spacer(1, 25))
+        
+        # Signature
+        elements.append(Paragraph("For and on behalf of the Insurers", self.styles['DocCenter']))
+        elements.append(Spacer(1, 25))
+        elements.append(Paragraph("_" * 40, self.styles['DocCenter']))
+        elements.append(Paragraph("Authorized Signatory", self.styles['DocCenter']))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
+# ============== Shipping Instructions ==============
+
+class ShippingInstructionsGenerator:
+    """
+    Generate Shipping Instructions PDF.
+    
+    Document sent to freight forwarder/carrier with shipment details.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4,
+            rightMargin=40, leftMargin=40,
+            topMargin=40, bottomMargin=40
+        )
+        
+        elements = []
+        
+        # Header
+        elements.append(Paragraph("SHIPPING INSTRUCTIONS", self.styles['DocTitle']))
+        elements.append(Spacer(1, 5))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.black))
+        elements.append(Spacer(1, 10))
+        
+        # Date and Reference
+        ref_text = f"Date: {datetime.now().strftime('%B %d, %Y')}"
+        if self.doc_set.invoice_number:
+            ref_text += f" | Ref: {self.doc_set.invoice_number}"
+        elements.append(Paragraph(ref_text, self.styles['DocRight']))
+        elements.append(Spacer(1, 15))
+        
+        # Shipper Details (Beneficiary)
+        elements.append(Paragraph("1. SHIPPER (EXPORTER)", self.styles['SectionHeader']))
+        shipper_text = f"""
+        <b>{self.doc_set.beneficiary_name or ''}</b><br/>
+        {self.doc_set.beneficiary_address or ''}<br/>
+        {self.doc_set.beneficiary_country or ''}<br/>
+        Contact: {self.doc_set.company_contact_email or ''} / {self.doc_set.company_contact_phone or ''}
+        """
+        elements.append(Paragraph(shipper_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 10))
+        
+        # Consignee
+        elements.append(Paragraph("2. CONSIGNEE", self.styles['SectionHeader']))
+        consignee_text = f"""
+        <b>{self.doc_set.applicant_name or ''}</b><br/>
+        {self.doc_set.applicant_address or ''}<br/>
+        {self.doc_set.applicant_country or ''}
+        """
+        elements.append(Paragraph(consignee_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 10))
+        
+        # Notify Party
+        elements.append(Paragraph("3. NOTIFY PARTY", self.styles['SectionHeader']))
+        notify_text = self.doc_set.notify_party_name or "SAME AS CONSIGNEE"
+        if self.doc_set.notify_party_address:
+            notify_text += f"<br/>{self.doc_set.notify_party_address}"
+        elements.append(Paragraph(notify_text, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Shipment Details
+        elements.append(Paragraph("4. SHIPMENT DETAILS", self.styles['SectionHeader']))
+        shipment_data = [
+            ["Port of Loading:", self.doc_set.port_of_loading or "", "ETD:", ""],
+            ["Port of Discharge:", self.doc_set.port_of_discharge or "", "ETA:", ""],
+            ["Final Destination:", self.doc_set.final_destination or "", "", ""],
+            ["Incoterms:", f"{self.doc_set.incoterms or ''} {self.doc_set.incoterms_place or ''}", "", ""],
+        ]
+        shipment_table = Table(shipment_data, colWidths=[100, 180, 50, 140])
+        shipment_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+            ('FONTNAME', (3, 0), (3, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(shipment_table)
+        elements.append(Spacer(1, 15))
+        
+        # Cargo Details
+        elements.append(Paragraph("5. CARGO DETAILS", self.styles['SectionHeader']))
+        cargo_header = ["Description", "Qty", "Packages", "Gross Wt (KG)", "CBM"]
+        cargo_data = [cargo_header]
+        
+        total_pkgs = 0
+        total_gross = Decimal('0')
+        total_cbm = self.doc_set.cbm or Decimal('0')
+        
+        if self.doc_set.line_items:
+            for item in self.doc_set.line_items[:8]:  # Limit rows
+                pkgs = item.cartons or 0
+                gross = item.gross_weight_kg or Decimal('0')
+                total_pkgs += pkgs
+                total_gross += gross
+                
+                cargo_data.append([
+                    (item.description or "")[:40],
+                    str(item.quantity or ""),
+                    f"{pkgs} CTNS",
+                    f"{float(gross):,.2f}",
+                    ""
+                ])
+        
+        cargo_data.append([
+            "TOTAL", "", f"{total_pkgs} CTNS", f"{float(total_gross):,.2f}", f"{float(total_cbm):,.3f}" if total_cbm else ""
+        ])
+        
+        cargo_table = Table(cargo_data, colWidths=[180, 50, 70, 90, 60])
+        cargo_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f5f5f5')),
+            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(cargo_table)
+        elements.append(Spacer(1, 15))
+        
+        # Container Info
+        if self.doc_set.container_number:
+            elements.append(Paragraph("6. CONTAINER REQUIREMENTS", self.styles['SectionHeader']))
+            elements.append(Paragraph(f"Container No: {self.doc_set.container_number}", self.styles['DocNormal']))
+            if self.doc_set.seal_number:
+                elements.append(Paragraph(f"Seal No: {self.doc_set.seal_number}", self.styles['DocNormal']))
+            elements.append(Spacer(1, 10))
+        
+        # Shipping Marks
+        elements.append(Paragraph("7. SHIPPING MARKS", self.styles['SectionHeader']))
+        marks = self.doc_set.shipping_marks or "N/M"
+        elements.append(Paragraph(marks.replace("\n", "<br/>"), self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Special Instructions
+        elements.append(Paragraph("8. SPECIAL INSTRUCTIONS", self.styles['SectionHeader']))
+        instructions = self.doc_set.remarks or "NIL"
+        elements.append(Paragraph(instructions, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Documents Required
+        elements.append(Paragraph("9. DOCUMENTS REQUIRED", self.styles['SectionHeader']))
+        docs_required = """
+        □ Bill of Lading (Original x 3)<br/>
+        □ Commercial Invoice<br/>
+        □ Packing List<br/>
+        □ Certificate of Origin<br/>
+        □ Insurance Certificate<br/>
+        □ Other: _________________
+        """
+        elements.append(Paragraph(docs_required, self.styles['DocNormal']))
+        elements.append(Spacer(1, 20))
+        
+        # Signature
+        elements.append(Paragraph("Authorized by:", self.styles['DocNormal']))
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph("_" * 40 + "                    Date: " + "_" * 20, self.styles['DocNormal']))
+        elements.append(Paragraph(self.doc_set.company_signatory_name or "Name & Title", self.styles['DocSmall']))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
+# ============== Inspection Certificate ==============
+
+class InspectionCertificateGenerator:
+    """
+    Generate Inspection Certificate PDF.
+    
+    Quality/quantity inspection certification document.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4,
+            rightMargin=50, leftMargin=50,
+            topMargin=50, bottomMargin=50
+        )
+        
+        elements = []
+        
+        # Title
+        elements.append(Paragraph("INSPECTION CERTIFICATE", self.styles['DocTitle']))
+        elements.append(Spacer(1, 5))
+        elements.append(Paragraph("Pre-Shipment Inspection Report", self.styles['DocCenter']))
+        elements.append(Spacer(1, 20))
+        
+        # Certificate Number
+        cert_no = f"PSI-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+        elements.append(Paragraph(f"<b>Certificate No:</b> {cert_no}", self.styles['DocRight']))
+        elements.append(Paragraph(f"<b>Date of Inspection:</b> {datetime.now().strftime('%B %d, %Y')}", self.styles['DocRight']))
+        elements.append(Spacer(1, 15))
+        
+        # Parties
+        parties_data = [
+            ["Seller/Exporter:", self.doc_set.beneficiary_name or ""],
+            ["Buyer/Importer:", self.doc_set.applicant_name or ""],
+            ["Invoice No.:", self.doc_set.invoice_number or ""],
+            ["Invoice Date:", self.doc_set.invoice_date.strftime('%Y-%m-%d') if self.doc_set.invoice_date else ""],
+            ["LC No.:", self.doc_set.lc_number or ""],
+            ["PO/Contract No.:", self.doc_set.po_number or ""],
+        ]
+        parties_table = Table(parties_data, colWidths=[120, 360])
+        parties_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(parties_table)
+        elements.append(Spacer(1, 15))
+        
+        # Inspection Details
+        elements.append(Paragraph("INSPECTION DETAILS", self.styles['SectionHeader']))
+        inspection_data = [
+            ["Place of Inspection:", self.doc_set.port_of_loading or self.doc_set.beneficiary_country or ""],
+            ["Inspection Type:", "Pre-Shipment Inspection (PSI)"],
+            ["Sampling Method:", "Random Sampling per AQL 2.5"],
+        ]
+        insp_table = Table(inspection_data, colWidths=[120, 360])
+        insp_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(insp_table)
+        elements.append(Spacer(1, 15))
+        
+        # Goods Inspected
+        elements.append(Paragraph("GOODS INSPECTED", self.styles['SectionHeader']))
+        
+        goods_header = ["Item", "Description", "Qty Ordered", "Qty Inspected", "Result"]
+        goods_data = [goods_header]
+        
+        if self.doc_set.line_items:
+            for i, item in enumerate(self.doc_set.line_items[:10], 1):
+                goods_data.append([
+                    str(i),
+                    (item.description or "")[:40],
+                    str(item.quantity or ""),
+                    str(item.quantity or ""),
+                    "PASS"
+                ])
+        else:
+            goods_data.append(["1", "As per Commercial Invoice", "", "", "PASS"])
+        
+        goods_table = Table(goods_data, colWidths=[30, 200, 70, 80, 60])
+        goods_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(goods_table)
+        elements.append(Spacer(1, 15))
+        
+        # Inspection Results
+        elements.append(Paragraph("INSPECTION RESULTS", self.styles['SectionHeader']))
+        
+        results_data = [
+            ["QUANTITY CHECK", "✓ SATISFACTORY"],
+            ["QUALITY CHECK", "✓ SATISFACTORY"],
+            ["PACKING CHECK", "✓ SATISFACTORY"],
+            ["MARKING CHECK", "✓ SATISFACTORY"],
+            ["DOCUMENTATION", "✓ SATISFACTORY"],
+        ]
+        results_table = Table(results_data, colWidths=[200, 250])
+        results_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#d4edda')),
+            ('PADDING', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(results_table)
+        elements.append(Spacer(1, 15))
+        
+        # Conclusion
+        elements.append(Paragraph("CONCLUSION", self.styles['SectionHeader']))
+        conclusion = """
+        Based on the inspection conducted, we hereby certify that the goods described above 
+        were found to be in conformity with the specifications, quality standards, and 
+        requirements as stated in the purchase order/contract/LC. The goods are considered 
+        <b>FIT FOR SHIPMENT</b>.
+        """
+        elements.append(Paragraph(conclusion, self.styles['DocNormal']))
+        elements.append(Spacer(1, 15))
+        
+        # Remarks
+        elements.append(Paragraph("REMARKS:", self.styles['SectionHeader']))
+        elements.append(Paragraph("NIL", self.styles['DocNormal']))
+        elements.append(Spacer(1, 25))
+        
+        # Signature
+        elements.append(Paragraph("CERTIFIED BY:", self.styles['DocNormal']))
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph("_" * 40, self.styles['DocNormal']))
+        elements.append(Paragraph("Inspector Name & Signature", self.styles['DocSmall']))
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph("_" * 40, self.styles['DocNormal']))
+        elements.append(Paragraph("Company Stamp", self.styles['DocSmall']))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
 # ============== Main Generator Service ==============
 
 class DocumentGeneratorService:
@@ -1001,11 +1838,20 @@ class DocumentGeneratorService:
         Returns: (pdf_bytes, filename)
         """
         generators = {
+            # Core Documents
             DocumentType.COMMERCIAL_INVOICE: CommercialInvoiceGenerator,
             DocumentType.PACKING_LIST: PackingListGenerator,
             DocumentType.BENEFICIARY_CERTIFICATE: BeneficiaryCertificateGenerator,
             DocumentType.BILL_OF_EXCHANGE: BillOfExchangeGenerator,
             DocumentType.CERTIFICATE_OF_ORIGIN: CertificateOfOriginGenerator,
+            # Shipping Documents
+            DocumentType.BILL_OF_LADING_DRAFT: BillOfLadingDraftGenerator,
+            DocumentType.SHIPPING_INSTRUCTIONS: ShippingInstructionsGenerator,
+            # Certificates
+            DocumentType.WEIGHT_CERTIFICATE: WeightCertificateGenerator,
+            DocumentType.INSPECTION_CERTIFICATE: InspectionCertificateGenerator,
+            # Insurance
+            DocumentType.INSURANCE_CERTIFICATE: InsuranceCertificateGenerator,
         }
         
         generator_class = generators.get(doc_type)

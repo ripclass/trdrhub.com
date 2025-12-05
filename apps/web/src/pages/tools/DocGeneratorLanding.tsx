@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award } from "lucide-react";
+import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
@@ -13,6 +13,8 @@ const documentTypes = [
   { name: "Bill of Lading Draft", icon: ScrollText, description: "Standard layout for carrier/shipper review" },
   { name: "Weight Certificate", icon: FileText, description: "Auto-calculated from packing details" },
   { name: "Beneficiary Certificate", icon: FileCheck, description: "LC-compliant attestation documents" },
+  { name: "Insurance Certificate", icon: Shield, description: "Marine cargo policy certificates" },
+  { name: "Inspection Certificate", icon: FileCheck, description: "Pre-shipment inspection reports" },
 ];
 
 const features = [
@@ -75,8 +77,8 @@ const process = [
 const stats = [
   { value: "95%", label: "Error Reduction" },
   { value: "10x", label: "Faster Prep" },
-  { value: "20+", label: "Doc Types" },
-  { value: "100+", label: "Templates" },
+  { value: "15+", label: "Doc Types" },
+  { value: "6", label: "Banks Supported" },
 ];
 
 const pricing = [
@@ -88,7 +90,7 @@ const pricing = [
 const faqs = [
   {
     q: "What documents can I generate?",
-    a: "We support 20+ trade document types including Commercial Invoice, Packing List, Certificate of Origin (multiple formats), Bill of Lading draft, Weight Certificate, Beneficiary Certificate, Inspection Certificate, Insurance Certificate, and more.",
+    a: "We support 15+ trade document types including Commercial Invoice, Packing List, Certificate of Origin (Form A, EUR.1, RCEP), Bill of Lading draft, Weight Certificate, Beneficiary Certificate, Bill of Exchange, Inspection Certificate, Insurance Certificate, and Shipping Instructions.",
   },
   {
     q: "Can I customize the templates?",
