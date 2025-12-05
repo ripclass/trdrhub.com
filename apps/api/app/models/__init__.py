@@ -92,6 +92,16 @@ from .tracking import (
     TrackingNotification,
 )
 
+# Doc Generator models
+from .doc_generator import (
+    DocumentSet,
+    DocumentLineItem,
+    GeneratedDocument,
+    DocumentStatus,
+    DocumentType as DocGenDocumentType,  # Alias to avoid conflict with legacy DocumentType
+    UnitType,
+)
+
 __all__ = [
     "User",
     "UserRole",
@@ -144,4 +154,11 @@ __all__ = [
     "TrackingAlert",
     "TrackingEvent",
     "TrackingNotification",
+    # Doc Generator models
+    "DocumentSet",
+    "DocumentLineItem",
+    "GeneratedDocument",
+    "DocumentStatus",
+    "DocGenDocumentType",
+    "UnitType",
 ]
