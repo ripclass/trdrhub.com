@@ -91,23 +91,32 @@ const industryOptions = [
   { value: "general", label: "General Trading", icon: Package },
 ];
 
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
+
 export default function BeneficiaryDirectoryPage() {
   const { session } = useAuth();
   const { toast } = useToast();
   
   const [profiles, setProfiles] = useState<BeneficiaryProfile[]>([]);
   const [filteredProfiles, setFilteredProfiles] = useState<BeneficiaryProfile[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<BeneficiaryProfile | null>(null);
   const [formData, setFormData] = useState(emptyProfile);
 
-  // Demo data
+  // Fetch profiles from API
   useEffect(() => {
-    setProfiles([
-      {
+    fetchProfiles();
+  }, [session?.access_token]);
+
+  const fetchProfiles = async () => {
+    if (!session?.access_token) {
+      setLoading(false);
+      // Show demo data when not logged in
+      setProfiles([
+        {
         id: "bp-1",
         company_name: "Fashion Garments Ltd",
         address: "Plot 123, BSCIC Industrial Area",
@@ -161,8 +170,28 @@ export default function BeneficiaryDirectoryPage() {
         created_at: "2024-03-01",
         usage_count: 12,
       },
-    ]);
-  }, []);
+      ]);
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/lc-builder/profiles/beneficiaries`, {
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setProfiles(data.profiles || []);
+      }
+    } catch (error) {
+      console.error("Error fetching profiles:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     filterProfiles();
@@ -217,7 +246,7 @@ export default function BeneficiaryDirectoryPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.company_name || !formData.country) {
       toast({
         title: "Validation Error",
@@ -227,45 +256,114 @@ export default function BeneficiaryDirectoryPage() {
       return;
     }
 
-    if (editingProfile) {
-      setProfiles(profiles.map(p => 
-        p.id === editingProfile.id 
-          ? { ...p, ...formData }
-          : p
-      ));
-      toast({
-        title: "Profile Updated",
-        description: `${formData.company_name} has been updated`,
+    if (!session?.access_token) {
+      // Offline mode - local state only
+      if (editingProfile) {
+        setProfiles(profiles.map(p => 
+          p.id === editingProfile.id ? { ...p, ...formData } : p
+        ));
+      } else {
+        const newProfile: BeneficiaryProfile = {
+          id: `bp-${Date.now()}`,
+          ...formData,
+          created_at: new Date().toISOString().split("T")[0],
+          usage_count: 0,
+        };
+        setProfiles([...profiles, newProfile]);
+      }
+      setIsDialogOpen(false);
+      return;
+    }
+
+    try {
+      const url = editingProfile
+        ? `${API_BASE}/lc-builder/profiles/beneficiaries/${editingProfile.id}`
+        : `${API_BASE}/lc-builder/profiles/beneficiaries`;
+      
+      const res = await fetch(url, {
+        method: editingProfile ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(formData),
       });
-    } else {
-      const newProfile: BeneficiaryProfile = {
-        id: `bp-${Date.now()}`,
-        ...formData,
-        created_at: new Date().toISOString().split("T")[0],
-        usage_count: 0,
-      };
-      setProfiles([...profiles, newProfile]);
+
+      if (res.ok) {
+        toast({
+          title: editingProfile ? "Profile Updated" : "Profile Created",
+          description: `${formData.company_name} has been ${editingProfile ? "updated" : "added"}`,
+        });
+        fetchProfiles();
+        setIsDialogOpen(false);
+      } else {
+        throw new Error("Failed to save");
+      }
+    } catch (error) {
       toast({
-        title: "Profile Created",
-        description: `${formData.company_name} has been added`,
+        title: "Error",
+        description: "Failed to save profile",
+        variant: "destructive",
       });
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (session?.access_token) {
+      try {
+        const res = await fetch(`${API_BASE}/lc-builder/profiles/beneficiaries/${id}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`,
+          },
+        });
+        
+        if (res.ok) {
+          toast({
+            title: "Profile Deleted",
+            description: "Beneficiary profile has been removed",
+          });
+          fetchProfiles();
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete profile",
+          variant: "destructive",
+        });
+      }
+    } else {
+      setProfiles(profiles.filter(p => p.id !== id));
+      toast({
+        title: "Profile Deleted",
+        description: "Beneficiary profile has been removed",
+      });
+    }
+  };
+
+  const toggleFavorite = async (id: string) => {
+    const profile = profiles.find(p => p.id === id);
+    if (!profile) return;
     
-    setIsDialogOpen(false);
-  };
-
-  const handleDelete = (id: string) => {
-    setProfiles(profiles.filter(p => p.id !== id));
-    toast({
-      title: "Profile Deleted",
-      description: "Beneficiary profile has been removed",
-    });
-  };
-
-  const toggleFavorite = (id: string) => {
-    setProfiles(profiles.map(p => 
-      p.id === id ? { ...p, is_favorite: !p.is_favorite } : p
-    ));
+    if (session?.access_token) {
+      try {
+        await fetch(`${API_BASE}/lc-builder/profiles/beneficiaries/${id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ ...profile, is_favorite: !profile.is_favorite }),
+        });
+        fetchProfiles();
+      } catch (error) {
+        console.error("Failed to update favorite:", error);
+      }
+    } else {
+      setProfiles(profiles.map(p => 
+        p.id === id ? { ...p, is_favorite: !p.is_favorite } : p
+      ));
+    }
   };
 
   const getIndustryIcon = (industry: string) => {

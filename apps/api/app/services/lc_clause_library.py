@@ -3638,3 +3638,140 @@ class LCClauseLibrary:
             }
         }
 
+    @staticmethod
+    def suggest_clauses(
+        origin_country: Optional[str] = None,
+        destination_country: Optional[str] = None,
+        goods_type: Optional[str] = None,
+        payment_terms: Optional[str] = None,
+        incoterms: Optional[str] = None,
+        first_time_beneficiary: bool = False,
+        amount_usd: Optional[float] = None
+    ) -> List[LCClause]:
+        """
+        Suggest relevant clauses based on trade parameters.
+        Returns a list of recommended clauses sorted by relevance.
+        """
+        suggestions = []
+        scores = {}  # clause_code -> relevance_score
+        
+        # Always include UCP600 application clause
+        for c in ALL_CLAUSES:
+            if "UCP600" in c.code and "application" in c.title.lower():
+                scores[c.code] = scores.get(c.code, 0) + 100
+        
+        # Country-specific suggestions
+        if origin_country:
+            origin_lower = origin_country.lower()
+            for c in ALL_CLAUSES:
+                # Bangladesh
+                if origin_lower in ["bangladesh", "bd"]:
+                    if any(tag in c.tags for tag in ["bangladesh", "rmg", "textiles", "south asia"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+                
+                # China
+                elif origin_lower in ["china", "cn", "prc"]:
+                    if any(tag in c.tags for tag in ["china", "asia", "manufacturing"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+                
+                # India
+                elif origin_lower in ["india", "in"]:
+                    if any(tag in c.tags for tag in ["india", "south asia"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+                
+                # Middle East
+                elif origin_lower in ["uae", "saudi arabia", "qatar", "bahrain", "kuwait", "oman"]:
+                    if any(tag in c.tags for tag in ["middle east", "gcc", "halal", "islamic"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+        
+        if destination_country:
+            dest_lower = destination_country.lower()
+            for c in ALL_CLAUSES:
+                # EU destinations
+                if dest_lower in ["germany", "france", "italy", "spain", "netherlands", "belgium"]:
+                    if any(tag in c.tags for tag in ["eu", "europe", "EUR.1"]):
+                        scores[c.code] = scores.get(c.code, 0) + 25
+                
+                # US destinations
+                elif dest_lower in ["usa", "united states", "us", "america"]:
+                    if any(tag in c.tags for tag in ["usa", "GSP", "us customs"]):
+                        scores[c.code] = scores.get(c.code, 0) + 25
+        
+        # Goods type suggestions
+        if goods_type:
+            goods_lower = goods_type.lower()
+            for c in ALL_CLAUSES:
+                # Textiles/Garments
+                if any(term in goods_lower for term in ["textile", "garment", "rmg", "clothing", "fabric"]):
+                    if any(tag in c.tags for tag in ["textiles", "rmg", "garments", "quota"]):
+                        scores[c.code] = scores.get(c.code, 0) + 35
+                
+                # Electronics
+                elif any(term in goods_lower for term in ["electronic", "computer", "phone", "device"]):
+                    if any(tag in c.tags for tag in ["electronics", "technology", "ce marking"]):
+                        scores[c.code] = scores.get(c.code, 0) + 35
+                
+                # Food/Perishable
+                elif any(term in goods_lower for term in ["food", "perishable", "fruit", "vegetable", "meat"]):
+                    if any(tag in c.tags for tag in ["perishable", "food", "halal", "phytosanitary"]):
+                        scores[c.code] = scores.get(c.code, 0) + 35
+                    # Add refrigerated transport clauses
+                    if "refrigerated" in c.title.lower() or "temperature" in c.clause_text.lower():
+                        scores[c.code] = scores.get(c.code, 0) + 20
+                
+                # Machinery
+                elif any(term in goods_lower for term in ["machine", "equipment", "industrial"]):
+                    if any(tag in c.tags for tag in ["machinery", "equipment", "performance"]):
+                        scores[c.code] = scores.get(c.code, 0) + 35
+        
+        # Payment terms suggestions
+        if payment_terms:
+            terms_lower = payment_terms.lower()
+            for c in ALL_CLAUSES:
+                if terms_lower == "sight":
+                    if c.category == ClauseCategory.PAYMENT and "sight" in c.tags:
+                        scores[c.code] = scores.get(c.code, 0) + 20
+                elif terms_lower in ["usance", "deferred"]:
+                    if c.category == ClauseCategory.PAYMENT and any(tag in c.tags for tag in ["usance", "deferred", "acceptance"]):
+                        scores[c.code] = scores.get(c.code, 0) + 20
+        
+        # Incoterms suggestions
+        if incoterms:
+            inco_upper = incoterms.upper()
+            for c in ALL_CLAUSES:
+                # CIF/CIP - Insurance required
+                if inco_upper in ["CIF", "CIP"]:
+                    if "insurance" in c.title.lower() or "insurance" in c.tags:
+                        scores[c.code] = scores.get(c.code, 0) + 25
+                
+                # FOB/FCA - Different document requirements
+                elif inco_upper in ["FOB", "FCA", "EXW"]:
+                    if inco_upper.lower() in c.tags or inco_upper in c.clause_text:
+                        scores[c.code] = scores.get(c.code, 0) + 20
+        
+        # First-time beneficiary - add protective clauses
+        if first_time_beneficiary:
+            for c in ALL_CLAUSES:
+                # Add inspection and confirmation clauses
+                if c.bias == BiasIndicator.APPLICANT or "inspection" in c.title.lower():
+                    scores[c.code] = scores.get(c.code, 0) + 15
+                if "confirmation" in c.title.lower():
+                    scores[c.code] = scores.get(c.code, 0) + 20
+        
+        # Large amounts - add extra security clauses
+        if amount_usd and amount_usd > 500000:
+            for c in ALL_CLAUSES:
+                if any(term in c.title.lower() for term in ["confirmation", "inspection", "certificate"]):
+                    scores[c.code] = scores.get(c.code, 0) + 10
+        
+        # Get all clauses with scores
+        for c in ALL_CLAUSES:
+            if c.code in scores and scores[c.code] > 0:
+                suggestions.append((c, scores[c.code]))
+        
+        # Sort by score descending
+        suggestions.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return top 20 clauses
+        return [s[0] for s in suggestions[:20]]
+

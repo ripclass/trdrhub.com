@@ -16,6 +16,8 @@ import {
   Save,
   Download,
   Eye,
+  Import,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -194,12 +196,149 @@ export default function LCBuilderWizard() {
   const [mt700Preview, setMT700Preview] = useState<any>(null);
   const [showMT700Dialog, setShowMT700Dialog] = useState(false);
   
+  // Import from Previous LC
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [previousLCs, setPreviousLCs] = useState<any[]>([]);
+  const [loadingLCs, setLoadingLCs] = useState(false);
+  const [selectedImportFields, setSelectedImportFields] = useState<string[]>([
+    "applicant", "beneficiary", "shipment", "goods", "documents"
+  ]);
+  
   // Load existing application if editing
   useEffect(() => {
     if (id && session?.access_token) {
       loadApplication(id);
     }
   }, [id, session?.access_token]);
+
+  // Fetch previous LCs for import
+  const fetchPreviousLCs = async () => {
+    if (!session?.access_token) return;
+    
+    setLoadingLCs(true);
+    try {
+      const response = await fetch(`${API_BASE}/lc-builder/applications`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPreviousLCs(data.applications || []);
+      }
+    } catch (error) {
+      console.error("Error fetching previous LCs:", error);
+    } finally {
+      setLoadingLCs(false);
+    }
+  };
+
+  const handleImportFromLC = async (sourceId: string) => {
+    if (!id || !session?.access_token) {
+      // If no current LC yet, just load the source LC data
+      try {
+        const response = await fetch(`${API_BASE}/lc-builder/applications/${sourceId}`, {
+          headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Only import selected fields
+          const newFormData = { ...formData };
+          
+          if (selectedImportFields.includes("applicant")) {
+            newFormData.applicant_name = data.applicant?.name || "";
+            newFormData.applicant_address = data.applicant?.address || "";
+            newFormData.applicant_country = data.applicant?.country || "";
+          }
+          
+          if (selectedImportFields.includes("beneficiary")) {
+            newFormData.beneficiary_name = data.beneficiary?.name || "";
+            newFormData.beneficiary_address = data.beneficiary?.address || "";
+            newFormData.beneficiary_country = data.beneficiary?.country || "";
+            newFormData.advising_bank_name = data.advising_bank?.name || "";
+            newFormData.advising_bank_swift = data.advising_bank?.swift || "";
+          }
+          
+          if (selectedImportFields.includes("shipment")) {
+            newFormData.port_of_loading = data.port_of_loading || "";
+            newFormData.port_of_discharge = data.port_of_discharge || "";
+            newFormData.place_of_delivery = data.place_of_delivery || "";
+            newFormData.incoterms = data.incoterms || "FOB";
+            newFormData.incoterms_place = data.incoterms_place || "";
+            newFormData.partial_shipments = data.partial_shipments ?? true;
+            newFormData.transhipment = data.transhipment ?? true;
+          }
+          
+          if (selectedImportFields.includes("goods")) {
+            newFormData.goods_description = data.goods_description || "";
+            newFormData.hs_code = data.hs_code || "";
+          }
+          
+          if (selectedImportFields.includes("documents")) {
+            newFormData.documents_required = data.documents_required || initialFormData.documents_required;
+          }
+          
+          if (selectedImportFields.includes("payment")) {
+            newFormData.payment_terms = data.payment_terms || "sight";
+            newFormData.usance_days = String(data.usance_days || 30);
+            newFormData.usance_from = data.usance_from || "bl_date";
+            newFormData.presentation_period = String(data.presentation_period || 21);
+            newFormData.confirmation_instructions = data.confirmation_instructions || "without";
+          }
+          
+          if (selectedImportFields.includes("conditions")) {
+            newFormData.additional_conditions = data.additional_conditions || [];
+          }
+          
+          setFormData(newFormData);
+          setShowImportDialog(false);
+          
+          toast({
+            title: "Data Imported",
+            description: `Imported ${selectedImportFields.length} sections from ${data.reference_number}`,
+          });
+        }
+      } catch (error) {
+        console.error("Error importing LC:", error);
+        toast({
+          title: "Import Failed",
+          description: "Could not import data from selected LC",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    
+    // If editing existing LC, use the import API
+    try {
+      const response = await fetch(
+        `${API_BASE}/lc-builder/applications/${id}/import-data?source_id=${sourceId}&fields=${selectedImportFields.join("&fields=")}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        await loadApplication(id);
+        setShowImportDialog(false);
+        
+        toast({
+          title: "Data Imported",
+          description: `Imported ${data.fields_imported.length} sections from ${data.source_reference}`,
+        });
+      }
+    } catch (error) {
+      console.error("Error importing LC:", error);
+      toast({
+        title: "Import Failed",
+        description: "Could not import data from selected LC",
+        variant: "destructive",
+      });
+    }
+  };
   
   const loadApplication = async (appId: string) => {
     try {
@@ -1020,6 +1159,16 @@ export default function LCBuilderWizard() {
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
+                onClick={() => {
+                  fetchPreviousLCs();
+                  setShowImportDialog(true);
+                }}
+              >
+                <Import className="h-4 w-4 mr-2" />
+                Import from Previous LC
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => handleSave(true)}
                 disabled={saving}
               >
@@ -1241,6 +1390,88 @@ export default function LCBuilderWizard() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from Previous LC Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import from Previous LC</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Field Selection */}
+            <div>
+              <p className="text-sm text-slate-400 mb-3">Select data to import:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "applicant", label: "Applicant Details" },
+                  { id: "beneficiary", label: "Beneficiary Details" },
+                  { id: "shipment", label: "Shipment Details" },
+                  { id: "goods", label: "Goods Description" },
+                  { id: "documents", label: "Documents Required" },
+                  { id: "payment", label: "Payment Terms" },
+                  { id: "conditions", label: "Additional Conditions" },
+                ].map((field) => (
+                  <label
+                    key={field.id}
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={selectedImportFields.includes(field.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedImportFields([...selectedImportFields, field.id]);
+                        } else {
+                          setSelectedImportFields(selectedImportFields.filter((f) => f !== field.id));
+                        }
+                      }}
+                    />
+                    <span className="text-sm text-white">{field.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            
+            {/* LC List */}
+            <div>
+              <p className="text-sm text-slate-400 mb-3">Select source LC:</p>
+              {loadingLCs ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                </div>
+              ) : previousLCs.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <p>No previous LC applications found</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {previousLCs.filter(lc => lc.id !== id).map((lc) => (
+                    <button
+                      key={lc.id}
+                      className="w-full text-left p-3 rounded-lg border border-slate-700 hover:border-emerald-500 hover:bg-slate-800/50 transition-colors"
+                      onClick={() => handleImportFromLC(lc.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-white">
+                            {lc.reference_number}
+                          </p>
+                          <p className="text-sm text-slate-400">
+                            {lc.beneficiary_name || "No beneficiary"} • {lc.currency} {Number(lc.amount || 0).toLocaleString()}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {lc.status}
+                        </Badge>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -740,6 +740,374 @@ async def duplicate_application(
 
 
 # ============================================================================
+# Profile Management Endpoints (Applicant & Beneficiary)
+# ============================================================================
+
+class ApplicantProfileCreate(BaseModel):
+    company_name: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: str
+    contact_person: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_swift: Optional[str] = None
+    bank_address: Optional[str] = None
+    is_favorite: bool = False
+
+
+class BeneficiaryProfileCreate(BaseModel):
+    company_name: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: str
+    contact_person: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_swift: Optional[str] = None
+    bank_account: Optional[str] = None
+    bank_address: Optional[str] = None
+    industry: Optional[str] = "general"
+    is_favorite: bool = False
+
+
+@router.get("/profiles/applicants")
+async def list_applicant_profiles(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List saved applicant profiles"""
+    profiles = db.query(ApplicantProfile).filter(
+        ApplicantProfile.user_id == current_user.id
+    ).order_by(ApplicantProfile.is_favorite.desc(), ApplicantProfile.usage_count.desc()).all()
+    
+    return {
+        "profiles": [
+            {
+                "id": str(p.id),
+                "company_name": p.company_name,
+                "address": p.address,
+                "city": p.city,
+                "country": p.country,
+                "contact_person": p.contact_person,
+                "email": p.email,
+                "phone": p.phone,
+                "bank_name": p.bank_name,
+                "bank_swift": p.bank_swift,
+                "bank_address": p.bank_address,
+                "is_favorite": p.is_favorite,
+                "usage_count": p.usage_count,
+                "created_at": p.created_at.isoformat(),
+            }
+            for p in profiles
+        ]
+    }
+
+
+@router.post("/profiles/applicants")
+async def create_applicant_profile(
+    data: ApplicantProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new applicant profile"""
+    profile = ApplicantProfile(
+        user_id=current_user.id,
+        company_name=data.company_name,
+        address=data.address,
+        city=data.city,
+        country=data.country,
+        contact_person=data.contact_person,
+        email=data.email,
+        phone=data.phone,
+        bank_name=data.bank_name,
+        bank_swift=data.bank_swift,
+        bank_address=data.bank_address,
+        is_favorite=data.is_favorite,
+    )
+    
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    
+    return {"id": str(profile.id), "status": "created"}
+
+
+@router.put("/profiles/applicants/{profile_id}")
+async def update_applicant_profile(
+    profile_id: str,
+    data: ApplicantProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an applicant profile"""
+    profile = db.query(ApplicantProfile).filter(
+        ApplicantProfile.id == profile_id,
+        ApplicantProfile.user_id == current_user.id
+    ).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    for field, value in data.dict().items():
+        if value is not None:
+            setattr(profile, field, value)
+    
+    db.commit()
+    return {"id": str(profile.id), "status": "updated"}
+
+
+@router.delete("/profiles/applicants/{profile_id}")
+async def delete_applicant_profile(
+    profile_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete an applicant profile"""
+    profile = db.query(ApplicantProfile).filter(
+        ApplicantProfile.id == profile_id,
+        ApplicantProfile.user_id == current_user.id
+    ).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    db.delete(profile)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/profiles/beneficiaries")
+async def list_beneficiary_profiles(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List saved beneficiary profiles"""
+    profiles = db.query(BeneficiaryProfile).filter(
+        BeneficiaryProfile.user_id == current_user.id
+    ).order_by(BeneficiaryProfile.is_favorite.desc(), BeneficiaryProfile.usage_count.desc()).all()
+    
+    return {
+        "profiles": [
+            {
+                "id": str(p.id),
+                "company_name": p.company_name,
+                "address": p.address,
+                "city": p.city,
+                "country": p.country,
+                "contact_person": p.contact_person,
+                "email": p.email,
+                "phone": p.phone,
+                "bank_name": p.bank_name,
+                "bank_swift": p.bank_swift,
+                "bank_account": p.bank_account,
+                "bank_address": p.bank_address,
+                "industry": p.industry,
+                "is_favorite": p.is_favorite,
+                "usage_count": p.usage_count,
+                "created_at": p.created_at.isoformat(),
+            }
+            for p in profiles
+        ]
+    }
+
+
+@router.post("/profiles/beneficiaries")
+async def create_beneficiary_profile(
+    data: BeneficiaryProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new beneficiary profile"""
+    profile = BeneficiaryProfile(
+        user_id=current_user.id,
+        company_name=data.company_name,
+        address=data.address,
+        city=data.city,
+        country=data.country,
+        contact_person=data.contact_person,
+        email=data.email,
+        phone=data.phone,
+        bank_name=data.bank_name,
+        bank_swift=data.bank_swift,
+        bank_account=data.bank_account,
+        bank_address=data.bank_address,
+        industry=data.industry,
+        is_favorite=data.is_favorite,
+    )
+    
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    
+    return {"id": str(profile.id), "status": "created"}
+
+
+@router.put("/profiles/beneficiaries/{profile_id}")
+async def update_beneficiary_profile(
+    profile_id: str,
+    data: BeneficiaryProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a beneficiary profile"""
+    profile = db.query(BeneficiaryProfile).filter(
+        BeneficiaryProfile.id == profile_id,
+        BeneficiaryProfile.user_id == current_user.id
+    ).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    for field, value in data.dict().items():
+        if value is not None:
+            setattr(profile, field, value)
+    
+    db.commit()
+    return {"id": str(profile.id), "status": "updated"}
+
+
+@router.delete("/profiles/beneficiaries/{profile_id}")
+async def delete_beneficiary_profile(
+    profile_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a beneficiary profile"""
+    profile = db.query(BeneficiaryProfile).filter(
+        BeneficiaryProfile.id == profile_id,
+        BeneficiaryProfile.user_id == current_user.id
+    ).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    db.delete(profile)
+    db.commit()
+    return {"status": "deleted"}
+
+
+# ============================================================================
+# Import from Previous LC
+# ============================================================================
+
+@router.post("/applications/{application_id}/import-data")
+async def import_from_previous_lc(
+    application_id: str,
+    source_id: str,
+    fields: List[str] = Query(default=["applicant", "beneficiary", "goods", "documents"]),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Import data from a previous LC application into the current one.
+    
+    Fields that can be imported:
+    - applicant: Applicant name, address, country
+    - beneficiary: Beneficiary name, address, country
+    - banks: Issuing and advising bank details
+    - shipment: Ports, incoterms, partial/transhipment
+    - goods: Goods description, HS code
+    - documents: Required documents list
+    - conditions: Additional conditions
+    - clauses: Selected clause IDs
+    - payment: Payment terms, tenor
+    """
+    
+    # Get target LC
+    target_lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not target_lc:
+        raise HTTPException(status_code=404, detail="Target LC application not found")
+    
+    if target_lc.status != LCStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Can only import into draft LC")
+    
+    # Get source LC
+    source_lc = db.query(LCApplication).filter(
+        LCApplication.id == source_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not source_lc:
+        raise HTTPException(status_code=404, detail="Source LC application not found")
+    
+    imported = []
+    
+    # Import selected fields
+    if "applicant" in fields:
+        target_lc.applicant_name = source_lc.applicant_name
+        target_lc.applicant_address = source_lc.applicant_address
+        target_lc.applicant_country = source_lc.applicant_country
+        target_lc.applicant_contact = source_lc.applicant_contact
+        imported.append("applicant")
+    
+    if "beneficiary" in fields:
+        target_lc.beneficiary_name = source_lc.beneficiary_name
+        target_lc.beneficiary_address = source_lc.beneficiary_address
+        target_lc.beneficiary_country = source_lc.beneficiary_country
+        target_lc.beneficiary_contact = source_lc.beneficiary_contact
+        imported.append("beneficiary")
+    
+    if "banks" in fields:
+        target_lc.issuing_bank_name = source_lc.issuing_bank_name
+        target_lc.issuing_bank_swift = source_lc.issuing_bank_swift
+        target_lc.advising_bank_name = source_lc.advising_bank_name
+        target_lc.advising_bank_swift = source_lc.advising_bank_swift
+        imported.append("banks")
+    
+    if "shipment" in fields:
+        target_lc.port_of_loading = source_lc.port_of_loading
+        target_lc.port_of_discharge = source_lc.port_of_discharge
+        target_lc.place_of_delivery = source_lc.place_of_delivery
+        target_lc.incoterms = source_lc.incoterms
+        target_lc.incoterms_place = source_lc.incoterms_place
+        target_lc.partial_shipments = source_lc.partial_shipments
+        target_lc.transhipment = source_lc.transhipment
+        imported.append("shipment")
+    
+    if "goods" in fields:
+        target_lc.goods_description = source_lc.goods_description
+        target_lc.hs_code = source_lc.hs_code
+        imported.append("goods")
+    
+    if "documents" in fields:
+        target_lc.documents_required = source_lc.documents_required
+        imported.append("documents")
+    
+    if "conditions" in fields:
+        target_lc.additional_conditions = source_lc.additional_conditions
+        imported.append("conditions")
+    
+    if "clauses" in fields:
+        target_lc.selected_clause_ids = source_lc.selected_clause_ids
+        imported.append("clauses")
+    
+    if "payment" in fields:
+        target_lc.payment_terms = source_lc.payment_terms
+        target_lc.usance_days = source_lc.usance_days
+        target_lc.usance_from = source_lc.usance_from
+        target_lc.presentation_period = source_lc.presentation_period
+        target_lc.confirmation_instructions = source_lc.confirmation_instructions
+        imported.append("payment")
+    
+    target_lc.updated_at = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "status": "imported",
+        "fields_imported": imported,
+        "source_reference": source_lc.reference_number,
+        "target_id": str(target_lc.id)
+    }
+
+
+# ============================================================================
 # Clause Library Endpoints
 # ============================================================================
 
@@ -830,6 +1198,67 @@ async def get_clause(code: str):
         "risk_notes": clause.risk_notes,
         "bank_acceptance": clause.bank_acceptance,
         "tags": clause.tags,
+    }
+
+
+@router.get("/clauses/suggest")
+async def suggest_clauses(
+    origin_country: Optional[str] = None,
+    destination_country: Optional[str] = None,
+    goods_type: Optional[str] = None,
+    payment_terms: Optional[str] = None,
+    incoterms: Optional[str] = None,
+    first_time: bool = False,
+    amount: Optional[float] = None
+):
+    """
+    Get smart clause suggestions based on trade parameters.
+    
+    Parameters:
+    - origin_country: Country where goods originate (e.g., "Bangladesh", "China")
+    - destination_country: Country where goods are shipped to (e.g., "USA", "Germany")
+    - goods_type: Type of goods (e.g., "textiles", "electronics", "machinery")
+    - payment_terms: Payment terms (e.g., "sight", "usance")
+    - incoterms: Incoterms (e.g., "FOB", "CIF", "CFR")
+    - first_time: Whether this is a first-time transaction with the beneficiary
+    - amount: LC amount in USD (for risk-based suggestions)
+    """
+    
+    clauses = LCClauseLibrary.suggest_clauses(
+        origin_country=origin_country,
+        destination_country=destination_country,
+        goods_type=goods_type,
+        payment_terms=payment_terms,
+        incoterms=incoterms,
+        first_time_beneficiary=first_time,
+        amount_usd=amount
+    )
+    
+    return {
+        "suggestions": [
+            {
+                "code": c.code,
+                "category": c.category.value,
+                "subcategory": c.subcategory,
+                "title": c.title,
+                "clause_text": c.clause_text,
+                "plain_english": c.plain_english,
+                "risk_level": c.risk_level.value,
+                "bias": c.bias.value,
+                "tags": c.tags,
+            }
+            for c in clauses
+        ],
+        "count": len(clauses),
+        "parameters": {
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "goods_type": goods_type,
+            "payment_terms": payment_terms,
+            "incoterms": incoterms,
+            "first_time": first_time,
+            "amount": amount,
+        }
     }
 
 
@@ -1379,6 +1808,301 @@ async def export_word(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
             "Content-Disposition": f"attachment; filename=LC_{lc.reference_number}.docx"
+        }
+    )
+
+
+# ============================================================================
+# Bank-Specific PDF Export
+# ============================================================================
+
+BANK_FORMATS = {
+    "SCB": {
+        "name": "Standard Chartered Bank",
+        "swift": "SCBLSGSG",
+        "color": "#00A86B",  # SCB Green
+        "header": "DOCUMENTARY CREDIT APPLICATION - STANDARD CHARTERED BANK FORMAT",
+        "footer_text": "This document complies with Standard Chartered Bank LC submission requirements.",
+        "requirements": [
+            "All documents must be original or certified true copies",
+            "Beneficiary name must match LC exactly (no abbreviations)",
+            "Port names must include country codes",
+        ],
+    },
+    "HSBC": {
+        "name": "HSBC",
+        "swift": "HSBCHKHH",
+        "color": "#DB0011",  # HSBC Red
+        "header": "DOCUMENTARY CREDIT APPLICATION - HSBC FORMAT",
+        "footer_text": "This document complies with HSBC documentary credit submission standards.",
+        "requirements": [
+            "Documents must be in English or with certified English translation",
+            "All amounts must be in figures and words",
+            "Shipping date must be clearly visible",
+        ],
+    },
+    "CITI": {
+        "name": "Citibank",
+        "swift": "CITIUS33",
+        "color": "#003B70",  # Citi Blue
+        "header": "DOCUMENTARY CREDIT APPLICATION - CITIBANK FORMAT",
+        "footer_text": "This document complies with Citibank LC processing requirements.",
+        "requirements": [
+            "All documents must be dated and signed",
+            "No alterations without authentication",
+            "Copy documents must be marked COPY",
+        ],
+    },
+    "DBS": {
+        "name": "DBS Bank",
+        "swift": "DBSSSGSG",
+        "color": "#E31837",  # DBS Red
+        "header": "DOCUMENTARY CREDIT APPLICATION - DBS BANK FORMAT",
+        "footer_text": "This document complies with DBS Bank trade finance requirements.",
+        "requirements": [
+            "All amounts in LC currency only",
+            "Clear description of goods required",
+            "Transport documents must show shipped on board",
+        ],
+    },
+}
+
+
+@router.get("/bank-formats")
+async def list_bank_formats():
+    """List available bank-specific export formats"""
+    return {
+        "formats": [
+            {
+                "code": code,
+                "name": fmt["name"],
+                "swift": fmt["swift"],
+                "requirements": fmt["requirements"],
+            }
+            for code, fmt in BANK_FORMATS.items()
+        ]
+    }
+
+
+@router.post("/applications/{application_id}/export/pdf/{bank_code}")
+async def export_bank_pdf(
+    application_id: str,
+    bank_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export LC application as bank-specific formatted PDF"""
+    from fastapi.responses import Response
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    
+    if bank_code.upper() not in BANK_FORMATS:
+        raise HTTPException(status_code=400, detail=f"Unknown bank format: {bank_code}")
+    
+    bank = BANK_FORMATS[bank_code.upper()]
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Generate bank-specific PDF
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    
+    bank_color = colors.HexColor(bank["color"])
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'Title',
+        parent=styles['Heading1'],
+        fontSize=14,
+        spaceAfter=10,
+        alignment=1,
+        textColor=bank_color
+    )
+    bank_header_style = ParagraphStyle(
+        'BankHeader',
+        parent=styles['Normal'],
+        fontSize=10,
+        alignment=1,
+        textColor=colors.gray
+    )
+    heading_style = ParagraphStyle(
+        'Heading',
+        parent=styles['Heading2'],
+        fontSize=11,
+        spaceBefore=12,
+        spaceAfter=8,
+        textColor=bank_color
+    )
+    normal_style = styles['Normal']
+    
+    elements = []
+    
+    # Bank Header
+    elements.append(Paragraph(f"<b>{bank['name']}</b>", bank_header_style))
+    elements.append(Paragraph(f"SWIFT: {bank['swift']}", bank_header_style))
+    elements.append(Spacer(1, 10))
+    
+    # Title
+    elements.append(Paragraph(bank["header"], title_style))
+    elements.append(Paragraph(f"<b>Reference: {lc.reference_number}</b>", bank_header_style))
+    elements.append(Spacer(1, 15))
+    
+    # Basic Info
+    elements.append(Paragraph("1. CREDIT DETAILS", heading_style))
+    basic_data = [
+        ["Form of Credit:", lc.lc_type.value.upper()],
+        ["Currency & Amount:", f"{lc.currency} {lc.amount:,.2f}"],
+        ["Tolerance:", f"+{lc.tolerance_plus}% / -{lc.tolerance_minus}%"],
+        ["Expiry Date:", lc.expiry_date.strftime("%d %B %Y") if lc.expiry_date else ""],
+        ["Expiry Place:", lc.expiry_place or ""],
+    ]
+    basic_table = Table(basic_data, colWidths=[2*inch, 4*inch])
+    basic_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#f8f9fa")),
+    ]))
+    elements.append(basic_table)
+    
+    # Parties
+    elements.append(Paragraph("2. PARTIES", heading_style))
+    parties_data = [
+        ["APPLICANT", "BENEFICIARY"],
+        [lc.applicant_name or "", lc.beneficiary_name or ""],
+        [lc.applicant_address or "", lc.beneficiary_address or ""],
+        [lc.applicant_country or "", lc.beneficiary_country or ""],
+    ]
+    parties_table = Table(parties_data, colWidths=[3*inch, 3*inch])
+    parties_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f8f9fa")),
+    ]))
+    elements.append(parties_table)
+    
+    # Shipment
+    elements.append(Paragraph("3. SHIPMENT DETAILS", heading_style))
+    ship_data = [
+        ["Port of Loading:", lc.port_of_loading or "Any Port"],
+        ["Port of Discharge:", lc.port_of_discharge or ""],
+        ["Latest Shipment:", lc.latest_shipment_date.strftime("%d %B %Y") if lc.latest_shipment_date else ""],
+        ["Incoterms:", f"{lc.incoterms} {lc.incoterms_place or ''}" if lc.incoterms else ""],
+        ["Partial Shipments:", "ALLOWED" if lc.partial_shipments else "NOT ALLOWED"],
+        ["Transhipment:", "ALLOWED" if lc.transhipment else "NOT ALLOWED"],
+    ]
+    ship_table = Table(ship_data, colWidths=[2*inch, 4*inch])
+    ship_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#f8f9fa")),
+    ]))
+    elements.append(ship_table)
+    
+    # Goods
+    elements.append(Paragraph("4. DESCRIPTION OF GOODS/SERVICES", heading_style))
+    goods_style = ParagraphStyle(
+        'Goods',
+        parent=normal_style,
+        fontSize=9,
+        borderColor=colors.lightgrey,
+        borderWidth=0.5,
+        borderPadding=8,
+        backColor=colors.HexColor("#f8f9fa"),
+    )
+    elements.append(Paragraph(lc.goods_description or "", goods_style))
+    
+    # Payment
+    elements.append(Paragraph("5. PAYMENT TERMS", heading_style))
+    payment_text = lc.payment_terms.value.upper()
+    if lc.payment_terms.value == "usance" and lc.usance_days:
+        payment_text = f"{lc.usance_days} DAYS FROM {lc.usance_from or 'B/L DATE'}"
+    pay_data = [
+        ["Payment:", payment_text],
+        ["Presentation Period:", f"{lc.presentation_period} days after shipment"],
+        ["Confirmation:", lc.confirmation_instructions.value.upper()],
+    ]
+    pay_table = Table(pay_data, colWidths=[2*inch, 4*inch])
+    pay_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#f8f9fa")),
+    ]))
+    elements.append(pay_table)
+    
+    # Documents
+    elements.append(Paragraph("6. DOCUMENTS REQUIRED", heading_style))
+    if lc.documents_required:
+        for i, doc_item in enumerate(lc.documents_required, 1):
+            if isinstance(doc_item, dict):
+                doc_text = f"{i}. {doc_item.get('document_type', '').replace('_', ' ').title()} - {doc_item.get('copies_original', 1)} original(s)"
+                if doc_item.get('copies_copy'):
+                    doc_text += f", {doc_item.get('copies_copy')} copy(ies)"
+                elements.append(Paragraph(doc_text, normal_style))
+            else:
+                elements.append(Paragraph(f"{i}. {doc_item}", normal_style))
+    
+    # Additional Conditions
+    if lc.additional_conditions:
+        elements.append(Paragraph("7. ADDITIONAL CONDITIONS", heading_style))
+        for cond in lc.additional_conditions:
+            elements.append(Paragraph(f"• {cond}", normal_style))
+    
+    # Bank Requirements Box
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph(f"<b>{bank['name']} SPECIFIC REQUIREMENTS</b>", heading_style))
+    req_style = ParagraphStyle(
+        'Requirements',
+        parent=normal_style,
+        fontSize=8,
+        textColor=colors.HexColor("#6b7280"),
+    )
+    for req in bank["requirements"]:
+        elements.append(Paragraph(f"• {req}", req_style))
+    
+    # Footer
+    elements.append(Spacer(1, 30))
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=normal_style,
+        fontSize=8,
+        textColor=colors.gray,
+        alignment=1
+    )
+    elements.append(Paragraph(bank["footer_text"], footer_style))
+    elements.append(Paragraph(
+        f"Generated on {datetime.now().strftime('%d %B %Y at %H:%M')} by TRDR Hub LC Builder",
+        footer_style
+    ))
+    
+    doc.build(elements)
+    
+    buffer.seek(0)
+    pdf_bytes = buffer.getvalue()
+    
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=LC_{lc.reference_number}_{bank_code}.pdf"
         }
     )
 

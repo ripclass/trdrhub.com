@@ -14,6 +14,8 @@ import {
   Search,
   Filter,
   ArrowLeft,
+  Building2,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -391,7 +393,7 @@ export default function LCBuilderDashboard() {
                             }
                           >
                             <Download className="h-4 w-4 mr-2" />
-                            Export PDF
+                            Export PDF (Generic)
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
@@ -403,6 +405,62 @@ export default function LCBuilderDashboard() {
                           >
                             <FileText className="h-4 w-4 mr-2" />
                             Export Word (.docx)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/lc-builder/applications/${app.id}/export/pdf/SCB`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Building2 className="h-4 w-4 mr-2" />
+                            <span className="flex items-center">
+                              Standard Chartered Format
+                              <ChevronRight className="h-3 w-3 ml-auto" />
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/lc-builder/applications/${app.id}/export/pdf/HSBC`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Building2 className="h-4 w-4 mr-2" />
+                            <span className="flex items-center">
+                              HSBC Format
+                              <ChevronRight className="h-3 w-3 ml-auto" />
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/lc-builder/applications/${app.id}/export/pdf/CITI`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Building2 className="h-4 w-4 mr-2" />
+                            <span className="flex items-center">
+                              Citibank Format
+                              <ChevronRight className="h-3 w-3 ml-auto" />
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/lc-builder/applications/${app.id}/export/pdf/DBS`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Building2 className="h-4 w-4 mr-2" />
+                            <span className="flex items-center">
+                              DBS Bank Format
+                              <ChevronRight className="h-3 w-3 ml-auto" />
+                            </span>
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-400"
