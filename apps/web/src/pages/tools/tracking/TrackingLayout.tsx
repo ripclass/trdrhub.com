@@ -172,10 +172,14 @@ export default function TrackingLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (strict check - not guest mode)
   useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+    if (!isLoading) {
+      const isGuest = user?.id === 'guest' || user?.email === 'guest@trdrhub.com';
+      
+      if (!user || isGuest) {
+        navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+      }
     }
   }, [user, isLoading, navigate, location.pathname]);
 
