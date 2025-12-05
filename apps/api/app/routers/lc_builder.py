@@ -667,6 +667,444 @@ async def validate_application(
     lc.risk_score = validation.risk_score
     lc.risk_details = validation.risk_details
     db.commit()
+
+
+# ============================================================================
+# Version History Endpoints
+# ============================================================================
+
+def _lc_to_snapshot(lc: LCApplication) -> Dict[str, Any]:
+    """Convert LC application to a JSON snapshot for versioning"""
+    return {
+        "reference_number": lc.reference_number,
+        "name": lc.name,
+        "lc_type": lc.lc_type.value if lc.lc_type else None,
+        "status": lc.status.value if lc.status else None,
+        "currency": lc.currency,
+        "amount": lc.amount,
+        "tolerance_plus": lc.tolerance_plus,
+        "tolerance_minus": lc.tolerance_minus,
+        "applicant_name": lc.applicant_name,
+        "applicant_address": lc.applicant_address,
+        "applicant_country": lc.applicant_country,
+        "beneficiary_name": lc.beneficiary_name,
+        "beneficiary_address": lc.beneficiary_address,
+        "beneficiary_country": lc.beneficiary_country,
+        "issuing_bank_name": lc.issuing_bank_name,
+        "issuing_bank_swift": lc.issuing_bank_swift,
+        "advising_bank_name": lc.advising_bank_name,
+        "advising_bank_swift": lc.advising_bank_swift,
+        "port_of_loading": lc.port_of_loading,
+        "port_of_discharge": lc.port_of_discharge,
+        "place_of_delivery": lc.place_of_delivery,
+        "latest_shipment_date": lc.latest_shipment_date.isoformat() if lc.latest_shipment_date else None,
+        "incoterms": lc.incoterms,
+        "incoterms_place": lc.incoterms_place,
+        "partial_shipments": lc.partial_shipments,
+        "transhipment": lc.transhipment,
+        "goods_description": lc.goods_description,
+        "hs_code": lc.hs_code,
+        "payment_terms": lc.payment_terms.value if lc.payment_terms else None,
+        "usance_days": lc.usance_days,
+        "usance_from": lc.usance_from,
+        "expiry_date": lc.expiry_date.isoformat() if lc.expiry_date else None,
+        "expiry_place": lc.expiry_place,
+        "presentation_period": lc.presentation_period,
+        "confirmation_instructions": lc.confirmation_instructions.value if lc.confirmation_instructions else None,
+        "documents_required": lc.documents_required,
+        "additional_conditions": lc.additional_conditions,
+        "selected_clause_ids": lc.selected_clause_ids,
+    }
+
+
+def _compute_diff(old_snapshot: Dict[str, Any], new_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Compute differences between two snapshots"""
+    diffs = []
+    
+    # Fields to compare with human-readable names
+    field_labels = {
+        "lc_type": "LC Type",
+        "currency": "Currency",
+        "amount": "Amount",
+        "tolerance_plus": "Tolerance (+%)",
+        "tolerance_minus": "Tolerance (-%)",
+        "applicant_name": "Applicant Name",
+        "applicant_address": "Applicant Address",
+        "applicant_country": "Applicant Country",
+        "beneficiary_name": "Beneficiary Name",
+        "beneficiary_address": "Beneficiary Address",
+        "beneficiary_country": "Beneficiary Country",
+        "port_of_loading": "Port of Loading",
+        "port_of_discharge": "Port of Discharge",
+        "place_of_delivery": "Place of Delivery",
+        "latest_shipment_date": "Latest Shipment Date",
+        "incoterms": "Incoterms",
+        "incoterms_place": "Incoterms Place",
+        "partial_shipments": "Partial Shipments",
+        "transhipment": "Transhipment",
+        "goods_description": "Goods Description",
+        "hs_code": "HS Code",
+        "payment_terms": "Payment Terms",
+        "usance_days": "Usance Days",
+        "expiry_date": "Expiry Date",
+        "expiry_place": "Expiry Place",
+        "presentation_period": "Presentation Period",
+        "confirmation_instructions": "Confirmation",
+    }
+    
+    for field, label in field_labels.items():
+        old_val = old_snapshot.get(field)
+        new_val = new_snapshot.get(field)
+        
+        if old_val != new_val:
+            diffs.append({
+                "field": field,
+                "label": label,
+                "old_value": old_val,
+                "new_value": new_val,
+                "change_type": "modified" if old_val and new_val else ("added" if new_val else "removed")
+            })
+    
+    # Handle complex fields (documents, conditions, clauses)
+    old_docs = old_snapshot.get("documents_required", []) or []
+    new_docs = new_snapshot.get("documents_required", []) or []
+    if old_docs != new_docs:
+        diffs.append({
+            "field": "documents_required",
+            "label": "Documents Required",
+            "old_value": f"{len(old_docs)} documents",
+            "new_value": f"{len(new_docs)} documents",
+            "change_type": "modified"
+        })
+    
+    old_conds = old_snapshot.get("additional_conditions", []) or []
+    new_conds = new_snapshot.get("additional_conditions", []) or []
+    if old_conds != new_conds:
+        diffs.append({
+            "field": "additional_conditions",
+            "label": "Additional Conditions",
+            "old_value": f"{len(old_conds)} conditions",
+            "new_value": f"{len(new_conds)} conditions",
+            "change_type": "modified"
+        })
+    
+    old_clauses = old_snapshot.get("selected_clause_ids", []) or []
+    new_clauses = new_snapshot.get("selected_clause_ids", []) or []
+    if old_clauses != new_clauses:
+        diffs.append({
+            "field": "selected_clause_ids",
+            "label": "Selected Clauses",
+            "old_value": f"{len(old_clauses)} clauses",
+            "new_value": f"{len(new_clauses)} clauses",
+            "change_type": "modified"
+        })
+    
+    return diffs
+
+
+@router.get("/applications/{application_id}/versions")
+async def list_versions(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all versions of an LC application"""
+    from app.models.lc_builder import LCApplicationVersion
+    
+    # Verify ownership
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    versions = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.lc_application_id == application_id
+    ).order_by(LCApplicationVersion.version_number.desc()).all()
+    
+    return {
+        "application_id": str(application_id),
+        "reference_number": lc.reference_number,
+        "total_versions": len(versions),
+        "versions": [
+            {
+                "id": str(v.id),
+                "version_number": v.version_number,
+                "change_summary": v.change_summary,
+                "created_at": v.created_at.isoformat(),
+                "created_by": str(v.created_by) if v.created_by else None,
+            }
+            for v in versions
+        ]
+    }
+
+
+@router.get("/applications/{application_id}/versions/{version_id}")
+async def get_version(
+    application_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific version snapshot"""
+    from app.models.lc_builder import LCApplicationVersion
+    
+    # Verify ownership
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    version = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.id == version_id,
+        LCApplicationVersion.lc_application_id == application_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    return {
+        "id": str(version.id),
+        "application_id": str(application_id),
+        "version_number": version.version_number,
+        "change_summary": version.change_summary,
+        "snapshot": version.snapshot,
+        "created_at": version.created_at.isoformat(),
+    }
+
+
+@router.get("/applications/{application_id}/versions/{version_id}/diff")
+async def get_version_diff(
+    application_id: str,
+    version_id: str,
+    compare_to: Optional[str] = Query(default=None, description="Version ID to compare against (default: previous version)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get diff between two versions"""
+    from app.models.lc_builder import LCApplicationVersion
+    
+    # Verify ownership
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Get the target version
+    version = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.id == version_id,
+        LCApplicationVersion.lc_application_id == application_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Get comparison version
+    if compare_to:
+        compare_version = db.query(LCApplicationVersion).filter(
+            LCApplicationVersion.id == compare_to,
+            LCApplicationVersion.lc_application_id == application_id
+        ).first()
+    else:
+        # Get previous version
+        compare_version = db.query(LCApplicationVersion).filter(
+            LCApplicationVersion.lc_application_id == application_id,
+            LCApplicationVersion.version_number == version.version_number - 1
+        ).first()
+    
+    if compare_version:
+        diffs = _compute_diff(compare_version.snapshot, version.snapshot)
+        compare_info = {
+            "id": str(compare_version.id),
+            "version_number": compare_version.version_number,
+        }
+    else:
+        # No previous version - show as all new
+        diffs = _compute_diff({}, version.snapshot)
+        compare_info = None
+    
+    return {
+        "version": {
+            "id": str(version.id),
+            "version_number": version.version_number,
+            "created_at": version.created_at.isoformat(),
+        },
+        "compare_to": compare_info,
+        "diffs": diffs,
+        "change_count": len(diffs),
+    }
+
+
+@router.post("/applications/{application_id}/versions")
+async def create_version(
+    application_id: str,
+    change_summary: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new version snapshot of the current application state"""
+    from app.models.lc_builder import LCApplicationVersion
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Get the latest version number
+    latest = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.lc_application_id == application_id
+    ).order_by(LCApplicationVersion.version_number.desc()).first()
+    
+    next_version = (latest.version_number + 1) if latest else 1
+    
+    # Create snapshot
+    snapshot = _lc_to_snapshot(lc)
+    
+    # Auto-generate change summary if not provided
+    if not change_summary and latest:
+        diffs = _compute_diff(latest.snapshot, snapshot)
+        if diffs:
+            changed_fields = [d["label"] for d in diffs[:3]]
+            change_summary = f"Updated: {', '.join(changed_fields)}"
+            if len(diffs) > 3:
+                change_summary += f" and {len(diffs) - 3} more"
+    
+    # Create version record
+    version = LCApplicationVersion(
+        lc_application_id=lc.id,
+        version_number=next_version,
+        snapshot=snapshot,
+        change_summary=change_summary or f"Version {next_version}",
+        created_by=current_user.id
+    )
+    
+    db.add(version)
+    db.commit()
+    db.refresh(version)
+    
+    return {
+        "id": str(version.id),
+        "version_number": version.version_number,
+        "change_summary": version.change_summary,
+        "created_at": version.created_at.isoformat(),
+    }
+
+
+@router.post("/applications/{application_id}/versions/{version_id}/restore")
+async def restore_version(
+    application_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Restore an LC application to a previous version"""
+    from app.models.lc_builder import LCApplicationVersion
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    if lc.status == LCStatus.SUBMITTED:
+        raise HTTPException(status_code=400, detail="Cannot restore submitted LC application")
+    
+    version = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.id == version_id,
+        LCApplicationVersion.lc_application_id == application_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Create a backup version of current state first
+    current_snapshot = _lc_to_snapshot(lc)
+    latest = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.lc_application_id == application_id
+    ).order_by(LCApplicationVersion.version_number.desc()).first()
+    
+    backup_version = LCApplicationVersion(
+        lc_application_id=lc.id,
+        version_number=(latest.version_number + 1) if latest else 1,
+        snapshot=current_snapshot,
+        change_summary=f"Backup before restoring to version {version.version_number}",
+        created_by=current_user.id
+    )
+    db.add(backup_version)
+    
+    # Restore from version snapshot
+    snapshot = version.snapshot
+    
+    lc.name = snapshot.get("name")
+    lc.lc_type = LCType(snapshot.get("lc_type")) if snapshot.get("lc_type") else LCType.DOCUMENTARY
+    lc.currency = snapshot.get("currency", "USD")
+    lc.amount = snapshot.get("amount", 0)
+    lc.tolerance_plus = snapshot.get("tolerance_plus", 0)
+    lc.tolerance_minus = snapshot.get("tolerance_minus", 0)
+    lc.applicant_name = snapshot.get("applicant_name")
+    lc.applicant_address = snapshot.get("applicant_address")
+    lc.applicant_country = snapshot.get("applicant_country")
+    lc.beneficiary_name = snapshot.get("beneficiary_name")
+    lc.beneficiary_address = snapshot.get("beneficiary_address")
+    lc.beneficiary_country = snapshot.get("beneficiary_country")
+    lc.issuing_bank_name = snapshot.get("issuing_bank_name")
+    lc.issuing_bank_swift = snapshot.get("issuing_bank_swift")
+    lc.advising_bank_name = snapshot.get("advising_bank_name")
+    lc.advising_bank_swift = snapshot.get("advising_bank_swift")
+    lc.port_of_loading = snapshot.get("port_of_loading")
+    lc.port_of_discharge = snapshot.get("port_of_discharge")
+    lc.place_of_delivery = snapshot.get("place_of_delivery")
+    lc.incoterms = snapshot.get("incoterms")
+    lc.incoterms_place = snapshot.get("incoterms_place")
+    lc.partial_shipments = snapshot.get("partial_shipments", True)
+    lc.transhipment = snapshot.get("transhipment", True)
+    lc.goods_description = snapshot.get("goods_description")
+    lc.hs_code = snapshot.get("hs_code")
+    lc.payment_terms = PaymentTerms(snapshot.get("payment_terms")) if snapshot.get("payment_terms") else PaymentTerms.SIGHT
+    lc.usance_days = snapshot.get("usance_days")
+    lc.usance_from = snapshot.get("usance_from")
+    lc.expiry_place = snapshot.get("expiry_place")
+    lc.presentation_period = snapshot.get("presentation_period", 21)
+    lc.confirmation_instructions = ConfirmationInstructions(snapshot.get("confirmation_instructions")) if snapshot.get("confirmation_instructions") else ConfirmationInstructions.WITHOUT
+    lc.documents_required = snapshot.get("documents_required", [])
+    lc.additional_conditions = snapshot.get("additional_conditions", [])
+    lc.selected_clause_ids = snapshot.get("selected_clause_ids", [])
+    
+    # Handle dates
+    if snapshot.get("latest_shipment_date"):
+        try:
+            lc.latest_shipment_date = datetime.fromisoformat(snapshot["latest_shipment_date"].replace("Z", "+00:00"))
+        except:
+            pass
+    
+    if snapshot.get("expiry_date"):
+        try:
+            lc.expiry_date = datetime.fromisoformat(snapshot["expiry_date"].replace("Z", "+00:00"))
+        except:
+            pass
+    
+    lc.updated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "status": "restored",
+        "restored_to_version": version.version_number,
+        "backup_version": backup_version.version_number,
+    }
     
     return validation.dict()
 
@@ -1327,6 +1765,193 @@ async def get_template(
         "template_data": template.template_data,
         "default_clause_ids": template.default_clause_ids,
         "default_documents": template.default_documents,
+    }
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    trade_route: Optional[str] = None
+    industry: Optional[str] = None
+    template_data: Dict[str, Any] = Field(default_factory=dict)
+    default_clause_ids: List[str] = Field(default_factory=list)
+    default_documents: List[Dict[str, Any]] = Field(default_factory=list)
+    is_public: bool = False
+
+
+@router.post("/templates")
+async def create_template(
+    data: TemplateCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new LC template"""
+    
+    template = LCTemplate(
+        user_id=current_user.id,
+        name=data.name,
+        description=data.description,
+        trade_route=data.trade_route,
+        industry=data.industry,
+        template_data=data.template_data,
+        default_clause_ids=data.default_clause_ids,
+        default_documents=data.default_documents,
+        is_public=data.is_public,
+        is_system=False,
+    )
+    
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    
+    return {"id": str(template.id), "status": "created"}
+
+
+@router.put("/templates/{template_id}")
+async def update_template(
+    template_id: str,
+    data: TemplateCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a user's template"""
+    
+    template = db.query(LCTemplate).filter(
+        LCTemplate.id == template_id,
+        LCTemplate.user_id == current_user.id
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found or not owned by user")
+    
+    template.name = data.name
+    template.description = data.description
+    template.trade_route = data.trade_route
+    template.industry = data.industry
+    template.template_data = data.template_data
+    template.default_clause_ids = data.default_clause_ids
+    template.default_documents = data.default_documents
+    template.is_public = data.is_public
+    
+    db.commit()
+    
+    return {"id": str(template.id), "status": "updated"}
+
+
+@router.delete("/templates/{template_id}")
+async def delete_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a user's template"""
+    
+    template = db.query(LCTemplate).filter(
+        LCTemplate.id == template_id,
+        LCTemplate.user_id == current_user.id,
+        LCTemplate.is_system == False  # Cannot delete system templates
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found or cannot be deleted")
+    
+    db.delete(template)
+    db.commit()
+    
+    return {"status": "deleted"}
+
+
+@router.post("/applications/{application_id}/save-as-template")
+async def save_lc_as_template(
+    application_id: str,
+    name: str,
+    description: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Save an LC application as a reusable template"""
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Build trade route from countries
+    trade_route = None
+    if lc.beneficiary_country and lc.applicant_country:
+        trade_route = f"{lc.beneficiary_country} → {lc.applicant_country}"
+    
+    # Create template data from the LC
+    template_data = {
+        "lc_type": lc.lc_type.value if lc.lc_type else None,
+        "currency": lc.currency,
+        "tolerance_plus": lc.tolerance_plus,
+        "tolerance_minus": lc.tolerance_minus,
+        "incoterms": lc.incoterms,
+        "incoterms_place": lc.incoterms_place,
+        "partial_shipments": lc.partial_shipments,
+        "transhipment": lc.transhipment,
+        "payment_terms": lc.payment_terms.value if lc.payment_terms else None,
+        "usance_days": lc.usance_days,
+        "usance_from": lc.usance_from,
+        "presentation_period": lc.presentation_period,
+        "confirmation_instructions": lc.confirmation_instructions.value if lc.confirmation_instructions else None,
+    }
+    
+    template = LCTemplate(
+        user_id=current_user.id,
+        name=name,
+        description=description or f"Created from LC {lc.reference_number}",
+        trade_route=trade_route,
+        industry=None,
+        template_data=template_data,
+        default_clause_ids=lc.selected_clause_ids or [],
+        default_documents=lc.documents_required or [],
+        additional_conditions=lc.additional_conditions or [],
+        is_public=False,
+        is_system=False,
+    )
+    
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    
+    return {
+        "id": str(template.id),
+        "name": template.name,
+        "trade_route": trade_route,
+        "status": "created"
+    }
+
+
+@router.get("/templates/mine")
+async def list_user_templates(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List templates created by the current user"""
+    
+    templates = db.query(LCTemplate).filter(
+        LCTemplate.user_id == current_user.id
+    ).order_by(LCTemplate.usage_count.desc()).all()
+    
+    return {
+        "templates": [
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "description": t.description,
+                "trade_route": t.trade_route,
+                "industry": t.industry,
+                "usage_count": t.usage_count,
+                "is_public": t.is_public,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in templates
+        ]
     }
 
 

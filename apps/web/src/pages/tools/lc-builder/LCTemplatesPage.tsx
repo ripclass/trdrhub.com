@@ -144,15 +144,57 @@ export default function LCTemplatesPage() {
   const { toast } = useToast();
   
   const [templates, setTemplates] = useState<LCTemplate[]>(defaultTemplates);
+  const [userTemplates, setUserTemplates] = useState<LCTemplate[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<LCTemplate[]>(defaultTemplates);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [industryFilter, setIndustryFilter] = useState("all");
 
   useEffect(() => {
-    // Could fetch from API if available
-    // fetchTemplates();
+    fetchTemplates();
   }, [session?.access_token]);
+
+  const fetchTemplates = async () => {
+    setLoading(true);
+    try {
+      // Fetch system templates
+      const sysRes = await fetch(`${API_BASE}/lc-builder/templates`);
+      if (sysRes.ok) {
+        const sysData = await sysRes.json();
+        if (sysData.templates && sysData.templates.length > 0) {
+          // Use API templates if available, else use defaults
+          const apiTemplates = sysData.templates.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            description: t.description || "",
+            industry: t.industry || "general",
+            trade_route: t.trade_route || "Any → Any",
+            payment_terms: t.template_data?.payment_terms || "At Sight",
+            typical_documents: t.default_documents?.map((d: any) => d.document_type || d) || [],
+            usage_count: t.usage_count || 0,
+          }));
+          if (apiTemplates.length > 0) {
+            setTemplates([...apiTemplates, ...defaultTemplates]);
+          }
+        }
+      }
+
+      // Fetch user's templates if logged in
+      if (session?.access_token) {
+        const userRes = await fetch(`${API_BASE}/lc-builder/templates/mine`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setUserTemplates(userData.templates || []);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     filterTemplates();

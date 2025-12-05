@@ -25,6 +25,7 @@ import MT700ReferencePage from './pages/tools/lc-builder/MT700ReferencePage'
 import RiskCalculatorPage from './pages/tools/lc-builder/RiskCalculatorPage'
 import LCBuilderSettingsPage from './pages/tools/lc-builder/LCBuilderSettingsPage'
 import LCBuilderHelpPage from './pages/tools/lc-builder/LCBuilderHelpPage'
+import VersionHistoryPage from './pages/tools/lc-builder/VersionHistoryPage'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
@@ -174,6 +175,8 @@ function App() {
           <Route path="risk" element={<RiskCalculatorPage />} />
           <Route path="settings" element={<LCBuilderSettingsPage />} />
           <Route path="help" element={<LCBuilderHelpPage />} />
+          <Route path="history" element={<VersionHistoryPage />} />
+          <Route path="history/:applicationId" element={<VersionHistoryPage />} />
         </Route>
         <Route path="/lc-builder/wizard" element={<LCBuilderWizard />} />
         <Route path="/lc-builder/wizard/:id" element={<LCBuilderWizard />} />

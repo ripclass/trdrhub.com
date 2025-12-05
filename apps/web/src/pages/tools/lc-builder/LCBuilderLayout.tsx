@@ -120,6 +120,12 @@ const navItems = [
         href: "/lc-builder/dashboard/risk",
         icon: AlertTriangle,
       },
+      {
+        title: "Version History",
+        href: "/lc-builder/dashboard/history",
+        icon: History,
+        badge: "New",
+      },
     ],
   },
   {

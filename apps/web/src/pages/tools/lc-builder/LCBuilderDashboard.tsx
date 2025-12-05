@@ -463,6 +463,12 @@ export default function LCBuilderDashboard() {
                             </span>
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            onClick={() => navigate(`/lc-builder/dashboard/history/${app.id}`)}
+                          >
+                            <Clock className="h-4 w-4 mr-2" />
+                            Version History
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-red-400"
                             onClick={() => handleDelete(app.id)}
                           >
