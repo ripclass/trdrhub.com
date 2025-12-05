@@ -173,10 +173,26 @@ async def lifespan(app: FastAPI):
     if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') and HAS_MONITORING:
         optimize_lambda_init()
     
+    # Start background job scheduler (for tracking alerts, etc.)
+    try:
+        from app.scheduler import start_scheduler, stop_scheduler
+        start_scheduler()
+        logger.info("Background job scheduler started")
+    except Exception as e:
+        logger.warning(f"Failed to start scheduler: {e}")
+    
     yield
 
     # Shutdown
     logger.info("LCopilot API shutting down")
+    
+    # Stop background scheduler
+    try:
+        from app.scheduler import stop_scheduler
+        stop_scheduler()
+        logger.info("Background job scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping scheduler: {e}")
 
 
 # Create database tables only when explicitly allowed

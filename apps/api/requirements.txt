@@ -19,6 +19,7 @@ prometheus-client>=0.19.0  # For Prometheus metrics
 requests>=2.31.0
 redis==5.0.1
 celery==5.3.4
+apscheduler==3.10.4  # Background job scheduler for tracking alerts
 pytest==7.4.3
 pytest-asyncio>=0.23.5
 pytest-cov>=5.0.0

@@ -1135,10 +1135,18 @@ async def tracking_health():
     except:
         notification_status = {"email": False, "sms": False}
     
+    # Get scheduler status
+    try:
+        from app.scheduler import get_scheduler_status
+        scheduler_status = get_scheduler_status()
+    except:
+        scheduler_status = {"running": False, "jobs": []}
+    
     return {
         "status": "healthy",
         "data_sources": sources,
         "notifications": notification_status,
+        "scheduler": scheduler_status,
         "fallback": "mock",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
