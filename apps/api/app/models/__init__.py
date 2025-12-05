@@ -80,6 +80,18 @@ from .rbac import (
     get_role_permissions,
 )
 
+# Tracking models
+from .tracking import (
+    TrackingType,
+    ShipmentStatus,
+    AlertType,
+    NotificationStatus,
+    TrackedShipment,
+    TrackingAlert,
+    TrackingEvent,
+    TrackingNotification,
+)
+
 __all__ = [
     "User",
     "UserRole",
@@ -123,4 +135,13 @@ __all__ = [
     "InvitationStatus",
     "DEFAULT_TOOL_ACCESS",
     "get_role_permissions",
+    # Tracking models
+    "TrackingType",
+    "ShipmentStatus",
+    "AlertType",
+    "NotificationStatus",
+    "TrackedShipment",
+    "TrackingAlert",
+    "TrackingEvent",
+    "TrackingNotification",
 ]
