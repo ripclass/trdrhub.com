@@ -175,30 +175,21 @@ export default function TrackingLayout() {
   // Check if user is guest
   const isGuest = user?.id === 'guest' || user?.email === 'guest@trdrhub.com';
   
-  // Check for stored auth token (synchronous check - runs IMMEDIATELY)
-  const hasStoredToken = (() => {
-    try {
-      const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_REF || '';
-      const storedAuth = localStorage.getItem(`sb-${projectRef}-auth-token`);
-      if (storedAuth) {
-        const parsed = JSON.parse(storedAuth);
-        return !!parsed?.access_token;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  })();
-  
-  // IMMEDIATE REDIRECT: If no stored token at all, redirect immediately
-  // Don't wait for auth to finish loading - there's nothing to load
-  if (!hasStoredToken) {
-    const returnUrl = encodeURIComponent(location.pathname);
-    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
+  // Show loading while auth is being checked
+  // This prevents race conditions after login redirect
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
   }
   
-  // If we have a token but auth finished and no valid user, redirect
-  if (!isLoading && (!user || isGuest)) {
+  // After loading completes, redirect if no valid user
+  if (!user || isGuest) {
     const returnUrl = encodeURIComponent(location.pathname);
     return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
   }
