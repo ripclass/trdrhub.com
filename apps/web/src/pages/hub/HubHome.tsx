@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { 
   FileCheck, 
+  FileText,
   DollarSign, 
   Package, 
   Shield, 
@@ -95,6 +96,18 @@ const TOOLS = [
     href: "/tracking/dashboard",
     operation: "container_tracks",
     pricePerUnit: 1.00,
+  },
+  {
+    id: "doc-generator",
+    name: "Doc Generator",
+    description: "Generate LC-compliant shipping documents",
+    icon: FileText,
+    color: "from-indigo-500 to-indigo-600",
+    bgColor: "bg-indigo-500/10",
+    borderColor: "border-indigo-500/20",
+    href: "/doc-generator/dashboard",
+    operation: "doc_sets",
+    pricePerUnit: 0.25,
   },
 ];
 

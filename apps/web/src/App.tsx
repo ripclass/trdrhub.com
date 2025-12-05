@@ -104,6 +104,11 @@ import {
   ExceptionsPage,
   PerformancePage,
 } from './pages/tools/tracking'
+import {
+  DocGeneratorLayout,
+  DocGeneratorDashboard,
+  CreateDocumentWizard,
+} from './pages/tools/doc-generator'
 
 function App() {
   return (
@@ -122,8 +127,14 @@ function App() {
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
         
-        {/* Tool Landing Pages - Coming Soon (Full Pages) */}
+        {/* Tool Landing Pages */}
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />
+        {/* Doc Generator Dashboard with Sidebar */}
+        <Route path="/doc-generator/dashboard" element={<DocGeneratorLayout />}>
+          <Route index element={<DocGeneratorDashboard />} />
+          <Route path="new" element={<CreateDocumentWizard />} />
+          <Route path="edit/:id" element={<CreateDocumentWizard />} />
+        </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
         {/* Tracking Dashboard with Sidebar */}
