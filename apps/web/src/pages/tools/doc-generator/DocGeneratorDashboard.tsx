@@ -18,6 +18,8 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Filter,
+  Import,
+  Copy,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { ImportFromLCopilot } from "./ImportFromLCopilot";
+import { PDFPreview } from "./PDFPreview";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
@@ -86,6 +90,8 @@ export default function DocGeneratorDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all");
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [previewDocSetId, setPreviewDocSetId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDocumentSets();
@@ -191,6 +197,39 @@ export default function DocGeneratorDashboard() {
     }
   };
 
+  const handleDuplicate = async (id: string) => {
+    try {
+      const token = session?.access_token || user?.id;
+      const response = await fetch(`${API_BASE}/api/doc-generator/document-sets/${id}/duplicate`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to duplicate document set");
+      }
+      
+      const data = await response.json();
+      
+      toast({
+        title: "Duplicated",
+        description: "Document set has been duplicated",
+      });
+      
+      // Refresh list and navigate to edit
+      fetchDocumentSets();
+      navigate(`/doc-generator/dashboard/edit/${data.id}`);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to duplicate document set",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredSets = documentSets.filter((set) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -263,12 +302,22 @@ export default function DocGeneratorDashboard() {
               Manage your shipping document sets
             </CardDescription>
           </div>
-          <Button asChild className="bg-blue-600 hover:bg-blue-700">
-            <Link to="/doc-generator/dashboard/new">
-              <Plus className="w-4 h-4 mr-2" />
-              Create New
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              className="border-slate-700 hover:bg-slate-800"
+              onClick={() => setShowImportDialog(true)}
+            >
+              <Import className="w-4 h-4 mr-2" />
+              Import from LC
+            </Button>
+            <Button asChild className="bg-blue-600 hover:bg-blue-700">
+              <Link to="/doc-generator/dashboard/new">
+                <Plus className="w-4 h-4 mr-2" />
+                Create New
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         
         <CardContent>
@@ -370,9 +419,17 @@ export default function DocGeneratorDashboard() {
                               <Eye className="w-4 h-4 mr-2" />
                               View / Edit
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setPreviewDocSetId(set.id)}>
+                              <FileText className="w-4 h-4 mr-2" />
+                              Preview PDF
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleDownload(set.id)}>
                               <Download className="w-4 h-4 mr-2" />
                               Download All
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDuplicate(set.id)}>
+                              <Copy className="w-4 h-4 mr-2" />
+                              Duplicate
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -393,6 +450,26 @@ export default function DocGeneratorDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Import from LCopilot Dialog */}
+      <ImportFromLCopilot
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImportComplete={(id) => {
+          fetchDocumentSets();
+          navigate(`/doc-generator/dashboard/edit/${id}`);
+        }}
+      />
+
+      {/* PDF Preview Dialog */}
+      {previewDocSetId && (
+        <PDFPreview
+          docSetId={previewDocSetId}
+          open={!!previewDocSetId}
+          onOpenChange={(open) => !open && setPreviewDocSetId(null)}
+          mode="modal"
+        />
+      )}
     </div>
   );
 }

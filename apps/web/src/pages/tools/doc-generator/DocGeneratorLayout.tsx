@@ -18,6 +18,8 @@ import {
   ChevronDown,
   LogOut,
   Package,
+  Palette,
+  Scroll,
 } from "lucide-react";
 import {
   Sidebar,
@@ -88,13 +90,23 @@ const navItems = [
         href: "/doc-generator/dashboard?type=beneficiary_certificate",
         icon: FileCheck,
       },
+      {
+        title: "Certificate of Origin",
+        href: "/doc-generator/dashboard?type=certificate_of_origin",
+        icon: Scroll,
+      },
     ],
   },
   {
-    title: "Support",
+    title: "Settings",
     items: [
       {
-        title: "Settings",
+        title: "Company Branding",
+        href: "/doc-generator/dashboard/branding",
+        icon: Palette,
+      },
+      {
+        title: "Preferences",
         href: "/doc-generator/dashboard/settings",
         icon: Settings,
       },

@@ -30,6 +30,14 @@ class DocumentStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class ValidationStatus(str, Enum):
+    """Document validation status"""
+    NOT_VALIDATED = "not_validated"
+    PASSED = "passed"
+    WARNINGS = "warnings"
+    FAILED = "failed"
+
+
 class DocumentType(str, Enum):
     """Types of shipping documents"""
     COMMERCIAL_INVOICE = "commercial_invoice"
@@ -56,6 +64,58 @@ class UnitType(str, Enum):
     UNIT = "UNIT"    # Units
 
 
+class CompanyBranding(Base):
+    """
+    Company branding for document generation.
+    
+    Stores logo, letterhead, colors, and other branding elements.
+    """
+    __tablename__ = "company_brandings"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
+    
+    # Logo & Letterhead
+    logo_url = Column(String(500))  # S3 URL for company logo
+    logo_width = Column(Integer, default=150)  # Logo width in pixels
+    letterhead_url = Column(String(500))  # Full letterhead template
+    
+    # Company Info (for documents)
+    company_name = Column(String(500))
+    company_address = Column(Text)
+    company_phone = Column(String(100))
+    company_email = Column(String(200))
+    company_website = Column(String(200))
+    
+    # Registration Details
+    tax_id = Column(String(100))  # VAT/GST number
+    registration_number = Column(String(100))  # Company registration
+    export_license = Column(String(100))  # IEC, ERC, etc.
+    
+    # Bank Details (for invoices)
+    bank_name = Column(String(300))
+    bank_account = Column(String(100))
+    bank_swift = Column(String(20))
+    bank_address = Column(Text)
+    
+    # Styling
+    primary_color = Column(String(10), default="#1e40af")  # Hex color
+    secondary_color = Column(String(10), default="#64748b")
+    
+    # Signature/Stamp
+    signature_url = Column(String(500))  # Authorized signature image
+    stamp_url = Column(String(500))  # Company stamp/seal image
+    signatory_name = Column(String(200))
+    signatory_title = Column(String(200))
+    
+    # Footer
+    footer_text = Column(Text)  # Custom footer for documents
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class DocumentSet(Base):
     """
     A set of related shipping documents.
@@ -72,6 +132,16 @@ class DocumentSet(Base):
     # Document Set Metadata
     name = Column(String(200))  # User-friendly name
     status = Column(SQLEnum(DocumentStatus), default=DocumentStatus.DRAFT)
+    
+    # ========== LCopilot Integration ==========
+    lcopilot_session_id = Column(UUID(as_uuid=True))  # Source LCopilot session
+    imported_from_lcopilot = Column(Boolean, default=False)
+    
+    # ========== Validation Status ==========
+    validation_status = Column(SQLEnum(ValidationStatus), default=ValidationStatus.NOT_VALIDATED)
+    validation_errors = Column(JSON)  # List of validation errors
+    validation_warnings = Column(JSON)  # List of warnings
+    last_validated_at = Column(DateTime)
     
     # ========== LC Reference ==========
     lc_number = Column(String(100))
@@ -250,8 +320,10 @@ __all__ = [
     "DocumentSet",
     "DocumentLineItem",
     "GeneratedDocument",
+    "CompanyBranding",
     "DocumentStatus",
     "DocumentType",
     "UnitType",
+    "ValidationStatus",
 ]
 

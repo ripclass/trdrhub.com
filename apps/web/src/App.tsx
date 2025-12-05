@@ -108,6 +108,7 @@ import {
   DocGeneratorLayout,
   DocGeneratorDashboard,
   CreateDocumentWizard,
+  BrandingSettings,
 } from './pages/tools/doc-generator'
 
 function App() {
@@ -134,6 +135,7 @@ function App() {
           <Route index element={<DocGeneratorDashboard />} />
           <Route path="new" element={<CreateDocumentWizard />} />
           <Route path="edit/:id" element={<CreateDocumentWizard />} />
+          <Route path="branding" element={<BrandingSettings />} />
         </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />

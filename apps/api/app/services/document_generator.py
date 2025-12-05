@@ -748,6 +748,242 @@ class BillOfExchangeGenerator:
         return str(d)
 
 
+# ============== Certificate of Origin ==============
+
+class CertificateOfOriginGenerator:
+    """
+    Generate Certificate of Origin PDF.
+    
+    Standard format accepted by most chambers of commerce.
+    """
+    
+    def __init__(self, doc_set: DocumentSet):
+        self.doc_set = doc_set
+        self.styles = get_styles()
+    
+    def generate(self) -> bytes:
+        """Generate PDF and return as bytes"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30
+        )
+        
+        elements = []
+        
+        # Header with title
+        elements.append(Paragraph("CERTIFICATE OF ORIGIN", self.styles['DocTitle']))
+        elements.append(Spacer(1, 5))
+        
+        # Reference numbers
+        ref_data = [
+            ["Certificate No:", f"COO-{self._get_ref_number()}", "Date:", self._format_date(self.doc_set.invoice_date)],
+            ["Invoice No:", self.doc_set.invoice_number or "-", "L/C No:", self.doc_set.lc_number or "-"],
+        ]
+        
+        ref_table = Table(ref_data, colWidths=[1.2*inch, 2*inch, 1*inch, 2*inch])
+        ref_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(ref_table)
+        elements.append(Spacer(1, 15))
+        
+        # Main content - Box structure
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.black))
+        
+        # Box 1 & 2: Exporter and Consignee
+        parties_data = [
+            ["1. EXPORTER (Name, full address, country)", "2. CONSIGNEE (Name, full address, country)"],
+            [
+                f"{self.doc_set.beneficiary_name}\n{self.doc_set.beneficiary_address or ''}\n{self.doc_set.beneficiary_country or ''}",
+                f"{self.doc_set.applicant_name}\n{self.doc_set.applicant_address or ''}\n{self.doc_set.applicant_country or ''}"
+            ],
+        ]
+        
+        parties_table = Table(parties_data, colWidths=[3.2*inch, 3.2*inch])
+        parties_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, 1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('PADDING', (0, 0), (-1, -1), 6),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ]))
+        elements.append(parties_table)
+        
+        # Box 3: Transport details
+        transport_header = Table(
+            [["3. MEANS OF TRANSPORT AND ROUTE (as far as known)"]],
+            colWidths=[6.4*inch]
+        )
+        transport_header.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(transport_header)
+        
+        transport_content = f"""
+        Vessel: {self.doc_set.vessel_name or '-'}  |  Voyage: {self.doc_set.voyage_number or '-'}
+        From: {self.doc_set.port_of_loading or '-'}  |  To: {self.doc_set.port_of_discharge or '-'}
+        B/L No: {self.doc_set.bl_number or '-'}  |  B/L Date: {self._format_date(self.doc_set.bl_date)}
+        """
+        transport_body = Table([[transport_content.strip()]], colWidths=[6.4*inch])
+        transport_body.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(transport_body)
+        
+        # Box 4: Country of Origin
+        origin_country = self.doc_set.country_of_origin or self.doc_set.beneficiary_country or "-"
+        origin_data = [
+            ["4. COUNTRY OF ORIGIN", f"{origin_country.upper()}"]
+        ]
+        origin_table = Table(origin_data, colWidths=[3.2*inch, 3.2*inch])
+        origin_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (0, 0), colors.HexColor("#f1f5f9")),
+            ('PADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(origin_table)
+        
+        # Box 5: Goods description
+        goods_header = Table(
+            [["5. MARKS AND NUMBERS", "6. DESCRIPTION OF GOODS", "7. QTY", "8. WEIGHT"]],
+            colWidths=[1.5*inch, 2.5*inch, 1*inch, 1.4*inch]
+        )
+        goods_header.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('PADDING', (0, 0), (-1, -1), 4),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ]))
+        elements.append(goods_header)
+        
+        # Build goods rows
+        goods_data = []
+        for item in sorted(self.doc_set.line_items, key=lambda x: x.line_number):
+            hs_note = f"\nHS: {item.hs_code}" if item.hs_code else ""
+            goods_data.append([
+                self.doc_set.shipping_marks or "N/M",
+                f"{item.description}{hs_note}",
+                f"{item.quantity:,} {item.unit or 'PCS'}",
+                f"{float(item.gross_weight_kg or 0):,.2f} KG" if item.gross_weight_kg else "-"
+            ])
+        
+        # Add total row
+        total_qty = self.doc_set.total_quantity
+        total_weight = float(self.doc_set.gross_weight_kg or 0)
+        goods_data.append([
+            "",
+            "TOTAL",
+            f"{total_qty:,}",
+            f"{total_weight:,.2f} KG"
+        ])
+        
+        goods_table = Table(goods_data, colWidths=[1.5*inch, 2.5*inch, 1*inch, 1.4*inch])
+        goods_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('PADDING', (0, 0), (-1, -1), 4),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+            ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+            # Total row
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+        ]))
+        elements.append(goods_table)
+        elements.append(Spacer(1, 10))
+        
+        # Certification statement
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.black))
+        elements.append(Spacer(1, 10))
+        
+        cert_text = f"""
+        <b>DECLARATION BY THE EXPORTER</b><br/><br/>
+        The undersigned hereby declares that the above details and statements are correct, 
+        that all the goods were produced in <b>{origin_country.upper()}</b> and that they 
+        comply with the origin requirements specified for those goods in the relevant trade 
+        agreement. The undersigned undertakes to submit, at the request of the appropriate 
+        authorities, any supporting evidence which these authorities may require.
+        """
+        
+        cert_style = ParagraphStyle(
+            name='CertText',
+            parent=self.styles['DocNormal'],
+            fontSize=8,
+            leading=12,
+            alignment=TA_JUSTIFY
+        )
+        elements.append(Paragraph(cert_text, cert_style))
+        elements.append(Spacer(1, 15))
+        
+        # Signature boxes
+        sig_data = [
+            ["EXPORTER'S SIGNATURE", "CHAMBER OF COMMERCE CERTIFICATION"],
+            [
+                f"\n\nFor: {self.doc_set.beneficiary_name}\n\n_______________________\nAuthorized Signatory\n\nDate: {self._format_date(self.doc_set.invoice_date)}\n\nPlace: {self.doc_set.beneficiary_country or '_______'}",
+                "\n\nWe hereby certify that the declaration by the exporter is correct.\n\n_______________________\nAuthorized Signature\n\nDate: _______________\n\nStamp:"
+            ],
+        ]
+        
+        sig_table = Table(sig_data, colWidths=[3.2*inch, 3.2*inch])
+        sig_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, 1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('PADDING', (0, 0), (-1, -1), 6),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ]))
+        elements.append(sig_table)
+        
+        # Build PDF
+        doc.build(elements)
+        
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_bytes
+    
+    def _format_date(self, d) -> str:
+        """Format date for display"""
+        if d is None:
+            return datetime.now().strftime("%d %b %Y")
+        if hasattr(d, 'strftime'):
+            return d.strftime("%d %b %Y")
+        return str(d)
+    
+    def _get_ref_number(self) -> str:
+        """Generate a reference number"""
+        if self.doc_set.invoice_number:
+            return self.doc_set.invoice_number.replace("/", "-")
+        return datetime.now().strftime("%Y%m%d-%H%M")
+
+
 # ============== Main Generator Service ==============
 
 class DocumentGeneratorService:
@@ -769,6 +1005,7 @@ class DocumentGeneratorService:
             DocumentType.PACKING_LIST: PackingListGenerator,
             DocumentType.BENEFICIARY_CERTIFICATE: BeneficiaryCertificateGenerator,
             DocumentType.BILL_OF_EXCHANGE: BillOfExchangeGenerator,
+            DocumentType.CERTIFICATE_OF_ORIGIN: CertificateOfOriginGenerator,
         }
         
         generator_class = generators.get(doc_type)

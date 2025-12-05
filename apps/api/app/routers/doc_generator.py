@@ -645,7 +645,563 @@ async def preview_document(
     )
 
 
+# ============== LCopilot Integration ==============
+
+class LCImportRequest(BaseModel):
+    """Request to import LC data from LCopilot"""
+    session_id: str
+    include_goods: bool = True
+
+
+@router.post("/import-from-lcopilot", response_model=DocumentSetResponse)
+async def import_from_lcopilot(
+    request: LCImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Import LC data from an LCopilot validation session.
+    
+    Creates a new document set pre-filled with extracted LC data.
+    """
+    from app.models.validation_session import ValidationSession
+    
+    # Find the LCopilot session
+    session = db.query(ValidationSession).filter(
+        ValidationSession.id == request.session_id,
+        ValidationSession.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="LCopilot session not found")
+    
+    # Get extracted data
+    extracted = session.extracted_data or {}
+    
+    # Create new document set
+    doc_set = DocumentSet(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        company_id=current_user.company_id,
+        
+        # Mark as imported from LCopilot
+        lcopilot_session_id=uuid.UUID(request.session_id),
+        imported_from_lcopilot=True,
+        
+        # LC Details
+        name=f"Import from LC {extracted.get('lc_number', 'Unknown')}",
+        lc_number=extracted.get('lc_number'),
+        lc_date=_parse_date(extracted.get('lc_issue_date')),
+        lc_amount=Decimal(str(extracted.get('lc_amount', 0))) if extracted.get('lc_amount') else None,
+        lc_currency=extracted.get('currency', 'USD'),
+        issuing_bank=extracted.get('issuing_bank'),
+        advising_bank=extracted.get('advising_bank'),
+        
+        # Beneficiary
+        beneficiary_name=extracted.get('beneficiary', {}).get('name') or extracted.get('beneficiary_name', 'Beneficiary'),
+        beneficiary_address=extracted.get('beneficiary', {}).get('address') or extracted.get('beneficiary_address'),
+        
+        # Applicant
+        applicant_name=extracted.get('applicant', {}).get('name') or extracted.get('applicant_name', 'Applicant'),
+        applicant_address=extracted.get('applicant', {}).get('address') or extracted.get('applicant_address'),
+        
+        # Shipment
+        port_of_loading=extracted.get('port_of_loading'),
+        port_of_discharge=extracted.get('port_of_discharge'),
+        
+        # Terms
+        incoterms=extracted.get('incoterms') or extracted.get('trade_terms'),
+        
+        # Country
+        country_of_origin=extracted.get('country_of_origin'),
+        
+        status=DocumentStatus.DRAFT,
+    )
+    
+    db.add(doc_set)
+    
+    # Import goods description as line items if requested
+    if request.include_goods and extracted.get('goods_description'):
+        goods = extracted.get('goods_description', '')
+        
+        # Create a single line item with the goods description
+        line_item = DocumentLineItem(
+            id=uuid.uuid4(),
+            document_set_id=doc_set.id,
+            line_number=1,
+            description=goods[:500] if goods else "Goods as per LC",
+            quantity=1,
+            unit="SET",
+            unit_price=Decimal(str(extracted.get('lc_amount', 0))) if extracted.get('lc_amount') else Decimal("0"),
+            total_price=Decimal(str(extracted.get('lc_amount', 0))) if extracted.get('lc_amount') else Decimal("0"),
+        )
+        db.add(line_item)
+    
+    db.commit()
+    db.refresh(doc_set)
+    
+    logger.info(f"Imported LC data from session {request.session_id} to document set {doc_set.id}")
+    
+    return _to_response(doc_set)
+
+
+# ============== Document Validation ==============
+
+class ValidationRequest(BaseModel):
+    """Request to validate documents against LC"""
+    lc_tolerance_plus: float = 5.0  # % allowed over
+    lc_tolerance_minus: float = 5.0  # % allowed under
+    lc_latest_shipment_date: Optional[date] = None
+    lc_expiry_date: Optional[date] = None
+    check_consistency: bool = True
+
+
+class ValidationIssueResponse(BaseModel):
+    code: str
+    severity: str
+    field: str
+    message: str
+    expected: Optional[str] = None
+    found: Optional[str] = None
+    rule_reference: Optional[str] = None
+
+
+class ValidationResponse(BaseModel):
+    is_valid: bool
+    status: str
+    errors: List[ValidationIssueResponse]
+    warnings: List[ValidationIssueResponse]
+    info: List[ValidationIssueResponse]
+
+
+@router.post("/document-sets/{doc_set_id}/validate", response_model=ValidationResponse)
+async def validate_document_set(
+    doc_set_id: str,
+    request: ValidationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate document set against LC requirements.
+    
+    Checks:
+    - Amount within LC tolerance (UCP600 Art. 30)
+    - Dates validity (UCP600 Art. 14)
+    - Party names match
+    - Shipment details match
+    - Document consistency across Invoice/Packing List/CoO
+    """
+    from app.services.doc_validation import (
+        get_document_validator, get_consistency_validator,
+        LCData, DocumentSetData, ValidationSeverity
+    )
+    
+    doc_set = db.query(DocumentSet).filter(
+        DocumentSet.id == doc_set_id,
+        DocumentSet.user_id == current_user.id
+    ).first()
+    
+    if not doc_set:
+        raise HTTPException(status_code=404, detail="Document set not found")
+    
+    all_errors = []
+    all_warnings = []
+    all_info = []
+    
+    # Validate against LC if LC data present
+    if doc_set.lc_number and doc_set.lc_amount:
+        lc_data = LCData(
+            lc_number=doc_set.lc_number,
+            lc_date=doc_set.lc_date,
+            lc_amount=Decimal(str(doc_set.lc_amount)),
+            lc_currency=doc_set.lc_currency or "USD",
+            tolerance_plus=request.lc_tolerance_plus,
+            tolerance_minus=request.lc_tolerance_minus,
+            latest_shipment_date=request.lc_latest_shipment_date,
+            expiry_date=request.lc_expiry_date,
+            beneficiary_name=doc_set.beneficiary_name,
+            applicant_name=doc_set.applicant_name,
+            port_of_loading=doc_set.port_of_loading,
+            port_of_discharge=doc_set.port_of_discharge,
+            incoterms=doc_set.incoterms,
+        )
+        
+        doc_data = DocumentSetData(
+            lc_number=doc_set.lc_number,
+            lc_date=doc_set.lc_date,
+            beneficiary_name=doc_set.beneficiary_name,
+            applicant_name=doc_set.applicant_name,
+            invoice_amount=Decimal(str(doc_set.total_amount)),
+            currency=doc_set.lc_currency or "USD",
+            shipment_date=doc_set.bl_date,
+            vessel_name=doc_set.vessel_name,
+            port_of_loading=doc_set.port_of_loading,
+            port_of_discharge=doc_set.port_of_discharge,
+            incoterms=doc_set.incoterms,
+            total_quantity=doc_set.total_quantity,
+            total_cartons=doc_set.total_cartons or 0,
+            gross_weight_kg=Decimal(str(doc_set.gross_weight_kg or 0)),
+            net_weight_kg=Decimal(str(doc_set.net_weight_kg or 0)),
+            invoice_date=doc_set.invoice_date,
+            bl_date=doc_set.bl_date,
+        )
+        
+        validator = get_document_validator()
+        result = validator.validate_against_lc(doc_data, lc_data)
+        
+        all_errors.extend(result.errors)
+        all_warnings.extend(result.warnings)
+        all_info.extend(result.info)
+    
+    # Check document consistency
+    if request.check_consistency:
+        invoice_data = {
+            "total_quantity": doc_set.total_quantity,
+            "gross_weight_kg": float(doc_set.gross_weight_kg or 0),
+            "total_cartons": doc_set.total_cartons,
+            "shipping_marks": doc_set.shipping_marks,
+            "total_amount": doc_set.total_amount,
+            "currency": doc_set.lc_currency,
+            "country_of_origin": doc_set.country_of_origin,
+        }
+        
+        # For now, packing list and CoO share the same data
+        packing_list_data = invoice_data.copy()
+        coo_data = invoice_data.copy()
+        
+        consistency_validator = get_consistency_validator()
+        consistency_result = consistency_validator.validate_consistency(
+            invoice_data, packing_list_data, coo_data
+        )
+        
+        all_errors.extend(consistency_result.errors)
+        all_warnings.extend(consistency_result.warnings)
+        all_info.extend(consistency_result.info)
+    
+    # Update document set validation status
+    if all_errors:
+        doc_set.validation_status = "failed"
+    elif all_warnings:
+        doc_set.validation_status = "warnings"
+    else:
+        doc_set.validation_status = "passed"
+    
+    doc_set.validation_errors = [e.dict() for e in all_errors]
+    doc_set.validation_warnings = [w.dict() for w in all_warnings]
+    doc_set.last_validated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    # Convert to response format
+    def to_issue_response(issue):
+        return ValidationIssueResponse(
+            code=issue.code,
+            severity=issue.severity.value if hasattr(issue.severity, 'value') else issue.severity,
+            field=issue.field,
+            message=issue.message,
+            expected=issue.expected,
+            found=issue.found,
+            rule_reference=issue.rule_reference,
+        )
+    
+    return ValidationResponse(
+        is_valid=len(all_errors) == 0,
+        status=doc_set.validation_status,
+        errors=[to_issue_response(e) for e in all_errors],
+        warnings=[to_issue_response(w) for w in all_warnings],
+        info=[to_issue_response(i) for i in all_info],
+    )
+
+
+# ============== Duplicate Document Set ==============
+
+@router.post("/document-sets/{doc_set_id}/duplicate", response_model=DocumentSetResponse)
+async def duplicate_document_set(
+    doc_set_id: str,
+    new_name: Optional[str] = None,
+    increment_invoice: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Duplicate a document set for a new shipment.
+    
+    Creates a copy with:
+    - New invoice number (auto-incremented if enabled)
+    - Fresh dates
+    - All line items copied
+    """
+    
+    source = db.query(DocumentSet).filter(
+        DocumentSet.id == doc_set_id,
+        DocumentSet.user_id == current_user.id
+    ).first()
+    
+    if not source:
+        raise HTTPException(status_code=404, detail="Document set not found")
+    
+    # Generate new invoice number
+    new_invoice_number = None
+    if increment_invoice and source.invoice_number:
+        # Try to increment number at end
+        import re
+        match = re.search(r'(\d+)$', source.invoice_number)
+        if match:
+            num = int(match.group(1)) + 1
+            new_invoice_number = re.sub(r'\d+$', str(num).zfill(len(match.group(1))), source.invoice_number)
+        else:
+            new_invoice_number = f"{source.invoice_number}-2"
+    
+    # Create duplicate
+    new_doc_set = DocumentSet(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        company_id=source.company_id,
+        
+        # Metadata
+        name=new_name or f"Copy of {source.name or source.lc_number or 'Document'}",
+        status=DocumentStatus.DRAFT,
+        
+        # Copy LC details
+        lc_number=source.lc_number,
+        lc_date=source.lc_date,
+        lc_amount=source.lc_amount,
+        lc_currency=source.lc_currency,
+        issuing_bank=source.issuing_bank,
+        advising_bank=source.advising_bank,
+        
+        # Copy parties
+        beneficiary_name=source.beneficiary_name,
+        beneficiary_address=source.beneficiary_address,
+        beneficiary_country=source.beneficiary_country,
+        applicant_name=source.applicant_name,
+        applicant_address=source.applicant_address,
+        applicant_country=source.applicant_country,
+        notify_party_name=source.notify_party_name,
+        notify_party_address=source.notify_party_address,
+        
+        # Copy shipment details
+        vessel_name=source.vessel_name,
+        voyage_number=source.voyage_number,
+        port_of_loading=source.port_of_loading,
+        port_of_discharge=source.port_of_discharge,
+        final_destination=source.final_destination,
+        
+        # Terms
+        incoterms=source.incoterms,
+        incoterms_place=source.incoterms_place,
+        
+        # Packing
+        total_cartons=source.total_cartons,
+        gross_weight_kg=source.gross_weight_kg,
+        net_weight_kg=source.net_weight_kg,
+        cbm=source.cbm,
+        shipping_marks=source.shipping_marks,
+        
+        # Fresh invoice details
+        invoice_number=new_invoice_number,
+        invoice_date=date.today(),
+        po_number=source.po_number,
+        
+        # Additional
+        country_of_origin=source.country_of_origin,
+        remarks=source.remarks,
+        draft_tenor=source.draft_tenor,
+        drawee_name=source.drawee_name,
+        drawee_address=source.drawee_address,
+    )
+    
+    db.add(new_doc_set)
+    
+    # Copy line items
+    for source_item in source.line_items:
+        new_item = DocumentLineItem(
+            id=uuid.uuid4(),
+            document_set_id=new_doc_set.id,
+            line_number=source_item.line_number,
+            description=source_item.description,
+            hs_code=source_item.hs_code,
+            quantity=source_item.quantity,
+            unit=source_item.unit,
+            unit_price=source_item.unit_price,
+            total_price=source_item.total_price,
+            cartons=source_item.cartons,
+            carton_dimensions=source_item.carton_dimensions,
+            gross_weight_kg=source_item.gross_weight_kg,
+            net_weight_kg=source_item.net_weight_kg,
+            remarks=source_item.remarks,
+        )
+        db.add(new_item)
+    
+    db.commit()
+    db.refresh(new_doc_set)
+    
+    logger.info(f"Duplicated document set {doc_set_id} -> {new_doc_set.id}")
+    
+    return _to_response(new_doc_set)
+
+
+# ============== Company Branding ==============
+
+class CompanyBrandingCreate(BaseModel):
+    """Create/update company branding"""
+    company_name: Optional[str] = None
+    company_address: Optional[str] = None
+    company_phone: Optional[str] = None
+    company_email: Optional[str] = None
+    company_website: Optional[str] = None
+    tax_id: Optional[str] = None
+    registration_number: Optional[str] = None
+    export_license: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    bank_swift: Optional[str] = None
+    bank_address: Optional[str] = None
+    primary_color: str = "#1e40af"
+    secondary_color: str = "#64748b"
+    signatory_name: Optional[str] = None
+    signatory_title: Optional[str] = None
+    footer_text: Optional[str] = None
+
+
+class CompanyBrandingResponse(BaseModel):
+    id: str
+    company_id: str
+    company_name: Optional[str]
+    company_address: Optional[str]
+    company_phone: Optional[str]
+    company_email: Optional[str]
+    tax_id: Optional[str]
+    bank_name: Optional[str]
+    bank_account: Optional[str]
+    bank_swift: Optional[str]
+    primary_color: str
+    logo_url: Optional[str]
+    signature_url: Optional[str]
+    stamp_url: Optional[str]
+
+
+@router.get("/branding", response_model=CompanyBrandingResponse)
+async def get_company_branding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get company branding settings"""
+    from app.models.doc_generator import CompanyBranding
+    
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
+    
+    branding = db.query(CompanyBranding).filter(
+        CompanyBranding.company_id == current_user.company_id
+    ).first()
+    
+    if not branding:
+        # Return empty branding with company_id
+        return CompanyBrandingResponse(
+            id="new",
+            company_id=str(current_user.company_id),
+            company_name=None,
+            company_address=None,
+            company_phone=None,
+            company_email=None,
+            tax_id=None,
+            bank_name=None,
+            bank_account=None,
+            bank_swift=None,
+            primary_color="#1e40af",
+            logo_url=None,
+            signature_url=None,
+            stamp_url=None,
+        )
+    
+    return CompanyBrandingResponse(
+        id=str(branding.id),
+        company_id=str(branding.company_id),
+        company_name=branding.company_name,
+        company_address=branding.company_address,
+        company_phone=branding.company_phone,
+        company_email=branding.company_email,
+        tax_id=branding.tax_id,
+        bank_name=branding.bank_name,
+        bank_account=branding.bank_account,
+        bank_swift=branding.bank_swift,
+        primary_color=branding.primary_color or "#1e40af",
+        logo_url=branding.logo_url,
+        signature_url=branding.signature_url,
+        stamp_url=branding.stamp_url,
+    )
+
+
+@router.put("/branding", response_model=CompanyBrandingResponse)
+async def update_company_branding(
+    request: CompanyBrandingCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update company branding settings"""
+    from app.models.doc_generator import CompanyBranding
+    
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
+    
+    branding = db.query(CompanyBranding).filter(
+        CompanyBranding.company_id == current_user.company_id
+    ).first()
+    
+    if not branding:
+        # Create new branding
+        branding = CompanyBranding(
+            id=uuid.uuid4(),
+            company_id=current_user.company_id,
+        )
+        db.add(branding)
+    
+    # Update fields
+    update_data = request.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        if hasattr(branding, field):
+            setattr(branding, field, value)
+    
+    db.commit()
+    db.refresh(branding)
+    
+    return CompanyBrandingResponse(
+        id=str(branding.id),
+        company_id=str(branding.company_id),
+        company_name=branding.company_name,
+        company_address=branding.company_address,
+        company_phone=branding.company_phone,
+        company_email=branding.company_email,
+        tax_id=branding.tax_id,
+        bank_name=branding.bank_name,
+        bank_account=branding.bank_account,
+        bank_swift=branding.bank_swift,
+        primary_color=branding.primary_color or "#1e40af",
+        logo_url=branding.logo_url,
+        signature_url=branding.signature_url,
+        stamp_url=branding.stamp_url,
+    )
+
+
 # ============== Helper Functions ==============
+
+def _parse_date(date_str: Optional[str]) -> Optional[date]:
+    """Parse date string to date object"""
+    if not date_str:
+        return None
+    try:
+        if isinstance(date_str, date):
+            return date_str
+        # Try common formats
+        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d']:
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    return None
 
 def _to_response(doc_set: DocumentSet) -> DocumentSetResponse:
     """Convert DocumentSet to response"""
