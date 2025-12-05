@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Link, useLocation, Outlet, useNavigate, Navigate } from "react-router-dom";
+import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import {
   Ship,
   Search,
@@ -166,13 +166,24 @@ const navItems = {
 export default function TrackingLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isLoading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { isAdmin, canAccessAdminPanels } = useUserRole();
   const [notifications] = useState(2);
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Keyboard shortcuts - MUST be called before any conditional returns
+  // Get user display info
+  const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
+  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
+
+  // Get current page title for breadcrumb
+  const getCurrentPageTitle = () => {
+    const allItems = [...navItems.main, ...navItems.monitoring, ...navItems.alerts, ...navItems.insights, ...navItems.support];
+    const currentItem = allItems.find(item => item.url === location.pathname);
+    return currentItem?.title || "Dashboard";
+  };
+
+  // Keyboard shortcuts
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       // Cmd+K or Ctrl+K - Open command palette
@@ -204,49 +215,11 @@ export default function TrackingLayout() {
     return () => document.removeEventListener("keydown", down);
   }, [navigate]);
 
-  // Command palette navigation - MUST be called before any conditional returns
+  // Command palette navigation
   const runCommand = useCallback((command: () => void) => {
     setCommandOpen(false);
     command();
   }, []);
-
-  // Check if user is a real authenticated user (not guest, not null)
-  const isValidUser = (() => {
-    if (!user) return false;
-    if (user.id === 'guest') return false;
-    if (user.email === 'guest@trdrhub.com') return false;
-    if (!user.id || user.id.length < 20) return false;
-    return true;
-  })();
-
-  // Get user display info
-  const userName = user?.full_name || user?.email?.split("@")[0] || "Guest User";
-  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "GU";
-
-  // Get current page title for breadcrumb
-  const getCurrentPageTitle = () => {
-    const allItems = [...navItems.main, ...navItems.monitoring, ...navItems.alerts, ...navItems.insights, ...navItems.support];
-    const currentItem = allItems.find(item => item.url === location.pathname);
-    return currentItem?.title || "Dashboard";
-  };
-  
-  // Show loading while auth is being checked
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Checking authentication...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Redirect if no valid authenticated user
-  if (!isValidUser) {
-    const returnUrl = encodeURIComponent(location.pathname);
-    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
-  }
 
   return (
     <SidebarProvider>
