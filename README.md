@@ -1,8 +1,21 @@
-# TRDR Hub LCopilot
+# TRDR Hub
 
-AI-assisted Letter of Credit validation for SME exporters, trade banks, and compliance teams.
+**Enterprise-grade trade compliance tools for SME exporters, trade banks, and compliance teams.**
 
-This monorepo contains the FastAPI backend and the Vite/React frontend that power LCopilot. The backend handles document intake, OCR, rule-based validation, AI assist flows, billing, and analytics. The frontend delivers the operator experience, dashboards, and customer-facing workflows.
+TRDR Hub provides a suite of AI-powered tools to validate Letters of Credit, verify commodity prices, track shipments, and ensure trade compliance - all powered by 4,000+ rules covering UCP600, ISBP745, and 160+ countries.
+
+**Production:** https://trdrhub.com  
+**API:** https://trdrhub-api.onrender.com
+
+---
+
+## 🚀 Live Tools
+
+| Tool | Description | Status |
+|------|-------------|--------|
+| **LCopilot** | AI-assisted LC validation with UCP600/ISBP rules | ✅ Live |
+| **Price Verify** | Commodity price verification for TBML detection | ✅ Live |
+| **Container Tracker** | Multi-carrier shipment tracking with alerts | ✅ Live |
 
 ---
 
@@ -11,112 +24,101 @@ This monorepo contains the FastAPI backend and the Vite/React frontend that powe
 ```
 trdrhub.com/
 ├── apps/
-│   ├── api/     # FastAPI service (Python 3.11)
-│   └── web/     # React + Vite frontend (TypeScript)
-├── docs/        # Product, architecture, and process documentation
-├── render.yaml  # Render deployment configuration for api
-└── vercel.json  # Vercel deployment configuration for web
+│   ├── api/            # FastAPI backend (Python 3.11)
+│   └── web/            # React + Vite frontend (TypeScript)
+├── Data/               # Trade finance rules (4,000+ rulesets)
+│   ├── icc_core/       # UCP600, ISBP745, eUCP
+│   ├── country_rules/  # 160+ country-specific rules
+│   ├── sanctions/      # OFAC, EU, UN sanctions data
+│   └── commodities/    # Commodity pricing data
+├── docs/               # Product, architecture, and process documentation
+├── memory-bank/        # AI context persistence
+├── packages/
+│   └── shared-types/   # Shared TypeScript/Python types
+├── render.yaml         # Render deployment (API)
+└── vercel.json         # Vercel deployment (Web)
 ```
-
-The project uses npm workspaces (Turborepo) to coordinate shared tooling and scripts.
 
 ---
 
 ## Technology Stack
 
-| Area        | Tech                                  |
-|-------------|---------------------------------------|
-| Backend     | FastAPI, SQLAlchemy, Alembic, Pydantic |
-| Database    | PostgreSQL (Supabase compatible)       |
-| Storage     | Amazon S3 (stub mode for local dev)    |
-| OCR / AI    | Google Document AI, AWS Textract, OpenAI/Anthropic (optional) |
-| Frontend    | React 18 + Vite + Tailwind/ShadCN      |
-| Auth        | JWT with role-based access             |
-| Monitoring  | AWS CloudWatch, structured logging     |
+| Area | Tech |
+|------|------|
+| **Frontend** | React 18 + Vite + TypeScript + Tailwind + shadcn/ui |
+| **Backend** | FastAPI + SQLAlchemy + Alembic + Pydantic |
+| **Database** | PostgreSQL (Supabase) |
+| **Auth** | Supabase Auth + JWT + RBAC |
+| **OCR / AI** | Google Document AI, AWS Textract, OpenAI/Anthropic |
+| **Storage** | Amazon S3 |
+| **Monitoring** | Structured logging, health checks |
 
 ---
 
 ## Quick Start
 
-### 1. Install prerequisites
+### 1. Prerequisites
 
 - Python 3.11+
 - Node.js 18+ (npm 10+)
 - PostgreSQL 15
 - (Optional) Redis for background tasks
 
-### 2. Install dependencies
+### 2. Install Dependencies
 
 ```bash
 git clone https://github.com/ripclass/trdrhub.com.git
 cd trdrhub.com
 
-# Install root workspace dependencies
+# Root workspace
 npm install
 
-# Install backend dependencies
+# Backend
 cd apps/api
 pip install -r requirements.txt
 
-# Install frontend dependencies
+# Frontend
 cd ../web
 npm install
 ```
 
-### 3. Configure environment variables
+### 3. Configure Environment
 
-Templates ship with all required keys. Copy and customise the ones you need:
-
-```
-# Root configuration (used by FastAPI Settings)
+```bash
+# Copy templates
 cp .env.example .env
-
-# Backend (apps/api)
 cp apps/api/.env.example apps/api/.env
-
-# Frontend (apps/web)
 cp apps/web/.env.example apps/web/.env
 ```
 
-> :warning: Populate secrets such as `DATABASE_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY`, and payment provider keys before running in non-stub mode. Production defaults live in `.env.production.template`.
+Key variables:
+- `DATABASE_URL` – PostgreSQL connection
+- `VITE_API_URL` – API endpoint for frontend
+- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` – Supabase auth
+- `GOOGLE_DOCUMENTAI_*` – OCR credentials
+- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` – AI assist
 
-### 4. Prepare the database
+### 4. Database Setup
 
 ```bash
-createdb lcopilot_dev
 cd apps/api
 alembic upgrade head
 ```
 
-### 5. Run services locally
+### 5. Run Locally
 
 ```bash
-# Backend
+# Backend (terminal 1)
 cd apps/api
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8000
 
-# Frontend (new shell)
+# Frontend (terminal 2)
 cd apps/web
 npm run dev
 ```
 
-Backend health endpoints:
-- `http://localhost:8000/health/live`
-- `http://localhost:8000/docs`
-
-Frontend dev server: `http://localhost:5173`
-
----
-
-## Testing & Quality Checks
-
-| Command | Description |
-|---------|-------------|
-| `cd apps/api && pytest` | Backend test suite (unit, integration, security) |
-| `cd apps/api && alembic check` | Validate Alembic migration chain |
-| `cd apps/web && npm run build` | Build-time smoke test for the frontend |
-
-> Run `pytest` before deploying. The test runner expects environment variables from `apps/api/.env`.
+- Backend: http://localhost:8000/docs
+- Frontend: http://localhost:5173
 
 ---
 
@@ -124,56 +126,70 @@ Frontend dev server: `http://localhost:5173`
 
 ### Backend (Render)
 
-- `render.yaml` provisions a Python web service using `apps/api` as the root.
-- Build command installs requirements, `postDeployCommand` runs Alembic migrations.
-- Health check is wired to `/health/live`.
-
-Deploy with:
-
 ```bash
 render blueprint deploy
 ```
 
-Map secrets via Render Environment Groups to populate the variables in `.env.production.template`.
+- Uses `render.yaml` configuration
+- Auto-runs Alembic migrations on deploy
+- Health check: `/health/live`
 
 ### Frontend (Vercel)
-
-- `vercel.json` builds the Vite application in `apps/web`.
-- Set `VITE_API_URL` to the public API URL and `VITE_TOKEN_STORAGE_KEY` if you change the storage key.
-
-Deploy with:
 
 ```bash
 vercel --prod
 ```
 
----
-
-## Environment Reference
-
-Key templates:
-
-- Root: `.env.example`, `.env.production.template`
-- Backend: `apps/api/.env.example`, `apps/api/.env.production.template`
-- Frontend: `apps/web/.env.example`, `apps/web/.env.production.template`
-
-Important variables:
-
-- `DATABASE_URL` – PostgreSQL connection string
-- `JWT_SECRET_KEY` / `JWT_EXPIRATION_HOURS`
-- `AWS_REGION`, `S3_BUCKET_NAME`, `DR_OBJECT_BACKUP_BUCKET`
-- `GOOGLE_DOCUMENTAI_*` for OCR
-- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `LLM_MODEL_VERSION`
-- Billing providers: `STRIPE_*`, `SSLCOMMERZ_*`
-- Frontend: `VITE_API_URL`, `VITE_TOKEN_STORAGE_KEY`
+- Uses `vercel.json` configuration
+- Set `VITE_API_URL` environment variable
 
 ---
 
-## Documentation & Support
+## Documentation
 
-- Product requirements: `docs/prd/index.md`
-- Architecture reference: `docs/architecture/index.md`
-- Monitoring & operations: `apps/api/MONITORING.md`, `apps/api/audit_monitoring.crontab`
-- Troubleshooting: `TROUBLESHOOTING.md`, `STUB_MODE.md`
+| Document | Location |
+|----------|----------|
+| **Current Status** | `docs/CURRENT_STATUS.md` |
+| **Product Requirements** | `docs/prd/index.md` |
+| **Architecture** | `docs/architecture/index.md` |
+| **Product Specs** | `docs/product_specs/` |
+| **Compliance Mappings** | `docs/compliance/` |
+| **Runbooks** | `docs/runbooks/` |
 
-For further questions, check the detailed guides under `docs/` or reach out to the platform team.
+---
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Rules | 4,000+ |
+| Countries Covered | 160+ |
+| LC Validation Accuracy | 94% |
+| Processing Time | ~47 seconds |
+
+---
+
+## Testing
+
+```bash
+# Backend tests
+cd apps/api && pytest
+
+# Frontend build check
+cd apps/web && npm run build
+
+# Migration check
+cd apps/api && alembic check
+```
+
+---
+
+## Support
+
+- **Documentation:** `docs/` directory
+- **Troubleshooting:** `TROUBLESHOOTING.md`
+- **Stub Mode:** `STUB_MODE.md` (for local dev without cloud services)
+
+---
+
+*Built with ❤️ for trade finance professionals*

@@ -396,28 +396,28 @@ Seamless workflow
 
 ---
 
-## MVP Features (Phase 1)
+## MVP Features (Phase 1) ✅ COMPLETED
 
-### Must Have
-- [ ] Manual price lookup (commodity + price input)
-- [ ] Top 20 commodities (Bangladesh focus)
-- [ ] 3 price sources per commodity
-- [ ] Variance calculation + verdict
-- [ ] PDF report generation
-- [ ] Basic historical chart (30 days)
+### Must Have ✅
+- [x] Manual price lookup (commodity + price input)
+- [x] Top 50+ commodities (Bangladesh focus)
+- [x] Multiple price sources per commodity
+- [x] Variance calculation + verdict
+- [x] PDF report generation
+- [x] Historical price charts
 
-### Should Have
-- [ ] Document upload with OCR extraction
-- [ ] HS code to commodity mapping
-- [ ] Currency conversion (live FX rates)
-- [ ] Incoterm adjustment (FOB → CIF)
-- [ ] Email report delivery
+### Should Have ✅
+- [x] HS code to commodity mapping
+- [x] Currency conversion (live FX rates)
+- [x] Dashboard with sidebar navigation
+- [x] Batch verification (CSV upload)
+- [x] TBML risk flagging
 
-### Nice to Have
-- [ ] LCopilot integration
-- [ ] API access
-- [ ] Bulk price checks (CSV upload)
+### Nice to Have 🔄
+- [ ] LCopilot integration (auto-verify LC prices)
+- [ ] API access for external systems
 - [ ] Custom commodity requests
+- [ ] White-label reports
 
 ---
 

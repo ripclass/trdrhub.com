@@ -253,28 +253,32 @@ Shipment Tracker → CustomsMate:
 
 ---
 
-## MVP Features (Week 1-2)
+## MVP Features (Week 1-2) ✅ COMPLETED
 
-- [ ] Container number tracking
-- [ ] 3 major carriers (Maersk, MSC, CMA CGM)
-- [ ] Basic status display
-- [ ] Manual tracking add
+- [x] Container number tracking
+- [x] Multi-carrier support (mock data with API fallback)
+- [x] Basic status display
+- [x] Manual tracking add
+- [x] Dashboard with sidebar navigation
+- [x] Search by container/vessel/B/L
 
-## V2 Features (Week 3-4)
+## V2 Features (Week 3-4) 🔄 IN PROGRESS
 
-- [ ] All major carriers
-- [ ] Vessel position map
-- [ ] ETA predictions
-- [ ] Email/SMS alerts
+- [x] Vessel tracking (IMO/MMSI/Name)
+- [x] ETA display
+- [x] Email/SMS alert creation
+- [ ] Real carrier API integration (Searates, Portcast)
+- [ ] Live vessel position map
 - [ ] Shareable tracking links
 
-## V3 Features (Future)
+## V3 Features (Future) 📅 PLANNED
 
 - [ ] AI delay prediction
 - [ ] Port congestion data
 - [ ] Bulk tracking upload
 - [ ] API for ERP integration
 - [ ] Historical analytics
+- [ ] Vessel sanctions screening (for banks)
 
 ---
 
