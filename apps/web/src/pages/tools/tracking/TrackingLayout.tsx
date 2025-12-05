@@ -438,9 +438,10 @@ export default function TrackingLayout() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     className="text-red-500 focus:text-red-500"
-                    onClick={async () => {
-                      await logout();
-                      navigate("/login");
+                    onClick={() => {
+                      logout().then(() => {
+                        window.location.href = "/login";
+                      });
                     }}
                   >
                     Log out
