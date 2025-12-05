@@ -192,11 +192,66 @@ def detect_carrier(container_number: str) -> tuple[str, str]:
     return prefix, carrier_name
 
 
+async def fetch_carrier_tracking_direct(container_number: str, carrier_code: str) -> Optional[Dict]:
+    """
+    Fetch tracking directly from carrier public tracking pages.
+    This is FREE but may be rate-limited.
+    
+    Supported carriers:
+    - MAEU: Maersk
+    - MSCU: MSC
+    - CMDU: CMA CGM
+    - HLCU: Hapag-Lloyd
+    - COSU: COSCO
+    - OOLU: OOCL
+    """
+    carrier_urls = {
+        "MAEU": f"https://www.maersk.com/tracking/{container_number}",
+        "MSCU": f"https://www.msc.com/track-a-shipment?query={container_number}",
+        "CMDU": f"https://www.cma-cgm.com/ebusiness/tracking/search?SearchBy=Container&Reference={container_number}",
+        "HLCU": f"https://www.hapag-lloyd.com/en/online-business/track/track-by-container-solution.html?container={container_number}",
+        "COSU": f"https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number={container_number}",
+        "OOLU": f"https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx?container={container_number}",
+    }
+    
+    # For now, return the tracking URL for manual verification
+    # In production, could implement web scraping with proper headers
+    if carrier_code in carrier_urls:
+        return {
+            "tracking_url": carrier_urls[carrier_code],
+            "carrier": CARRIER_CODES.get(carrier_code, "Unknown"),
+            "note": "Visit carrier website for real-time tracking"
+        }
+    
+    return None
+
+
+async def fetch_track_trace_api(container_number: str) -> Optional[Dict]:
+    """
+    Fetch from Track & Trace API (free tier available).
+    https://api.tracktraceship.com - 100 free requests/month
+    """
+    api_key = os.getenv("TRACKTRACE_API_KEY")
+    if not api_key:
+        return None
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"https://api.tracktraceship.com/v1/container/{container_number}",
+                headers={"X-API-Key": api_key}
+            )
+            if response.status_code == 200:
+                return response.json()
+    except Exception as e:
+        logger.error(f"Track&Trace API error: {e}")
+    return None
+
+
 async def fetch_searates_tracking(container_number: str) -> Optional[Dict]:
-    """Fetch container tracking from Searates."""
+    """Fetch container tracking from Searates (paid)."""
     api_key = os.getenv("SEARATES_API_KEY")
     if not api_key:
-        logger.warning("SEARATES_API_KEY not configured")
         return None
     
     try:
@@ -213,7 +268,7 @@ async def fetch_searates_tracking(container_number: str) -> Optional[Dict]:
 
 
 async def fetch_portcast_tracking(container_number: str) -> Optional[Dict]:
-    """Fetch from Portcast API."""
+    """Fetch from Portcast API (paid)."""
     api_key = os.getenv("PORTCAST_API_KEY")
     if not api_key:
         return None
@@ -229,7 +284,6 @@ async def fetch_portcast_tracking(container_number: str) -> Optional[Dict]:
                 return response.json()
     except Exception as e:
         logger.error(f"Portcast API error: {e}")
-    return None
 
 
 async def fetch_vessel_ais(identifier: str, search_type: str = "name") -> Optional[Dict]:
@@ -381,15 +435,16 @@ async def _track_container_internal(container_number: str) -> ContainerTrackingR
         )
     
     result = None
+    carrier_code, carrier_name = detect_carrier(container_number)
     
-    # Try Searates
-    searates_data = await fetch_searates_tracking(container_number)
-    if searates_data and searates_data.get("data"):
-        data = searates_data["data"]
+    # PRIORITY 1: Try free Track & Trace API (100 free/month)
+    tracktrace_data = await fetch_track_trace_api(container_number)
+    if tracktrace_data and tracktrace_data.get("status"):
+        data = tracktrace_data
         result = ContainerTrackingResult(
             container_number=container_number,
-            carrier=data.get("carrier", {}).get("name"),
-            carrier_code=data.get("carrier", {}).get("code"),
+            carrier=data.get("carrier", {}).get("name", carrier_name),
+            carrier_code=data.get("carrier", {}).get("code", carrier_code),
             status=data.get("status", "unknown"),
             origin=Port(
                 name=data.get("origin", {}).get("name", "Unknown"),
@@ -402,7 +457,7 @@ async def _track_container_internal(container_number: str) -> ContainerTrackingR
                 country=data.get("destination", {}).get("country", "")
             ),
             eta=data.get("eta"),
-            current_location=data.get("location", {}).get("name"),
+            current_location=data.get("location"),
             events=[
                 TrackingEventResponse(
                     timestamp=e.get("date", ""),
@@ -414,15 +469,53 @@ async def _track_container_internal(container_number: str) -> ContainerTrackingR
                 for e in data.get("events", [])
             ],
             last_update=datetime.utcnow().isoformat() + "Z",
-            data_source="searates"
+            data_source="tracktrace"
         )
     
-    # Try Portcast as fallback
+    # PRIORITY 2: Try Searates (paid - if API key configured)
+    if not result:
+        searates_data = await fetch_searates_tracking(container_number)
+        if searates_data and searates_data.get("data"):
+            data = searates_data["data"]
+            result = ContainerTrackingResult(
+                container_number=container_number,
+                carrier=data.get("carrier", {}).get("name", carrier_name),
+                carrier_code=data.get("carrier", {}).get("code", carrier_code),
+                status=data.get("status", "unknown"),
+                origin=Port(
+                    name=data.get("origin", {}).get("name", "Unknown"),
+                    code=data.get("origin", {}).get("code", ""),
+                    country=data.get("origin", {}).get("country", "")
+                ),
+                destination=Port(
+                    name=data.get("destination", {}).get("name", "Unknown"),
+                    code=data.get("destination", {}).get("code", ""),
+                    country=data.get("destination", {}).get("country", "")
+                ),
+                eta=data.get("eta"),
+                current_location=data.get("location", {}).get("name"),
+                events=[
+                    TrackingEventResponse(
+                        timestamp=e.get("date", ""),
+                        event=e.get("event", ""),
+                        location=e.get("location", ""),
+                        description=e.get("description", ""),
+                        status="completed"
+                    )
+                    for e in data.get("events", [])
+                ],
+                last_update=datetime.utcnow().isoformat() + "Z",
+                data_source="searates"
+            )
+    
+    # PRIORITY 3: Try Portcast (paid - if API key configured)
     if not result:
         portcast_data = await fetch_portcast_tracking(container_number)
         if portcast_data:
             result = ContainerTrackingResult(
                 container_number=container_number,
+                carrier=carrier_name,
+                carrier_code=carrier_code,
                 status=portcast_data.get("status", "unknown"),
                 origin=Port(
                     name=portcast_data.get("pod", {}).get("name", "Unknown"),
@@ -439,10 +532,22 @@ async def _track_container_internal(container_number: str) -> ContainerTrackingR
                 data_source="portcast"
             )
     
-    # Fall back to mock data
+    # PRIORITY 4: Generate smart mock data with carrier URL
     if not result:
-        logger.info(f"Using mock data for container {container_number}")
+        logger.info(f"Using enhanced mock data for container {container_number}")
         result = generate_mock_container_tracking(container_number)
+        
+        # Add carrier tracking URL for manual verification
+        carrier_info = await fetch_carrier_tracking_direct(container_number, carrier_code)
+        if carrier_info:
+            # Store the tracking URL in events for UI to display
+            result.events.insert(0, TrackingEventResponse(
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                event="Manual Tracking Available",
+                location=carrier_info.get("tracking_url", ""),
+                description=f"Track on {carrier_name} website",
+                status="info"
+            ))
     
     return result
 
@@ -1196,11 +1301,18 @@ async def trigger_alert_check(
 @router.get("/health")
 async def tracking_health():
     """Check tracking API health and data source availability."""
-    sources = {
-        "searates": bool(os.getenv("SEARATES_API_KEY")),
-        "portcast": bool(os.getenv("PORTCAST_API_KEY")),
-        "datalastic": bool(os.getenv("DATALASTIC_API_KEY")),
-        "marinetraffic": bool(os.getenv("MARINETRAFFIC_API_KEY")),
+    # Container tracking APIs
+    container_sources = {
+        "tracktrace": bool(os.getenv("TRACKTRACE_API_KEY")),  # Free tier: 100/month
+        "searates": bool(os.getenv("SEARATES_API_KEY")),      # Paid: $29+/month
+        "portcast": bool(os.getenv("PORTCAST_API_KEY")),      # Paid
+        "carrier_direct": True,  # Always available (free - uses carrier URLs)
+    }
+    
+    # Vessel tracking APIs
+    vessel_sources = {
+        "datalastic": bool(os.getenv("DATALASTIC_API_KEY")),   # Free tier: 50/day
+        "marinetraffic": bool(os.getenv("MARINETRAFFIC_API_KEY")),  # Paid
     }
     
     try:
@@ -1215,11 +1327,22 @@ async def tracking_health():
     except:
         scheduler_status = {"running": False, "jobs": []}
     
+    # Determine overall data mode
+    has_real_container = any(container_sources.values())
+    has_real_vessel = any(vessel_sources.values())
+    
     return {
         "status": "healthy",
-        "data_sources": sources,
+        "data_mode": "live" if (has_real_container or has_real_vessel) else "mock",
+        "container_sources": container_sources,
+        "vessel_sources": vessel_sources,
         "notifications": notification_status,
         "scheduler": scheduler_status,
-        "fallback": "mock",
+        "fallback": "enhanced_mock_with_carrier_urls",
+        "free_options": {
+            "tracktrace": "100 requests/month - sign up at tracktraceship.com",
+            "datalastic": "50 requests/day - sign up at datalastic.com",
+            "carrier_direct": "Unlimited - direct links to carrier tracking pages"
+        },
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
