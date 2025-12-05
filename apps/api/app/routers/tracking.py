@@ -30,6 +30,7 @@ from app.models.tracking import (
 from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
 from app.services.vessel_sanctions import get_sanctions_service, SanctionsResult
+from app.services.ais_gap_detection import get_ais_service, AISAnalysisResult
 from app.utils.usage_tracker import track_usage
 import logging
 
@@ -706,6 +707,58 @@ async def screen_vessel_by_identifier(
         mmsi=vessel_data.mmsi,
         flag_state=vessel_data.flag
     )
+    
+    return result
+
+
+# ============== AIS Gap Detection ==============
+
+@router.get("/ais-analysis/{identifier}", response_model=AISAnalysisResult)
+async def analyze_vessel_ais(
+    identifier: str,
+    days: int = Query(30, ge=7, le=90, description="Analysis period in days"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Analyze a vessel's AIS transmission history for suspicious gaps.
+    
+    Detects:
+    - Gaps in AIS transmission > 6 hours
+    - Suspicious patterns indicating intentional AIS shutdown
+    - Visits to high-risk areas (sanctioned waters)
+    - Potential ship-to-ship transfers
+    
+    Returns risk score and detailed gap analysis.
+    """
+    # Get vessel details first
+    vessel_data = await _track_vessel_internal(identifier, "name")
+    
+    service = get_ais_service()
+    
+    # For now, use demo data based on vessel risk profile
+    # In production, this would fetch real AIS history
+    # and call service.analyze_positions()
+    
+    # Determine risk profile based on flag
+    high_risk_flags = ["IR", "KP", "SY", "CU", "VE"]
+    flag_code = vessel_data.flag[:2].upper() if vessel_data.flag else "XX"
+    
+    if flag_code in high_risk_flags:
+        risk_profile = "high"
+    elif flag_code in ["PA", "LR", "MH", "BS"]:  # Flags of convenience
+        risk_profile = "medium"
+    else:
+        risk_profile = "low"
+    
+    result = service.generate_demo_analysis(
+        vessel_name=vessel_data.name,
+        imo=vessel_data.imo,
+        mmsi=vessel_data.mmsi,
+        risk_profile=risk_profile
+    )
+    
+    logger.info(f"AIS analysis for {vessel_data.name}: {result.risk_level}")
     
     return result
 

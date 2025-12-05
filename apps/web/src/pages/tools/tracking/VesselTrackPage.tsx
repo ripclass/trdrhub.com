@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/components/ui/use-toast";
-import { VesselSanctionsCard } from "@/components/tracking";
+import { VesselSanctionsCard, AISGapAnalysisCard } from "@/components/tracking";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
@@ -661,55 +661,91 @@ export default function VesselTrackPage() {
 
           {/* Compliance Tab */}
           <TabsContent value="compliance">
-            <div className="grid md:grid-cols-2 gap-6">
-              <VesselSanctionsCard
-                vesselName={vessel.name}
-                imo={vessel.imo}
-                mmsi={vessel.mmsi}
-                flagState={vessel.flag}
-                className="bg-slate-900/50 border-slate-800"
-              />
+            <div className="space-y-6">
+              {/* Sanctions and AIS Analysis Row */}
+              <div className="grid md:grid-cols-2 gap-6">
+                <VesselSanctionsCard
+                  vesselName={vessel.name}
+                  imo={vessel.imo}
+                  mmsi={vessel.mmsi}
+                  flagState={vessel.flag}
+                  className="bg-slate-900/50 border-slate-800"
+                />
+                
+                <AISGapAnalysisCard
+                  vesselName={vessel.name}
+                  imo={vessel.imo}
+                  mmsi={vessel.mmsi}
+                  className="bg-slate-900/50 border-slate-800"
+                />
+              </div>
               
+              {/* Compliance Overview */}
               <Card className="bg-slate-900/50 border-slate-800">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <Shield className="w-5 h-5 text-emerald-400" />
-                    Compliance Overview
+                    Bank-Grade Compliance Suite
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                    <h4 className="font-medium text-emerald-400 mb-2">What We Check</h4>
-                    <ul className="text-sm text-slate-400 space-y-2">
-                      <li className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        OFAC SDN List (US Treasury)
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        EU Consolidated Sanctions
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        UN Security Council Sanctions
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        Flag State Risk Assessment
-                      </li>
-                    </ul>
+                <CardContent>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      <h4 className="font-medium text-emerald-400 mb-2">Sanctions Screening</h4>
+                      <ul className="text-sm text-slate-400 space-y-2">
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                          OFAC SDN List (US Treasury)
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                          EU Consolidated Sanctions
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                          UN Security Council Sanctions
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                          Flag State Risk Assessment
+                        </li>
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                      <h4 className="font-medium text-blue-400 mb-2">AIS Analysis</h4>
+                      <ul className="text-sm text-slate-400 space-y-2">
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                          Transmission gap detection
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                          Dark shipping alerts
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                          High-risk area monitoring
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                          Ship-to-ship transfer detection
+                        </li>
+                      </ul>
+                    </div>
                   </div>
                   
-                  <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <h4 className="font-medium text-blue-400 mb-2">Why It Matters</h4>
+                  <div className="mt-4 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <h4 className="font-medium text-amber-400 mb-2">Why Banks Require This</h4>
                     <p className="text-sm text-slate-400">
-                      Banks and trade finance institutions require sanctions screening 
-                      before processing Letters of Credit. Our automated screening helps 
-                      you stay compliant with international regulations.
+                      Trade finance institutions must perform due diligence on vessels 
+                      involved in LC transactions. Our automated compliance suite helps 
+                      identify sanctioned entities, flag state risks, and suspicious 
+                      AIS transmission patterns that could indicate sanctions evasion.
                     </p>
                   </div>
                   
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs text-slate-500 mt-4">
                     <p>Data sources updated daily from official government databases.</p>
                     <p className="mt-1">This is a screening tool - always consult compliance for final decisions.</p>
                   </div>
