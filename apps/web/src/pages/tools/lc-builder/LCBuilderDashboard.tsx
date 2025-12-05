@@ -16,6 +16,9 @@ import {
   ArrowLeft,
   Building2,
   ChevronRight,
+  Import,
+  Loader2,
+  FileCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +43,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -76,6 +87,17 @@ const riskColors = (score: number | null) => {
   return "text-red-500";
 };
 
+interface LCopilotSession {
+  session_id: string;
+  created_at: string;
+  lc_number: string;
+  beneficiary: string;
+  applicant: string;
+  amount: number | null;
+  currency: string;
+  has_extracted_data: boolean;
+}
+
 export default function LCBuilderDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -86,11 +108,70 @@ export default function LCBuilderDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   
+  // LCopilot Import State
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [lcopilotSessions, setLcopilotSessions] = useState<LCopilotSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [importing, setImporting] = useState(false);
+  
   useEffect(() => {
     if (session?.access_token) {
       fetchApplications();
     }
   }, [statusFilter, session?.access_token]);
+
+  const fetchLCopilotSessions = async () => {
+    if (!session?.access_token) return;
+    
+    setLoadingSessions(true);
+    try {
+      const res = await fetch(`${API_BASE}/lc-builder/lcopilot/sessions`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setLcopilotSessions(data.sessions || []);
+      }
+    } catch (error) {
+      console.error("Error fetching LCopilot sessions:", error);
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  const handleImportFromLCopilot = async (sessionId: string) => {
+    if (!session?.access_token) return;
+    
+    setImporting(true);
+    try {
+      const res = await fetch(`${API_BASE}/lc-builder/lcopilot/import/${sessionId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        toast({
+          title: "Imported Successfully",
+          description: `LC Application ${data.reference_number} created from LCopilot validation`,
+        });
+        setShowImportDialog(false);
+        fetchApplications();
+        navigate(`/lc-builder/dashboard/edit/${data.id}`);
+      } else {
+        throw new Error("Import failed");
+      }
+    } catch (error) {
+      toast({
+        title: "Import Failed",
+        description: "Could not import from LCopilot session",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
   
   const fetchApplications = async () => {
     try {
@@ -195,13 +276,25 @@ export default function LCBuilderDashboard() {
                 Create and manage LC applications
               </p>
             </div>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => navigate("/lc-builder/dashboard/new")}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New LC Application
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  fetchLCopilotSessions();
+                  setShowImportDialog(true);
+                }}
+              >
+                <Import className="h-4 w-4 mr-2" />
+                Import from LCopilot
+              </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => navigate("/lc-builder/dashboard/new")}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New LC Application
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -485,6 +578,79 @@ export default function LCBuilderDashboard() {
           </div>
         )}
       </div>
+
+      {/* LCopilot Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-emerald-400" />
+              Import from LCopilot
+            </DialogTitle>
+            <DialogDescription>
+              Select a completed LCopilot validation session to create an LC application with pre-filled data.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingSessions ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+            </div>
+          ) : lcopilotSessions.length === 0 ? (
+            <div className="text-center py-8">
+              <FileCheck className="h-12 w-12 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400">No LCopilot sessions found</p>
+              <p className="text-sm text-slate-500 mt-1">
+                Complete an LC validation in LCopilot to import the data here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {lcopilotSessions.map((sess) => (
+                <button
+                  key={sess.session_id}
+                  className="w-full text-left p-4 rounded-lg border border-slate-700 hover:border-emerald-500 hover:bg-slate-800/50 transition-colors"
+                  onClick={() => handleImportFromLCopilot(sess.session_id)}
+                  disabled={importing}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-white">
+                          {sess.lc_number || "LC Reference"}
+                        </p>
+                        {sess.has_extracted_data && (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            Ready
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-400 mt-1">
+                        <span>{sess.beneficiary || "Unknown Beneficiary"}</span>
+                        {sess.amount && (
+                          <span className="text-emerald-400">
+                            {sess.currency} {Number(sess.amount).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Validated: {new Date(sess.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-slate-500" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

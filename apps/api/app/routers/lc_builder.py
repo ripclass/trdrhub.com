@@ -6,7 +6,7 @@ Endpoints for creating and managing LC applications.
 
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
@@ -1178,6 +1178,207 @@ async def duplicate_application(
 
 
 # ============================================================================
+# Amendment Builder
+# ============================================================================
+
+class AmendmentRequest(BaseModel):
+    """Request to create an amendment"""
+    amendment_type: str = Field(..., description="Type: increase_amount, decrease_amount, extend_expiry, change_shipment, add_documents, change_goods, other")
+    reason: str = Field(..., description="Reason for the amendment")
+    changes: Dict[str, Any] = Field(default_factory=dict, description="Fields to change")
+
+
+@router.post("/applications/{application_id}/amend")
+async def create_amendment(
+    application_id: str,
+    request: AmendmentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create an amendment to an existing LC application.
+    This creates a new version (if not draft) and applies the changes.
+    """
+    from app.models.lc_builder import LCApplicationVersion
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Store original state before amendment
+    original_snapshot = _lc_to_snapshot(lc)
+    
+    # Get latest version number
+    latest = db.query(LCApplicationVersion).filter(
+        LCApplicationVersion.lc_application_id == application_id
+    ).order_by(LCApplicationVersion.version_number.desc()).first()
+    
+    next_version = (latest.version_number + 1) if latest else 1
+    
+    # Create version record with pre-amendment state
+    pre_amendment_version = LCApplicationVersion(
+        lc_application_id=lc.id,
+        version_number=next_version,
+        snapshot=original_snapshot,
+        change_summary=f"Pre-amendment snapshot: {request.amendment_type}",
+        created_by=current_user.id
+    )
+    db.add(pre_amendment_version)
+    
+    # Apply changes based on amendment type
+    changes_applied = []
+    
+    for field, value in request.changes.items():
+        if hasattr(lc, field):
+            old_value = getattr(lc, field)
+            
+            # Handle enum fields
+            if field == "payment_terms" and isinstance(value, str):
+                value = PaymentTerms(value)
+            elif field == "confirmation_instructions" and isinstance(value, str):
+                value = ConfirmationInstructions(value)
+            elif field == "lc_type" and isinstance(value, str):
+                value = LCType(value)
+            
+            # Handle date fields
+            if field in ["expiry_date", "latest_shipment_date"] and isinstance(value, str):
+                try:
+                    from dateutil import parser as date_parser
+                    value = date_parser.parse(value)
+                except:
+                    pass
+            
+            setattr(lc, field, value)
+            changes_applied.append({
+                "field": field,
+                "old_value": str(old_value) if old_value else None,
+                "new_value": str(value) if value else None,
+            })
+    
+    # Update status to AMENDED if it was submitted/approved
+    if lc.status in [LCStatus.SUBMITTED, LCStatus.APPROVED]:
+        lc.status = LCStatus.AMENDED
+    
+    lc.updated_at = datetime.utcnow()
+    
+    # Re-validate
+    validation = validate_lc_application(lc)
+    lc.validation_issues = [i.dict() for i in validation.issues]
+    lc.risk_score = validation.risk_score
+    lc.risk_details = validation.risk_details
+    
+    db.commit()
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "status": lc.status.value,
+        "amendment_type": request.amendment_type,
+        "changes_applied": changes_applied,
+        "version_created": next_version,
+        "validation": {
+            "is_valid": validation.is_valid,
+            "risk_score": validation.risk_score,
+            "issue_count": len(validation.issues),
+        }
+    }
+
+
+@router.get("/applications/{application_id}/amendment-options")
+async def get_amendment_options(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get available amendment options for an LC application.
+    Returns common amendment types and which fields can be changed.
+    """
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    return {
+        "current_values": {
+            "amount": lc.amount,
+            "currency": lc.currency,
+            "expiry_date": lc.expiry_date.isoformat() if lc.expiry_date else None,
+            "latest_shipment_date": lc.latest_shipment_date.isoformat() if lc.latest_shipment_date else None,
+            "port_of_loading": lc.port_of_loading,
+            "port_of_discharge": lc.port_of_discharge,
+            "goods_description": lc.goods_description,
+            "documents_count": len(lc.documents_required or []),
+        },
+        "amendment_types": [
+            {
+                "type": "increase_amount",
+                "label": "Increase LC Amount",
+                "description": "Increase the documentary credit amount",
+                "fields": ["amount"],
+                "notes": "May require bank approval",
+            },
+            {
+                "type": "decrease_amount",
+                "label": "Decrease LC Amount",
+                "description": "Reduce the documentary credit amount",
+                "fields": ["amount"],
+                "notes": "Usually approved quickly",
+            },
+            {
+                "type": "extend_expiry",
+                "label": "Extend Expiry Date",
+                "description": "Extend the LC expiry and/or shipment date",
+                "fields": ["expiry_date", "latest_shipment_date"],
+                "notes": "Common amendment type",
+            },
+            {
+                "type": "change_shipment",
+                "label": "Change Shipment Details",
+                "description": "Modify ports, partial shipments, or transhipment",
+                "fields": ["port_of_loading", "port_of_discharge", "partial_shipments", "transhipment"],
+                "notes": "May affect freight costs",
+            },
+            {
+                "type": "add_documents",
+                "label": "Add/Remove Documents",
+                "description": "Modify required documents list",
+                "fields": ["documents_required"],
+                "notes": "Check beneficiary capability",
+            },
+            {
+                "type": "change_goods",
+                "label": "Change Goods Description",
+                "description": "Modify the goods description",
+                "fields": ["goods_description", "hs_code"],
+                "notes": "Must match actual shipment",
+            },
+            {
+                "type": "change_terms",
+                "label": "Change Payment Terms",
+                "description": "Modify payment terms or tenor",
+                "fields": ["payment_terms", "usance_days"],
+                "notes": "May affect pricing",
+            },
+            {
+                "type": "other",
+                "label": "Other Amendment",
+                "description": "Other changes to LC terms",
+                "fields": ["additional_conditions", "tolerance_plus", "tolerance_minus", "incoterms"],
+                "notes": "Specify details",
+            },
+        ]
+    }
+
+
+# ============================================================================
 # Profile Management Endpoints (Applicant & Beneficiary)
 # ============================================================================
 
@@ -1542,6 +1743,315 @@ async def import_from_previous_lc(
         "fields_imported": imported,
         "source_reference": source_lc.reference_number,
         "target_id": str(target_lc.id)
+    }
+
+
+# ============================================================================
+# LCopilot Integration - Import from Validation Sessions
+# ============================================================================
+
+@router.get("/lcopilot/sessions")
+async def list_lcopilot_sessions(
+    limit: int = Query(default=20, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List user's LCopilot validation sessions that can be imported.
+    Returns sessions with extracted LC data.
+    """
+    from app.models import ValidationSession, SessionStatus
+    
+    # Get user's completed validation sessions
+    sessions = db.query(ValidationSession).filter(
+        ValidationSession.user_id == current_user.id,
+        ValidationSession.status.in_([SessionStatus.COMPLETED.value, "completed", "validated"]),
+        ValidationSession.extracted_data.isnot(None)
+    ).order_by(ValidationSession.created_at.desc()).limit(limit).all()
+    
+    result = []
+    for s in sessions:
+        extracted = s.extracted_data or {}
+        lc_data = extracted.get("lc") or {}
+        mt700 = lc_data.get("mt700") or {}
+        
+        result.append({
+            "session_id": str(s.id),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "status": s.status,
+            "lc_number": lc_data.get("lc_number") or mt700.get("20") or "Unknown",
+            "beneficiary": lc_data.get("beneficiary_name") or mt700.get("beneficiary") or "",
+            "applicant": lc_data.get("applicant_name") or mt700.get("applicant") or "",
+            "amount": lc_data.get("amount") or mt700.get("32B_amount"),
+            "currency": lc_data.get("currency") or mt700.get("32B_currency") or "USD",
+            "has_extracted_data": bool(lc_data),
+        })
+    
+    return {"sessions": result, "count": len(result)}
+
+
+@router.get("/lcopilot/sessions/{session_id}/preview")
+async def preview_lcopilot_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview the LC data extracted from an LCopilot validation session.
+    Shows what fields will be imported.
+    """
+    from app.models import ValidationSession
+    
+    session = db.query(ValidationSession).filter(
+        ValidationSession.id == session_id,
+        ValidationSession.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Validation session not found")
+    
+    if not session.extracted_data:
+        raise HTTPException(status_code=400, detail="Session has no extracted data")
+    
+    extracted = session.extracted_data or {}
+    lc_data = extracted.get("lc") or {}
+    mt700 = lc_data.get("mt700") or {}
+    
+    # Build preview of importable fields
+    preview = {
+        "session_id": str(session.id),
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        
+        # Basic LC Info
+        "lc_number": lc_data.get("lc_number") or mt700.get("20"),
+        "lc_type": lc_data.get("lc_type") or lc_data.get("form_of_doc_credit") or mt700.get("form_of_doc_credit"),
+        
+        # Amount
+        "currency": lc_data.get("currency") or mt700.get("32B_currency"),
+        "amount": lc_data.get("amount") or mt700.get("32B_amount"),
+        "tolerance_plus": lc_data.get("tolerance_plus") or mt700.get("39A_tolerance_plus"),
+        "tolerance_minus": lc_data.get("tolerance_minus") or mt700.get("39A_tolerance_minus"),
+        
+        # Parties
+        "applicant_name": lc_data.get("applicant_name") or lc_data.get("applicant") or mt700.get("50"),
+        "applicant_address": lc_data.get("applicant_address") or mt700.get("applicant_address"),
+        "beneficiary_name": lc_data.get("beneficiary_name") or lc_data.get("beneficiary") or mt700.get("59"),
+        "beneficiary_address": lc_data.get("beneficiary_address") or mt700.get("beneficiary_address"),
+        
+        # Banks
+        "issuing_bank": lc_data.get("issuing_bank") or mt700.get("issuing_bank"),
+        "advising_bank": lc_data.get("advising_bank") or mt700.get("advising_bank"),
+        
+        # Shipment
+        "port_of_loading": lc_data.get("port_of_loading") or mt700.get("44E"),
+        "port_of_discharge": lc_data.get("port_of_discharge") or mt700.get("44F"),
+        "latest_shipment_date": lc_data.get("latest_shipment_date") or mt700.get("44C"),
+        "incoterms": lc_data.get("incoterms"),
+        "partial_shipments": lc_data.get("partial_shipments") or mt700.get("43P"),
+        "transhipment": lc_data.get("transhipment") or mt700.get("43T"),
+        
+        # Goods
+        "goods_description": lc_data.get("goods_description") or mt700.get("45A"),
+        
+        # Validity
+        "expiry_date": lc_data.get("expiry_date") or mt700.get("31D_expiry_date"),
+        "expiry_place": lc_data.get("expiry_place") or mt700.get("31D_expiry_place"),
+        "presentation_period": lc_data.get("presentation_period") or mt700.get("48"),
+        
+        # Conditions
+        "additional_conditions": lc_data.get("additional_conditions") or lc_data.get("clauses") or mt700.get("47A") or [],
+        
+        # Documents
+        "documents_required": lc_data.get("documents_required") or mt700.get("46A") or [],
+    }
+    
+    # Count non-null fields
+    fields_available = sum(1 for v in preview.values() if v is not None and v != "" and v != [])
+    
+    return {
+        "preview": preview,
+        "fields_available": fields_available,
+        "can_import": fields_available >= 3,  # At least 3 meaningful fields
+    }
+
+
+@router.post("/lcopilot/import/{session_id}")
+async def import_from_lcopilot(
+    session_id: str,
+    name: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new LC application from an LCopilot validation session.
+    Imports all extracted LC data.
+    """
+    from app.models import ValidationSession
+    
+    session = db.query(ValidationSession).filter(
+        ValidationSession.id == session_id,
+        ValidationSession.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Validation session not found")
+    
+    if not session.extracted_data:
+        raise HTTPException(status_code=400, detail="Session has no extracted data")
+    
+    extracted = session.extracted_data or {}
+    lc_data = extracted.get("lc") or {}
+    mt700 = lc_data.get("mt700") or {}
+    
+    # Parse amount
+    amount_raw = lc_data.get("amount") or mt700.get("32B_amount") or 0
+    try:
+        if isinstance(amount_raw, str):
+            amount = float(amount_raw.replace(",", ""))
+        elif isinstance(amount_raw, dict):
+            amount = float(amount_raw.get("value", 0))
+        else:
+            amount = float(amount_raw)
+    except (ValueError, TypeError):
+        amount = 0.0
+    
+    # Parse expiry date
+    expiry_str = lc_data.get("expiry_date") or mt700.get("31D_expiry_date")
+    expiry_date = None
+    if expiry_str:
+        try:
+            from dateutil import parser as date_parser
+            expiry_date = date_parser.parse(expiry_str)
+        except:
+            # Default to 90 days from now
+            expiry_date = datetime.utcnow() + timedelta(days=90)
+    else:
+        expiry_date = datetime.utcnow() + timedelta(days=90)
+    
+    # Determine LC type
+    lc_type_str = (lc_data.get("lc_type") or lc_data.get("form_of_doc_credit") or 
+                   mt700.get("form_of_doc_credit") or "documentary").lower()
+    
+    if "standby" in lc_type_str or "sblc" in lc_type_str:
+        lc_type = LCType.STANDBY
+    elif "revolving" in lc_type_str:
+        lc_type = LCType.REVOLVING
+    elif "transferable" in lc_type_str:
+        lc_type = LCType.TRANSFERABLE
+    else:
+        lc_type = LCType.DOCUMENTARY
+    
+    # Parse tolerances
+    tolerance_plus = lc_data.get("tolerance_plus") or mt700.get("39A_tolerance_plus") or 5
+    tolerance_minus = lc_data.get("tolerance_minus") or mt700.get("39A_tolerance_minus") or 5
+    try:
+        tolerance_plus = float(str(tolerance_plus).replace("%", ""))
+        tolerance_minus = float(str(tolerance_minus).replace("%", ""))
+    except:
+        tolerance_plus = 5.0
+        tolerance_minus = 5.0
+    
+    # Parse partial shipments / transhipment
+    partial_raw = lc_data.get("partial_shipments") or mt700.get("43P")
+    tranship_raw = lc_data.get("transhipment") or mt700.get("43T")
+    
+    partial_shipments = True
+    if partial_raw:
+        partial_str = str(partial_raw).lower()
+        partial_shipments = "allowed" in partial_str or "permitted" in partial_str or partial_str == "true"
+    
+    transhipment = True
+    if tranship_raw:
+        tranship_str = str(tranship_raw).lower()
+        transhipment = "allowed" in tranship_str or "permitted" in tranship_str or tranship_str == "true"
+    
+    # Build documents list
+    docs_raw = lc_data.get("documents_required") or mt700.get("46A") or []
+    documents_required = []
+    if isinstance(docs_raw, list):
+        for doc in docs_raw:
+            if isinstance(doc, str):
+                documents_required.append({
+                    "document_type": doc,
+                    "copies_original": 1,
+                    "copies_copy": 0,
+                    "is_required": True,
+                })
+            elif isinstance(doc, dict):
+                documents_required.append(doc)
+    
+    # Create LC Application
+    lc = LCApplication(
+        user_id=current_user.id,
+        reference_number=generate_reference_number(),
+        name=name or f"Import from LCopilot - {session.created_at.strftime('%Y-%m-%d') if session.created_at else 'Session'}",
+        lc_type=lc_type,
+        status=LCStatus.DRAFT,
+        
+        # Amount
+        currency=lc_data.get("currency") or mt700.get("32B_currency") or "USD",
+        amount=amount,
+        tolerance_plus=tolerance_plus,
+        tolerance_minus=tolerance_minus,
+        
+        # Parties
+        applicant_name=lc_data.get("applicant_name") or lc_data.get("applicant") or mt700.get("50") or "Unknown Applicant",
+        applicant_address=lc_data.get("applicant_address") or mt700.get("applicant_address"),
+        applicant_country=lc_data.get("applicant_country"),
+        
+        beneficiary_name=lc_data.get("beneficiary_name") or lc_data.get("beneficiary") or mt700.get("59") or "Unknown Beneficiary",
+        beneficiary_address=lc_data.get("beneficiary_address") or mt700.get("beneficiary_address"),
+        beneficiary_country=lc_data.get("beneficiary_country"),
+        
+        # Banks
+        issuing_bank_name=lc_data.get("issuing_bank") or mt700.get("issuing_bank"),
+        advising_bank_name=lc_data.get("advising_bank") or mt700.get("advising_bank"),
+        
+        # Shipment
+        port_of_loading=lc_data.get("port_of_loading") or mt700.get("44E"),
+        port_of_discharge=lc_data.get("port_of_discharge") or mt700.get("44F"),
+        place_of_delivery=lc_data.get("place_of_delivery"),
+        incoterms=lc_data.get("incoterms"),
+        partial_shipments=partial_shipments,
+        transhipment=transhipment,
+        
+        # Goods
+        goods_description=lc_data.get("goods_description") or mt700.get("45A") or "Imported from LCopilot",
+        
+        # Validity
+        expiry_date=expiry_date,
+        expiry_place=lc_data.get("expiry_place") or mt700.get("31D_expiry_place"),
+        presentation_period=lc_data.get("presentation_period") or mt700.get("48") or 21,
+        
+        # Documents
+        documents_required=documents_required,
+        
+        # Additional conditions
+        additional_conditions=lc_data.get("additional_conditions") or lc_data.get("clauses") or [],
+    )
+    
+    db.add(lc)
+    db.commit()
+    db.refresh(lc)
+    
+    # Validate and get risk score
+    validation = validate_lc_application(lc)
+    lc.validation_issues = [i.dict() for i in validation.issues]
+    lc.risk_score = validation.risk_score
+    lc.risk_details = validation.risk_details
+    db.commit()
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "status": lc.status.value,
+        "imported_from": str(session.id),
+        "validation": {
+            "is_valid": validation.is_valid,
+            "risk_score": validation.risk_score,
+            "issue_count": len(validation.issues),
+        },
+        "created_at": lc.created_at.isoformat()
     }
 
 
