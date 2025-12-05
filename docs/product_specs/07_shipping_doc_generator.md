@@ -326,18 +326,18 @@ class ConsistencyValidator:
 
 ---
 
-## MVP Features (Week 1-3)
+## MVP Features (Week 1-3) ✅ COMPLETE
 
-- [ ] Commercial Invoice generator
-- [ ] Packing List generator
-- [ ] LC data import (manual)
-- [ ] PDF export
-- [ ] Basic validation
+- [x] Commercial Invoice generator
+- [x] Packing List generator
+- [x] LC data import (manual)
+- [x] PDF export
+- [x] Basic validation
 
-## V2 Features (Week 4-5)
+## V2 Features (Week 4-5) ✅ COMPLETE
 
-- [ ] Beneficiary Certificate
-- [ ] Bill of Exchange
+- [x] Beneficiary Certificate
+- [x] Bill of Exchange
 - [ ] MT700 import parser
 - [ ] LCopilot integration
 - [ ] Consistency validation
@@ -346,7 +346,7 @@ class ConsistencyValidator:
 
 - [ ] Certificate of Origin (Chamber formats)
 - [ ] Custom templates
-- [ ] Multi-currency
+- [x] Multi-currency
 - [ ] Digital signatures
 
 ---

@@ -6,7 +6,7 @@
 
 **16 products** across 5 categories, serving the complete trade finance lifecycle.
 
-**Current Status:** 3 tools LIVE, 13 planned
+**Current Status:** 4 tools LIVE, 12 planned
 
 ---
 
@@ -30,8 +30,8 @@
 │                                                             │
 │  📦 SHIPMENT & LOGISTICS (3 products)                       │
 │  ├── Container/Vessel Tracker ✅ LIVE                       │
-│  ├── eBL Manager 📅 Planned                                 │
-│  └── Shipping Doc Generator 📅 Planned                      │
+│  ├── Shipping Doc Generator ✅ LIVE                         │
+│  └── eBL Manager 📅 Planned                                 │
 │                                                             │
 │  💰 FINANCE & PAYMENTS (3 products)                         │
 │  ├── Trade Finance Calculator 📅 Planned ⭐ FREE/LEAD GEN   │

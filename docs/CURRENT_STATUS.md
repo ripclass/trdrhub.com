@@ -72,9 +72,35 @@ TRDR Hub is a comprehensive trade compliance platform serving SME exporters, tra
 | Feature | Status |
 |---------|--------|
 | Real carrier API integration | 🔄 In Progress |
-| Live vessel map | 📅 Planned |
+| Live vessel map | ✅ Live |
 | Port congestion data | 📅 Planned |
-| Vessel sanctions screening | 📅 Planned |
+| Vessel sanctions screening | ✅ Live |
+| AIS gap detection | ✅ Live |
+| PDF compliance reports | ✅ Live |
+
+---
+
+### 4. Shipping Doc Generator
+**Status:** ✅ Production  
+**URL:** `/doc-generator/dashboard`
+
+| Feature | Status |
+|---------|--------|
+| Commercial Invoice generation | ✅ Live |
+| Packing List generation | ✅ Live |
+| Beneficiary Certificate | ✅ Live |
+| Bill of Exchange (Draft) | ✅ Live |
+| Multi-step wizard | ✅ Live |
+| Line items management | ✅ Live |
+| PDF download (ZIP) | ✅ Live |
+| Document preview | ✅ Live |
+
+| Feature | Status |
+|---------|--------|
+| Certificate of Origin | 📅 Planned |
+| LCopilot integration | 📅 Planned |
+| MT700 parser | 📅 Planned |
+| Custom templates | 📅 Planned |
 
 ---
 
@@ -105,9 +131,9 @@ All tool landing pages are live with marketing content:
 | LCopilot | `/lcopilot` | → Live tool |
 | Price Verify | `/price-verify` | → Live tool |
 | Container Tracker | `/tracking` | → Live tool |
+| Doc Generator | `/doc-generator` | → Live tool |
 | HS Code Lookup | `/hs-lookup` | Coming Soon |
 | Sanctions Screening | `/sanctions` | Coming Soon |
-| Doc Generator | `/doc-generator` | Coming Soon |
 | LC Builder | `/lc-builder` | Coming Soon |
 | Counterparty Risk | `/counterparty-risk` | Coming Soon |
 | Dual-Use Checker | `/dual-use` | Coming Soon |
@@ -156,8 +182,8 @@ All tool landing pages are live with marketing content:
 | Countries Covered | 160+ |
 | LC Validation Accuracy | 94% |
 | Average Processing Time | 47 seconds |
-| Tools Live | 3 |
-| Tools Planned | 13 |
+| Tools Live | 4 |
+| Tools Planned | 12 |
 
 ---
 
