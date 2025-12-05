@@ -1061,15 +1061,88 @@ async def check_and_send_alerts(db: Session):
                     if tracking_data.status == "delayed":
                         await notification_service.send_delay_alert(
                             container_number=tracking_data.container_number,
-                            current_eta=tracking_data.eta,
+                            original_eta="Unknown",  # Would need to track previous ETA
+                            new_eta=tracking_data.eta or "Unknown",
                             delay_hours=alert.threshold_hours or 0,
+                            reason="Shipping delay detected",
                             user_email=user_email,
                             user_phone=user_phone,
                             user_name=user.email.split("@")[0] if user.email else "User",
                         )
                         alert.last_triggered = datetime.utcnow()
                         alert.trigger_count += 1
+                        
+                        # Log notification
+                        notification = TrackingNotificationModel(
+                            id=uuid.uuid4(),
+                            alert_id=alert.id,
+                            user_id=user.id,
+                            notification_type="email" if user_email else "sms",
+                            recipient=user_email or user_phone or "unknown",
+                            subject=f"Delay Alert: {tracking_data.container_number}",
+                            trigger_reason="Shipment status is delayed",
+                            shipment_reference=alert.reference,
+                            shipment_status=tracking_data.status,
+                            status=NotificationStatus.SENT.value,
+                            sent_at=datetime.utcnow(),
+                        )
+                        db.add(notification)
+                        
                         logger.info(f"Sent delay alert for container {alert.reference}")
+                
+                # Check for LC risk alert
+                elif alert.alert_type == AlertType.LC_RISK.value:
+                    # Get linked shipment to check LC expiry
+                    shipment = db.query(TrackedShipment).filter(
+                        TrackedShipment.reference == alert.reference,
+                        TrackedShipment.user_id == alert.user_id,
+                    ).first()
+                    
+                    if shipment and shipment.lc_expiry and tracking_data.eta:
+                        try:
+                            eta_date = datetime.fromisoformat(tracking_data.eta.replace("Z", "+00:00"))
+                            lc_expiry = shipment.lc_expiry
+                            
+                            # Make timezone aware if needed
+                            if lc_expiry.tzinfo is None:
+                                from datetime import timezone
+                                lc_expiry = lc_expiry.replace(tzinfo=timezone.utc)
+                            
+                            days_until_lc_expiry = (lc_expiry - eta_date).days
+                            threshold = alert.threshold_days or 7  # Default 7 days
+                            
+                            # Alert if ETA is within threshold days of LC expiry
+                            if days_until_lc_expiry <= threshold and days_until_lc_expiry >= 0:
+                                await notification_service.send_lc_risk_alert(
+                                    container_number=tracking_data.container_number,
+                                    eta=tracking_data.eta,
+                                    lc_expiry=lc_expiry.strftime("%Y-%m-%d"),
+                                    days_remaining=days_until_lc_expiry,
+                                    user_email=user_email,
+                                    user_phone=user_phone,
+                                    user_name=user.email.split("@")[0] if user.email else "User",
+                                )
+                                alert.last_triggered = datetime.utcnow()
+                                alert.trigger_count += 1
+                                
+                                notification = TrackingNotificationModel(
+                                    id=uuid.uuid4(),
+                                    alert_id=alert.id,
+                                    user_id=user.id,
+                                    notification_type="email" if user_email else "sms",
+                                    recipient=user_email or user_phone or "unknown",
+                                    subject=f"LC Risk Alert: {tracking_data.container_number}",
+                                    trigger_reason=f"LC expires in {days_until_lc_expiry} days",
+                                    shipment_reference=alert.reference,
+                                    shipment_status=tracking_data.status,
+                                    status=NotificationStatus.SENT.value,
+                                    sent_at=datetime.utcnow(),
+                                )
+                                db.add(notification)
+                                
+                                logger.info(f"Sent LC risk alert for {alert.reference}")
+                        except Exception as e:
+                            logger.error(f"Error processing LC risk alert: {e}")
             
             elif alert.tracking_type == "vessel":
                 search_type = "imo" if alert.reference.startswith("IMO") else \

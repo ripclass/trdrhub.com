@@ -333,6 +333,162 @@ def get_delay_sms(
     return f"TRDR Hub: Container {container_number} delayed {delay_hours}h. New ETA: {new_eta}"
 
 
+def get_eta_change_email(
+    container_number: str,
+    old_eta: str,
+    new_eta: str,
+    user_name: str = "User",
+) -> tuple[str, str, str]:
+    """Generate email content for ETA change alert."""
+    
+    subject = f"📅 Container {container_number} - ETA Updated"
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #e2e8f0; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: #3b82f6; padding: 20px; border-radius: 8px 8px 0 0; }}
+            .content {{ background: #1e293b; padding: 20px; border-radius: 0 0 8px 8px; }}
+            .highlight {{ background: #334155; padding: 15px; border-radius: 4px; margin: 10px 0; }}
+            .btn {{ display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; 
+                    text-decoration: none; border-radius: 6px; margin-top: 15px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 style="margin: 0; color: white;">📅 ETA Update</h1>
+            </div>
+            <div class="content">
+                <p>Hi {user_name},</p>
+                <p>The estimated arrival time for your container has been updated:</p>
+                
+                <div class="highlight">
+                    <p style="margin: 5px 0;"><strong>Container:</strong> {container_number}</p>
+                    <p style="margin: 5px 0;"><strong>Previous ETA:</strong> <s>{old_eta}</s></p>
+                    <p style="margin: 5px 0;"><strong>New ETA:</strong> {new_eta}</p>
+                </div>
+                
+                <a href="https://trdrhub.com/tracking/container/{container_number}" class="btn">
+                    View Details →
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    text = f"""
+ETA Update
+
+Hi {user_name},
+
+The estimated arrival time for your container has been updated:
+
+Container: {container_number}
+Previous ETA: {old_eta}
+New ETA: {new_eta}
+
+View details: https://trdrhub.com/tracking/container/{container_number}
+    """
+    
+    return subject, html, text
+
+
+def get_lc_risk_email(
+    container_number: str,
+    eta: str,
+    lc_expiry: str,
+    days_remaining: int,
+    user_name: str = "User",
+) -> tuple[str, str, str]:
+    """Generate email content for LC expiry risk alert."""
+    
+    urgency = "🔴 CRITICAL" if days_remaining <= 3 else "🟡 WARNING"
+    subject = f"{urgency} Container {container_number} - LC Expiry Risk"
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #e2e8f0; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: {'#dc2626' if days_remaining <= 3 else '#f59e0b'}; padding: 20px; border-radius: 8px 8px 0 0; }}
+            .content {{ background: #1e293b; padding: 20px; border-radius: 0 0 8px 8px; }}
+            .highlight {{ background: #334155; padding: 15px; border-radius: 4px; margin: 10px 0; }}
+            .warning {{ border-left: 4px solid {'#dc2626' if days_remaining <= 3 else '#f59e0b'}; padding-left: 12px; }}
+            .btn {{ display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; 
+                    text-decoration: none; border-radius: 6px; margin-top: 15px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 style="margin: 0; color: white;">{urgency} LC Expiry Risk</h1>
+            </div>
+            <div class="content">
+                <p>Hi {user_name},</p>
+                <p><strong>Your shipment arrival is approaching your LC expiry date.</strong></p>
+                
+                <div class="highlight warning">
+                    <p style="margin: 5px 0;"><strong>Container:</strong> {container_number}</p>
+                    <p style="margin: 5px 0;"><strong>ETA:</strong> {eta}</p>
+                    <p style="margin: 5px 0;"><strong>LC Expiry:</strong> {lc_expiry}</p>
+                    <p style="margin: 5px 0;"><strong>Days Remaining:</strong> {days_remaining} days</p>
+                </div>
+                
+                <p>Please take immediate action to:</p>
+                <ul>
+                    <li>Contact your bank about a potential LC amendment</li>
+                    <li>Coordinate with the shipping line for priority handling</li>
+                    <li>Prepare all documents in advance</li>
+                </ul>
+                
+                <a href="https://trdrhub.com/tracking/container/{container_number}" class="btn">
+                    View Details →
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    text = f"""
+{urgency} LC Expiry Risk
+
+Hi {user_name},
+
+Your shipment arrival is approaching your LC expiry date.
+
+Container: {container_number}
+ETA: {eta}
+LC Expiry: {lc_expiry}
+Days Remaining: {days_remaining} days
+
+Please take immediate action:
+- Contact your bank about a potential LC amendment
+- Coordinate with the shipping line for priority handling
+- Prepare all documents in advance
+
+View details: https://trdrhub.com/tracking/container/{container_number}
+    """
+    
+    return subject, html, text
+
+
+def get_lc_risk_sms(
+    container_number: str,
+    days_remaining: int,
+) -> str:
+    """Generate SMS content for LC risk alert."""
+    urgency = "CRITICAL" if days_remaining <= 3 else "WARNING"
+    return f"TRDR Hub {urgency}: Container {container_number} - LC expires in {days_remaining} days. Act now!"
+
+
 # ============== Unified Notification Service ==============
 
 class NotificationService:
@@ -392,6 +548,59 @@ class NotificationService:
         
         if user_phone:
             sms_text = get_delay_sms(container_number, delay_hours, new_eta)
+            result = await self.sms.send(user_phone, sms_text)
+            results.append(result)
+        
+        return results
+    
+    async def send_eta_change_alert(
+        self,
+        container_number: str,
+        old_eta: str,
+        new_eta: str,
+        user_email: Optional[str] = None,
+        user_phone: Optional[str] = None,
+        user_name: str = "User",
+    ) -> List[NotificationResult]:
+        """Send ETA change notifications via all configured channels."""
+        results = []
+        
+        if user_email:
+            subject, html, text = get_eta_change_email(
+                container_number, old_eta, new_eta, user_name
+            )
+            result = await self.email.send(user_email, subject, html, text)
+            results.append(result)
+        
+        if user_phone:
+            sms_text = f"TRDR Hub: Container {container_number} ETA changed from {old_eta} to {new_eta}"
+            result = await self.sms.send(user_phone, sms_text)
+            results.append(result)
+        
+        return results
+    
+    async def send_lc_risk_alert(
+        self,
+        container_number: str,
+        eta: str,
+        lc_expiry: str,
+        days_remaining: int,
+        user_email: Optional[str] = None,
+        user_phone: Optional[str] = None,
+        user_name: str = "User",
+    ) -> List[NotificationResult]:
+        """Send LC expiry risk notifications via all configured channels."""
+        results = []
+        
+        if user_email:
+            subject, html, text = get_lc_risk_email(
+                container_number, eta, lc_expiry, days_remaining, user_name
+            )
+            result = await self.email.send(user_email, subject, html, text)
+            results.append(result)
+        
+        if user_phone:
+            sms_text = get_lc_risk_sms(container_number, days_remaining)
             result = await self.sms.send(user_phone, sms_text)
             results.append(result)
         
