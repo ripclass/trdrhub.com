@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +34,11 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { loginWithEmail } = useAuth();
+
+  // Get returnUrl from query params (e.g., /login?returnUrl=/tracking/dashboard)
+  const returnUrl = searchParams.get("returnUrl");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +51,14 @@ export default function Login() {
         description: "Successfully signed in to TRDR Hub.",
       });
 
-      // Simplified routing: Most users go to Hub, only banks go to bank dashboard
+      // If returnUrl is provided, use it (for redirects from protected pages)
+      if (returnUrl) {
+        setIsLoading(false);
+        navigate(returnUrl);
+        return;
+      }
+
+      // Default routing: Most users go to Hub, only banks go to bank dashboard
       let destination = "/hub";
       
       try {
@@ -67,7 +78,8 @@ export default function Login() {
       } catch (err) {
         console.warn("Onboarding status check failed, defaulting to Hub:", err);
         // Default to Hub for all users if status check fails
-        if (profile.role === "bank_officer" || profile.role === "bank_admin") {
+        // profile.role is already mapped to "bank" for bank_officer/bank_admin
+        if (profile.role === "bank") {
           destination = "/lcopilot/bank-dashboard";
         }
       }
