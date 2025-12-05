@@ -92,10 +92,9 @@ const TOOLS = [
     color: "from-cyan-500 to-cyan-600",
     bgColor: "bg-cyan-500/10",
     borderColor: "border-cyan-500/20",
-    href: "/tools/container-tracker",
+    href: "/tracking/dashboard",
     operation: "container_tracks",
     pricePerUnit: 1.00,
-    comingSoon: true,
   },
 ];
 
