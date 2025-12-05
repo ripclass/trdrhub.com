@@ -17,6 +17,14 @@ import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import LCBuilderDashboard from './pages/tools/lc-builder/LCBuilderDashboard'
 import LCBuilderWizard from './pages/tools/lc-builder/LCBuilderWizard'
 import LCBuilderLayout from './pages/tools/lc-builder/LCBuilderLayout'
+import ClauseLibraryPage from './pages/tools/lc-builder/ClauseLibraryPage'
+import LCTemplatesPage from './pages/tools/lc-builder/LCTemplatesPage'
+import ApplicantProfilesPage from './pages/tools/lc-builder/ApplicantProfilesPage'
+import BeneficiaryDirectoryPage from './pages/tools/lc-builder/BeneficiaryDirectoryPage'
+import MT700ReferencePage from './pages/tools/lc-builder/MT700ReferencePage'
+import RiskCalculatorPage from './pages/tools/lc-builder/RiskCalculatorPage'
+import LCBuilderSettingsPage from './pages/tools/lc-builder/LCBuilderSettingsPage'
+import LCBuilderHelpPage from './pages/tools/lc-builder/LCBuilderHelpPage'
 import ContainerTrackerLanding from './pages/tools/ContainerTrackerLanding'
 import TradeAnalyticsLanding from './pages/tools/TradeAnalyticsLanding'
 import PriceVerifyLanding from './pages/tools/PriceVerifyLanding'
@@ -158,6 +166,14 @@ function App() {
           <Route index element={<LCBuilderDashboard />} />
           <Route path="new" element={<LCBuilderWizard />} />
           <Route path="edit/:id" element={<LCBuilderWizard />} />
+          <Route path="clauses" element={<ClauseLibraryPage />} />
+          <Route path="templates" element={<LCTemplatesPage />} />
+          <Route path="applicants" element={<ApplicantProfilesPage />} />
+          <Route path="beneficiaries" element={<BeneficiaryDirectoryPage />} />
+          <Route path="mt700-reference" element={<MT700ReferencePage />} />
+          <Route path="risk" element={<RiskCalculatorPage />} />
+          <Route path="settings" element={<LCBuilderSettingsPage />} />
+          <Route path="help" element={<LCBuilderHelpPage />} />
         </Route>
         <Route path="/lc-builder/wizard" element={<LCBuilderWizard />} />
         <Route path="/lc-builder/wizard/:id" element={<LCBuilderWizard />} />
