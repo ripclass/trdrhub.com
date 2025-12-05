@@ -152,9 +152,9 @@ function App() {
           <Route path="certificates" element={<CertificatesPage />} />
         </Route>
         <Route path="/lc-builder" element={<LCBuilderLanding />} />
-        <Route path="/lc-builder/dashboard" element={<PrivateRoute><LCBuilderDashboard /></PrivateRoute>} />
-        <Route path="/lc-builder/wizard" element={<PrivateRoute><LCBuilderWizard /></PrivateRoute>} />
-        <Route path="/lc-builder/wizard/:id" element={<PrivateRoute><LCBuilderWizard /></PrivateRoute>} />
+        <Route path="/lc-builder/dashboard" element={<LCBuilderDashboard />} />
+        <Route path="/lc-builder/wizard" element={<LCBuilderWizard />} />
+        <Route path="/lc-builder/wizard/:id" element={<LCBuilderWizard />} />
         <Route path="/tracking" element={<ContainerTrackerLanding />} />
         {/* Tracking Dashboard with Sidebar */}
         <Route path="/tracking/dashboard" element={<TrackingLayout />}>

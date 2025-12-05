@@ -185,7 +185,7 @@ export default function LCBuilderWizard() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { session } = useAuth();
+  const { session, user, loading: authLoading } = useAuth();
   
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>(initialFormData);
@@ -194,12 +194,19 @@ export default function LCBuilderWizard() {
   const [mt700Preview, setMT700Preview] = useState<any>(null);
   const [showMT700Dialog, setShowMT700Dialog] = useState(false);
   
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/login?redirect=/lc-builder/wizard");
+    }
+  }, [authLoading, user, navigate]);
+  
   // Load existing application if editing
   useEffect(() => {
-    if (id) {
+    if (id && session?.access_token) {
       loadApplication(id);
     }
-  }, [id]);
+  }, [id, session?.access_token]);
   
   const loadApplication = async (appId: string) => {
     try {

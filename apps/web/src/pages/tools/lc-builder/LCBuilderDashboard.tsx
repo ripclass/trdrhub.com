@@ -77,16 +77,25 @@ const riskColors = (score: number | null) => {
 export default function LCBuilderDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { session } = useAuth();
+  const { session, user, loading: authLoading } = useAuth();
   
   const [applications, setApplications] = useState<LCApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   
+  // Redirect to login if not authenticated
   useEffect(() => {
-    fetchApplications();
-  }, [statusFilter]);
+    if (!authLoading && !user) {
+      navigate("/login?redirect=/lc-builder/dashboard");
+    }
+  }, [authLoading, user, navigate]);
+  
+  useEffect(() => {
+    if (session?.access_token) {
+      fetchApplications();
+    }
+  }, [statusFilter, session?.access_token]);
   
   const fetchApplications = async () => {
     try {
