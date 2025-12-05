@@ -194,7 +194,7 @@ const getStatusBadge = (status: VesselDetails["status"]) => {
 
 export default function VesselTrackPage() {
   const { vesselId } = useParams<{ vesselId: string }>();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [vessel, setVessel] = useState<VesselDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,9 +208,6 @@ export default function VesselTrackPage() {
         // Try IMO first, then name
         const searchType = /^IMO\d+$/.test(vesselId) ? "imo" : /^\d{9}$/.test(vesselId) ? "mmsi" : "name";
         const response = await fetch(`${API_BASE}/tracking/vessel/${vesselId}?search_type=${searchType}`, {
-          headers: {
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
           credentials: "include",
         });
 
@@ -271,7 +268,7 @@ export default function VesselTrackPage() {
     };
 
     fetchVesselData();
-  }, [vesselId, session?.access_token]);
+  }, [vesselId]);
 
   if (loading) {
     return (
@@ -328,7 +325,6 @@ export default function VesselTrackPage() {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
-                        "Authorization": `Bearer ${session?.access_token}`,
                       },
                       credentials: "include",
                       body: JSON.stringify({

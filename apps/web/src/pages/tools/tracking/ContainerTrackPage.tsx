@@ -217,7 +217,7 @@ const getStatusBadge = (status: ContainerDetails["status"]) => {
 
 export default function ContainerTrackPage() {
   const { containerId } = useParams<{ containerId: string }>();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [container, setContainer] = useState<ContainerDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -229,9 +229,6 @@ export default function ContainerTrackPage() {
       
       try {
         const response = await fetch(`${API_BASE}/tracking/container/${containerId}`, {
-          headers: {
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
           credentials: "include",
         });
 
@@ -315,7 +312,7 @@ export default function ContainerTrackPage() {
     };
 
     fetchContainerData();
-  }, [containerId, session?.access_token]);
+  }, [containerId]);
 
   if (loading) {
     return (
@@ -375,7 +372,6 @@ export default function ContainerTrackPage() {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
-                        "Authorization": `Bearer ${session?.access_token}`,
                       },
                       credentials: "include",
                       body: JSON.stringify({

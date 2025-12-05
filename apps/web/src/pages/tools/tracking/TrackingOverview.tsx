@@ -208,7 +208,7 @@ const getAlertIcon = (type: TrackingAlert["type"], severity: TrackingAlert["seve
 
 export default function TrackingOverview() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState<"container" | "vessel" | "bl">("container");
@@ -228,9 +228,6 @@ export default function TrackingOverview() {
     const fetchPortfolio = async () => {
       try {
         const response = await fetch(`${API_BASE}/tracking/portfolio`, {
-          headers: {
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
           credentials: "include",
         });
         
@@ -265,12 +262,12 @@ export default function TrackingOverview() {
       }
     };
 
-    if (session?.access_token) {
+    if (user) {
       fetchPortfolio();
     } else {
       setIsLoading(false);
     }
-  }, [session?.access_token]);
+  }, [user]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,9 +284,6 @@ export default function TrackingOverview() {
       }
 
       const response = await fetch(`${API_BASE}${endpoint}`, {
-        headers: {
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
         credentials: "include",
       });
 
@@ -323,9 +317,6 @@ export default function TrackingOverview() {
     setIsLoading(true);
     try {
       const response = await fetch(`${API_BASE}/tracking/portfolio`, {
-        headers: {
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
         credentials: "include",
       });
       if (response.ok) {
