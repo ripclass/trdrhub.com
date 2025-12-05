@@ -54,7 +54,9 @@ export default function Login() {
       // If returnUrl is provided, use it (for redirects from protected pages)
       if (returnUrl) {
         setIsLoading(false);
-        navigate(returnUrl);
+        // Use window.location for a hard redirect to ensure it works
+        // after auth state changes (React navigate can get lost in re-renders)
+        window.location.href = returnUrl;
         return;
       }
 
