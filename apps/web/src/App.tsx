@@ -13,6 +13,18 @@ import ContactPage from './pages/ContactPage'
 import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
 import {
+  SanctionsLayout,
+  SanctionsOverview,
+  SanctionsScreenParty,
+  SanctionsScreenVessel,
+  SanctionsScreenGoods,
+  SanctionsHistory as SanctionsHistoryPage,
+  SanctionsCertificates,
+  SanctionsWatchlist,
+  SanctionsSettings as SanctionsSettingsPage,
+  SanctionsHelp as SanctionsHelpPage,
+} from './pages/tools/sanctions'
+import {
   HSCodeLayout,
   HSCodeOverview,
   HSCodeClassify,
@@ -171,6 +183,18 @@ function App() {
         
         {/* Tool Landing Pages - Live */}
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
+        {/* Sanctions Screener Dashboard with Sidebar */}
+        <Route path="/sanctions/dashboard" element={<SanctionsLayout />}>
+          <Route index element={<SanctionsOverview />} />
+          <Route path="screen/party" element={<SanctionsScreenParty />} />
+          <Route path="screen/vessel" element={<SanctionsScreenVessel />} />
+          <Route path="screen/goods" element={<SanctionsScreenGoods />} />
+          <Route path="history" element={<SanctionsHistoryPage />} />
+          <Route path="certificates" element={<SanctionsCertificates />} />
+          <Route path="watchlist" element={<SanctionsWatchlist />} />
+          <Route path="settings" element={<SanctionsSettingsPage />} />
+          <Route path="help" element={<SanctionsHelpPage />} />
+        </Route>
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
         {/* HS Code Finder Dashboard with Sidebar */}
         <Route path="/hs-code/dashboard" element={<HSCodeLayout />}>

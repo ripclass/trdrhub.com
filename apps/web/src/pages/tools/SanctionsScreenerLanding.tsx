@@ -11,7 +11,7 @@ const screeningTypes = [
     id: "party",
     title: "Screen a Party",
     description: "Check buyers, sellers, banks, and agents against sanctions lists",
-    to: "/sanctions/screen?type=party",
+    to: "/sanctions/dashboard/screen/party",
     icon: Users,
     accent: "from-red-500 to-red-600",
   },
@@ -19,7 +19,7 @@ const screeningTypes = [
     id: "vessel",
     title: "Screen a Vessel",
     description: "Verify vessels against sanctioned flags, owners, and dark activity patterns",
-    to: "/sanctions/screen?type=vessel",
+    to: "/sanctions/dashboard/screen/vessel",
     icon: Ship,
     accent: "from-orange-500 to-orange-600",
   },
@@ -27,7 +27,7 @@ const screeningTypes = [
     id: "goods",
     title: "Screen Goods",
     description: "Check HS codes against dual-use and export control lists",
-    to: "/sanctions/screen?type=goods",
+    to: "/sanctions/dashboard/screen/goods",
     icon: AlertTriangle,
     accent: "from-yellow-500 to-yellow-600",
   },
@@ -401,7 +401,7 @@ const SanctionsScreenerLanding = () => {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button size="lg" className="bg-red-500 hover:bg-red-600 text-white font-semibold" asChild>
-                  <Link to="/sanctions/screen">
+                  <Link to="/sanctions/dashboard">
                     Start Free Screening <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
