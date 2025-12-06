@@ -285,6 +285,11 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const complianceLevel = structured.analytics?.compliance_level ?? validationStatus;
   const complianceCapReason = structured.analytics?.compliance_cap_reason ?? null;
 
+  // Sanctions Screening fields
+  const sanctionsScreening = structured.sanctions_screening ?? null;
+  const sanctionsBlocked = Boolean(structured.sanctions_blocked);
+  const sanctionsBlockReason = structured.sanctions_block_reason ?? null;
+
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
     summary,
@@ -304,5 +309,10 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     lcBaseline,
     complianceLevel,
     complianceCapReason,
+    
+    // Sanctions Screening additions
+    sanctionsScreening,
+    sanctionsBlocked,
+    sanctionsBlockReason,
   };
 };

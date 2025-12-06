@@ -200,6 +200,26 @@ export type StructuredResultAnalytics = SharedStructuredResultAnalytics;
 
 export type StructuredResultPayload = SharedStructuredResultPayload;
 
+// Sanctions Screening Types
+export interface SanctionsScreeningIssue {
+  party: string | null;
+  type: string | null;
+  status: 'match' | 'potential_match' | 'clear';
+  score: number | null;
+}
+
+export interface SanctionsScreeningSummary {
+  screened: boolean;
+  parties_screened: number;
+  matches: number;
+  potential_matches: number;
+  clear: number;
+  should_block: boolean;
+  screened_at: string;
+  issues: SanctionsScreeningIssue[];
+  error?: string;
+}
+
 export interface ValidationResults {
   jobId: string;
   summary: ProcessingSummaryPayload;
@@ -221,4 +241,9 @@ export interface ValidationResults {
   lcBaseline?: LCBaseline | null;
   complianceLevel?: string;
   complianceCapReason?: string | null;
+  
+  // Sanctions Screening additions
+  sanctionsScreening?: SanctionsScreeningSummary | null;
+  sanctionsBlocked?: boolean;
+  sanctionsBlockReason?: string | null;
 }

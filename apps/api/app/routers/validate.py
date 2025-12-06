@@ -31,6 +31,10 @@ from app.services.crossdoc import (
     build_issue_cards,
     DEFAULT_LABELS,
 )
+from app.services.sanctions_lcopilot import (
+    run_sanctions_screening_for_validation,
+    extract_parties_from_lc,
+)
 from app.services.ai_issue_rewriter import rewrite_issue
 from app.services import ValidationSessionService
 from app.services.audit_service import AuditService
@@ -1216,6 +1220,57 @@ async def validate_doc(
         
         # NOTE: v2_crossdoc_issues are already included in issue_cards via failed_results
         # Do NOT add them again here - that was causing DUPLICATE issues!
+
+        # =====================================================================
+        # SANCTIONS SCREENING - Auto-screen LC parties
+        # Screen applicant, beneficiary, banks, and other parties
+        # =====================================================================
+        sanctions_summary = None
+        sanctions_should_block = False
+        
+        try:
+            current_issues = structured_result.get("issues") or []
+            
+            updated_issues, sanctions_should_block, sanctions_summary = await run_sanctions_screening_for_validation(
+                payload=payload,
+                existing_issues=current_issues,
+            )
+            
+            # Update issues with sanctions results
+            structured_result["issues"] = updated_issues
+            
+            # Add sanctions summary to result
+            structured_result["sanctions_screening"] = sanctions_summary
+            
+            if sanctions_should_block:
+                logger.warning(
+                    "SANCTIONS MATCH DETECTED - LC processing should be blocked. "
+                    f"Summary: {sanctions_summary}"
+                )
+                # Add sanctions blocked flag
+                structured_result["sanctions_blocked"] = True
+                structured_result["sanctions_block_reason"] = (
+                    f"{sanctions_summary.get('matches', 0)} sanctioned party match(es) found. "
+                    "LC processing halted pending compliance review."
+                )
+            else:
+                structured_result["sanctions_blocked"] = False
+                
+            if sanctions_summary:
+                logger.info(
+                    "Sanctions screening complete: %d parties screened, %d matches, %d potential matches",
+                    sanctions_summary.get("parties_screened", 0),
+                    sanctions_summary.get("matches", 0),
+                    sanctions_summary.get("potential_matches", 0),
+                )
+                
+        except Exception as e:
+            logger.error(f"Sanctions screening failed: {e}", exc_info=True)
+            # Don't block on screening errors - log and continue
+            structured_result["sanctions_screening"] = {
+                "screened": False,
+                "error": str(e),
+            }
 
         # =====================================================================
         # V2 VALIDATION PIPELINE - FINAL SCORING
