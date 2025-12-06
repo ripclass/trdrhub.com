@@ -8,7 +8,7 @@ import uuid
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -3240,4 +3240,483 @@ async def export_bank_pdf(
             "Content-Disposition": f"attachment; filename=LC_{lc.reference_number}_{bank_code}.pdf"
         }
     )
+
+
+# ============================================================================
+# Email Notification Service for LC Builder
+# ============================================================================
+
+async def send_lc_status_notification(
+    user_email: str,
+    user_name: str,
+    lc_reference: str,
+    old_status: str,
+    new_status: str,
+    lc_amount: float,
+    lc_currency: str,
+    beneficiary_name: str,
+    additional_info: Optional[str] = None
+):
+    """Send email notification when LC status changes."""
+    from app.services.notifications import EmailService
+    
+    email_service = EmailService()
+    
+    status_messages = {
+        "review": "Your LC application is now under review.",
+        "submitted": "Your LC application has been submitted to the bank.",
+        "approved": "Congratulations! Your LC application has been approved.",
+        "rejected": "Your LC application requires attention.",
+        "amended": "Your LC application has been amended.",
+    }
+    
+    status_colors = {
+        "draft": "#6B7280",
+        "review": "#F59E0B",
+        "submitted": "#3B82F6",
+        "approved": "#10B981",
+        "rejected": "#EF4444",
+        "amended": "#8B5CF6",
+    }
+    
+    subject = f"LC {lc_reference} - Status Update: {new_status.upper()}"
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }}
+            .container {{ max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+            .header {{ background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white; padding: 30px; text-align: center; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .content {{ padding: 30px; }}
+            .status-badge {{ display: inline-block; padding: 8px 16px; border-radius: 20px; background: {status_colors.get(new_status, '#6B7280')}; color: white; font-weight: bold; font-size: 14px; text-transform: uppercase; }}
+            .lc-details {{ background: #f9fafb; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+            .detail-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }}
+            .detail-row:last-child {{ border-bottom: none; }}
+            .detail-label {{ color: #6B7280; }}
+            .detail-value {{ font-weight: 600; color: #111827; }}
+            .amount {{ font-size: 24px; color: #10B981; font-weight: bold; }}
+            .cta {{ text-align: center; margin: 30px 0; }}
+            .cta a {{ display: inline-block; padding: 12px 30px; background: #10B981; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; }}
+            .footer {{ background: #f9fafb; padding: 20px; text-align: center; color: #6B7280; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>LC Status Update</h1>
+            </div>
+            <div class="content">
+                <p>Hello {user_name},</p>
+                <p>{status_messages.get(new_status, f'Your LC status has changed to {new_status}.')}</p>
+                
+                <div style="text-align: center; margin: 20px 0;">
+                    <span class="status-badge">{new_status}</span>
+                </div>
+                
+                <div class="lc-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Reference Number</span>
+                        <span class="detail-value">{lc_reference}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Amount</span>
+                        <span class="detail-value amount">{lc_currency} {lc_amount:,.2f}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Beneficiary</span>
+                        <span class="detail-value">{beneficiary_name}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Previous Status</span>
+                        <span class="detail-value">{old_status.upper()}</span>
+                    </div>
+                </div>
+                
+                {f'<p style="background: #FEF3C7; padding: 12px; border-radius: 6px; border-left: 4px solid #F59E0B;">{additional_info}</p>' if additional_info else ''}
+                
+                <div class="cta">
+                    <a href="https://trdrhub.com/lc-builder/dashboard">View LC Application</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>This is an automated notification from TRDR Hub LC Builder.</p>
+                <p>© 2024 TRDR Hub. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    text = f"""
+LC Status Update - {lc_reference}
+
+Hello {user_name},
+
+{status_messages.get(new_status, f'Your LC status has changed to {new_status}.')}
+
+Status: {new_status.upper()}
+
+LC Details:
+- Reference: {lc_reference}
+- Amount: {lc_currency} {lc_amount:,.2f}
+- Beneficiary: {beneficiary_name}
+- Previous Status: {old_status.upper()}
+
+{additional_info or ''}
+
+View your LC at: https://trdrhub.com/lc-builder/dashboard
+
+---
+TRDR Hub LC Builder
+    """
+    
+    result = await email_service.send(
+        to=user_email,
+        subject=subject,
+        html=html,
+        text=text
+    )
+    
+    return result
+
+
+# ============================================================================
+# Approval Workflow Endpoints
+# ============================================================================
+
+class StatusUpdateRequest(BaseModel):
+    """Request to update LC status"""
+    new_status: str = Field(..., description="New status: review, submitted, approved, rejected")
+    comment: Optional[str] = None
+    notify: bool = True
+
+
+@router.post("/applications/{application_id}/status")
+async def update_application_status(
+    application_id: str,
+    request: StatusUpdateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the status of an LC application with optional notification.
+    
+    Status flow:
+    - draft -> review -> submitted -> approved/rejected
+    - approved/submitted -> amended (via amendment)
+    """
+    from fastapi import BackgroundTasks
+    
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    old_status = lc.status.value
+    new_status = request.new_status.lower()
+    
+    # Validate status transitions
+    valid_transitions = {
+        "draft": ["review", "submitted"],
+        "review": ["draft", "submitted", "approved", "rejected"],
+        "submitted": ["approved", "rejected", "amended"],
+        "approved": ["amended"],
+        "rejected": ["draft", "review"],
+        "amended": ["review", "submitted"],
+    }
+    
+    if new_status not in valid_transitions.get(old_status, []):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid status transition from {old_status} to {new_status}"
+        )
+    
+    # Update status
+    try:
+        lc.status = LCStatus(new_status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
+    
+    lc.updated_at = datetime.utcnow()
+    
+    if new_status == "submitted":
+        lc.submitted_at = datetime.utcnow()
+    
+    db.commit()
+    
+    # Send notification if enabled
+    if request.notify:
+        # Get user's email
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user and user.email:
+            background_tasks.add_task(
+                send_lc_status_notification,
+                user_email=user.email,
+                user_name=user.full_name or user.email,
+                lc_reference=lc.reference_number,
+                old_status=old_status,
+                new_status=new_status,
+                lc_amount=lc.amount,
+                lc_currency=lc.currency,
+                beneficiary_name=lc.beneficiary_name,
+                additional_info=request.comment
+            )
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "old_status": old_status,
+        "new_status": new_status,
+        "notification_sent": request.notify,
+        "updated_at": lc.updated_at.isoformat()
+    }
+
+
+@router.post("/applications/{application_id}/submit-for-review")
+async def submit_for_review(
+    application_id: str,
+    background_tasks: BackgroundTasks,
+    reviewer_email: Optional[str] = None,
+    notes: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Submit an LC application for review.
+    Optionally send to a specific reviewer.
+    """
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    if lc.status not in [LCStatus.DRAFT, LCStatus.AMENDED]:
+        raise HTTPException(status_code=400, detail="Only draft or amended applications can be submitted for review")
+    
+    # Validate before submitting
+    validation = validate_lc_application(lc)
+    
+    if not validation.is_valid:
+        error_count = len([i for i in validation.issues if i.severity == "error"])
+        if error_count > 0:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Application has {error_count} error(s) that must be resolved before submission"
+            )
+    
+    old_status = lc.status.value
+    lc.status = LCStatus.REVIEW
+    lc.updated_at = datetime.utcnow()
+    db.commit()
+    
+    # Send notification to owner
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user and user.email:
+        background_tasks.add_task(
+            send_lc_status_notification,
+            user_email=user.email,
+            user_name=user.full_name or user.email,
+            lc_reference=lc.reference_number,
+            old_status=old_status,
+            new_status="review",
+            lc_amount=lc.amount,
+            lc_currency=lc.currency,
+            beneficiary_name=lc.beneficiary_name,
+            additional_info=notes
+        )
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "status": "review",
+        "validation": {
+            "is_valid": validation.is_valid,
+            "risk_score": validation.risk_score,
+            "issue_count": len(validation.issues),
+        },
+        "message": "Application submitted for review"
+    }
+
+
+@router.post("/applications/{application_id}/approve")
+async def approve_application(
+    application_id: str,
+    background_tasks: BackgroundTasks,
+    approval_notes: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Approve an LC application (for reviewers/managers).
+    """
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    if lc.status not in [LCStatus.REVIEW, LCStatus.SUBMITTED]:
+        raise HTTPException(status_code=400, detail="Only applications under review or submitted can be approved")
+    
+    old_status = lc.status.value
+    lc.status = LCStatus.APPROVED
+    lc.updated_at = datetime.utcnow()
+    db.commit()
+    
+    # Send notification
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user and user.email:
+        background_tasks.add_task(
+            send_lc_status_notification,
+            user_email=user.email,
+            user_name=user.full_name or user.email,
+            lc_reference=lc.reference_number,
+            old_status=old_status,
+            new_status="approved",
+            lc_amount=lc.amount,
+            lc_currency=lc.currency,
+            beneficiary_name=lc.beneficiary_name,
+            additional_info=approval_notes
+        )
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "status": "approved",
+        "approved_at": lc.updated_at.isoformat(),
+        "message": "Application approved successfully"
+    }
+
+
+@router.post("/applications/{application_id}/reject")
+async def reject_application(
+    application_id: str,
+    background_tasks: BackgroundTasks,
+    rejection_reason: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reject an LC application with reason.
+    """
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    if lc.status not in [LCStatus.REVIEW, LCStatus.SUBMITTED]:
+        raise HTTPException(status_code=400, detail="Only applications under review or submitted can be rejected")
+    
+    old_status = lc.status.value
+    lc.status = LCStatus.REJECTED
+    lc.updated_at = datetime.utcnow()
+    db.commit()
+    
+    # Send notification with rejection reason
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user and user.email:
+        background_tasks.add_task(
+            send_lc_status_notification,
+            user_email=user.email,
+            user_name=user.full_name or user.email,
+            lc_reference=lc.reference_number,
+            old_status=old_status,
+            new_status="rejected",
+            lc_amount=lc.amount,
+            lc_currency=lc.currency,
+            beneficiary_name=lc.beneficiary_name,
+            additional_info=f"Rejection Reason: {rejection_reason}"
+        )
+    
+    return {
+        "id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "status": "rejected",
+        "rejection_reason": rejection_reason,
+        "message": "Application rejected"
+    }
+
+
+@router.get("/applications/{application_id}/workflow-status")
+async def get_workflow_status(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the current workflow status and available actions for an LC application.
+    """
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    current_status = lc.status.value
+    
+    # Define available actions based on status
+    status_actions = {
+        "draft": [
+            {"action": "submit_for_review", "label": "Submit for Review", "endpoint": "/submit-for-review"},
+            {"action": "edit", "label": "Edit Application", "endpoint": None},
+            {"action": "delete", "label": "Delete", "endpoint": None},
+        ],
+        "review": [
+            {"action": "approve", "label": "Approve", "endpoint": "/approve"},
+            {"action": "reject", "label": "Reject", "endpoint": "/reject"},
+            {"action": "edit", "label": "Edit Application", "endpoint": None},
+        ],
+        "submitted": [
+            {"action": "approve", "label": "Mark as Approved", "endpoint": "/approve"},
+            {"action": "reject", "label": "Mark as Rejected", "endpoint": "/reject"},
+        ],
+        "approved": [
+            {"action": "amend", "label": "Create Amendment", "endpoint": "/amend"},
+            {"action": "export", "label": "Export Documents", "endpoint": None},
+        ],
+        "rejected": [
+            {"action": "resubmit", "label": "Resubmit", "endpoint": "/submit-for-review"},
+            {"action": "edit", "label": "Edit and Fix", "endpoint": None},
+        ],
+        "amended": [
+            {"action": "submit_for_review", "label": "Submit Amendment for Review", "endpoint": "/submit-for-review"},
+            {"action": "edit", "label": "Edit Amendment", "endpoint": None},
+        ],
+    }
+    
+    # Workflow timeline
+    workflow_steps = [
+        {"step": "draft", "label": "Draft", "completed": current_status != "draft"},
+        {"step": "review", "label": "Under Review", "completed": current_status in ["submitted", "approved", "rejected"]},
+        {"step": "submitted", "label": "Submitted to Bank", "completed": current_status in ["approved", "rejected"]},
+        {"step": "approved", "label": "Approved", "completed": current_status == "approved"},
+    ]
+    
+    return {
+        "application_id": str(lc.id),
+        "reference_number": lc.reference_number,
+        "current_status": current_status,
+        "available_actions": status_actions.get(current_status, []),
+        "workflow_steps": workflow_steps,
+        "created_at": lc.created_at.isoformat(),
+        "updated_at": lc.updated_at.isoformat(),
+        "submitted_at": lc.submitted_at.isoformat() if lc.submitted_at else None,
+    }
 

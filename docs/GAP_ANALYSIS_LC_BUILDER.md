@@ -88,11 +88,13 @@ After Phase 1 completion, the tool is now much more usable:
 - [x] **Template Persistence** - User templates CRUD, save LC as template, fetch from API
 - [x] **LCopilot Integration** - Import from validation sessions with preview, one-click import
 - [x] **Amendment Builder** - Create amendments with multiple types, automatic versioning
+- [x] **Email Notifications** - Status change notifications via Resend with beautiful HTML templates
+- [x] **Approval Workflow UI** - Submit for review, approve, reject with workflow status page
 
-### Remaining (Future Enhancements):
-- [ ] Email notification on status change
-- [ ] Approval workflow UI (submit for review, approve/reject)
+### Future Enhancements:
 - [ ] Team collaboration (share with colleagues)
+- [ ] Role-based access (reviewer vs owner permissions)
+- [ ] Email notifications to reviewers
 
 ---
 
@@ -158,6 +160,11 @@ After Phase 1 completion, the tool is now much more usable:
 | `GET /lc-builder/lcopilot/sessions/:id/preview` | ✅ | **Phase 3** Preview session data |
 | `POST /lc-builder/lcopilot/import/:id` | ✅ | **Phase 3** Import from LCopilot |
 | `GET /lc-builder/bank-formats` | ✅ | **Phase 2** List bank formats |
+| `POST /lc-builder/applications/:id/status` | ✅ | **Phase 3** Update status with notification |
+| `POST /lc-builder/applications/:id/submit-for-review` | ✅ | **Phase 3** Submit for review |
+| `POST /lc-builder/applications/:id/approve` | ✅ | **Phase 3** Approve application |
+| `POST /lc-builder/applications/:id/reject` | ✅ | **Phase 3** Reject application |
+| `GET /lc-builder/applications/:id/workflow-status` | ✅ | **Phase 3** Get workflow status |
 
 ---
 

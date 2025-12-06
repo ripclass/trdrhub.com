@@ -562,6 +562,12 @@ export default function LCBuilderDashboard() {
                             Version History
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            onClick={() => navigate(`/lc-builder/dashboard/workflow/${app.id}`)}
+                          >
+                            <FileCheck className="h-4 w-4 mr-2" />
+                            Workflow Status
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-red-400"
                             onClick={() => handleDelete(app.id)}
                           >

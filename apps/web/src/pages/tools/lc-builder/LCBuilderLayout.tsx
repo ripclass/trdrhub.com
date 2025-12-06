@@ -25,6 +25,8 @@ import {
   Users,
   Building2,
   Zap,
+  ClipboardCheck,
+  Send,
 } from "lucide-react";
 import {
   Sidebar,
@@ -74,6 +76,17 @@ const navItems = [
         title: "Create New",
         href: "/lc-builder/dashboard/new",
         icon: Plus,
+      },
+    ],
+  },
+  {
+    title: "Workflow",
+    items: [
+      {
+        title: "Approval Queue",
+        href: "/lc-builder/dashboard/approvals",
+        icon: ClipboardCheck,
+        badge: "New",
       },
     ],
   },
