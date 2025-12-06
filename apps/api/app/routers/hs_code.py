@@ -18,7 +18,7 @@ from app.database import get_db
 from app.models.user import User
 from app.core.security import get_current_user, get_optional_user
 from app.models.hs_code import (
-    HSCode, DutyRate, FTAAgreement, FTARule,
+    HSCodeTariff, DutyRate, FTAAgreement, FTARule,
     HSClassification, HSCodeSearch, ClassificationSource
 )
 

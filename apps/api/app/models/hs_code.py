@@ -25,12 +25,13 @@ class ClassificationSource(str, enum.Enum):
     CUSTOMS = "customs"
 
 
-class HSCode(Base):
+class HSCodeTariff(Base):
     """
-    HS Code reference table.
+    HS Code tariff reference table for HS Code Finder tool.
     Stores the hierarchical tariff codes and their descriptions.
+    Note: Named HSCodeTariff to avoid conflict with HSCode in commodities.py
     """
-    __tablename__ = "hs_codes"
+    __tablename__ = "hs_code_tariffs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
@@ -73,8 +74,8 @@ class HSCode(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     __table_args__ = (
-        Index('ix_hs_codes_code_country', 'code', 'country_code'),
-        Index('ix_hs_codes_code_6', 'code_6'),
+        Index('ix_hs_code_tariffs_code_country', 'code', 'country_code'),
+        Index('ix_hs_code_tariffs_code_6', 'code_6'),
     )
 
 
@@ -86,7 +87,7 @@ class DutyRate(Base):
     __tablename__ = "duty_rates"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    hs_code_id = Column(UUID(as_uuid=True), ForeignKey("hs_codes.id"), nullable=False, index=True)
+    hs_code_id = Column(UUID(as_uuid=True), ForeignKey("hs_code_tariffs.id"), nullable=False, index=True)
     
     # Rate type
     rate_type = Column(String(20), nullable=False)  # mfn, preferential, special
@@ -120,7 +121,7 @@ class DutyRate(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationship
-    hs_code = relationship("HSCode", backref="duty_rates")
+    hs_code = relationship("HSCodeTariff", backref="duty_rates")
 
 
 class FTAAgreement(Base):
