@@ -110,7 +110,7 @@ import {
   VesselSearchPage,
   ActiveShipmentsPage,
   AlertsPage,
-  HistoryPage,
+  HistoryPage as TrackingHistoryPage,
   AnalyticsPage as TrackingAnalyticsPage,
   SettingsPage as TrackingSettingsPage,
   HelpPage as TrackingHelpPage,
@@ -201,7 +201,7 @@ function App() {
           <Route path="ports" element={<PortSchedulePage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="exceptions" element={<ExceptionsPage />} />
-          <Route path="history" element={<HistoryPage />} />
+          <Route path="history" element={<TrackingHistoryPage />} />
           <Route path="analytics" element={<TrackingAnalyticsPage />} />
           <Route path="performance" element={<PerformancePage />} />
           <Route path="settings" element={<TrackingSettingsPage />} />
