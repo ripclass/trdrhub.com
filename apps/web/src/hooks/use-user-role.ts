@@ -60,13 +60,15 @@ const DEFAULT_PERMISSIONS: UserPermissions = {
   api_access: false,
 };
 
-// All available tools
+// All available tools - must match tool IDs in HubHome.tsx
 export const ALL_TOOLS = [
   "lcopilot",
-  "price_verify",
-  "hscode",
+  "lc_builder",
+  "doc-generator",
   "sanctions",
-  "container_track",
+  "hs_code",
+  "container",
+  "price_verify",
 ] as const;
 
 export type ToolId = typeof ALL_TOOLS[number];

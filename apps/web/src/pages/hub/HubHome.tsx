@@ -166,8 +166,11 @@ export default function HubHome() {
   const [userName, setUserName] = useState("User");
 
   // Filter tools based on user's access
+  // Default to showing all tools if role data is unavailable (legacy users or loading)
   const accessibleTools = TOOLS.filter(tool => {
-    if (isOwner || isAdmin) return true; // Owner/Admin can see all
+    // Show all tools while loading or if no role restriction applies
+    if (roleLoading || role === null) return true;
+    if (isOwner || isAdmin) return true;
     return canAccessTool(tool.id);
   });
 

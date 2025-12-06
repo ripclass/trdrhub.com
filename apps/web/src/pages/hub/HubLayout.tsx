@@ -74,42 +74,13 @@ const NAV_SECTIONS: NavSection[] = [
         toolId: "lcopilot",
       },
       { 
-        id: "price-verify", 
-        label: "Price Verify", 
-        icon: DollarSign, 
-        href: "/price-verify/dashboard",
+        id: "lc-builder", 
+        label: "LC Builder", 
+        icon: FileText, 
+        href: "/lc-builder/dashboard",
         badge: "Active",
         badgeVariant: "success",
-        toolId: "price_verify",
-      },
-      { 
-        id: "hs-code", 
-        label: "HS Code Finder", 
-        icon: Package, 
-        href: "/tools/hs-code",
-        badge: "Soon",
-        badgeVariant: "default",
-        disabled: true,
-        toolId: "hscode",
-      },
-      { 
-        id: "sanctions", 
-        label: "Sanctions", 
-        icon: Shield, 
-        href: "/tools/sanctions",
-        badge: "Soon",
-        badgeVariant: "default",
-        disabled: true,
-        toolId: "sanctions",
-      },
-      { 
-        id: "tracking", 
-        label: "Container Track", 
-        icon: Ship, 
-        href: "/tracking/dashboard",
-        badge: "Active",
-        badgeVariant: "success",
-        toolId: "container_track",
+        toolId: "lc_builder",
       },
       { 
         id: "doc-generator", 
@@ -118,7 +89,43 @@ const NAV_SECTIONS: NavSection[] = [
         href: "/doc-generator/dashboard",
         badge: "Active",
         badgeVariant: "success",
-        toolId: "doc_generator",
+        toolId: "doc-generator",
+      },
+      { 
+        id: "sanctions", 
+        label: "Sanctions", 
+        icon: Shield, 
+        href: "/sanctions/dashboard",
+        badge: "Active",
+        badgeVariant: "success",
+        toolId: "sanctions",
+      },
+      { 
+        id: "hs-code", 
+        label: "HS Code Finder", 
+        icon: Package, 
+        href: "/hs-code/dashboard",
+        badge: "Active",
+        badgeVariant: "success",
+        toolId: "hs_code",
+      },
+      { 
+        id: "tracking", 
+        label: "Container Track", 
+        icon: Ship, 
+        href: "/tracking/dashboard",
+        badge: "Active",
+        badgeVariant: "success",
+        toolId: "container",
+      },
+      { 
+        id: "price-verify", 
+        label: "Price Verify", 
+        icon: DollarSign, 
+        href: "/price-verify/dashboard",
+        badge: "Active",
+        badgeVariant: "success",
+        toolId: "price_verify",
       },
     ],
   },
@@ -157,13 +164,16 @@ export default function HubLayout() {
   }, [user, isLoading, navigate, location.pathname]);
 
   // Filter navigation items based on user role
+  // Default to showing all items if role data is unavailable (legacy users)
   const shouldShowItem = (item: NavItem): boolean => {
+    // If role is still loading or we have no role data, show all items (permissive default)
+    if (roleLoading || role === null) return true;
     // Check admin requirement
-    if (item.requiresAdmin && !isAdmin) return false;
+    if (item.requiresAdmin && !isOwner && !isAdmin) return false;
     // Check owner requirement
     if (item.requiresOwner && !isOwner) return false;
-    // Check tool access
-    if (item.toolId && !isAdmin && !canAccessTool(item.toolId)) return false;
+    // Check tool access - owner/admin can access all
+    if (item.toolId && !isOwner && !isAdmin && !canAccessTool(item.toolId)) return false;
     return true;
   };
 
@@ -200,13 +210,14 @@ export default function HubLayout() {
     );
   }
 
-  // Get role display name
+  // Get role display name - default to Owner for legacy users without RBAC
   const getRoleBadge = () => {
     if (isOwner) return { label: "Owner", color: "bg-purple-500" };
     if (isAdmin) return { label: "Admin", color: "bg-blue-500" };
     if (role === "member") return { label: "Member", color: "bg-green-500" };
     if (role === "viewer") return { label: "Viewer", color: "bg-slate-500" };
-    return null;
+    // Default to Owner for legacy users (no RBAC record yet)
+    return { label: "Owner", color: "bg-purple-500" };
   };
   const roleBadge = getRoleBadge();
 

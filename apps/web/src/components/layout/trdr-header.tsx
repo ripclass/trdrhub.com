@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const navigation = [
   { name: "Home", href: "/" },
@@ -14,6 +16,7 @@ const navigation = [
 
 export function TRDRHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, isLoading } = useAuth();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/50">
@@ -38,25 +41,50 @@ export function TRDRHeader() {
             ))}
           </nav>
 
-          {/* Desktop CTAs */}
+          {/* Desktop CTAs - Show different buttons based on auth state */}
           <div className="hidden md:flex items-center gap-3">
-            <Link to="/login">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-slate-400 hover:text-white hover:bg-slate-800"
-              >
-                Login
-              </Button>
-            </Link>
-            <Link to="/lcopilot">
-              <Button 
-                size="sm" 
-                className="bg-white text-slate-900 hover:bg-slate-100 font-medium"
-              >
-                Get Started
-              </Button>
-            </Link>
+            {!isLoading && user ? (
+              // Logged in user
+              <>
+                <Link to="/hub">
+                  <Button 
+                    size="sm" 
+                    className="bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white font-medium"
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Go to Hub
+                  </Button>
+                </Link>
+                <Link to="/hub">
+                  <Avatar className="h-8 w-8 cursor-pointer">
+                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-emerald-500 text-white text-sm">
+                      {(user.full_name || user.email || "U").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                </Link>
+              </>
+            ) : (
+              // Not logged in
+              <>
+                <Link to="/login">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-slate-400 hover:text-white hover:bg-slate-800"
+                  >
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/lcopilot">
+                  <Button 
+                    size="sm" 
+                    className="bg-white text-slate-900 hover:bg-slate-100 font-medium"
+                  >
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -93,23 +121,39 @@ export function TRDRHeader() {
               </Link>
             ))}
             <div className="flex gap-2 mt-4 px-4">
-              <Link to="/login" className="flex-1">
-                <Button 
-                  variant="outline" 
-                  className="w-full border-slate-700 text-slate-300"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Login
-                </Button>
-              </Link>
-              <Link to="/lcopilot" className="flex-1">
-                <Button 
-                  className="w-full bg-white text-slate-900"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Get Started
-                </Button>
-              </Link>
+              {!isLoading && user ? (
+                // Logged in user - mobile
+                <Link to="/hub" className="flex-1">
+                  <Button 
+                    className="w-full bg-gradient-to-r from-blue-500 to-emerald-500 text-white"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Go to Hub
+                  </Button>
+                </Link>
+              ) : (
+                // Not logged in - mobile
+                <>
+                  <Link to="/login" className="flex-1">
+                    <Button 
+                      variant="outline" 
+                      className="w-full border-slate-700 text-slate-300"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Login
+                    </Button>
+                  </Link>
+                  <Link to="/lcopilot" className="flex-1">
+                    <Button 
+                      className="w-full bg-white text-slate-900"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Get Started
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </nav>
         </div>
