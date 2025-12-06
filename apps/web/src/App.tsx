@@ -29,6 +29,8 @@ import {
   HSCodeCompare,
   HSCodeRulings,
   HSCodeAlerts,
+  HSCodeUSMCA,
+  HSCodeTeams,
 } from './pages/tools/hs-code'
 import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
@@ -183,6 +185,9 @@ function App() {
           <Route path="compare" element={<HSCodeCompare />} />
           <Route path="rulings" element={<HSCodeRulings />} />
           <Route path="alerts" element={<HSCodeAlerts />} />
+          {/* Phase 3 Features */}
+          <Route path="usmca" element={<HSCodeUSMCA />} />
+          <Route path="teams" element={<HSCodeTeams />} />
         </Route>
         
         {/* Tool Landing Pages */}

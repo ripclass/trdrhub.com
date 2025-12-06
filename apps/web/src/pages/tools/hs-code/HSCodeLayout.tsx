@@ -19,6 +19,8 @@ import {
   GitCompare,
   Bell,
   Gavel,
+  Globe2,
+  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -45,13 +47,14 @@ const navSections: NavSection[] = [
       { title: 'Classify Product', href: '/hs-code/dashboard/classify', icon: Search },
       { title: 'Search HS Codes', href: '/hs-code/dashboard/search', icon: BookOpen },
       { title: 'Duty Calculator', href: '/hs-code/dashboard/duty', icon: Calculator },
-      { title: 'Compare Products', href: '/hs-code/dashboard/compare', icon: GitCompare, badge: 'New' },
+      { title: 'Compare Products', href: '/hs-code/dashboard/compare', icon: GitCompare },
     ],
   },
   {
     title: 'Trade Agreements',
     items: [
       { title: 'FTA Eligibility', href: '/hs-code/dashboard/fta', icon: Globe },
+      { title: 'USMCA Calculator', href: '/hs-code/dashboard/usmca', icon: Globe2, badge: 'New' },
       { title: 'Rules of Origin', href: '/hs-code/dashboard/roo', icon: FileCheck },
       { title: 'Compliance Check', href: '/hs-code/dashboard/compliance', icon: Scale },
     ],
@@ -59,8 +62,8 @@ const navSections: NavSection[] = [
   {
     title: 'Research & Alerts',
     items: [
-      { title: 'Binding Rulings', href: '/hs-code/dashboard/rulings', icon: Gavel, badge: 'New' },
-      { title: 'Rate Alerts', href: '/hs-code/dashboard/alerts', icon: Bell, badge: 'New' },
+      { title: 'Binding Rulings', href: '/hs-code/dashboard/rulings', icon: Gavel },
+      { title: 'Rate Alerts', href: '/hs-code/dashboard/alerts', icon: Bell },
     ],
   },
   {
@@ -69,6 +72,12 @@ const navSections: NavSection[] = [
       { title: 'My Classifications', href: '/hs-code/dashboard/history', icon: History },
       { title: 'Favorites', href: '/hs-code/dashboard/favorites', icon: Star },
       { title: 'Bulk Upload', href: '/hs-code/dashboard/bulk', icon: Upload },
+    ],
+  },
+  {
+    title: 'Collaboration',
+    items: [
+      { title: 'Teams', href: '/hs-code/dashboard/teams', icon: Users, badge: 'New' },
     ],
   },
   {

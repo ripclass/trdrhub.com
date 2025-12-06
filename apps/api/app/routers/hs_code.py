@@ -3,6 +3,7 @@ HS Code Finder API Router
 
 Endpoints for AI-powered HS code classification, duty rates, and FTA eligibility.
 Phase 2: Bulk classification, PDF export, binding rulings, comparison, rate alerts.
+Phase 3: USMCA/RCEP ROO engines, RVC calculator, team collaboration.
 """
 
 import logging
@@ -10,6 +11,7 @@ import uuid
 import time
 import csv
 import io
+import secrets
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks, UploadFile, File
@@ -24,7 +26,9 @@ from app.core.security import get_current_user, get_optional_user
 from app.models.hs_code import (
     HSCodeTariff, DutyRate, FTAAgreement, FTARule,
     HSClassification, HSCodeSearch, ClassificationSource,
-    BindingRuling, ChapterNote, Section301Rate, RateAlert
+    BindingRuling, ChapterNote, Section301Rate, RateAlert,
+    ProductSpecificRule, RVCCalculation, OriginDetermination,
+    HSCodeTeam, HSCodeTeamMember, HSCodeProject, ClassificationShare
 )
 
 logger = logging.getLogger(__name__)
@@ -1766,5 +1770,866 @@ async def get_recent_rate_changes(
         "period_days": days,
         "changes_count": len(changes),
         "changes": changes,
+    }
+
+
+# ============================================================================
+# Phase 3: USMCA/RCEP Rules of Origin Engine
+# ============================================================================
+
+class RVCCalculationRequest(BaseModel):
+    """Request to calculate Regional Value Content"""
+    product_description: str
+    hs_code: str
+    fta_code: str = Field(default="USMCA", description="USMCA, RCEP, etc.")
+    transaction_value: float = Field(..., description="FOB sale price")
+    vom_value: float = Field(..., description="Value of non-originating materials")
+    vom_breakdown: Optional[List[Dict[str, Any]]] = None
+    direct_labor_cost: Optional[float] = None
+    direct_overhead: Optional[float] = None
+    profit: Optional[float] = None
+    method: str = Field(default="transaction_value", description="transaction_value, net_cost")
+    # For USMCA auto sector
+    is_automotive: bool = False
+    steel_from_na: Optional[float] = None
+    high_wage_labor: Optional[float] = None
+
+
+class OriginDeterminationRequest(BaseModel):
+    """Request for full origin determination"""
+    product_description: str
+    product_name: Optional[str] = None
+    hs_code: str
+    fta_code: str
+    export_country: str
+    import_country: str
+    # Optional RVC data
+    transaction_value: Optional[float] = None
+    vom_value: Optional[float] = None
+    # Producer info
+    producer_name: Optional[str] = None
+    producer_address: Optional[str] = None
+
+
+@router.get("/roo/rules/{fta_code}/{hs_code}")
+async def get_rules_of_origin(
+    fta_code: str,
+    hs_code: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get applicable Rules of Origin for an HS code under a specific FTA.
+    Supports USMCA, RCEP, and other major FTAs.
+    """
+    # Get FTA
+    fta = db.query(FTAAgreement).filter(
+        FTAAgreement.code == fta_code.upper(),
+        FTAAgreement.is_active == True
+    ).first()
+    
+    if not fta:
+        raise HTTPException(status_code=404, detail=f"FTA {fta_code} not found")
+    
+    # Get product-specific rules
+    code_clean = hs_code.replace(".", "")
+    
+    # Try exact match first, then broader matches
+    psr = None
+    for prefix_len in [8, 6, 4, 2]:
+        if len(code_clean) >= prefix_len:
+            psr = db.query(ProductSpecificRule).filter(
+                ProductSpecificRule.fta_id == fta.id,
+                ProductSpecificRule.hs_code_from <= code_clean[:prefix_len],
+                or_(
+                    ProductSpecificRule.hs_code_to >= code_clean[:prefix_len],
+                    ProductSpecificRule.hs_code_to == None
+                ),
+                ProductSpecificRule.is_active == True
+            ).first()
+            if psr:
+                break
+    
+    # Also get general FTA rules
+    general_rule = db.query(FTARule).filter(
+        FTARule.fta_id == fta.id,
+        or_(
+            FTARule.hs_code_prefix == code_clean[:2],
+            FTARule.hs_code_prefix == code_clean[:4],
+            FTARule.hs_code_prefix == code_clean[:6]
+        )
+    ).first()
+    
+    response = {
+        "fta_code": fta_code.upper(),
+        "fta_name": fta.name,
+        "hs_code": hs_code,
+        "member_countries": fta.member_countries,
+        "certificate_types": fta.certificate_types,
+        "cumulation_type": fta.cumulation_type,
+        "de_minimis_threshold": fta.de_minimis_threshold,
+    }
+    
+    if psr:
+        response["product_specific_rule"] = {
+            "rule_type": psr.rule_type,
+            "rule_text": psr.rule_text,
+            "ctc_type": psr.ctc_type,
+            "ctc_exceptions": psr.ctc_exceptions,
+            "rvc_required": psr.rvc_required,
+            "rvc_threshold": psr.rvc_threshold,
+            "rvc_method": psr.rvc_method,
+            "lvc_required": psr.lvc_required,
+            "lvc_threshold": psr.lvc_threshold,
+            "steel_aluminum_required": psr.steel_aluminum_required,
+            "process_requirements": psr.process_requirements,
+            "annex_reference": psr.annex_reference,
+            "rule_notes": psr.rule_notes,
+        }
+    elif general_rule:
+        response["general_rule"] = {
+            "rule_type": general_rule.rule_type,
+            "rule_text": general_rule.rule_text,
+            "ctc_requirement": general_rule.ctc_requirement,
+            "rvc_threshold": general_rule.rvc_threshold,
+            "rvc_method": general_rule.rvc_method,
+            "preferential_rate": general_rule.preferential_rate,
+        }
+    else:
+        # Return default rules for the FTA
+        response["default_rule"] = _get_default_fta_rules(fta_code.upper())
+    
+    return response
+
+
+def _get_default_fta_rules(fta_code: str) -> Dict[str, Any]:
+    """Get default rules for common FTAs when PSR not found."""
+    defaults = {
+        "USMCA": {
+            "rule_type": "CTC or RVC",
+            "ctc_type": "CTSH",
+            "rvc_threshold": 60,
+            "rvc_method": "transaction_value",
+            "rvc_alternative": 50,
+            "rvc_alternative_method": "net_cost",
+            "de_minimis": 10,
+            "note": "Default rule. Check specific annex for your product category."
+        },
+        "RCEP": {
+            "rule_type": "CTC or RVC",
+            "ctc_type": "CTH",
+            "rvc_threshold": 40,
+            "rvc_method": "build_down",
+            "de_minimis": 10,
+            "note": "Default rule. Some products have stricter requirements."
+        },
+        "CPTPP": {
+            "rule_type": "CTC or RVC",
+            "ctc_type": "CTH",
+            "rvc_threshold": 45,
+            "rvc_method": "build_down",
+            "de_minimis": 10,
+        },
+        "KORUS": {
+            "rule_type": "CTC or RVC",
+            "ctc_type": "CTH",
+            "rvc_threshold": 35,
+            "rvc_method": "build_down",
+        },
+    }
+    return defaults.get(fta_code, {
+        "rule_type": "CTC",
+        "ctc_type": "CTH",
+        "note": "Consult FTA text for specific requirements"
+    })
+
+
+@router.post("/roo/calculate-rvc")
+async def calculate_rvc(
+    request: RVCCalculationRequest,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate Regional Value Content (RVC) for origin determination.
+    Supports Transaction Value and Net Cost methods.
+    """
+    # Get applicable rules
+    fta = db.query(FTAAgreement).filter(
+        FTAAgreement.code == request.fta_code.upper()
+    ).first()
+    
+    if not fta:
+        raise HTTPException(status_code=404, detail=f"FTA {request.fta_code} not found")
+    
+    # Calculate RVC based on method
+    if request.method == "transaction_value":
+        # RVC = ((TV - VNM) / TV) × 100
+        rvc_percent = ((request.transaction_value - request.vom_value) / request.transaction_value) * 100
+    else:  # net_cost
+        # RVC = ((NC - VNM) / NC) × 100
+        net_cost = request.transaction_value - (request.profit or 0)
+        rvc_percent = ((net_cost - request.vom_value) / net_cost) * 100
+    
+    rvc_percent = round(rvc_percent, 2)
+    
+    # Determine threshold based on FTA and product
+    threshold = 60 if request.fta_code.upper() == "USMCA" else 40
+    
+    # Check product-specific rules for threshold
+    code_clean = request.hs_code.replace(".", "")
+    psr = db.query(ProductSpecificRule).filter(
+        ProductSpecificRule.fta_id == fta.id,
+        ProductSpecificRule.hs_code_from <= code_clean[:4],
+        or_(
+            ProductSpecificRule.hs_code_to >= code_clean[:4],
+            ProductSpecificRule.hs_code_to == None
+        ),
+        ProductSpecificRule.rvc_required == True
+    ).first()
+    
+    if psr and psr.rvc_threshold:
+        threshold = psr.rvc_threshold
+    
+    meets_requirement = rvc_percent >= threshold
+    
+    # Additional USMCA automotive checks
+    lvc_result = None
+    if request.is_automotive and request.fta_code.upper() == "USMCA":
+        if request.high_wage_labor and request.transaction_value:
+            lvc_percent = (request.high_wage_labor / request.transaction_value) * 100
+            lvc_result = {
+                "lvc_percent": round(lvc_percent, 2),
+                "threshold": 40,
+                "meets_requirement": lvc_percent >= 40,
+            }
+    
+    result = {
+        "fta_code": request.fta_code.upper(),
+        "hs_code": request.hs_code,
+        "product_description": request.product_description,
+        "method": request.method,
+        "calculation": {
+            "transaction_value": request.transaction_value,
+            "vom_value": request.vom_value,
+            "originating_content": round(request.transaction_value - request.vom_value, 2),
+        },
+        "rvc_result": {
+            "rvc_percent": rvc_percent,
+            "threshold": threshold,
+            "meets_requirement": meets_requirement,
+        },
+        "lvc_result": lvc_result,
+        "overall_eligible": meets_requirement and (lvc_result is None or lvc_result["meets_requirement"]),
+    }
+    
+    # Save calculation if user is logged in
+    if current_user:
+        calc = RVCCalculation(
+            user_id=current_user.id,
+            product_description=request.product_description,
+            hs_code=request.hs_code,
+            fta_code=request.fta_code.upper(),
+            transaction_value=request.transaction_value,
+            vom_value=request.vom_value,
+            vom_breakdown=request.vom_breakdown,
+            direct_labor_cost=request.direct_labor_cost,
+            direct_overhead=request.direct_overhead,
+            profit=request.profit,
+            rvc_percent=rvc_percent,
+            method_used=request.method,
+            threshold_required=threshold,
+            meets_requirement=meets_requirement,
+        )
+        db.add(calc)
+        db.commit()
+        result["calculation_id"] = str(calc.id)
+    
+    return result
+
+
+@router.post("/roo/determine-origin")
+async def determine_origin(
+    request: OriginDeterminationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete origin determination for FTA claims.
+    Returns eligibility and generates determination record.
+    """
+    # Get FTA details
+    fta = db.query(FTAAgreement).filter(
+        FTAAgreement.code == request.fta_code.upper(),
+        FTAAgreement.is_active == True
+    ).first()
+    
+    if not fta:
+        raise HTTPException(status_code=404, detail=f"FTA {request.fta_code} not found")
+    
+    # Check if countries are members
+    if request.export_country not in (fta.member_countries or []):
+        return {
+            "is_originating": False,
+            "reason": f"{request.export_country} is not a member of {request.fta_code}",
+            "fta_code": request.fta_code,
+        }
+    
+    # Get applicable rules
+    code_clean = request.hs_code.replace(".", "")
+    
+    psr = db.query(ProductSpecificRule).filter(
+        ProductSpecificRule.fta_id == fta.id,
+        ProductSpecificRule.hs_code_from <= code_clean[:4],
+        or_(
+            ProductSpecificRule.hs_code_to >= code_clean[:4],
+            ProductSpecificRule.hs_code_to == None
+        ),
+        ProductSpecificRule.is_active == True
+    ).first()
+    
+    # Determine eligibility
+    is_originating = True
+    rule_applied = "CTC"  # Default to change in tariff classification
+    determination_reason = ""
+    
+    # If RVC is required and values provided, calculate
+    rvc_calc_id = None
+    if psr and psr.rvc_required and request.transaction_value and request.vom_value:
+        rvc_percent = ((request.transaction_value - request.vom_value) / request.transaction_value) * 100
+        threshold = psr.rvc_threshold or 40
+        
+        if rvc_percent < threshold:
+            is_originating = False
+            determination_reason = f"RVC of {rvc_percent:.1f}% does not meet {threshold}% threshold"
+        else:
+            determination_reason = f"RVC of {rvc_percent:.1f}% meets {threshold}% threshold"
+            rule_applied = "RVC"
+        
+        # Save RVC calculation
+        rvc_calc = RVCCalculation(
+            user_id=current_user.id,
+            product_description=request.product_description,
+            hs_code=request.hs_code,
+            fta_code=request.fta_code.upper(),
+            transaction_value=request.transaction_value,
+            vom_value=request.vom_value,
+            rvc_percent=rvc_percent,
+            method_used="transaction_value",
+            threshold_required=threshold,
+            meets_requirement=is_originating,
+        )
+        db.add(rvc_calc)
+        db.flush()
+        rvc_calc_id = rvc_calc.id
+    else:
+        determination_reason = "Assumed CTC compliance - provide cost data for RVC verification"
+    
+    # Create origin determination record
+    determination = OriginDetermination(
+        user_id=current_user.id,
+        product_description=request.product_description,
+        product_name=request.product_name,
+        hs_code=request.hs_code,
+        fta_code=request.fta_code.upper(),
+        export_country=request.export_country,
+        import_country=request.import_country,
+        rule_applied=rule_applied,
+        psr_id=psr.id if psr else None,
+        rvc_calculation_id=rvc_calc_id,
+        is_originating=is_originating,
+        determination_reason=determination_reason,
+        certificate_type=fta.certificate_types[0] if fta.certificate_types else "Certificate of Origin",
+        producer_name=request.producer_name,
+        producer_address=request.producer_address,
+        status="draft",
+    )
+    
+    db.add(determination)
+    db.commit()
+    db.refresh(determination)
+    
+    return {
+        "determination_id": str(determination.id),
+        "is_originating": is_originating,
+        "fta_code": request.fta_code.upper(),
+        "fta_name": fta.name,
+        "hs_code": request.hs_code,
+        "product_description": request.product_description,
+        "rule_applied": rule_applied,
+        "determination_reason": determination_reason,
+        "certificate_type": determination.certificate_type,
+        "status": determination.status,
+        "next_steps": [
+            "Verify CTC requirements with bill of materials",
+            "Document production process if specific processing required",
+            "Complete certificate of origin form",
+            "Maintain records for 5 years (USMCA) or per FTA requirements",
+        ] if is_originating else [
+            "Review product sourcing for more originating content",
+            "Consider alternative suppliers in FTA territory",
+            "Consult with customs broker for other qualifying options",
+        ],
+    }
+
+
+@router.get("/roo/determinations")
+async def list_origin_determinations(
+    fta_code: Optional[str] = None,
+    limit: int = Query(default=50, le=200),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List user's origin determination history."""
+    query = db.query(OriginDetermination).filter(
+        OriginDetermination.user_id == current_user.id,
+        OriginDetermination.is_active == True
+    )
+    
+    if fta_code:
+        query = query.filter(OriginDetermination.fta_code == fta_code.upper())
+    
+    determinations = query.order_by(desc(OriginDetermination.created_at)).limit(limit).all()
+    
+    return {
+        "total": len(determinations),
+        "determinations": [
+            {
+                "id": str(d.id),
+                "product_name": d.product_name,
+                "product_description": d.product_description[:100],
+                "hs_code": d.hs_code,
+                "fta_code": d.fta_code,
+                "is_originating": d.is_originating,
+                "rule_applied": d.rule_applied,
+                "status": d.status,
+                "created_at": d.created_at.isoformat(),
+            }
+            for d in determinations
+        ]
+    }
+
+
+# ============================================================================
+# Phase 3: Team Collaboration
+# ============================================================================
+
+class CreateTeamRequest(BaseModel):
+    """Request to create a team"""
+    name: str = Field(..., min_length=2, max_length=200)
+    description: Optional[str] = None
+    default_import_country: str = "US"
+
+
+class InviteTeamMemberRequest(BaseModel):
+    """Request to invite a team member"""
+    email: str
+    role: str = Field(default="editor", description="owner, admin, editor, viewer")
+
+
+class ShareClassificationRequest(BaseModel):
+    """Request to share a classification"""
+    classification_id: str
+    share_with_user_id: Optional[str] = None
+    share_with_team_id: Optional[str] = None
+    share_with_email: Optional[str] = None
+    can_edit: bool = False
+    can_comment: bool = True
+    expires_days: Optional[int] = None
+
+
+@router.post("/teams")
+async def create_team(
+    request: CreateTeamRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new team."""
+    team = HSCodeTeam(
+        name=request.name,
+        description=request.description,
+        owner_id=current_user.id,
+        default_import_country=request.default_import_country,
+    )
+    db.add(team)
+    db.flush()
+    
+    # Add creator as owner member
+    member = HSCodeTeamMember(
+        team_id=team.id,
+        user_id=current_user.id,
+        role="owner",
+        can_classify=True,
+        can_edit=True,
+        can_delete=True,
+        can_share=True,
+        can_export=True,
+        can_invite=True,
+        status="active",
+        joined_at=datetime.utcnow(),
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(team)
+    
+    return {
+        "id": str(team.id),
+        "name": team.name,
+        "description": team.description,
+        "owner_id": str(team.owner_id),
+        "created_at": team.created_at.isoformat(),
+    }
+
+
+@router.get("/teams")
+async def list_teams(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List teams the user belongs to."""
+    memberships = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.user_id == current_user.id,
+        HSCodeTeamMember.is_active == True
+    ).all()
+    
+    teams = []
+    for m in memberships:
+        team = db.query(HSCodeTeam).filter(HSCodeTeam.id == m.team_id).first()
+        if team and team.is_active:
+            member_count = db.query(HSCodeTeamMember).filter(
+                HSCodeTeamMember.team_id == team.id,
+                HSCodeTeamMember.is_active == True
+            ).count()
+            
+            teams.append({
+                "id": str(team.id),
+                "name": team.name,
+                "description": team.description,
+                "role": m.role,
+                "member_count": member_count,
+                "plan": team.plan,
+                "created_at": team.created_at.isoformat(),
+            })
+    
+    return {"teams": teams}
+
+
+@router.get("/teams/{team_id}")
+async def get_team(
+    team_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get team details with members."""
+    # Verify membership
+    membership = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.team_id == team_id,
+        HSCodeTeamMember.user_id == current_user.id,
+        HSCodeTeamMember.is_active == True
+    ).first()
+    
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
+    
+    team = db.query(HSCodeTeam).filter(
+        HSCodeTeam.id == team_id,
+        HSCodeTeam.is_active == True
+    ).first()
+    
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Get all members
+    members = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.team_id == team_id,
+        HSCodeTeamMember.is_active == True
+    ).all()
+    
+    # Get projects
+    projects = db.query(HSCodeProject).filter(
+        HSCodeProject.team_id == team_id,
+        HSCodeProject.is_active == True
+    ).all()
+    
+    return {
+        "id": str(team.id),
+        "name": team.name,
+        "description": team.description,
+        "owner_id": str(team.owner_id),
+        "default_import_country": team.default_import_country,
+        "plan": team.plan,
+        "max_members": team.max_members,
+        "members": [
+            {
+                "id": str(m.id),
+                "user_id": str(m.user_id),
+                "role": m.role,
+                "status": m.status,
+                "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+            }
+            for m in members
+        ],
+        "projects": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "status": p.status,
+                "classification_count": p.classification_count,
+            }
+            for p in projects
+        ],
+        "your_role": membership.role,
+    }
+
+
+@router.post("/teams/{team_id}/invite")
+async def invite_team_member(
+    team_id: str,
+    request: InviteTeamMemberRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Invite a new member to the team."""
+    # Verify permission
+    membership = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.team_id == team_id,
+        HSCodeTeamMember.user_id == current_user.id,
+        HSCodeTeamMember.can_invite == True,
+        HSCodeTeamMember.is_active == True
+    ).first()
+    
+    if not membership:
+        raise HTTPException(status_code=403, detail="No permission to invite members")
+    
+    team = db.query(HSCodeTeam).filter(HSCodeTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Check member limit
+    current_count = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.team_id == team_id,
+        HSCodeTeamMember.is_active == True
+    ).count()
+    
+    if current_count >= team.max_members:
+        raise HTTPException(status_code=400, detail=f"Team has reached maximum members ({team.max_members})")
+    
+    # Look up user by email (simplified - in production would send email invite)
+    from app.models.user import User as UserModel
+    invitee = db.query(UserModel).filter(UserModel.email == request.email).first()
+    
+    if invitee:
+        # Check if already member
+        existing = db.query(HSCodeTeamMember).filter(
+            HSCodeTeamMember.team_id == team_id,
+            HSCodeTeamMember.user_id == invitee.id
+        ).first()
+        
+        if existing:
+            raise HTTPException(status_code=400, detail="User is already a team member")
+        
+        # Create membership
+        role_permissions = {
+            "admin": {"classify": True, "edit": True, "delete": True, "share": True, "export": True, "invite": True},
+            "editor": {"classify": True, "edit": True, "delete": False, "share": True, "export": True, "invite": False},
+            "viewer": {"classify": False, "edit": False, "delete": False, "share": False, "export": True, "invite": False},
+        }
+        perms = role_permissions.get(request.role, role_permissions["viewer"])
+        
+        new_member = HSCodeTeamMember(
+            team_id=team_id,
+            user_id=invitee.id,
+            role=request.role,
+            can_classify=perms["classify"],
+            can_edit=perms["edit"],
+            can_delete=perms["delete"],
+            can_share=perms["share"],
+            can_export=perms["export"],
+            can_invite=perms["invite"],
+            status="active",
+            invited_by=current_user.id,
+            invited_at=datetime.utcnow(),
+            joined_at=datetime.utcnow(),
+        )
+        db.add(new_member)
+        db.commit()
+        
+        return {
+            "status": "added",
+            "member_id": str(new_member.id),
+            "user_id": str(invitee.id),
+            "role": request.role,
+        }
+    else:
+        # User not found - would send email invite in production
+        return {
+            "status": "invited",
+            "email": request.email,
+            "message": "Invitation sent. User will be added when they sign up.",
+        }
+
+
+@router.post("/teams/{team_id}/projects")
+async def create_project(
+    team_id: str,
+    name: str,
+    description: Optional[str] = None,
+    target_fta: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a project within a team."""
+    # Verify membership with edit permission
+    membership = db.query(HSCodeTeamMember).filter(
+        HSCodeTeamMember.team_id == team_id,
+        HSCodeTeamMember.user_id == current_user.id,
+        HSCodeTeamMember.can_edit == True,
+        HSCodeTeamMember.is_active == True
+    ).first()
+    
+    if not membership:
+        raise HTTPException(status_code=403, detail="No permission to create projects")
+    
+    project = HSCodeProject(
+        team_id=team_id,
+        created_by=current_user.id,
+        name=name,
+        description=description,
+        target_fta=target_fta,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "description": project.description,
+        "target_fta": project.target_fta,
+        "status": project.status,
+        "created_at": project.created_at.isoformat(),
+    }
+
+
+@router.post("/share")
+async def share_classification(
+    request: ShareClassificationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Share a classification with another user, team, or via link."""
+    # Verify ownership
+    classification = db.query(HSClassification).filter(
+        HSClassification.id == request.classification_id,
+        HSClassification.user_id == current_user.id
+    ).first()
+    
+    if not classification:
+        raise HTTPException(status_code=404, detail="Classification not found")
+    
+    # Generate share link
+    share_link = secrets.token_urlsafe(16)
+    
+    # Calculate expiry
+    expires_at = None
+    if request.expires_days:
+        expires_at = datetime.utcnow() + timedelta(days=request.expires_days)
+    
+    share = ClassificationShare(
+        classification_id=classification.id,
+        shared_by=current_user.id,
+        shared_with_user=request.share_with_user_id,
+        shared_with_team=request.share_with_team_id,
+        shared_with_email=request.share_with_email,
+        can_view=True,
+        can_edit=request.can_edit,
+        can_comment=request.can_comment,
+        share_link=share_link,
+        requires_auth=request.share_with_email is None,
+        expires_at=expires_at,
+    )
+    
+    db.add(share)
+    
+    # Update classification shared status
+    classification.is_shared = True
+    if request.share_with_user_id:
+        shared_with = classification.shared_with or []
+        if request.share_with_user_id not in shared_with:
+            shared_with.append(request.share_with_user_id)
+            classification.shared_with = shared_with
+    
+    db.commit()
+    db.refresh(share)
+    
+    share_url = f"/hs-code/shared/{share_link}"
+    
+    return {
+        "share_id": str(share.id),
+        "classification_id": request.classification_id,
+        "share_link": share_link,
+        "share_url": share_url,
+        "can_edit": request.can_edit,
+        "can_comment": request.can_comment,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+    }
+
+
+@router.get("/shared/{share_link}")
+async def get_shared_classification(
+    share_link: str,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    """Access a shared classification via link."""
+    share = db.query(ClassificationShare).filter(
+        ClassificationShare.share_link == share_link,
+        ClassificationShare.is_active == True
+    ).first()
+    
+    if not share:
+        raise HTTPException(status_code=404, detail="Share link not found or expired")
+    
+    # Check expiry
+    if share.expires_at and share.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=410, detail="Share link has expired")
+    
+    # Check auth requirement
+    if share.requires_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Get classification
+    classification = db.query(HSClassification).filter(
+        HSClassification.id == share.classification_id
+    ).first()
+    
+    if not classification:
+        raise HTTPException(status_code=404, detail="Classification not found")
+    
+    # Update view count
+    share.view_count = (share.view_count or 0) + 1
+    share.last_viewed = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "classification": {
+            "id": str(classification.id),
+            "product_description": classification.product_description,
+            "product_name": classification.product_name,
+            "hs_code": classification.hs_code,
+            "hs_code_description": classification.hs_code_description,
+            "import_country": classification.import_country,
+            "export_country": classification.export_country,
+            "confidence_score": classification.confidence_score,
+            "mfn_rate": classification.mfn_rate,
+            "ai_reasoning": classification.ai_reasoning,
+            "is_verified": classification.is_verified,
+            "created_at": classification.created_at.isoformat(),
+        },
+        "permissions": {
+            "can_view": share.can_view,
+            "can_edit": share.can_edit,
+            "can_comment": share.can_comment,
+        },
+        "view_count": share.view_count,
     }
 

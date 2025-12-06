@@ -422,3 +422,343 @@ class RateAlert(Base):
         Index('ix_rate_alerts_user', 'user_id', 'is_active'),
     )
 
+
+# ============================================================================
+# Phase 3: USMCA and RCEP Rules of Origin
+# ============================================================================
+
+class ProductSpecificRule(Base):
+    """
+    Product-Specific Rules (PSR) for FTAs like USMCA and RCEP.
+    These are the detailed rules that determine origin eligibility.
+    """
+    __tablename__ = "product_specific_rules"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fta_id = Column(UUID(as_uuid=True), ForeignKey("fta_agreements.id"), nullable=False)
+    
+    # HS Code targeting (can be at various levels of specificity)
+    hs_code_from = Column(String(10), nullable=False, index=True)  # Range start
+    hs_code_to = Column(String(10))  # Range end (null if single code)
+    chapter = Column(String(2))  # Chapter number
+    
+    # Rule type (USMCA uses multiple rule types)
+    rule_type = Column(String(20), nullable=False)  # CTC, RVC, SP, WO, combination
+    
+    # Change in Tariff Classification (CTC) rules
+    ctc_type = Column(String(10))  # CC (chapter), CTH (heading), CTSH (subheading)
+    ctc_exceptions = Column(Text)  # "except from headings 52.04 through 52.12"
+    
+    # Regional Value Content (RVC) requirements
+    rvc_required = Column(Boolean, default=False)
+    rvc_threshold = Column(Float)  # e.g., 75 for USMCA autos
+    rvc_method = Column(String(30))  # transaction_value, net_cost, build_down, build_up
+    rvc_alternative_threshold = Column(Float)  # Some rules allow alternative RVC
+    
+    # Labor Value Content (LVC) - USMCA specific for autos
+    lvc_required = Column(Boolean, default=False)
+    lvc_threshold = Column(Float)  # e.g., 40 for USMCA autos
+    
+    # Steel/Aluminum requirements (USMCA specific)
+    steel_aluminum_required = Column(Boolean, default=False)
+    steel_requirement = Column(Float)  # % from North America
+    
+    # Specific Process rules
+    process_requirements = Column(Text)  # e.g., "cut and sewn in territory"
+    
+    # Full rule text (official language)
+    rule_text = Column(Text, nullable=False)
+    rule_notes = Column(Text)  # Additional clarifications
+    
+    # Annex/Chapter reference
+    annex_reference = Column(String(50))  # e.g., "Annex 4-B", "Chapter 62 Rule"
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    fta = relationship("FTAAgreement", backref="product_specific_rules")
+    
+    __table_args__ = (
+        Index('ix_psr_fta_hs', 'fta_id', 'hs_code_from'),
+    )
+
+
+class RVCCalculation(Base):
+    """
+    Saved Regional Value Content calculations for origin determination.
+    Users can save and track their RVC calculations.
+    """
+    __tablename__ = "rvc_calculations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # Product details
+    product_description = Column(Text, nullable=False)
+    hs_code = Column(String(15), nullable=False)
+    fta_code = Column(String(20), nullable=False)  # USMCA, RCEP, etc.
+    
+    # Value breakdown
+    transaction_value = Column(Float)  # FOB price
+    adjusted_value = Column(Float)  # After adjustments
+    
+    # Non-originating materials
+    vom_value = Column(Float)  # Value of non-originating materials
+    vom_breakdown = Column(JSON)  # Detailed breakdown by component
+    
+    # Originating materials
+    vdm_value = Column(Float)  # Value of originating materials
+    vdm_breakdown = Column(JSON)  # Detailed breakdown
+    
+    # Cost elements
+    direct_labor_cost = Column(Float)
+    direct_overhead = Column(Float)
+    profit = Column(Float)
+    other_costs = Column(Float)
+    
+    # Net cost method components (for USMCA)
+    net_cost = Column(Float)
+    excluded_costs = Column(JSON)  # Royalties, shipping, packing, etc.
+    
+    # Calculation results
+    rvc_percent = Column(Float)  # Calculated RVC
+    method_used = Column(String(30))  # transaction_value, net_cost
+    threshold_required = Column(Float)  # Required RVC threshold
+    meets_requirement = Column(Boolean)
+    
+    # For autos (USMCA)
+    lvc_percent = Column(Float)
+    lvc_meets_requirement = Column(Boolean)
+    
+    # Notes and documentation
+    notes = Column(Text)
+    supporting_docs = Column(JSON)  # List of uploaded document references
+    
+    # Project organization
+    project_name = Column(String(200))
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_rvc_calc_user', 'user_id', 'created_at'),
+    )
+
+
+class OriginDetermination(Base):
+    """
+    Complete origin determination record for FTA claims.
+    Links classification + PSR + RVC calculation + certificate.
+    """
+    __tablename__ = "origin_determinations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # Product
+    product_description = Column(Text, nullable=False)
+    product_name = Column(String(200))
+    hs_code = Column(String(15), nullable=False)
+    
+    # FTA being claimed
+    fta_code = Column(String(20), nullable=False)
+    export_country = Column(String(2), nullable=False)
+    import_country = Column(String(2), nullable=False)
+    
+    # Rule applied
+    rule_applied = Column(String(50))  # CTC, RVC, combination
+    psr_id = Column(UUID(as_uuid=True), ForeignKey("product_specific_rules.id"))
+    rvc_calculation_id = Column(UUID(as_uuid=True), ForeignKey("rvc_calculations.id"))
+    
+    # Determination result
+    is_originating = Column(Boolean)
+    determination_reason = Column(Text)
+    
+    # Certificate details
+    certificate_type = Column(String(50))  # USMCA Certificate, Form D, etc.
+    certificate_number = Column(String(100))
+    certificate_date = Column(DateTime)
+    blanket_period_from = Column(DateTime)
+    blanket_period_to = Column(DateTime)
+    
+    # Producer/Exporter info
+    producer_name = Column(String(200))
+    producer_address = Column(Text)
+    exporter_name = Column(String(200))
+    exporter_address = Column(Text)
+    
+    # Status
+    status = Column(String(20), default="draft")  # draft, verified, certified, expired
+    verified_by = Column(UUID(as_uuid=True))
+    verified_at = Column(DateTime)
+    
+    # Documentation
+    supporting_documents = Column(JSON)  # List of document references
+    notes = Column(Text)
+    
+    # Sharing
+    is_shared = Column(Boolean, default=False)
+    shared_with = Column(JSON, default=list)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    psr = relationship("ProductSpecificRule", backref="determinations")
+    rvc_calculation = relationship("RVCCalculation", backref="determination")
+    
+    __table_args__ = (
+        Index('ix_origin_det_user', 'user_id', 'fta_code'),
+    )
+
+
+# ============================================================================
+# Phase 3: Team Collaboration
+# ============================================================================
+
+class HSCodeTeam(Base):
+    """
+    Teams for collaborative HS code management.
+    """
+    __tablename__ = "hs_code_teams"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    
+    # Owner
+    owner_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # Team settings
+    default_import_country = Column(String(2), default="US")
+    default_ftas = Column(JSON, default=list)  # Preferred FTAs
+    
+    # Subscription/billing
+    plan = Column(String(20), default="free")  # free, pro, enterprise
+    max_members = Column(Integer, default=3)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class HSCodeTeamMember(Base):
+    """
+    Team membership with role-based permissions.
+    """
+    __tablename__ = "hs_code_team_members"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    team_id = Column(UUID(as_uuid=True), ForeignKey("hs_code_teams.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), nullable=False)
+    
+    # Role determines permissions
+    role = Column(String(20), nullable=False, default="viewer")  # owner, admin, editor, viewer
+    
+    # Permissions (can override role defaults)
+    can_classify = Column(Boolean, default=True)
+    can_edit = Column(Boolean, default=False)
+    can_delete = Column(Boolean, default=False)
+    can_share = Column(Boolean, default=False)
+    can_export = Column(Boolean, default=True)
+    can_invite = Column(Boolean, default=False)
+    
+    # Status
+    status = Column(String(20), default="active")  # active, invited, suspended
+    invited_by = Column(UUID(as_uuid=True))
+    invited_at = Column(DateTime)
+    joined_at = Column(DateTime)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    team = relationship("HSCodeTeam", backref="members")
+    
+    __table_args__ = (
+        Index('ix_team_members_team', 'team_id', 'user_id'),
+    )
+
+
+class HSCodeProject(Base):
+    """
+    Projects for organizing classifications within a team.
+    """
+    __tablename__ = "hs_code_projects"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    team_id = Column(UUID(as_uuid=True), ForeignKey("hs_code_teams.id"), nullable=False)
+    created_by = Column(UUID(as_uuid=True), nullable=False)
+    
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    
+    # Project settings
+    default_import_country = Column(String(2))
+    default_export_country = Column(String(2))
+    target_fta = Column(String(20))  # Primary FTA for this project
+    
+    # Status
+    status = Column(String(20), default="active")  # active, completed, archived
+    
+    # Metadata
+    classification_count = Column(Integer, default=0)
+    last_activity = Column(DateTime)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    team = relationship("HSCodeTeam", backref="projects")
+    
+    __table_args__ = (
+        Index('ix_projects_team', 'team_id'),
+    )
+
+
+class ClassificationShare(Base):
+    """
+    Sharing individual classifications with team members or external users.
+    """
+    __tablename__ = "classification_shares"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    classification_id = Column(UUID(as_uuid=True), ForeignKey("hs_classifications.id"), nullable=False)
+    shared_by = Column(UUID(as_uuid=True), nullable=False)
+    
+    # Share target (one of these will be set)
+    shared_with_user = Column(UUID(as_uuid=True))  # Specific user
+    shared_with_team = Column(UUID(as_uuid=True))  # Entire team
+    shared_with_email = Column(String(200))  # External email
+    
+    # Permissions
+    can_view = Column(Boolean, default=True)
+    can_edit = Column(Boolean, default=False)
+    can_comment = Column(Boolean, default=True)
+    
+    # Access control
+    share_link = Column(String(100), unique=True)  # For link sharing
+    requires_auth = Column(Boolean, default=True)
+    expires_at = Column(DateTime)
+    
+    # Tracking
+    view_count = Column(Integer, default=0)
+    last_viewed = Column(DateTime)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    classification = relationship("HSClassification", backref="shares")
+    
+    __table_args__ = (
+        Index('ix_shares_classification', 'classification_id'),
+    )
+

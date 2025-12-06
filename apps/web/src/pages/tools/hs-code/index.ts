@@ -21,3 +21,7 @@ export { default as HSCodeCompare } from './HSCodeCompare'
 export { default as HSCodeRulings } from './HSCodeRulings'
 export { default as HSCodeAlerts } from './HSCodeAlerts'
 
+// Phase 3 Features
+export { default as HSCodeUSMCA } from './HSCodeUSMCA'
+export { default as HSCodeTeams } from './HSCodeTeams'
+
