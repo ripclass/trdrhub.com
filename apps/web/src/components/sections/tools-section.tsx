@@ -64,7 +64,7 @@ const tools = [
     tagline: "Screen in Under 2 Seconds",
     description: "Real-time screening against OFAC, EU, UN, and 50+ global sanctions lists. Parties, vessels, and goods.",
     highlights: ["50+ Lists", "Vessel Screening", "Fuzzy Matching"],
-    status: "coming" as const,
+    status: "live" as const,
     href: "/sanctions",
     category: "Compliance & Screening",
     color: "red",
