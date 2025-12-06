@@ -12,6 +12,7 @@ import ContactPage from './pages/ContactPage'
 // Tool landing pages
 import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
+import HSCodeDashboard from './pages/tools/hs-code/HSCodeDashboard'
 import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import LCBuilderDashboard from './pages/tools/lc-builder/LCBuilderDashboard'
@@ -147,6 +148,7 @@ function App() {
         {/* Tool Landing Pages - Live */}
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
+        <Route path="/hs-code/dashboard" element={<HSCodeDashboard />} />
         
         {/* Tool Landing Pages */}
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />
