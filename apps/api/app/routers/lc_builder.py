@@ -3720,3 +3720,447 @@ async def get_workflow_status(
         "submitted_at": lc.submitted_at.isoformat() if lc.submitted_at else None,
     }
 
+
+# ============================================================================
+# Team Collaboration - Sharing
+# ============================================================================
+
+from app.models.lc_builder import LCShare, SharePermission, LCComment, NotificationPreference
+
+
+class ShareRequest(BaseModel):
+    """Request to share an LC application"""
+    email: str = Field(..., description="Email of person to share with")
+    permission: str = Field(default="view", description="Permission level: view, comment, edit, review")
+    message: Optional[str] = None
+
+
+@router.post("/applications/{application_id}/share")
+async def share_application(
+    application_id: str,
+    request: ShareRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Share an LC application with a colleague."""
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    # Check if already shared with this email
+    existing = db.query(LCShare).filter(
+        LCShare.lc_application_id == application_id,
+        LCShare.shared_with_email == request.email.lower()
+    ).first()
+    
+    if existing:
+        # Update permission
+        existing.permission = SharePermission(request.permission)
+        db.commit()
+        return {"status": "updated", "share_id": str(existing.id)}
+    
+    # Check if email belongs to an existing user
+    shared_user = db.query(User).filter(User.email == request.email.lower()).first()
+    
+    # Create share
+    share = LCShare(
+        lc_application_id=lc.id,
+        shared_by_id=current_user.id,
+        shared_with_user_id=shared_user.id if shared_user else None,
+        shared_with_email=request.email.lower(),
+        permission=SharePermission(request.permission),
+        is_accepted=True if shared_user else False,
+    )
+    
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+    
+    # Send notification email
+    from app.services.notifications import EmailService
+    email_service = EmailService()
+    
+    share_html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #10B981;">LC Application Shared With You</h2>
+        <p>{current_user.full_name or current_user.email} has shared an LC application with you.</p>
+        <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Reference:</strong> {lc.reference_number}</p>
+            <p><strong>Amount:</strong> {lc.currency} {lc.amount:,.2f}</p>
+            <p><strong>Beneficiary:</strong> {lc.beneficiary_name}</p>
+            <p><strong>Permission:</strong> {request.permission.upper()}</p>
+        </div>
+        {f'<p><em>Message: {request.message}</em></p>' if request.message else ''}
+        <a href="https://trdrhub.com/lc-builder/dashboard" 
+           style="display: inline-block; background: #10B981; color: white; padding: 12px 24px; 
+                  text-decoration: none; border-radius: 6px; margin-top: 20px;">
+            View LC Application
+        </a>
+    </div>
+    """
+    
+    background_tasks.add_task(
+        email_service.send,
+        to=request.email,
+        subject=f"LC Application Shared: {lc.reference_number}",
+        html=share_html,
+        text=f"{current_user.full_name or current_user.email} shared LC {lc.reference_number} with you."
+    )
+    
+    return {
+        "status": "shared",
+        "share_id": str(share.id),
+        "email": request.email,
+        "permission": request.permission,
+        "is_existing_user": shared_user is not None
+    }
+
+
+@router.get("/applications/{application_id}/shares")
+async def list_shares(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all shares for an LC application."""
+    # Check access (owner or shared with)
+    lc = db.query(LCApplication).filter(LCApplication.id == application_id).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    is_owner = str(lc.user_id) == str(current_user.id)
+    is_shared = db.query(LCShare).filter(
+        LCShare.lc_application_id == application_id,
+        LCShare.shared_with_user_id == current_user.id
+    ).first() is not None
+    
+    if not is_owner and not is_shared:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    shares = db.query(LCShare).filter(LCShare.lc_application_id == application_id).all()
+    
+    result = []
+    for s in shares:
+        # Get user info if available
+        shared_user = None
+        if s.shared_with_user_id:
+            shared_user = db.query(User).filter(User.id == s.shared_with_user_id).first()
+        
+        result.append({
+            "id": str(s.id),
+            "email": s.shared_with_email,
+            "user_name": shared_user.full_name if shared_user else None,
+            "permission": s.permission.value,
+            "is_accepted": s.is_accepted,
+            "invited_at": s.invited_at.isoformat() if s.invited_at else None,
+            "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
+        })
+    
+    return {"shares": result, "is_owner": is_owner}
+
+
+@router.delete("/applications/{application_id}/shares/{share_id}")
+async def remove_share(
+    application_id: str,
+    share_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a share from an LC application."""
+    lc = db.query(LCApplication).filter(
+        LCApplication.id == application_id,
+        LCApplication.user_id == current_user.id
+    ).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found or access denied")
+    
+    share = db.query(LCShare).filter(
+        LCShare.id == share_id,
+        LCShare.lc_application_id == application_id
+    ).first()
+    
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+    
+    db.delete(share)
+    db.commit()
+    
+    return {"status": "removed"}
+
+
+@router.get("/shared-with-me")
+async def list_shared_with_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all LC applications shared with the current user."""
+    shares = db.query(LCShare).filter(
+        (LCShare.shared_with_user_id == current_user.id) |
+        (LCShare.shared_with_email == current_user.email)
+    ).all()
+    
+    result = []
+    for s in shares:
+        lc = db.query(LCApplication).filter(LCApplication.id == s.lc_application_id).first()
+        if lc:
+            owner = db.query(User).filter(User.id == lc.user_id).first()
+            result.append({
+                "share_id": str(s.id),
+                "lc_id": str(lc.id),
+                "reference_number": lc.reference_number,
+                "name": lc.name,
+                "status": lc.status.value,
+                "amount": lc.amount,
+                "currency": lc.currency,
+                "beneficiary_name": lc.beneficiary_name,
+                "permission": s.permission.value,
+                "shared_by": owner.full_name if owner else "Unknown",
+                "shared_at": s.invited_at.isoformat() if s.invited_at else None,
+            })
+    
+    return {"shared_applications": result, "count": len(result)}
+
+
+# ============================================================================
+# Team Collaboration - Comments
+# ============================================================================
+
+class CommentRequest(BaseModel):
+    """Request to add a comment"""
+    content: str = Field(..., min_length=1, max_length=5000)
+    parent_id: Optional[str] = None
+    field_reference: Optional[str] = None
+    mentions: List[str] = Field(default_factory=list)
+
+
+@router.post("/applications/{application_id}/comments")
+async def add_comment(
+    application_id: str,
+    request: CommentRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a comment to an LC application."""
+    # Check access
+    lc = db.query(LCApplication).filter(LCApplication.id == application_id).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    is_owner = str(lc.user_id) == str(current_user.id)
+    share = db.query(LCShare).filter(
+        LCShare.lc_application_id == application_id,
+        LCShare.shared_with_user_id == current_user.id,
+        LCShare.permission.in_([SharePermission.COMMENT, SharePermission.EDIT, SharePermission.REVIEW, SharePermission.ADMIN])
+    ).first()
+    
+    if not is_owner and not share:
+        raise HTTPException(status_code=403, detail="You don't have permission to comment")
+    
+    comment = LCComment(
+        lc_application_id=lc.id,
+        user_id=current_user.id,
+        content=request.content,
+        parent_id=request.parent_id,
+        field_reference=request.field_reference,
+        mentions=request.mentions,
+    )
+    
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    
+    # Notify mentioned users and owner
+    from app.services.notifications import EmailService
+    email_service = EmailService()
+    
+    # Notify owner if commenter is not owner
+    if not is_owner:
+        owner = db.query(User).filter(User.id == lc.user_id).first()
+        if owner and owner.email:
+            background_tasks.add_task(
+                email_service.send,
+                to=owner.email,
+                subject=f"New Comment on LC {lc.reference_number}",
+                html=f"""
+                <p>{current_user.full_name or current_user.email} commented on your LC application.</p>
+                <blockquote style="background: #f3f4f6; padding: 12px; border-left: 4px solid #10B981;">
+                    {request.content}
+                </blockquote>
+                <a href="https://trdrhub.com/lc-builder/dashboard/edit/{lc.id}">View Application</a>
+                """,
+                text=f"New comment from {current_user.full_name}: {request.content}"
+            )
+    
+    return {
+        "id": str(comment.id),
+        "content": comment.content,
+        "user_id": str(comment.user_id),
+        "user_name": current_user.full_name or current_user.email,
+        "created_at": comment.created_at.isoformat(),
+        "field_reference": comment.field_reference,
+    }
+
+
+@router.get("/applications/{application_id}/comments")
+async def list_comments(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all comments on an LC application."""
+    # Check access
+    lc = db.query(LCApplication).filter(LCApplication.id == application_id).first()
+    
+    if not lc:
+        raise HTTPException(status_code=404, detail="LC application not found")
+    
+    is_owner = str(lc.user_id) == str(current_user.id)
+    is_shared = db.query(LCShare).filter(
+        LCShare.lc_application_id == application_id,
+        LCShare.shared_with_user_id == current_user.id
+    ).first() is not None
+    
+    if not is_owner and not is_shared:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    comments = db.query(LCComment).filter(
+        LCComment.lc_application_id == application_id
+    ).order_by(LCComment.created_at.desc()).all()
+    
+    result = []
+    for c in comments:
+        user = db.query(User).filter(User.id == c.user_id).first()
+        result.append({
+            "id": str(c.id),
+            "content": c.content,
+            "user_id": str(c.user_id),
+            "user_name": user.full_name if user else "Unknown",
+            "user_email": user.email if user else None,
+            "parent_id": str(c.parent_id) if c.parent_id else None,
+            "field_reference": c.field_reference,
+            "mentions": c.mentions,
+            "is_resolved": c.is_resolved,
+            "created_at": c.created_at.isoformat(),
+        })
+    
+    return {"comments": result, "count": len(result)}
+
+
+@router.post("/applications/{application_id}/comments/{comment_id}/resolve")
+async def resolve_comment(
+    application_id: str,
+    comment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a comment as resolved."""
+    comment = db.query(LCComment).filter(
+        LCComment.id == comment_id,
+        LCComment.lc_application_id == application_id
+    ).first()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    comment.is_resolved = True
+    comment.resolved_by = current_user.id
+    comment.resolved_at = datetime.utcnow()
+    db.commit()
+    
+    return {"status": "resolved"}
+
+
+# ============================================================================
+# Notification Preferences
+# ============================================================================
+
+class NotificationPreferencesUpdate(BaseModel):
+    """Update notification preferences"""
+    email_on_status_change: Optional[bool] = None
+    email_on_share: Optional[bool] = None
+    email_on_comment: Optional[bool] = None
+    email_on_mention: Optional[bool] = None
+    email_on_approval_request: Optional[bool] = None
+    email_on_rejection: Optional[bool] = None
+    email_digest: Optional[str] = None  # instant, daily, weekly, none
+    in_app_on_status_change: Optional[bool] = None
+    in_app_on_share: Optional[bool] = None
+    in_app_on_comment: Optional[bool] = None
+    in_app_on_mention: Optional[bool] = None
+
+
+@router.get("/notification-preferences")
+async def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get current user's notification preferences."""
+    prefs = db.query(NotificationPreference).filter(
+        NotificationPreference.user_id == current_user.id
+    ).first()
+    
+    if not prefs:
+        # Return defaults
+        return {
+            "email_on_status_change": True,
+            "email_on_share": True,
+            "email_on_comment": True,
+            "email_on_mention": True,
+            "email_on_approval_request": True,
+            "email_on_rejection": True,
+            "email_digest": "instant",
+            "in_app_on_status_change": True,
+            "in_app_on_share": True,
+            "in_app_on_comment": True,
+            "in_app_on_mention": True,
+        }
+    
+    return {
+        "email_on_status_change": prefs.email_on_status_change,
+        "email_on_share": prefs.email_on_share,
+        "email_on_comment": prefs.email_on_comment,
+        "email_on_mention": prefs.email_on_mention,
+        "email_on_approval_request": prefs.email_on_approval_request,
+        "email_on_rejection": prefs.email_on_rejection,
+        "email_digest": prefs.email_digest,
+        "in_app_on_status_change": prefs.in_app_on_status_change,
+        "in_app_on_share": prefs.in_app_on_share,
+        "in_app_on_comment": prefs.in_app_on_comment,
+        "in_app_on_mention": prefs.in_app_on_mention,
+    }
+
+
+@router.put("/notification-preferences")
+async def update_notification_preferences(
+    request: NotificationPreferencesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update notification preferences."""
+    prefs = db.query(NotificationPreference).filter(
+        NotificationPreference.user_id == current_user.id
+    ).first()
+    
+    if not prefs:
+        prefs = NotificationPreference(user_id=current_user.id)
+        db.add(prefs)
+    
+    # Update only provided fields
+    for field, value in request.dict(exclude_unset=True).items():
+        if value is not None:
+            setattr(prefs, field, value)
+    
+    db.commit()
+    db.refresh(prefs)
+    
+    return {"status": "updated"}
+

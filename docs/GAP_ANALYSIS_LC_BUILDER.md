@@ -91,10 +91,20 @@ After Phase 1 completion, the tool is now much more usable:
 - [x] **Email Notifications** - Status change notifications via Resend with beautiful HTML templates
 - [x] **Approval Workflow UI** - Submit for review, approve, reject with workflow status page
 
+## Phase 4: Team Collaboration - COMPLETED ✅
+
+### All Tasks Done:
+- [x] **Team Sharing** - Share LC applications with colleagues via email
+- [x] **Permission Levels** - View, Comment, Edit, Review, Admin permissions
+- [x] **Shared With Me Page** - View all LCs shared by colleagues
+- [x] **Comments System** - Add comments, resolve, field-specific comments
+- [x] **Notification Preferences** - Granular control over email/in-app notifications
+- [x] **Share Notifications** - Email alerts when someone shares an LC
+
 ### Future Enhancements:
-- [ ] Team collaboration (share with colleagues)
-- [ ] Role-based access (reviewer vs owner permissions)
-- [ ] Email notifications to reviewers
+- [ ] Team/Organization management
+- [ ] Activity feed on dashboard
+- [ ] @mention notifications in comments
 
 ---
 
@@ -165,6 +175,15 @@ After Phase 1 completion, the tool is now much more usable:
 | `POST /lc-builder/applications/:id/approve` | ✅ | **Phase 3** Approve application |
 | `POST /lc-builder/applications/:id/reject` | ✅ | **Phase 3** Reject application |
 | `GET /lc-builder/applications/:id/workflow-status` | ✅ | **Phase 3** Get workflow status |
+| `POST /lc-builder/applications/:id/share` | ✅ | **Phase 4** Share application |
+| `GET /lc-builder/applications/:id/shares` | ✅ | **Phase 4** List shares |
+| `DELETE /lc-builder/applications/:id/shares/:shareId` | ✅ | **Phase 4** Remove share |
+| `GET /lc-builder/shared-with-me` | ✅ | **Phase 4** List shared applications |
+| `POST /lc-builder/applications/:id/comments` | ✅ | **Phase 4** Add comment |
+| `GET /lc-builder/applications/:id/comments` | ✅ | **Phase 4** List comments |
+| `POST /lc-builder/applications/:id/comments/:id/resolve` | ✅ | **Phase 4** Resolve comment |
+| `GET /lc-builder/notification-preferences` | ✅ | **Phase 4** Get preferences |
+| `PUT /lc-builder/notification-preferences` | ✅ | **Phase 4** Update preferences |
 
 ---
 

@@ -86,6 +86,11 @@ const navItems = [
         title: "Approval Queue",
         href: "/lc-builder/dashboard/approvals",
         icon: ClipboardCheck,
+      },
+      {
+        title: "Shared With Me",
+        href: "/lc-builder/dashboard/shared",
+        icon: Users,
         badge: "New",
       },
     ],

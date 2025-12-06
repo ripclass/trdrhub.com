@@ -314,3 +314,104 @@ class BeneficiaryProfile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class SharePermission(str, enum.Enum):
+    """Permission levels for shared LC applications"""
+    VIEW = "view"           # Can view only
+    COMMENT = "comment"     # Can view and comment
+    EDIT = "edit"          # Can view, comment, and edit
+    REVIEW = "review"      # Can view, comment, and approve/reject
+    ADMIN = "admin"        # Full access including sharing
+
+
+class LCShare(Base):
+    """Sharing permissions for LC applications"""
+    __tablename__ = "lc_shares"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lc_application_id = Column(UUID(as_uuid=True), ForeignKey("lc_applications.id"), nullable=False, index=True)
+    
+    # Who is sharing
+    shared_by_id = Column(UUID(as_uuid=True), nullable=False)
+    
+    # Who it's shared with (either user_id OR email for pending invites)
+    shared_with_user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    shared_with_email = Column(String(255), nullable=True, index=True)
+    
+    # Permission level
+    permission = Column(SQLEnum(SharePermission), default=SharePermission.VIEW)
+    
+    # Invitation status
+    is_accepted = Column(Boolean, default=False)
+    invited_at = Column(DateTime, default=datetime.utcnow)
+    accepted_at = Column(DateTime, nullable=True)
+    
+    # Notification preferences for this share
+    notify_on_status_change = Column(Boolean, default=True)
+    notify_on_comment = Column(Boolean, default=True)
+    notify_on_amendment = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    lc_application = relationship("LCApplication", backref="shares")
+
+
+class LCComment(Base):
+    """Comments on LC applications for collaboration"""
+    __tablename__ = "lc_comments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lc_application_id = Column(UUID(as_uuid=True), ForeignKey("lc_applications.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), nullable=False)
+    
+    # Comment content
+    content = Column(Text, nullable=False)
+    
+    # For threaded comments
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("lc_comments.id"), nullable=True)
+    
+    # Mentions (store as JSON array of user IDs)
+    mentions = Column(JSON, default=list)
+    
+    # For field-specific comments
+    field_reference = Column(String(100), nullable=True)  # e.g., "goods_description", "amount"
+    
+    is_resolved = Column(Boolean, default=False)
+    resolved_by = Column(UUID(as_uuid=True), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    lc_application = relationship("LCApplication", backref="comments")
+    replies = relationship("LCComment", backref="parent", remote_side=[id])
+
+
+class NotificationPreference(Base):
+    """User notification preferences for LC Builder"""
+    __tablename__ = "lc_notification_preferences"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    
+    # Email notifications
+    email_on_status_change = Column(Boolean, default=True)
+    email_on_share = Column(Boolean, default=True)
+    email_on_comment = Column(Boolean, default=True)
+    email_on_mention = Column(Boolean, default=True)
+    email_on_approval_request = Column(Boolean, default=True)
+    email_on_rejection = Column(Boolean, default=True)
+    email_digest = Column(String(20), default="instant")  # instant, daily, weekly, none
+    
+    # In-app notifications
+    in_app_on_status_change = Column(Boolean, default=True)
+    in_app_on_share = Column(Boolean, default=True)
+    in_app_on_comment = Column(Boolean, default=True)
+    in_app_on_mention = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

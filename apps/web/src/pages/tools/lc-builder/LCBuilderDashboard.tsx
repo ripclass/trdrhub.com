@@ -19,6 +19,8 @@ import {
   Import,
   Loader2,
   FileCheck,
+  Share2,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +116,13 @@ export default function LCBuilderDashboard() {
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [importing, setImporting] = useState(false);
   
+  // Share State
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [sharingAppId, setSharingAppId] = useState<string | null>(null);
+  const [shareEmail, setShareEmail] = useState("");
+  const [sharePermission, setSharePermission] = useState("view");
+  const [sharing, setSharing] = useState(false);
+  
   useEffect(() => {
     if (session?.access_token) {
       fetchApplications();
@@ -170,6 +179,45 @@ export default function LCBuilderDashboard() {
       });
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!sharingAppId || !shareEmail || !session?.access_token) return;
+    
+    setSharing(true);
+    try {
+      const res = await fetch(`${API_BASE}/lc-builder/applications/${sharingAppId}/share`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: shareEmail,
+          permission: sharePermission,
+        }),
+      });
+      
+      if (res.ok) {
+        toast({
+          title: "Shared Successfully",
+          description: `LC shared with ${shareEmail}`,
+        });
+        setShowShareDialog(false);
+        setShareEmail("");
+        setSharingAppId(null);
+      } else {
+        throw new Error("Share failed");
+      }
+    } catch (error) {
+      toast({
+        title: "Share Failed",
+        description: "Could not share the application",
+        variant: "destructive",
+      });
+    } finally {
+      setSharing(false);
     }
   };
   
@@ -568,6 +616,15 @@ export default function LCBuilderDashboard() {
                             Workflow Status
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            onClick={() => {
+                              setSharingAppId(app.id);
+                              setShowShareDialog(true);
+                            }}
+                          >
+                            <Share2 className="h-4 w-4 mr-2" />
+                            Share
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-red-400"
                             onClick={() => handleDelete(app.id)}
                           >
@@ -653,6 +710,69 @@ export default function LCBuilderDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>
               Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-emerald-400" />
+              Share LC Application
+            </DialogTitle>
+            <DialogDescription>
+              Share this LC application with a colleague. They'll receive an email notification.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">Email Address</label>
+              <Input
+                type="email"
+                placeholder="colleague@company.com"
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+                className="bg-slate-800 border-slate-700"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">Permission Level</label>
+              <Select value={sharePermission} onValueChange={setSharePermission}>
+                <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="view">View Only</SelectItem>
+                  <SelectItem value="comment">View & Comment</SelectItem>
+                  <SelectItem value="edit">Full Edit Access</SelectItem>
+                  <SelectItem value="review">Reviewer (Approve/Reject)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                {sharePermission === "view" && "Can view the application but cannot make changes."}
+                {sharePermission === "comment" && "Can view and add comments for discussion."}
+                {sharePermission === "edit" && "Can edit all fields of the application."}
+                {sharePermission === "review" && "Can approve or reject the application."}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowShareDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={handleShare}
+              disabled={sharing || !shareEmail}
+            >
+              {sharing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Share
             </Button>
           </DialogFooter>
         </DialogContent>
