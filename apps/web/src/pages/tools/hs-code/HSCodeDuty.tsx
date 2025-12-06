@@ -86,7 +86,7 @@ export default function HSCodeDuty() {
         body: JSON.stringify({
           hs_code: hsCode,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
           product_value: parseFloat(productValue),
           fta_code: ftaCode || undefined,
         }),
@@ -172,7 +172,7 @@ export default function HSCodeDuty() {
                       <SelectValue placeholder="Select origin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Not specified</SelectItem>
+                      <SelectItem value="none">Not specified</SelectItem>
                       {COUNTRIES.map((c) => (
                         <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
                       ))}

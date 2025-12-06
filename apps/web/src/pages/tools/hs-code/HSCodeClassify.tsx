@@ -117,7 +117,7 @@ export default function HSCodeClassify() {
         body: JSON.stringify({
           description,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
         }),
       });
 
@@ -152,7 +152,7 @@ export default function HSCodeClassify() {
           product_description: description,
           hs_code: result.hs_code,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
         }),
       });
 
@@ -247,7 +247,7 @@ export default function HSCodeClassify() {
                         <SelectValue placeholder="Select origin" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Not specified</SelectItem>
+                        <SelectItem value="none">Not specified</SelectItem>
                         {COUNTRIES.map((c) => (
                           <SelectItem key={c.code} value={c.code}>
                             {c.name}

@@ -199,7 +199,7 @@ export default function HSCodeDashboard() {
         body: JSON.stringify({
           description: productDescription,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
           product_value: productValue,
         }),
       });
@@ -236,7 +236,7 @@ export default function HSCodeDashboard() {
         body: JSON.stringify({
           hs_code: hsCode,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
           product_value: productValue,
         }),
       });
@@ -271,7 +271,7 @@ export default function HSCodeDashboard() {
           product_description: productDescription,
           hs_code: result.hs_code,
           import_country: importCountry,
-          export_country: exportCountry || undefined,
+          export_country: exportCountry && exportCountry !== "none" ? exportCountry : undefined,
           product_value: productValue,
         }),
       });
@@ -384,7 +384,7 @@ export default function HSCodeDashboard() {
                         <SelectValue placeholder="Select origin" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Not specified</SelectItem>
+                        <SelectItem value="none">Not specified</SelectItem>
                         {COUNTRIES.map((c) => (
                           <SelectItem key={c.code} value={c.code}>
                             {c.flag} {c.name}

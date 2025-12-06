@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers
 revision = 'hs_code_finder_001'
-down_revision = 'e02d1cb'
+down_revision = 'lc_builder_001'  # Fixed: reference actual migration ID, not git commit
 branch_labels = None
 depends_on = None
 
