@@ -13,7 +13,7 @@ from app.services.sanctions_screening import (
     get_screening_service,
     ScreeningInput,
     ComprehensiveScreeningResult,
-    ScreeningMatch,
+    PartyMatch,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,7 +244,7 @@ async def screen_lc_parties(
 def _build_sanctions_issue(
     party: Dict[str, Any],
     result: ComprehensiveScreeningResult,
-    match_info: Optional[ScreeningMatch],
+    match_info: Optional[PartyMatch],
     severity: str,
 ) -> Dict[str, Any]:
     """
