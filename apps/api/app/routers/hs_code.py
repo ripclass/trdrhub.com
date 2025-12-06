@@ -86,179 +86,111 @@ class SaveClassificationRequest(BaseModel):
 # AI Classification Service
 # ============================================================================
 
-# Sample HS codes for demo (in production, these come from database)
-SAMPLE_HS_CODES = {
-    "6109.10": {
-        "code": "6109.10.00",
-        "description": "T-shirts, singlets, tank tops and similar garments, knitted or crocheted, of cotton",
-        "chapter": "61 - Articles of apparel and clothing accessories, knitted or crocheted",
-        "heading": "6109 - T-shirts, singlets, tank tops and similar garments",
-        "unit": "DOZ/KG",
-        "keywords": ["t-shirt", "tshirt", "cotton", "apparel", "clothing", "knitted", "garment", "singlet", "tank top"],
-    },
-    "8471.30": {
-        "code": "8471.30.01",
-        "description": "Portable automatic data processing machines, weighing not more than 10 kg",
-        "chapter": "84 - Nuclear reactors, boilers, machinery and mechanical appliances",
-        "heading": "8471 - Automatic data processing machines",
-        "unit": "NO.",
-        "keywords": ["laptop", "notebook", "computer", "portable", "data processing", "pc"],
-    },
-    "8517.12": {
-        "code": "8517.12.00",
-        "description": "Telephones for cellular networks or for other wireless networks",
-        "chapter": "85 - Electrical machinery and equipment",
-        "heading": "8517 - Telephone sets and other apparatus for transmission/reception",
-        "unit": "NO.",
-        "keywords": ["mobile phone", "cell phone", "smartphone", "cellular", "wireless", "iphone", "android"],
-    },
-    "0901.21": {
-        "code": "0901.21.00",
-        "description": "Coffee, roasted, not decaffeinated",
-        "chapter": "09 - Coffee, tea, maté and spices",
-        "heading": "0901 - Coffee, whether or not roasted or decaffeinated",
-        "unit": "KG",
-        "keywords": ["coffee", "roasted", "beans", "ground coffee", "arabica", "robusta"],
-    },
-    "3004.90": {
-        "code": "3004.90.92",
-        "description": "Medicaments consisting of mixed or unmixed products for therapeutic use",
-        "chapter": "30 - Pharmaceutical products",
-        "heading": "3004 - Medicaments",
-        "unit": "KG",
-        "keywords": ["medicine", "pharmaceutical", "drug", "tablet", "capsule", "medicament"],
-    },
-    "9403.20": {
-        "code": "9403.20.00",
-        "description": "Other metal furniture",
-        "chapter": "94 - Furniture; bedding, mattresses",
-        "heading": "9403 - Other furniture and parts thereof",
-        "unit": "NO.",
-        "keywords": ["furniture", "metal", "steel", "desk", "chair", "cabinet", "shelf"],
-    },
-    "8703.23": {
-        "code": "8703.23.00",
-        "description": "Motor vehicles for transport of persons, spark-ignition engine 1500-3000cc",
-        "chapter": "87 - Vehicles other than railway",
-        "heading": "8703 - Motor cars and other motor vehicles",
-        "unit": "NO.",
-        "keywords": ["car", "automobile", "vehicle", "sedan", "suv", "motor car"],
-    },
-    "6204.62": {
-        "code": "6204.62.40",
-        "description": "Women's or girls' trousers, breeches, of cotton",
-        "chapter": "62 - Articles of apparel, not knitted or crocheted",
-        "heading": "6204 - Women's or girls' suits, ensembles, jackets",
-        "unit": "DOZ",
-        "keywords": ["pants", "trousers", "jeans", "cotton", "women", "ladies", "denim"],
-    },
-}
-
-# Sample duty rates
-SAMPLE_DUTY_RATES = {
-    "US": {
-        "6109.10.00": {"mfn": 16.5, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "8471.30.01": {"mfn": 0, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "8517.12.00": {"mfn": 0, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "0901.21.00": {"mfn": 0, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "3004.90.92": {"mfn": 0, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "9403.20.00": {"mfn": 0, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "8703.23.00": {"mfn": 2.5, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-        "6204.62.40": {"mfn": 16.6, "gsp": 0, "fta_ca": 0, "fta_mx": 0},
-    },
-    "EU": {
-        "6109.10.00": {"mfn": 12.0, "gsp": 9.6, "fta_uk": 0},
-        "8471.30.01": {"mfn": 0, "gsp": 0, "fta_uk": 0},
-        "8517.12.00": {"mfn": 0, "gsp": 0, "fta_uk": 0},
-    },
-}
-
-# Sample FTAs
-SAMPLE_FTAS = [
-    {"code": "USMCA", "name": "US-Mexico-Canada Agreement", "countries": ["US", "CA", "MX"]},
-    {"code": "RCEP", "name": "Regional Comprehensive Economic Partnership", "countries": ["CN", "JP", "KR", "AU", "NZ", "SG", "MY", "TH", "VN", "ID", "PH", "BN", "KH", "LA", "MM"]},
-    {"code": "CPTPP", "name": "Comprehensive and Progressive TPP", "countries": ["AU", "BN", "CA", "CL", "JP", "MY", "MX", "NZ", "PE", "SG", "VN"]},
-    {"code": "EU-UK", "name": "EU-UK Trade and Cooperation Agreement", "countries": ["EU", "UK"]},
-    {"code": "GSP", "name": "Generalized System of Preferences", "countries": ["BD", "PK", "KH", "LK", "ET"]},
-]
+# Import the classification service
+try:
+    from app.services.hs_classification import HSClassificationService
+    CLASSIFICATION_SERVICE_AVAILABLE = True
+except ImportError:
+    CLASSIFICATION_SERVICE_AVAILABLE = False
+    logger.warning("HSClassificationService not available - using fallback")
 
 
-def classify_with_ai(description: str, import_country: str) -> Dict[str, Any]:
+async def classify_with_ai(db: Session, description: str, import_country: str, export_country: Optional[str] = None) -> Dict[str, Any]:
     """
     AI-powered HS code classification.
-    In production, this calls OpenAI/Claude for classification.
-    For demo, uses keyword matching.
+    Uses OpenAI when available, falls back to database search.
+    """
+    # Try to use the classification service
+    if CLASSIFICATION_SERVICE_AVAILABLE:
+        try:
+            service = HSClassificationService(db)
+            result = await service.classify_product(
+                description=description,
+                import_country=import_country,
+                export_country=export_country
+            )
+            
+            # Get duty rates
+            rates = await service.get_duty_rates(
+                result["hs_code"],
+                import_country,
+                export_country
+            )
+            result["duty_rates"] = {
+                "mfn": rates.get("mfn_rate", 0),
+                "preferential": rates.get("preferential_rates", {}),
+                "section_301": rates.get("section_301_rate", 0),
+                "total": rates.get("total_rate", 0),
+            }
+            
+            return result
+        except Exception as e:
+            logger.error(f"Classification service error: {e}")
+    
+    # Fallback to database keyword search
+    return await fallback_classify(db, description, import_country)
+
+
+async def fallback_classify(db: Session, description: str, import_country: str) -> Dict[str, Any]:
+    """
+    Fallback classification using database keyword search.
     """
     desc_lower = description.lower()
     
-    best_match = None
-    best_score = 0
-    alternatives = []
+    # Try to find matches in database
+    results = db.query(HSCodeTariff).filter(
+        HSCodeTariff.country_code == import_country,
+        HSCodeTariff.is_active == True,
+        or_(
+            HSCodeTariff.description.ilike(f"%{desc_lower[:50]}%"),
+            func.lower(HSCodeTariff.description).contains(desc_lower[:30])
+        )
+    ).limit(10).all()
     
-    for code_prefix, data in SAMPLE_HS_CODES.items():
-        # Calculate keyword match score
-        score = 0
-        matched_keywords = []
-        for kw in data["keywords"]:
-            if kw in desc_lower:
-                score += 1
-                matched_keywords.append(kw)
-        
-        # Boost for exact matches
-        if data["description"].lower() in desc_lower:
-            score += 5
-        
-        if score > 0:
+    if results:
+        best = results[0]
+        alternatives = []
+        for r in results[1:5]:
             alternatives.append({
-                "code": data["code"],
-                "description": data["description"],
-                "score": score,
-                "keywords_matched": matched_keywords,
+                "code": r.code,
+                "description": r.description,
+                "score": 0.5
             })
         
-        if score > best_score:
-            best_score = score
-            best_match = data
-    
-    # Sort alternatives by score
-    alternatives = sorted(alternatives, key=lambda x: x["score"], reverse=True)[:5]
-    
-    if not best_match:
-        # Default fallback
-        best_match = {
-            "code": "9999.99.99",
-            "description": "Other goods not elsewhere specified",
-            "chapter": "99 - Special classification provisions",
-            "heading": "9999 - Other",
-            "unit": "KG",
-            "keywords": [],
+        # Get duty rate
+        duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == best.id,
+            DutyRate.rate_type == "mfn",
+            DutyRate.is_active == True
+        ).first()
+        
+        mfn_rate = duty.ad_valorem_rate if duty else 0
+        
+        return {
+            "hs_code": best.code,
+            "description": best.description,
+            "confidence": 0.6,
+            "chapter": best.chapter_description or f"Chapter {best.code_2}",
+            "heading": best.heading_description or "",
+            "subheading": best.code_6 or best.code[:6],
+            "alternatives": alternatives,
+            "duty_rates": {"mfn": mfn_rate},
+            "reasoning": f"Matched by keyword search. Found {len(results)} potential matches in database.",
+            "source": "database_fallback"
         }
-        alternatives = []
     
-    # Calculate confidence
-    confidence = min(0.98, 0.5 + (best_score * 0.1)) if best_score > 0 else 0.3
-    
-    # Get duty rates
-    country_rates = SAMPLE_DUTY_RATES.get(import_country, SAMPLE_DUTY_RATES.get("US", {}))
-    rates = country_rates.get(best_match["code"], {"mfn": 0})
-    
-    # Build reasoning
-    reasoning = f"Based on the description '{description}', the product appears to be {best_match['description']}. "
-    if alternatives:
-        reasoning += f"Key terms identified: {', '.join(alternatives[0].get('keywords_matched', []))}. "
-    reasoning += f"Classified under Chapter {best_match.get('chapter', 'N/A')}."
-    
+    # Return unknown if nothing found
     return {
-        "hs_code": best_match["code"],
-        "description": best_match["description"],
-        "confidence": confidence,
-        "chapter": best_match.get("chapter", ""),
-        "heading": best_match.get("heading", ""),
-        "subheading": best_match["code"][:6] if len(best_match["code"]) >= 6 else "",
-        "unit": best_match.get("unit", ""),
-        "alternatives": alternatives[1:] if len(alternatives) > 1 else [],
-        "duty_rates": rates,
-        "reasoning": reasoning,
+        "hs_code": "9999.99.9999",
+        "description": "Unclassified - requires manual review",
+        "confidence": 0.1,
+        "chapter": "Chapter 99 - Special classification provisions",
+        "heading": "",
+        "subheading": "",
+        "alternatives": [],
+        "duty_rates": {"mfn": 0},
+        "reasoning": "No matching classification found. Please provide more detailed product description or contact customs specialist.",
+        "source": "fallback_default"
     }
 
 
@@ -279,28 +211,52 @@ async def classify_product(
     """
     start_time = time.time()
     
-    # Run AI classification
-    result = classify_with_ai(request.description, request.import_country)
+    # Run AI classification (now uses service)
+    result = await classify_with_ai(
+        db=db,
+        description=request.description,
+        import_country=request.import_country,
+        export_country=request.export_country
+    )
     
-    # Get FTA options
+    # Get FTA options from database
     fta_options = []
     if request.export_country:
-        for fta in SAMPLE_FTAS:
-            if (request.export_country in fta["countries"] and 
-                request.import_country in fta["countries"]):
-                fta_options.append({
-                    "code": fta["code"],
-                    "name": fta["name"],
-                    "preferential_rate": 0,  # Would look up actual rate
-                    "savings_percent": result["duty_rates"].get("mfn", 0),
-                })
+        ftas = db.query(FTAAgreement).filter(
+            FTAAgreement.is_active == True,
+            FTAAgreement.member_countries.contains([request.export_country]),
+            FTAAgreement.member_countries.contains([request.import_country])
+        ).all()
+        
+        for fta in ftas:
+            # Get preferential rate if exists
+            fta_rule = db.query(FTARule).filter(
+                FTARule.fta_id == fta.id,
+                FTARule.hs_code_prefix == result["hs_code"][:2]
+            ).first()
+            
+            fta_options.append({
+                "code": fta.code,
+                "name": fta.name,
+                "preferential_rate": fta_rule.preferential_rate if fta_rule else 0,
+                "savings_percent": result["duty_rates"].get("mfn", 0) - (fta_rule.preferential_rate if fta_rule else 0),
+                "certificate_types": fta.certificate_types,
+            })
     
-    # Check restrictions (demo - would query actual restriction database)
+    # Check restrictions (expand with actual database lookup)
     restrictions = []
-    if "medicine" in request.description.lower() or "drug" in request.description.lower():
-        restrictions.append("FDA approval may be required for pharmaceutical imports")
-    if "firearm" in request.description.lower() or "weapon" in request.description.lower():
+    desc_lower = request.description.lower()
+    
+    if any(kw in desc_lower for kw in ["medicine", "drug", "pharmaceutical"]):
+        restrictions.append("FDA approval required for pharmaceutical imports")
+    if any(kw in desc_lower for kw in ["firearm", "weapon", "ammunition"]):
         restrictions.append("Import license required from ATF")
+    if any(kw in desc_lower for kw in ["alcohol", "wine", "beer", "spirits"]):
+        restrictions.append("TTB permit and state licensing required")
+    if any(kw in desc_lower for kw in ["pesticide", "chemical", "hazardous"]):
+        restrictions.append("EPA approval may be required")
+    if any(kw in desc_lower for kw in ["food", "meat", "poultry", "dairy"]):
+        restrictions.append("USDA/FSIS inspection required")
     
     # Log search for analytics
     response_time = int((time.time() - start_time) * 1000)
@@ -319,14 +275,14 @@ async def classify_product(
         hs_code=result["hs_code"],
         description=result["description"],
         confidence=result["confidence"],
-        chapter=result["chapter"],
-        heading=result["heading"],
-        subheading=result["subheading"],
-        alternatives=result["alternatives"],
-        duty_rates=result["duty_rates"],
+        chapter=result.get("chapter", ""),
+        heading=result.get("heading", ""),
+        subheading=result.get("subheading", ""),
+        alternatives=result.get("alternatives", []),
+        duty_rates=result.get("duty_rates", {}),
         fta_options=fta_options,
         restrictions=restrictions,
-        ai_reasoning=result["reasoning"],
+        ai_reasoning=result.get("reasoning", ""),
     )
 
 
@@ -340,37 +296,45 @@ async def search_hs_codes(
     """
     Search HS codes by code number or description.
     """
-    q_lower = q.lower()
+    q_clean = q.strip()
+    is_code_search = q_clean.replace(".", "").isdigit()
+    
+    if is_code_search:
+        # Code search - find codes starting with query
+        code_prefix = q_clean.replace(".", "")
+        tariffs = db.query(HSCodeTariff).filter(
+            HSCodeTariff.country_code == country,
+            HSCodeTariff.is_active == True,
+            HSCodeTariff.code.like(f"{code_prefix}%")
+        ).order_by(HSCodeTariff.code).limit(limit).all()
+    else:
+        # Description/keyword search
+        tariffs = db.query(HSCodeTariff).filter(
+            HSCodeTariff.country_code == country,
+            HSCodeTariff.is_active == True,
+            or_(
+                HSCodeTariff.description.ilike(f"%{q_clean}%"),
+                HSCodeTariff.heading_description.ilike(f"%{q_clean}%"),
+                HSCodeTariff.chapter_description.ilike(f"%{q_clean}%")
+            )
+        ).limit(limit).all()
+    
     results = []
-    
-    # Check if searching by code
-    is_code_search = q.replace(".", "").isdigit()
-    
-    for code_prefix, data in SAMPLE_HS_CODES.items():
-        score = 0
+    for t in tariffs:
+        # Get MFN duty rate
+        duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == t.id,
+            DutyRate.rate_type == "mfn"
+        ).first()
         
-        if is_code_search:
-            # Code search
-            if data["code"].startswith(q.replace(".", "")):
-                score = 100
-        else:
-            # Description/keyword search
-            if q_lower in data["description"].lower():
-                score = 50
-            for kw in data["keywords"]:
-                if q_lower in kw:
-                    score += 10
-        
-        if score > 0:
-            results.append({
-                "code": data["code"],
-                "description": data["description"],
-                "chapter": data.get("chapter", ""),
-                "score": score,
-            })
-    
-    # Sort by score
-    results = sorted(results, key=lambda x: x["score"], reverse=True)[:limit]
+        results.append({
+            "code": t.code,
+            "description": t.description,
+            "chapter": t.chapter_description or f"Chapter {t.code_2}",
+            "heading": t.heading_description or "",
+            "unit": t.unit_of_quantity,
+            "mfn_rate": duty.ad_valorem_rate if duty else 0,
+        })
     
     return {
         "query": q,
@@ -390,47 +354,115 @@ async def get_hs_code_details(
     """
     Get detailed information about a specific HS code.
     """
-    # Normalize code
-    code_normalized = hs_code.replace(".", "")
+    # Find the tariff code in database
+    tariff = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code == hs_code,
+        HSCodeTariff.country_code == import_country,
+        HSCodeTariff.is_active == True
+    ).first()
     
-    # Find code
-    found = None
-    for code_prefix, data in SAMPLE_HS_CODES.items():
-        if data["code"].replace(".", "").startswith(code_normalized):
-            found = data
-            break
+    # Try partial match if exact not found
+    if not tariff:
+        code_prefix = hs_code.replace(".", "")
+        tariff = db.query(HSCodeTariff).filter(
+            HSCodeTariff.country_code == import_country,
+            HSCodeTariff.is_active == True,
+            HSCodeTariff.code.like(f"{code_prefix}%")
+        ).first()
     
-    if not found:
+    if not tariff:
         raise HTTPException(status_code=404, detail=f"HS code {hs_code} not found")
     
-    # Get duty rates
-    country_rates = SAMPLE_DUTY_RATES.get(import_country, {})
-    rates = country_rates.get(found["code"], {"mfn": 0})
+    # Get all duty rates for this code
+    duty_rates = db.query(DutyRate).filter(
+        DutyRate.hs_code_id == tariff.id,
+        DutyRate.is_active == True
+    ).all()
+    
+    rates_by_origin = {}
+    mfn_rate = 0
+    for rate in duty_rates:
+        if rate.rate_type == "mfn":
+            mfn_rate = rate.ad_valorem_rate or 0
+        elif rate.origin_country:
+            rates_by_origin[rate.origin_country] = {
+                "rate": rate.ad_valorem_rate or 0,
+                "code": rate.rate_code
+            }
+    
+    # Check Section 301 rates (US-China)
+    from app.models.hs_code import Section301Rate
+    section_301 = None
+    if import_country == "US" and export_country == "CN":
+        s301 = db.query(Section301Rate).filter(
+            Section301Rate.hs_code == hs_code,
+            Section301Rate.origin_country == "CN",
+            Section301Rate.is_active == True,
+            Section301Rate.is_excluded == False
+        ).first()
+        if s301:
+            section_301 = {
+                "list": s301.list_number,
+                "rate": s301.additional_rate
+            }
     
     # Get FTA options
     fta_options = []
     if export_country:
-        for fta in SAMPLE_FTAS:
-            if export_country in fta["countries"] and import_country in fta["countries"]:
-                fta_options.append({
-                    "code": fta["code"],
-                    "name": fta["name"],
-                    "preferential_rate": 0,
-                })
+        ftas = db.query(FTAAgreement).filter(
+            FTAAgreement.is_active == True,
+            FTAAgreement.member_countries.contains([export_country]),
+            FTAAgreement.member_countries.contains([import_country])
+        ).all()
+        
+        for fta in ftas:
+            fta_rule = db.query(FTARule).filter(
+                FTARule.fta_id == fta.id,
+                or_(
+                    FTARule.hs_code_prefix == tariff.code_2,
+                    FTARule.hs_code_prefix == tariff.code_4,
+                    FTARule.hs_code_prefix == tariff.code_6
+                )
+            ).first()
+            
+            fta_options.append({
+                "code": fta.code,
+                "name": fta.name,
+                "preferential_rate": fta_rule.preferential_rate if fta_rule else 0,
+                "certificate_types": fta.certificate_types,
+                "rule_of_origin": {
+                    "type": fta_rule.rule_type if fta_rule else None,
+                    "text": fta_rule.rule_text if fta_rule else None,
+                } if fta_rule else None
+            })
+    
+    # Get related codes (same chapter)
+    related = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code_4 == tariff.code_4,
+        HSCodeTariff.id != tariff.id,
+        HSCodeTariff.country_code == import_country
+    ).limit(5).all()
     
     return {
-        "code": found["code"],
-        "description": found["description"],
-        "chapter": found.get("chapter", ""),
-        "heading": found.get("heading", ""),
-        "unit_of_quantity": found.get("unit", ""),
+        "code": tariff.code,
+        "description": tariff.description,
+        "chapter": tariff.chapter_description or f"Chapter {tariff.code_2}",
+        "heading": tariff.heading_description or "",
+        "subheading": tariff.subheading_description or "",
+        "unit_of_quantity": tariff.unit_of_quantity,
+        "unit_of_quantity_2": tariff.unit_of_quantity_2,
+        "general_notes": tariff.general_notes,
+        "special_notes": tariff.special_notes,
+        "requires_license": tariff.requires_license,
+        "quota_applicable": tariff.quota_applicable,
         "duty_rates": {
             "import_country": import_country,
-            "mfn_rate": rates.get("mfn", 0),
-            "rates_by_origin": rates,
+            "mfn_rate": mfn_rate,
+            "rates_by_origin": rates_by_origin,
+            "section_301": section_301,
         },
         "fta_options": fta_options,
-        "related_codes": [],
+        "related_codes": [{"code": r.code, "description": r.description} for r in related],
     }
 
 
@@ -442,32 +474,93 @@ async def calculate_duty(
     """
     Calculate import duties for a product.
     """
-    # Get duty rate
-    country_rates = SAMPLE_DUTY_RATES.get(request.import_country, {})
-    rates = country_rates.get(request.hs_code, {"mfn": 0})
+    from app.models.hs_code import Section301Rate
+    
+    # Find the tariff code
+    tariff = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code == request.hs_code,
+        HSCodeTariff.country_code == request.import_country,
+        HSCodeTariff.is_active == True
+    ).first()
+    
+    if not tariff:
+        # Try partial match
+        code_prefix = request.hs_code.replace(".", "")[:8]
+        tariff = db.query(HSCodeTariff).filter(
+            HSCodeTariff.country_code == request.import_country,
+            HSCodeTariff.is_active == True,
+            HSCodeTariff.code.like(f"{code_prefix}%")
+        ).first()
+    
+    # Get MFN rate
+    mfn_rate = 0
+    if tariff:
+        mfn_duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == tariff.id,
+            DutyRate.rate_type == "mfn",
+            DutyRate.is_active == True
+        ).first()
+        if mfn_duty:
+            mfn_rate = mfn_duty.ad_valorem_rate or 0
     
     # Determine applicable rate
-    applicable_rate = rates.get("mfn", 0)
+    applicable_rate = mfn_rate
     rate_type = "MFN"
     
+    # Check FTA preferential rate
     if request.fta_code:
-        fta_key = f"fta_{request.fta_code.lower()}"
-        if fta_key in rates:
-            applicable_rate = rates[fta_key]
-            rate_type = request.fta_code
-    elif request.export_country:
+        fta = db.query(FTAAgreement).filter(
+            FTAAgreement.code == request.fta_code,
+            FTAAgreement.is_active == True
+        ).first()
+        if fta:
+            fta_rule = db.query(FTARule).filter(
+                FTARule.fta_id == fta.id,
+                or_(
+                    FTARule.hs_code_prefix == request.hs_code[:2],
+                    FTARule.hs_code_prefix == request.hs_code[:4]
+                )
+            ).first()
+            if fta_rule and fta_rule.preferential_rate is not None:
+                applicable_rate = fta_rule.preferential_rate
+                rate_type = request.fta_code
+    elif request.export_country and tariff:
         # Check for GSP or other preferential
-        gsp_rate = rates.get("gsp")
-        if gsp_rate is not None and request.export_country in ["BD", "PK", "KH", "LK"]:
-            applicable_rate = gsp_rate
-            rate_type = "GSP"
+        pref_duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == tariff.id,
+            DutyRate.origin_country == request.export_country,
+            DutyRate.is_active == True
+        ).first()
+        if pref_duty and pref_duty.ad_valorem_rate is not None:
+            applicable_rate = pref_duty.ad_valorem_rate
+            rate_type = pref_duty.rate_code or "Preferential"
     
-    # Calculate duty
-    duty_amount = request.product_value * (applicable_rate / 100)
+    # Check Section 301 additional tariff
+    section_301_rate = 0
+    section_301_list = None
+    if request.import_country == "US" and request.export_country == "CN":
+        s301 = db.query(Section301Rate).filter(
+            Section301Rate.hs_code == request.hs_code,
+            Section301Rate.origin_country == "CN",
+            Section301Rate.is_active == True,
+            Section301Rate.is_excluded == False
+        ).first()
+        if s301:
+            section_301_rate = s301.additional_rate
+            section_301_list = s301.list_number
     
-    # Potential savings
-    mfn_duty = request.product_value * (rates.get("mfn", 0) / 100)
-    savings = mfn_duty - duty_amount
+    # Calculate duties
+    base_duty = request.product_value * (applicable_rate / 100)
+    additional_duty = request.product_value * (section_301_rate / 100)
+    total_duty = base_duty + additional_duty
+    
+    # MFN comparison
+    mfn_duty_amount = request.product_value * (mfn_rate / 100) + additional_duty
+    savings = mfn_duty_amount - total_duty
+    
+    # Landed cost estimate
+    estimated_freight = request.product_value * 0.05  # 5% estimate
+    estimated_insurance = request.product_value * 0.005  # 0.5%
     
     return {
         "hs_code": request.hs_code,
@@ -478,18 +571,24 @@ async def calculate_duty(
         "duty_calculation": {
             "rate_type": rate_type,
             "rate_percent": applicable_rate,
-            "duty_amount": round(duty_amount, 2),
+            "base_duty": round(base_duty, 2),
+            "section_301_rate": section_301_rate,
+            "section_301_list": section_301_list,
+            "section_301_duty": round(additional_duty, 2),
+            "total_duty": round(total_duty, 2),
         },
         "mfn_comparison": {
-            "mfn_rate": rates.get("mfn", 0),
-            "mfn_duty": round(mfn_duty, 2),
-            "savings": round(savings, 2),
+            "mfn_rate": mfn_rate,
+            "mfn_duty": round(mfn_duty_amount, 2),
+            "savings": round(max(0, savings), 2),
         },
         "landed_cost_estimate": {
             "product_value": request.product_value,
-            "duty": round(duty_amount, 2),
-            "estimated_freight": round(request.product_value * 0.05, 2),  # 5% estimate
-            "total": round(request.product_value + duty_amount + (request.product_value * 0.05), 2),
+            "freight": round(estimated_freight, 2),
+            "insurance": round(estimated_insurance, 2),
+            "cif_value": round(request.product_value + estimated_freight + estimated_insurance, 2),
+            "duty": round(total_duty, 2),
+            "total": round(request.product_value + estimated_freight + estimated_insurance + total_duty, 2),
         },
     }
 
@@ -504,32 +603,69 @@ async def check_fta_eligibility(
     """
     Check FTA eligibility and rules of origin requirements.
     """
-    eligible_ftas = []
+    # Get MFN rate for comparison
+    tariff = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code == hs_code,
+        HSCodeTariff.country_code == import_country
+    ).first()
     
-    for fta in SAMPLE_FTAS:
-        if export_country in fta["countries"] and import_country in fta["countries"]:
-            # Get duty rates
-            country_rates = SAMPLE_DUTY_RATES.get(import_country, {})
-            rates = country_rates.get(hs_code, {"mfn": 0})
-            
-            eligible_ftas.append({
-                "fta_code": fta["code"],
-                "fta_name": fta["name"],
-                "mfn_rate": rates.get("mfn", 0),
-                "preferential_rate": 0,  # Would look up actual
-                "savings_percent": rates.get("mfn", 0),
-                "rules_of_origin": {
-                    "requirement": "Change in Tariff Classification (CTC) at 4-digit level",
-                    "rvc_threshold": "40% Regional Value Content",
-                    "certificate_required": "Certificate of Origin Form D" if fta["code"] == "RCEP" else "Certificate of Origin",
-                },
-                "documentation": [
-                    "Certificate of Origin",
-                    "Commercial Invoice showing origin",
-                    "Bill of Lading",
-                    "Packing List",
-                ],
-            })
+    mfn_rate = 0
+    if tariff:
+        mfn_duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == tariff.id,
+            DutyRate.rate_type == "mfn"
+        ).first()
+        if mfn_duty:
+            mfn_rate = mfn_duty.ad_valorem_rate or 0
+    
+    # Find eligible FTAs
+    ftas = db.query(FTAAgreement).filter(
+        FTAAgreement.is_active == True,
+        FTAAgreement.member_countries.contains([export_country]),
+        FTAAgreement.member_countries.contains([import_country])
+    ).all()
+    
+    eligible_ftas = []
+    for fta in ftas:
+        # Get rules of origin for this HS code
+        fta_rule = db.query(FTARule).filter(
+            FTARule.fta_id == fta.id,
+            or_(
+                FTARule.hs_code_prefix == hs_code[:2],
+                FTARule.hs_code_prefix == hs_code[:4],
+                FTARule.hs_code_prefix == hs_code[:6]
+            )
+        ).first()
+        
+        preferential_rate = fta_rule.preferential_rate if fta_rule else 0
+        
+        eligible_ftas.append({
+            "fta_code": fta.code,
+            "fta_name": fta.name,
+            "mfn_rate": mfn_rate,
+            "preferential_rate": preferential_rate,
+            "savings_percent": mfn_rate - preferential_rate,
+            "rules_of_origin": {
+                "requirement": fta_rule.rule_text if fta_rule else "Change in Tariff Classification (CTC)",
+                "rule_type": fta_rule.rule_type if fta_rule else "CTC",
+                "ctc_requirement": fta_rule.ctc_requirement if fta_rule else None,
+                "rvc_threshold": f"{fta_rule.rvc_threshold}% Regional Value Content" if fta_rule and fta_rule.rvc_threshold else None,
+                "rvc_method": fta_rule.rvc_method if fta_rule else None,
+                "certificate_required": fta.certificate_types[0] if fta.certificate_types else "Certificate of Origin",
+            },
+            "documentation": [
+                fta.certificate_types[0] if fta.certificate_types else "Certificate of Origin",
+                "Commercial Invoice showing origin",
+                "Bill of Lading",
+                "Packing List",
+                "Production/Manufacturing records (if RVC required)",
+            ],
+            "cumulation_type": fta.cumulation_type,
+            "de_minimis": f"{fta.de_minimis_threshold}%" if fta.de_minimis_threshold else None,
+        })
+    
+    # Sort by savings
+    eligible_ftas.sort(key=lambda x: x["savings_percent"], reverse=True)
     
     return {
         "hs_code": hs_code,
@@ -562,19 +698,28 @@ async def list_supported_countries():
 
 
 @router.get("/ftas")
-async def list_ftas():
+async def list_ftas(
+    db: Session = Depends(get_db)
+):
     """
     List supported Free Trade Agreements.
     """
+    ftas = db.query(FTAAgreement).filter(FTAAgreement.is_active == True).all()
+    
     return {
         "ftas": [
             {
-                "code": fta["code"],
-                "name": fta["name"],
-                "member_count": len(fta["countries"]),
-                "members": fta["countries"],
+                "code": fta.code,
+                "name": fta.name,
+                "full_name": fta.full_name,
+                "member_count": len(fta.member_countries) if fta.member_countries else 0,
+                "members": fta.member_countries or [],
+                "certificate_types": fta.certificate_types or [],
+                "cumulation_type": fta.cumulation_type,
+                "de_minimis_threshold": fta.de_minimis_threshold,
+                "effective_from": fta.effective_from.isoformat() if fta.effective_from else None,
             }
-            for fta in SAMPLE_FTAS
+            for fta in ftas
         ],
     }
 
@@ -593,21 +738,26 @@ async def save_classification(
     Save a classification to user's history.
     """
     # Look up code details
-    result = classify_with_ai(request.product_description, request.import_country)
+    result = await classify_with_ai(
+        db=db,
+        description=request.product_description,
+        import_country=request.import_country,
+        export_country=request.export_country
+    )
     
     classification = HSClassification(
         user_id=current_user.id,
         product_description=request.product_description,
         product_name=request.product_name,
         hs_code=request.hs_code,
-        hs_code_description=result["description"],
+        hs_code_description=result.get("description", ""),
         import_country=request.import_country,
         export_country=request.export_country,
         source=ClassificationSource.AI,
-        confidence_score=result["confidence"],
-        alternative_codes=result["alternatives"],
-        ai_reasoning=result["reasoning"],
-        mfn_rate=result["duty_rates"].get("mfn"),
+        confidence_score=result.get("confidence", 0.5),
+        alternative_codes=result.get("alternatives", []),
+        ai_reasoning=result.get("reasoning", ""),
+        mfn_rate=result.get("duty_rates", {}).get("mfn"),
         product_value=request.product_value,
         quantity=request.quantity,
         quantity_unit=request.quantity_unit,

@@ -12,7 +12,21 @@ import ContactPage from './pages/ContactPage'
 // Tool landing pages
 import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
-import HSCodeDashboard from './pages/tools/hs-code/HSCodeDashboard'
+import {
+  HSCodeLayout,
+  HSCodeOverview,
+  HSCodeClassify,
+  HSCodeSearch,
+  HSCodeDuty,
+  HSCodeFTA,
+  HSCodeROO,
+  HSCodeCompliance,
+  HSCodeHistory as HSCodeHistoryPage,
+  HSCodeFavorites,
+  HSCodeBulk,
+  HSCodeSettings,
+  HSCodeHelp,
+} from './pages/tools/hs-code'
 import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
 import LCBuilderDashboard from './pages/tools/lc-builder/LCBuilderDashboard'
@@ -148,7 +162,21 @@ function App() {
         {/* Tool Landing Pages - Live */}
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
         <Route path="/hs-code" element={<HSCodeFinderLanding />} />
-        <Route path="/hs-code/dashboard" element={<HSCodeDashboard />} />
+        {/* HS Code Finder Dashboard with Sidebar */}
+        <Route path="/hs-code/dashboard" element={<HSCodeLayout />}>
+          <Route index element={<HSCodeOverview />} />
+          <Route path="classify" element={<HSCodeClassify />} />
+          <Route path="search" element={<HSCodeSearch />} />
+          <Route path="duty" element={<HSCodeDuty />} />
+          <Route path="fta" element={<HSCodeFTA />} />
+          <Route path="roo" element={<HSCodeROO />} />
+          <Route path="compliance" element={<HSCodeCompliance />} />
+          <Route path="history" element={<HSCodeHistoryPage />} />
+          <Route path="favorites" element={<HSCodeFavorites />} />
+          <Route path="bulk" element={<HSCodeBulk />} />
+          <Route path="settings" element={<HSCodeSettings />} />
+          <Route path="help" element={<HSCodeHelp />} />
+        </Route>
         
         {/* Tool Landing Pages */}
         <Route path="/doc-generator" element={<DocGeneratorLanding />} />

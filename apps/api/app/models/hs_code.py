@@ -281,3 +281,105 @@ class HSCodeSearch(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class BindingRuling(Base):
+    """
+    CBP Binding Rulings (CROSS database) for classification precedent.
+    Used as training context for AI classification.
+    """
+    __tablename__ = "binding_rulings"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Ruling identification
+    ruling_number = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "N123456"
+    ruling_type = Column(String(20))  # NY (New York), HQ (Headquarters)
+    
+    # Product classification
+    product_description = Column(Text, nullable=False)
+    hs_code = Column(String(15), nullable=False, index=True)
+    
+    # Context
+    country = Column(String(2), default="US")  # Issuing authority country
+    legal_reference = Column(Text)  # GRI citations, chapter notes
+    reasoning = Column(Text)  # Why this classification
+    
+    # Keywords extracted for AI matching
+    keywords = Column(JSON, default=list)
+    
+    # Dates
+    ruling_date = Column(DateTime)
+    effective_date = Column(DateTime)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_binding_rulings_hs_code', 'hs_code'),
+    )
+
+
+class ChapterNote(Base):
+    """
+    HS Chapter and Section Notes for classification context.
+    Critical for accurate AI classification per GRI rules.
+    """
+    __tablename__ = "chapter_notes"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Note identification
+    chapter = Column(String(2), nullable=False, index=True)  # "01" to "99"
+    note_type = Column(String(20), nullable=False)  # section_note, chapter_note, subheading_note
+    note_number = Column(Integer)  # Note 1, Note 2, etc.
+    
+    # Content
+    note_text = Column(Text, nullable=False)
+    
+    # Country-specific (some notes differ)
+    country_code = Column(String(2), default="US")
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_chapter_notes_chapter', 'chapter', 'country_code'),
+    )
+
+
+class Section301Rate(Base):
+    """
+    US Section 301 additional tariffs (e.g., on China).
+    Tracked separately due to frequent changes.
+    """
+    __tablename__ = "section_301_rates"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    hs_code = Column(String(15), nullable=False, index=True)
+    
+    # Origin country subject to 301
+    origin_country = Column(String(2), nullable=False, default="CN")  # China primarily
+    
+    # List identification
+    list_number = Column(String(10))  # List 1, List 2, List 3, List 4A, List 4B
+    
+    # Rate
+    additional_rate = Column(Float, nullable=False)  # 7.5%, 25%, etc.
+    
+    # Exclusions
+    is_excluded = Column(Boolean, default=False)
+    exclusion_number = Column(String(50))
+    exclusion_expiry = Column(DateTime)
+    
+    # Validity
+    effective_from = Column(DateTime)
+    effective_to = Column(DateTime)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_section_301_hs_origin', 'hs_code', 'origin_country'),
+    )
+
