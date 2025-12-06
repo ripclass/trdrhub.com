@@ -202,7 +202,7 @@ def upgrade() -> None:
         sa.Column('is_active', sa.Boolean, default=True),
         sa.Column('created_at', sa.DateTime, server_default=sa.func.now()),
     )
-    op.create_index('ix_chapter_notes_chapter', 'chapter_notes', ['chapter', 'country_code'])
+    op.create_index('ix_chapter_notes_chapter', 'chapter_notes', ['chapter', 'country_code'], if_not_exists=True)
 
     # Section 301 Rates
     op.create_table(
@@ -220,7 +220,7 @@ def upgrade() -> None:
         sa.Column('is_active', sa.Boolean, default=True),
         sa.Column('created_at', sa.DateTime, server_default=sa.func.now()),
     )
-    op.create_index('ix_section_301_hs_origin', 'section_301_rates', ['hs_code', 'origin_country'])
+    op.create_index('ix_section_301_hs_origin', 'section_301_rates', ['hs_code', 'origin_country'], if_not_exists=True)
 
 
 def downgrade() -> None:
