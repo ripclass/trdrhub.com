@@ -10,7 +10,7 @@ from uuid import UUID, uuid5, NAMESPACE_URL
 
 import jwt
 from jwt import InvalidTokenError, ExpiredSignatureError
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -535,6 +535,59 @@ async def get_current_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication failed"
     )
+
+
+async def get_optional_user(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Get current user from JWT token if provided, otherwise return None.
+    
+    This allows endpoints to work for both authenticated and anonymous users.
+    Use this for endpoints where authentication is optional (e.g., public search
+    with enhanced features for logged-in users).
+    
+    Args:
+        request: FastAPI request object
+        db: Database session
+        
+    Returns:
+        User object if authenticated, None otherwise
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    
+    token = auth_header.replace("Bearer ", "")
+    if not token:
+        return None
+    
+    # Try to decode and validate token
+    try:
+        payload = decode_access_token(token)
+        if payload:
+            user_id = payload.get("sub")
+            if user_id:
+                try:
+                    user_uuid = UUID(str(user_id))
+                    user = db.query(User).filter(User.id == user_uuid).first()
+                    if user and user.is_active:
+                        return user
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+    
+    # Try external provider
+    try:
+        external_user = await authenticate_external_token(token, db)
+        if external_user and external_user.is_active:
+            return external_user
+    except Exception:
+        pass
+    
+    return None
 
 
 def require_roles(required_roles: List[str]):
