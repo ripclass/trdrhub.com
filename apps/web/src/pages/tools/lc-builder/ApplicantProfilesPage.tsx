@@ -162,8 +162,9 @@ export default function ApplicantProfilesPage() {
         created_at: "2024-02-20",
         usage_count: 12,
       },
-    ]);
-  }, []);
+      ]);
+    }
+  }, [loading, profiles.length, session?.access_token]);
 
   useEffect(() => {
     filterProfiles();

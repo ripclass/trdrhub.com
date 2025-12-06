@@ -161,7 +161,7 @@ const navItems = [
 export default function LCBuilderLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const [commandOpen, setCommandOpen] = useState(false);
 
   // Auth check
@@ -184,9 +184,9 @@ export default function LCBuilderLayout() {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    await signOut();
+    await logout();
     navigate("/");
-  }, [signOut, navigate]);
+  }, [logout, navigate]);
 
   const isActive = (href: string) => {
     if (href === "/lc-builder/dashboard") {
