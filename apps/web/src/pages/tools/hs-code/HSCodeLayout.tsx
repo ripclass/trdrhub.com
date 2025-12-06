@@ -21,6 +21,10 @@ import {
   Gavel,
   Globe2,
   Users,
+  ShieldCheck,
+  Shield,
+  FileText,
+  PieChart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -54,9 +58,18 @@ const navSections: NavSection[] = [
     title: 'Trade Agreements',
     items: [
       { title: 'FTA Eligibility', href: '/hs-code/dashboard/fta', icon: Globe },
-      { title: 'USMCA Calculator', href: '/hs-code/dashboard/usmca', icon: Globe2, badge: 'New' },
+      { title: 'USMCA Calculator', href: '/hs-code/dashboard/usmca', icon: Globe2 },
       { title: 'Rules of Origin', href: '/hs-code/dashboard/roo', icon: FileCheck },
-      { title: 'Compliance Check', href: '/hs-code/dashboard/compliance', icon: Scale },
+    ],
+  },
+  {
+    title: 'Compliance Suite',
+    items: [
+      { title: 'Compliance Dashboard', href: '/hs-code/dashboard/compliance-suite', icon: ShieldCheck, badge: 'New' },
+      { title: 'Export Controls', href: '/hs-code/dashboard/export-controls', icon: Shield },
+      { title: 'Section 301', href: '/hs-code/dashboard/section-301', icon: FileText },
+      { title: 'AD/CVD Orders', href: '/hs-code/dashboard/ad-cvd', icon: Scale },
+      { title: 'Quota Status', href: '/hs-code/dashboard/quotas', icon: PieChart },
     ],
   },
   {

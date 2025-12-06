@@ -762,3 +762,293 @@ class ClassificationShare(Base):
         Index('ix_shares_classification', 'classification_id'),
     )
 
+
+# ============================================================================
+# Phase 4: Compliance Suite
+# ============================================================================
+
+class ExportControlItem(Base):
+    """
+    Export Control Classification Numbers (ECCN) from EAR Commerce Control List.
+    Maps HS codes to export control requirements.
+    """
+    __tablename__ = "export_control_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # ECCN identification
+    eccn = Column(String(20), nullable=False, index=True)  # e.g., "3A001", "5A002"
+    category = Column(String(5))  # 0-9 (Nuclear, Materials, Electronics, etc.)
+    product_group = Column(String(5))  # A-E (Equipment, Test equipment, Materials, etc.)
+    
+    # Description
+    description = Column(Text, nullable=False)
+    technical_description = Column(Text)
+    
+    # Control reasons
+    control_reasons = Column(JSON, default=list)  # NS, MT, NP, CB, CC, RS, AT, UN
+    license_requirements = Column(JSON)  # By country group
+    license_exceptions = Column(JSON)  # Available exceptions
+    
+    # HS code mapping (many ECCNs can map to multiple HS codes)
+    hs_codes = Column(JSON, default=list)  # List of related HS codes
+    
+    # Classification notes
+    notes = Column(Text)
+    related_definitions = Column(Text)
+    
+    # ITAR crosswalk (some items are ITAR controlled)
+    itar_category = Column(String(50))  # USML Category if applicable
+    is_itar = Column(Boolean, default=False)
+    
+    # Status
+    effective_date = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_eccn_category', 'category', 'product_group'),
+    )
+
+
+class ITARItem(Base):
+    """
+    ITAR (International Traffic in Arms Regulations) controlled items.
+    US Munitions List categories.
+    """
+    __tablename__ = "itar_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # USML Category
+    usml_category = Column(String(10), nullable=False, index=True)  # I-XXI
+    subcategory = Column(String(20))  # e.g., "(a)", "(b)(1)"
+    
+    # Description
+    description = Column(Text, nullable=False)
+    technical_notes = Column(Text)
+    
+    # Control details
+    significant_military_equipment = Column(Boolean, default=False)  # SME
+    missile_technology = Column(Boolean, default=False)  # MTCR
+    
+    # Related HS codes (for screening)
+    hs_codes = Column(JSON, default=list)
+    
+    # License requirements
+    license_required = Column(Boolean, default=True)
+    exemptions = Column(JSON, default=list)  # ITAR exemptions
+    
+    # Keywords for matching
+    keywords = Column(JSON, default=list)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_usml_category', 'usml_category'),
+    )
+
+
+class Section301Exclusion(Base):
+    """
+    Section 301 tariff exclusions granted by USTR.
+    Separate from Section301Rate as these are specific product exclusions.
+    """
+    __tablename__ = "section_301_exclusions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Exclusion identification
+    exclusion_number = Column(String(50), nullable=False, unique=True, index=True)
+    list_number = Column(String(10), nullable=False)  # List 1, 2, 3, 4A, 4B
+    
+    # Product details
+    hs_code = Column(String(15), nullable=False, index=True)
+    product_description = Column(Text, nullable=False)
+    product_scope = Column(Text)  # Detailed scope of exclusion
+    
+    # Status
+    status = Column(String(20), default="active")  # active, expired, extended
+    
+    # Dates
+    effective_from = Column(DateTime, nullable=False)
+    effective_to = Column(DateTime, nullable=False)
+    original_expiry = Column(DateTime)  # Before any extensions
+    
+    # Extension history
+    extensions = Column(JSON, default=list)  # List of extension dates
+    
+    # Federal Register citation
+    fr_citation = Column(String(100))  # e.g., "85 FR 12345"
+    fr_date = Column(DateTime)
+    
+    # Requestor info (public)
+    requestor_type = Column(String(50))  # Company, trade association, etc.
+    
+    notes = Column(Text)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_301_excl_hs_list', 'hs_code', 'list_number'),
+    )
+
+
+class ADCVDOrder(Base):
+    """
+    Antidumping (AD) and Countervailing Duty (CVD) orders.
+    Active trade remedy orders on specific products/countries.
+    """
+    __tablename__ = "ad_cvd_orders"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Order identification
+    case_number = Column(String(50), nullable=False, unique=True, index=True)  # e.g., "A-570-848"
+    order_type = Column(String(10), nullable=False)  # AD, CVD, AD/CVD
+    
+    # Product and country
+    product_name = Column(String(200), nullable=False)
+    product_description = Column(Text)
+    country = Column(String(2), nullable=False, index=True)  # ISO 2-letter
+    country_name = Column(String(100))
+    
+    # HS codes covered
+    hs_codes = Column(JSON, nullable=False, default=list)  # List of covered codes
+    scope_description = Column(Text)  # Official scope language
+    
+    # Duty rates
+    all_others_rate = Column(Float)  # Rate for non-examined companies
+    company_rates = Column(JSON, default=list)  # Individual company rates
+    
+    # Cash deposit rate (current)
+    current_deposit_rate = Column(Float)
+    deposit_effective_date = Column(DateTime)
+    
+    # Order status
+    status = Column(String(20), default="active")  # active, revoked, suspended
+    order_date = Column(DateTime)
+    revocation_date = Column(DateTime)
+    
+    # Review information
+    last_review_period = Column(String(50))  # e.g., "01/01/2023 - 12/31/2023"
+    next_review_due = Column(DateTime)
+    sunset_review_due = Column(DateTime)
+    
+    # Federal Register citations
+    order_fr_citation = Column(String(100))
+    latest_rate_fr = Column(String(100))
+    
+    notes = Column(Text)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_adcvd_country_type', 'country', 'order_type'),
+    )
+
+
+class TariffQuota(Base):
+    """
+    Tariff Rate Quotas (TRQ) status and fill rates.
+    Track quota availability for preferential duty rates.
+    """
+    __tablename__ = "tariff_quotas"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Quota identification
+    quota_number = Column(String(50), nullable=False, index=True)
+    quota_name = Column(String(200), nullable=False)
+    
+    # Product coverage
+    hs_codes = Column(JSON, nullable=False, default=list)
+    product_description = Column(Text)
+    
+    # Country/FTA
+    applicable_countries = Column(JSON, default=list)  # ISO codes or "all"
+    fta_code = Column(String(20))  # Associated FTA if any
+    
+    # Quota quantities
+    quota_quantity = Column(Float, nullable=False)
+    quota_unit = Column(String(20))  # kg, pieces, metric tons
+    quota_period = Column(String(20))  # annual, quarterly
+    
+    # Current period
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    
+    # Fill status
+    quantity_used = Column(Float, default=0)
+    fill_rate_percent = Column(Float, default=0)  # Calculated
+    last_updated = Column(DateTime)
+    
+    # Rates
+    in_quota_rate = Column(Float)  # Preferential rate
+    over_quota_rate = Column(Float)  # MFN or higher rate
+    
+    # Status
+    status = Column(String(20), default="open")  # open, near_full, full, closed
+    
+    # Alert thresholds
+    alert_threshold_percent = Column(Float, default=80)  # Alert when fill rate hits this
+    
+    notes = Column(Text)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_quota_hs', 'quota_number'),
+    )
+
+
+class ComplianceScreening(Base):
+    """
+    User's compliance screening history.
+    Tracks what products have been screened and results.
+    """
+    __tablename__ = "compliance_screenings"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # Product being screened
+    product_description = Column(Text, nullable=False)
+    hs_code = Column(String(15))
+    
+    # Screening parameters
+    export_country = Column(String(2))
+    import_country = Column(String(2))
+    end_use = Column(String(200))
+    end_user = Column(String(200))
+    
+    # Screening results
+    export_control_result = Column(JSON)  # ECCN match, license requirements
+    itar_result = Column(JSON)  # USML category if applicable
+    sanctions_result = Column(JSON)  # Country sanctions
+    ad_cvd_result = Column(JSON)  # AD/CVD orders
+    section_301_result = Column(JSON)  # 301 rates and exclusions
+    quota_result = Column(JSON)  # Applicable quotas
+    
+    # Overall assessment
+    overall_risk = Column(String(20))  # low, medium, high, prohibited
+    flags = Column(JSON, default=list)  # List of compliance flags
+    recommendations = Column(JSON, default=list)
+    
+    # Status
+    status = Column(String(20), default="complete")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_screening_user', 'user_id', 'created_at'),
+    )
+

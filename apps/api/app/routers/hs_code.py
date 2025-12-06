@@ -28,7 +28,9 @@ from app.models.hs_code import (
     HSClassification, HSCodeSearch, ClassificationSource,
     BindingRuling, ChapterNote, Section301Rate, RateAlert,
     ProductSpecificRule, RVCCalculation, OriginDetermination,
-    HSCodeTeam, HSCodeTeamMember, HSCodeProject, ClassificationShare
+    HSCodeTeam, HSCodeTeamMember, HSCodeProject, ClassificationShare,
+    ExportControlItem, ITARItem, Section301Exclusion, ADCVDOrder,
+    TariffQuota, ComplianceScreening
 )
 
 logger = logging.getLogger(__name__)
@@ -2631,5 +2633,857 @@ async def get_shared_classification(
             "can_comment": share.can_comment,
         },
         "view_count": share.view_count,
+    }
+
+
+# ============================================================================
+# Phase 4: Compliance Suite - Export Controls
+# ============================================================================
+
+class ExportControlScreenRequest(BaseModel):
+    """Request to screen a product for export controls."""
+    product_description: str = Field(..., min_length=3)
+    hs_code: Optional[str] = None
+    export_country: str = Field(default="US")
+    import_country: str
+    end_use: Optional[str] = None
+    end_user: Optional[str] = None
+
+
+class ExportControlResult(BaseModel):
+    """Export control screening result."""
+    is_controlled: bool
+    eccn: Optional[str] = None
+    control_reasons: List[str] = []
+    license_required: bool = False
+    license_exceptions: List[str] = []
+    itar_controlled: bool = False
+    usml_category: Optional[str] = None
+    risk_level: str  # low, medium, high, prohibited
+    recommendations: List[str] = []
+
+
+@router.post("/compliance/export-control/screen")
+async def screen_export_controls(
+    request: ExportControlScreenRequest,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Screen a product for EAR (Export Administration Regulations) and ITAR controls.
+    Returns ECCN classification and license requirements.
+    """
+    results = {
+        "product": request.product_description,
+        "hs_code": request.hs_code,
+        "export_country": request.export_country,
+        "import_country": request.import_country,
+        "ear_results": None,
+        "itar_results": None,
+        "overall_risk": "low",
+        "license_required": False,
+        "recommendations": [],
+        "flags": [],
+    }
+    
+    # Search ECCN database by HS code or keywords
+    eccn_matches = []
+    if request.hs_code:
+        # Search by HS code mapping
+        eccn_items = db.query(ExportControlItem).filter(
+            ExportControlItem.is_active == True
+        ).all()
+        
+        for item in eccn_items:
+            if item.hs_codes and request.hs_code in str(item.hs_codes):
+                eccn_matches.append(item)
+    
+    # Also search by product description keywords
+    keywords = request.product_description.lower().split()
+    for item in db.query(ExportControlItem).filter(
+        ExportControlItem.is_active == True
+    ).all():
+        desc_lower = (item.description or "").lower()
+        tech_desc_lower = (item.technical_description or "").lower()
+        if any(kw in desc_lower or kw in tech_desc_lower for kw in keywords):
+            if item not in eccn_matches:
+                eccn_matches.append(item)
+    
+    if eccn_matches:
+        primary_match = eccn_matches[0]
+        results["ear_results"] = {
+            "eccn": primary_match.eccn,
+            "category": primary_match.category,
+            "product_group": primary_match.product_group,
+            "description": primary_match.description,
+            "control_reasons": primary_match.control_reasons or [],
+            "license_requirements": primary_match.license_requirements,
+            "license_exceptions": primary_match.license_exceptions or [],
+            "is_itar": primary_match.is_itar,
+        }
+        
+        if primary_match.control_reasons:
+            results["license_required"] = True
+            results["flags"].append(f"Export controlled under ECCN {primary_match.eccn}")
+            results["overall_risk"] = "medium"
+        
+        if primary_match.is_itar:
+            results["overall_risk"] = "high"
+            results["flags"].append("Potentially ITAR controlled")
+    
+    # Check ITAR database
+    itar_matches = []
+    for item in db.query(ITARItem).filter(ITARItem.is_active == True).all():
+        desc_lower = (item.description or "").lower()
+        keywords_match = item.keywords or []
+        
+        if any(kw.lower() in request.product_description.lower() for kw in keywords_match):
+            itar_matches.append(item)
+        elif any(kw in desc_lower for kw in keywords):
+            itar_matches.append(item)
+    
+    if itar_matches:
+        primary_itar = itar_matches[0]
+        results["itar_results"] = {
+            "usml_category": primary_itar.usml_category,
+            "subcategory": primary_itar.subcategory,
+            "description": primary_itar.description,
+            "significant_military_equipment": primary_itar.significant_military_equipment,
+            "missile_technology": primary_itar.missile_technology,
+            "license_required": primary_itar.license_required,
+            "exemptions": primary_itar.exemptions or [],
+        }
+        
+        results["overall_risk"] = "high"
+        results["license_required"] = True
+        results["flags"].append(f"ITAR controlled - USML Category {primary_itar.usml_category}")
+        
+        if primary_itar.significant_military_equipment:
+            results["overall_risk"] = "prohibited"
+            results["flags"].append("Significant Military Equipment - enhanced restrictions")
+    
+    # Check country restrictions
+    embargoed_countries = ["CU", "IR", "KP", "SY", "RU", "BY"]  # Example
+    if request.import_country in embargoed_countries:
+        results["overall_risk"] = "prohibited"
+        results["flags"].append(f"Comprehensive sanctions apply to {request.import_country}")
+        results["recommendations"].append("Export may be prohibited. Consult legal counsel.")
+    
+    # Generate recommendations
+    if results["license_required"]:
+        results["recommendations"].append("Export license may be required from BIS or DDTC")
+        results["recommendations"].append("Conduct full end-use and end-user screening")
+    
+    if not eccn_matches and not itar_matches:
+        results["recommendations"].append("No specific controls identified. May qualify as EAR99.")
+        results["ear_results"] = {"eccn": "EAR99", "description": "Items not specifically listed on CCL"}
+    
+    # Save screening history if user is authenticated
+    if current_user:
+        screening = ComplianceScreening(
+            user_id=current_user.id,
+            product_description=request.product_description,
+            hs_code=request.hs_code,
+            export_country=request.export_country,
+            import_country=request.import_country,
+            end_use=request.end_use,
+            end_user=request.end_user,
+            export_control_result=results["ear_results"],
+            itar_result=results["itar_results"],
+            overall_risk=results["overall_risk"],
+            flags=results["flags"],
+            recommendations=results["recommendations"],
+        )
+        db.add(screening)
+        db.commit()
+    
+    return results
+
+
+@router.get("/compliance/eccn/search")
+async def search_eccn(
+    query: str = Query(..., min_length=1),
+    category: Optional[str] = None,
+    limit: int = Query(default=20, le=100),
+    db: Session = Depends(get_db)
+):
+    """Search Export Control Classification Numbers (ECCN)."""
+    q = db.query(ExportControlItem).filter(ExportControlItem.is_active == True)
+    
+    # Search by ECCN or description
+    search_filter = or_(
+        ExportControlItem.eccn.ilike(f"%{query}%"),
+        ExportControlItem.description.ilike(f"%{query}%"),
+        ExportControlItem.technical_description.ilike(f"%{query}%")
+    )
+    q = q.filter(search_filter)
+    
+    if category:
+        q = q.filter(ExportControlItem.category == category)
+    
+    items = q.limit(limit).all()
+    
+    return {
+        "query": query,
+        "count": len(items),
+        "results": [
+            {
+                "eccn": item.eccn,
+                "category": item.category,
+                "product_group": item.product_group,
+                "description": item.description,
+                "control_reasons": item.control_reasons or [],
+                "is_itar": item.is_itar,
+            }
+            for item in items
+        ],
+    }
+
+
+@router.get("/compliance/itar/categories")
+async def get_itar_categories(db: Session = Depends(get_db)):
+    """Get USML (US Munitions List) categories."""
+    categories = db.query(
+        ITARItem.usml_category,
+        func.count(ITARItem.id).label('item_count')
+    ).filter(
+        ITARItem.is_active == True
+    ).group_by(ITARItem.usml_category).all()
+    
+    # Standard USML category names
+    category_names = {
+        "I": "Firearms, Close Assault Weapons and Combat Shotguns",
+        "II": "Guns and Armament",
+        "III": "Ammunition/Ordnance",
+        "IV": "Launch Vehicles, Guided Missiles, Ballistic Missiles",
+        "V": "Explosives and Energetic Materials",
+        "VI": "Surface Vessels of War",
+        "VII": "Ground Vehicles",
+        "VIII": "Aircraft and Related Articles",
+        "IX": "Military Training Equipment and Training",
+        "X": "Personal Protective Equipment",
+        "XI": "Military Electronics",
+        "XII": "Fire Control, Range Finder, Optical and Guidance",
+        "XIII": "Materials and Miscellaneous Articles",
+        "XIV": "Toxicological Agents",
+        "XV": "Spacecraft and Related Articles",
+        "XVI": "Nuclear Weapons Related Articles",
+        "XVII": "Classified Articles",
+        "XVIII": "Directed Energy Weapons",
+        "XIX": "Gas Turbine Engines and Associated Equipment",
+        "XX": "Submersible Vessels and Related Articles",
+        "XXI": "Articles, Technical Data, and Defense Services",
+    }
+    
+    return {
+        "categories": [
+            {
+                "category": cat[0],
+                "name": category_names.get(cat[0], f"Category {cat[0]}"),
+                "item_count": cat[1],
+            }
+            for cat in categories
+        ] if categories else [
+            {"category": k, "name": v, "item_count": 0}
+            for k, v in category_names.items()
+        ],
+    }
+
+
+# ============================================================================
+# Phase 4: Compliance Suite - Section 301 Exclusions
+# ============================================================================
+
+@router.get("/compliance/section-301/exclusions")
+async def search_section_301_exclusions(
+    hs_code: Optional[str] = None,
+    list_number: Optional[str] = None,
+    status: Optional[str] = Query(default="active", regex="^(active|expired|all)$"),
+    limit: int = Query(default=50, le=200),
+    db: Session = Depends(get_db)
+):
+    """
+    Search Section 301 tariff exclusions.
+    Returns exclusions that may apply to your HS code.
+    """
+    q = db.query(Section301Exclusion)
+    
+    if status == "active":
+        q = q.filter(
+            Section301Exclusion.status == "active",
+            Section301Exclusion.effective_to >= datetime.utcnow()
+        )
+    elif status == "expired":
+        q = q.filter(or_(
+            Section301Exclusion.status == "expired",
+            Section301Exclusion.effective_to < datetime.utcnow()
+        ))
+    
+    if hs_code:
+        # Match on HS code prefix
+        q = q.filter(Section301Exclusion.hs_code.startswith(hs_code[:6]))
+    
+    if list_number:
+        q = q.filter(Section301Exclusion.list_number == list_number)
+    
+    exclusions = q.order_by(desc(Section301Exclusion.effective_to)).limit(limit).all()
+    
+    return {
+        "count": len(exclusions),
+        "exclusions": [
+            {
+                "exclusion_number": e.exclusion_number,
+                "list_number": e.list_number,
+                "hs_code": e.hs_code,
+                "product_description": e.product_description,
+                "product_scope": e.product_scope,
+                "status": e.status,
+                "effective_from": e.effective_from.isoformat() if e.effective_from else None,
+                "effective_to": e.effective_to.isoformat() if e.effective_to else None,
+                "days_remaining": (e.effective_to - datetime.utcnow()).days if e.effective_to and e.effective_to > datetime.utcnow() else 0,
+                "fr_citation": e.fr_citation,
+                "extensions_count": len(e.extensions or []),
+            }
+            for e in exclusions
+        ],
+    }
+
+
+@router.get("/compliance/section-301/check/{hs_code}")
+async def check_section_301_status(
+    hs_code: str,
+    export_country: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Check Section 301 tariff status for an HS code.
+    Returns both the additional duty rate and any applicable exclusions.
+    """
+    # Get Section 301 rate
+    rate = db.query(Section301Rate).filter(
+        Section301Rate.hs_code.startswith(hs_code[:6]),
+        Section301Rate.is_active == True
+    ).first()
+    
+    # Get applicable exclusions
+    exclusions = db.query(Section301Exclusion).filter(
+        Section301Exclusion.hs_code.startswith(hs_code[:6]),
+        Section301Exclusion.status == "active",
+        Section301Exclusion.effective_to >= datetime.utcnow()
+    ).all()
+    
+    result = {
+        "hs_code": hs_code,
+        "is_subject_to_301": rate is not None,
+        "rate_info": None,
+        "exclusions": [],
+        "net_effect": "No Section 301 duties apply",
+    }
+    
+    if rate:
+        result["rate_info"] = {
+            "list_number": rate.list_number,
+            "additional_duty_rate": rate.additional_duty_rate,
+            "effective_date": rate.effective_date.isoformat() if rate.effective_date else None,
+            "countries_affected": rate.countries_affected,
+        }
+        result["net_effect"] = f"Subject to {rate.additional_duty_rate}% additional duty (List {rate.list_number})"
+    
+    if exclusions:
+        result["exclusions"] = [
+            {
+                "exclusion_number": e.exclusion_number,
+                "product_description": e.product_description,
+                "effective_to": e.effective_to.isoformat(),
+                "days_remaining": (e.effective_to - datetime.utcnow()).days,
+            }
+            for e in exclusions
+        ]
+        
+        if rate:
+            result["net_effect"] = f"Exclusion available - may avoid {rate.additional_duty_rate}% duty"
+    
+    return result
+
+
+# ============================================================================
+# Phase 4: Compliance Suite - AD/CVD Orders
+# ============================================================================
+
+@router.get("/compliance/ad-cvd/search")
+async def search_ad_cvd_orders(
+    hs_code: Optional[str] = None,
+    country: Optional[str] = None,
+    order_type: Optional[str] = Query(default=None, regex="^(AD|CVD|AD/CVD)?$"),
+    product: Optional[str] = None,
+    status: str = Query(default="active", regex="^(active|revoked|all)$"),
+    limit: int = Query(default=50, le=200),
+    db: Session = Depends(get_db)
+):
+    """
+    Search Antidumping (AD) and Countervailing Duty (CVD) orders.
+    """
+    q = db.query(ADCVDOrder)
+    
+    if status == "active":
+        q = q.filter(ADCVDOrder.status == "active")
+    elif status == "revoked":
+        q = q.filter(ADCVDOrder.status == "revoked")
+    
+    if country:
+        q = q.filter(ADCVDOrder.country == country.upper())
+    
+    if order_type:
+        q = q.filter(ADCVDOrder.order_type == order_type)
+    
+    if product:
+        q = q.filter(or_(
+            ADCVDOrder.product_name.ilike(f"%{product}%"),
+            ADCVDOrder.product_description.ilike(f"%{product}%")
+        ))
+    
+    orders = q.order_by(desc(ADCVDOrder.order_date)).limit(limit).all()
+    
+    # Filter by HS code if provided (check JSON array)
+    if hs_code:
+        filtered = []
+        for order in orders:
+            if order.hs_codes:
+                for code in order.hs_codes:
+                    if code.startswith(hs_code[:6]) or hs_code.startswith(code[:6]):
+                        filtered.append(order)
+                        break
+        orders = filtered
+    
+    return {
+        "count": len(orders),
+        "orders": [
+            {
+                "case_number": o.case_number,
+                "order_type": o.order_type,
+                "product_name": o.product_name,
+                "country": o.country,
+                "country_name": o.country_name,
+                "hs_codes": o.hs_codes or [],
+                "all_others_rate": o.all_others_rate,
+                "current_deposit_rate": o.current_deposit_rate,
+                "status": o.status,
+                "order_date": o.order_date.isoformat() if o.order_date else None,
+                "next_review_due": o.next_review_due.isoformat() if o.next_review_due else None,
+            }
+            for o in orders
+        ],
+    }
+
+
+@router.get("/compliance/ad-cvd/check")
+async def check_ad_cvd_applicability(
+    hs_code: str,
+    country: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Check if AD/CVD orders apply to a specific HS code and country combination.
+    Returns applicable orders and current deposit rates.
+    """
+    orders = db.query(ADCVDOrder).filter(
+        ADCVDOrder.country == country.upper(),
+        ADCVDOrder.status == "active",
+        ADCVDOrder.is_active == True
+    ).all()
+    
+    applicable_orders = []
+    for order in orders:
+        if order.hs_codes:
+            for code in order.hs_codes:
+                if code.startswith(hs_code[:6]) or hs_code.startswith(code[:6]):
+                    applicable_orders.append(order)
+                    break
+    
+    if not applicable_orders:
+        return {
+            "hs_code": hs_code,
+            "country": country,
+            "has_ad_cvd": False,
+            "orders": [],
+            "total_estimated_duty": 0,
+            "message": "No AD/CVD orders found for this product/country combination",
+        }
+    
+    total_rate = 0
+    order_details = []
+    
+    for order in applicable_orders:
+        rate = order.current_deposit_rate or order.all_others_rate or 0
+        total_rate += rate
+        
+        order_details.append({
+            "case_number": order.case_number,
+            "order_type": order.order_type,
+            "product_name": order.product_name,
+            "deposit_rate": rate,
+            "scope": order.scope_description,
+            "company_specific_rates": order.company_rates or [],
+            "next_review": order.next_review_due.isoformat() if order.next_review_due else None,
+            "fr_citation": order.latest_rate_fr,
+        })
+    
+    return {
+        "hs_code": hs_code,
+        "country": country,
+        "has_ad_cvd": True,
+        "orders": order_details,
+        "total_estimated_duty": total_rate,
+        "message": f"AD/CVD duties totaling {total_rate}% may apply",
+        "recommendations": [
+            "Verify product falls within scope of order",
+            "Check for company-specific rates if applicable",
+            "Consider whether duty drawback or FTZ benefits apply",
+        ],
+    }
+
+
+@router.get("/compliance/ad-cvd/countries")
+async def get_ad_cvd_countries(db: Session = Depends(get_db)):
+    """Get countries with active AD/CVD orders."""
+    countries = db.query(
+        ADCVDOrder.country,
+        ADCVDOrder.country_name,
+        func.count(ADCVDOrder.id).label('order_count')
+    ).filter(
+        ADCVDOrder.status == "active",
+        ADCVDOrder.is_active == True
+    ).group_by(
+        ADCVDOrder.country,
+        ADCVDOrder.country_name
+    ).order_by(desc('order_count')).all()
+    
+    return {
+        "countries": [
+            {
+                "code": c[0],
+                "name": c[1] or c[0],
+                "active_orders": c[2],
+            }
+            for c in countries
+        ],
+    }
+
+
+# ============================================================================
+# Phase 4: Compliance Suite - Quota Monitoring
+# ============================================================================
+
+@router.get("/compliance/quotas/search")
+async def search_tariff_quotas(
+    hs_code: Optional[str] = None,
+    fta: Optional[str] = None,
+    status: Optional[str] = Query(default=None, regex="^(open|near_full|full|closed)?$"),
+    limit: int = Query(default=50, le=200),
+    db: Session = Depends(get_db)
+):
+    """Search tariff rate quotas (TRQ)."""
+    q = db.query(TariffQuota).filter(TariffQuota.is_active == True)
+    
+    if status:
+        q = q.filter(TariffQuota.status == status)
+    
+    if fta:
+        q = q.filter(TariffQuota.fta_code == fta.upper())
+    
+    quotas = q.order_by(desc(TariffQuota.fill_rate_percent)).limit(limit).all()
+    
+    # Filter by HS code if provided
+    if hs_code:
+        filtered = []
+        for quota in quotas:
+            if quota.hs_codes:
+                for code in quota.hs_codes:
+                    if code.startswith(hs_code[:4]) or hs_code.startswith(code[:4]):
+                        filtered.append(quota)
+                        break
+        quotas = filtered
+    
+    return {
+        "count": len(quotas),
+        "quotas": [
+            {
+                "quota_number": q.quota_number,
+                "quota_name": q.quota_name,
+                "hs_codes": q.hs_codes or [],
+                "fta_code": q.fta_code,
+                "quota_quantity": q.quota_quantity,
+                "quota_unit": q.quota_unit,
+                "quantity_used": q.quantity_used or 0,
+                "fill_rate_percent": q.fill_rate_percent or 0,
+                "status": q.status,
+                "in_quota_rate": q.in_quota_rate,
+                "over_quota_rate": q.over_quota_rate,
+                "period_end": q.period_end.isoformat() if q.period_end else None,
+                "days_remaining": (q.period_end - datetime.utcnow()).days if q.period_end else None,
+            }
+            for q in quotas
+        ],
+    }
+
+
+@router.get("/compliance/quotas/check/{hs_code}")
+async def check_quota_status(
+    hs_code: str,
+    fta: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Check quota status for an HS code.
+    Returns applicable quotas and their fill rates.
+    """
+    quotas = db.query(TariffQuota).filter(
+        TariffQuota.is_active == True,
+        TariffQuota.period_end >= datetime.utcnow()
+    )
+    
+    if fta:
+        quotas = quotas.filter(TariffQuota.fta_code == fta.upper())
+    
+    quotas = quotas.all()
+    
+    applicable = []
+    for quota in quotas:
+        if quota.hs_codes:
+            for code in quota.hs_codes:
+                if code.startswith(hs_code[:4]) or hs_code.startswith(code[:4]):
+                    applicable.append(quota)
+                    break
+    
+    if not applicable:
+        return {
+            "hs_code": hs_code,
+            "has_quotas": False,
+            "quotas": [],
+            "message": "No active quotas found for this HS code",
+        }
+    
+    return {
+        "hs_code": hs_code,
+        "has_quotas": True,
+        "quotas": [
+            {
+                "quota_number": q.quota_number,
+                "quota_name": q.quota_name,
+                "status": q.status,
+                "fill_rate_percent": q.fill_rate_percent or 0,
+                "quantity_remaining": (q.quota_quantity or 0) - (q.quantity_used or 0),
+                "quota_unit": q.quota_unit,
+                "in_quota_rate": q.in_quota_rate,
+                "over_quota_rate": q.over_quota_rate,
+                "period_end": q.period_end.isoformat() if q.period_end else None,
+                "last_updated": q.last_updated.isoformat() if q.last_updated else None,
+                "recommendation": _get_quota_recommendation(q),
+            }
+            for q in applicable
+        ],
+    }
+
+
+def _get_quota_recommendation(quota: TariffQuota) -> str:
+    """Generate recommendation based on quota status."""
+    fill_rate = quota.fill_rate_percent or 0
+    
+    if fill_rate >= 100 or quota.status == "full":
+        return "Quota exhausted - over-quota rate applies"
+    elif fill_rate >= 90:
+        return "Quota nearly full - apply immediately to secure in-quota rate"
+    elif fill_rate >= 75:
+        return "Quota filling quickly - plan shipments soon"
+    elif fill_rate >= 50:
+        return "Moderate fill rate - monitor status"
+    else:
+        return "Quota available - in-quota rate should apply"
+
+
+@router.get("/compliance/quotas/alerts")
+async def get_quota_alerts(
+    threshold: float = Query(default=75, ge=0, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get quotas that are near their fill threshold."""
+    quotas = db.query(TariffQuota).filter(
+        TariffQuota.is_active == True,
+        TariffQuota.period_end >= datetime.utcnow(),
+        TariffQuota.fill_rate_percent >= threshold
+    ).order_by(desc(TariffQuota.fill_rate_percent)).all()
+    
+    return {
+        "threshold": threshold,
+        "count": len(quotas),
+        "alerts": [
+            {
+                "quota_number": q.quota_number,
+                "quota_name": q.quota_name,
+                "fill_rate_percent": q.fill_rate_percent,
+                "status": q.status,
+                "days_remaining": (q.period_end - datetime.utcnow()).days if q.period_end else None,
+                "in_quota_rate": q.in_quota_rate,
+                "over_quota_rate": q.over_quota_rate,
+                "rate_impact": (q.over_quota_rate or 0) - (q.in_quota_rate or 0),
+            }
+            for q in quotas
+        ],
+    }
+
+
+# ============================================================================
+# Phase 4: Compliance Suite - Combined Screening
+# ============================================================================
+
+@router.post("/compliance/full-screening")
+async def run_full_compliance_screening(
+    request: ExportControlScreenRequest,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Run a comprehensive compliance screening covering:
+    - Export controls (EAR/ITAR)
+    - Section 301 tariffs and exclusions
+    - AD/CVD orders
+    - Quota status
+    - Country restrictions
+    
+    Returns a complete compliance assessment.
+    """
+    results = {
+        "product": request.product_description,
+        "hs_code": request.hs_code,
+        "export_country": request.export_country,
+        "import_country": request.import_country,
+        "screening_date": datetime.utcnow().isoformat(),
+        "export_controls": None,
+        "section_301": None,
+        "ad_cvd": None,
+        "quotas": None,
+        "overall_risk": "low",
+        "total_flags": 0,
+        "all_recommendations": [],
+    }
+    
+    flags = []
+    recommendations = []
+    
+    # 1. Export Controls
+    export_result = await screen_export_controls(request, None, db)
+    results["export_controls"] = {
+        "risk_level": export_result["overall_risk"],
+        "license_required": export_result["license_required"],
+        "eccn": export_result["ear_results"]["eccn"] if export_result["ear_results"] else None,
+        "flags": export_result["flags"],
+    }
+    flags.extend(export_result["flags"])
+    recommendations.extend(export_result["recommendations"])
+    
+    # Update overall risk based on export controls
+    if export_result["overall_risk"] == "prohibited":
+        results["overall_risk"] = "prohibited"
+    elif export_result["overall_risk"] == "high" and results["overall_risk"] != "prohibited":
+        results["overall_risk"] = "high"
+    
+    # 2. Section 301 (if importing to US)
+    if request.import_country == "US" and request.hs_code:
+        section_301_result = await check_section_301_status(request.hs_code, request.export_country, db)
+        results["section_301"] = {
+            "is_subject": section_301_result["is_subject_to_301"],
+            "rate_info": section_301_result["rate_info"],
+            "exclusions_available": len(section_301_result["exclusions"]) > 0,
+        }
+        
+        if section_301_result["is_subject_to_301"]:
+            rate = section_301_result["rate_info"]["additional_duty_rate"] if section_301_result["rate_info"] else 0
+            flags.append(f"Subject to Section 301 duty of {rate}%")
+            
+            if section_301_result["exclusions"]:
+                recommendations.append("Section 301 exclusion may be available - review exclusion scope")
+    
+    # 3. AD/CVD
+    if request.hs_code and request.export_country:
+        adcvd_result = await check_ad_cvd_applicability(request.hs_code, request.export_country, db)
+        results["ad_cvd"] = {
+            "has_orders": adcvd_result["has_ad_cvd"],
+            "total_duty": adcvd_result["total_estimated_duty"],
+            "order_count": len(adcvd_result["orders"]),
+        }
+        
+        if adcvd_result["has_ad_cvd"]:
+            flags.append(f"AD/CVD duties of {adcvd_result['total_estimated_duty']}% may apply")
+            recommendations.extend(adcvd_result["recommendations"])
+    
+    # 4. Quotas (if importing to US)
+    if request.import_country == "US" and request.hs_code:
+        quota_result = await check_quota_status(request.hs_code, None, db)
+        results["quotas"] = {
+            "has_quotas": quota_result["has_quotas"],
+            "quota_count": len(quota_result.get("quotas", [])),
+            "quotas": quota_result.get("quotas", [])[:3],  # Top 3 quotas
+        }
+        
+        for q in quota_result.get("quotas", []):
+            if q.get("fill_rate_percent", 0) >= 90:
+                flags.append(f"Quota {q['quota_number']} is {q['fill_rate_percent']}% full")
+                recommendations.append(q.get("recommendation", ""))
+    
+    results["total_flags"] = len(flags)
+    results["all_flags"] = flags
+    results["all_recommendations"] = list(set(recommendations))  # Dedupe
+    
+    # Save screening to history if user authenticated
+    if current_user:
+        screening = ComplianceScreening(
+            user_id=current_user.id,
+            product_description=request.product_description,
+            hs_code=request.hs_code,
+            export_country=request.export_country,
+            import_country=request.import_country,
+            end_use=request.end_use,
+            end_user=request.end_user,
+            export_control_result=results["export_controls"],
+            section_301_result=results["section_301"],
+            ad_cvd_result=results["ad_cvd"],
+            quota_result=results["quotas"],
+            overall_risk=results["overall_risk"],
+            flags=flags,
+            recommendations=results["all_recommendations"],
+        )
+        db.add(screening)
+        db.commit()
+        results["screening_id"] = str(screening.id)
+    
+    return results
+
+
+@router.get("/compliance/history")
+async def get_compliance_screening_history(
+    limit: int = Query(default=20, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's compliance screening history."""
+    screenings = db.query(ComplianceScreening).filter(
+        ComplianceScreening.user_id == current_user.id
+    ).order_by(desc(ComplianceScreening.created_at)).limit(limit).all()
+    
+    return {
+        "count": len(screenings),
+        "screenings": [
+            {
+                "id": str(s.id),
+                "product_description": s.product_description,
+                "hs_code": s.hs_code,
+                "export_country": s.export_country,
+                "import_country": s.import_country,
+                "overall_risk": s.overall_risk,
+                "flag_count": len(s.flags or []),
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in screenings
+        ],
     }
 

@@ -25,3 +25,10 @@ export { default as HSCodeAlerts } from './HSCodeAlerts'
 export { default as HSCodeUSMCA } from './HSCodeUSMCA'
 export { default as HSCodeTeams } from './HSCodeTeams'
 
+// Phase 4 Features - Compliance Suite
+export { default as HSCodeComplianceDashboard } from './HSCodeComplianceDashboard'
+export { default as HSCodeExportControls } from './HSCodeExportControls'
+export { default as HSCodeSection301 } from './HSCodeSection301'
+export { default as HSCodeADCVD } from './HSCodeADCVD'
+export { default as HSCodeQuotas } from './HSCodeQuotas'
+
