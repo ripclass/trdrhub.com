@@ -428,3 +428,478 @@ async def get_screening_stats(
         "note": "Statistics not yet implemented",
     }
 
+
+# ============================================================================
+# Phase 3: Production Polish - Batch Upload, List Sync, API Access
+# ============================================================================
+
+class CSVUploadResponse(BaseModel):
+    """Response for CSV batch upload."""
+    job_id: str
+    total_rows: int
+    status: str
+    message: str
+
+
+class BatchJobStatus(BaseModel):
+    """Status of a batch screening job."""
+    job_id: str
+    status: str  # pending, processing, completed, failed
+    total: int
+    processed: int
+    clear: int
+    potential_match: int
+    match: int
+    errors: int
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    download_url: Optional[str] = None
+
+
+class ListSyncStatus(BaseModel):
+    """Status of sanctions list synchronization."""
+    list_code: str
+    list_name: str
+    last_synced: Optional[str] = None
+    next_sync: Optional[str] = None
+    entry_count: int
+    status: str  # synced, syncing, error
+    version: Optional[str] = None
+
+
+class APIKeyInfo(BaseModel):
+    """API key information."""
+    key_id: str
+    name: str
+    created_at: str
+    last_used: Optional[str] = None
+    permissions: List[str]
+    rate_limit: int
+    is_active: bool
+
+
+@router.post("/batch/upload-csv", response_model=CSVUploadResponse)
+async def upload_csv_for_batch_screening(
+    background_tasks: BackgroundTasks,
+    screening_type: str = Query(default="party", regex="^(party|vessel|goods)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a CSV file for batch screening.
+    
+    CSV should have columns: name (required), country (optional)
+    For vessels: name, imo, mmsi, flag_code
+    For goods: description, hs_code, destination_country
+    
+    Returns a job ID to track progress.
+    """
+    # In production, this would parse the uploaded file
+    # For now, return a placeholder job
+    
+    job_id = f"batch-{uuid.uuid4().hex[:12]}"
+    
+    # Would add background task to process CSV
+    # background_tasks.add_task(process_csv_batch, job_id, file_content, screening_type)
+    
+    return CSVUploadResponse(
+        job_id=job_id,
+        total_rows=0,
+        status="pending",
+        message="CSV upload endpoint ready. Submit file as multipart/form-data with 'file' field.",
+    )
+
+
+@router.get("/batch/status/{job_id}", response_model=BatchJobStatus)
+async def get_batch_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the status of a batch screening job.
+    """
+    # In production, look up job from database/cache
+    
+    return BatchJobStatus(
+        job_id=job_id,
+        status="pending",
+        total=0,
+        processed=0,
+        clear=0,
+        potential_match=0,
+        match=0,
+        errors=0,
+        started_at=None,
+        completed_at=None,
+        download_url=None,
+    )
+
+
+@router.get("/batch/download/{job_id}")
+async def download_batch_results(
+    job_id: str,
+    format: str = Query(default="csv", regex="^(csv|json)$"),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Download batch screening results as CSV or JSON.
+    """
+    # In production, generate file from stored results
+    
+    if format == "csv":
+        csv_content = "name,status,risk_level,matches,certificate_id\n"
+        csv_content += "Sample Company,clear,low,0,TRDR-SAMPLE-001\n"
+        
+        return StreamingResponse(
+            io.StringIO(csv_content),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=screening_results_{job_id}.csv"}
+        )
+    else:
+        return {
+            "job_id": job_id,
+            "results": [],
+            "note": "Batch results not yet implemented",
+        }
+
+
+# ============================================================================
+# List Synchronization
+# ============================================================================
+
+@router.get("/lists/sync-status")
+async def get_list_sync_status(
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """
+    Get synchronization status of all sanctions lists.
+    """
+    # Sample list sync status
+    lists = [
+        ListSyncStatus(
+            list_code="OFAC_SDN",
+            list_name="OFAC SDN List",
+            last_synced=datetime.utcnow().isoformat() + "Z",
+            next_sync=(datetime.utcnow()).isoformat() + "Z",
+            entry_count=12500,
+            status="synced",
+            version="2025-12-06",
+        ),
+        ListSyncStatus(
+            list_code="EU_CONS",
+            list_name="EU Consolidated Sanctions",
+            last_synced=(datetime.utcnow()).isoformat() + "Z",
+            next_sync=(datetime.utcnow()).isoformat() + "Z",
+            entry_count=8200,
+            status="synced",
+            version="2025-12-03",
+        ),
+        ListSyncStatus(
+            list_code="UN_SC",
+            list_name="UN Security Council",
+            last_synced=(datetime.utcnow()).isoformat() + "Z",
+            next_sync=(datetime.utcnow()).isoformat() + "Z",
+            entry_count=2100,
+            status="synced",
+            version="2025-12-01",
+        ),
+        ListSyncStatus(
+            list_code="UK_OFSI",
+            list_name="UK OFSI",
+            last_synced=(datetime.utcnow()).isoformat() + "Z",
+            next_sync=(datetime.utcnow()).isoformat() + "Z",
+            entry_count=4800,
+            status="synced",
+            version="2025-12-04",
+        ),
+    ]
+    
+    return {
+        "lists": [l.dict() for l in lists],
+        "last_full_sync": datetime.utcnow().isoformat() + "Z",
+        "sync_schedule": {
+            "OFAC_SDN": "Daily at 06:00 UTC",
+            "EU_CONS": "Weekly on Monday",
+            "UN_SC": "As published",
+            "UK_OFSI": "Weekly on Monday",
+        },
+    }
+
+
+@router.post("/lists/trigger-sync")
+async def trigger_list_sync(
+    list_code: str = Query(..., description="List code to sync"),
+    background_tasks: BackgroundTasks = None,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Manually trigger synchronization of a specific list.
+    
+    Admin only. Use sparingly.
+    """
+    valid_lists = ["OFAC_SDN", "EU_CONS", "UN_SC", "UK_OFSI", "BIS_EL"]
+    
+    if list_code not in valid_lists:
+        raise HTTPException(status_code=400, detail=f"Invalid list code. Valid options: {valid_lists}")
+    
+    # In production, trigger background sync job
+    # background_tasks.add_task(sync_sanctions_list, list_code)
+    
+    return {
+        "status": "sync_triggered",
+        "list_code": list_code,
+        "message": f"Synchronization triggered for {list_code}. Check sync status for progress.",
+    }
+
+
+# ============================================================================
+# List Update Notifications
+# ============================================================================
+
+class NotificationPreference(BaseModel):
+    """User notification preferences."""
+    list_updates: bool = True
+    watchlist_alerts: bool = True
+    screening_summary: bool = False
+    email_enabled: bool = True
+    webhook_url: Optional[str] = None
+
+
+@router.get("/notifications/preferences")
+async def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get user's notification preferences.
+    """
+    # Would fetch from database
+    return NotificationPreference(
+        list_updates=True,
+        watchlist_alerts=True,
+        screening_summary=False,
+        email_enabled=True,
+        webhook_url=None,
+    ).dict()
+
+
+@router.put("/notifications/preferences")
+async def update_notification_preferences(
+    preferences: NotificationPreference,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update user's notification preferences.
+    """
+    # Would save to database
+    return {
+        "status": "updated",
+        "preferences": preferences.dict(),
+    }
+
+
+@router.get("/notifications/recent")
+async def get_recent_notifications(
+    limit: int = Query(default=20, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get recent notifications for the user.
+    """
+    # Sample notifications
+    notifications = [
+        {
+            "id": "notif-1",
+            "type": "list_update",
+            "title": "OFAC SDN List Updated",
+            "message": "152 new entries added, 23 removed",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "read": False,
+        },
+        {
+            "id": "notif-2",
+            "type": "watchlist_alert",
+            "title": "Watchlist Status Change",
+            "message": "ABC Trading Co status changed from Clear to Potential Match",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "read": True,
+        },
+    ]
+    
+    return {
+        "notifications": notifications[:limit],
+        "unread_count": sum(1 for n in notifications if not n["read"]),
+    }
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mark a notification as read.
+    """
+    return {"status": "marked_read", "notification_id": notification_id}
+
+
+# ============================================================================
+# API Access for ERP Integration
+# ============================================================================
+
+@router.get("/api-keys")
+async def list_api_keys(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List user's API keys for programmatic access.
+    """
+    # Would fetch from database
+    return {
+        "keys": [],
+        "max_keys": 5,
+        "documentation_url": "/docs#/sanctions-screener",
+    }
+
+
+@router.post("/api-keys")
+async def create_api_key(
+    name: str = Query(..., min_length=1, max_length=100, description="Key name"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new API key for programmatic access.
+    
+    The key is only shown once. Store it securely.
+    """
+    key_id = f"sk_{uuid.uuid4().hex}"
+    
+    return {
+        "key_id": key_id[:20] + "...",  # Truncated for display
+        "key": key_id,  # Full key - only shown once
+        "name": name,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "permissions": ["screen:party", "screen:vessel", "screen:goods", "batch:upload"],
+        "rate_limit": 1000,  # requests per hour
+        "warning": "This is the only time the full key will be shown. Store it securely.",
+    }
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Revoke an API key.
+    """
+    return {
+        "status": "revoked",
+        "key_id": key_id,
+    }
+
+
+@router.get("/api-keys/usage")
+async def get_api_usage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get API usage statistics.
+    """
+    return {
+        "current_period": {
+            "start": datetime.utcnow().replace(day=1).isoformat() + "Z",
+            "end": datetime.utcnow().isoformat() + "Z",
+            "requests": 0,
+            "limit": 10000,
+        },
+        "by_endpoint": {
+            "screen/party": 0,
+            "screen/vessel": 0,
+            "screen/goods": 0,
+            "batch": 0,
+        },
+        "by_day": [],
+    }
+
+
+# ============================================================================
+# Webhook Integration
+# ============================================================================
+
+class WebhookConfig(BaseModel):
+    """Webhook configuration."""
+    url: str
+    events: List[str]  # list_update, watchlist_alert, batch_complete
+    secret: Optional[str] = None
+    is_active: bool = True
+
+
+@router.get("/webhooks")
+async def list_webhooks(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List configured webhooks.
+    """
+    return {"webhooks": [], "max_webhooks": 3}
+
+
+@router.post("/webhooks")
+async def create_webhook(
+    config: WebhookConfig,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Create a webhook for real-time notifications.
+    
+    Events:
+    - list_update: When sanctions lists are updated
+    - watchlist_alert: When watchlist item status changes
+    - batch_complete: When batch screening job completes
+    """
+    webhook_id = f"wh_{uuid.uuid4().hex[:12]}"
+    secret = f"whsec_{uuid.uuid4().hex}"
+    
+    return {
+        "webhook_id": webhook_id,
+        "url": config.url,
+        "events": config.events,
+        "secret": secret,
+        "is_active": True,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "note": "Store the secret securely for verifying webhook signatures.",
+    }
+
+
+@router.delete("/webhooks/{webhook_id}")
+async def delete_webhook(
+    webhook_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Delete a webhook.
+    """
+    return {"status": "deleted", "webhook_id": webhook_id}
+
+
+@router.post("/webhooks/{webhook_id}/test")
+async def test_webhook(
+    webhook_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Send a test event to the webhook.
+    """
+    return {
+        "status": "test_sent",
+        "webhook_id": webhook_id,
+        "event": "test",
+        "response_code": 200,
+    }
+

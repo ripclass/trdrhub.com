@@ -18,6 +18,8 @@ import {
   Bell,
   LogOut,
   ChevronRight,
+  Upload,
+  Key,
 } from "lucide-react";
 
 const navigation = [
@@ -26,10 +28,12 @@ const navigation = [
   { name: "Screen Vessel", href: "/sanctions/dashboard/screen/vessel", icon: Ship },
   { name: "Screen Goods", href: "/sanctions/dashboard/screen/goods", icon: Package },
   { divider: true },
+  { name: "Batch Upload", href: "/sanctions/dashboard/batch", icon: Upload },
   { name: "History", href: "/sanctions/dashboard/history", icon: History },
   { name: "Certificates", href: "/sanctions/dashboard/certificates", icon: FileCheck },
   { name: "Watchlist", href: "/sanctions/dashboard/watchlist", icon: Bell },
   { divider: true },
+  { name: "API Access", href: "/sanctions/dashboard/api", icon: Key },
   { name: "Settings", href: "/sanctions/dashboard/settings", icon: Settings },
   { name: "Help & FAQ", href: "/sanctions/dashboard/help", icon: HelpCircle },
 ];

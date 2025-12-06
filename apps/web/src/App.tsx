@@ -23,6 +23,8 @@ import {
   SanctionsWatchlist,
   SanctionsSettings as SanctionsSettingsPage,
   SanctionsHelp as SanctionsHelpPage,
+  SanctionsBatchUpload,
+  SanctionsAPIAccess,
 } from './pages/tools/sanctions'
 import {
   HSCodeLayout,
@@ -189,9 +191,11 @@ function App() {
           <Route path="screen/party" element={<SanctionsScreenParty />} />
           <Route path="screen/vessel" element={<SanctionsScreenVessel />} />
           <Route path="screen/goods" element={<SanctionsScreenGoods />} />
+          <Route path="batch" element={<SanctionsBatchUpload />} />
           <Route path="history" element={<SanctionsHistoryPage />} />
           <Route path="certificates" element={<SanctionsCertificates />} />
           <Route path="watchlist" element={<SanctionsWatchlist />} />
+          <Route path="api" element={<SanctionsAPIAccess />} />
           <Route path="settings" element={<SanctionsSettingsPage />} />
           <Route path="help" element={<SanctionsHelpPage />} />
         </Route>

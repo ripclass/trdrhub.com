@@ -8,4 +8,6 @@ export { default as SanctionsCertificates } from "./SanctionsCertificates";
 export { default as SanctionsWatchlist } from "./SanctionsWatchlist";
 export { default as SanctionsSettings } from "./SanctionsSettings";
 export { default as SanctionsHelp } from "./SanctionsHelp";
+export { default as SanctionsBatchUpload } from "./SanctionsBatchUpload";
+export { default as SanctionsAPIAccess } from "./SanctionsAPIAccess";
 
