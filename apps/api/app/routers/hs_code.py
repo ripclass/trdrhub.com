@@ -2,16 +2,20 @@
 HS Code Finder API Router
 
 Endpoints for AI-powered HS code classification, duty rates, and FTA eligibility.
+Phase 2: Bulk classification, PDF export, binding rulings, comparison, rate alerts.
 """
 
 import logging
 import uuid
 import time
-from datetime import datetime
+import csv
+import io
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, desc
 from pydantic import BaseModel, Field
 
 from app.database import get_db
@@ -19,7 +23,8 @@ from app.models.user import User
 from app.core.security import get_current_user, get_optional_user
 from app.models.hs_code import (
     HSCodeTariff, DutyRate, FTAAgreement, FTARule,
-    HSClassification, HSCodeSearch, ClassificationSource
+    HSClassification, HSCodeSearch, ClassificationSource,
+    BindingRuling, ChapterNote, Section301Rate, RateAlert
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,44 @@ class SaveClassificationRequest(BaseModel):
     project_name: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
+
+
+# ============================================================================
+# Phase 2: Bulk Classification Models
+# ============================================================================
+
+class BulkClassifyItem(BaseModel):
+    """Single item in bulk classification request"""
+    description: str
+    import_country: str = "US"
+    export_country: Optional[str] = None
+    product_value: Optional[float] = None
+    row_id: Optional[str] = None  # For tracking in CSV
+
+
+class BulkClassifyRequest(BaseModel):
+    """Request for bulk classification"""
+    items: List[BulkClassifyItem] = Field(..., max_length=500)
+    include_fta: bool = True
+    include_duty_calc: bool = True
+
+
+class CompareClassificationsRequest(BaseModel):
+    """Request to compare two products' classifications"""
+    product_a: str = Field(..., description="First product description")
+    product_b: str = Field(..., description="Second product description")
+    import_country: str = "US"
+    export_country: Optional[str] = None
+
+
+class RateAlertRequest(BaseModel):
+    """Request to create a rate change alert"""
+    hs_code: str
+    import_country: str = "US"
+    export_country: Optional[str] = None
+    alert_type: str = Field(default="any", description="any, increase, decrease")
+    threshold_percent: Optional[float] = Field(default=None, description="Alert if change exceeds %")
+    email_notification: bool = True
 
 
 # ============================================================================
@@ -876,4 +919,852 @@ def log_search(
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log search: {e}")
+
+
+# ============================================================================
+# Phase 2: Bulk Classification Endpoints
+# ============================================================================
+
+@router.post("/bulk-classify")
+async def bulk_classify_products(
+    request: BulkClassifyRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Classify multiple products at once.
+    Maximum 500 products per request.
+    """
+    start_time = time.time()
+    results = []
+    errors = []
+    
+    for idx, item in enumerate(request.items):
+        try:
+            # Classify each product
+            result = await classify_with_ai(
+                db=db,
+                description=item.description,
+                import_country=item.import_country,
+                export_country=item.export_country
+            )
+            
+            row_result = {
+                "row_id": item.row_id or str(idx + 1),
+                "description": item.description,
+                "hs_code": result["hs_code"],
+                "hs_description": result["description"],
+                "confidence": result["confidence"],
+                "chapter": result.get("chapter", ""),
+                "import_country": item.import_country,
+                "export_country": item.export_country,
+            }
+            
+            # Add duty calculation if requested
+            if request.include_duty_calc and item.product_value:
+                mfn_rate = result.get("duty_rates", {}).get("mfn", 0)
+                s301_rate = result.get("duty_rates", {}).get("section_301", 0)
+                row_result["mfn_rate"] = mfn_rate
+                row_result["section_301_rate"] = s301_rate
+                row_result["total_rate"] = mfn_rate + s301_rate
+                row_result["estimated_duty"] = round(item.product_value * (mfn_rate + s301_rate) / 100, 2)
+            else:
+                row_result["mfn_rate"] = result.get("duty_rates", {}).get("mfn", 0)
+            
+            # Add FTA options if requested
+            if request.include_fta and item.export_country:
+                ftas = db.query(FTAAgreement).filter(
+                    FTAAgreement.is_active == True,
+                    FTAAgreement.member_countries.contains([item.export_country]),
+                    FTAAgreement.member_countries.contains([item.import_country])
+                ).all()
+                
+                row_result["fta_options"] = [
+                    {"code": f.code, "name": f.name}
+                    for f in ftas
+                ]
+            
+            results.append(row_result)
+            
+        except Exception as e:
+            logger.error(f"Error classifying row {idx}: {e}")
+            errors.append({
+                "row_id": item.row_id or str(idx + 1),
+                "description": item.description,
+                "error": str(e)
+            })
+    
+    processing_time = round(time.time() - start_time, 2)
+    
+    return {
+        "status": "completed",
+        "total_items": len(request.items),
+        "successful": len(results),
+        "failed": len(errors),
+        "processing_time_seconds": processing_time,
+        "results": results,
+        "errors": errors,
+    }
+
+
+@router.post("/bulk-classify/upload")
+async def bulk_classify_csv_upload(
+    file: UploadFile = File(...),
+    import_country: str = Query(default="US"),
+    include_fta: bool = Query(default=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a CSV file for bulk classification.
+    Expected columns: description, import_country (optional), export_country (optional), product_value (optional)
+    """
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+    
+    # Read CSV content
+    content = await file.read()
+    try:
+        csv_text = content.decode('utf-8')
+    except:
+        csv_text = content.decode('latin-1')
+    
+    reader = csv.DictReader(io.StringIO(csv_text))
+    
+    items = []
+    for row_idx, row in enumerate(reader):
+        if row_idx >= 500:  # Limit to 500 rows
+            break
+            
+        description = row.get('description', '').strip()
+        if not description:
+            continue
+        
+        items.append(BulkClassifyItem(
+            description=description,
+            import_country=row.get('import_country', import_country).strip() or import_country,
+            export_country=row.get('export_country', '').strip() or None,
+            product_value=float(row['product_value']) if row.get('product_value') else None,
+            row_id=str(row_idx + 1)
+        ))
+    
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid products found in CSV")
+    
+    # Process using the bulk endpoint
+    request = BulkClassifyRequest(
+        items=items,
+        include_fta=include_fta,
+        include_duty_calc=True
+    )
+    
+    return await bulk_classify_products(
+        request=request,
+        background_tasks=BackgroundTasks(),
+        current_user=current_user,
+        db=db
+    )
+
+
+@router.get("/bulk-classify/download-template")
+async def download_bulk_template():
+    """
+    Download a CSV template for bulk classification.
+    """
+    csv_content = io.StringIO()
+    writer = csv.writer(csv_content)
+    
+    # Header
+    writer.writerow(['description', 'import_country', 'export_country', 'product_value'])
+    
+    # Sample rows
+    writer.writerow(['Cotton t-shirts for men', 'US', 'CN', '10000'])
+    writer.writerow(['Laptop computers 15 inch', 'US', 'TW', '50000'])
+    writer.writerow(['Fresh organic apples', 'US', 'NZ', '5000'])
+    writer.writerow(['Stainless steel bolts M8', 'US', 'DE', '2000'])
+    writer.writerow(['Leather handbags', 'US', 'IT', '25000'])
+    
+    csv_content.seek(0)
+    
+    return StreamingResponse(
+        io.BytesIO(csv_content.getvalue().encode('utf-8')),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=bulk_classification_template.csv"}
+    )
+
+
+@router.get("/bulk-classify/export/{job_id}")
+async def export_bulk_results(
+    job_id: str,
+    format: str = Query(default="csv", enum=["csv", "json"]),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export bulk classification results as CSV or JSON.
+    For now, returns user's recent classifications as export.
+    """
+    # Get user's recent classifications
+    classifications = db.query(HSClassification).filter(
+        HSClassification.user_id == current_user.id
+    ).order_by(desc(HSClassification.created_at)).limit(100).all()
+    
+    if format == "csv":
+        csv_content = io.StringIO()
+        writer = csv.writer(csv_content)
+        
+        # Header
+        writer.writerow([
+            'description', 'hs_code', 'hs_description', 'confidence',
+            'import_country', 'export_country', 'mfn_rate', 'classified_at'
+        ])
+        
+        # Data rows
+        for c in classifications:
+            writer.writerow([
+                c.product_description,
+                c.hs_code,
+                c.hs_code_description,
+                c.confidence_score,
+                c.import_country,
+                c.export_country or '',
+                c.mfn_rate or 0,
+                c.created_at.isoformat()
+            ])
+        
+        csv_content.seek(0)
+        
+        return StreamingResponse(
+            io.BytesIO(csv_content.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=classifications_{job_id}.csv"}
+        )
+    
+    else:  # JSON
+        return {
+            "job_id": job_id,
+            "export_date": datetime.utcnow().isoformat(),
+            "total": len(classifications),
+            "classifications": [
+                {
+                    "description": c.product_description,
+                    "hs_code": c.hs_code,
+                    "hs_description": c.hs_code_description,
+                    "confidence": c.confidence_score,
+                    "import_country": c.import_country,
+                    "export_country": c.export_country,
+                    "mfn_rate": c.mfn_rate,
+                    "classified_at": c.created_at.isoformat()
+                }
+                for c in classifications
+            ]
+        }
+
+
+# ============================================================================
+# Phase 2: PDF Export
+# ============================================================================
+
+@router.get("/export/pdf/{classification_id}")
+async def export_classification_pdf(
+    classification_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export a single classification as PDF.
+    Returns HTML that can be converted to PDF client-side.
+    """
+    classification = db.query(HSClassification).filter(
+        HSClassification.id == classification_id,
+        HSClassification.user_id == current_user.id
+    ).first()
+    
+    if not classification:
+        raise HTTPException(status_code=404, detail="Classification not found")
+    
+    # Get additional details
+    tariff = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code == classification.hs_code,
+        HSCodeTariff.country_code == classification.import_country
+    ).first()
+    
+    # Build PDF data structure
+    pdf_data = {
+        "title": "HS Code Classification Report",
+        "generated_at": datetime.utcnow().isoformat(),
+        "classification": {
+            "id": str(classification.id),
+            "product_description": classification.product_description,
+            "product_name": classification.product_name,
+            "hs_code": classification.hs_code,
+            "hs_code_description": classification.hs_code_description,
+            "chapter": tariff.chapter_description if tariff else f"Chapter {classification.hs_code[:2]}",
+            "heading": tariff.heading_description if tariff else None,
+            "confidence_score": classification.confidence_score,
+            "ai_reasoning": classification.ai_reasoning,
+            "import_country": classification.import_country,
+            "export_country": classification.export_country,
+            "classified_at": classification.created_at.isoformat(),
+        },
+        "duty_information": {
+            "mfn_rate": classification.mfn_rate,
+            "preferential_rate": classification.preferential_rate,
+            "fta_applied": classification.fta_applied,
+            "estimated_duty": classification.estimated_duty,
+            "currency": classification.currency,
+        },
+        "product_details": {
+            "value": classification.product_value,
+            "quantity": classification.quantity,
+            "quantity_unit": classification.quantity_unit,
+        },
+        "compliance": {
+            "requires_license": tariff.requires_license if tariff else False,
+            "quota_applicable": tariff.quota_applicable if tariff else False,
+            "restrictions": classification.restrictions,
+            "licenses_required": classification.licenses_required,
+        },
+        "verification": {
+            "is_verified": classification.is_verified,
+            "verified_at": classification.verified_at.isoformat() if classification.verified_at else None,
+            "source": classification.source.value if classification.source else "ai",
+        },
+        "disclaimer": "This classification is provided for informational purposes only. "
+                     "Always verify with customs authorities for official rulings."
+    }
+    
+    # Return as JSON (frontend converts to PDF)
+    return pdf_data
+
+
+@router.post("/export/bulk-pdf")
+async def export_bulk_pdf(
+    classification_ids: List[str],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export multiple classifications as PDF report.
+    """
+    classifications = db.query(HSClassification).filter(
+        HSClassification.id.in_(classification_ids),
+        HSClassification.user_id == current_user.id
+    ).all()
+    
+    if not classifications:
+        raise HTTPException(status_code=404, detail="No classifications found")
+    
+    items = []
+    for c in classifications:
+        tariff = db.query(HSCodeTariff).filter(
+            HSCodeTariff.code == c.hs_code,
+            HSCodeTariff.country_code == c.import_country
+        ).first()
+        
+        items.append({
+            "product": c.product_description[:100],
+            "hs_code": c.hs_code,
+            "description": c.hs_code_description,
+            "chapter": tariff.chapter_description if tariff else f"Chapter {c.hs_code[:2]}",
+            "confidence": c.confidence_score,
+            "mfn_rate": c.mfn_rate,
+            "import_country": c.import_country,
+            "export_country": c.export_country,
+        })
+    
+    return {
+        "title": "Bulk Classification Report",
+        "generated_at": datetime.utcnow().isoformat(),
+        "total_items": len(items),
+        "items": items,
+        "summary": {
+            "unique_chapters": len(set(i["hs_code"][:2] for i in items)),
+            "avg_confidence": sum(i["confidence"] or 0 for i in items) / len(items) if items else 0,
+            "countries": list(set(i["import_country"] for i in items)),
+        }
+    }
+
+
+# ============================================================================
+# Phase 2: Binding Rulings Search
+# ============================================================================
+
+@router.get("/rulings/search")
+async def search_binding_rulings(
+    q: str = Query(..., min_length=2, description="Search query"),
+    hs_code: Optional[str] = None,
+    country: str = "US",
+    limit: int = Query(default=20, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Search CBP binding rulings for classification precedent.
+    """
+    query = db.query(BindingRuling).filter(
+        BindingRuling.country == country,
+        BindingRuling.is_active == True
+    )
+    
+    # Filter by HS code if provided
+    if hs_code:
+        query = query.filter(
+            BindingRuling.hs_code.like(f"{hs_code[:4]}%")
+        )
+    
+    # Search by product description
+    query = query.filter(
+        or_(
+            BindingRuling.product_description.ilike(f"%{q}%"),
+            BindingRuling.keywords.contains([q.lower()]),
+            BindingRuling.ruling_number.ilike(f"%{q}%")
+        )
+    )
+    
+    rulings = query.order_by(desc(BindingRuling.ruling_date)).limit(limit).all()
+    
+    return {
+        "query": q,
+        "hs_code_filter": hs_code,
+        "count": len(rulings),
+        "rulings": [
+            {
+                "ruling_number": r.ruling_number,
+                "ruling_type": r.ruling_type,
+                "product_description": r.product_description,
+                "hs_code": r.hs_code,
+                "reasoning": r.reasoning,
+                "legal_reference": r.legal_reference,
+                "ruling_date": r.ruling_date.isoformat() if r.ruling_date else None,
+                "keywords": r.keywords,
+            }
+            for r in rulings
+        ]
+    }
+
+
+@router.get("/rulings/{ruling_number}")
+async def get_binding_ruling(
+    ruling_number: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get details of a specific binding ruling.
+    """
+    ruling = db.query(BindingRuling).filter(
+        BindingRuling.ruling_number == ruling_number
+    ).first()
+    
+    if not ruling:
+        raise HTTPException(status_code=404, detail="Ruling not found")
+    
+    # Find related rulings
+    related = db.query(BindingRuling).filter(
+        BindingRuling.hs_code.like(f"{ruling.hs_code[:4]}%"),
+        BindingRuling.ruling_number != ruling_number,
+        BindingRuling.is_active == True
+    ).limit(5).all()
+    
+    return {
+        "ruling_number": ruling.ruling_number,
+        "ruling_type": ruling.ruling_type,
+        "product_description": ruling.product_description,
+        "hs_code": ruling.hs_code,
+        "reasoning": ruling.reasoning,
+        "legal_reference": ruling.legal_reference,
+        "keywords": ruling.keywords,
+        "ruling_date": ruling.ruling_date.isoformat() if ruling.ruling_date else None,
+        "effective_date": ruling.effective_date.isoformat() if ruling.effective_date else None,
+        "country": ruling.country,
+        "related_rulings": [
+            {
+                "ruling_number": r.ruling_number,
+                "product_description": r.product_description[:100],
+                "hs_code": r.hs_code
+            }
+            for r in related
+        ]
+    }
+
+
+@router.get("/rulings/by-code/{hs_code}")
+async def get_rulings_by_hs_code(
+    hs_code: str,
+    country: str = "US",
+    limit: int = Query(default=20, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all binding rulings for a specific HS code.
+    """
+    code_prefix = hs_code.replace(".", "")[:6]  # At least heading level
+    
+    rulings = db.query(BindingRuling).filter(
+        BindingRuling.hs_code.like(f"{code_prefix}%"),
+        BindingRuling.country == country,
+        BindingRuling.is_active == True
+    ).order_by(desc(BindingRuling.ruling_date)).limit(limit).all()
+    
+    return {
+        "hs_code": hs_code,
+        "count": len(rulings),
+        "rulings": [
+            {
+                "ruling_number": r.ruling_number,
+                "ruling_type": r.ruling_type,
+                "product_description": r.product_description,
+                "hs_code": r.hs_code,
+                "ruling_date": r.ruling_date.isoformat() if r.ruling_date else None,
+            }
+            for r in rulings
+        ]
+    }
+
+
+# ============================================================================
+# Phase 2: Classification Comparison Tool
+# ============================================================================
+
+@router.post("/compare")
+async def compare_classifications(
+    request: CompareClassificationsRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Compare classifications for two products side-by-side.
+    Useful for determining if products belong to the same HS code.
+    """
+    # Classify both products
+    result_a = await classify_with_ai(
+        db=db,
+        description=request.product_a,
+        import_country=request.import_country,
+        export_country=request.export_country
+    )
+    
+    result_b = await classify_with_ai(
+        db=db,
+        description=request.product_b,
+        import_country=request.import_country,
+        export_country=request.export_country
+    )
+    
+    # Determine similarity
+    same_chapter = result_a["hs_code"][:2] == result_b["hs_code"][:2]
+    same_heading = result_a["hs_code"][:4] == result_b["hs_code"][:4]
+    same_subheading = result_a["hs_code"][:6] == result_b["hs_code"][:6]
+    same_code = result_a["hs_code"] == result_b["hs_code"]
+    
+    # Calculate duty difference
+    rate_a = result_a.get("duty_rates", {}).get("mfn", 0) or 0
+    rate_b = result_b.get("duty_rates", {}).get("mfn", 0) or 0
+    rate_difference = abs(rate_a - rate_b)
+    
+    # Determine consolidation recommendation
+    can_consolidate = same_code
+    consolidation_note = None
+    if same_code:
+        consolidation_note = "Products can be shipped under the same HS code."
+    elif same_subheading:
+        consolidation_note = "Products are in the same subheading but may have different rates at 8-digit level."
+    elif same_heading:
+        consolidation_note = "Products are in the same heading. Check if duty rates differ."
+    elif same_chapter:
+        consolidation_note = "Products are in the same chapter but classified differently."
+    else:
+        consolidation_note = "Products are in different chapters - separate classification required."
+    
+    return {
+        "product_a": {
+            "description": request.product_a,
+            "hs_code": result_a["hs_code"],
+            "hs_description": result_a["description"],
+            "confidence": result_a["confidence"],
+            "chapter": result_a.get("chapter", ""),
+            "mfn_rate": rate_a,
+            "reasoning": result_a.get("reasoning", ""),
+        },
+        "product_b": {
+            "description": request.product_b,
+            "hs_code": result_b["hs_code"],
+            "hs_description": result_b["description"],
+            "confidence": result_b["confidence"],
+            "chapter": result_b.get("chapter", ""),
+            "mfn_rate": rate_b,
+            "reasoning": result_b.get("reasoning", ""),
+        },
+        "comparison": {
+            "same_chapter": same_chapter,
+            "same_heading": same_heading,
+            "same_subheading": same_subheading,
+            "same_code": same_code,
+            "rate_difference_percent": rate_difference,
+            "can_consolidate": can_consolidate,
+            "consolidation_note": consolidation_note,
+        },
+        "import_country": request.import_country,
+        "export_country": request.export_country,
+    }
+
+
+# ============================================================================
+# Phase 2: Rate Alerts / Change Notifications
+# ============================================================================
+
+@router.post("/alerts/subscribe")
+async def subscribe_rate_alert(
+    request: RateAlertRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Subscribe to rate change alerts for an HS code.
+    """
+    # Check if already subscribed
+    existing = db.query(RateAlert).filter(
+        RateAlert.user_id == current_user.id,
+        RateAlert.hs_code == request.hs_code,
+        RateAlert.import_country == request.import_country,
+        RateAlert.is_active == True
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400, 
+            detail="Already subscribed to alerts for this HS code"
+        )
+    
+    # Get current rate for baseline
+    tariff = db.query(HSCodeTariff).filter(
+        HSCodeTariff.code == request.hs_code,
+        HSCodeTariff.country_code == request.import_country
+    ).first()
+    
+    if not tariff:
+        # Try partial match
+        code_prefix = request.hs_code.replace(".", "")[:6]
+        tariff = db.query(HSCodeTariff).filter(
+            HSCodeTariff.country_code == request.import_country,
+            HSCodeTariff.code.like(f"{code_prefix}%")
+        ).first()
+    
+    current_rate = 0
+    if tariff:
+        duty = db.query(DutyRate).filter(
+            DutyRate.hs_code_id == tariff.id,
+            DutyRate.rate_type == "mfn"
+        ).first()
+        current_rate = duty.ad_valorem_rate if duty else 0
+    
+    # Create the alert subscription
+    alert = RateAlert(
+        user_id=current_user.id,
+        hs_code=request.hs_code,
+        import_country=request.import_country,
+        export_country=request.export_country,
+        alert_type=request.alert_type,
+        threshold_percent=request.threshold_percent,
+        baseline_rate=current_rate,
+        email_notification=request.email_notification,
+    )
+    
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    
+    return {
+        "status": "subscribed",
+        "alert_id": str(alert.id),
+        "hs_code": alert.hs_code,
+        "import_country": alert.import_country,
+        "export_country": alert.export_country,
+        "alert_type": alert.alert_type,
+        "threshold_percent": alert.threshold_percent,
+        "baseline_rate": alert.baseline_rate,
+        "email_notification": alert.email_notification,
+        "created_at": alert.created_at.isoformat(),
+        "message": f"You will be notified when rates change for HS {alert.hs_code}",
+    }
+
+
+@router.get("/alerts")
+async def list_rate_alerts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List user's rate change alert subscriptions.
+    """
+    alerts = db.query(RateAlert).filter(
+        RateAlert.user_id == current_user.id,
+        RateAlert.is_active == True
+    ).order_by(desc(RateAlert.created_at)).all()
+    
+    alert_list = []
+    for alert in alerts:
+        # Get current rate for comparison
+        tariff = db.query(HSCodeTariff).filter(
+            HSCodeTariff.code == alert.hs_code,
+            HSCodeTariff.country_code == alert.import_country
+        ).first()
+        
+        current_rate = alert.baseline_rate or 0
+        if tariff:
+            duty = db.query(DutyRate).filter(
+                DutyRate.hs_code_id == tariff.id,
+                DutyRate.rate_type == "mfn"
+            ).first()
+            if duty:
+                current_rate = duty.ad_valorem_rate or 0
+        
+        rate_changed = current_rate != alert.baseline_rate
+        rate_change = current_rate - (alert.baseline_rate or 0)
+        
+        alert_list.append({
+            "id": str(alert.id),
+            "hs_code": alert.hs_code,
+            "import_country": alert.import_country,
+            "export_country": alert.export_country,
+            "alert_type": alert.alert_type,
+            "threshold_percent": alert.threshold_percent,
+            "baseline_rate": alert.baseline_rate,
+            "current_rate": current_rate,
+            "rate_changed": rate_changed,
+            "rate_change": round(rate_change, 2),
+            "email_notification": alert.email_notification,
+            "last_notified": alert.last_notified.isoformat() if alert.last_notified else None,
+            "notification_count": alert.notification_count,
+            "created_at": alert.created_at.isoformat(),
+        })
+    
+    return {
+        "total": len(alert_list),
+        "alerts": alert_list,
+    }
+
+
+@router.delete("/alerts/{alert_id}")
+async def unsubscribe_rate_alert(
+    alert_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Unsubscribe from a rate change alert.
+    """
+    alert = db.query(RateAlert).filter(
+        RateAlert.id == alert_id,
+        RateAlert.user_id == current_user.id
+    ).first()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    alert.is_active = False
+    db.commit()
+    
+    return {
+        "status": "unsubscribed",
+        "alert_id": alert_id,
+        "hs_code": alert.hs_code,
+    }
+
+
+@router.put("/alerts/{alert_id}")
+async def update_rate_alert(
+    alert_id: str,
+    alert_type: Optional[str] = None,
+    threshold_percent: Optional[float] = None,
+    email_notification: Optional[bool] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update alert settings.
+    """
+    alert = db.query(RateAlert).filter(
+        RateAlert.id == alert_id,
+        RateAlert.user_id == current_user.id,
+        RateAlert.is_active == True
+    ).first()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    if alert_type is not None:
+        alert.alert_type = alert_type
+    if threshold_percent is not None:
+        alert.threshold_percent = threshold_percent
+    if email_notification is not None:
+        alert.email_notification = email_notification
+    
+    db.commit()
+    db.refresh(alert)
+    
+    return {
+        "status": "updated",
+        "alert_id": str(alert.id),
+        "hs_code": alert.hs_code,
+        "alert_type": alert.alert_type,
+        "threshold_percent": alert.threshold_percent,
+        "email_notification": alert.email_notification,
+    }
+
+
+@router.get("/rate-changes")
+async def get_recent_rate_changes(
+    country: str = Query(default="US"),
+    days: int = Query(default=30, le=365),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent duty rate changes.
+    """
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    # Find recently updated rates
+    recent_rates = db.query(DutyRate).filter(
+        DutyRate.updated_at >= cutoff_date,
+        DutyRate.is_active == True
+    ).order_by(desc(DutyRate.updated_at)).limit(50).all()
+    
+    changes = []
+    for rate in recent_rates:
+        hs_code = db.query(HSCodeTariff).filter(
+            HSCodeTariff.id == rate.hs_code_id
+        ).first()
+        
+        if hs_code:
+            changes.append({
+                "hs_code": hs_code.code,
+                "description": hs_code.description[:100],
+                "rate_type": rate.rate_type,
+                "current_rate": rate.ad_valorem_rate,
+                "effective_from": rate.effective_from.isoformat() if rate.effective_from else None,
+                "updated_at": rate.updated_at.isoformat(),
+            })
+    
+    # Also check Section 301 changes for US
+    if country == "US":
+        s301_changes = db.query(Section301Rate).filter(
+            Section301Rate.is_active == True
+        ).order_by(desc(Section301Rate.effective_from)).limit(20).all()
+        
+        for s in s301_changes:
+            changes.append({
+                "hs_code": s.hs_code,
+                "description": f"Section 301 - {s.list_number}",
+                "rate_type": "section_301",
+                "current_rate": s.additional_rate,
+                "effective_from": s.effective_from.isoformat() if s.effective_from else None,
+                "is_excluded": s.is_excluded,
+            })
+    
+    return {
+        "country": country,
+        "period_days": days,
+        "changes_count": len(changes),
+        "changes": changes,
+    }
 

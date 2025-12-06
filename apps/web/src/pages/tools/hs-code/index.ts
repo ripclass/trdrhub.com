@@ -16,3 +16,8 @@ export { default as HSCodeBulk } from './HSCodeBulk'
 export { default as HSCodeSettings } from './HSCodeSettings'
 export { default as HSCodeHelp } from './HSCodeHelp'
 
+// Phase 2 Features
+export { default as HSCodeCompare } from './HSCodeCompare'
+export { default as HSCodeRulings } from './HSCodeRulings'
+export { default as HSCodeAlerts } from './HSCodeAlerts'
+

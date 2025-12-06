@@ -16,6 +16,9 @@ import {
   Scale,
   TrendingUp,
   LogOut,
+  GitCompare,
+  Bell,
+  Gavel,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -42,6 +45,7 @@ const navSections: NavSection[] = [
       { title: 'Classify Product', href: '/hs-code/dashboard/classify', icon: Search },
       { title: 'Search HS Codes', href: '/hs-code/dashboard/search', icon: BookOpen },
       { title: 'Duty Calculator', href: '/hs-code/dashboard/duty', icon: Calculator },
+      { title: 'Compare Products', href: '/hs-code/dashboard/compare', icon: GitCompare, badge: 'New' },
     ],
   },
   {
@@ -50,6 +54,13 @@ const navSections: NavSection[] = [
       { title: 'FTA Eligibility', href: '/hs-code/dashboard/fta', icon: Globe },
       { title: 'Rules of Origin', href: '/hs-code/dashboard/roo', icon: FileCheck },
       { title: 'Compliance Check', href: '/hs-code/dashboard/compliance', icon: Scale },
+    ],
+  },
+  {
+    title: 'Research & Alerts',
+    items: [
+      { title: 'Binding Rulings', href: '/hs-code/dashboard/rulings', icon: Gavel, badge: 'New' },
+      { title: 'Rate Alerts', href: '/hs-code/dashboard/alerts', icon: Bell, badge: 'New' },
     ],
   },
   {

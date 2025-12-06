@@ -26,6 +26,9 @@ import {
   HSCodeBulk,
   HSCodeSettings,
   HSCodeHelp,
+  HSCodeCompare,
+  HSCodeRulings,
+  HSCodeAlerts,
 } from './pages/tools/hs-code'
 import DocGeneratorLanding from './pages/tools/DocGeneratorLanding'
 import LCBuilderLanding from './pages/tools/LCBuilderLanding'
@@ -176,6 +179,10 @@ function App() {
           <Route path="bulk" element={<HSCodeBulk />} />
           <Route path="settings" element={<HSCodeSettings />} />
           <Route path="help" element={<HSCodeHelp />} />
+          {/* Phase 2 Features */}
+          <Route path="compare" element={<HSCodeCompare />} />
+          <Route path="rulings" element={<HSCodeRulings />} />
+          <Route path="alerts" element={<HSCodeAlerts />} />
         </Route>
         
         {/* Tool Landing Pages */}

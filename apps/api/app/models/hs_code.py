@@ -383,3 +383,42 @@ class Section301Rate(Base):
         Index('ix_section_301_hs_origin', 'hs_code', 'origin_country'),
     )
 
+
+class RateAlert(Base):
+    """
+    User subscriptions to rate change notifications.
+    """
+    __tablename__ = "rate_alerts"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # Code to monitor
+    hs_code = Column(String(15), nullable=False, index=True)
+    import_country = Column(String(2), nullable=False, default="US")
+    export_country = Column(String(2))
+    
+    # Alert configuration
+    alert_type = Column(String(20), default="any")  # any, increase, decrease
+    threshold_percent = Column(Float)  # Alert only if change exceeds this
+    
+    # Baseline rate at subscription time
+    baseline_rate = Column(Float)
+    baseline_date = Column(DateTime, default=datetime.utcnow)
+    
+    # Notification preferences
+    email_notification = Column(Boolean, default=True)
+    in_app_notification = Column(Boolean, default=True)
+    
+    # Tracking
+    last_notified = Column(DateTime)
+    notification_count = Column(Integer, default=0)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('ix_rate_alerts_user', 'user_id', 'is_active'),
+    )
+
