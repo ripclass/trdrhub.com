@@ -376,7 +376,7 @@ const HSCodeFinderLanding = () => {
                     "w-full",
                     plan.popular ? "bg-purple-500 hover:bg-purple-600" : "bg-slate-700 hover:bg-slate-600"
                   )} asChild>
-                    <Link to="/hs-code/search">Get Started</Link>
+                    <Link to="/hs-code/dashboard">Get Started</Link>
                   </Button>
                 </div>
               ))}
@@ -428,7 +428,7 @@ const HSCodeFinderLanding = () => {
                 Free, instant, accurate. The way tariff classification should be.
               </p>
               <Button size="lg" className="bg-purple-500 hover:bg-purple-600 text-white font-semibold" asChild>
-                <Link to="/hs-code/search">
+                <Link to="/hs-code/dashboard">
                   Start Classifying Free <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
               </Button>

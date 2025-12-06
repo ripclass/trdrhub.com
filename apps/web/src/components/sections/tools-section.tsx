@@ -40,8 +40,8 @@ const tools = [
     tagline: "Trade Docs in Minutes",
     description: "Auto-generate compliant commercial invoices, packing lists, and certificates of origin. Pre-filled from your LC data.",
     highlights: ["20+ Doc Types", "LC Pre-fill", "Bank-Ready PDFs"],
-    status: "coming" as const,
-    href: "/doc-generator",
+    status: "live" as const,
+    href: "/doc-generator/dashboard",
     category: "Document & Validation",
     color: "blue",
   },
@@ -52,7 +52,7 @@ const tools = [
     description: "Guided LC application builder with clause library, real-time validation, and MT700 preview. 80% fewer rejections.",
     highlights: ["500+ Clauses", "Risk Scoring", "MT700 Preview"],
     status: "live" as const,
-    href: "/lc-builder",
+    href: "/lc-builder/dashboard",
     category: "Document & Validation",
     color: "emerald",
   },
@@ -134,8 +134,8 @@ const tools = [
     tagline: "Track + Vessel Compliance",
     description: "Track containers across 100+ carriers with vessel sanctions screening, AIS gap detection, and LC expiry alerts. Bank-grade compliance.",
     highlights: ["Vessel Screening", "AIS Monitoring", "LC Expiry Alerts"],
-    status: "coming" as const,
-    href: "/tracking",
+    status: "live" as const,
+    href: "/tracking/dashboard",
     category: "Logistics & Tracking",
     color: "blue",
     badge: "🏦 Bank Requested",
@@ -194,8 +194,8 @@ const tools = [
     tagline: "Catch Price Anomalies",
     description: "Verify trade prices against real-time market data. Detect over/under invoicing and TBML risks. Compliance-ready reports.",
     highlights: ["50+ Commodities", "TBML Detection", "Market Data"],
-    status: "coming" as const,
-    href: "/price-verify",
+    status: "live" as const,
+    href: "/price-verify/dashboard",
     category: "Intelligence",
     color: "green",
     badge: "🏦 Bank Requested",
@@ -248,7 +248,7 @@ export function ToolsSection() {
         <div className="text-center mb-10 sm:mb-16">
           <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 sm:mb-6 leading-tight">
-            16 Tools.
+            7 Live. 9 Coming.
             <br />
             <span className="text-slate-500">One Platform.</span>
           </h2>

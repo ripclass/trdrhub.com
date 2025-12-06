@@ -21,7 +21,8 @@ import {
   Clock,
   AlertCircle,
   ArrowUpRight,
-  Activity
+  Activity,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,7 @@ import { useUserRole } from "@/hooks/use-user-role";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-// Tool definitions
+// Tool definitions - ALL LIVE TOOLS
 const TOOLS = [
   {
     id: "lcopilot",
@@ -48,15 +49,39 @@ const TOOLS = [
     pricePerUnit: 5.00,
   },
   {
-    id: "price_verify",
-    name: "Price Verify",
-    description: "TBML compliance - verify prices against market data",
-    icon: DollarSign,
+    id: "lc_builder",
+    name: "LC Builder",
+    description: "Guided LC application builder with clause library",
+    icon: Receipt,
     color: "from-emerald-500 to-emerald-600",
     bgColor: "bg-emerald-500/10",
     borderColor: "border-emerald-500/20",
-    href: "/price-verify/dashboard",
-    operation: "price_checks",
+    href: "/lc-builder/dashboard",
+    operation: "lc_applications",
+    pricePerUnit: 2.00,
+  },
+  {
+    id: "doc-generator",
+    name: "Doc Generator",
+    description: "Generate LC-compliant shipping documents",
+    icon: FileText,
+    color: "from-indigo-500 to-indigo-600",
+    bgColor: "bg-indigo-500/10",
+    borderColor: "border-indigo-500/20",
+    href: "/doc-generator/dashboard",
+    operation: "doc_sets",
+    pricePerUnit: 0.25,
+  },
+  {
+    id: "sanctions",
+    name: "Sanctions Screener",
+    description: "Real-time screening against global sanctions lists",
+    icon: Shield,
+    color: "from-red-500 to-red-600",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-500/20",
+    href: "/sanctions/dashboard",
+    operation: "sanctions_screens",
     pricePerUnit: 0.50,
   },
   {
@@ -67,23 +92,9 @@ const TOOLS = [
     color: "from-purple-500 to-purple-600",
     bgColor: "bg-purple-500/10",
     borderColor: "border-purple-500/20",
-    href: "/tools/hs-code",
+    href: "/hs-code/dashboard",
     operation: "hs_lookups",
     pricePerUnit: 0.25,
-    comingSoon: true,
-  },
-  {
-    id: "sanctions",
-    name: "Sanctions Screener",
-    description: "Real-time screening against global sanctions lists",
-    icon: Shield,
-    color: "from-red-500 to-red-600",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
-    href: "/tools/sanctions",
-    operation: "sanctions_screens",
-    pricePerUnit: 0.50,
-    comingSoon: true,
   },
   {
     id: "container",
@@ -98,16 +109,16 @@ const TOOLS = [
     pricePerUnit: 1.00,
   },
   {
-    id: "doc-generator",
-    name: "Doc Generator",
-    description: "Generate LC-compliant shipping documents",
-    icon: FileText,
-    color: "from-indigo-500 to-indigo-600",
-    bgColor: "bg-indigo-500/10",
-    borderColor: "border-indigo-500/20",
-    href: "/doc-generator/dashboard",
-    operation: "doc_sets",
-    pricePerUnit: 0.25,
+    id: "price_verify",
+    name: "Price Verify",
+    description: "TBML compliance - verify prices against market data",
+    icon: DollarSign,
+    color: "from-green-500 to-green-600",
+    bgColor: "bg-green-500/10",
+    borderColor: "border-green-500/20",
+    href: "/price-verify/dashboard",
+    operation: "price_checks",
+    pricePerUnit: 0.50,
   },
 ];
 
