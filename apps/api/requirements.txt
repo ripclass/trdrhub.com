@@ -44,9 +44,10 @@ proto-plus==1.25.0  # Pin exact - handles unknown fields
 protobuf==5.29.1  # Pin exact - latest protobuf
 google-cloud-core==2.4.1  # Core library
 
-# LLM Provider dependencies (for AI enrichment)
+# LLM Provider dependencies (for AI enrichment and ensemble extraction)
 openai>=1.0.0  # OpenAI GPT provider
 anthropic>=0.18.0  # Anthropic Claude provider
+google-generativeai>=0.8.0  # Google Gemini provider for ensemble extraction
 
 # DeepSeek OCR dependencies (optional - only needed if USE_DEEPSEEK_OCR=true)
 # Commented out to reduce build size (~3.5GB). Uncomment if enabling DeepSeek OCR.

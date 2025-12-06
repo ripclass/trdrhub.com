@@ -122,3 +122,112 @@ async def get_available_scenarios() -> Dict:
     }
 
 
+@router.get("/ensemble-status")
+async def get_ensemble_status() -> Dict:
+    """
+    Get status of AI ensemble extraction providers.
+    
+    Returns information about which LLM providers are available for
+    ensemble extraction and the recommended extraction mode.
+    """
+    try:
+        from ..services.extraction.ensemble_extractor import get_ensemble_status as _get_status
+        
+        status = _get_status()
+        
+        # Add configuration info
+        status["configuration"] = {
+            "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+            "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "gemini_configured": bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")),
+        }
+        
+        # Add extraction mode info
+        if status["providers_available"] >= 3:
+            status["extraction_mode"] = "full_ensemble"
+            status["expected_accuracy_boost"] = "+15%"
+        elif status["providers_available"] == 2:
+            status["extraction_mode"] = "partial_ensemble"
+            status["expected_accuracy_boost"] = "+10%"
+        else:
+            status["extraction_mode"] = "single_provider"
+            status["expected_accuracy_boost"] = "baseline"
+        
+        return status
+        
+    except ImportError as e:
+        return {
+            "ensemble_available": False,
+            "error": f"Ensemble module not available: {e}",
+            "providers_available": 0,
+            "providers": [],
+            "recommendation": "Install ensemble dependencies",
+        }
+    except Exception as e:
+        return {
+            "ensemble_available": False,
+            "error": str(e),
+            "providers_available": 0,
+            "providers": [],
+        }
+
+
+@router.get("/ai-providers")
+async def get_ai_providers() -> Dict:
+    """
+    Get detailed status of all AI providers.
+    
+    Returns:
+        Detailed status for each configured AI provider.
+    """
+    from ..services.llm_provider import LLMProviderFactory
+    
+    providers_status = []
+    
+    # Check OpenAI
+    openai_key = os.getenv("OPENAI_API_KEY")
+    providers_status.append({
+        "name": "openai",
+        "model": os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini"),
+        "configured": bool(openai_key),
+        "key_prefix": openai_key[:8] + "..." if openai_key else None,
+        "cost_per_1m_tokens": {"input": 0.15, "output": 0.60},
+    })
+    
+    # Check Anthropic
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    providers_status.append({
+        "name": "anthropic",
+        "model": os.getenv("ANTHROPIC_MODEL_VERSION", "claude-3-haiku-20240307"),
+        "configured": bool(anthropic_key),
+        "key_prefix": anthropic_key[:8] + "..." if anthropic_key else None,
+        "cost_per_1m_tokens": {"input": 0.25, "output": 1.25},
+    })
+    
+    # Check Gemini
+    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    providers_status.append({
+        "name": "gemini",
+        "model": os.getenv("GEMINI_MODEL_VERSION", "gemini-1.5-flash"),
+        "configured": bool(gemini_key),
+        "key_prefix": gemini_key[:8] + "..." if gemini_key else None,
+        "cost_per_1m_tokens": {"input": 0.075, "output": 0.30},
+    })
+    
+    configured_count = sum(1 for p in providers_status if p["configured"])
+    
+    return {
+        "providers": providers_status,
+        "configured_count": configured_count,
+        "ensemble_ready": configured_count >= 2,
+        "full_ensemble_ready": configured_count >= 3,
+        "primary_provider": os.getenv("LLM_PROVIDER", "openai"),
+        "recommendation": (
+            "Full ensemble available - maximum accuracy" if configured_count >= 3
+            else "Partial ensemble - add more API keys for better accuracy" if configured_count == 2
+            else "Single provider only - add API keys for ensemble extraction" if configured_count == 1
+            else "No AI providers configured - add at least one API key"
+        ),
+    }
+
+

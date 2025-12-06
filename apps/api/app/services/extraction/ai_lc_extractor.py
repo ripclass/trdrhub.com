@@ -84,6 +84,7 @@ async def extract_lc_with_ai(
     ocr_text: str,
     max_chars: int = 12000,
     temperature: float = 0.1,
+    use_ensemble: bool = True,
 ) -> Tuple[Dict[str, Any], float, str]:
     """
     Extract LC fields using AI when rule-based parsers fail.
@@ -92,6 +93,7 @@ async def extract_lc_with_ai(
         ocr_text: The OCR/raw text from the LC document
         max_chars: Maximum characters to send (truncate if longer)
         temperature: LLM temperature (lower = more deterministic)
+        use_ensemble: If True, use multi-model ensemble for higher accuracy
     
     Returns:
         (extracted_fields, confidence_score, provider_used)
@@ -103,7 +105,64 @@ async def extract_lc_with_ai(
     # Truncate if too long (save tokens + stay under context limits)
     text_to_process = ocr_text[:max_chars] if len(ocr_text) > max_chars else ocr_text
     
-    # Build prompt
+    # Try ensemble extraction first if enabled
+    if use_ensemble:
+        try:
+            from .ensemble_extractor import EnsembleLCExtractor, get_ensemble_status
+            
+            status = get_ensemble_status()
+            if status["ensemble_available"]:
+                logger.info(
+                    "Using ensemble extraction with %d providers: %s",
+                    status["providers_available"],
+                    status["providers"]
+                )
+                
+                extractor = EnsembleLCExtractor(
+                    min_providers=2,
+                    temperature=temperature,
+                )
+                result = await extractor.extract(text_to_process)
+                
+                # Convert to dict format
+                extracted = result.to_dict()
+                
+                logger.info(
+                    "Ensemble LC Extraction: providers=%s, agreement=%.2f, confidence=%.2f",
+                    result.providers_used,
+                    result.overall_agreement,
+                    result.overall_confidence,
+                )
+                
+                # Add ensemble metadata
+                extracted["_extraction_method"] = "ensemble"
+                extracted["_providers_used"] = result.providers_used
+                extracted["_overall_agreement"] = result.overall_agreement
+                
+                # Get fields that need review
+                needs_review = [
+                    name for name, field in result.fields.items()
+                    if field.needs_review
+                ]
+                if needs_review:
+                    extracted["_fields_need_review"] = needs_review
+                    logger.warning(
+                        "Ensemble extraction: %d fields need manual review: %s",
+                        len(needs_review), needs_review
+                    )
+                
+                return extracted, result.overall_confidence, "ensemble:" + ",".join(result.providers_used)
+            else:
+                logger.info(
+                    "Ensemble not available (%s), falling back to single provider",
+                    status["recommendation"]
+                )
+        except ImportError:
+            logger.debug("Ensemble extractor not available, using single provider")
+        except Exception as e:
+            logger.warning(f"Ensemble extraction failed, falling back to single provider: {e}")
+    
+    # Fallback to single-provider extraction
     prompt = LC_EXTRACTION_PROMPT.format(document_text=text_to_process)
     
     try:
@@ -131,6 +190,10 @@ async def extract_lc_with_ai(
             len([v for v in extracted.values() if v is not None]),
             confidence
         )
+        
+        # Mark as single-provider extraction
+        extracted["_extraction_method"] = "single"
+        extracted["_providers_used"] = [provider]
         
         return extracted, confidence, provider
         
