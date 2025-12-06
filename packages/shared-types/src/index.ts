@@ -1,6 +1,9 @@
 // Export all API types and schemas
 export * from './api';
 
+// Export V2 LCopilot types
+export * from './lcopilot-v2';
+
 // Re-export zod for convenience
 export { z } from 'zod';
 
