@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getUserSessions, type ValidationSession } from "@/api/sessions";
 import { 
   ArrowLeft, 
   BarChart3, 
@@ -21,46 +22,160 @@ import {
   LineChart
 } from "lucide-react";
 
-// Mock analytics data
-const mockAnalytics = {
-  overview: {
-    totalExports: 52,
-    monthlyGrowth: 18.3,
-    complianceRate: 96.8,
-    avgProcessingTime: "1.9 minutes",
-    customsPacks: 48,
-    timeToMarket: 3.2
-  },
-  monthly: [
-    { month: "Jul", exports: 6, compliance: 94, avgTime: 2.2, packs: 5 },
-    { month: "Aug", exports: 9, compliance: 95, avgTime: 2.1, packs: 8 },
-    { month: "Sep", exports: 11, compliance: 97, avgTime: 1.8, packs: 10 },
-    { month: "Oct", exports: 14, compliance: 98, avgTime: 1.9, packs: 13 },
-    { month: "Nov", exports: 17, compliance: 96, avgTime: 1.7, packs: 16 },
-    { month: "Dec", exports: 20, compliance: 97, avgTime: 1.9, packs: 19 }
-  ],
-  documentTypes: [
-    { type: "Commercial Invoice", count: 52, complianceRate: 98, trend: "up" },
-    { type: "Packing List", count: 52, complianceRate: 95, trend: "up" },
-    { type: "Bill of Lading", count: 48, complianceRate: 97, trend: "stable" },
-    { type: "Certificate of Origin", count: 45, complianceRate: 99, trend: "up" },
-    { type: "GSP Certificate", count: 32, complianceRate: 94, trend: "down" }
-  ],
-  exportDestinations: [
-    { country: "Germany", orders: 18, value: 245000, compliance: 98 },
-    { country: "United Kingdom", orders: 12, value: 189000, compliance: 96 },
-    { country: "France", orders: 10, value: 156000, compliance: 97 },
-    { country: "Netherlands", orders: 8, value: 134000, compliance: 95 },
-    { country: "Belgium", orders: 4, value: 89000, compliance: 99 }
-  ]
-};
-
 type ExporterAnalyticsProps = {
   embedded?: boolean;
 };
 
+// Calculate analytics from real session data
+function calculateAnalytics(sessions: ValidationSession[]) {
+  const now = new Date();
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  
+  // Filter sessions from last 6 months
+  const recentSessions = sessions.filter(s => new Date(s.created_at) >= sixMonthsAgo);
+  const completedSessions = recentSessions.filter(s => s.status === 'completed');
+  
+  // Calculate overview stats
+  const totalExports = completedSessions.length;
+  const successfulSessions = completedSessions.filter(s => (s.discrepancies?.length || 0) === 0);
+  const complianceRate = completedSessions.length > 0 
+    ? Math.round((successfulSessions.length / completedSessions.length) * 1000) / 10
+    : 0;
+  
+  // Calculate average processing time
+  const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+  const avgProcessingMs = sessionsWithTime.length > 0
+    ? sessionsWithTime.reduce((sum, s) => {
+        const start = new Date(s.processing_started_at!).getTime();
+        const end = new Date(s.processing_completed_at!).getTime();
+        return sum + (end - start);
+      }, 0) / sessionsWithTime.length
+    : 0;
+  const avgProcessingTime = avgProcessingMs > 0 
+    ? `${(avgProcessingMs / 60000).toFixed(1)} minutes`
+    : "N/A";
+  
+  // Calculate monthly growth
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+  
+  const lastMonthSessions = completedSessions.filter(s => {
+    const date = new Date(s.created_at);
+    return date >= lastMonthStart && date <= lastMonthEnd;
+  });
+  const prevMonthSessions = completedSessions.filter(s => {
+    const date = new Date(s.created_at);
+    return date >= prevMonthStart && date <= prevMonthEnd;
+  });
+  
+  const monthlyGrowth = prevMonthSessions.length > 0 
+    ? Math.round(((lastMonthSessions.length - prevMonthSessions.length) / prevMonthSessions.length) * 1000) / 10
+    : lastMonthSessions.length > 0 ? 100 : 0;
+  
+  // Calculate monthly breakdown
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthly = [];
+  for (let i = 5; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const monthSessions = completedSessions.filter(s => {
+      const date = new Date(s.created_at);
+      return date >= monthStart && date <= monthEnd;
+    });
+    const monthSuccessful = monthSessions.filter(s => (s.discrepancies?.length || 0) === 0);
+    const monthSessionsWithTime = monthSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+    const monthAvgMs = monthSessionsWithTime.length > 0
+      ? monthSessionsWithTime.reduce((sum, s) => {
+          const start = new Date(s.processing_started_at!).getTime();
+          const end = new Date(s.processing_completed_at!).getTime();
+          return sum + (end - start);
+        }, 0) / monthSessionsWithTime.length
+      : 0;
+    
+    monthly.push({
+      month: months[monthStart.getMonth()],
+      exports: monthSessions.length,
+      compliance: monthSessions.length > 0 ? Math.round((monthSuccessful.length / monthSessions.length) * 100) : 0,
+      avgTime: monthAvgMs > 0 ? Math.round((monthAvgMs / 60000) * 10) / 10 : 0,
+      packs: monthSessions.length // Assuming each session can generate a customs pack
+    });
+  }
+  
+  // Calculate document types from sessions
+  const docTypeCounts: Record<string, { count: number; compliant: number }> = {};
+  completedSessions.forEach(s => {
+    (s.documents || []).forEach((doc: any) => {
+      const type = doc.type || doc.documentType || 'Other';
+      if (!docTypeCounts[type]) {
+        docTypeCounts[type] = { count: 0, compliant: 0 };
+      }
+      docTypeCounts[type].count++;
+      if (doc.status === 'success' || !doc.issuesCount) {
+        docTypeCounts[type].compliant++;
+      }
+    });
+  });
+  
+  const documentTypes = Object.entries(docTypeCounts)
+    .map(([type, { count, compliant }]) => ({
+      type,
+      count,
+      complianceRate: count > 0 ? Math.round((compliant / count) * 100) : 0,
+      trend: 'stable' as const
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  
+  // If no document types, use defaults
+  if (documentTypes.length === 0) {
+    documentTypes.push(
+      { type: "Commercial Invoice", count: 0, complianceRate: 0, trend: 'stable' as const },
+      { type: "Packing List", count: 0, complianceRate: 0, trend: 'stable' as const },
+      { type: "Bill of Lading", count: 0, complianceRate: 0, trend: 'stable' as const }
+    );
+  }
+  
+  return {
+    overview: {
+      totalExports,
+      monthlyGrowth,
+      complianceRate,
+      avgProcessingTime,
+      customsPacks: totalExports,
+      timeToMarket: avgProcessingMs > 0 ? Math.round((avgProcessingMs / 86400000) * 10) / 10 : 0
+    },
+    monthly,
+    documentTypes,
+    exportDestinations: [] // Would need LC data to populate this
+  };
+}
+
 export default function ExporterAnalytics({ embedded = false }: ExporterAnalyticsProps = {}) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Load real session data
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoading(true);
+      try {
+        const data = await getUserSessions();
+        setSessions(data || []);
+      } catch (error) {
+        console.error('Failed to load sessions for analytics:', error);
+        setSessions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadSessions();
+  }, []);
+  
+  // Calculate analytics from real data
+  const analytics = useMemo(() => calculateAnalytics(sessions), [sessions]);
 
   const containerClasses = embedded
     ? "mx-auto w-full max-w-6xl py-4"
@@ -103,10 +218,10 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Exports</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.totalExports}</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.totalExports}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingUp className="w-4 h-4 text-success" />
-                    <span className="text-sm text-success">+{mockAnalytics.overview.monthlyGrowth}% this month</span>
+                    <span className="text-sm text-success">+{analytics.overview.monthlyGrowth}% this month</span>
                   </div>
                 </div>
                 <div className="bg-exporter/10 p-3 rounded-lg">
@@ -121,7 +236,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Compliance Rate</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.complianceRate}%</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.complianceRate}%</p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingUp className="w-4 h-4 text-success" />
                     <span className="text-sm text-success">Industry leading</span>
@@ -139,7 +254,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Customs Packs</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.customsPacks}</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.customsPacks}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <Truck className="w-4 h-4 text-primary" />
                     <span className="text-sm text-primary">Ready for shipment</span>
@@ -175,7 +290,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
                 <CardContent className="space-y-4">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-exporter mb-2">
-                      {mockAnalytics.overview.avgProcessingTime}
+                      {analytics.overview.avgProcessingTime}
                     </div>
                     <p className="text-sm text-muted-foreground">Average processing time</p>
                   </div>
@@ -248,7 +363,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {mockAnalytics.monthly.map((month, index) => (
+                    {analytics.monthly.map((month, index) => (
                       <div key={index} className="grid grid-cols-4 gap-2 p-2 rounded bg-muted/30 text-sm">
                         <div className="text-center font-medium">{month.month}</div>
                         <div className="text-center text-exporter">{month.exports}</div>
@@ -270,7 +385,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {mockAnalytics.documentTypes.map((doc, index) => (
+                    {analytics.documentTypes.map((doc, index) => (
                       <div key={index} className="flex items-center justify-between p-2 rounded border border-gray-200">
                         <div className="flex-1">
                           <div className="font-medium text-sm">{doc.type}</div>
@@ -306,7 +421,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockAnalytics.exportDestinations.map((dest, index) => (
+                  {analytics.exportDestinations.map((dest, index) => (
                     <div key={index} className="p-4 rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-3">
                         <div>

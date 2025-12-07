@@ -364,18 +364,16 @@ export default function ImportResults({
   const mode = (modeOverride ?? searchParams.get('mode') ?? 'draft') as 'draft' | 'supplier';
   const rawJobId = jobIdOverride ?? params.jobId ?? searchParams.get('jobId') ?? undefined;
   const jobId = rawJobId ?? `demo-${mode}`;
-  const lcNumber = lcNumberOverride ?? searchParams.get('lc') ?? (
-    mode === 'draft' ? mockDraftLCResults.lcNumber : mockSupplierResults.lcNumber
-  );
+  const lcNumber = lcNumberOverride ?? searchParams.get('lc') ?? '';
 
-  const isDemoJob = !rawJobId || jobId.startsWith('demo-');
-  const shouldUseAPI = !isDemoJob;
+  // Only treat jobs starting with "demo-" as demo jobs
+  const isDemoJob = jobId.startsWith('demo-');
+  const shouldUseAPI = !isDemoJob && !!rawJobId;
 
   const { jobStatus, isPolling, startPolling } = useJob(shouldUseAPI ? jobId : null);
   const { results, getResults, isLoading: isLoadingResults } = useResults();
   const { generatePackage, downloadPackage, isLoading: isGeneratingPackage } = usePackage();
   const [activeTab, setActiveTab] = useState("overview");
-  const [useMockData, setUseMockData] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [showSupplierDialog, setShowSupplierDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -390,66 +388,45 @@ export default function ImportResults({
   const enableBankPrecheck = isImporterFeatureEnabled("importer_bank_precheck");
   const enableSupplierFixPack = isImporterFeatureEnabled("supplier_fix_pack");
 
-  // Transform API results or use mock data
-  const hasRealResults = results && !isDemoJob;
+  // Transform API results - use real data when available
+  const hasRealResults = !!results;
   const transformedSupplierData = hasRealResults ? transformApiToSupplierFormat(results) : null;
   const transformedDraftData = hasRealResults ? transformApiToDraftFormat(results) : null;
   
-  // Use real data if available, otherwise fall back to mock
-  const supplierData = transformedSupplierData || mockSupplierResults;
-  const draftData = transformedDraftData || mockDraftLCResults;
+  // Use real data if available, fall back to mock only for demo jobs
+  const supplierData = transformedSupplierData || (isDemoJob ? mockSupplierResults : null);
+  const draftData = transformedDraftData || (isDemoJob ? mockDraftLCResults : null);
   const displayData = mode === 'draft' ? draftData : supplierData;
   
-  // Legacy alias for backward compatibility
+  // Alias for backward compatibility with existing render code
   const mockData = displayData;
   
   // Determine if ready to submit (only for supplier mode with no issues and feature flag enabled)
-  const isReadyToSubmit = mode === 'supplier' && supplierData.totalIssues === 0 && enableBankPrecheck;
+  const isReadyToSubmit = mode === 'supplier' && supplierData?.totalIssues === 0 && enableBankPrecheck;
   
   // Determine if supplier has issues (for supplier mode)
-  const hasSupplierIssues = mode === 'supplier' && supplierData.totalIssues > 0;
+  const hasSupplierIssues = mode === 'supplier' && (supplierData?.totalIssues ?? 0) > 0;
 
+  // Check if we're still loading real data
+  const isLoadingRealData = shouldUseAPI && !hasRealResults && (isPolling || isLoadingResults || !jobStatus);
+  
+  // Check if job failed
+  const jobFailed = jobStatus?.status === 'failed';
+
+  // Start polling and fetch results for real jobs
   useEffect(() => {
-    // For demo job IDs, immediately use mock data
-    if (isDemoJob) {
-      console.log('Demo job detected, using mock data immediately');
-      setUseMockData(true);
-      return;
-    }
-
-    // For real jobs, if no jobId or API fails, use mock data after 2 seconds
-    const timer = setTimeout(() => {
-      if (!jobStatus && jobId) {
-        console.log('Using mock data for demo purposes');
-        setUseMockData(true);
-      }
-    }, 2000);
+    if (!shouldUseAPI) return;
     
-    // Safety timeout: if processing takes more than 60 seconds, show results anyway
-    const processingTimeout = setTimeout(() => {
-      if (isPolling || jobStatus?.status === 'processing') {
-        console.log('Processing timeout reached, showing available data');
-        setUseMockData(true);
-      }
-    }, 60000);
-
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(processingTimeout);
-    };
-  }, [jobId, jobStatus, isDemoJob, isPolling]);
-
-  useEffect(() => {
-    if (!isDemoJob && jobId && jobStatus?.status === 'active' && !isPolling) {
-      console.log('Starting polling for job:', jobId);
+    // Start polling if job is active and we're not already polling
+    if (jobStatus?.status === 'active' && !isPolling) {
       startPolling(jobId);
     }
 
-    if (!isDemoJob && jobId && jobStatus?.status === 'completed') {
-      console.log('Job completed, fetching results');
+    // Fetch results when job is completed
+    if (jobStatus?.status === 'completed' && !results) {
       getResults(jobId);
     }
-  }, [jobId, jobStatus, getResults, isDemoJob, isPolling, startPolling]);
+  }, [jobId, jobStatus, results, getResults, shouldUseAPI, isPolling, startPolling]);
 
   const handleDownloadReport = async () => {
     console.log("Download button clicked, jobId:", jobId);
@@ -774,7 +751,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
   }, [isPolling, jobStatus?.status]);
 
   const renderProcessingState = () => {
-    if ((isPolling || jobStatus?.status === 'processing') && !useMockData) {
+    if (isLoadingRealData || isPolling || jobStatus?.status === 'processing') {
       return (
         <div className="container mx-auto px-4 py-8 max-w-4xl">
           <Card>
@@ -790,27 +767,13 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                 }
               </p>
               <Progress value={processingProgress} className="w-64 mx-auto mb-4" />
-              <p className="text-xs text-muted-foreground mb-3">
-                {processingProgress < 30 ? 'Extracting document content...' :
-                 processingProgress < 60 ? 'Applying compliance rules...' :
-                 processingProgress < 85 ? 'Generating risk analysis...' :
-                 'Finalizing results...'}
-              </p>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setUseMockData(true)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                Skip to preview results
-              </Button>
             </CardContent>
           </Card>
         </div>
       );
     }
 
-    if (jobStatus?.status === 'failed' && !useMockData) {
+    if (jobFailed) {
       return (
         <div className="container mx-auto px-4 py-8 max-w-4xl">
           <Card>
@@ -820,8 +783,27 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
               <p className="text-muted-foreground mb-4">
                 Something went wrong while processing your documents. Please try again.
               </p>
-              <Button onClick={() => window.location.href = '/lcopilot/import-upload'}>
+              <Button onClick={() => navigate('/lcopilot/importer-dashboard?section=upload')}>
                 Back to Upload
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (shouldUseAPI && !hasRealResults && jobStatus?.status === 'completed') {
+      return (
+        <div className="container mx-auto px-4 py-8 max-w-4xl">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Results Available</h3>
+              <p className="text-muted-foreground mb-4">
+                The validation completed but no results were returned. Please try again.
+              </p>
+              <Button onClick={() => navigate('/lcopilot/importer-dashboard?section=upload')}>
+                Try Again
               </Button>
             </CardContent>
           </Card>
@@ -833,6 +815,15 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
   };
 
   const renderOverviewTab = () => {
+    // Guard for null data - should be handled by processing state, but just in case
+    if (!mockData) {
+      return (
+        <div className="text-center py-8 text-muted-foreground">
+          Loading results...
+        </div>
+      );
+    }
+    
     if (mode === 'draft') {
       return (
         <div className="space-y-6">
@@ -846,7 +837,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Risk Score</p>
-                    <p className="text-2xl font-bold">{mockData.overallRiskScore}/100</p>
+                    <p className="text-2xl font-bold">{mockData.overallRiskScore ?? 0}/100</p>
                   </div>
                 </div>
               </CardContent>
@@ -860,7 +851,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Risks</p>
-                    <p className="text-2xl font-bold">{mockData.totalRisks}</p>
+                    <p className="text-2xl font-bold">{mockData.totalRisks ?? 0}</p>
                   </div>
                 </div>
               </CardContent>
@@ -874,7 +865,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">LC Clauses</p>
-                    <p className="text-2xl font-bold">{mockData.totalClauses}</p>
+                    <p className="text-2xl font-bold">{mockData.totalClauses ?? 0}</p>
                   </div>
                 </div>
               </CardContent>
@@ -903,7 +894,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockData.risks.filter(r => r.severity === 'high').map((risk) => (
+                {(mockData.risks ?? []).filter(r => r.severity === 'high').map((risk) => (
                   <div key={risk.id} className="border border-destructive/20 rounded-lg p-4 bg-destructive/5">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -1310,7 +1301,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
               <CardContent>
                 {mode === 'draft' ? (
                   <div className="space-y-4">
-                    {mockData.lcClauses.map((clause) => (
+                    {(mockData.lcClauses ?? []).map((clause) => (
                       <div key={clause.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -1340,7 +1331,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {supplierData.documents.map((doc) => (
+                    {(supplierData?.documents ?? []).map((doc) => (
                       <div key={doc.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -1408,7 +1399,7 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
                 <div className="space-y-4">
                   {mode === 'draft' ? (
                     // Draft mode: Show risk analysis (keep existing format)
-                    mockData.risks.map((issue) => (
+                    (mockData.risks ?? []).map((issue) => (
                       <div key={issue.id} className={`border rounded-lg p-4 ${
                         issue.severity === 'high' ? 'border-destructive/20 bg-destructive/5' :
                         issue.severity === 'medium' ? 'border-warning/20 bg-warning/5' :

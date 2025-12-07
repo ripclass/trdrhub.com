@@ -88,49 +88,8 @@ interface HistoryItem {
   risks: number;
 }
 
-const notifications: Notification[] = [
-  {
-    id: 1,
-    title: "Import Regulations Update",
-    message: "New customs requirements effective Feb 1st. Review upcoming shipments.",
-    type: "info",
-    timestamp: "2 hours ago",
-    read: false,
-    link: "/lcopilot/importer-dashboard?section=settings",
-    action: {
-      label: "Review Settings",
-      action: () => {},
-    },
-  },
-  {
-    id: 2,
-    title: "LC Review Complete",
-    message: "Your draft LC has been reviewed with no critical risks identified.",
-    type: "success",
-    timestamp: "5 hours ago",
-    read: false,
-    link: "/lcopilot/importer-dashboard?section=reviews",
-    action: {
-      label: "View Results",
-      action: () => {},
-    },
-  },
-  {
-    id: 3,
-    title: "Risk Alert",
-    message: "Unrealistic shipment date detected in LC-IMP-2024-003.",
-    type: "warning",
-    timestamp: "1 day ago",
-    read: false,
-    link: "/lcopilot/importer-dashboard?section=reviews&lc=LC-IMP-2024-003",
-    badge: "High",
-    action: {
-      label: "Review LC",
-      action: () => {},
-      variant: "destructive",
-    },
-  },
-];
+// Empty notifications - real notifications API not yet implemented
+const notifications: Notification[] = [];
 
 const parseSectionParam = (sectionParam: string | null, legacyTabParam: string | null): Section => {
   if (sectionParam && SECTION_OPTIONS.includes(sectionParam as Section)) {

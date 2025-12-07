@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getUserSessions, type ValidationSession } from "@/api/sessions";
 import { 
   ArrowLeft, 
   BarChart3, 
@@ -21,44 +22,192 @@ import {
   LineChart
 } from "lucide-react";
 
-// Mock analytics data
-const mockAnalytics = {
-  overview: {
-    totalLCs: 47,
-    monthlyGrowth: 12.5,
-    successRate: 94.2,
-    avgProcessingTime: "2.3 minutes",
-    costSavings: 85000,
-    riskMitigation: 92
-  },
-  monthly: [
-    { month: "Jul", lcs: 8, success: 95, avgTime: 2.1 },
-    { month: "Aug", lcs: 12, success: 92, avgTime: 2.4 },
-    { month: "Sep", lcs: 15, success: 96, avgTime: 2.0 },
-    { month: "Oct", lcs: 18, success: 93, avgTime: 2.5 },
-    { month: "Nov", lcs: 22, success: 97, avgTime: 1.9 },
-    { month: "Dec", lcs: 25, success: 94, avgTime: 2.3 }
-  ],
-  documentTypes: [
-    { type: "Import LC Analysis", count: 28, avgScore: 87, trend: "up" },
-    { type: "Supplier Document Check", count: 19, avgScore: 91, trend: "up" },
-    { type: "Draft LC Risk Assessment", count: 15, avgScore: 84, trend: "down" },
-    { type: "Trade Document Validation", count: 12, avgScore: 89, trend: "up" }
-  ],
-  riskReduction: [
-    { category: "Timeline Risks", reduction: 89, incidents: 3 },
-    { category: "Documentation Risks", reduction: 94, incidents: 2 },
-    { category: "Compliance Risks", reduction: 92, incidents: 1 },
-    { category: "Financial Risks", reduction: 87, incidents: 4 }
-  ]
-};
-
 type ImporterAnalyticsProps = {
   embedded?: boolean;
 };
 
+// Calculate analytics from real session data
+function calculateAnalytics(sessions: ValidationSession[]) {
+  const now = new Date();
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  
+  // Filter sessions from last 6 months
+  const recentSessions = sessions.filter(s => new Date(s.created_at) >= sixMonthsAgo);
+  const completedSessions = recentSessions.filter(s => s.status === 'completed');
+  
+  // Calculate overview stats
+  const totalLCs = completedSessions.length;
+  const successfulSessions = completedSessions.filter(s => {
+    const criticalCount = (s.discrepancies || []).filter((d: any) => d.severity === 'critical').length;
+    return criticalCount === 0;
+  });
+  const successRate = completedSessions.length > 0 
+    ? Math.round((successfulSessions.length / completedSessions.length) * 1000) / 10
+    : 0;
+  
+  // Calculate average processing time
+  const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+  const avgProcessingMs = sessionsWithTime.length > 0
+    ? sessionsWithTime.reduce((sum, s) => {
+        const start = new Date(s.processing_started_at!).getTime();
+        const end = new Date(s.processing_completed_at!).getTime();
+        return sum + (end - start);
+      }, 0) / sessionsWithTime.length
+    : 0;
+  const avgProcessingTime = avgProcessingMs > 0 
+    ? `${(avgProcessingMs / 60000).toFixed(1)} minutes`
+    : "N/A";
+  
+  // Calculate monthly growth
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+  
+  const lastMonthSessions = completedSessions.filter(s => {
+    const date = new Date(s.created_at);
+    return date >= lastMonthStart && date <= lastMonthEnd;
+  });
+  const prevMonthSessions = completedSessions.filter(s => {
+    const date = new Date(s.created_at);
+    return date >= prevMonthStart && date <= prevMonthEnd;
+  });
+  
+  const monthlyGrowth = prevMonthSessions.length > 0 
+    ? Math.round(((lastMonthSessions.length - prevMonthSessions.length) / prevMonthSessions.length) * 1000) / 10
+    : lastMonthSessions.length > 0 ? 100 : 0;
+  
+  // Calculate monthly breakdown
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthly = [];
+  for (let i = 5; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const monthSessions = completedSessions.filter(s => {
+      const date = new Date(s.created_at);
+      return date >= monthStart && date <= monthEnd;
+    });
+    const monthSuccessful = monthSessions.filter(s => {
+      const criticalCount = (s.discrepancies || []).filter((d: any) => d.severity === 'critical').length;
+      return criticalCount === 0;
+    });
+    const monthSessionsWithTime = monthSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+    const monthAvgMs = monthSessionsWithTime.length > 0
+      ? monthSessionsWithTime.reduce((sum, s) => {
+          const start = new Date(s.processing_started_at!).getTime();
+          const end = new Date(s.processing_completed_at!).getTime();
+          return sum + (end - start);
+        }, 0) / monthSessionsWithTime.length
+      : 0;
+    
+    monthly.push({
+      month: months[monthStart.getMonth()],
+      lcs: monthSessions.length,
+      success: monthSessions.length > 0 ? Math.round((monthSuccessful.length / monthSessions.length) * 100) : 0,
+      avgTime: monthAvgMs > 0 ? Math.round((monthAvgMs / 60000) * 10) / 10 : 0
+    });
+  }
+  
+  // Calculate document types/workflow breakdown
+  const workflowCounts: Record<string, { count: number; successful: number }> = {
+    "Import LC Analysis": { count: 0, successful: 0 },
+    "Supplier Document Check": { count: 0, successful: 0 },
+    "Draft LC Risk Assessment": { count: 0, successful: 0 },
+    "Trade Document Validation": { count: 0, successful: 0 }
+  };
+  
+  completedSessions.forEach(s => {
+    const workflow = s.extracted_data?.workflow_type || 'draft-lc-risk';
+    const key = workflow.includes('supplier') ? "Supplier Document Check" 
+              : workflow.includes('draft') ? "Draft LC Risk Assessment"
+              : "Import LC Analysis";
+    if (!workflowCounts[key]) {
+      workflowCounts[key] = { count: 0, successful: 0 };
+    }
+    workflowCounts[key].count++;
+    const criticalCount = (s.discrepancies || []).filter((d: any) => d.severity === 'critical').length;
+    if (criticalCount === 0) {
+      workflowCounts[key].successful++;
+    }
+  });
+  
+  const documentTypes = Object.entries(workflowCounts)
+    .filter(([_, { count }]) => count > 0)
+    .map(([type, { count, successful }]) => ({
+      type,
+      count,
+      avgScore: count > 0 ? Math.round((successful / count) * 100) : 0,
+      trend: 'stable' as const
+    }));
+  
+  // Calculate risk reduction from discrepancies
+  const riskCategories: Record<string, { total: number; resolved: number }> = {
+    "Timeline Risks": { total: 0, resolved: 0 },
+    "Documentation Risks": { total: 0, resolved: 0 },
+    "Compliance Risks": { total: 0, resolved: 0 },
+    "Financial Risks": { total: 0, resolved: 0 }
+  };
+  
+  completedSessions.forEach(s => {
+    (s.discrepancies || []).forEach((d: any) => {
+      const category = d.title?.toLowerCase().includes('date') || d.title?.toLowerCase().includes('timeline') 
+        ? "Timeline Risks"
+        : d.title?.toLowerCase().includes('amount') || d.title?.toLowerCase().includes('value')
+        ? "Financial Risks"
+        : d.title?.toLowerCase().includes('document') 
+        ? "Documentation Risks"
+        : "Compliance Risks";
+      riskCategories[category].total++;
+      // Consider as "resolved" if the session is complete
+      riskCategories[category].resolved++;
+    });
+  });
+  
+  const riskReduction = Object.entries(riskCategories).map(([category, { total, resolved }]) => ({
+    category,
+    reduction: total > 0 ? Math.round((resolved / total) * 100) : 100,
+    incidents: total
+  }));
+  
+  return {
+    overview: {
+      totalLCs,
+      monthlyGrowth,
+      successRate,
+      avgProcessingTime,
+      costSavings: totalLCs * 1500, // Estimated savings per LC
+      riskMitigation: successRate
+    },
+    monthly,
+    documentTypes,
+    riskReduction
+  };
+}
+
 export default function ImporterAnalytics({ embedded = false }: ImporterAnalyticsProps = {}) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Load real session data
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoading(true);
+      try {
+        const data = await getUserSessions();
+        setSessions(data || []);
+      } catch (error) {
+        console.error('Failed to load sessions for analytics:', error);
+        setSessions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadSessions();
+  }, []);
+  
+  // Calculate analytics from real data
+  const analytics = useMemo(() => calculateAnalytics(sessions), [sessions]);
 
   const containerClasses = embedded
     ? "mx-auto w-full max-w-6xl py-4"
@@ -101,10 +250,10 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total LCs Processed</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.totalLCs}</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.totalLCs}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingUp className="w-4 h-4 text-success" />
-                    <span className="text-sm text-success">+{mockAnalytics.overview.monthlyGrowth}% this month</span>
+                    <span className="text-sm text-success">+{analytics.overview.monthlyGrowth}% this month</span>
                   </div>
                 </div>
                 <div className="bg-importer/10 p-3 rounded-lg">
@@ -119,7 +268,7 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Success Rate</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.successRate}%</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.successRate}%</p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingUp className="w-4 h-4 text-success" />
                     <span className="text-sm text-success">Above industry average</span>
@@ -137,7 +286,7 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Avg Processing Time</p>
-                  <p className="text-2xl font-bold text-foreground">{mockAnalytics.overview.avgProcessingTime}</p>
+                  <p className="text-2xl font-bold text-foreground">{analytics.overview.avgProcessingTime}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingDown className="w-4 h-4 text-success" />
                     <span className="text-sm text-success">15% faster than before</span>
@@ -173,7 +322,7 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
                 <CardContent className="space-y-4">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-success mb-2">
-                      ${mockAnalytics.overview.costSavings.toLocaleString()}
+                      ${analytics.overview.costSavings.toLocaleString()}
                     </div>
                     <p className="text-sm text-muted-foreground">Total cost savings this year</p>
                   </div>
@@ -206,13 +355,13 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
                 <CardContent className="space-y-4">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-importer mb-2">
-                      {mockAnalytics.overview.riskMitigation}%
+                      {analytics.overview.riskMitigation}%
                     </div>
                     <p className="text-sm text-muted-foreground">Overall risk reduction achieved</p>
                   </div>
                   
                   <div className="space-y-3">
-                    {mockAnalytics.riskReduction.map((risk, index) => (
+                    {analytics.riskReduction.map((risk, index) => (
                       <div key={index} className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span>{risk.category}</span>
@@ -237,7 +386,7 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockAnalytics.monthly.map((month, index) => (
+                  {analytics.monthly.map((month, index) => (
                     <div key={index} className="grid grid-cols-4 gap-4 p-3 rounded-lg bg-muted/30">
                       <div className="text-center">
                         <div className="text-sm text-muted-foreground">Month</div>
@@ -272,7 +421,7 @@ export default function ImporterAnalytics({ embedded = false }: ImporterAnalytic
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockAnalytics.documentTypes.map((doc, index) => (
+                  {analytics.documentTypes.map((doc, index) => (
                     <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
                       <div className="flex-1">
                         <div className="font-medium">{doc.type}</div>

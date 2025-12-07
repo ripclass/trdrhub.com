@@ -67,44 +67,6 @@ import {
 
 const DASHBOARD_BASE = "/lcopilot/exporter-dashboard";
 
-// Mock notifications for exporter dashboard
-const mockNotifications: Notification[] = [
-  {
-    id: 1,
-    title: "Export Regulations Update",
-    message: "New export documentation requirements effective Feb 1st. Review your templates.",
-    type: "info",
-    timestamp: "2 hours ago",
-    read: false,
-    link: "/lcopilot/exporter-dashboard?section=settings",
-    action: {
-      label: "Review Settings",
-      action: () => {},
-    },
-  },
-  {
-    id: 2,
-    title: "LC Validation Completed",
-    message: "LC-2024-042 has been validated. 2 issues require your attention.",
-    type: "warning",
-    timestamp: "4 hours ago",
-    read: false,
-    link: "/lcopilot/exporter-dashboard?section=reviews",
-    action: {
-      label: "View Results",
-      action: () => {},
-    },
-  },
-  {
-    id: 3,
-    title: "Customs Pack Ready",
-    message: "Your customs documentation pack for LC-2024-041 is ready for download.",
-    type: "success",
-    timestamp: "Yesterday",
-    read: true,
-  },
-];
-
 export default function ExporterDashboard() {
   return (
     <ResultsProvider>
@@ -396,7 +358,22 @@ function DashboardContent() {
 
         {/* Notifications Section */}
         {activeSection === "notifications" && (
-          <NotificationsCard notifications={mockNotifications} />
+          <Card className="shadow-soft border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="w-5 h-5" />
+                Notifications
+              </CardTitle>
+              <CardDescription>Stay updated on your LC validations and compliance alerts</CardDescription>
+            </CardHeader>
+            <CardContent className="text-center py-8">
+              <Bell className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-muted-foreground">No notifications yet</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                You'll receive notifications when your LCs are validated or require attention.
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         {/* Billing Section */}
