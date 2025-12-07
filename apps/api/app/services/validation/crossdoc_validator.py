@@ -189,6 +189,16 @@ class CrossDocValidator:
         # Convert baseline to dict for easier access
         lc_data = self._baseline_to_dict(lc_baseline)
         
+        # =========================================================================
+        # LC VALIDITY CHECK (FF001) - Must be checked FIRST
+        # =========================================================================
+        rules_executed += 1
+        lc_expiry_issue = self._check_lc_expiry(lc_data)
+        if lc_expiry_issue:
+            all_issues.append(lc_expiry_issue)
+        else:
+            rules_passed += 1
+        
         # Invoice vs LC
         if invoice:
             inv_issues, inv_exec, inv_pass = self._validate_invoice_vs_lc(
@@ -291,6 +301,68 @@ class CrossDocValidator:
             passed += 1
         
         return issues, executed, passed
+    
+    # =========================================================================
+    # LC VALIDITY CHECKS
+    # =========================================================================
+    
+    def _check_lc_expiry(
+        self,
+        lc_data: Dict[str, Any],
+    ) -> Optional[CrossDocIssue]:
+        """
+        Check if LC has expired (FF001).
+        
+        Per UCP600 Article 6(d)(i), documents must be presented within
+        the validity period of the LC. An expired LC cannot be used.
+        """
+        expiry_str = lc_data.get("expiry_date")
+        if not expiry_str:
+            return None  # Can't check without expiry date
+        
+        expiry_date = self._parse_date(expiry_str)
+        if expiry_date is None:
+            return None
+        
+        today = datetime.now().date()
+        
+        # Check if LC is expired
+        if isinstance(expiry_date, datetime):
+            expiry_date = expiry_date.date()
+        
+        if expiry_date < today:
+            days_expired = (today - expiry_date).days
+            return CrossDocIssue(
+                rule_id="CROSSDOC-LC-001",
+                title="LC Expired",
+                severity=IssueSeverity.CRITICAL,
+                message=(
+                    f"Letter of Credit expired on {expiry_date.isoformat()}. "
+                    f"Documents cannot be presented under an expired LC. "
+                    f"LC has been expired for {days_expired} day(s)."
+                ),
+                expected="Valid LC (not expired)",
+                found=f"LC expired on {expiry_date.isoformat()}",
+                suggestion="Request LC amendment to extend expiry date before presenting documents.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.LC,
+                source_field="expiry_date",
+                target_field="expiry_date",
+                ucp_article="UCP600 Article 6(d)(i)",
+                isbp_paragraph="ISBP745 A14",
+                source_value=expiry_date,
+                target_value=today,
+            )
+        
+        # Warn if expiring within 7 days
+        days_until_expiry = (expiry_date - today).days
+        if days_until_expiry <= 7:
+            logger.warning(
+                "LC expiring soon: %s (in %d days)",
+                expiry_date.isoformat(), days_until_expiry
+            )
+        
+        return None
     
     def _check_invoice_amount(
         self,
