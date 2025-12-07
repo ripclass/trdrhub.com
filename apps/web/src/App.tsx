@@ -106,7 +106,6 @@ import ImportLCUpload from './pages/ImportLCUpload'
 import ImportResults from './pages/ImportResults'
 import ImportResultsSimple from './pages/ImportResultsSimple'
 import ExporterDashboard from './pages/ExporterDashboard'
-import ImporterDashboard from './pages/ImporterDashboard'
 import ExporterResults from './pages/ExporterResults'
 import ExporterAnalytics from './pages/ExporterAnalytics'
 import ImporterAnalytics from './pages/ImporterAnalytics'
@@ -366,7 +365,6 @@ function App() {
             <ImporterDashboardV2 />
           </ImporterAuthProvider>
         } />
-        <Route path="/lcopilot/importer-dashboard/legacy" element={<ImporterDashboard />} />
         <Route path="/lcopilot/enterprise-dashboard" element={
           <ExporterAuthProvider>
             <EnterpriseDashboard />

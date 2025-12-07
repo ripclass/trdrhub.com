@@ -142,21 +142,34 @@ export default function Dashboard() {
     const successCount = completedSessions.filter(s => s.discrepancies.length === 0).length;
     const successRate = completedSessions.length > 0 ? (successCount / completedSessions.length) * 100 : 0;
 
+    // Calculate real average processing time from session timestamps
+    const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+    const avgProcessingMs = sessionsWithTime.length > 0
+      ? sessionsWithTime.reduce((sum, s) => {
+          const start = new Date(s.processing_started_at!).getTime();
+          const end = new Date(s.processing_completed_at!).getTime();
+          return sum + (end - start);
+        }, 0) / sessionsWithTime.length
+      : 0;
+    const avgProcessingTime = avgProcessingMs > 0 
+      ? `${(avgProcessingMs / 60000).toFixed(1)} min`
+      : "N/A";
+
     const stats: DashboardStats = {
       totalLCs: sessions.length,
       thisMonth: thisMonthSessions.length,
       successRate: Math.round(successRate * 10) / 10,
-      avgProcessingTime: "2.3 minutes", // Could calculate from processing_started_at and processing_completed_at
+      avgProcessingTime,
       discrepanciesFound: totalDiscrepancies,
       documentsProcessed: totalDocuments
     };
 
     const recent: RecentLC[] = sessions
       .slice(0, 4)
-      .map((session, index) => ({
+      .map((session) => ({
         id: session.id,
-        lcNumber: `LC-${session.id.slice(-6)}`,
-        companyName: `Company ${index + 1}`, // Would come from session metadata
+        lcNumber: session.extracted_data?.lc_number || `LC-${session.id.slice(-6)}`,
+        companyName: session.extracted_data?.beneficiary_name || session.extracted_data?.applicant || "Unknown",
         dateProcessed: new Date(session.created_at).toISOString().split('T')[0],
         status: session.status === 'completed'
                ? (session.discrepancies.length === 0 ? "success" :
