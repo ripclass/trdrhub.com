@@ -15,6 +15,7 @@ import { SupportTicketForm } from "@/components/shared/SupportTicketForm";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ImporterSidebar } from "@/components/importer/ImporterSidebar";
 import { useImporterAuth } from "@/lib/importer/auth";
+import { getUserSessions, type ValidationSession } from "@/api/sessions";
 import ImportLCUpload from "./ImportLCUpload";
 import ImporterAnalytics from "./ImporterAnalytics";
 import ImportResults from "./ImportResults";
@@ -68,41 +69,24 @@ type Section =
 
 const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-usage", "ai-assistance", "content-library", "shipment-timeline", "settings", "help"];
 
-const dashboardStats = {
-  thisMonth: 6,
-  successRate: 91.7,
-  avgProcessingTime: "2.8 minutes",
-  risksIdentified: 3,
-  totalReviews: 18,
-  documentsProcessed: 54,
-};
+// Types for computed stats
+interface DashboardStats {
+  thisMonth: number;
+  successRate: number;
+  avgProcessingTime: string;
+  risksIdentified: number;
+  totalReviews: number;
+  documentsProcessed: number;
+}
 
-const mockHistory = [
-  {
-    id: "1",
-    date: "2024-01-18",
-    type: "LC Review",
-    supplier: "ABC Exports Ltd.",
-    status: "approved" as const,
-    risks: 2,
-  },
-  {
-    id: "2",
-    date: "2024-01-12",
-    type: "Document Check",
-    supplier: "XYZ Trading Co.",
-    status: "flagged" as const,
-    risks: 4,
-  },
-  {
-    id: "3",
-    date: "2024-01-08",
-    type: "LC Review",
-    supplier: "Global Textiles Inc.",
-    status: "approved" as const,
-    risks: 1,
-  },
-];
+interface HistoryItem {
+  id: string;
+  date: string;
+  type: string;
+  supplier: string;
+  status: "approved" | "flagged" | "pending";
+  risks: number;
+}
 
 const notifications: Notification[] = [
   {
@@ -186,6 +170,8 @@ export default function ImporterDashboardV2() {
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(true);
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<"drafts" | "amendments">("drafts");
   const [billingTab, setBillingTab] = useState<string>("overview");
@@ -199,6 +185,25 @@ export default function ImporterDashboardV2() {
       setShowOnboarding(true);
     }
   }, [needsOnboarding, isLoadingOnboarding]);
+
+  // Load real validation sessions
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoadingSessions(true);
+      try {
+        const data = await getUserSessions();
+        setSessions(data || []);
+      } catch (error) {
+        console.error("Failed to load validation sessions:", error);
+        setSessions([]);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+    if (isAuthenticated) {
+      loadSessions();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const fetchDrafts = async () => {
@@ -340,6 +345,62 @@ export default function ImporterDashboardV2() {
     return null;
   }
 
+  // Calculate real stats from sessions
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisMonthSessions = sessions.filter(s => new Date(s.created_at) >= thisMonthStart);
+  const completedSessions = sessions.filter(s => s.status === 'completed');
+  const totalDiscrepancies = sessions.reduce((sum, s) => sum + (s.discrepancies?.length || 0), 0);
+  const totalDocuments = sessions.reduce((sum, s) => sum + (s.documents?.length || 0), 0);
+  
+  // Calculate success rate (sessions with 0 critical discrepancies)
+  const successfulSessions = completedSessions.filter(s => {
+    const criticalCount = (s.discrepancies || []).filter(d => d.severity === 'critical').length;
+    return criticalCount === 0;
+  });
+  const successRate = completedSessions.length > 0 
+    ? Math.round((successfulSessions.length / completedSessions.length) * 100 * 10) / 10
+    : 0;
+
+  // Calculate average processing time
+  const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+  const avgProcessingMs = sessionsWithTime.length > 0
+    ? sessionsWithTime.reduce((sum, s) => {
+        const start = new Date(s.processing_started_at!).getTime();
+        const end = new Date(s.processing_completed_at!).getTime();
+        return sum + (end - start);
+      }, 0) / sessionsWithTime.length
+    : 0;
+  const avgProcessingTime = avgProcessingMs > 0 
+    ? `${(avgProcessingMs / 60000).toFixed(1)} min`
+    : "N/A";
+
+  // Computed dashboard stats
+  const dashboardStats: DashboardStats = {
+    thisMonth: thisMonthSessions.length,
+    successRate,
+    avgProcessingTime,
+    risksIdentified: totalDiscrepancies,
+    totalReviews: sessions.length,
+    documentsProcessed: totalDocuments,
+  };
+
+  // Transform sessions to history format
+  const recentHistory: HistoryItem[] = [...sessions]
+    .filter(s => s.status === 'completed')
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5)
+    .map(s => ({
+      id: s.id,
+      date: new Date(s.created_at).toISOString().split('T')[0],
+      type: "LC Review",
+      supplier: s.extracted_data?.beneficiary_name || s.extracted_data?.applicant || "Unknown",
+      status: (s.discrepancies?.filter(d => d.severity === 'critical').length || 0) > 0 
+        ? "flagged" as const 
+        : "approved" as const,
+      risks: s.discrepancies?.length || 0,
+    }));
+
   return (
     <>
       <DashboardLayout
@@ -360,7 +421,7 @@ export default function ImporterDashboardV2() {
               formatTimeAgo={formatTimeAgo}
               workspaceTab={workspaceTab}
               onWorkspaceTabChange={setWorkspaceTab}
-              recentHistory={mockHistory}
+              recentHistory={recentHistory}
               notifications={notifications}
             />
           )}
@@ -432,7 +493,7 @@ export default function ImporterDashboardV2() {
 }
 
 interface DashboardOverviewProps {
-  stats: typeof dashboardStats;
+  stats: DashboardStats;
   drafts: Draft[];
   loadingDrafts: boolean;
   onResumeDraft: (draft: Draft) => void;
@@ -440,7 +501,7 @@ interface DashboardOverviewProps {
   formatTimeAgo: (date: string) => string;
   workspaceTab: "drafts" | "amendments";
   onWorkspaceTabChange: (value: "drafts" | "amendments") => void;
-  recentHistory: typeof mockHistory;
+  recentHistory: HistoryItem[];
   notifications: typeof notifications;
 }
 
@@ -488,7 +549,7 @@ function DashboardOverview({
   );
 }
 
-function StatGrid({ stats }: { stats: typeof dashboardStats }) {
+function StatGrid({ stats }: { stats: DashboardStats }) {
   const navigate = useNavigate();
   const { data: usageStats } = useUsageStats();
   const { data: invoicesData } = useInvoices({
@@ -744,7 +805,7 @@ function WorkspaceListItem({ draft, documentLabel, onResumeDraft, onDeleteDraft,
   );
 }
 
-function RecentValidationsCard({ history }: { history: typeof mockHistory }) {
+function RecentValidationsCard({ history }: { history: HistoryItem[] }) {
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
@@ -837,7 +898,7 @@ function NotificationsCard({ notifications }: { notifications: Notification[] })
   );
 }
 
-function QuickStatsCard({ stats }: { stats: typeof dashboardStats }) {
+function QuickStatsCard({ stats }: { stats: DashboardStats }) {
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>

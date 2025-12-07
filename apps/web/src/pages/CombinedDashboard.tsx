@@ -17,6 +17,7 @@ import { ViewModeToggle } from "@/components/combined/ViewModeToggle";
 import { CombinedKPIs, type KPIData } from "@/components/combined/CombinedKPIs";
 import { CombinedSessions, type Session } from "@/components/combined/CombinedSessions";
 import { CombinedTasks, type Task } from "@/components/combined/CombinedTasks";
+import { getUserSessions, type ValidationSession } from "@/api/sessions";
 import {
   Upload,
   FileText,
@@ -43,68 +44,29 @@ type Section =
   | "settings"
   | "help";
 
-// Mock data - will be replaced with API calls in Phase 2
-const mockKPIData: KPIData = {
-  activeLCs: {
-    total: 12,
-    export: 7,
-    import: 5,
-  },
-  approvalRate: {
-    total: 94,
-    export: 96,
-    import: 92,
-  },
-  pendingActions: {
-    total: 4,
-    export: 2,
-    import: 2,
-  },
-  avgTurnaround: {
-    total: '2.1 days',
-    export: '1.8 days',
-    import: '2.5 days',
-  },
+// Helper to format time ago
+const formatTimeAgo = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
+  if (diffInHours < 1) return "Just now";
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays === 1) return "Yesterday";
+  if (diffInDays < 7) return `${diffInDays}d ago`;
+  return date.toLocaleDateString();
 };
 
-const mockExportSessions: Session[] = [
-  {
-    id: 'EXP-2391',
-    type: 'export',
-    counterparty: 'BRAC Bank',
-    amount: 'USD 125K',
-    status: 'Ready to submit',
-    updatedAt: '2 hours ago',
-  },
-  {
-    id: 'EXP-2384',
-    type: 'export',
-    counterparty: 'Sonali Bank',
-    amount: 'USD 210K',
-    status: 'Discrepancy noted',
-    updatedAt: 'Yesterday',
-  },
-];
+// Helper to format amount
+const formatAmount = (amount: number | undefined) => {
+  if (!amount) return "N/A";
+  if (amount >= 1000000) return `USD ${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `USD ${(amount / 1000).toFixed(0)}K`;
+  return `USD ${amount.toFixed(0)}`;
+};
 
-const mockImportSessions: Session[] = [
-  {
-    id: 'IMP-1178',
-    type: 'import',
-    counterparty: 'HSBC Dhaka',
-    amount: 'USD 90K',
-    status: 'Awaiting supplier docs',
-    updatedAt: 'Today',
-  },
-  {
-    id: 'IMP-1169',
-    type: 'import',
-    counterparty: 'UCBL',
-    amount: 'USD 140K',
-    status: 'Under review',
-    updatedAt: '48 mins ago',
-  },
-];
-
+// Mock tasks - will be replaced with tasks API later
 const mockTasks: Task[] = [
   {
     id: 'task-1',
@@ -188,6 +150,27 @@ export default function CombinedDashboard() {
   const { viewMode } = useCombined();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+
+  // Load real validation sessions
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoadingSessions(true);
+      try {
+        const data = await getUserSessions();
+        setSessions(data || []);
+      } catch (error) {
+        console.error("Failed to load validation sessions:", error);
+        setSessions([]);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+    if (mainUser) {
+      loadSessions();
+    }
+  }, [mainUser]);
 
   const parseSection = (value: string | null): Section => {
     const allowed: Section[] = [
@@ -260,6 +243,78 @@ export default function CombinedDashboard() {
       const exportTasks = mockTasks.filter(t => t.type === "export");
       const importTasks = mockTasks.filter(t => t.type === "import");
 
+      // Compute KPIs from real sessions
+      const completedSessions = sessions.filter(s => s.status === 'completed');
+      const pendingSessions = sessions.filter(s => s.status === 'processing' || s.status === 'uploading');
+      
+      // For now, treat all sessions as "export" since we don't have type differentiation
+      // In future, this could be based on LC type or user role
+      const exportCount = sessions.length;
+      const importCount = 0; // Would need importer sessions API
+      
+      const successfulSessions = completedSessions.filter(s => {
+        const criticalCount = (s.discrepancies || []).filter(d => d.severity === 'critical').length;
+        return criticalCount === 0;
+      });
+      
+      const exportApprovalRate = completedSessions.length > 0
+        ? Math.round((successfulSessions.length / completedSessions.length) * 100)
+        : 0;
+
+      // Calculate average turnaround
+      const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
+      const avgTurnaroundMs = sessionsWithTime.length > 0
+        ? sessionsWithTime.reduce((sum, s) => {
+            const start = new Date(s.processing_started_at!).getTime();
+            const end = new Date(s.processing_completed_at!).getTime();
+            return sum + (end - start);
+          }, 0) / sessionsWithTime.length
+        : 0;
+      const avgTurnaroundDays = avgTurnaroundMs > 0 
+        ? `${(avgTurnaroundMs / (1000 * 60 * 60 * 24)).toFixed(1)} days`
+        : "N/A";
+
+      const kpiData: KPIData = {
+        activeLCs: {
+          total: sessions.length,
+          export: exportCount,
+          import: importCount,
+        },
+        approvalRate: {
+          total: exportApprovalRate,
+          export: exportApprovalRate,
+          import: 0, // Would need importer data
+        },
+        pendingActions: {
+          total: pendingSessions.length,
+          export: pendingSessions.length,
+          import: 0,
+        },
+        avgTurnaround: {
+          total: avgTurnaroundDays,
+          export: avgTurnaroundDays,
+          import: "N/A",
+        },
+      };
+
+      // Transform sessions to Session[] format for CombinedSessions component
+      const exportSessions: Session[] = [...sessions]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5)
+        .map(s => ({
+          id: s.id.slice(0, 8).toUpperCase(),
+          type: 'export' as const,
+          counterparty: s.extracted_data?.issuing_bank || s.extracted_data?.applicant_bank || "Bank",
+          amount: formatAmount(s.extracted_data?.amount || s.extracted_data?.lc_amount),
+          status: s.status === 'completed' 
+            ? ((s.discrepancies?.length || 0) > 0 ? 'Discrepancy noted' : 'Ready to submit')
+            : s.status === 'processing' ? 'Processing...' : 'Pending',
+          updatedAt: formatTimeAgo(s.updated_at),
+        }));
+
+      // Empty for now - would need separate importer sessions API
+      const importSessions: Session[] = [];
+
       return (
         <div className="space-y-8">
           <header className="space-y-2">
@@ -279,8 +334,8 @@ export default function CombinedDashboard() {
           {/* KPI Section */}
           <section>
             <CombinedKPIs
-              data={mockKPIData}
-              isLoading={false}
+              data={kpiData}
+              isLoading={isLoadingSessions}
               onKpiClick={handleKpiClick}
             />
           </section>
@@ -314,9 +369,9 @@ export default function CombinedDashboard() {
           {/* Sessions Section */}
           <section>
             <CombinedSessions
-              exportSessions={mockExportSessions}
-              importSessions={mockImportSessions}
-              isLoading={false}
+              exportSessions={exportSessions}
+              importSessions={importSessions}
+              isLoading={isLoadingSessions}
               onSessionClick={handleSessionClick}
             />
           </section>
@@ -343,23 +398,23 @@ export default function CombinedDashboard() {
                 <div className="rounded-lg border border-border/40 bg-muted/30 p-4 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between text-foreground">
                     <span>Export approval</span>
-                    <span className="font-semibold">{mockKPIData.approvalRate.export}%</span>
+                    <span className="font-semibold">{kpiData.approvalRate.export}%</span>
                   </div>
-                  <p className="mt-1 text-xs">+4.2% vs previous quarter</p>
+                  <p className="mt-1 text-xs">Based on {completedSessions.length} validations</p>
                 </div>
                 <div className="rounded-lg border border-border/40 bg-muted/20 p-4 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between text-foreground">
-                    <span>Import approval</span>
-                    <span className="font-semibold">{mockKPIData.approvalRate.import}%</span>
+                    <span>Avg. turnaround</span>
+                    <span className="font-semibold">{kpiData.avgTurnaround.export}</span>
                   </div>
-                  <p className="mt-1 text-xs">+2.5% vs previous quarter</p>
+                  <p className="mt-1 text-xs">Processing time per validation</p>
                 </div>
                 <div className="rounded-lg border border-border/40 bg-muted/20 p-4 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between text-foreground">
-                    <span>Bank escalations</span>
-                    <span className="font-semibold">3</span>
+                    <span>Total discrepancies</span>
+                    <span className="font-semibold">{sessions.reduce((sum, s) => sum + (s.discrepancies?.length || 0), 0)}</span>
                   </div>
-                  <p className="mt-1 text-xs">Down from 7 last quarter</p>
+                  <p className="mt-1 text-xs">Across all validations</p>
                 </div>
                 <Button asChild variant="outline" className="w-full text-sm">
                   <Link to="/lcopilot/exporter-dashboard?section=analytics">Open analytics <ArrowUpRight className="ml-2 h-4 w-4" /></Link>
