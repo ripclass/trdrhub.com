@@ -11,11 +11,10 @@ import type {
 } from '@/types/lcopilot';
 // Schema-first validation (runtime type checking)
 import { ValidationResultsSchema, safeValidateApiResponse } from '@shared/types';
+// Unified feature flags
+import { isLCopilotFeatureEnabled } from '@/config/featureFlagService';
 
 const lcopilotLogger = logger.createLogger('LCopilot');
-
-// Enable runtime schema validation in development
-const ENABLE_SCHEMA_VALIDATION = import.meta.env.DEV || import.meta.env.VITE_ENABLE_SCHEMA_VALIDATION === 'true';
 
 export interface ValidationRequest {
   files: File[];
@@ -328,8 +327,8 @@ export const useResults = () => {
       const normalized: ValidationResults = buildValidationResponse(payload);
 
       // Schema-first validation: verify response matches expected contract
-      // This runs in development to catch API contract drift early
-      if (ENABLE_SCHEMA_VALIDATION) {
+      // Controlled by 'schema_validation' feature flag (enabled in dev by default)
+      if (isLCopilotFeatureEnabled('schema_validation')) {
         const validationResult = safeValidateApiResponse(
           ValidationResultsSchema,
           normalized,
