@@ -94,11 +94,28 @@ interface BankVerdict {
   action_items_count: number;
 }
 
-// Bank Profile Types
+// Bank Profile Types - extended to match backend
 interface BankProfile {
   bank_code: string;
   bank_name: string;
   strictness: "lenient" | "standard" | "strict";
+  // Extended profile data from backend
+  port_rules?: {
+    strict_spelling?: boolean;
+    accept_unlisted_ports?: boolean;
+  };
+  date_rules?: {
+    strict_format?: boolean;
+    allow_partial_dates?: boolean;
+  };
+  amount_rules?: {
+    default_tolerance_pct?: number;
+  };
+  party_rules?: {
+    strict_matching?: boolean;
+    minimum_similarity?: number;
+  };
+  special_requirements?: string[];
 }
 
 // Extraction Confidence Types
@@ -255,12 +272,14 @@ function BankVerdictCard({ verdict }: { verdict: BankVerdict }) {
   );
 }
 
-// Bank Profile Badge Component
+// Bank Profile Badge Component - with expandable details
 function BankProfileBadge({ profile }: { profile: BankProfile }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   const strictnessColors = {
-    lenient: "bg-green-500/20 text-green-400 border-green-500/30",
-    standard: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    strict: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    lenient: "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30",
+    standard: "bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/30",
+    strict: "bg-orange-500/20 text-orange-700 dark:text-orange-400 border-orange-500/30",
   };
   
   const strictnessLabels = {
@@ -268,16 +287,137 @@ function BankProfileBadge({ profile }: { profile: BankProfile }) {
     standard: "Standard",
     strict: "Strict",
   };
+  
+  const strictnessDescriptions = {
+    lenient: "This bank has relaxed validation policies. Minor discrepancies may be accepted.",
+    standard: "This bank follows standard UCP600/ISBP745 interpretation. Normal validation applies.",
+    strict: "This bank has stringent validation policies. Extra care required with document details.",
+  };
+  
+  const hasDetailedRules = profile.port_rules || profile.date_rules || profile.amount_rules || profile.party_rules || profile.special_requirements?.length;
 
   return (
     <div className={cn(
-      "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium",
-      strictnessColors[profile.strictness]
+      "rounded-lg border transition-all duration-200",
+      strictnessColors[profile.strictness],
+      isExpanded && "shadow-md"
     )}>
-      <Building2 className="w-3.5 h-3.5" />
-      <span>{profile.bank_name}</span>
-      <span className="opacity-60">•</span>
-      <span>{strictnessLabels[profile.strictness]}</span>
+      <button 
+        onClick={() => hasDetailedRules && setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:opacity-90"
+      >
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4" />
+          <span className="font-semibold">{profile.bank_name}</span>
+          <span className="opacity-60">•</span>
+          <span title={strictnessDescriptions[profile.strictness]}>{strictnessLabels[profile.strictness]}</span>
+        </div>
+        {hasDetailedRules && (
+          <span className="text-[10px] opacity-60 ml-2">
+            {isExpanded ? "▲ Less" : "▼ Details"}
+          </span>
+        )}
+      </button>
+      
+      {isExpanded && hasDetailedRules && (
+        <div className="px-3 pb-3 pt-1 border-t border-current/10 space-y-2">
+          {profile.port_rules && (
+            <div className="text-[10px] space-y-0.5">
+              <div className="font-semibold uppercase tracking-wider opacity-60">Port Matching</div>
+              {profile.port_rules.strict_spelling !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Strict Spelling</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {profile.port_rules.strict_spelling ? "Required" : "Flexible"}
+                  </Badge>
+                </div>
+              )}
+              {profile.port_rules.accept_unlisted_ports !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Unlisted Ports</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {profile.port_rules.accept_unlisted_ports ? "Accepted" : "Rejected"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {profile.date_rules && (
+            <div className="text-[10px] space-y-0.5">
+              <div className="font-semibold uppercase tracking-wider opacity-60">Date Handling</div>
+              {profile.date_rules.strict_format !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Strict Format</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {profile.date_rules.strict_format ? "Required" : "Flexible"}
+                  </Badge>
+                </div>
+              )}
+              {profile.date_rules.allow_partial_dates !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Partial Dates</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {profile.date_rules.allow_partial_dates ? "Allowed" : "Not Allowed"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {profile.amount_rules?.default_tolerance_pct !== undefined && (
+            <div className="text-[10px] space-y-0.5">
+              <div className="font-semibold uppercase tracking-wider opacity-60">Amount Tolerance</div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Default</span>
+                <Badge variant="outline" className="text-[9px] px-1 h-4">
+                  ±{profile.amount_rules.default_tolerance_pct}%
+                </Badge>
+              </div>
+            </div>
+          )}
+          
+          {profile.party_rules && (
+            <div className="text-[10px] space-y-0.5">
+              <div className="font-semibold uppercase tracking-wider opacity-60">Party Name Matching</div>
+              {profile.party_rules.strict_matching !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Matching Mode</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {profile.party_rules.strict_matching ? "Exact" : "Fuzzy OK"}
+                  </Badge>
+                </div>
+              )}
+              {profile.party_rules.minimum_similarity !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Min. Similarity</span>
+                  <Badge variant="outline" className="text-[9px] px-1 h-4">
+                    {Math.round(profile.party_rules.minimum_similarity * 100)}%
+                  </Badge>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {profile.special_requirements && profile.special_requirements.length > 0 && (
+            <div className="text-[10px] space-y-1">
+              <div className="font-semibold uppercase tracking-wider opacity-60">Special Notes</div>
+              {profile.special_requirements.map((req, idx) => (
+                <div key={idx} className="flex items-start gap-1 text-muted-foreground">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 text-amber-500 flex-shrink-0" />
+                  <span>{req}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="pt-1 border-t border-current/10">
+            <p className="text-[9px] text-muted-foreground italic">
+              Bank profiles affect UCP600/ISBP745 rule interpretation
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -593,7 +733,53 @@ const safeString = (value: any): string => {
   return String(value);
 };
 
-const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: string): ReactElement[] => {
+// Field confidence indicator component
+const FieldConfidenceIndicator = ({ 
+  confidence, 
+  status 
+}: { 
+  confidence?: number; 
+  status?: 'trusted' | 'review' | 'untrusted' | 'missing' | string;
+}) => {
+  if (!confidence && !status) return null;
+  
+  const getStatusColor = () => {
+    if (status === 'trusted') return 'bg-emerald-500';
+    if (status === 'review') return 'bg-amber-500';
+    if (status === 'untrusted') return 'bg-red-500';
+    if (confidence !== undefined) {
+      if (confidence >= 0.8) return 'bg-emerald-500';
+      if (confidence >= 0.5) return 'bg-amber-500';
+      return 'bg-red-500';
+    }
+    return 'bg-gray-400';
+  };
+  
+  const getStatusLabel = () => {
+    if (status === 'trusted') return 'Verified';
+    if (status === 'review') return 'Review';
+    if (status === 'untrusted') return 'Low Confidence';
+    if (confidence !== undefined) {
+      return `${Math.round(confidence * 100)}%`;
+    }
+    return '';
+  };
+  
+  return (
+    <span 
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-white",
+        getStatusColor()
+      )}
+      title={confidence !== undefined ? `Extraction confidence: ${Math.round(confidence * 100)}%` : `Status: ${status}`}
+    >
+      {getStatusLabel()}
+    </span>
+  );
+};
+
+// Enhanced field row with confidence
+const buildFieldRows = (fields: { label: string; value: any; confidence?: number; status?: string }[], keyPrefix: string): ReactElement[] => {
   return fields
     .map((field) => {
       if (field.value === undefined || field.value === null || field.value === "") {
@@ -605,7 +791,12 @@ const buildFieldRows = (fields: { label: string; value: any }[], keyPrefix: stri
       }
       return (
         <div key={`${keyPrefix}-${field.label}`} className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">{field.label}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">{field.label}</span>
+            {(field.confidence !== undefined || field.status) && (
+              <FieldConfidenceIndicator confidence={field.confidence} status={field.status as any} />
+            )}
+          </div>
           <span className="font-medium whitespace-pre-wrap break-words">{formatted}</span>
         </div>
       );
@@ -620,10 +811,46 @@ const buildFieldRowsFromObject = (
   if (!source || typeof source !== "object") {
     return [];
   }
-  const entries = Object.entries(source).map(([key, value]) => ({
-    label: humanizeLabel(key),
-    value,
-  }));
+  
+  // Extract field details if available (for confidence/status)
+  const fieldDetails = source._field_details as Record<string, { confidence?: number; status?: string; value?: any }> | undefined;
+  const twoStageValidation = source._two_stage_validation as { fields?: Record<string, { status?: string; final_confidence?: number }> } | undefined;
+  
+  const entries = Object.entries(source)
+    .filter(([key]) => !key.startsWith('_')) // Skip internal fields
+    .map(([key, rawValue]) => {
+      // Check if value is a complex object with value/confidence
+      let value = rawValue;
+      let confidence: number | undefined;
+      let status: string | undefined;
+      
+      // Handle complex value objects: { value: "...", confidence: 0.8 }
+      if (typeof rawValue === 'object' && rawValue !== null && 'value' in rawValue) {
+        value = rawValue.value;
+        confidence = typeof rawValue.confidence === 'number' ? rawValue.confidence : undefined;
+        status = rawValue.status;
+      }
+      
+      // Try to get confidence from _field_details
+      if (fieldDetails?.[key]) {
+        confidence = confidence ?? fieldDetails[key].confidence;
+        status = status ?? fieldDetails[key].status;
+      }
+      
+      // Try to get from _two_stage_validation
+      if (twoStageValidation?.fields?.[key]) {
+        confidence = confidence ?? twoStageValidation.fields[key].final_confidence;
+        status = status ?? twoStageValidation.fields[key].status;
+      }
+      
+      return {
+        label: humanizeLabel(key),
+        value,
+        confidence,
+        status,
+      };
+    });
+    
   return buildFieldRows(entries, prefix);
 };
 
@@ -1487,38 +1714,86 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }
 
   const renderAIInsightsCard = () => {
-    if (!aiInsights?.summary) {
-      return null;
+    // Show AI insights if available
+    if (aiInsights?.summary) {
+      return (
+        <Card className="shadow-soft border border-primary/20 bg-primary/5">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/20">
+                <Lightbulb className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  AI Risk Insights
+                  <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                    AI-Powered
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Context-aware guidance generated for this LC package.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
+            {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Recommended Actions</p>
+                <ul className="space-y-2">
+                  {aiInsights.suggestions.map((suggestion, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-sm">
+                      <CheckCircle className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>{suggestion}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {aiInsights.rule_references && aiInsights.rule_references.length > 0 && (
+              <div className="pt-2 border-t border-primary/20">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">References:</span>{' '}
+                  {aiInsights.rule_references.map((ref, idx) => (
+                    <span key={idx}>
+                      {idx > 0 && ', '}
+                      {typeof ref === 'string' ? ref : ref.rule_code}
+                    </span>
+                  ))}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      );
     }
-
-    return (
-      <Card className="shadow-soft border-0">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Lightbulb className="w-5 h-5 text-primary" />
-            <div>
-              <CardTitle>AI Risk Insights</CardTitle>
-              <CardDescription>
-                Context-aware guidance generated for this LC package.
-              </CardDescription>
+    
+    // Show placeholder when issues exist but no AI insights (feature not enabled)
+    if (hasIssueCards && !aiInsights) {
+      return (
+        <Card className="shadow-soft border border-dashed border-muted-foreground/30 bg-muted/20">
+          <CardContent className="py-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-muted">
+                <Lightbulb className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-sm text-muted-foreground">AI Risk Insights Available</p>
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                  Enable AI enrichment to get context-aware explanations, fix suggestions, and UCP600/ISBP745 references for your {issueCards.length} issue{issueCards.length !== 1 ? 's' : ''}.
+                </p>
+              </div>
+              <Badge variant="outline" className="text-xs">
+                Enterprise Feature
+              </Badge>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-foreground leading-relaxed">{aiInsights.summary}</p>
-          {Array.isArray(aiInsights.suggestions) && aiInsights.suggestions.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Next Suggestions</p>
-              <ul className="list-disc list-inside text-sm text-foreground space-y-1">
-                {aiInsights.suggestions.map((suggestion, idx) => (
-                  <li key={idx}>{suggestion}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
+          </CardContent>
+        </Card>
+      );
+    }
+    
+    return null;
   };
 
   const renderReferenceIssuesCard = () => {
@@ -2236,6 +2511,67 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Two-Stage Validation Summary */}
+                {(() => {
+                  // Get two-stage validation data from any document
+                  const twoStageData = structuredResult?._two_stage_validation as { 
+                    total_fields?: number; 
+                    trusted?: number; 
+                    review?: number; 
+                    untrusted?: number;
+                  } | undefined;
+                  
+                  if (twoStageData && typeof twoStageData.total_fields === 'number') {
+                    const total = twoStageData.total_fields || 0;
+                    const trusted = twoStageData.trusted || 0;
+                    const review = twoStageData.review || 0;
+                    const untrusted = twoStageData.untrusted || 0;
+                    
+                    return (
+                      <div className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="w-5 h-5 text-primary" />
+                            <span className="font-semibold">Two-Stage Validation</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                            AI + Deterministic
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Fields are extracted by AI and then validated against reference data (ports, currencies, dates, etc.)
+                        </p>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                            <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{trusted}</div>
+                            <div className="text-xs text-muted-foreground">Trusted</div>
+                          </div>
+                          <div className="text-center p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                            <div className="text-lg font-bold text-amber-600 dark:text-amber-400">{review}</div>
+                            <div className="text-xs text-muted-foreground">Review</div>
+                          </div>
+                          <div className="text-center p-2 bg-red-500/10 rounded-lg border border-red-500/20">
+                            <div className="text-lg font-bold text-red-600 dark:text-red-400">{untrusted}</div>
+                            <div className="text-xs text-muted-foreground">Low Confidence</div>
+                          </div>
+                        </div>
+                        {review > 0 || untrusted > 0 ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            {review + untrusted} field(s) may need manual verification
+                          </p>
+                        ) : total > 0 ? (
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            All extracted fields verified against reference data
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                
                 {/* Extraction Status */}
                 <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
                   <div className="font-semibold">Extraction Status:</div>

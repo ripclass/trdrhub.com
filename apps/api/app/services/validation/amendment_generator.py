@@ -483,19 +483,22 @@ def generate_amendment_for_discrepancy(
     Returns:
         AmendmentDraft if applicable, None if amendment not possible
     """
-    rule_id = discrepancy.get("rule", "")
+    rule_id = discrepancy.get("rule", "").lower()
     title = discrepancy.get("title", "").lower()
+    message = discrepancy.get("message", "").lower()
+    combined_text = f"{title} {message} {rule_id}"
     lc_number = lc_data.get("lc_number", "UNKNOWN")
+    found = discrepancy.get("found", "") or discrepancy.get("actual", "") or ""
+    expected = discrepancy.get("expected", "") or ""
     
-    # Late shipment
-    if "late" in title and "shipment" in title:
-        # Extract dates from discrepancy
-        found = discrepancy.get("found", "")
-        expected = discrepancy.get("expected", "")
-        
-        # Parse dates from strings
-        current_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6})', expected)
-        proposed_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6})', found)
+    # =========================================================================
+    # LATE SHIPMENT / SHIPMENT DATE ISSUES
+    # =========================================================================
+    shipment_keywords = ["late shipment", "shipment date", "latest shipment", "shipped after", 
+                        "b/l date", "on board date", "shipping date"]
+    if any(kw in combined_text for kw in shipment_keywords):
+        current_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', expected)
+        proposed_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', found)
         
         if current_date_match and proposed_date_match:
             return generate_late_shipment_amendment(
@@ -504,30 +507,68 @@ def generate_amendment_for_discrepancy(
                 lc_number=lc_number,
             )
     
-    # Amount exceeds LC
-    if "amount" in title and ("exceed" in title or "mismatch" in title):
-        current_amount = lc_data.get("amount", 0)
-        currency = lc_data.get("currency", "USD")
+    # =========================================================================
+    # EXPIRY DATE ISSUES
+    # =========================================================================
+    expiry_keywords = ["expir", "validity", "lc expired", "expired", "after expiry", 
+                      "presentation after", "late presentation", "stale document"]
+    if any(kw in combined_text for kw in expiry_keywords):
+        current_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', expected)
+        proposed_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', found)
         
-        # Try to extract proposed amount from found field
-        found = discrepancy.get("found", "")
-        amount_match = re.search(r'[\d,]+\.?\d*', found.replace(",", ""))
-        if amount_match:
-            proposed_amount = float(amount_match.group().replace(",", ""))
-            return generate_amount_amendment(
-                current_amount=current_amount,
-                proposed_amount=proposed_amount,
-                currency=currency,
+        # If we can't find dates in the fields, try the LC data
+        if not current_date_match:
+            lc_expiry = lc_data.get("expiry_date") or lc_data.get("expiry")
+            if lc_expiry:
+                expected = str(lc_expiry)
+                current_date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{6})', expected)
+        
+        if current_date_match:
+            return generate_expiry_amendment(
+                current_date=current_date_match.group(1),
+                proposed_date=proposed_date_match.group(1) if proposed_date_match else "",
                 lc_number=lc_number,
             )
     
-    # Port mismatch
-    if "port" in title:
-        current_port = discrepancy.get("expected", "").split(":")[-1].strip()
-        proposed_port = discrepancy.get("found", "").split(":")[-1].strip()
-        port_type = "loading" if "loading" in title.lower() else "discharge"
+    # =========================================================================
+    # AMOUNT ISSUES
+    # =========================================================================
+    amount_keywords = ["amount", "exceed", "over-drawn", "overdrawn", "invoice total", 
+                      "value mismatch", "total value", "exceeds lc"]
+    if any(kw in combined_text for kw in amount_keywords):
+        current_amount = lc_data.get("amount") or lc_data.get("lc_amount") or 0
+        currency = lc_data.get("currency", "USD")
         
-        if current_port and proposed_port:
+        # Try to extract proposed amount from found field
+        amount_match = re.search(r'[\d,]+\.?\d*', str(found).replace(",", ""))
+        if amount_match and current_amount:
+            try:
+                proposed_amount = float(amount_match.group().replace(",", ""))
+                if proposed_amount != current_amount:
+                    return generate_amount_amendment(
+                        current_amount=float(current_amount),
+                        proposed_amount=proposed_amount,
+                        currency=currency,
+                        lc_number=lc_number,
+                    )
+            except (ValueError, TypeError):
+                pass
+    
+    # =========================================================================
+    # PORT MISMATCH
+    # =========================================================================
+    port_keywords = ["port", "loading", "discharge", "destination", "place of", 
+                    "origin port", "final destination"]
+    if any(kw in combined_text for kw in port_keywords):
+        current_port = expected.split(":")[-1].strip() if ":" in expected else expected.strip()
+        proposed_port = found.split(":")[-1].strip() if ":" in found else found.strip()
+        
+        # Determine port type
+        port_type = "loading"
+        if any(kw in combined_text for kw in ["discharge", "destination", "final"]):
+            port_type = "discharge"
+        
+        if current_port and proposed_port and current_port.lower() != proposed_port.lower():
             return generate_port_amendment(
                 port_type=port_type,
                 current_port=current_port,
@@ -535,11 +576,107 @@ def generate_amendment_for_discrepancy(
                 lc_number=lc_number,
             )
     
-    # Missing document (can't be amended, but we can suggest adding to LC)
-    if "missing" in title and "document" in title:
-        doc_name = discrepancy.get("documents", ["Unknown"])[0]
-        # This is informational only - beneficiary needs to obtain the document
-        # Amendment would be to REMOVE the requirement (requires applicant consent)
+    # =========================================================================
+    # GOODS DESCRIPTION / QUANTITY MISMATCH
+    # =========================================================================
+    goods_keywords = ["goods description", "quantity", "weight", "unit", "merchandise",
+                     "commodity", "product description"]
+    if any(kw in combined_text for kw in goods_keywords):
+        # Generate a generic goods amendment
+        if expected and found and expected.lower() != found.lower():
+            swift_text = f"""MT707 AMENDMENT TO DOCUMENTARY CREDIT
+
+:20: {lc_number}
+:21: AMENDMENT TO LC
+
+:79: PLS AMEND FLD 45A (GOODS DESCRIPTION)
+     FROM: {expected[:100].upper()}
+     TO:   {found[:100].upper()}
+     
+     GOODS DESCRIPTION/QUANTITY AMENDED AS ABOVE
+     
+     ALL OTHER TERMS AND CONDITIONS REMAIN UNCHANGED."""
+            
+            return AmendmentDraft(
+                discrepancy_type="goods_description_change",
+                field_tag="45A",
+                field_name="Description of Goods",
+                current_value=expected[:100],
+                proposed_value=found[:100],
+                swift_text=swift_text,
+                narrative=f"Amend goods description to match actual shipment",
+                estimated_fee_usd=100.0,  # Goods amendments can be more complex
+                lc_number=lc_number,
+            )
+    
+    # =========================================================================
+    # PARTIAL SHIPMENT / TRANSHIPMENT
+    # =========================================================================
+    shipment_terms_keywords = ["partial shipment", "transhipment", "transshipment"]
+    if any(kw in combined_text for kw in shipment_terms_keywords):
+        term_type = "PARTIAL SHIPMENTS" if "partial" in combined_text else "TRANSHIPMENT"
+        current_status = "NOT ALLOWED" if "not allowed" in combined_text or "prohibited" in combined_text else "ALLOWED"
+        proposed_status = "ALLOWED" if current_status == "NOT ALLOWED" else "NOT ALLOWED"
+        
+        swift_text = f"""MT707 AMENDMENT TO DOCUMENTARY CREDIT
+
+:20: {lc_number}
+:21: AMENDMENT TO LC
+
+:79: PLS AMEND {term_type}
+     FROM: {current_status}
+     TO:   {proposed_status}
+     
+     ALL OTHER TERMS AND CONDITIONS REMAIN UNCHANGED."""
+        
+        return AmendmentDraft(
+            discrepancy_type="shipment_terms_change",
+            field_tag="43P" if "partial" in combined_text else "43T",
+            field_name=term_type.title(),
+            current_value=current_status,
+            proposed_value=proposed_status,
+            swift_text=swift_text,
+            narrative=f"Change {term_type.lower()} from {current_status.lower()} to {proposed_status.lower()}",
+            estimated_fee_usd=75.0,
+            lc_number=lc_number,
+        )
+    
+    # =========================================================================
+    # INSURANCE COVERAGE
+    # =========================================================================
+    insurance_keywords = ["insurance", "coverage", "underinsured", "insurance amount"]
+    if any(kw in combined_text for kw in insurance_keywords):
+        # Try to extract insurance amount requirement
+        if expected and found:
+            swift_text = f"""MT707 AMENDMENT TO DOCUMENTARY CREDIT
+
+:20: {lc_number}
+:21: AMENDMENT TO LC
+
+:79: PLS AMEND INSURANCE REQUIREMENTS
+     
+     INSURANCE COVERAGE REQUIREMENT AMENDED
+     
+     ALL OTHER TERMS AND CONDITIONS REMAIN UNCHANGED."""
+            
+            return AmendmentDraft(
+                discrepancy_type="insurance_coverage_change",
+                field_tag="46A",
+                field_name="Insurance Requirement",
+                current_value=expected[:100] if expected else "As per LC",
+                proposed_value=found[:100] if found else "To be advised",
+                swift_text=swift_text,
+                narrative="Amend insurance coverage requirements",
+                estimated_fee_usd=75.0,
+                lc_number=lc_number,
+            )
+    
+    # =========================================================================
+    # MISSING DOCUMENT (informational - cannot be fixed via amendment)
+    # =========================================================================
+    if "missing" in combined_text and "document" in combined_text:
+        # Amendment can't add a missing document - the exporter needs to obtain it
+        # But we could suggest removing the requirement (requires applicant consent)
         return None
     
     return None

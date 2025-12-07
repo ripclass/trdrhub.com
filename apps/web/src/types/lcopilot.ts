@@ -163,10 +163,9 @@ export interface AIEnrichmentPayload {
   summary?: string;
   suggestions?: string[];
   confidence?: string;
-  rule_references?: Array<{
-    rule_code: string;
-    title?: string;
-  }>;
+  // Can be array of strings or objects with rule_code/title
+  rule_references?: string[] | Array<{ rule_code: string; title?: string }>;
+  fallback_used?: boolean;
 }
 
 export type SeverityBreakdown = SharedSeverityBreakdown;

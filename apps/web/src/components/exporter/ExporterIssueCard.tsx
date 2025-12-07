@@ -43,6 +43,82 @@ const ISBP745_DESCRIPTIONS: Record<string, string> = {
   '73': 'Data linkage principle',
 };
 
+// Tolerance source explanations
+const TOLERANCE_SOURCE_EXPLANATIONS: Record<string, { title: string; description: string; reference?: string }> = {
+  'LC_SPECIFIED': {
+    title: 'LC-Specified Tolerance',
+    description: 'This tolerance was explicitly stated in your Letter of Credit. It takes precedence over UCP600 defaults.',
+    reference: 'As per LC terms',
+  },
+  'UCP_DEFAULT': {
+    title: 'UCP600 Article 30 Tolerance',
+    description: 'Standard ±5% tolerance applies to quantity/unit price when LC uses "about" or "approximately", or when no tolerance is specified for goods sold in bulk.',
+    reference: 'UCP600 Article 30(a)',
+  },
+  'BANK_POLICY': {
+    title: 'Issuing Bank Policy',
+    description: 'The issuing bank has specific tolerance policies that differ from standard UCP600. These are applied based on the bank\'s historical practices.',
+    reference: 'Bank-specific',
+  },
+  'USER_OVERRIDE': {
+    title: 'Manual Override',
+    description: 'You have manually specified this tolerance. Please ensure it aligns with your LC terms.',
+    reference: 'User-defined',
+  },
+  'INCOTERM_ADJUSTMENT': {
+    title: 'Incoterms Adjustment',
+    description: 'Tolerance adjusted based on the Incoterm used (CIF, FOB, etc.) which affects insurance and freight calculations.',
+    reference: 'Trade practice',
+  },
+};
+
+// ToleranceExplanationBadge component with hover tooltip
+function ToleranceExplanationBadge({ tolerance }: { tolerance: { tolerance_percent: number; source: string; explicit?: boolean } }) {
+  const sourceInfo = TOLERANCE_SOURCE_EXPLANATIONS[tolerance.source] || {
+    title: 'Applied Tolerance',
+    description: `A ${tolerance.tolerance_percent}% tolerance was applied to this check.`,
+  };
+  
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge 
+            variant="outline" 
+            className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 cursor-help"
+          >
+            <Scale className="w-3 h-3" />
+            ±{tolerance.tolerance_percent}% tolerance
+            {tolerance.explicit && <CheckCircle className="w-3 h-3 ml-0.5" />}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-sm p-3">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Scale className="w-4 h-4 text-emerald-500" />
+              <p className="font-semibold text-sm">{sourceInfo.title}</p>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {sourceInfo.description}
+            </p>
+            {sourceInfo.reference && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                <BookOpen className="w-3 h-3" />
+                {sourceInfo.reference}
+              </p>
+            )}
+            {tolerance.explicit && (
+              <p className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded">
+                ✓ Explicitly stated in LC
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // Business impact mapping - what will the bank do?
 const BUSINESS_IMPACT = {
   critical: {
@@ -303,29 +379,36 @@ export function ExporterIssueCard({
         {(issue.tolerance_applied || issue.extraction_confidence !== undefined) && (
           <div className="flex flex-wrap gap-2 mt-2">
             {issue.tolerance_applied && (
-              <Badge 
-                variant="outline" 
-                className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-              >
-                <Scale className="w-3 h-3" />
-                ±{issue.tolerance_applied.tolerance_percent}% tolerance
-                <span className="opacity-60">({issue.tolerance_applied.source.replace(/_/g, ' ')})</span>
-              </Badge>
+              <ToleranceExplanationBadge tolerance={issue.tolerance_applied} />
             )}
             {issue.extraction_confidence !== undefined && issue.extraction_confidence < 0.7 && (
-              <Badge 
-                variant="outline" 
-                className={cn(
-                  "gap-1 text-xs",
-                  issue.extraction_confidence < 0.5 
-                    ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30"
-                    : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30"
-                )}
-              >
-                <AlertTriangle className="w-3 h-3" />
-                OCR: {(issue.extraction_confidence * 100).toFixed(0)}%
-                {issue.extraction_confidence < 0.5 && " - Verify manually"}
-              </Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge 
+                      variant="outline" 
+                      className={cn(
+                        "gap-1 text-xs cursor-help",
+                        issue.extraction_confidence < 0.5 
+                          ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30"
+                          : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30"
+                      )}
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      OCR: {(issue.extraction_confidence * 100).toFixed(0)}%
+                      {issue.extraction_confidence < 0.5 && " - Verify manually"}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <p className="font-medium mb-1">Extraction Confidence: {(issue.extraction_confidence * 100).toFixed(0)}%</p>
+                    <p className="text-xs text-muted-foreground">
+                      {issue.extraction_confidence < 0.5 
+                        ? "Low confidence extraction. The OCR may have misread this field. Please verify the value manually against your original document."
+                        : "Medium confidence extraction. The value is likely correct but may need verification for critical fields."}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         )}
