@@ -18,8 +18,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any
 
 from ..core.types import (
-    DocumentType, DocumentQuality, FieldConfidence, 
-    ExtractedFields, IssueSeverity
+    DocumentType, DocumentQuality, FieldConfidence, IssueSeverity
 )
 from ..core.config import get_v2_config, AIProviderConfig
 
