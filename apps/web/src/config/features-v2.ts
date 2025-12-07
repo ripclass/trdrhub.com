@@ -24,7 +24,7 @@ export const FEATURES: Record<string, FeatureConfig> = {
   USE_V2_RESULTS: {
     enabled: true,
     rolloutPercent: 0,  // Start at 0%, gradually increase
-    allowlist: [],      // Add test emails here
+    allowlist: ['imran@iec.com', 'admin@trdr.io'],  // Test users for V2
     description: 'Use V2 validation results component with citations',
   },
   
@@ -64,7 +64,7 @@ export const FEATURES: Record<string, FeatureConfig> = {
   USE_V2_API: {
     enabled: true,
     rolloutPercent: 0,
-    allowlist: [],
+    allowlist: ['imran@iec.com', 'admin@trdr.io'],  // Test users for V2
     description: 'Use /api/v2/validate endpoint',
   },
   

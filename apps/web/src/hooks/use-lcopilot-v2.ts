@@ -58,7 +58,7 @@ export function useLCopilotV2(): UseLCopilotV2Result {
       }
       
       // Call V2 API
-      const response = await fetch(`${API_BASE}/api/v2/validate`, {
+      const response = await fetch(`${API_BASE}/v2/validate`, {
         method: 'POST',
         body: formData,
         credentials: 'include',
