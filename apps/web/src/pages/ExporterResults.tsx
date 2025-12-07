@@ -454,6 +454,47 @@ export default function ExporterResults({
   console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID, jobIdProp, lcNumberProp });
   (window as any).__LIVE = FILE_ID;
   const [searchParams, setSearchParams] = useSearchParams();
+  
+  // =================================================================
+  // V2 RESULTS DETECTION - Check if V2 results are available
+  // If v2=true in URL and sessionStorage has results, show V2 UI
+  // This block is COMPLETELY SEPARATE from V1 logic below
+  // =================================================================
+  const isV2 = searchParams.get('v2') === 'true';
+  const v2SessionId = jobIdProp || searchParams.get('jobId') || searchParams.get('session');
+  
+  if (isV2 && v2SessionId) {
+    const v2ResultsKey = `v2Results_${v2SessionId}`;
+    const v2ResultsJson = sessionStorage.getItem(v2ResultsKey);
+    
+    if (v2ResultsJson) {
+      try {
+        const v2Data = JSON.parse(v2ResultsJson);
+        console.log("[V2] Rendering V2 results for session:", v2SessionId);
+        
+        // Import and render V2 component
+        const { ValidationResultsV2 } = require('@/components/v2/ValidationResultsV2');
+        
+        return (
+          <div className={embedded ? "" : "container mx-auto px-4 py-8"}>
+            <ValidationResultsV2 
+              data={v2Data}
+              onRevalidate={() => {
+                sessionStorage.removeItem(v2ResultsKey);
+                window.location.href = '/lcopilot/exporter-dashboard?section=upload';
+              }}
+            />
+          </div>
+        );
+      } catch (e) {
+        console.error("[V2] Failed to parse V2 results:", e);
+        // Fall through to V1 logic
+      }
+    }
+  }
+  // =================================================================
+  // END V2 DETECTION - V1 logic continues unchanged below
+  // =================================================================
   const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();

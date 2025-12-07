@@ -463,6 +463,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
 
       if (embedded && onComplete) {
+        // For embedded mode, also update URL with v2 param if V2 was used
+        if (useV2Pipeline) {
+          const currentParams = new URLSearchParams(window.location.search);
+          currentParams.set('v2', 'true');
+          currentParams.set('jobId', jobId);
+          window.history.replaceState({}, '', `${window.location.pathname}?${currentParams.toString()}`);
+        }
         setTimeout(() => {
           onComplete({ jobId, lcNumber: lcNumber.trim() });
         }, 800);
