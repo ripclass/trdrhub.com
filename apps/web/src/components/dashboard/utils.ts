@@ -55,11 +55,12 @@ export function formatTimeAgo(dateString: string): string {
 export function formatDuration(ms: number): string {
   if (ms <= 0) return "N/A";
   
+  const seconds = ms / 1000;
   const minutes = ms / 60000;
-  if (minutes < 1) return `${(ms / 1000).toFixed(1)}s`;
-  if (minutes < 60) return `${minutes.toFixed(1)} min`;
+  const hours = ms / 3600000;
   
-  const hours = minutes / 60;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  if (minutes < 60) return `${minutes.toFixed(1)} min`;
   return `${hours.toFixed(1)}h`;
 }
 
