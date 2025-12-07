@@ -56,6 +56,7 @@ import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilo
 import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { deriveValidationState } from "@/lib/validation/validationState";
+import { ValidationResultsV2 } from "@/components/v2/ValidationResultsV2";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -475,11 +476,9 @@ export default function ExporterResults({
     if (v2ResultsJson) {
       try {
         const v2Data = JSON.parse(v2ResultsJson);
-        console.log("[V2] Rendering V2 results for session:", v2SessionId);
+        console.log("[V2] Rendering V2 results for session:", v2SessionId, v2Data);
         
-        // Import and render V2 component
-        const { ValidationResultsV2 } = require('@/components/v2/ValidationResultsV2');
-        
+        // Use static import (ValidationResultsV2 imported at top)
         return (
           <div className={embedded ? "" : "container mx-auto px-4 py-8"}>
             <ValidationResultsV2 
