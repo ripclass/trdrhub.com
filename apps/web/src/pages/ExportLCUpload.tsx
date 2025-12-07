@@ -9,11 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate } from "@/hooks/use-lcopilot";
-import { useLCopilotV2 } from "@/hooks/use-lcopilot-v2";
-import { useFeature } from "@/config/features-v2";
 import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
@@ -81,22 +78,15 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       ? (initialLcTypeParam as 'export' | 'import')
       : 'auto';
   const [lcTypeOverride, setLcTypeOverride] = useState<'auto' | 'export' | 'import'>(initialLcTypeOverride);
-  const [useV2Pipeline, setUseV2Pipeline] = useState(false);
   
-  // V1 validation hook
+  // Validation hook
   const { validate, isLoading: isValidating, clearError } = useValidate();
-  
-  // V2 validation hook
-  const { validate: validateV2, isLoading: isValidatingV2, results: v2Results } = useLCopilotV2();
-  
-  // Check if user has V2 access
-  const hasV2Access = useFeature('USE_V2_API');
   
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
   const { checkLCExists } = useVersions();
   
-  // Combined loading state
-  const isProcessing = isValidating || isValidatingV2;
+  // Loading state
+  const isProcessing = isValidating;
 
   // Load draft if draftId is provided in URL params
   useEffect(() => {
@@ -402,7 +392,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       setShowRateLimit(false);
 
       toast({
-        title: useV2Pipeline ? "Starting V2 Validation" : "Starting Document Validation",
+        title: "Starting Document Validation",
         description: "Uploading documents and checking compliance...",
       });
 
@@ -411,51 +401,19 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       console.log('🏷️  LC Number:', lcNumber.trim());
       console.log('📋 Document Tags:', documentTags);
       console.log('⚙️  LC Type Override:', lcTypeOverride);
-      console.log('🚀 Using V2 Pipeline:', useV2Pipeline);
 
-      let jobId: string;
+      // Validate using V1 API
+      const response = await validate({
+        files,
+        lcNumber: lcNumber.trim(),
+        notes: notes.trim() || undefined,
+        documentTags: documentTags,
+        userType: "exporter",
+        workflowType: "export-lc-upload",
+        lcTypeOverride,
+      });
       
-      if (useV2Pipeline && hasV2Access) {
-        // Use V2 API
-        console.log('🔬 Using V2 validation pipeline');
-        const v2Response = await validateV2(files, {
-          lcNumber: lcNumber.trim(),
-          userType: 'exporter',
-        });
-        
-        // Hook normalizes snake_case to camelCase
-        jobId = v2Response.sessionId;
-        console.log('✅ V2 Validation complete, sessionId:', jobId);
-        
-        if (!jobId) {
-          // Fallback to snake_case if normalization failed
-          jobId = (v2Response as any).session_id;
-          console.warn('⚠️ Using fallback session_id:', jobId);
-        }
-        
-        if (!jobId) {
-          console.error('❌ V2 response missing session_id:', v2Response);
-          throw new Error('V2 validation returned no session ID');
-        }
-        
-        // Store V2 results AND mode marker in sessionStorage
-        sessionStorage.setItem(`v2Results_${jobId}`, JSON.stringify(v2Response));
-        sessionStorage.setItem(`v2Mode_${jobId}`, 'true');
-        console.log('📦 V2 results stored in sessionStorage:', `v2Results_${jobId}`);
-      } else {
-        // Use V1 API
-        const response = await validate({
-          files,
-          lcNumber: lcNumber.trim(),
-          notes: notes.trim() || undefined,
-          documentTags: documentTags,
-          userType: "exporter",
-          workflowType: "export-lc-upload",
-          lcTypeOverride,
-        });
-        
-        jobId = response.jobId || response.job_id;
-      }
+      const jobId = response.jobId || response.job_id;
       
       console.log('✅ Validation started, jobId:', jobId);
 
@@ -477,17 +435,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
 
       if (embedded && onComplete) {
-        // V2 mode is tracked via sessionStorage (v2Mode_${jobId})
-        // So embedded mode doesn't need URL param manipulation
         setTimeout(() => {
           onComplete({ jobId, lcNumber: lcNumber.trim() });
         }, 800);
       } else {
-        // Navigate with v2 flag if using V2 pipeline
-        const v2Param = useV2Pipeline ? '&v2=true' : '';
         console.log('🚀 Navigating to results page with jobId:', jobId);
         setTimeout(() => {
-          navigate(`/lcopilot/results/${jobId}?lc=${encodeURIComponent(lcNumber.trim())}${v2Param}`);
+          navigate(`/lcopilot/results/${jobId}?lc=${encodeURIComponent(lcNumber.trim())}`);
         }, 1500);
       }
 
@@ -917,23 +871,6 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                   )}
                 </div>
                 <div className="flex items-center gap-4">
-                  {/* V2 Toggle - Only shown for users with V2 access */}
-                  {hasV2Access && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-purple-200">
-                      <Switch
-                        id="v2-toggle"
-                        checked={useV2Pipeline}
-                        onCheckedChange={setUseV2Pipeline}
-                        className="data-[state=checked]:bg-purple-600"
-                      />
-                      <Label htmlFor="v2-toggle" className="text-sm font-medium cursor-pointer">
-                        V2 Pipeline
-                        <span className="ml-1.5 text-xs text-purple-600 font-normal">
-                          (2,159 rules)
-                        </span>
-                      </Label>
-                    </div>
-                  )}
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
@@ -945,20 +882,15 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                     <Button
                       onClick={handleProcessLC}
                       disabled={!isReadyToProcess}
-                      className={cn(
-                        "hover:opacity-90",
-                        useV2Pipeline 
-                          ? "bg-gradient-to-r from-purple-600 to-blue-600" 
-                          : "bg-gradient-exporter"
-                      )}
+                      className="hover:opacity-90 bg-gradient-exporter"
                     >
                       {isProcessing ? (
                         <>
                           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                          {useV2Pipeline ? 'V2 Validation...' : 'Validating...'}
+                          Validating...
                         </>
                       ) : (
-                        useV2Pipeline ? "Validate (V2)" : "Validate Documents"
+                        "Validate Documents"
                       )}
                     </Button>
                   </div>
@@ -970,7 +902,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                   <div className="flex items-center gap-3 mb-3">
                     <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
                     <span className="font-medium text-exporter">
-                      {useV2Pipeline ? 'Running V2 validation with 2,159 rules...' : 'Validating your documents...'}
+                      Validating your documents...
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">

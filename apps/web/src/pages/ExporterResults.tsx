@@ -56,7 +56,6 @@ import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilo
 import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { deriveValidationState } from "@/lib/validation/validationState";
-import { ValidationResultsV2 } from "@/components/v2/ValidationResultsV2";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -455,51 +454,7 @@ export default function ExporterResults({
   console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID, jobIdProp, lcNumberProp });
   (window as any).__LIVE = FILE_ID;
   const [searchParams, setSearchParams] = useSearchParams();
-  
-  // =================================================================
-  // V2 RESULTS DETECTION - Check if V2 results are available
-  // Check sessionStorage for V2 mode marker OR v2=true in URL
-  // This block is COMPLETELY SEPARATE from V1 logic below
-  // =================================================================
   const params = useParams<{ jobId?: string }>();
-  const v2SessionId = jobIdProp || searchParams.get('jobId') || searchParams.get('session') || params.jobId;
-  const isV2FromUrl = searchParams.get('v2') === 'true';
-  const isV2FromStorage = v2SessionId ? sessionStorage.getItem(`v2Mode_${v2SessionId}`) === 'true' : false;
-  const isV2 = isV2FromUrl || isV2FromStorage;
-  
-  if (isV2 && v2SessionId) {
-    const v2ResultsKey = `v2Results_${v2SessionId}`;
-    const v2ResultsJson = sessionStorage.getItem(v2ResultsKey);
-    
-    console.log("[V2] Checking for V2 results:", { v2SessionId, isV2FromUrl, isV2FromStorage, hasResults: !!v2ResultsJson });
-    
-    if (v2ResultsJson) {
-      try {
-        const v2Data = JSON.parse(v2ResultsJson);
-        console.log("[V2] Rendering V2 results for session:", v2SessionId, v2Data);
-        
-        // Use static import (ValidationResultsV2 imported at top)
-        return (
-          <div className={embedded ? "" : "container mx-auto px-4 py-8"}>
-            <ValidationResultsV2 
-              data={v2Data}
-              onRevalidate={() => {
-                sessionStorage.removeItem(v2ResultsKey);
-                sessionStorage.removeItem(`v2Mode_${v2SessionId}`);
-                window.location.href = '/lcopilot/exporter-dashboard?section=upload';
-              }}
-            />
-          </div>
-        );
-      } catch (e) {
-        console.error("[V2] Failed to parse V2 results:", e);
-        // Fall through to V1 logic
-      }
-    }
-  }
-  // =================================================================
-  // END V2 DETECTION - V1 logic continues unchanged below
-  // =================================================================
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();

@@ -57,8 +57,7 @@ from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
 from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions
 
-# V2 Pipeline (parallel to V1 - activated via feature flag)
-from app.v2.routers import validate_router as validate_v2_router
+# V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
@@ -271,7 +270,7 @@ app.include_router(doc_generator_advanced.router)  # Doc generator signatures, t
 app.include_router(lc_builder.router)  # LC Application Builder (wizard, clauses, MT700 export)
 app.include_router(hs_code.router)  # HS Code Finder (AI classification, duty calculator, FTA checker)
 app.include_router(sanctions.router)  # Sanctions Screener (party, vessel, goods screening)
-app.include_router(validate_v2_router)  # V2 Validation Pipeline (<30s, 99% accuracy, citations)
+# V2 router removed - V1 enhanced with bank-grade features
 app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack, bank submissions)
 app.include_router(jobs_public.router)  # Public validation job status/results endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
@@ -378,7 +377,6 @@ if not settings.USE_STUBS:
             "/auth/register",
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
             "/api/validate",  # TEMPORARY - Exempt for demo mode (validation works without auth)
-            "/v2",  # V2 API uses Bearer token auth, not session cookies
             "/price-verify",  # Price verification API (public tool)
             "/members/admin/seed-existing-users",  # One-time setup endpoint
         },
