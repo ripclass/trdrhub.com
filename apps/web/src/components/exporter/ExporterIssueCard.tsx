@@ -10,38 +10,9 @@ import type { IssueCard } from '@/types/lcopilot';
 import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// UCP600 article descriptions for tooltips (from V2)
-const UCP600_DESCRIPTIONS: Record<string, string> = {
-  '6': 'Availability, Expiry Date and Place for Presentation',
-  '6(d)': 'Documents must be presented within expiry date',
-  '14': 'Standard for Examination of Documents',
-  '14(a)': 'Banks must examine presentation to determine compliance on face',
-  '14(b)': 'Bank has maximum 5 banking days for examination',
-  '14(c)': 'Data in documents must not conflict',
-  '14(d)': 'Data need not be identical but must not conflict',
-  '16': 'Discrepant Documents, Waiver and Notice',
-  '18': 'Commercial Invoice',
-  '18(a)': 'Invoice must appear to be issued by beneficiary',
-  '18(b)': 'Invoice must be made out in name of applicant',
-  '18(c)': 'Description of goods must correspond with LC',
-  '20': 'Bill of Lading',
-  '20(a)': 'B/L requirements (carrier name, signature, dates)',
-  '27': 'Clean Transport Document',
-  '28': 'Insurance Document and Coverage',
-  '28(b)': 'Insurance coverage must be at least 110% of CIF/CIP value',
-  '29': 'Extension of Expiry Date or Period for Presentation',
-  '30': 'Tolerance in Credit Amount, Quantity and Unit Prices',
-};
-
-// ISBP745 paragraph descriptions
-const ISBP745_DESCRIPTIONS: Record<string, string> = {
-  'A14': 'Documents must be presented within LC validity',
-  'A27': 'Expiry date considerations',
-  'C3': 'Invoice amount and currency',
-  'E12': 'B/L requirements and clauses',
-  '72': 'Goods description requirements',
-  '73': 'Data linkage principle',
-};
+// NOTE: UCP600 and ISBP745 descriptions are now provided by the backend
+// via issue.ucpDescription and issue.isbpDescription fields.
+// See: apps/api/app/constants/compliance_references.py
 
 // Tolerance source explanations
 const TOLERANCE_SOURCE_EXPLANATIONS: Record<string, { title: string; description: string; reference?: string }> = {
@@ -309,11 +280,7 @@ export function ExporterIssueCard({
                     <TooltipContent className="max-w-xs">
                       <p className="font-medium">{issue.ucpReference}</p>
                       <p className="text-xs text-slate-400">
-                        {(() => {
-                          const artMatch = issue.ucpReference?.match(/Article\s*(\d+[a-z]?(?:\([a-z]\))?)/i);
-                          const art = artMatch ? artMatch[1] : '';
-                          return UCP600_DESCRIPTIONS[art] || 'ICC Uniform Customs and Practice for Documentary Credits';
-                        })()}
+                        {issue.ucpDescription || 'ICC Uniform Customs and Practice for Documentary Credits'}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -331,11 +298,7 @@ export function ExporterIssueCard({
                     <TooltipContent className="max-w-xs">
                       <p className="font-medium">{issue.isbpReference}</p>
                       <p className="text-xs text-slate-400">
-                        {(() => {
-                          const paraMatch = issue.isbpReference?.match(/([A-Z]?\d+)/);
-                          const para = paraMatch ? paraMatch[1] : '';
-                          return ISBP745_DESCRIPTIONS[para] || 'ICC International Standard Banking Practice';
-                        })()}
+                        {issue.isbpDescription || 'ICC International Standard Banking Practice'}
                       </p>
                     </TooltipContent>
                   </Tooltip>

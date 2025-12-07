@@ -140,6 +140,7 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
+from app.constants.compliance_references import get_ucp_description, get_isbp_description
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
     ExtractedField,
@@ -913,6 +914,8 @@ async def validate_doc(
         if v2_issues:
             for issue in v2_issues:
                 issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                ucp_ref = issue_dict.get("ucp_reference")
+                isbp_ref = issue_dict.get("isbp_reference")
                 failed_results.append({
                     "rule": issue_dict.get("rule", "V2-ISSUE"),
                     "title": issue_dict.get("title", "Validation Issue"),
@@ -923,7 +926,10 @@ async def validate_doc(
                     "found": issue_dict.get("found", issue_dict.get("actual", "")),
                     "suggested_fix": issue_dict.get("suggested_fix", issue_dict.get("suggestion", "")),
                     "documents": issue_dict.get("documents", []),
-                    "ucp_reference": issue_dict.get("ucp_reference"),
+                    "ucp_reference": ucp_ref,
+                    "isbp_reference": isbp_ref,
+                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
                 })
@@ -936,6 +942,8 @@ async def validate_doc(
                 # Handle both CrossDocIssue and AIValidationIssue formats
                 # CrossDocIssue uses: "rule", "ucp_article", "actual"
                 # AIValidationIssue uses: "rule", "ucp_reference", "actual"
+                ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
+                isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
                 failed_results.append({
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "CROSSDOC-ISSUE",
                     "title": issue_dict.get("title", "Cross-Document Issue"),
@@ -946,8 +954,10 @@ async def validate_doc(
                     "found": issue_dict.get("actual") or issue_dict.get("found") or "",
                     "suggested_fix": issue_dict.get("suggestion") or issue_dict.get("suggested_fix") or "",
                     "documents": issue_dict.get("documents") or issue_dict.get("document_names") or [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
-                    "ucp_reference": issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or "",
-                    "isbp_reference": issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or "",
+                    "ucp_reference": ucp_ref,
+                    "isbp_reference": isbp_ref,
+                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                     "auto_generated": issue_dict.get("auto_generated", False),

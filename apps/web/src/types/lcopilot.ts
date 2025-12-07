@@ -137,9 +137,11 @@ export interface IssueCard {
   suggestion?: string;
   field?: string;
   ucpReference?: string;
+  ucpDescription?: string;
   ruleset_domain?: string;
   auto_generated?: boolean;
   isbpReference?: string;
+  isbpDescription?: string;
   // Tolerance and confidence metadata
   tolerance_applied?: {
     tolerance_percent: number;

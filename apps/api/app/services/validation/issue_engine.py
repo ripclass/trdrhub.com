@@ -29,6 +29,7 @@ from app.services.extraction.lc_baseline import (
 )
 from app.rules.external.rule_executor import RuleExecutor, ExecutionSummary
 from app.rules.external.rule_schema import RuleCategory
+from app.constants.compliance_references import get_ucp_description, get_isbp_description
 
 
 logger = logging.getLogger(__name__)
@@ -81,9 +82,18 @@ class Issue:
     # Compliance references
     ucp_reference: Optional[str] = None
     isbp_reference: Optional[str] = None
+    ucp_description: Optional[str] = None
+    isbp_description: Optional[str] = None
     
     # Timestamps
     created_at: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self):
+        """Auto-populate descriptions from references if not provided."""
+        if self.ucp_reference and not self.ucp_description:
+            self.ucp_description = get_ucp_description(self.ucp_reference)
+        if self.isbp_reference and not self.isbp_description:
+            self.isbp_description = get_isbp_description(self.isbp_reference)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response."""
@@ -107,6 +117,8 @@ class Issue:
             "auto_generated": self.auto_generated,
             "ucp_reference": self.ucp_reference,
             "isbp_reference": self.isbp_reference,
+            "ucp_description": self.ucp_description,
+            "isbp_description": self.isbp_description,
             "passed": False,  # Issues are always failed checks
         }
 
