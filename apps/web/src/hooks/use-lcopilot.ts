@@ -9,8 +9,13 @@ import type {
   ReferenceIssue,
   AIEnrichmentPayload,
 } from '@/types/lcopilot';
+// Schema-first validation (runtime type checking)
+import { ValidationResultsSchema, safeValidateApiResponse } from '@shared/types';
 
 const lcopilotLogger = logger.createLogger('LCopilot');
+
+// Enable runtime schema validation in development
+const ENABLE_SCHEMA_VALIDATION = import.meta.env.DEV || import.meta.env.VITE_ENABLE_SCHEMA_VALIDATION === 'true';
 
 export interface ValidationRequest {
   files: File[];
@@ -321,6 +326,19 @@ export const useResults = () => {
       lcopilotLogger.debug('API response received', { jobId });
       
       const normalized: ValidationResults = buildValidationResponse(payload);
+
+      // Schema-first validation: verify response matches expected contract
+      // This runs in development to catch API contract drift early
+      if (ENABLE_SCHEMA_VALIDATION) {
+        const validationResult = safeValidateApiResponse(
+          ValidationResultsSchema,
+          normalized,
+          `results/${jobId}`
+        );
+        if (!validationResult) {
+          lcopilotLogger.warn('Schema validation warning - response may have unexpected shape', { jobId });
+        }
+      }
 
       setResults(normalized);
       lcopilotLogger.debug('Results fetched', { jobId, issues: normalized.issues?.length ?? 0 });

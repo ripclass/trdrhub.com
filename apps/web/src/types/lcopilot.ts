@@ -7,7 +7,35 @@ import type {
   SeverityBreakdown as SharedSeverityBreakdown,
   TimelineEntry as SharedTimelineEntry,
   DocumentRiskEntry as SharedDocumentRiskEntry,
+  // New schema-first types from shared-types
+  IssueCard as SharedIssueCard,
+  ReferenceIssue as SharedReferenceIssue,
+  AIEnrichmentPayload as SharedAIEnrichmentPayload,
+  GateResult as SharedGateResult,
+  ExtractionSummary as SharedExtractionSummary,
+  LCBaseline as SharedLCBaseline,
+  SanctionsScreeningIssue as SharedSanctionsScreeningIssue,
+  SanctionsScreeningSummary as SharedSanctionsScreeningSummary,
+  ValidationDocument as SharedValidationDocument,
+  ValidationResults as SharedValidationResults,
+  ToleranceApplied as SharedToleranceApplied,
 } from '@shared/types';
+
+// Re-export schema-first types for use across the app
+// These are now the source of truth from shared-types
+export type {
+  SharedIssueCard,
+  SharedReferenceIssue,
+  SharedAIEnrichmentPayload,
+  SharedGateResult,
+  SharedExtractionSummary,
+  SharedLCBaseline,
+  SharedSanctionsScreeningIssue,
+  SharedSanctionsScreeningSummary,
+  SharedValidationDocument,
+  SharedValidationResults,
+  SharedToleranceApplied,
+};
 
 export type OptionEDocument = {
   document_id: string;
@@ -39,47 +67,11 @@ export type OptionELCStructured = {
   };
 };
 
-// V2 Validation Pipeline Types
-export interface GateResult {
-  status: 'passed' | 'blocked' | 'warning';
-  can_proceed: boolean;
-  block_reason?: string | null;
-  completeness: number; // 0-100 percentage
-  critical_completeness: number; // 0-100 percentage
-  missing_critical: string[];
-  missing_required?: string[];
-  blocking_issues?: Array<Record<string, unknown>>;
-  warning_issues?: Array<Record<string, unknown>>;
-}
+// V2 Validation Pipeline Types - now using schema-first shared types
+export type GateResult = SharedGateResult;
+export type ExtractionSummary = SharedExtractionSummary;
 
-export interface ExtractionSummary {
-  completeness: number; // 0-100 percentage
-  critical_completeness: number; // 0-100 percentage
-  missing_critical: string[];
-  missing_required?: string[];
-  total_fields?: number;
-  extracted_fields?: number;
-}
-
-export interface LCBaseline {
-  lc_number?: string | null;
-  lc_type?: string | null;
-  applicant?: string | null;
-  beneficiary?: string | null;
-  issuing_bank?: string | null;
-  advising_bank?: string | null;
-  amount?: string | null;
-  currency?: string | null;
-  expiry_date?: string | null;
-  issue_date?: string | null;
-  latest_shipment?: string | null;
-  port_of_loading?: string | null;
-  port_of_discharge?: string | null;
-  goods_description?: string | null;
-  incoterm?: string | null;
-  extraction_completeness: number;
-  critical_completeness: number;
-}
+export type LCBaseline = SharedLCBaseline;
 
 export type OptionEStructuredResult = StructuredResultPayload & {
   version: 'structured_result_v1';
@@ -122,53 +114,11 @@ export type OptionEStructuredResult = StructuredResultPayload & {
   audit_trail_id?: string | null;
 };
 
-export interface IssueCard {
-  id: string;
-  rule?: string;
-  title: string;
-  description: string;
-  severity: string;
-  priority?: string;
-  documentName?: string;
-  documentType?: string;
-  documents?: string[];
-  expected?: string;
-  actual?: string;
-  suggestion?: string;
-  field?: string;
-  ucpReference?: string;
-  ucpDescription?: string;
-  ruleset_domain?: string;
-  auto_generated?: boolean;
-  isbpReference?: string;
-  isbpDescription?: string;
-  // Tolerance and confidence metadata
-  tolerance_applied?: {
-    tolerance_percent: number;
-    source: string;
-    explicit: boolean;
-  };
-  extraction_confidence?: number;
-  amendment_available?: boolean;
-}
-
-export interface ReferenceIssue {
-  rule?: string;
-  title?: string;
-  severity?: string;
-  message?: string;
-  article?: string;
-  ruleset_domain?: string;
-}
-
-export interface AIEnrichmentPayload {
-  summary?: string;
-  suggestions?: string[];
-  confidence?: string;
-  // Can be array of strings or objects with rule_code/title
-  rule_references?: string[] | Array<{ rule_code: string; title?: string }>;
-  fallback_used?: boolean;
-}
+// Use schema-first types from shared-types package
+// These are now validated with Zod schemas at runtime
+export type IssueCard = SharedIssueCard;
+export type ReferenceIssue = SharedReferenceIssue;
+export type AIEnrichmentPayload = SharedAIEnrichmentPayload;
 
 export type SeverityBreakdown = SharedSeverityBreakdown;
 
@@ -201,25 +151,9 @@ export type StructuredResultAnalytics = SharedStructuredResultAnalytics;
 
 export type StructuredResultPayload = SharedStructuredResultPayload;
 
-// Sanctions Screening Types
-export interface SanctionsScreeningIssue {
-  party: string | null;
-  type: string | null;
-  status: 'match' | 'potential_match' | 'clear';
-  score: number | null;
-}
-
-export interface SanctionsScreeningSummary {
-  screened: boolean;
-  parties_screened: number;
-  matches: number;
-  potential_matches: number;
-  clear: number;
-  should_block: boolean;
-  screened_at: string;
-  issues: SanctionsScreeningIssue[];
-  error?: string;
-}
+// Sanctions Screening Types - now using schema-first shared types
+export type SanctionsScreeningIssue = SharedSanctionsScreeningIssue;
+export type SanctionsScreeningSummary = SharedSanctionsScreeningSummary;
 
 export interface ValidationResults {
   jobId: string;

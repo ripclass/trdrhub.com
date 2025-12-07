@@ -328,6 +328,246 @@ export const ErrorResponseSchema = z.object({
 });
 
 // ============================================================================
+// LCopilot Issue Card Schema
+// ============================================================================
+
+export const ToleranceAppliedSchema = z.object({
+  tolerance_percent: z.number(),
+  source: z.string(),
+  explicit: z.boolean(),
+});
+export type ToleranceApplied = z.infer<typeof ToleranceAppliedSchema>;
+
+export const IssueCardSchema = z.object({
+  id: z.string(),
+  rule: z.string().optional(),
+  title: z.string(),
+  description: z.string(),
+  severity: z.string(),
+  priority: z.string().optional(),
+  documentName: z.string().optional(),
+  documentType: z.string().optional(),
+  documents: z.array(z.string()).optional(),
+  expected: z.string().optional(),
+  actual: z.string().optional(),
+  suggestion: z.string().optional(),
+  field: z.string().optional(),
+  ucpReference: z.string().optional().nullable(),
+  ucpDescription: z.string().optional().nullable(),
+  ruleset_domain: z.string().optional(),
+  auto_generated: z.boolean().optional(),
+  isbpReference: z.string().optional().nullable(),
+  isbpDescription: z.string().optional().nullable(),
+  tolerance_applied: ToleranceAppliedSchema.optional(),
+  extraction_confidence: z.number().optional(),
+  amendment_available: z.boolean().optional(),
+});
+export type IssueCard = z.infer<typeof IssueCardSchema>;
+
+export const ReferenceIssueSchema = z.object({
+  rule: z.string().optional(),
+  title: z.string().optional(),
+  severity: z.string().optional(),
+  message: z.string().optional(),
+  article: z.string().optional(),
+  ruleset_domain: z.string().optional(),
+});
+export type ReferenceIssue = z.infer<typeof ReferenceIssueSchema>;
+
+// ============================================================================
+// AI Enrichment Schema
+// ============================================================================
+
+export const RuleReferenceSchema = z.object({
+  rule_code: z.string(),
+  title: z.string().optional(),
+});
+export type RuleReference = z.infer<typeof RuleReferenceSchema>;
+
+export const AIEnrichmentPayloadSchema = z.object({
+  summary: z.string().optional(),
+  suggestions: z.array(z.string()).optional(),
+  confidence: z.string().optional(),
+  rule_references: z.union([
+    z.array(z.string()),
+    z.array(RuleReferenceSchema),
+  ]).optional(),
+  fallback_used: z.boolean().optional(),
+});
+export type AIEnrichmentPayload = z.infer<typeof AIEnrichmentPayloadSchema>;
+
+// ============================================================================
+// V2 Validation Pipeline Schemas
+// ============================================================================
+
+export const GateResultSchema = z.object({
+  status: z.enum(['passed', 'blocked', 'warning']),
+  can_proceed: z.boolean(),
+  block_reason: z.string().optional().nullable(),
+  completeness: z.number(),
+  critical_completeness: z.number(),
+  missing_critical: z.array(z.string()),
+  missing_required: z.array(z.string()).optional(),
+  blocking_issues: z.array(z.record(z.unknown())).optional(),
+  warning_issues: z.array(z.record(z.unknown())).optional(),
+});
+export type GateResult = z.infer<typeof GateResultSchema>;
+
+export const ExtractionSummarySchema = z.object({
+  completeness: z.number(),
+  critical_completeness: z.number(),
+  missing_critical: z.array(z.string()),
+  missing_required: z.array(z.string()).optional(),
+  total_fields: z.number().optional(),
+  extracted_fields: z.number().optional(),
+});
+export type ExtractionSummary = z.infer<typeof ExtractionSummarySchema>;
+
+export const LCBaselineSchema = z.object({
+  lc_number: z.string().optional().nullable(),
+  lc_type: z.string().optional().nullable(),
+  applicant: z.string().optional().nullable(),
+  beneficiary: z.string().optional().nullable(),
+  issuing_bank: z.string().optional().nullable(),
+  advising_bank: z.string().optional().nullable(),
+  amount: z.string().optional().nullable(),
+  currency: z.string().optional().nullable(),
+  expiry_date: z.string().optional().nullable(),
+  issue_date: z.string().optional().nullable(),
+  latest_shipment: z.string().optional().nullable(),
+  port_of_loading: z.string().optional().nullable(),
+  port_of_discharge: z.string().optional().nullable(),
+  goods_description: z.string().optional().nullable(),
+  incoterm: z.string().optional().nullable(),
+  extraction_completeness: z.number(),
+  critical_completeness: z.number(),
+});
+export type LCBaseline = z.infer<typeof LCBaselineSchema>;
+
+// ============================================================================
+// Sanctions Screening Schemas
+// ============================================================================
+
+export const SanctionsScreeningIssueSchema = z.object({
+  party: z.string().nullable(),
+  type: z.string().nullable(),
+  status: z.enum(['match', 'potential_match', 'clear']),
+  score: z.number().nullable(),
+});
+export type SanctionsScreeningIssue = z.infer<typeof SanctionsScreeningIssueSchema>;
+
+export const SanctionsScreeningSummarySchema = z.object({
+  screened: z.boolean(),
+  parties_screened: z.number(),
+  matches: z.number(),
+  potential_matches: z.number(),
+  clear: z.number(),
+  should_block: z.boolean(),
+  screened_at: z.string(),
+  issues: z.array(SanctionsScreeningIssueSchema),
+  error: z.string().optional(),
+});
+export type SanctionsScreeningSummary = z.infer<typeof SanctionsScreeningSummarySchema>;
+
+// ============================================================================
+// Validation Document Schema (Frontend-specific normalization)
+// ============================================================================
+
+export const ValidationDocumentSchema = z.object({
+  id: z.string(),
+  documentId: z.string(),
+  name: z.string(),
+  filename: z.string(),
+  type: z.string(),
+  typeKey: z.string().optional(),
+  extractionStatus: z.string(),
+  status: z.enum(['success', 'warning', 'error']),
+  issuesCount: z.number(),
+  extractedFields: z.record(z.unknown()),
+});
+export type ValidationDocument = z.infer<typeof ValidationDocumentSchema>;
+
+// ============================================================================
+// Full Validation Results Schema (LCopilot Response)
+// ============================================================================
+
+export const ValidationResultsSchema = z.object({
+  jobId: z.string(),
+  summary: ProcessingSummarySchema,
+  documents: z.array(ValidationDocumentSchema),
+  issues: z.array(IssueCardSchema),
+  analytics: StructuredResultAnalyticsSchema,
+  timeline: z.array(StructuredTimelineEntrySchema),
+  structured_result: StructuredResultSchema,
+  lc_structured: z.record(z.unknown()).optional().nullable(),
+  ai_enrichment: AIEnrichmentPayloadSchema.optional().nullable(),
+  telemetry: z.record(z.unknown()).optional(),
+  reference_issues: z.array(ReferenceIssueSchema).optional(),
+  
+  // V2 Validation Pipeline additions
+  validationBlocked: z.boolean().optional(),
+  validationStatus: z.string().optional(),
+  gateResult: GateResultSchema.optional().nullable(),
+  extractionSummary: ExtractionSummarySchema.optional().nullable(),
+  lcBaseline: LCBaselineSchema.optional().nullable(),
+  complianceLevel: z.string().optional(),
+  complianceCapReason: z.string().optional().nullable(),
+  
+  // Sanctions Screening additions
+  sanctionsScreening: SanctionsScreeningSummarySchema.optional().nullable(),
+  sanctionsBlocked: z.boolean().optional(),
+  sanctionsBlockReason: z.string().optional().nullable(),
+});
+export type ValidationResults = z.infer<typeof ValidationResultsSchema>;
+
+// ============================================================================
+// API Response Validation Helper
+// ============================================================================
+
+/**
+ * Safely parse and validate an API response against a Zod schema.
+ * Returns the parsed data or throws a detailed error.
+ */
+export function validateApiResponse<T>(
+  schema: z.ZodType<T>,
+  data: unknown,
+  context?: string
+): T {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    const errorMessage = result.error.errors
+      .map((e) => `${e.path.join('.')}: ${e.message}`)
+      .join('; ');
+    throw new Error(
+      `API Response Validation Failed${context ? ` (${context})` : ''}: ${errorMessage}`
+    );
+  }
+  return result.data;
+}
+
+/**
+ * Safely parse API response, returning null on failure instead of throwing.
+ * Logs validation errors to console in development.
+ */
+export function safeValidateApiResponse<T>(
+  schema: z.ZodType<T>,
+  data: unknown,
+  context?: string
+): T | null {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        `API Response Validation Warning${context ? ` (${context})` : ''}:`,
+        result.error.errors
+      );
+    }
+    return null;
+  }
+  return result.data;
+}
+
+// ============================================================================
 // Schema Collections for Export
 // ============================================================================
 
@@ -372,4 +612,23 @@ export const schemas = {
   StructuredResultAnalytics: StructuredResultAnalyticsSchema,
   StructuredResultTimelineEntry: TimelineEntrySchema,
   StructuredResult: StructuredResultSchema,
+  
+  // LCopilot-specific schemas
+  IssueCard: IssueCardSchema,
+  ReferenceIssue: ReferenceIssueSchema,
+  AIEnrichmentPayload: AIEnrichmentPayloadSchema,
+  ToleranceApplied: ToleranceAppliedSchema,
+  
+  // V2 Validation Pipeline
+  GateResult: GateResultSchema,
+  ExtractionSummary: ExtractionSummarySchema,
+  LCBaseline: LCBaselineSchema,
+  
+  // Sanctions Screening
+  SanctionsScreeningIssue: SanctionsScreeningIssueSchema,
+  SanctionsScreeningSummary: SanctionsScreeningSummarySchema,
+  
+  // Full validation results
+  ValidationDocument: ValidationDocumentSchema,
+  ValidationResults: ValidationResultsSchema,
 } as const;

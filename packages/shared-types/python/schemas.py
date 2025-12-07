@@ -339,6 +339,170 @@ class ErrorResponse(BaseModel):
 
 
 # ============================================================================
+# LCopilot Issue Card Types
+# ============================================================================
+
+class ToleranceApplied(BaseModel):
+    tolerance_percent: float
+    source: str
+    explicit: bool
+
+
+class IssueCard(BaseModel):
+    id: str
+    rule: Optional[str] = None
+    title: str
+    description: str
+    severity: str
+    priority: Optional[str] = None
+    documentName: Optional[str] = None
+    documentType: Optional[str] = None
+    documents: Optional[List[str]] = None
+    expected: Optional[str] = None
+    actual: Optional[str] = None
+    suggestion: Optional[str] = None
+    field: Optional[str] = None
+    ucpReference: Optional[str] = None
+    ucpDescription: Optional[str] = None
+    ruleset_domain: Optional[str] = None
+    auto_generated: Optional[bool] = None
+    isbpReference: Optional[str] = None
+    isbpDescription: Optional[str] = None
+    tolerance_applied: Optional[ToleranceApplied] = None
+    extraction_confidence: Optional[float] = None
+    amendment_available: Optional[bool] = None
+
+
+class ReferenceIssue(BaseModel):
+    rule: Optional[str] = None
+    title: Optional[str] = None
+    severity: Optional[str] = None
+    message: Optional[str] = None
+    article: Optional[str] = None
+    ruleset_domain: Optional[str] = None
+
+
+# ============================================================================
+# AI Enrichment Types
+# ============================================================================
+
+class RuleReference(BaseModel):
+    rule_code: str
+    title: Optional[str] = None
+
+
+class AIEnrichmentPayload(BaseModel):
+    summary: Optional[str] = None
+    suggestions: Optional[List[str]] = None
+    confidence: Optional[str] = None
+    rule_references: Optional[List[Any]] = None  # Can be strings or RuleReference objects
+    fallback_used: Optional[bool] = None
+
+
+# ============================================================================
+# V2 Validation Pipeline Types
+# ============================================================================
+
+class GateStatus(str, Enum):
+    PASSED = "passed"
+    BLOCKED = "blocked"
+    WARNING = "warning"
+
+
+class GateResult(BaseModel):
+    status: GateStatus
+    can_proceed: bool
+    block_reason: Optional[str] = None
+    completeness: float
+    critical_completeness: float
+    missing_critical: List[str]
+    missing_required: Optional[List[str]] = None
+    blocking_issues: Optional[List[Dict[str, Any]]] = None
+    warning_issues: Optional[List[Dict[str, Any]]] = None
+
+
+class ExtractionSummary(BaseModel):
+    completeness: float
+    critical_completeness: float
+    missing_critical: List[str]
+    missing_required: Optional[List[str]] = None
+    total_fields: Optional[int] = None
+    extracted_fields: Optional[int] = None
+
+
+class LCBaseline(BaseModel):
+    lc_number: Optional[str] = None
+    lc_type: Optional[str] = None
+    applicant: Optional[str] = None
+    beneficiary: Optional[str] = None
+    issuing_bank: Optional[str] = None
+    advising_bank: Optional[str] = None
+    amount: Optional[str] = None
+    currency: Optional[str] = None
+    expiry_date: Optional[str] = None
+    issue_date: Optional[str] = None
+    latest_shipment: Optional[str] = None
+    port_of_loading: Optional[str] = None
+    port_of_discharge: Optional[str] = None
+    goods_description: Optional[str] = None
+    incoterm: Optional[str] = None
+    extraction_completeness: float
+    critical_completeness: float
+
+
+# ============================================================================
+# Sanctions Screening Types
+# ============================================================================
+
+class SanctionsStatus(str, Enum):
+    MATCH = "match"
+    POTENTIAL_MATCH = "potential_match"
+    CLEAR = "clear"
+
+
+class SanctionsScreeningIssue(BaseModel):
+    party: Optional[str] = None
+    type: Optional[str] = None
+    status: SanctionsStatus
+    score: Optional[float] = None
+
+
+class SanctionsScreeningSummary(BaseModel):
+    screened: bool
+    parties_screened: int
+    matches: int
+    potential_matches: int
+    clear: int
+    should_block: bool
+    screened_at: str
+    issues: List[SanctionsScreeningIssue]
+    error: Optional[str] = None
+
+
+# ============================================================================
+# Validation Document (Frontend-normalized)
+# ============================================================================
+
+class ValidationDocumentStatus(str, Enum):
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class ValidationDocument(BaseModel):
+    id: str
+    documentId: str
+    name: str
+    filename: str
+    type: str
+    typeKey: Optional[str] = None
+    extractionStatus: str
+    status: ValidationDocumentStatus
+    issuesCount: int
+    extractedFields: Dict[str, Any]
+
+
+# ============================================================================
 # Schema Registry for Runtime Access
 # ============================================================================
 
@@ -377,6 +541,24 @@ SCHEMAS = {
     'StructuredResultAnalytics': StructuredResultAnalytics,
     'StructuredResultTimelineEntry': TimelineEntry,
     'StructuredResultPayload': StructuredResultPayload,
+    
+    # LCopilot-specific types
+    'IssueCard': IssueCard,
+    'ReferenceIssue': ReferenceIssue,
+    'AIEnrichmentPayload': AIEnrichmentPayload,
+    'ToleranceApplied': ToleranceApplied,
+    
+    # V2 Validation Pipeline
+    'GateResult': GateResult,
+    'ExtractionSummary': ExtractionSummary,
+    'LCBaseline': LCBaseline,
+    
+    # Sanctions Screening
+    'SanctionsScreeningIssue': SanctionsScreeningIssue,
+    'SanctionsScreeningSummary': SanctionsScreeningSummary,
+    
+    # Validation Document
+    'ValidationDocument': ValidationDocument,
     
     # Pagination
     'PaginationParams': PaginationParams,
