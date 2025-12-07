@@ -48,6 +48,45 @@ from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
 
+# Import refactored validation utilities (from split modules)
+from app.routers.validation import (
+    # Utilities
+    severity_rank as _severity_rank,
+    severity_to_status as _severity_to_status,
+    normalize_issue_severity as _normalize_issue_severity,
+    priority_to_severity as _priority_to_severity,
+    label_to_doc_type as _label_to_doc_type,
+    normalize_doc_type_key as _normalize_doc_type_key,
+    humanize_doc_type as _humanize_doc_type,
+    infer_document_type_from_name as _infer_document_type_from_name,
+    fallback_doc_type as _fallback_doc_type,
+    normalize_doc_match_key as _normalize_doc_match_key,
+    strip_extension as _strip_extension,
+    coerce_issue_value as _coerce_issue_value,
+    format_duration as _format_duration,
+    filter_user_facing_fields as _filter_user_facing_fields,
+    # Issue resolver
+    resolve_issue_stats as _resolve_issue_stats,
+    collect_document_issue_stats as _collect_document_issue_stats,
+    extract_document_names as _extract_document_names,
+    extract_document_types as _extract_document_types,
+    extract_document_ids as _extract_document_ids,
+    bump_issue_entry as _bump_issue_entry,
+    count_issue_severity as _count_issue_severity,
+    format_deterministic_issue as _format_deterministic_issue,
+    # Document builder
+    build_document_summaries as _build_document_summaries,
+    build_document_lookup as _build_document_lookup,
+    match_issue_documents as _match_issue_documents,
+    build_documents_section as _build_documents_section,
+    # Response builder
+    compose_processing_summary as _compose_processing_summary,
+    build_analytics_section as _build_analytics_section,
+    build_timeline_entries as _build_timeline_entries,
+    build_document_processing_analytics as _build_document_processing_analytics,
+    summarize_document_statuses as _summarize_document_statuses,
+)
+
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.utils.logger import TRACE_LOG_LEVEL
 from app.services.customs.customs_pack import build_customs_manifest_from_option_e
@@ -118,44 +157,7 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
         _two_stage_extractor = TwoStageExtractor()
     return _two_stage_extractor
 
-
-def _filter_user_facing_fields(extracted: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Filter extracted fields to only include user-facing data.
-    
-    Removes internal metadata fields that start with underscore (_).
-    These are useful for debugging but shouldn't clutter the user interface.
-    """
-    if not extracted:
-        return {}
-    
-    # Fields to exclude from user display (internal metadata)
-    INTERNAL_FIELDS = {
-        "_extraction_method", "_extraction_confidence", "_ai_provider",
-        "_status", "_field_details", "_status_counts", "_document_type",
-        "_two_stage_validation", "_validation_details", "_raw_ai_response",
-        "_fallback_used", "_failure_reason", "raw_text",
-    }
-    
-    filtered = {}
-    for key, value in extracted.items():
-        # Skip underscore-prefixed fields
-        if key.startswith("_"):
-            continue
-        # Skip known internal fields
-        if key in INTERNAL_FIELDS:
-            continue
-        # Skip None values
-        if value is None:
-            continue
-        # Skip empty strings
-        if isinstance(value, str) and not value.strip():
-            continue
-        # Keep this field
-        filtered[key] = value
-    
-    return filtered
-
+# _filter_user_facing_fields moved to app.routers.validation.utilities
 
 def _apply_two_stage_validation(
     extracted_fields: Dict[str, Any],
