@@ -255,8 +255,25 @@ export function getFeatureFlagsDefaults<T extends FlagDomain>(domain: T): FlagsS
  */
 export function resetFeatureFlags(domain: FlagDomain): void {
   const state = getCache();
-  state[domain] = { ...DEFAULTS[domain] } as FlagsState[typeof domain];
-  writeToStorage(domain, state[domain]);
+  
+  switch (domain) {
+    case "admin":
+      state.admin = { ...ADMIN_DEFAULTS };
+      writeToStorage("admin", state.admin);
+      break;
+    case "exporter":
+      state.exporter = { ...EXPORTER_DEFAULTS };
+      writeToStorage("exporter", state.exporter);
+      break;
+    case "importer":
+      state.importer = { ...IMPORTER_DEFAULTS };
+      writeToStorage("importer", state.importer);
+      break;
+    case "lcopilot":
+      state.lcopilot = { ...LCOPILOT_DEFAULTS };
+      writeToStorage("lcopilot", state.lcopilot);
+      break;
+  }
 }
 
 /**
