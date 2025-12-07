@@ -1,8 +1,47 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { IssueCard } from '@/types/lcopilot';
-import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// UCP600 article descriptions for tooltips (from V2)
+const UCP600_DESCRIPTIONS: Record<string, string> = {
+  '6': 'Availability, Expiry Date and Place for Presentation',
+  '6(d)': 'Documents must be presented within expiry date',
+  '14': 'Standard for Examination of Documents',
+  '14(a)': 'Banks must examine presentation to determine compliance on face',
+  '14(b)': 'Bank has maximum 5 banking days for examination',
+  '14(c)': 'Data in documents must not conflict',
+  '14(d)': 'Data need not be identical but must not conflict',
+  '16': 'Discrepant Documents, Waiver and Notice',
+  '18': 'Commercial Invoice',
+  '18(a)': 'Invoice must appear to be issued by beneficiary',
+  '18(b)': 'Invoice must be made out in name of applicant',
+  '18(c)': 'Description of goods must correspond with LC',
+  '20': 'Bill of Lading',
+  '20(a)': 'B/L requirements (carrier name, signature, dates)',
+  '27': 'Clean Transport Document',
+  '28': 'Insurance Document and Coverage',
+  '28(b)': 'Insurance coverage must be at least 110% of CIF/CIP value',
+  '29': 'Extension of Expiry Date or Period for Presentation',
+  '30': 'Tolerance in Credit Amount, Quantity and Unit Prices',
+};
+
+// ISBP745 paragraph descriptions
+const ISBP745_DESCRIPTIONS: Record<string, string> = {
+  'A14': 'Documents must be presented within LC validity',
+  'A27': 'Expiry date considerations',
+  'C3': 'Invoice amount and currency',
+  'E12': 'B/L requirements and clauses',
+  '72': 'Goods description requirements',
+  '73': 'Data linkage principle',
+};
 
 // Business impact mapping - what will the bank do?
 const BUSINESS_IMPACT = {
@@ -160,6 +199,76 @@ export function ExporterIssueCard({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Bank Examiner Message - Professional format for banks (from V2) */}
+        {(issue.ucpReference || issue.isbpReference) && (
+          <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Bank Examiner Message:
+            </p>
+            <p className="text-sm text-slate-900 dark:text-slate-100 mt-1 font-mono">
+              {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? `ISBP745 ${issue.isbpReference.replace('ISBP745 ', '¶')}` : ''}.
+            </p>
+          </div>
+        )}
+        
+        {/* Citation Badges with Tooltips (from V2) */}
+        {(issue.ucpReference || issue.isbpReference) && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <BookOpen className="h-4 w-4" />
+              Regulatory Citations
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <TooltipProvider>
+                {issue.ucpReference && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge 
+                        variant="secondary" 
+                        className="cursor-help bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200"
+                      >
+                        UCP600 {issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-medium">{issue.ucpReference}</p>
+                      <p className="text-xs text-slate-400">
+                        {(() => {
+                          const artMatch = issue.ucpReference?.match(/Article\s*(\d+[a-z]?(?:\([a-z]\))?)/i);
+                          const art = artMatch ? artMatch[1] : '';
+                          return UCP600_DESCRIPTIONS[art] || 'ICC Uniform Customs and Practice for Documentary Credits';
+                        })()}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {issue.isbpReference && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge 
+                        variant="secondary"
+                        className="cursor-help bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-200"
+                      >
+                        ISBP745 {issue.isbpReference.replace('ISBP745 ', '¶')}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-medium">{issue.isbpReference}</p>
+                      <p className="text-xs text-slate-400">
+                        {(() => {
+                          const paraMatch = issue.isbpReference?.match(/([A-Z]?\d+)/);
+                          const para = paraMatch ? paraMatch[1] : '';
+                          return ISBP745_DESCRIPTIONS[para] || 'ICC International Standard Banking Practice';
+                        })()}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </TooltipProvider>
+            </div>
+          </div>
+        )}
+        
         {documentNames.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {documentNames.map((name) => {
@@ -173,16 +282,18 @@ export function ExporterIssueCard({
             })}
           </div>
         )}
+        
+        {/* Color-coded Expected/Found (from V2) */}
         <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Expected</p>
-            <pre className="mt-1 rounded-md border border-muted bg-muted/20 p-3 font-mono text-sm leading-relaxed whitespace-pre-wrap">
+          <div className="p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
+            <p className="text-xs font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Expected</p>
+            <pre className="mt-1 font-mono text-sm leading-relaxed whitespace-pre-wrap text-green-900 dark:text-green-100">
               {formatValue(issue.expected)}
             </pre>
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Found</p>
-            <pre className="mt-1 rounded-md border border-muted bg-muted/20 p-3 font-mono text-sm leading-relaxed whitespace-pre-wrap">
+          <div className="p-3 bg-red-50 dark:bg-red-950 rounded-lg border border-red-200 dark:border-red-800">
+            <p className="text-xs font-medium text-red-700 dark:text-red-300 uppercase tracking-wide">Found</p>
+            <pre className="mt-1 font-mono text-sm leading-relaxed whitespace-pre-wrap text-red-900 dark:text-red-100">
               {formatValue(issue.actual)}
             </pre>
           </div>
@@ -231,19 +342,10 @@ export function ExporterIssueCard({
             </div>
           </div>
         )}
-        {/* Compliance References - only show if they have actual content */}
-        {(issue.ucpReference || issue.isbpReference) && (
-          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-            {issue.ucpReference && (
-              <p className="flex items-center gap-1">
-                <span className="font-medium">UCP600:</span> {issue.ucpReference}
-              </p>
-            )}
-            {issue.isbpReference && (
-              <p className="flex items-center gap-1">
-                <span className="font-medium">ISBP745:</span> {issue.isbpReference}
-              </p>
-            )}
+        {/* Rule ID - shows the specific rule that triggered this issue */}
+        {issue.rule && (
+          <div className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+            <span className="font-medium">Rule:</span> {issue.rule}
           </div>
         )}
       </CardContent>
