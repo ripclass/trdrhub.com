@@ -289,18 +289,35 @@ async def validate_v2(
         # Generate amendments for critical/major issues
         amendments = []
         if issues:
-            from app.services.amendment_generator import generate_amendment_for_issue
-            
-            for issue in issues[:5]:  # Top 5 issues
-                if issue.can_amend:
-                    try:
-                        # Get LC data for amendment
-                        lc_data = extracted_data.get("letter_of_credit", {})
-                        amendment = await generate_amendment_for_issue(issue, lc_data)
-                        if amendment:
-                            amendments.append(amendment)
-                    except Exception as e:
-                        logger.warning(f"Amendment generation failed: {e}")
+            try:
+                from app.services.validation.amendment_generator import generate_amendment_for_discrepancy
+                
+                # Get LC data for amendment generation
+                lc_data = extracted_data.get("letter_of_credit", {})
+                lc_info = {
+                    "lc_number": lc_data.get("value", {}).get("lc_number") if isinstance(lc_data.get("value"), dict) else lc_data.get("lc_number", "UNKNOWN"),
+                    "amount": lc_data.get("value", {}).get("amount") if isinstance(lc_data.get("value"), dict) else lc_data.get("amount"),
+                    "currency": lc_data.get("value", {}).get("currency") if isinstance(lc_data.get("value"), dict) else lc_data.get("currency", "USD"),
+                }
+                
+                for issue in issues[:5]:  # Top 5 issues
+                    if issue.can_amend:
+                        try:
+                            # Convert Issue to dict format expected by amendment_generator
+                            issue_dict = {
+                                "rule": issue.rule_id,
+                                "title": issue.title,
+                                "expected": issue.expected,
+                                "found": issue.found,
+                                "documents": issue.documents,
+                            }
+                            amendment = generate_amendment_for_discrepancy(issue_dict, lc_info)
+                            if amendment:
+                                amendments.append(amendment.to_dict())
+                        except Exception as e:
+                            logger.warning(f"Amendment generation failed for {issue.rule_id}: {e}")
+            except ImportError as e:
+                logger.warning(f"Amendment generator not available: {e}")
         
         total_time = time.perf_counter() - start_time
         
