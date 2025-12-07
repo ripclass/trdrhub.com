@@ -146,14 +146,14 @@ interface FeatureProps {
   fallback?: React.ReactNode;
 }
 
-export function Feature({ name, children, fallback = null }: FeatureProps): JSX.Element | null {
+export function Feature({ name, children, fallback = null }: FeatureProps) {
   const hasAccess = useFeature(name);
   
   if (hasAccess) {
-    return <>{children}</>;
+    return children;
   }
   
-  return <>{fallback}</>;
+  return fallback;
 }
 
 // Get all enabled features for current user
