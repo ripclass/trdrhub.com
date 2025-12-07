@@ -149,43 +149,24 @@ class ValidationEngineV2:
         self,
         context: Dict[str, Any],
     ) -> List[Issue]:
-        """Run validation rules from database."""
-        issues = []
+        """
+        Run validation rules - V2 uses basic validation only.
         
-        try:
-            # Use existing rule engine with database session
-            from app.rules.external.rule_loader import get_rule_loader_with_db
-            from app.rules.external.rule_executor import RuleExecutor
-            
-            # Get rule loader with database access
-            rule_loader = get_rule_loader_with_db()
-            executor = RuleExecutor(rule_loader=rule_loader)
-            
-            # Execute all enabled rules against context
-            result = executor.execute_all_rules(context)
-            
-            # Track metrics
-            context["rules_checked"] = [r.rule.id for r in result.execution_results]
-            context["rules_passed"] = [r.rule.id for r in result.execution_results if r.passed]
-            
-            logger.info(
-                f"Rule validation: {result.total_rules} rules, "
-                f"{result.passed} passed, {result.failed} failed, "
-                f"{result.skipped} skipped in {result.execution_time_ms}ms"
-            )
-            
-            # Convert rule issues to V2 Issue format
-            for rule_issue in result.issues:
-                issue = self._create_issue_from_rule_result(rule_issue, context)
-                if issue:
-                    issues.append(issue)
-                    
-        except ImportError as e:
-            logger.warning(f"Rule engine not available: {e}, using basic validation")
-            issues = self._run_basic_validation(context)
-        except Exception as e:
-            logger.error(f"Rule validation failed: {e}", exc_info=True)
-            issues = self._run_basic_validation(context)
+        The full rule engine runs 2,159 rules but many are country/document
+        specific and trigger false positives when fields are missing.
+        
+        For V2 MVP, we use focused basic validation + crossdoc checks.
+        Full rule engine integration requires proper field mapping.
+        """
+        # V2 MVP: Use basic validation only (similar to V1's focused approach)
+        # This prevents the "1000+ issues" problem from running all rules
+        issues = self._run_basic_validation(context)
+        
+        # Track metrics
+        context["rules_checked"] = ["basic_validation"]
+        context["rules_passed"] = [] if issues else ["basic_validation"]
+        
+        logger.info(f"V2 Basic validation: {len(issues)} issues found")
         
         return issues
     
