@@ -934,6 +934,8 @@ async def validate_doc(
         results = []  # Legacy results - empty
         failed_results = []
         
+        checkpoint("pre_issue_conversion")
+        
         # Convert v2 issues to legacy format for compatibility
         if v2_issues:
             for issue in v2_issues:
@@ -1035,6 +1037,7 @@ async def validate_doc(
         )
         
         issue_cards, reference_issues = build_issue_cards(deduplicated_results)
+        checkpoint("issue_cards_built")
 
         # Record usage - link to session if created (skip for demo user)
         quota = None
@@ -1089,6 +1092,8 @@ async def validate_doc(
                 "Document summaries are empty: no documents captured for job %s", job_id
             )
         
+        checkpoint("document_summaries_built")
+        
         processing_duration = time.time() - start_time
         processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
 
@@ -1137,6 +1142,7 @@ async def validate_doc(
                 legacy_payload=None,
             )
             structured_result = option_e_payload["structured_result"]
+            checkpoint("structured_result_built")
         except Exception as e:
             import traceback
             logger.error(
@@ -1236,6 +1242,8 @@ async def validate_doc(
         # SANCTIONS SCREENING - Auto-screen LC parties
         # Screen applicant, beneficiary, banks, and other parties
         # =====================================================================
+        checkpoint("pre_sanctions_screening")
+        
         sanctions_summary = None
         sanctions_should_block = False
         
@@ -1282,6 +1290,7 @@ async def validate_doc(
                 "screened": False,
                 "error": str(e),
             }
+        checkpoint("post_sanctions_screening")
 
         # =====================================================================
         # V2 VALIDATION PIPELINE - FINAL SCORING
