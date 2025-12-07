@@ -212,8 +212,8 @@ export default function TrackingOverview() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState<"container" | "vessel" | "bl">("container");
-  const [shipments, setShipments] = useState<TrackedShipment[]>(MOCK_SHIPMENTS);
-  const [alerts, setAlerts] = useState<TrackingAlert[]>(MOCK_ALERTS);
+  const [shipments, setShipments] = useState<TrackedShipment[]>([]);
+  const [alerts, setAlerts] = useState<TrackingAlert[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioStats, setPortfolioStats] = useState({

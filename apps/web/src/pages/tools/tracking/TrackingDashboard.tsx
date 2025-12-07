@@ -217,8 +217,8 @@ export default function TrackingDashboard() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState<"container" | "vessel" | "bl">("container");
-  const [shipments, setShipments] = useState<TrackedShipment[]>(MOCK_SHIPMENTS);
-  const [alerts, setAlerts] = useState<TrackingAlert[]>(MOCK_ALERTS);
+  const [shipments, setShipments] = useState<TrackedShipment[]>([]);
+  const [alerts, setAlerts] = useState<TrackingAlert[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioStats, setPortfolioStats] = useState({
@@ -228,19 +228,20 @@ export default function TrackingDashboard() {
     on_time_rate: 92,
   });
 
-  // Fetch portfolio on mount
+  // Fetch portfolio and alerts on mount
   useEffect(() => {
-    const fetchPortfolio = async () => {
+    const fetchData = async () => {
       try {
-        const response = await fetch(`${API_BASE}/tracking/portfolio`, {
+        // Fetch portfolio
+        const portfolioResponse = await fetch(`${API_BASE}/tracking/portfolio`, {
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
           },
           credentials: "include",
         });
         
-        if (response.ok) {
-          const data = await response.json();
+        if (portfolioResponse.ok) {
+          const data = await portfolioResponse.json();
           // Transform API response to local format
           if (data.shipments && data.shipments.length > 0) {
             const transformed = data.shipments.map((s: any) => ({
@@ -248,15 +249,17 @@ export default function TrackingDashboard() {
               reference: s.reference,
               type: s.type,
               carrier: s.carrier || "Unknown",
+              vessel: s.vessel_name,
+              voyage: s.voyage,
               origin: s.origin,
               destination: s.destination,
               status: s.status,
               eta: s.eta,
-              etaConfidence: 90,
-              lastUpdate: "just now",
+              etaConfidence: s.eta_confidence || 90,
+              lastUpdate: s.last_update || "just now",
               lastLocation: s.current_location || "In Transit",
               progress: s.progress || 50,
-              alerts: s.alerts || 0,
+              alerts: s.alerts_count || 0,
             }));
             setShipments(transformed);
           }
@@ -264,16 +267,40 @@ export default function TrackingDashboard() {
             setPortfolioStats(data.stats);
           }
         }
+
+        // Fetch alerts
+        const alertsResponse = await fetch(`${API_BASE}/tracking/alerts`, {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          credentials: "include",
+        });
+
+        if (alertsResponse.ok) {
+          const alertsData = await alertsResponse.json();
+          if (alertsData && alertsData.length > 0) {
+            const transformedAlerts = alertsData.map((a: any) => ({
+              id: a.id,
+              shipmentId: a.shipment_id,
+              reference: a.reference || a.shipment_reference,
+              type: a.alert_type || a.type,
+              severity: a.severity || "info",
+              message: a.message,
+              timestamp: a.created_at || a.timestamp,
+              read: a.is_read || false,
+            }));
+            setAlerts(transformedAlerts);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch portfolio:", error);
-        // Keep mock data as fallback
       } finally {
         setIsLoading(false);
       }
     };
 
     if (session?.access_token) {
-      fetchPortfolio();
+      fetchData();
     } else {
       setIsLoading(false);
     }

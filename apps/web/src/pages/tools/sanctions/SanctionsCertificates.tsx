@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   FileCheck,
   Search,
@@ -11,45 +12,69 @@ import {
   AlertTriangle,
   Clock,
   Shield,
+  RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-// Mock certificates
-const mockCertificates = [
-  {
-    id: "TRDR-20251206-A1B2C3",
-    query: "Acme Trading Co Ltd",
-    type: "party",
-    status: "clear",
-    issued_at: "2025-12-06T18:45:32Z",
-    valid_until: "2025-12-07T18:45:32Z",
-    lists_count: 6,
-  },
-  {
-    id: "TRDR-20251206-D4E5F6",
-    query: "M/V PACIFIC TRADER",
-    type: "vessel",
-    status: "potential_match",
-    issued_at: "2025-12-06T17:30:15Z",
-    valid_until: "2025-12-07T17:30:15Z",
-    lists_count: 3,
-  },
-  {
-    id: "TRDR-20251205-J1K2L3",
-    query: "Global Imports Inc",
-    type: "party",
-    status: "clear",
-    issued_at: "2025-12-05T14:20:00Z",
-    valid_until: "2025-12-06T14:20:00Z",
-    lists_count: 6,
-    expired: true,
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
+
+interface Certificate {
+  id: string;
+  query: string;
+  type: "party" | "vessel" | "goods";
+  status: "clear" | "potential_match" | "match";
+  issued_at: string;
+  valid_until: string;
+  lists_count: number;
+  expired?: boolean;
+}
 
 export default function SanctionsCertificates() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredCerts = mockCertificates.filter((cert) =>
+  // Fetch certificates from history API (certificates are generated from screening history)
+  useEffect(() => {
+    const fetchCertificates = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`${API_BASE}/sanctions/history`, {
+          credentials: "include",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to fetch certificates");
+        }
+        const data = await response.json();
+        // Transform history items to certificate format
+        const historyItems = data.history || data || [];
+        const certs: Certificate[] = historyItems
+          .filter((item: any) => item.certificate_id)
+          .map((item: any) => ({
+            id: item.certificate_id,
+            query: item.query,
+            type: item.type,
+            status: item.status,
+            issued_at: item.screened_at,
+            valid_until: new Date(new Date(item.screened_at).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            lists_count: item.lists_screened?.length || 0,
+            expired: new Date(item.screened_at).getTime() + 24 * 60 * 60 * 1000 < Date.now(),
+          }));
+        setCertificates(certs);
+      } catch (err) {
+        console.error("Failed to fetch certificates:", err);
+        setError("Failed to load certificates. Please try again.");
+        setCertificates([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchCertificates();
+  }, []);
+
+  const filteredCerts = certificates.filter((cert) =>
     cert.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     cert.query.toLowerCase().includes(searchQuery.toLowerCase())
   );

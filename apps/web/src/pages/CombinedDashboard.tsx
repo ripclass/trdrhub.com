@@ -66,39 +66,23 @@ const formatAmount = (amount: number | undefined) => {
   return `USD ${amount.toFixed(0)}`;
 };
 
-// Mock tasks - will be replaced with tasks API later
-const mockTasks: Task[] = [
-  {
-    id: 'task-1',
-    type: 'export',
-    title: 'Shipment packing list upload',
-    description: 'XYZ Trading Co.',
-    lcNumber: 'EXP-2384',
-    dueDate: new Date().toISOString().split('T')[0], // Today
-    priority: 'high',
-    status: 'pending',
-  },
-  {
-    id: 'task-2',
-    type: 'export',
-    title: 'Bank discrepancy resolution call',
-    description: 'Sonali Bank',
-    lcNumber: 'EXP-2384',
-    dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Tomorrow
-    priority: 'medium',
-    status: 'pending',
-  },
-  {
-    id: 'task-3',
-    type: 'import',
-    title: 'Supplier invoice verification',
-    description: 'UCBL',
-    lcNumber: 'IMP-1169',
-    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // In 3 days
-    priority: 'medium',
-    status: 'pending',
-  },
-];
+// Tasks will be populated from API when tasks feature is implemented
+// For now, derive pending tasks from sessions with discrepancies
+const derivePendingTasks = (sessions: ValidationSession[]): Task[] => {
+  return sessions
+    .filter(s => s.status === 'completed' && (s.discrepancies?.length || 0) > 0)
+    .slice(0, 5)
+    .map((s, idx) => ({
+      id: `task-${idx + 1}`,
+      type: 'export' as const,
+      title: `Resolve ${s.discrepancies?.length || 0} discrepanc${(s.discrepancies?.length || 0) === 1 ? 'y' : 'ies'}`,
+      description: s.extracted_data?.issuing_bank || 'LC validation',
+      lcNumber: s.id.slice(0, 8).toUpperCase(),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      priority: (s.discrepancies?.filter((d: any) => d.severity === 'critical').length || 0) > 0 ? 'high' as const : 'medium' as const,
+      status: 'pending' as const,
+    }));
+};
 
 const getQuickActions = (viewMode: "export" | "import" | "all") => {
   const baseActions = [
@@ -240,8 +224,10 @@ export default function CombinedDashboard() {
   const renderContent = () => {
     if (activeSection === "dashboard") {
       const quickActions = getQuickActions(viewMode);
-      const exportTasks = mockTasks.filter(t => t.type === "export");
-      const importTasks = mockTasks.filter(t => t.type === "import");
+      // Derive tasks from sessions with discrepancies
+      const pendingTasks = derivePendingTasks(sessions);
+      const exportTasks = pendingTasks.filter(t => t.type === "export");
+      const importTasks = pendingTasks.filter(t => t.type === "import");
 
       // Compute KPIs from real sessions
       const completedSessions = sessions.filter(s => s.status === 'completed');

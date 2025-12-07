@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   History,
   Search,
@@ -17,45 +18,72 @@ import {
   Eye,
   Calendar,
   Filter,
+  RefreshCw,
 } from "lucide-react";
 
-// Mock data for demonstration
-const mockHistory = [
-  {
-    id: "1",
-    query: "Acme Trading Co Ltd",
-    type: "party",
-    status: "clear",
-    screened_at: "2025-12-06T18:45:32Z",
-    lists_screened: ["OFAC_SDN", "EU_CONS", "UN_SC"],
-    certificate_id: "TRDR-20251206-A1B2C3",
-  },
-  {
-    id: "2",
-    query: "M/V PACIFIC TRADER",
-    type: "vessel",
-    status: "potential_match",
-    screened_at: "2025-12-06T17:30:15Z",
-    lists_screened: ["OFAC_SDN", "EU_CONS"],
-    certificate_id: "TRDR-20251206-D4E5F6",
-    match_score: 78,
-  },
-  {
-    id: "3",
-    query: "Industrial centrifuge equipment",
-    type: "goods",
-    status: "potential_match",
-    screened_at: "2025-12-06T16:20:00Z",
-    lists_screened: ["DUAL_USE", "COUNTRY_SANCTIONS"],
-    certificate_id: "TRDR-20251206-G7H8I9",
-    flags: ["Keyword detected: Nuclear/dual-use equipment"],
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
+
+interface HistoryItem {
+  id: string;
+  query: string;
+  type: "party" | "vessel" | "goods";
+  status: "clear" | "potential_match" | "match";
+  screened_at: string;
+  lists_screened: string[];
+  certificate_id?: string;
+  match_score?: number;
+  flags?: string[];
+}
 
 export default function SanctionsHistory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch history from API
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`${API_BASE}/sanctions/history`, {
+          credentials: "include",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to fetch screening history");
+        }
+        const data = await response.json();
+        setHistory(data.history || data || []);
+      } catch (err) {
+        console.error("Failed to fetch sanctions history:", err);
+        setError("Failed to load screening history. Please try again.");
+        setHistory([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchHistory();
+  }, []);
+
+  const refreshHistory = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/sanctions/history`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(data.history || data || []);
+      }
+    } catch (err) {
+      console.error("Failed to refresh history:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -84,7 +112,7 @@ export default function SanctionsHistory() {
     }
   };
 
-  const filteredHistory = mockHistory.filter((item) => {
+  const filteredHistory = history.filter((item) => {
     if (searchQuery && !item.query.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
     }
@@ -110,11 +138,31 @@ export default function SanctionsHistory() {
             View and download your past screening results
           </p>
         </div>
-        <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white">
-          <Download className="w-4 h-4 mr-2" />
-          Export All
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            className="border-slate-700 text-slate-400 hover:text-white"
+            onClick={refreshHistory}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white">
+            <Download className="w-4 h-4 mr-2" />
+            Export All
+          </Button>
+        </div>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <Card className="bg-red-900/20 border-red-800">
+          <CardContent className="p-4 text-red-400">
+            {error}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card className="bg-slate-900/50 border-slate-800">

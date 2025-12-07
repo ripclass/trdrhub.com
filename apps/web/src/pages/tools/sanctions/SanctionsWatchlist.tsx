@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -25,45 +27,142 @@ import {
   Settings,
   Calendar,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 
-// Mock watchlist
-const mockWatchlist = [
-  {
-    id: "1",
-    name: "ABC Trading Partners",
-    type: "party",
-    country: "CN",
-    last_screened: "2025-12-06T10:00:00Z",
-    last_status: "clear",
-    alert_email: true,
-    alert_in_app: true,
-  },
-  {
-    id: "2",
-    name: "XYZ Shipping Ltd",
-    type: "party",
-    country: "SG",
-    last_screened: "2025-12-05T14:30:00Z",
-    last_status: "clear",
-    alert_email: true,
-    alert_in_app: false,
-  },
-  {
-    id: "3",
-    name: "M/V OCEAN STAR",
-    type: "vessel",
-    imo: "9876543",
-    last_screened: "2025-12-06T08:15:00Z",
-    last_status: "potential_match",
-    alert_email: true,
-    alert_in_app: true,
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
+
+interface WatchlistItem {
+  id: string;
+  name: string;
+  type: "party" | "vessel";
+  country?: string;
+  imo?: string;
+  last_screened: string;
+  last_status: "clear" | "potential_match" | "match";
+  alert_email: boolean;
+  alert_in_app: boolean;
+}
 
 export default function SanctionsWatchlist() {
+  const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newEntry, setNewEntry] = useState({ name: "", type: "party" });
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch watchlist from API (derived from notifications/preferences)
+  useEffect(() => {
+    const fetchWatchlist = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Get history items that were screened multiple times (indicates monitoring)
+        const response = await fetch(`${API_BASE}/sanctions/history?limit=100`, {
+          credentials: "include",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to fetch watchlist");
+        }
+        const data = await response.json();
+        const historyItems = data.history || data || [];
+        
+        // Group by query to find frequently monitored items
+        const queryCount: Record<string, any> = {};
+        historyItems.forEach((item: any) => {
+          const key = item.query.toLowerCase();
+          if (!queryCount[key]) {
+            queryCount[key] = { ...item, count: 0 };
+          }
+          queryCount[key].count++;
+          // Keep the most recent screening
+          if (new Date(item.screened_at) > new Date(queryCount[key].screened_at)) {
+            queryCount[key] = { ...item, count: queryCount[key].count };
+          }
+        });
+        
+        // Convert to watchlist format (items screened more than once)
+        const watchlistItems: WatchlistItem[] = Object.values(queryCount)
+          .filter((item: any) => item.count >= 1)
+          .map((item: any, idx) => ({
+            id: String(idx + 1),
+            name: item.query,
+            type: item.type || "party",
+            last_screened: item.screened_at,
+            last_status: item.status,
+            alert_email: true,
+            alert_in_app: true,
+          }));
+        
+        setWatchlist(watchlistItems);
+      } catch (err) {
+        console.error("Failed to fetch watchlist:", err);
+        setError("Failed to load watchlist. Please try again.");
+        setWatchlist([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchWatchlist();
+  }, []);
+
+  const handleAddToWatchlist = async () => {
+    if (!newEntry.name.trim()) return;
+    
+    setIsSaving(true);
+    try {
+      // Screen the party/vessel to add to history (which becomes watchlist)
+      const endpoint = newEntry.type === "vessel" ? "screen/vessel" : "screen/party";
+      const response = await fetch(`${API_BASE}/sanctions/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          query: newEntry.name,
+          lists: ["OFAC_SDN", "EU_CONS", "UN_SC"],
+        }),
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        // Add to local watchlist
+        setWatchlist(prev => [...prev, {
+          id: String(prev.length + 1),
+          name: newEntry.name,
+          type: newEntry.type as "party" | "vessel",
+          last_screened: new Date().toISOString(),
+          last_status: result.status || "clear",
+          alert_email: true,
+          alert_in_app: true,
+        }]);
+        setIsAddDialogOpen(false);
+        setNewEntry({ name: "", type: "party" });
+        toast({
+          title: "Added to watchlist",
+          description: `${newEntry.name} will be monitored for sanctions updates.`,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to add to watchlist:", err);
+      toast({
+        title: "Error",
+        description: "Failed to add to watchlist. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRemoveFromWatchlist = (id: string) => {
+    setWatchlist(prev => prev.filter(item => item.id !== id));
+    toast({
+      title: "Removed from watchlist",
+      description: "Item will no longer be monitored.",
+    });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -115,7 +214,12 @@ export default function SanctionsWatchlist() {
               <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} className="border-slate-700 text-slate-400">
                 Cancel
               </Button>
-              <Button className="bg-red-500 hover:bg-red-600">
+              <Button 
+                className="bg-red-500 hover:bg-red-600"
+                onClick={handleAddToWatchlist}
+                disabled={isSaving || !newEntry.name.trim()}
+              >
+                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Add to Watchlist
               </Button>
             </DialogFooter>
@@ -139,9 +243,38 @@ export default function SanctionsWatchlist() {
         </CardContent>
       </Card>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <Card key={i} className="bg-slate-900/50 border-slate-800">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="w-10 h-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <Card className="bg-red-900/20 border-red-800">
+          <CardContent className="p-4 text-red-400">
+            {error}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Watchlist */}
+      {!isLoading && (
       <div className="space-y-3">
-        {mockWatchlist.length === 0 ? (
+        {watchlist.length === 0 ? (
           <Card className="bg-slate-900/50 border-slate-800">
             <CardContent className="p-12 text-center">
               <Bell className="w-12 h-12 text-slate-600 mx-auto mb-4" />
@@ -149,14 +282,17 @@ export default function SanctionsWatchlist() {
               <p className="text-slate-400 mb-4">
                 Add parties or vessels to monitor for sanctions list changes
               </p>
-              <Button className="bg-red-500 hover:bg-red-600 text-white">
+              <Button 
+                className="bg-red-500 hover:bg-red-600 text-white"
+                onClick={() => setIsAddDialogOpen(true)}
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Add First Entry
               </Button>
             </CardContent>
           </Card>
         ) : (
-          mockWatchlist.map((item) => (
+          watchlist.map((item) => (
             <Card key={item.id} className="bg-slate-900/50 border-slate-800">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -219,7 +355,12 @@ export default function SanctionsWatchlist() {
                     <Button variant="ghost" size="icon" className="text-slate-500 hover:text-white">
                       <Settings className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-slate-500 hover:text-red-400">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-slate-500 hover:text-red-400"
+                      onClick={() => handleRemoveFromWatchlist(item.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -229,6 +370,7 @@ export default function SanctionsWatchlist() {
           ))
         )}
       </div>
+      )}
     </div>
   );
 }

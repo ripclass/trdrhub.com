@@ -256,14 +256,14 @@ export default function VesselTrackPage() {
           
           setVessel(transformedData);
         } else {
-          // Fallback to mock data
-          console.warn("API returned error, using mock data");
-          setVessel({ ...MOCK_VESSEL, imo: vesselId, name: vesselId });
+          // Show error state - no mock data
+          console.warn("API returned error");
+          setVessel(null);
         }
       } catch (error) {
         console.error("Failed to fetch vessel data:", error);
-        // Fallback to mock data
-        setVessel({ ...MOCK_VESSEL, imo: vesselId, name: vesselId });
+        // Show error state - no mock data
+        setVessel(null);
       } finally {
         setLoading(false);
       }

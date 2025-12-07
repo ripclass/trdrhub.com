@@ -298,21 +298,27 @@ export default function ContainerTrackPage() {
             })),
           };
           
-          // If no events from API, use default events
+          // If no events from API, show empty events
           if (transformedData.events.length === 0) {
-            transformedData.events = MOCK_CONTAINER.events;
+            transformedData.events = [{
+              date: new Date().toISOString(),
+              location: "Unknown",
+              status: "Tracking data unavailable",
+              isCompleted: false,
+              isCurrent: true,
+            }];
           }
           
           setContainer(transformedData);
         } else {
-          // Fallback to mock data with the containerId
-          console.warn("API returned error, using mock data");
-          setContainer({ ...MOCK_CONTAINER, containerNumber: containerId || MOCK_CONTAINER.containerNumber });
+          // Show error state - no mock data
+          console.warn("API returned error");
+          setContainer(null);
         }
       } catch (error) {
         console.error("Failed to fetch container data:", error);
-        // Fallback to mock data
-        setContainer({ ...MOCK_CONTAINER, containerNumber: containerId || MOCK_CONTAINER.containerNumber });
+        // Show error state - no mock data
+        setContainer(null);
       } finally {
         setLoading(false);
       }
