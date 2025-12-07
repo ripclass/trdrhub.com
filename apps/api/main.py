@@ -378,7 +378,7 @@ if not settings.USE_STUBS:
             "/auth/register",
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
             "/api/validate",  # TEMPORARY - Exempt for demo mode (validation works without auth)
-            "/api/v2",  # V2 API uses Bearer token auth, not session cookies
+            "/v2",  # V2 API uses Bearer token auth, not session cookies
             "/price-verify",  # Price verification API (public tool)
             "/members/admin/seed-existing-users",  # One-time setup endpoint
         },
