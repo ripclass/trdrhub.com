@@ -324,11 +324,50 @@ class CrossDocValidator:
         """
         expiry_str = lc_data.get("expiry_date")
         if not expiry_str:
-            return None  # Can't check without expiry date
+            # CRITICAL: Missing expiry date means we cannot verify LC validity
+            logger.warning("LC expiry date not found in extracted data - cannot verify LC validity")
+            return CrossDocIssue(
+                rule_id="CROSSDOC-LC-001",
+                title="LC Expiry Date Not Found",
+                severity=IssueSeverity.MAJOR,
+                message=(
+                    "LC expiry date could not be extracted from the document. "
+                    "Cannot verify if the LC is still valid for presentation. "
+                    "This is a critical field required for UCP600 compliance."
+                ),
+                expected="LC expiry date (SWIFT field :31D:)",
+                found="Not extracted / Not found in document",
+                suggestion="Verify the LC document contains an expiry date. Re-upload if OCR failed to capture it, or manually verify LC validity.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.LC,
+                source_field="expiry_date",
+                target_field="expiry_date",
+                ucp_article="UCP600 Article 6(d)",
+                isbp_paragraph="ISBP745 A14",
+            )
         
         expiry_date = self._parse_date(expiry_str)
         if expiry_date is None:
-            return None
+            # Could extract the string but couldn't parse it as a date
+            logger.warning("LC expiry date found but could not be parsed: %s", expiry_str)
+            return CrossDocIssue(
+                rule_id="CROSSDOC-LC-001",
+                title="LC Expiry Date Invalid Format",
+                severity=IssueSeverity.MAJOR,
+                message=(
+                    f"LC expiry date '{expiry_str}' could not be parsed as a valid date. "
+                    "Cannot verify if the LC is still valid for presentation."
+                ),
+                expected="Valid date format (YYYY-MM-DD or DD/MM/YYYY)",
+                found=f"'{expiry_str}' (unparseable)",
+                suggestion="Verify the expiry date format in the LC document. Expected format: YYYY-MM-DD or similar.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.LC,
+                source_field="expiry_date",
+                target_field="expiry_date",
+                ucp_article="UCP600 Article 6(d)",
+                isbp_paragraph="ISBP745 A14",
+            )
         
         today = datetime.now().date()
         

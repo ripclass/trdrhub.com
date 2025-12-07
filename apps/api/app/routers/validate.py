@@ -3334,20 +3334,29 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     
     # =====================================================================
     # Dates (MT700 Fields 31C, 31D, 44C)
+    # Also check nested "dates" structure from legacy fallback extraction
     # =====================================================================
+    dates_nested = lc_context.get("dates") or {}
+    
     issue_date = get_value("issue_date", "date_of_issue")
     if not issue_date:
         issue_date = blocks.get("31C")  # MT700 field 31C - Date of Issue
+    if not issue_date:
+        issue_date = dates_nested.get("issue")  # Legacy fallback: dates.issue
     set_field(baseline.issue_date, issue_date)
     
     expiry_date = get_value("expiry_date", "expiry", "validity_date")
     if not expiry_date:
         expiry_date = blocks.get("31D")  # MT700 field 31D - Date and Place of Expiry
+    if not expiry_date:
+        expiry_date = dates_nested.get("expiry")  # Legacy fallback: dates.expiry
     set_field(baseline.expiry_date, expiry_date)
     
     latest_shipment = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
     if not latest_shipment:
         latest_shipment = blocks.get("44C")  # MT700 field 44C - Latest Date of Shipment
+    if not latest_shipment:
+        latest_shipment = dates_nested.get("latest_shipment")  # Legacy fallback: dates.latest_shipment
     set_field(baseline.latest_shipment, latest_shipment)
     
     # =====================================================================
