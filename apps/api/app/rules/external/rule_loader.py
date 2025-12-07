@@ -296,8 +296,9 @@ class RuleLoader:
     
     def _determine_category(self, record) -> RuleCategory:
         """Determine rule category from database record."""
-        # First check ruleset_id
-        ruleset = (record.ruleset_id or "").lower()
+        # First check ruleset_id (convert UUID to string if needed)
+        ruleset_id = record.ruleset_id
+        ruleset = (str(ruleset_id) if ruleset_id else "").lower()
         if "ucp600" in ruleset or "ucp-600" in ruleset:
             return RuleCategory.UCP600
         if "urdg" in ruleset:
