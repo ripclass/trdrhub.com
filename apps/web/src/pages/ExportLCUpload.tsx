@@ -423,8 +423,20 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
           userType: 'exporter',
         });
         
+        // Hook normalizes snake_case to camelCase
         jobId = v2Response.sessionId;
         console.log('✅ V2 Validation complete, sessionId:', jobId);
+        
+        if (!jobId) {
+          // Fallback to snake_case if normalization failed
+          jobId = (v2Response as any).session_id;
+          console.warn('⚠️ Using fallback session_id:', jobId);
+        }
+        
+        if (!jobId) {
+          console.error('❌ V2 response missing session_id:', v2Response);
+          throw new Error('V2 validation returned no session ID');
+        }
         
         // Store V2 results AND mode marker in sessionStorage
         sessionStorage.setItem(`v2Results_${jobId}`, JSON.stringify(v2Response));

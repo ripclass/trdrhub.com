@@ -69,7 +69,15 @@ export function useLCopilotV2(): UseLCopilotV2Result {
         throw new Error(errorData.detail || `Validation failed: ${response.status}`);
       }
       
-      const data: ValidationResultsV2Data = await response.json();
+      const rawData = await response.json();
+      
+      // Normalize snake_case from backend to camelCase for frontend
+      const data: ValidationResultsV2Data = {
+        ...rawData,
+        sessionId: rawData.session_id || rawData.sessionId,
+        processingTimeSeconds: rawData.processing_time_seconds || rawData.processingTimeSeconds,
+        extractedData: rawData.extracted_data || rawData.extractedData,
+      };
       
       setResults(data);
       
