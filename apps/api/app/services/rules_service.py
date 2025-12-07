@@ -311,6 +311,163 @@ class DBRulesAdapter(RulesService):
 
         return payload
 
+    # =========================================================================
+    # RULE DESCRIPTION LOOKUP (DB + AI Fallback)
+    # =========================================================================
+    
+    # In-memory cache for rule descriptions (article -> description)
+    _description_cache: Dict[str, Optional[str]] = {}
+    
+    async def get_rule_description(
+        self,
+        article: str,
+        domain: str = "icc.ucp600",
+        use_ai_fallback: bool = True,
+    ) -> Optional[str]:
+        """
+        Get human-readable description for a rule article.
+        
+        Lookup priority:
+        1. In-memory cache
+        2. Rules database (admin-uploaded rulesets)
+        3. AI-generated fallback (if enabled)
+        
+        Args:
+            article: Article reference, e.g., "14", "14(a)", "A14"
+            domain: Rule domain, e.g., "icc.ucp600" or "icc.isbp745"
+            use_ai_fallback: Whether to use AI to generate description if not in DB
+            
+        Returns:
+            Description string or None if not found
+        """
+        # Normalize article reference
+        article_clean = self._normalize_article_reference(article)
+        cache_key = f"{domain}:{article_clean}"
+        
+        # 1. Check cache
+        if cache_key in self._description_cache:
+            return self._description_cache[cache_key]
+        
+        # 2. Query database
+        description = self._lookup_description_from_db(article_clean, domain)
+        if description:
+            self._description_cache[cache_key] = description
+            return description
+        
+        # 3. AI fallback
+        if use_ai_fallback:
+            description = await self._generate_description_with_ai(article_clean, domain)
+            if description:
+                self._description_cache[cache_key] = description
+                return description
+        
+        # Not found anywhere
+        self._description_cache[cache_key] = None
+        return None
+    
+    def _normalize_article_reference(self, article: str) -> str:
+        """Normalize article reference for lookup."""
+        import re
+        if not article:
+            return ""
+        
+        # Remove common prefixes
+        # "UCP600 Article 14(a)" -> "14(a)"
+        # "ISBP745 A14" -> "A14"
+        # "Article 14" -> "14"
+        cleaned = article.strip()
+        cleaned = re.sub(r"^(?:UCP600\s*)?(?:Article\s*)?", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^(?:ISBP745\s*)?(?:¶)?", "", cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+    
+    def _lookup_description_from_db(self, article: str, domain: str) -> Optional[str]:
+        """Query rules database for description."""
+        db = SessionLocal()
+        try:
+            # Try exact match on article field
+            record = db.query(RuleRecord).filter(
+                RuleRecord.article == article,
+                RuleRecord.domain == domain,
+                RuleRecord.is_active == True,
+            ).first()
+            
+            if record and record.description:
+                logger.debug(f"Found rule description in DB: {domain}/{article}")
+                return record.description
+            
+            # Try matching by rule_id pattern (e.g., "UCP600-14" or "ISBP745-A14")
+            if domain == "icc.ucp600":
+                rule_id_pattern = f"UCP600-{article}%"
+            elif domain == "icc.isbp745":
+                rule_id_pattern = f"ISBP745-{article}%"
+            else:
+                rule_id_pattern = f"{article}%"
+            
+            record = db.query(RuleRecord).filter(
+                RuleRecord.rule_id.ilike(rule_id_pattern),
+                RuleRecord.domain == domain,
+                RuleRecord.is_active == True,
+            ).first()
+            
+            if record and record.description:
+                logger.debug(f"Found rule description by rule_id pattern: {domain}/{article}")
+                return record.description
+            
+            # Also try title as fallback (many rules have descriptive titles)
+            if record and record.title:
+                return record.title
+            
+            return None
+        except Exception as e:
+            logger.warning(f"Error looking up rule description: {e}")
+            return None
+        finally:
+            db.close()
+    
+    async def _generate_description_with_ai(self, article: str, domain: str) -> Optional[str]:
+        """Generate rule description using AI as fallback."""
+        try:
+            from app.services.llm_provider import LLMProviderFactory
+            
+            # Determine rulebook name
+            if domain == "icc.ucp600":
+                rulebook = "UCP600 (Uniform Customs and Practice for Documentary Credits)"
+                article_ref = f"Article {article}"
+            elif domain == "icc.isbp745":
+                rulebook = "ISBP745 (International Standard Banking Practice)"
+                article_ref = f"Paragraph {article}"
+            else:
+                rulebook = domain
+                article_ref = article
+            
+            prompt = f"""Provide a brief, one-sentence description of {article_ref} from {rulebook}.
+            
+The description should be suitable for a tooltip explaining what this rule requires.
+Respond with ONLY the description text, no additional formatting or explanation.
+
+Example format: "Banks must examine documents within 5 banking days following presentation."
+"""
+            
+            system_prompt = "You are an expert in international trade finance and documentary credits. Provide accurate, concise rule descriptions."
+            
+            output, _, _, provider = await LLMProviderFactory.generate_with_fallback(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=100,
+                temperature=0.1,
+                model_override="gpt-4o-mini",  # Use cheap model for simple lookups
+            )
+            
+            if output:
+                description = output.strip().strip('"').strip("'")
+                logger.info(f"Generated AI description for {domain}/{article} via {provider}")
+                return description
+            
+            return None
+        except Exception as e:
+            logger.warning(f"AI fallback failed for rule description: {e}")
+            return None
+
 
 class RulesServiceDBAdapter:
     """
@@ -427,3 +584,91 @@ def get_rules_service() -> RulesService:
         logger.info(f"Initialized RulesService (DBRulesAdapter, cache TTL: {cache_ttl}min)")
     
     return _rules_service
+
+
+# =============================================================================
+# CONVENIENCE FUNCTIONS FOR RULE DESCRIPTION LOOKUP
+# =============================================================================
+
+async def get_ucp_description(article: str, use_ai_fallback: bool = True) -> Optional[str]:
+    """
+    Get description for a UCP600 article.
+    
+    Args:
+        article: Article reference, e.g., "14", "14(a)", "UCP600 Article 14"
+        use_ai_fallback: Whether to use AI if not in database
+        
+    Returns:
+        Description string or None
+    """
+    service = get_rules_service()
+    if isinstance(service, DBRulesAdapter):
+        return await service.get_rule_description(article, "icc.ucp600", use_ai_fallback)
+    return None
+
+
+async def get_isbp_description(article: str, use_ai_fallback: bool = True) -> Optional[str]:
+    """
+    Get description for an ISBP745 paragraph.
+    
+    Args:
+        article: Paragraph reference, e.g., "A14", "ISBP745 A14"
+        use_ai_fallback: Whether to use AI if not in database
+        
+    Returns:
+        Description string or None
+    """
+    service = get_rules_service()
+    if isinstance(service, DBRulesAdapter):
+        return await service.get_rule_description(article, "icc.isbp745", use_ai_fallback)
+    return None
+
+
+def get_ucp_description_sync(article: str, use_ai_fallback: bool = False) -> Optional[str]:
+    """
+    Synchronous version of get_ucp_description.
+    
+    Note: AI fallback disabled by default in sync version to avoid blocking.
+    For AI fallback, use the async version.
+    """
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Can't run async in running loop - use DB-only lookup
+            service = get_rules_service()
+            if isinstance(service, DBRulesAdapter):
+                return service._lookup_description_from_db(
+                    service._normalize_article_reference(article),
+                    "icc.ucp600"
+                )
+            return None
+        return loop.run_until_complete(get_ucp_description(article, use_ai_fallback))
+    except RuntimeError:
+        # No event loop - create one
+        return asyncio.run(get_ucp_description(article, use_ai_fallback))
+
+
+def get_isbp_description_sync(article: str, use_ai_fallback: bool = False) -> Optional[str]:
+    """
+    Synchronous version of get_isbp_description.
+    
+    Note: AI fallback disabled by default in sync version to avoid blocking.
+    For AI fallback, use the async version.
+    """
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Can't run async in running loop - use DB-only lookup
+            service = get_rules_service()
+            if isinstance(service, DBRulesAdapter):
+                return service._lookup_description_from_db(
+                    service._normalize_article_reference(article),
+                    "icc.isbp745"
+                )
+            return None
+        return loop.run_until_complete(get_isbp_description(article, use_ai_fallback))
+    except RuntimeError:
+        # No event loop - create one
+        return asyncio.run(get_isbp_description(article, use_ai_fallback))

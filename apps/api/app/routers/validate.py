@@ -140,7 +140,7 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
-from app.constants.compliance_references import get_ucp_description, get_isbp_description
+from app.services.rules_service import get_ucp_description_sync, get_isbp_description_sync
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
     ExtractedField,
@@ -928,8 +928,8 @@ async def validate_doc(
                     "documents": issue_dict.get("documents", []),
                     "ucp_reference": ucp_ref,
                     "isbp_reference": isbp_ref,
-                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description(ucp_ref),
-                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description(isbp_ref),
+                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description_sync(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description_sync(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
                 })
@@ -956,8 +956,8 @@ async def validate_doc(
                     "documents": issue_dict.get("documents") or issue_dict.get("document_names") or [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
                     "ucp_reference": ucp_ref,
                     "isbp_reference": isbp_ref,
-                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description(ucp_ref),
-                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description(isbp_ref),
+                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description_sync(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description_sync(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                     "auto_generated": issue_dict.get("auto_generated", False),
