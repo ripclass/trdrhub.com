@@ -334,13 +334,14 @@ class PreprocessingPipeline:
         self,
         image_data: bytes,
     ) -> tuple[str, float]:
-        """Run OCR on image."""
+        """Run OCR on image using the global OCR factory."""
         try:
             # Use existing OCR infrastructure
-            from app.ocr.factory import OCRFactory
+            from app.ocr.factory import get_ocr_factory
             
-            ocr = OCRFactory.create(self.config.ocr.primary_provider)
-            result = await ocr.process(image_data)
+            factory = get_ocr_factory()
+            adapter = await factory.get_adapter()
+            result = await adapter.process(image_data)
             
             return result.text, result.confidence
             
@@ -349,9 +350,10 @@ class PreprocessingPipeline:
             
             try:
                 # Try fallback provider
-                from app.ocr.factory import OCRFactory
-                ocr = OCRFactory.create(self.config.ocr.fallback_provider)
-                result = await ocr.process(image_data)
+                from app.ocr.factory import get_ocr_factory
+                factory = get_ocr_factory()
+                adapter = await factory.get_adapter(prefer_fallback=True)
+                result = await adapter.process(image_data)
                 return result.text, result.confidence
             except Exception as e2:
                 logger.error(f"Fallback OCR also failed: {e2}")

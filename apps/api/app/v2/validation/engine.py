@@ -153,35 +153,38 @@ class ValidationEngineV2:
         issues = []
         
         try:
-            # Use existing rule engine
-            from app.rules.rule_loader import RuleLoader
-            from app.rules.rule_executor import RuleExecutor
+            # Use existing rule engine with database session
+            from app.rules.external.rule_loader import get_rule_loader_with_db
+            from app.rules.external.rule_executor import RuleExecutor
             
-            rule_loader = RuleLoader()
-            executor = RuleExecutor()
+            # Get rule loader with database access
+            rule_loader = get_rule_loader_with_db()
+            executor = RuleExecutor(rule_loader=rule_loader)
             
-            # Load active rules
-            rules = await rule_loader.load_active_rules()
-            context["rules_checked"] = [r.id for r in rules]
+            # Execute all enabled rules against context
+            result = executor.execute_all_rules(context)
             
-            # Execute rules
-            for rule in rules:
-                try:
-                    result = executor.evaluate(rule, context)
+            # Track metrics
+            context["rules_checked"] = [r.rule.id for r in result.execution_results]
+            context["rules_passed"] = [r.rule.id for r in result.execution_results if r.passed]
+            
+            logger.info(
+                f"Rule validation: {result.total_rules} rules, "
+                f"{result.passed} passed, {result.failed} failed, "
+                f"{result.skipped} skipped in {result.execution_time_ms}ms"
+            )
+            
+            # Convert rule issues to V2 Issue format
+            for rule_issue in result.issues:
+                issue = self._create_issue_from_rule_result(rule_issue, context)
+                if issue:
+                    issues.append(issue)
                     
-                    if result.passed:
-                        context["rules_passed"].append(rule.id)
-                    else:
-                        # Create issue with citations
-                        issue = self._create_issue_from_rule(rule, result, context)
-                        if issue:
-                            issues.append(issue)
-                            
-                except Exception as e:
-                    logger.warning(f"Rule {rule.id} execution failed: {e}")
-                    
-        except ImportError:
-            logger.warning("Rule engine not available, using basic validation")
+        except ImportError as e:
+            logger.warning(f"Rule engine not available: {e}, using basic validation")
+            issues = self._run_basic_validation(context)
+        except Exception as e:
+            logger.error(f"Rule validation failed: {e}", exc_info=True)
             issues = self._run_basic_validation(context)
         
         return issues
@@ -284,31 +287,47 @@ class ValidationEngineV2:
         self,
         context: Dict[str, Any],
     ) -> List[Issue]:
-        """Run cross-document validation."""
+        """Run cross-document validation using existing crossdoc service."""
         issues = []
         
         try:
             from app.services.crossdoc import run_cross_document_checks
             
-            crossdoc_results = await run_cross_document_checks(context)
+            # Map V2 context to crossdoc payload format
+            crossdoc_payload = {
+                "lc": context.get("lc", {}),
+                "invoice": context.get("invoice", {}),
+                "bill_of_lading": context.get("bl", {}),
+                "documents_presence": context.get("documents_presence", {}),
+                "documents": list(context.get("documents", {}).values()),
+            }
+            
+            # Run synchronous crossdoc checks
+            crossdoc_results = run_cross_document_checks(crossdoc_payload)
+            
+            logger.info(f"CrossDoc validation found {len(crossdoc_results)} issues")
             
             for result in crossdoc_results:
+                # Skip if marked as passed
+                if result.get("passed", True):
+                    continue
+                    
                 issue = self._create_issue(
-                    rule_id=result.get("rule_id", "CROSSDOC"),
+                    rule_id=result.get("rule", "CROSSDOC"),
                     title=result.get("title", "Cross-Document Discrepancy"),
                     severity=self._map_severity(result.get("severity", "warning")),
-                    issue_type=result.get("type", "data_conflict"),
-                    expected=result.get("expected", "Consistent data"),
-                    found=result.get("found", "Data mismatch"),
-                    suggestion=result.get("suggestion", "Review and correct"),
-                    documents=result.get("documents", []),
+                    issue_type="crossdoc",
+                    expected=result.get("expected", "Consistent data across documents"),
+                    found=result.get("actual", result.get("found", "Data mismatch detected")),
+                    suggestion=result.get("suggestion", "Review and correct discrepancy"),
+                    documents=result.get("documents", result.get("document_names", [])),
                 )
                 issues.append(issue)
                 
-        except ImportError:
-            logger.warning("CrossDoc service not available")
+        except ImportError as e:
+            logger.warning(f"CrossDoc service not available: {e}")
         except Exception as e:
-            logger.error(f"CrossDoc validation failed: {e}")
+            logger.error(f"CrossDoc validation failed: {e}", exc_info=True)
         
         return issues
     
@@ -483,6 +502,48 @@ class ValidationEngineV2:
             )
         except Exception as e:
             logger.warning(f"Failed to create issue from rule: {e}")
+            return None
+    
+    def _create_issue_from_rule_result(
+        self,
+        rule_issue: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Optional[Issue]:
+        """Create V2 Issue from rule executor result dict."""
+        try:
+            rule_id = rule_issue.get("rule_id", rule_issue.get("rule", "UNKNOWN"))
+            title = rule_issue.get("title", rule_id)
+            severity_str = rule_issue.get("severity", "major").lower()
+            
+            # Get citations from the citation library based on rule_id
+            citations = self.citation_lib.get_citations(rule_id)
+            
+            # If the rule has reference info, try to parse UCP/ISBP references
+            reference = rule_issue.get("ucp_reference") or rule_issue.get("reference", "")
+            if reference and not citations.ucp600:
+                # Try to extract article numbers
+                import re
+                ucp_match = re.findall(r'Article\s*(\d+[a-z]?)', reference, re.IGNORECASE)
+                if ucp_match:
+                    citations.ucp600 = ucp_match
+            
+            return Issue(
+                id=str(uuid.uuid4())[:8],
+                rule_id=rule_id,
+                title=title,
+                severity=self._map_severity(severity_str),
+                citations=citations,
+                bank_message=self.citation_lib.format_bank_message(title, citations),
+                explanation=rule_issue.get("message", rule_issue.get("description", "")),
+                expected=rule_issue.get("expected", "Compliant with LC terms"),
+                found=rule_issue.get("actual", rule_issue.get("found", "Discrepancy detected")),
+                suggestion=rule_issue.get("suggestion", "Review and correct the discrepancy"),
+                documents=rule_issue.get("documents", []),
+                document_ids=rule_issue.get("document_ids", []),
+                can_amend=rule_issue.get("can_amend", True),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create issue from rule result: {e}")
             return None
     
     def _create_sanctions_issues(
