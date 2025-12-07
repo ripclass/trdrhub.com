@@ -5,7 +5,7 @@ Centralized configuration for all magic numbers used in validation.
 Each threshold is documented with its purpose and UCP600/ISBP745 reference where applicable.
 
 Usage:
-    from app.config.thresholds import ValidationThresholds, AIThresholds, SimilarityThresholds
+    from app.constants.thresholds import ValidationThresholds, AIThresholds, SimilarityThresholds
 """
 
 from decimal import Decimal

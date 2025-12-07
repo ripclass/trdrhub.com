@@ -23,7 +23,7 @@ from enum import Enum
 from app.services.extraction.lc_baseline import LCBaseline
 from app.services.validation.issue_engine import Issue, IssueSeverity, IssueSource
 from app.reference_data.ports import get_port_registry, PortRegistry
-from app.config.thresholds import VALIDATION, CONFIDENCE
+from app.constants.thresholds import VALIDATION, CONFIDENCE
 
 
 logger = logging.getLogger(__name__)
