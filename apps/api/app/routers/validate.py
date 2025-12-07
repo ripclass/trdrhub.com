@@ -346,6 +346,17 @@ async def validate_doc(
     import time
     start_time = time.time()
     
+    # ==========================================================================
+    # TIMING TELEMETRY - Track where time is spent
+    # ==========================================================================
+    timings: Dict[str, float] = {}
+    
+    def checkpoint(name: str) -> None:
+        """Record time elapsed since start for a named checkpoint."""
+        timings[name] = round(time.time() - start_time, 3)
+    
+    checkpoint("request_received")
+    
     audit_service = AuditService(db)
     audit_context = create_audit_context(request)
     
@@ -448,9 +459,12 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
+        checkpoint("form_parsed")
+        
         # Extract structured data from uploaded files (respecting any document tags)
         document_tags = payload.get("document_tags")
         extracted_context = await _build_document_context(files_list, document_tags)
+        checkpoint("ocr_extraction_complete")
         if extracted_context:
             logger.info(
                 "Extracted context from %d files. Keys: %s",
@@ -536,6 +550,7 @@ async def validate_doc(
             lc_type_reason,
         )
         lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
+        checkpoint("lc_type_detected")
 
         # =====================================================================
         # CREATE VALIDATION SESSION EARLY
@@ -586,6 +601,7 @@ async def validate_doc(
             validation_session.processing_started_at = func.now()
             db.commit()
             job_id = str(validation_session.id)
+            checkpoint("session_created")
             
             # =====================================================================
             # PERSIST DOCUMENTS TO DATABASE
@@ -639,6 +655,7 @@ async def validate_doc(
                 v2_gate_result.completeness * 100,
                 v2_gate_result.critical_completeness * 100,
             )
+            checkpoint("validation_gate_complete")
             
             # =====================================================================
             # BLOCKED RESPONSE - Return immediately if gate blocks
@@ -676,7 +693,12 @@ async def validate_doc(
                     "job_id": str(job_id),
                     "jobId": str(job_id),
                     "structured_result": blocked_result,
-                    "telemetry": {"validation_blocked": True, "block_reason": v2_gate_result.block_reason},
+                    "telemetry": {
+                        "validation_blocked": True,
+                        "block_reason": v2_gate_result.block_reason,
+                        "timings": timings,
+                        "total_time_seconds": round(time.time() - start_time, 3),
+                    },
                 }
             # =====================================================================
             
@@ -720,6 +742,7 @@ async def validate_doc(
             )
             v2_crossdoc_issues = crossdoc_result.issues
             logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
+            checkpoint("crossdoc_validation_complete")
             
             # =================================================================
             # PRICE VERIFICATION (LCopilot Integration)
@@ -806,6 +829,7 @@ async def validate_doc(
             # Convert AI issues to same format as crossdoc issues
             for ai_issue in ai_issues:
                 v2_crossdoc_issues.append(ai_issue)
+            checkpoint("ai_validation_complete")
             
             # =================================================================
             # HYBRID VALIDATION ENHANCEMENTS
@@ -1444,10 +1468,15 @@ async def validate_doc(
             logger.warning("V2 scoring failed: %s", e, exc_info=True)
         # =====================================================================
 
+        checkpoint("response_building")
+        
         telemetry_payload = {
             "UnifiedStructuredResultBuilt": True,
             "documents": len(structured_result.get("documents_structured", [])),
             "issues": len(structured_result.get("issues", [])),
+            # Timing breakdown for performance analysis
+            "timings": timings,
+            "total_time_seconds": round(time.time() - start_time, 3),
         }
 
         if validation_session:
