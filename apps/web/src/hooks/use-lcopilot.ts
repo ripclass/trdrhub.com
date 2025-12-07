@@ -2,12 +2,15 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { logger } from '@/lib/logger';
 import type {
   ValidationResults,
   IssueCard,
   ReferenceIssue,
   AIEnrichmentPayload,
 } from '@/types/lcopilot';
+
+const lcopilotLogger = logger.createLogger('LCopilot');
 
 export interface ValidationRequest {
   files: File[];
@@ -99,15 +102,7 @@ export const useValidate = () => {
         formData.append('lc_type_override', request.lcTypeOverride);
       }
 
-      // Debug: Log request details
-      console.log('🚀 [DEBUG] Making validation request:', {
-        url: '/api/validate',
-        baseURL: api.defaults.baseURL,
-        fullURL: `${api.defaults.baseURL}/api/validate`,
-        filesCount: request.files.length,
-        fileNames: request.files.map(f => f.name),
-        formDataKeys: Array.from(formData.keys()),
-      });
+      lcopilotLogger.debug('Making validation request', { filesCount: request.files.length });
 
       const response = await api.post('/api/validate', formData, {
         headers: {
@@ -115,11 +110,7 @@ export const useValidate = () => {
         },
       });
 
-      console.log('✅ [DEBUG] Validation response received:', {
-        status: response.status,
-        hasData: !!response.data,
-        jobId: response.data?.jobId || response.data?.job_id,
-      });
+      lcopilotLogger.debug('Validation response received', { jobId: response.data?.jobId });
 
       return response.data;
     } catch (err: any) {
@@ -142,8 +133,7 @@ export const useValidate = () => {
           baseURL: err.config?.baseURL,
         } : null,
       };
-      console.error('🔴 [VALIDATION ERROR] Full error object:', JSON.stringify(errorDetails, null, 2));
-      console.error('🔴 [VALIDATION ERROR] Response data:', err.response?.data);
+      lcopilotLogger.error('Validation error', errorDetails);
       
       let validationError: ValidationError;
 
@@ -239,12 +229,7 @@ export const useJob = (jobId: string | null) => {
       status.status = normalizedStatus;
 
       if (normalizedStatus !== previousStatus) {
-        console.log('[LCopilot][Job] status update', {
-          jobId,
-          status: normalizedStatus,
-          previousStatus,
-          progress: status.progress,
-        });
+        lcopilotLogger.debug('Job status update', { jobId, status: normalizedStatus });
         lastStatusRef.current = normalizedStatus;
       }
 
@@ -267,11 +252,7 @@ export const useJob = (jobId: string | null) => {
           pollJob();
         }, 2000); // Poll every 2 seconds
       } else {
-        console.log('[LCopilot][Job] polling stopped', {
-          jobId,
-          status: normalizedStatus,
-          reason: isTerminal ? 'terminal' : 'inactive',
-        });
+        lcopilotLogger.debug('Job polling stopped', { jobId, status: normalizedStatus });
         setIsPolling(false);
       }
     } catch (err: any) {
@@ -325,7 +306,7 @@ export const useResults = () => {
   const queryClient = useQueryClient();
 
   const getResults = useCallback(async (jobId: string): Promise<ValidationResults> => {
-    console.log('[LCopilot][Results] fetching results', { jobId });
+    lcopilotLogger.debug('Fetching results', { jobId });
     setIsLoading(true);
     setError(null);
 
@@ -337,22 +318,12 @@ export const useResults = () => {
       const response = await api.get(`/api/results/${jobId}`);
       const payload = response.data;
       
-      console.log('[LCopilot][Results] API response received', {
-        jobId,
-        hasStructuredResult: !!payload?.structured_result,
-        version: payload?.structured_result?.version,
-      });
+      lcopilotLogger.debug('API response received', { jobId });
       
       const normalized: ValidationResults = buildValidationResponse(payload);
 
       setResults(normalized);
-      console.log('[LCopilot][Results] fetched results', {
-        jobId,
-        hasStructuredResult: !!normalized.structured_result,
-        hasLcStructured: !!normalized.structured_result?.lc_structured,
-        documents: normalized.documents?.length ?? 0,
-        issues: normalized.issues?.length ?? 0,
-      });
+      lcopilotLogger.debug('Results fetched', { jobId, issues: normalized.issues?.length ?? 0 });
       
       // Update cache with the fetched data
       queryClient.setQueryData(['results', jobId], normalized);
@@ -384,13 +355,7 @@ export const useResults = () => {
       }
 
       setError(validationError);
-      console.error('[LCopilot][Results] failed to fetch results', {
-        jobId,
-        errorType: validationError?.type,
-        errorMessage: validationError?.message,
-        statusCode: validationError?.statusCode,
-        rawError: err?.message || String(err),
-      });
+      lcopilotLogger.error('Failed to fetch results', { jobId, error: validationError?.message });
       throw validationError;
     } finally {
       setIsLoading(false);
@@ -484,7 +449,7 @@ export const usePackage = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(link);
     } catch (err) {
-      console.error('Failed to download package:', err);
+      lcopilotLogger.error('Failed to download package:', err);
       throw new Error('Failed to download package');
     }
   }, []);

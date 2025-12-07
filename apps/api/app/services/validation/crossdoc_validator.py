@@ -23,6 +23,7 @@ from enum import Enum
 from app.services.extraction.lc_baseline import LCBaseline
 from app.services.validation.issue_engine import Issue, IssueSeverity, IssueSource
 from app.reference_data.ports import get_port_registry, PortRegistry
+from app.config.thresholds import VALIDATION, CONFIDENCE
 
 
 logger = logging.getLogger(__name__)
@@ -153,16 +154,10 @@ class CrossDocValidator:
     - Document-to-document matching
     """
     
-    # Amount tolerance (5% per UCP600 Article 30)
-    DEFAULT_AMOUNT_TOLERANCE = 0.05
-    
-    # Quantity tolerance (5% per UCP600 Article 30)
-    DEFAULT_QUANTITY_TOLERANCE = 0.05
-    
     def __init__(
         self,
-        amount_tolerance: float = DEFAULT_AMOUNT_TOLERANCE,
-        quantity_tolerance: float = DEFAULT_QUANTITY_TOLERANCE,
+        amount_tolerance: float = VALIDATION.AMOUNT_TOLERANCE,
+        quantity_tolerance: float = VALIDATION.QUANTITY_TOLERANCE,
         strict_goods_matching: bool = False,
     ):
         self.amount_tolerance = amount_tolerance
@@ -493,8 +488,8 @@ class CrossDocValidator:
         similarity = self._text_similarity(inv_goods, lc_goods)
         
         # Invoice goods must not conflict with LC (but can be more specific)
-        # Lowered threshold from 0.5 to 0.35 - UCP600 allows general terms
-        if similarity < 0.35:
+        # UCP600 Article 18(c) allows general terms - "correspond" not "identical"
+        if similarity < VALIDATION.GOODS_DESCRIPTION_MIN_SIMILARITY:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-003",
                 title="Invoice Goods Description Mismatch",
@@ -1267,7 +1262,7 @@ class CrossDocValidator:
         min_coverage = lc_amount * 1.10
         
         # Use small epsilon for floating-point comparison
-        epsilon = 0.01
+        epsilon = VALIDATION.NUMERIC_EPSILON
         if ins_amount < (min_coverage - epsilon):
             return CrossDocIssue(
                 rule_id="CROSSDOC-INS-001",
@@ -1400,7 +1395,7 @@ class CrossDocValidator:
         
         similarity = self._text_similarity(inv_goods, bl_goods)
         
-        if similarity < 0.4:
+        if similarity < VALIDATION.GOODS_DESCRIPTION_MIN_SIMILARITY:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-BL-001",
                 title="Goods Description Inconsistency",
@@ -1534,8 +1529,8 @@ class CrossDocValidator:
         intersection = tokens1 & tokens2
         union = tokens1 | tokens2
         
-        # Jaccard similarity > 0.5
-        return len(intersection) / len(union) > 0.5
+        # Jaccard similarity threshold for set comparisons
+        return len(intersection) / len(union) > VALIDATION.JACCARD_SIMILARITY_THRESHOLD
     
     # Port aliases for common spelling variations
     PORT_ALIASES = {

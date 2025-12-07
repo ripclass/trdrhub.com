@@ -2,6 +2,10 @@ import * as React from 'react'
 import type { Role } from '@/types/analytics'
 import { supabase } from '@/lib/supabase'
 import { api } from '@/api/client'
+import { logger } from '@/lib/logger'
+
+// Auth-specific logger (debug logs only in development)
+const authLogger = logger.createLogger('Auth')
 
 export interface User {
   id: string
@@ -106,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const doResolve = (token: string, source: string) => {
         if (resolved) return
         resolved = true
-        console.log(`✓ Session found via ${source}`)
+        authLogger.debug(`Session found via ${source}`)
         cleanup()
         resolve(token)
       }
@@ -117,14 +121,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (token) {
           doResolve(token, 'immediate check')
         } else {
-          console.log('No session in immediate check')
+          authLogger.debug('No session in immediate check')
         }
-      }).catch(err => console.warn('getSession error:', err))
+      }).catch(err => authLogger.warn('getSession error:', err))
       
       // Also listen for auth state changes (most reliable)
       try {
         const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('Auth state change event:', event, 'hasSession:', !!session)
+          authLogger.debug('Auth state change:', event, !!session)
           const token = session?.access_token || null
           if (token) {
             doResolve(token, `auth state change (${event})`)
@@ -132,14 +136,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         subscription = sub
       } catch (err) {
-        console.warn('onAuthStateChange setup error:', err)
+        authLogger.warn('onAuthStateChange setup error:', err)
       }
       
       // Aggressive polling every 50ms
       pollInterval = setInterval(async () => {
         const elapsed = Date.now() - started
         if (elapsed > maxMs) {
-          console.error(`✗ Session wait timed out after ${maxMs}ms`)
+          authLogger.error(`Session wait timed out after ${maxMs}ms`)
           cleanup()
           if (!resolved) resolve(null)
           return
@@ -152,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             doResolve(token, `polling (${elapsed}ms)`)
           }
         } catch (err) {
-          console.warn('Polling getSession error:', err)
+          authLogger.warn('Polling getSession error:', err)
         }
       }, 50)
     })
@@ -173,13 +177,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = React.useCallback(async (providedToken?: string) => {
     try {
-      console.log('fetchUserProfile: Starting...', providedToken ? 'with provided token' : 'will get token')
+      authLogger.debug('fetchUserProfile starting', providedToken ? 'with token' : 'will get token')
       
       let supabaseToken = providedToken
       
       if (!supabaseToken) {
         // Fallback: get token from session if not provided (with timeout)
-        console.log('fetchUserProfile: Getting Supabase session...')
+        authLogger.debug('Getting Supabase session...')
         try {
           const { data: sessionData, error: sessionError } = await Promise.race([
             supabase.auth.getSession(),
@@ -189,14 +193,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ]) as { data: { session: any }, error: any }
           
           if (sessionError) {
-            console.error('fetchUserProfile: getSession error:', sessionError)
+            authLogger.error('getSession error:', sessionError)
             throw new Error(`Failed to get session: ${sessionError.message}`)
           }
           
-          console.log('fetchUserProfile: Session data:', { hasSession: !!sessionData.session, hasToken: !!sessionData.session?.access_token })
+          authLogger.debug('Session data:', { hasSession: !!sessionData.session })
           supabaseToken = sessionData.session?.access_token || null
         } catch (error: any) {
-          console.warn('fetchUserProfile: Failed to get Supabase session:', error?.message || error)
+          authLogger.warn('Failed to get Supabase session:', error?.message)
           // If getSession times out, check if we can get token from localStorage as fallback
           // This can happen on page refresh if Supabase client hasn't initialized yet
           const storedToken = localStorage.getItem('sb-' + import.meta.env.VITE_SUPABASE_PROJECT_REF + '-auth-token')
@@ -204,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               const parsed = JSON.parse(storedToken)
               supabaseToken = parsed?.access_token || null
-              console.log('fetchUserProfile: Using token from localStorage fallback')
+              authLogger.debug('Using token from localStorage fallback')
             } catch {
               // Ignore parse errors
             }
@@ -216,21 +220,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (!supabaseToken) {
-        console.error('fetchUserProfile: No Supabase token available for /auth/me')
+        authLogger.error('No Supabase token available')
         throw new Error('No authentication token available')
       }
       
-      console.log('fetchUserProfile: Calling /auth/me with token:', supabaseToken.substring(0, 20) + '...')
+      authLogger.debug('Calling /auth/me')
       const headers = { Authorization: `Bearer ${supabaseToken}` }
       
-      console.log('fetchUserProfile: Making API request to /auth/me...')
       const { data: userData } = await withTimeout(
         api.get('/auth/me', { headers }),
         'Loading profile',
         PROFILE_TIMEOUT_MS
       )
-      console.log('fetchUserProfile: API response received:', userData)
-      console.log('Successfully fetched user profile:', userData.email)
+      authLogger.info('User profile loaded:', userData.email)
       const mapped: User = {
         id: userData.id,
         email: userData.email,
@@ -247,13 +249,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
         await fetchCsrfToken(API_BASE_URL)
       } catch (csrfError) {
-        console.warn('Failed to fetch CSRF token:', csrfError)
+        authLogger.warn('Failed to fetch CSRF token:', csrfError)
         // Non-critical, continue without CSRF token
       }
       
       return mapped
     } catch (error) {
-      console.error('Failed to load user profile', error)
+      authLogger.error('Failed to load user profile', error)
       if (GUEST_MODE) {
         setGuest()
         return {
@@ -349,7 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, 2000)
         }
       } catch (error: any) {
-        console.warn('Auth init: Failed to get session:', error?.message || error)
+        authLogger.warn('Auth init: Failed to get session:', error?.message)
         if (!mounted) return
         initTimeout = setTimeout(() => {
           if (mounted && !profileFetchedRef.current) {
@@ -374,26 +376,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUserProfile])
 
   const loginWithEmail = async (email: string, password: string) => {
-    console.log('=== LOGIN START ===', { email })
+    authLogger.debug('Login started', { email })
     setIsLoading(true)
     try {
-      console.log('Attempting Supabase sign-in...')
+      authLogger.debug('Attempting Supabase sign-in...')
       // Login to Supabase - start the request but don't wait for promise
       const signInPromise = supabase.auth.signInWithPassword({ email, password })
-      console.log('Sign-in request started, checking for session...')
       
       // Don't wait for promise - check session immediately and wait for it to appear
       // The HTTP request succeeds (200) but promise may resolve slowly
       signInPromise.catch(err => {
-        console.warn('Sign-in promise error (checking session anyway):', err)
+        authLogger.warn('Sign-in promise error (checking session anyway):', err)
       })
       
       // Wait for session to appear (session appears when HTTP request completes)
-      console.log('Waiting for Supabase session to appear...')
+      authLogger.debug('Waiting for Supabase session...')
       const token = await waitForSupabaseSession(20000)
       
       if (!token) {
-        console.error('No token after waiting 20s')
+        authLogger.error('No token after waiting 20s')
         // Check if sign-in promise resolved with error
         try {
           const result = await Promise.race([
@@ -402,7 +403,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ])
           const { error } = (result as any) || {}
           if (error) {
-            console.error('Sign-in returned error:', error)
+            authLogger.error('Sign-in returned error:', error)
             throw error
           }
         } catch (checkError: any) {
@@ -413,25 +414,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Signing in timed out. Please try again.')
       }
       
-      console.log('Supabase session obtained, token:', token.substring(0, 20) + '...')
+      authLogger.debug('Supabase session obtained')
       
       // For Supabase users: Skip /auth/login (it expects email/password, not Supabase tokens)
       // The /auth/login endpoint is for backend-managed users only
       // Supabase users authenticate directly via /auth/me with their Supabase token
       
-      console.log('Calling fetchUserProfile() with Supabase token...')
-      console.log('Token available:', token ? 'YES' : 'NO')
       // Pass token directly to avoid calling getSession() again
       const profile = await fetchUserProfile(token)
-      console.log('fetchUserProfile completed, profile:', profile?.email || 'NO PROFILE')
+      authLogger.info('Login completed:', profile?.email)
       return profile
     } catch (error: any) {
-      console.error('=== LOGIN ERROR ===', error)
-      console.error('Error message:', error?.message)
-      console.error('Error stack:', error?.stack)
+      authLogger.error('Login failed:', error?.message)
       throw error
     } finally {
-      console.log('=== LOGIN FINALLY ===')
       setIsLoading(false)
     }
   }
@@ -504,15 +500,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         registerPayload.country = companyInfo.country
         registerPayload.currency = companyInfo.currency
         registerPayload.payment_gateway = companyInfo.paymentGateway
-        console.log('📝 Registering with company info:', {
-          company_name: companyInfo.companyName,
-          company_type: companyInfo.companyType,
-          company_size: companyInfo.companySize,
-          business_types: companyInfo.businessTypes,
-          country: companyInfo.country,
-          currency: companyInfo.currency,
-          payment_gateway: companyInfo.paymentGateway,
-        })
+        authLogger.debug('Registering with company info:', companyInfo.companyName)
       }
       
       try {
@@ -531,26 +519,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // If user already exists, that's okay - continue
           if (registerResponse.status === 400 && errorData.detail?.includes('already registered')) {
-            console.log('ℹ️ User already exists in backend, continuing...')
+            authLogger.info('User already exists in backend, continuing...')
           } else {
             // This is CRITICAL - backend registration failed
-            console.error('❌ Backend registration FAILED:', errorMessage)
-            console.error('📋 Payload was:', registerPayload)
+            authLogger.error('Backend registration failed:', errorMessage)
             // Still continue - user exists in Supabase, but onboarding data might be missing
             // User will need to complete onboarding wizard
           }
         } else {
           const userData = await registerResponse.json().catch(() => null)
-          console.log('✅ Backend registration successful:', {
-            user_id: userData?.id,
-            company_id: userData?.company_id,
-            onboarding_data: userData?.onboarding_data
-          })
+          authLogger.info('Backend registration successful:', userData?.id)
         }
       } catch (backendError: any) {
         // This is CRITICAL - backend registration error
-        console.error('❌ Backend registration ERROR:', backendError)
-        console.error('📋 Payload was:', registerPayload)
+        authLogger.error('Backend registration error:', backendError?.message)
         // Still continue - user exists in Supabase, but onboarding data might be missing
         // User will need to complete onboarding wizard
       }
@@ -563,13 +545,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    console.log('🔴 Logging out - clearing all authentication state...')
+    authLogger.info('Logging out - clearing all authentication state')
     
     // Clear Supabase session
     try {
       await supabase.auth.signOut()
     } catch (error) {
-      console.warn('Error signing out from Supabase:', error)
+      authLogger.warn('Error signing out from Supabase:', error)
     }
     
     // Clear user state

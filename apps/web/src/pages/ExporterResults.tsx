@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ReactElement } from "react";
 import { Link, useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { logger } from "@/lib/logger";
+
+// Module-specific logger for LCopilot results
+const resultsLogger = logger.createLogger('LCopilot');
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -450,9 +454,8 @@ export default function ExporterResults({
   initialTab,
   onTabChange,
 }: ExporterResultsProps = {}) {
-  const FILE_ID = "apps/web/src/pages/ExporterResults.tsx";
-  console.log("[LIVE_COMPONENT_MOUNTED]", { file: FILE_ID, jobIdProp, lcNumberProp });
-  (window as any).__LIVE = FILE_ID;
+  // Debug hook for development - automatically stripped in production
+  resultsLogger.debug('Component mounted', { jobIdProp, lcNumberProp });
   const [searchParams, setSearchParams] = useSearchParams();
   const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
@@ -740,7 +743,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     fetchedOnceRef.current = false;
     lastFetchedJobIdRef.current = null;
     if (validationSessionId) {
-      console.log('[LCopilot][UI] reset results state for session change', { validationSessionId });
+      resultsLogger.debug('Reset results state for session change', { validationSessionId });
     }
   }, [validationSessionId]);
 
@@ -748,29 +751,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     async (source: 'auto' | 'manual', sessionOverride?: string) => {
       const targetId = sessionOverride ?? validationSessionId;
       if (!targetId) {
-        console.log('[LCopilot][UI] skip results fetch: missing validation session id', { source });
+        resultsLogger.debug('Skip results fetch: missing session id');
         return;
       }
 
       fetchedOnceRef.current = true;
       lastFetchedJobIdRef.current = targetId;
-      console.log('[LCopilot][UI] fetching results', { validationSessionId: targetId, source });
+      resultsLogger.debug('Fetching results', { validationSessionId: targetId, source });
 
       try {
         const data = await getResults(targetId);
-        console.log('[LCopilot][UI] results received', {
-          validationSessionId: targetId,
-          hasStructured: !!data?.structured_result,
-          hasLcStructured: !!data?.structured_result?.lc_structured,
-        });
+        resultsLogger.debug('Results received', { validationSessionId: targetId });
         setLiveResults(data);
         setResultsErrorState(null);
       } catch (e: any) {
-        console.warn('[LCopilot][UI] results fetch failed', {
-          validationSessionId: targetId,
-          error: e?.message,
-          source,
-        });
+        resultsLogger.warn('Results fetch failed', { validationSessionId: targetId, error: e?.message });
         fetchedOnceRef.current = false; // allow manual retry
         lastFetchedJobIdRef.current = null;
         setResultsErrorState(e?.message || 'Failed to load validation results.');
@@ -787,53 +782,29 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'error';
     const alreadyFetched = fetchedOnceRef.current && lastFetchedJobIdRef.current === validationSessionId;
 
-    if (!validationSessionId) {
-      console.log('[LCopilot][UI] results fetch skipped: no validationSessionId');
-      return;
-    }
+    if (!validationSessionId) return;
 
     // If job status is not available yet, wait for it (but don't block forever)
     if (!normalizedStatus && !jobStatus) {
-      console.log('[LCopilot][UI] waiting for job status before fetching results', { validationSessionId });
+      resultsLogger.debug('Waiting for job status', { validationSessionId });
       return;
     }
 
     // If we have a status but it's not terminal, wait
     if (normalizedStatus && !isTerminal) {
-      console.log('[LCopilot][UI] job not terminal yet, skipping results fetch', {
-        validationSessionId,
-        status: normalizedStatus,
-      });
+      resultsLogger.debug('Job not terminal', { validationSessionId, status: normalizedStatus });
       return;
     }
 
     // If job is terminal, fetch results
     if (isTerminal) {
-      if (resultsLoading) {
-        console.log('[LCopilot][UI] results fetch already in-flight', { validationSessionId });
-        return;
-      }
+      if (resultsLoading || alreadyFetched) return;
 
-      if (alreadyFetched) {
-        console.log('[LCopilot][UI] results already fetched for this session', { validationSessionId });
-        return;
-      }
-
-      console.log('[LCopilot][UI][FETCH_RESULTS_TRIGGERED]', {
-        jobId: validationSessionId,
-        status: normalizedStatus,
-        jobStatus: jobStatus,
-      });
-      (window as any).__FETCH = { jobId: validationSessionId, status: normalizedStatus, jobStatus };
+      resultsLogger.debug('Fetching results triggered', { validationSessionId, status: normalizedStatus });
       
       fetchResults('auto', validationSessionId)
-        .then((results) => {
-          console.log('[LCopilot][UI][FETCH_RESULTS_SUCCESS]', results);
-          (window as any).__RESULTS = results;
-        })
-        .catch((err) => {
-          console.error('[LCopilot][UI][FETCH_RESULTS_ERROR]', err);
-        });
+        .then(() => resultsLogger.debug('Results fetch success'))
+        .catch((err) => resultsLogger.error('Results fetch error', err));
     }
   }, [validationSessionId, jobStatus?.status, resultsLoading, fetchResults, jobStatus]);
 
@@ -846,18 +817,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (jobStatus?.status) return; // If we have status, the main effect handles it
 
     const timeoutId = setTimeout(() => {
-      console.log('[LCopilot][UI][FETCH_RESULTS_FALLBACK]', {
-        jobId: validationSessionId,
-        reason: 'No jobStatus after 3s, attempting direct fetch',
-      });
+      resultsLogger.debug('Fallback fetch triggered', { validationSessionId });
       fetchResults('auto', validationSessionId)
-        .then((results) => {
-          console.log('[LCopilot][UI][FETCH_RESULTS_FALLBACK_SUCCESS]', results);
-          (window as any).__RESULTS = results;
-        })
-        .catch((err) => {
-          console.warn('[LCopilot][UI][FETCH_RESULTS_FALLBACK_ERROR]', err);
-        });
+        .then(() => resultsLogger.debug('Fallback fetch success'))
+        .catch((err) => resultsLogger.warn('Fallback fetch error', err));
     }, 3000);
 
     return () => clearTimeout(timeoutId);
@@ -869,17 +832,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const terminal = ['completed', 'failed', 'error'];
     const jobId = validationSessionId;
 
-    (window as any).__lastJobStatus = st;
-
     if (!jobId || !terminal.includes(st)) return;
 
-    console.log('[LIVE_FETCH]', { jobId, st, jobStatus });
+    resultsLogger.debug('Terminal guard fetch', { jobId, status: st });
     fetchResults('auto', jobId)
-      .then((r) => {
-        console.log('[LIVE_RESULTS]', r);
-        (window as any).__RESULTS = r;
-      })
-      .catch((err) => console.error('[LIVE_ERROR]', err));
+      .then(() => resultsLogger.debug('Terminal guard fetch success'))
+      .catch((err) => resultsLogger.error('Terminal guard fetch error', err));
   }, [jobStatus?.status, validationSessionId, fetchResults]);
 
   const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
@@ -1001,11 +959,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         description: "Your customs pack has been prepared successfully.",
       });
       // Track telemetry (Phase 6)
-      console.log("Telemetry: customs_pack_generated", {
-        validation_session_id: validationSessionId,
-        lc_number: lcNumber,
-        sha256: data.sha256,
-      });
+      resultsLogger.info('Telemetry: customs_pack_generated', { lcNumber });
     },
     onError: (error: any) => {
       toast({
@@ -1070,12 +1024,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       queryClient.invalidateQueries({ queryKey: ['exporter-submissions'] });
       
       // Track telemetry (Phase 6)
-      console.log("Telemetry: bank_submit_requested", {
-        validation_session_id: validationSessionId,
-        lc_number: lcNumber,
-        submission_id: submission.id,
-        bank_name: submission.bank_name,
-      });
+      resultsLogger.info('Telemetry: bank_submit_requested', { lcNumber, bank: submission.bank_name });
     },
     onError: (error: any) => {
       toast({
@@ -1169,7 +1118,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       };
     });
   }, [structuredDocumentsPayload]);
-  console.log("[DOCS_DEBUG_PHASE4]", documents);
+  resultsLogger.debug('Documents loaded', { count: documents.length });
   const issueCards = resultData?.issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
