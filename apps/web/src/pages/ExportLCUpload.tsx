@@ -426,8 +426,10 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         jobId = v2Response.sessionId;
         console.log('✅ V2 Validation complete, sessionId:', jobId);
         
-        // Store V2 results in sessionStorage for the results page
+        // Store V2 results AND mode marker in sessionStorage
         sessionStorage.setItem(`v2Results_${jobId}`, JSON.stringify(v2Response));
+        sessionStorage.setItem(`v2Mode_${jobId}`, 'true');
+        console.log('📦 V2 results stored in sessionStorage:', `v2Results_${jobId}`);
       } else {
         // Use V1 API
         const response = await validate({
@@ -463,13 +465,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
 
       if (embedded && onComplete) {
-        // For embedded mode, also update URL with v2 param if V2 was used
-        if (useV2Pipeline) {
-          const currentParams = new URLSearchParams(window.location.search);
-          currentParams.set('v2', 'true');
-          currentParams.set('jobId', jobId);
-          window.history.replaceState({}, '', `${window.location.pathname}?${currentParams.toString()}`);
-        }
+        // V2 mode is tracked via sessionStorage (v2Mode_${jobId})
+        // So embedded mode doesn't need URL param manipulation
         setTimeout(() => {
           onComplete({ jobId, lcNumber: lcNumber.trim() });
         }, 800);

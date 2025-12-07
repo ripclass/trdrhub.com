@@ -457,15 +457,20 @@ export default function ExporterResults({
   
   // =================================================================
   // V2 RESULTS DETECTION - Check if V2 results are available
-  // If v2=true in URL and sessionStorage has results, show V2 UI
+  // Check sessionStorage for V2 mode marker OR v2=true in URL
   // This block is COMPLETELY SEPARATE from V1 logic below
   // =================================================================
-  const isV2 = searchParams.get('v2') === 'true';
-  const v2SessionId = jobIdProp || searchParams.get('jobId') || searchParams.get('session');
+  const params = useParams<{ jobId?: string }>();
+  const v2SessionId = jobIdProp || searchParams.get('jobId') || searchParams.get('session') || params.jobId;
+  const isV2FromUrl = searchParams.get('v2') === 'true';
+  const isV2FromStorage = v2SessionId ? sessionStorage.getItem(`v2Mode_${v2SessionId}`) === 'true' : false;
+  const isV2 = isV2FromUrl || isV2FromStorage;
   
   if (isV2 && v2SessionId) {
     const v2ResultsKey = `v2Results_${v2SessionId}`;
     const v2ResultsJson = sessionStorage.getItem(v2ResultsKey);
+    
+    console.log("[V2] Checking for V2 results:", { v2SessionId, isV2FromUrl, isV2FromStorage, hasResults: !!v2ResultsJson });
     
     if (v2ResultsJson) {
       try {
@@ -481,6 +486,7 @@ export default function ExporterResults({
               data={v2Data}
               onRevalidate={() => {
                 sessionStorage.removeItem(v2ResultsKey);
+                sessionStorage.removeItem(`v2Mode_${v2SessionId}`);
                 window.location.href = '/lcopilot/exporter-dashboard?section=upload';
               }}
             />
@@ -495,7 +501,6 @@ export default function ExporterResults({
   // =================================================================
   // END V2 DETECTION - V1 logic continues unchanged below
   // =================================================================
-  const params = useParams<{ jobId?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
