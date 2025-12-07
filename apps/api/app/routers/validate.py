@@ -677,57 +677,32 @@ async def validate_doc(
                 }
             # =====================================================================
             
-            # Gate passed - run v2 IssueEngine with DB-backed rules
+            # Gate passed - run v2 IssueEngine (without full rule execution)
             from app.services.validation.issue_engine import IssueEngine
-            from app.rules.external.rule_executor import RuleExecutor
-            from app.rules.external.rule_loader import get_rule_loader
             
-            # Create rule loader with database session to load all rules (YAML + DB)
-            db_rule_loader = get_rule_loader(db_session=db)
-            db_rule_executor = RuleExecutor(rule_loader=db_rule_loader)
-            issue_engine = IssueEngine(rule_executor=db_rule_executor)
+            # Create IssueEngine without RuleExecutor to avoid running all 2,159 rules
+            # Full rule execution is DISABLED due to false positives from country-specific rules
+            issue_engine = IssueEngine()
             
             v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
-            logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
-            
-            # Log database rules loaded
-            db_rules_count = len([r for r in db_rule_loader.load_all_rules() if hasattr(r, 'id')])
-            logger.info("V2 IssueEngine loaded %d total rules (YAML + Database)", db_rules_count)
+            logger.info("V2 IssueEngine generated %d extraction issues (rule execution disabled)", len(v2_issues))
             
             # =================================================================
-            # EXECUTE DATABASE RULES
-            # Run the uploaded rules (UCP600, ISBP745, bank profiles, etc.) 
-            # against the validation context
+            # EXECUTE DATABASE RULES - DISABLED
+            # Running all 2,159 database rules creates too many false positives
+            # because many are country-specific (Saudi, UAE, etc.) and trigger
+            # when fields are simply not present.
+            # 
+            # For now, we rely on:
+            # - IssueEngine extraction issues (v2_issues)
+            # - CrossDocValidator (crossdoc checks)
+            # - Fatal Four checks
+            # 
+            # Full rule engine requires proper field mapping and filtering.
             # =================================================================
-            try:
-                # Build context for rule execution from all extracted data
-                rule_context = {
-                    "lc": lc_context,
-                    "mt700": lc_context.get("mt700", {}),
-                    "invoice": payload.get("invoice", {}),
-                    "bill_of_lading": payload.get("bill_of_lading", {}),
-                    "packing_list": payload.get("packing_list", {}),
-                    "insurance": payload.get("insurance", {}),
-                    "certificate_of_origin": payload.get("certificate_of_origin", {}),
-                    "documents": payload.get("documents", []),
-                    "documents_presence": payload.get("documents_presence", {}),
-                }
-                
-                # Execute rules and get issues
-                rule_issues = issue_engine.generate_rule_issues(rule_context)
-                if rule_issues:
-                    v2_issues.extend(rule_issues)
-                    logger.info(
-                        "V2 Rule execution generated %d issues from %d database rules",
-                        len(rule_issues),
-                        db_rules_count
-                    )
-            except Exception as rule_exec_err:
-                logger.warning(
-                    "Rule execution failed (non-blocking): %s",
-                    str(rule_exec_err),
-                    exc_info=True
-                )
+            # TEMPORARILY DISABLED - Causes 2000+ false positive issues
+            # TODO: Add rule filtering by country, document type, required fields
+            logger.info("Database rule execution SKIPPED (disabled to prevent false positives)")
             
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
