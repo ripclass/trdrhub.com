@@ -84,6 +84,7 @@ import {
   type AmendmentFieldChange,
   type ToleranceApplied,
 } from "./exporter/results";
+import { HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
@@ -1799,84 +1800,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            {hasIssueCards ? (
-              <>
-                <Card className="shadow-soft border border-border/60">
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-4 sm:grid-cols-4">
-                      <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Critical</p>
-                        <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Major</p>
-                        <p className="text-2xl font-bold text-warning">{severityCounts.major}</p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-muted/30 border border-muted">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Minor</p>
-                        <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
-                        <p className="text-2xl font-bold text-foreground">{issueCards.length}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { value: "all", label: `All (${issueCards.length})` },
-                        { value: "critical", label: `Critical (${severityCounts.critical})` },
-                        { value: "major", label: `Major (${severityCounts.major})` },
-                        { value: "minor", label: `Minor (${severityCounts.minor})` },
-                      ].map((option) => (
-                        <Button
-                          key={option.value}
-                          size="sm"
-                          variant={issueFilter === option.value ? "default" : "outline"}
-                          onClick={() => setIssueFilter(option.value as typeof issueFilter)}
-                        >
-                          {option.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-                {filteredIssueCards.length === 0 ? (
-                  <Card className="shadow-soft border border-dashed">
-                    <CardContent className="py-6 text-center text-sm text-muted-foreground">
-                      No issues match this severity filter.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  filteredIssueCards.map((card, index) => {
-                    const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
-                    const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-                    return (
-                      <ExporterIssueCard
-                        key={fallbackId}
-                        issue={card}
-                        normalizedSeverity={normalizedSeverity}
-                        documentStatusMap={documentStatusMap}
-                        fallbackId={fallbackId}
-                      />
-                    );
-                  })
-                )}
-              </>
-            ) : (
-              <Card className="border border-success/40 bg-success/5 text-success">
-                <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
-                  <ShieldCheck className="w-8 h-8" />
-                  <div>
-                    <p className="text-lg font-semibold">All documents comply with LC terms.</p>
-                    <p className="text-sm text-success/80">
-                      No discrepancies detected across the submitted document set.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            {renderAIInsightsCard()}
-            {renderReferenceIssuesCard()}
+            <IssuesTab
+              hasIssueCards={hasIssueCards}
+              issueCards={issueCards}
+              filteredIssueCards={filteredIssueCards}
+              severityCounts={severityCounts}
+              issueFilter={issueFilter}
+              setIssueFilter={setIssueFilter}
+              documentStatusMap={documentStatusMap}
+              renderAIInsightsCard={renderAIInsightsCard}
+              renderReferenceIssuesCard={renderReferenceIssuesCard}
+            />
           </TabsContent>
           <TabsContent value="extracted-data" className="space-y-4">
             <Card className="shadow-soft border-0">
@@ -2174,190 +2108,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
-            <Card className="shadow-soft border-0">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="w-5 h-5" />
-                  Submission History
-                </CardTitle>
-                <CardDescription>
-                  Track all submissions of this LC to banks
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {submissionsLoading ? (
-                  <div className="text-center py-12">
-                    <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
-                    <p className="text-muted-foreground">Loading submission history...</p>
-                  </div>
-                ) : !submissionsData || submissionsData.items.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-2">No submissions yet</p>
-                    <p className="text-sm text-muted-foreground">
-                      Submit this LC to a bank to track its submission history
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {submissionsData.items.map((submission) => (
-                      <SubmissionHistoryCard 
-                        key={submission.id} 
-                        submission={submission}
-                        validationSessionId={validationSessionId}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <HistoryTab
+              submissionsLoading={submissionsLoading}
+              submissionsData={submissionsData}
+              validationSessionId={validationSessionId || ''}
+            />
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
-            {analyticsAvailable ? (
-              <>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Card className="shadow-soft border border-border/60">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="w-5 h-5" />
-                        Processing Performance
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Document Extraction Accuracy</span>
-                          <span className="text-sm font-medium">{extractionAccuracy}%</span>
-                        </div>
-                        <Progress value={extractionAccuracy} className="h-2" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">LC Compliance Check</span>
-                          <span className="text-sm font-medium">{lcComplianceScore}%</span>
-                        </div>
-                        <Progress value={lcComplianceScore} className="h-2" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Customs Readiness</span>
-                          <span className="text-sm font-medium">{customsReadyScore}%</span>
-                        </div>
-                        <Progress value={customsReadyScore} className="h-2" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
-                          <div className="text-lg font-bold text-success">{processingTime}</div>
-                          <div className="text-xs text-muted-foreground">Processing Time</div>
-                        </div>
-                        <div className="text-center p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                          <div className="text-lg font-bold text-primary">
-                            {totalDocuments}/{totalDocuments}
-                          </div>
-                          <div className="text-xs text-muted-foreground">Documents Processed</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="shadow-soft border border-border/60">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <PieChart className="w-5 h-5" />
-                        Document Status Distribution
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-success rounded-full"></div>
-                            <span className="text-sm">Verified Documents</span>
-                          </div>
-                          <span className="text-sm font-medium">
-                            {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-warning rounded-full"></div>
-                            <span className="text-sm">Minor Issues</span>
-                          </div>
-                          <span className="text-sm font-medium">
-                            {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                            <span className="text-sm">Critical Issues</span>
-                          </div>
-                          <span className="text-sm font-medium">
-                            {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mt-4 p-3 bg-gradient-primary/5 rounded-lg">
-                        <div className="flex items-center gap-2 mb-2">
-                          <TrendingUp className="w-4 h-4 text-primary" />
-                          <span className="text-sm font-medium text-primary">Performance Insights</span>
-                        </div>
-                        <ul className="text-xs text-muted-foreground space-y-1">
-                          {performanceInsights.map((insight, idx) => (
-                            <li key={idx}>- {insight}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-                <Card className="shadow-soft border border-border/60">
-                  <CardHeader>
-                    <CardTitle>Document Processing Analytics</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left py-2">Document</th>
-                            <th className="text-left py-2">Issues</th>
-                            <th className="text-left py-2">Status</th>
-                            <th className="text-left py-2">Risk</th>
-                          </tr>
-                        </thead>
-                        <tbody className="space-y-2">
-                          {documentProcessingList.map((item, index) => (
-                            <tr key={item.name ?? index} className="border-b border-gray-200/50">
-                              <td className="py-3 font-medium">{safeString(item.type ?? documents[index]?.type)}</td>
-                              <td className="py-3 text-muted-foreground">{item.issues ?? 0}</td>
-                              <td className="py-3">
-                                <StatusBadge status={item.status || 'success'}>
-                                  {item.status === 'success'
-                                    ? 'Verified'
-                                    : item.status === 'warning'
-                                    ? 'Review'
-                                    : 'Fix Required'}
-                                </StatusBadge>
-                              </td>
-                              <td className="py-3 text-muted-foreground text-capitalize">
-                                {item.risk ?? 'low'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            ) : (
-              <Card className="border border-dashed border-muted-foreground/40 bg-muted/10">
-                <CardContent className="py-10 text-center space-y-2">
-                  <Sparkles className="w-8 h-8 mx-auto text-muted-foreground" />
-                  <p className="text-lg font-semibold text-foreground">Analytics unavailable</p>
-                  <p className="text-sm text-muted-foreground">
-                    Analytics were not generated for this validation run. Re-run the validation to capture full metrics.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            <AnalyticsTab
+              analyticsAvailable={analyticsAvailable}
+              extractionAccuracy={extractionAccuracy}
+              lcComplianceScore={lcComplianceScore}
+              customsReadyScore={customsReadyScore}
+              processingTime={processingTime}
+              totalDocuments={totalDocuments}
+              successCount={successCount}
+              warningCount={warningCount}
+              errorCount={errorCount}
+              performanceInsights={performanceInsights}
+              documentProcessingList={documentProcessingList}
+              documents={documents}
+            />
           </TabsContent>
         </Tabs>
 
