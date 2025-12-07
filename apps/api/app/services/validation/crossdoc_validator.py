@@ -199,6 +199,17 @@ class CrossDocValidator:
         else:
             rules_passed += 1
         
+        # =========================================================================
+        # ARTICLE 16 TIMING CHECK - Presentation deadline
+        # =========================================================================
+        if bill_of_lading:
+            rules_executed += 1
+            timing_issue = self._check_article_16_timing(bill_of_lading, lc_data)
+            if timing_issue:
+                all_issues.append(timing_issue)
+            else:
+                rules_passed += 1
+        
         # Invoice vs LC
         if invoice:
             inv_issues, inv_exec, inv_pass = self._validate_invoice_vs_lc(
@@ -708,6 +719,14 @@ class CrossDocValidator:
         else:
             passed += 1
         
+        # CROSSDOC-BL-008: Multimodal Transport validation (UCP600 Article 19)
+        executed += 1
+        issue = self._check_multimodal_transport(bl, lc_data)
+        if issue:
+            issues.append(issue)
+        else:
+            passed += 1
+        
         return issues, executed, passed
     
     def _check_bl_port_of_loading(
@@ -936,6 +955,258 @@ class CrossDocValidator:
                     ucp_article="UCP600 Article 27",
                     source_value=clause,
                 )
+        
+        return None
+    
+    def _check_multimodal_transport(
+        self,
+        bl: Dict[str, Any],
+        lc_data: Dict[str, Any],
+    ) -> Optional[CrossDocIssue]:
+        """
+        Validate multimodal transport document per UCP600 Article 19.
+        
+        Per UCP600 Article 19, a multimodal transport document must:
+        - Indicate the carrier/multimodal transport operator
+        - Indicate shipment/dispatch/taking in charge at the place stated in LC
+        - Indicate the place of final destination stated in LC
+        - Be signed by the carrier/MTO or their agent
+        - Indicate that goods are on board or have been dispatched
+        """
+        bl_type = (bl.get("type") or bl.get("document_type") or "").lower()
+        
+        # Only validate if this is a multimodal/combined transport document
+        is_multimodal = any(term in bl_type for term in [
+            "multimodal", "combined", "intermodal", "multi-modal"
+        ])
+        
+        # Also check if LC specifies multimodal transport
+        lc_transport = (lc_data.get("transport_mode") or "").lower()
+        lc_requires_multimodal = "multimodal" in lc_transport or "combined" in lc_transport
+        
+        if not is_multimodal and not lc_requires_multimodal:
+            return None  # Standard ocean B/L, no multimodal validation needed
+        
+        # For multimodal, check place of receipt (not just port of loading)
+        place_of_receipt = bl.get("place_of_receipt") or bl.get("place_of_taking_in_charge")
+        lc_place_of_receipt = lc_data.get("place_of_receipt") or lc_data.get("place_of_dispatch")
+        
+        # Check place of delivery (final destination)
+        place_of_delivery = bl.get("place_of_delivery") or bl.get("final_destination")
+        lc_place_of_delivery = lc_data.get("place_of_delivery") or lc_data.get("final_destination")
+        
+        # Validate place of receipt matches
+        if lc_place_of_receipt and place_of_receipt:
+            if not self._places_match(place_of_receipt, lc_place_of_receipt):
+                return CrossDocIssue(
+                    rule_id="CROSSDOC-BL-008",
+                    title="Multimodal Place of Receipt Mismatch",
+                    severity=IssueSeverity.MAJOR,
+                    message="Multimodal transport document place of receipt does not match LC.",
+                    expected=f"Place of Receipt: {lc_place_of_receipt}",
+                    found=f"Document shows: {place_of_receipt}",
+                    suggestion="Ensure place of taking in charge matches LC requirements.",
+                    source_doc=DocumentType.BILL_OF_LADING,
+                    target_doc=DocumentType.LC,
+                    source_field="place_of_receipt",
+                    target_field="place_of_receipt",
+                    ucp_article="UCP600 Article 19(a)(ii)",
+                    isbp_paragraph="ISBP745 D1-D3",
+                    source_value=place_of_receipt,
+                    target_value=lc_place_of_receipt,
+                )
+        
+        # Validate place of delivery matches
+        if lc_place_of_delivery and place_of_delivery:
+            if not self._places_match(place_of_delivery, lc_place_of_delivery):
+                return CrossDocIssue(
+                    rule_id="CROSSDOC-BL-008",
+                    title="Multimodal Final Destination Mismatch",
+                    severity=IssueSeverity.MAJOR,
+                    message="Multimodal transport document final destination does not match LC.",
+                    expected=f"Final Destination: {lc_place_of_delivery}",
+                    found=f"Document shows: {place_of_delivery}",
+                    suggestion="Ensure final destination matches LC requirements.",
+                    source_doc=DocumentType.BILL_OF_LADING,
+                    target_doc=DocumentType.LC,
+                    source_field="place_of_delivery",
+                    target_field="place_of_delivery",
+                    ucp_article="UCP600 Article 19(a)(ii)",
+                    isbp_paragraph="ISBP745 D1-D3",
+                    source_value=place_of_delivery,
+                    target_value=lc_place_of_delivery,
+                )
+        
+        # Check if document indicates dispatch/taking in charge
+        dispatch_date = bl.get("dispatch_date") or bl.get("taking_in_charge_date")
+        on_board_date = bl.get("on_board_date") or bl.get("shipped_date")
+        
+        if is_multimodal and not dispatch_date and not on_board_date:
+            return CrossDocIssue(
+                rule_id="CROSSDOC-BL-008",
+                title="Missing Dispatch/On-Board Date on Multimodal Document",
+                severity=IssueSeverity.CRITICAL,
+                message="Multimodal transport document must indicate when goods were dispatched or taken in charge.",
+                expected="Dispatch date or on-board notation",
+                found="No dispatch/shipment date indicated",
+                suggestion="Add dispatch date or on-board notation to the transport document.",
+                source_doc=DocumentType.BILL_OF_LADING,
+                target_doc=DocumentType.LC,
+                source_field="dispatch_date",
+                target_field="latest_shipment_date",
+                ucp_article="UCP600 Article 19(a)(ii)",
+                isbp_paragraph="ISBP745 D7",
+            )
+        
+        return None
+    
+    def _places_match(self, place1: str, place2: str) -> bool:
+        """Check if two place names match (flexible matching)."""
+        if not place1 or not place2:
+            return True  # Can't compare, assume OK
+        
+        p1 = place1.upper().strip()
+        p2 = place2.upper().strip()
+        
+        # Direct match
+        if p1 == p2:
+            return True
+        
+        # One contains the other
+        if p1 in p2 or p2 in p1:
+            return True
+        
+        # Remove common suffixes and compare
+        suffixes = [" PORT", " AIRPORT", " TERMINAL", " STATION", " DEPOT"]
+        for suffix in suffixes:
+            p1 = p1.replace(suffix, "")
+            p2 = p2.replace(suffix, "")
+        
+        return p1 == p2
+    
+    def _check_article_16_timing(
+        self,
+        bl: Dict[str, Any],
+        lc_data: Dict[str, Any],
+    ) -> Optional[CrossDocIssue]:
+        """
+        Check presentation timing per UCP600 Article 14(c) and Article 16.
+        
+        Key rules:
+        - Documents must be presented within 21 days of shipment (Art. 14(c))
+        - Unless LC specifies a different period
+        - Presentation must be within LC validity
+        - Bank has 5 banking days to examine (Art. 14(b))
+        """
+        from datetime import datetime, timedelta
+        
+        # Get shipment date from B/L
+        shipment_date_str = (
+            bl.get("on_board_date") or 
+            bl.get("shipped_date") or 
+            bl.get("date_of_issue") or
+            bl.get("dispatch_date")
+        )
+        
+        if not shipment_date_str:
+            return None  # Can't check without shipment date
+        
+        # Parse shipment date
+        try:
+            if isinstance(shipment_date_str, datetime):
+                shipment_date = shipment_date_str
+            else:
+                # Try multiple date formats
+                for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%d %b %Y", "%B %d, %Y"]:
+                    try:
+                        shipment_date = datetime.strptime(str(shipment_date_str), fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    return None  # Can't parse date
+        except Exception:
+            return None
+        
+        # Get presentation period from LC (default: 21 days per UCP600 Art. 14(c))
+        presentation_period = lc_data.get("presentation_period")
+        if presentation_period:
+            try:
+                days_allowed = int(presentation_period)
+            except (ValueError, TypeError):
+                days_allowed = 21
+        else:
+            days_allowed = 21
+        
+        # Calculate presentation deadline
+        presentation_deadline = shipment_date + timedelta(days=days_allowed)
+        today = datetime.now()
+        
+        # Get LC expiry date
+        expiry_date_str = lc_data.get("expiry_date") or lc_data.get("date_of_expiry")
+        expiry_date = None
+        if expiry_date_str:
+            try:
+                if isinstance(expiry_date_str, datetime):
+                    expiry_date = expiry_date_str
+                else:
+                    for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]:
+                        try:
+                            expiry_date = datetime.strptime(str(expiry_date_str), fmt)
+                            break
+                        except ValueError:
+                            continue
+            except Exception:
+                pass
+        
+        # The effective deadline is the EARLIER of:
+        # 1. 21 days (or LC-specified period) after shipment
+        # 2. LC expiry date
+        effective_deadline = presentation_deadline
+        if expiry_date and expiry_date < presentation_deadline:
+            effective_deadline = expiry_date
+        
+        # Check if presentation deadline has passed
+        if today > presentation_deadline:
+            days_overdue = (today - presentation_deadline).days
+            return CrossDocIssue(
+                rule_id="CROSSDOC-TIMING-001",
+                title="Presentation Period Exceeded",
+                severity=IssueSeverity.CRITICAL,
+                message=f"Documents presented {days_overdue} days after the {days_allowed}-day presentation deadline.",
+                expected=f"Documents presented by {presentation_deadline.strftime('%Y-%m-%d')} ({days_allowed} days from shipment)",
+                found=f"Today is {today.strftime('%Y-%m-%d')} ({days_overdue} days late)",
+                suggestion="Present documents within the stipulated period. Bank will refuse documents presented late per UCP600 Article 14(c).",
+                source_doc=DocumentType.BILL_OF_LADING,
+                target_doc=DocumentType.LC,
+                source_field="shipment_date",
+                target_field="presentation_period",
+                ucp_article="UCP600 Article 14(c)",
+                isbp_paragraph="ISBP745 A20-A22",
+                source_value=shipment_date.strftime("%Y-%m-%d"),
+                target_value=f"{days_allowed} days",
+            )
+        
+        # Warning if presentation is getting close to deadline (within 5 days)
+        days_remaining = (effective_deadline - today).days
+        if 0 < days_remaining <= 5:
+            return CrossDocIssue(
+                rule_id="CROSSDOC-TIMING-002",
+                title="Presentation Deadline Approaching",
+                severity=IssueSeverity.WARNING,
+                message=f"Only {days_remaining} day(s) remaining to present documents.",
+                expected=f"Present by {effective_deadline.strftime('%Y-%m-%d')}",
+                found=f"Today is {today.strftime('%Y-%m-%d')} ({days_remaining} days remaining)",
+                suggestion=f"Present documents immediately. Bank needs 5 banking days to examine (Art. 14(b)).",
+                source_doc=DocumentType.BILL_OF_LADING,
+                target_doc=DocumentType.LC,
+                source_field="shipment_date",
+                target_field="expiry_date",
+                ucp_article="UCP600 Article 14(b)(c)",
+                isbp_paragraph="ISBP745 A20",
+                source_value=shipment_date.strftime("%Y-%m-%d"),
+                target_value=effective_deadline.strftime("%Y-%m-%d"),
+            )
         
         return None
     
