@@ -116,6 +116,14 @@ export const useValidate = () => {
 
       lcopilotLogger.debug('Validation response received', { jobId: response.data?.jobId });
 
+      // 🔍 TIMING TELEMETRY - See where time is spent during validation
+      if (response.data?.telemetry?.timings) {
+        console.group('⏱️ Validation Timing Breakdown');
+        console.table(response.data.telemetry.timings);
+        console.log(`Total backend time: ${response.data.telemetry.total_time_seconds}s`);
+        console.groupEnd();
+      }
+
       return response.data;
     } catch (err: any) {
       // Log full error details for debugging
@@ -321,6 +329,14 @@ export const useResults = () => {
       // Direct API call with proper auth - no race conditions
       const response = await api.get(`/api/results/${jobId}`);
       const payload = response.data;
+      
+      // 🔍 TIMING TELEMETRY - See where time is spent
+      if (payload?.telemetry?.timings) {
+        console.group('⏱️ Validation Timing Breakdown');
+        console.table(payload.telemetry.timings);
+        console.log(`Total backend time: ${payload.telemetry.total_time_seconds}s`);
+        console.groupEnd();
+      }
       
       lcopilotLogger.debug('API response received', { jobId });
       
