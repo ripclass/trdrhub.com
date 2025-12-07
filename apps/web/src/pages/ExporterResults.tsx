@@ -56,7 +56,7 @@ import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 // LcHeader removed - LC info now shown inline in SummaryStrip
 // RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
-// Extracted components from ExporterResults
+// Extracted components and utilities from ExporterResults
 import {
   BankVerdictCard,
   BankProfileBadge,
@@ -64,6 +64,17 @@ import {
   AmendmentCard,
   ToleranceBadge,
   SubmissionHistoryCard,
+  // Utilities
+  DOCUMENT_LABELS,
+  humanizeLabel,
+  safeString,
+  formatExtractedValue,
+  formatConditions,
+  formatAmountValue,
+  normalizeDiscrepancySeverity,
+  getStatusColor,
+  getStatusLabel,
+  // Types
   type BankVerdict,
   type BankVerdictActionItem,
   type BankProfile,
@@ -86,23 +97,7 @@ type ExporterResultsProps = {
   onTabChange?: (tab: ResultsTab) => void;
 };
 
-// NOTE: BankVerdict, BankProfile, ExtractionConfidence, Amendment, ToleranceApplied types
-// and BankVerdictCard, BankProfileBadge, OCRConfidenceWarning, AmendmentCard, ToleranceBadge, SubmissionHistoryCard
-// are now imported from ./exporter/results
-
-// Utility function for severity normalization
-const normalizeDiscrepancySeverity = (
-  severity?: string | null
-): "critical" | "major" | "minor" => {
-  const value = (severity ?? "").toLowerCase();
-  if (["critical", "fail", "error", "high"].includes(value)) {
-    return "critical";
-  }
-  if (["warning", "warn", "major", "medium"].includes(value)) {
-    return "major";
-  }
-  return "minor";
-};
+// NOTE: Components, types, and utilities are now imported from ./exporter/results
 
 export default function ExporterResults({
   embedded = false,
@@ -136,121 +131,7 @@ export default function ExporterResults({
   const tabParamRaw = searchParams.get("tab");
   const tabParam = isResultsTab(tabParamRaw) ? tabParamRaw : null;
 
-  const formatExtractedValue = (value: any): string => {
-    if (value === null || value === undefined) {
-      return "N/A";
-    }
-    if (Array.isArray(value)) {
-      // For simple arrays (strings/numbers), join them
-      if (value.every((v) => typeof v === "string" || typeof v === "number")) {
-        return value.join(", ");
-      }
-      return value.map((item) => formatExtractedValue(item)).join("; ");
-    }
-    if (typeof value === "object") {
-      // Handle lc_classification {types: [...]}
-      if ("types" in value && Array.isArray(value.types)) {
-        return value.types.join(", ");
-      }
-      // Handle condition/clause objects {id, text, type}
-      if ("text" in value && typeof value.text === "string") {
-        return value.text;
-      }
-      // Handle amount objects {value, currency} or {amount, currency}
-      if (("value" in value || "amount" in value) && "currency" in value) {
-        const amt = value.value ?? value.amount ?? "";
-        const cur = value.currency ?? "";
-        return `${cur} ${Number(amt).toLocaleString()}`.trim();
-      }
-      // Handle party objects {name}
-      if ("name" in value && typeof value.name === "string") {
-        return value.name.replace(/\n+/g, ", ");
-      }
-      // Handle ports objects {loading, discharge}
-      if ("loading" in value || "discharge" in value) {
-        const parts = [];
-        if (value.loading) parts.push(`Loading: ${value.loading}`);
-        if (value.discharge) parts.push(`Discharge: ${value.discharge}`);
-        return parts.join(" → ") || "N/A";
-      }
-      // For other small objects, create a simple key-value display
-      const entries = Object.entries(value).filter(([k, v]) => 
-        v != null && typeof v !== "object" && !k.startsWith("_")
-      );
-      if (entries.length > 0 && entries.length <= 4) {
-        return entries.map(([k, v]) => `${k}: ${v}`).join(", ");
-      }
-      // For large/complex objects, indicate that details are available
-      try {
-        const str = JSON.stringify(value);
-        if (str.length > 200) {
-          return `[Complex data - ${Object.keys(value).length} fields]`;
-        }
-        return JSON.stringify(value, null, 2);
-      } catch {
-        return String(value);
-      }
-    }
-    return String(value);
-  };
-  
-  // Format additional conditions as a readable list
-  const formatConditions = (conditions: any): string[] => {
-    if (!conditions) return [];
-    if (!Array.isArray(conditions)) return [];
-    return conditions
-      .filter((c: any) => c && typeof c.text === "string")
-      .map((c: any) => c.text);
-  };
-
-const formatAmountValue = (amount: any): string => {
-  if (!amount) {
-    return "";
-  }
-  if (typeof amount === "object") {
-    const value = amount.value ?? amount.amount ?? amount.text ?? "";
-    const currency = amount.currency ?? amount.curr ?? amount.ccy ?? "";
-    const normalized = [value, currency].filter(Boolean).join(" ").trim();
-    if (normalized) {
-      return normalized;
-    }
-  }
-  return formatExtractedValue(amount);
-};
-
-const DOCUMENT_LABELS: Record<string, string> = {
-  letter_of_credit: "Letter of Credit",
-  commercial_invoice: "Commercial Invoice",
-  bill_of_lading: "Bill of Lading",
-  packing_list: "Packing List",
-  insurance_certificate: "Insurance Certificate",
-  certificate_of_origin: "Certificate of Origin",
-  inspection_certificate: "Inspection Certificate",
-  supporting_documents: "Supporting Documents",
-};
-
-const humanizeLabel = (value: string): string =>
-  value
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-
-// Safely convert any value to a displayable string - prevents React Error #31
-const safeString = (value: any): string => {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    // Handle {types: [...]} from lc_classification
-    if ("types" in value && Array.isArray(value.types)) {
-      return value.types.join(", ");
-    }
-    return JSON.stringify(value);
-  }
-  return String(value);
-};
-
-// Field confidence indicator component
+// Field confidence indicator component (uses imported getStatusColor/getStatusLabel)
 const FieldConfidenceIndicator = ({ 
   confidence, 
   status 
@@ -260,37 +141,15 @@ const FieldConfidenceIndicator = ({
 }) => {
   if (!confidence && !status) return null;
   
-  const getStatusColor = () => {
-    if (status === 'trusted') return 'bg-emerald-500';
-    if (status === 'review') return 'bg-amber-500';
-    if (status === 'untrusted') return 'bg-red-500';
-    if (confidence !== undefined) {
-      if (confidence >= 0.8) return 'bg-emerald-500';
-      if (confidence >= 0.5) return 'bg-amber-500';
-      return 'bg-red-500';
-    }
-    return 'bg-gray-400';
-  };
-  
-  const getStatusLabel = () => {
-    if (status === 'trusted') return 'Verified';
-    if (status === 'review') return 'Review';
-    if (status === 'untrusted') return 'Low Confidence';
-    if (confidence !== undefined) {
-      return `${Math.round(confidence * 100)}%`;
-    }
-    return '';
-  };
-  
   return (
     <span 
       className={cn(
         "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-white",
-        getStatusColor()
+        getStatusColor(confidence, status)
       )}
       title={confidence !== undefined ? `Extraction confidence: ${Math.round(confidence * 100)}%` : `Status: ${status}`}
     >
-      {getStatusLabel()}
+      {getStatusLabel(confidence, status)}
     </span>
   );
 };

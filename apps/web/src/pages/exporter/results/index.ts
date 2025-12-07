@@ -23,3 +23,15 @@ export type { Amendment, AmendmentsAvailable, AmendmentFieldChange, ToleranceApp
 // Submission history
 export { SubmissionHistoryCard } from './SubmissionHistoryCard';
 
+// Utility functions and constants
+export {
+  DOCUMENT_LABELS,
+  humanizeLabel,
+  safeString,
+  formatExtractedValue,
+  formatConditions,
+  formatAmountValue,
+  normalizeDiscrepancySeverity,
+  getStatusColor,
+  getStatusLabel,
+} from './utils';
