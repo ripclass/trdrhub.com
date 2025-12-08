@@ -126,8 +126,10 @@ interface SMEValidationResponse {
 // API FETCH
 // ============================================
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://trdrhub-api.onrender.com';
+
 async function fetchValidationResultV2(sessionId: string): Promise<SMEValidationResponse> {
-  const response = await fetch(`/api/validate/v2/session/${sessionId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/validate/v2/session/${sessionId}`, {
     credentials: 'include',
   });
   
