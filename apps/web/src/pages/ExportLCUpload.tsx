@@ -396,40 +396,40 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const detectDocumentType = (filename: string): { type: string; confidence: number; isTradeDoc: boolean; warning?: string } => {
     const name = filename.toLowerCase();
     
-    // Define patterns for detection
+    // Define patterns for detection (using word boundaries OR underscores)
     const patterns: Array<{ pattern: RegExp; type: string; confidence: number }> = [
       // LC patterns
-      { pattern: /\b(lc|letter.?of.?credit|mt700|mt760|swift|documentary.?credit)\b/i, type: "lc", confidence: 0.9 },
+      { pattern: /(^|[_\s])(lc|letter[_\s]?of[_\s]?credit|mt700|mt760|swift|documentary[_\s]?credit)([_\s]|$|\.)/i, type: "lc", confidence: 0.9 },
       // Invoice patterns  
-      { pattern: /\b(invoice|inv|commercial.?invoice|proforma)\b/i, type: "invoice", confidence: 0.85 },
+      { pattern: /(^|[_\s])(invoice|inv|commercial[_\s]?invoice|proforma)([_\s]|$|\.)/i, type: "invoice", confidence: 0.85 },
       // B/L patterns
-      { pattern: /\b(b[\/.]?l|bill.?of.?lading|bol|ocean.?bill|sea.?waybill)\b/i, type: "bl", confidence: 0.85 },
+      { pattern: /(^|[_\s])(b[\/.]?l|bill[_\s]?of[_\s]?lading|bol|ocean[_\s]?bill|sea[_\s]?waybill)([_\s]|$|\.)/i, type: "bl", confidence: 0.85 },
       // Packing list
-      { pattern: /\b(packing.?list|pack.?list|plist)\b/i, type: "packing_list", confidence: 0.85 },
+      { pattern: /(^|[_\s])(packing[_\s]?list|pack[_\s]?list|plist)([_\s]|$|\.)/i, type: "packing_list", confidence: 0.85 },
       // Certificate of Origin
-      { pattern: /\b(coo|certificate.?of.?origin|origin.?cert|form.?a)\b/i, type: "coo", confidence: 0.85 },
-      // Insurance
-      { pattern: /\b(insurance|ins.?cert|marine.?insurance|cargo.?insurance)\b/i, type: "insurance", confidence: 0.85 },
+      { pattern: /(^|[_\s])(coo|certificate[_\s]?of[_\s]?origin|origin[_\s]?cert|form[_\s]?a)([_\s]|$|\.)/i, type: "coo", confidence: 0.85 },
+      // Insurance - match insurance_certificate, insurance.pdf, etc.
+      { pattern: /(^|[_\s])(insurance|ins[_\s]?cert|marine[_\s]?insurance|cargo[_\s]?insurance)([_\s]|$|\.)/i, type: "insurance", confidence: 0.85 },
       // Inspection
-      { pattern: /\b(inspection|sgs|bureau.?veritas|intertek|quality.?control)\b/i, type: "inspection", confidence: 0.8 },
+      { pattern: /(^|[_\s])(inspection|sgs|bureau[_\s]?veritas|intertek|quality[_\s]?control)([_\s]|$|\.)/i, type: "inspection", confidence: 0.8 },
       // Weight certificate
-      { pattern: /\b(weight|measurement|weighing|tonnage)\b/i, type: "weight_cert", confidence: 0.75 },
+      { pattern: /(^|[_\s])(weight|measurement|weighing|tonnage)([_\s]|$|\.)/i, type: "weight_cert", confidence: 0.75 },
       // Quality certificate
-      { pattern: /\b(quality|analysis|test.?report|lab.?report)\b/i, type: "quality_cert", confidence: 0.75 },
+      { pattern: /(^|[_\s])(quality|analysis|test[_\s]?report|lab[_\s]?report)([_\s]|$|\.)/i, type: "quality_cert", confidence: 0.75 },
       // Fumigation
-      { pattern: /\b(fumigat|pest.?control)\b/i, type: "fumigation", confidence: 0.8 },
+      { pattern: /(^|[_\s])(fumigat|pest[_\s]?control)([_\s]|$|\.)/i, type: "fumigation", confidence: 0.8 },
       // Phytosanitary
-      { pattern: /\b(phyto|sanitary|plant.?health)\b/i, type: "phytosanitary", confidence: 0.8 },
+      { pattern: /(^|[_\s])(phyto|sanitary|plant[_\s]?health)([_\s]|$|\.)/i, type: "phytosanitary", confidence: 0.8 },
       // Health certificate
-      { pattern: /\b(health|sanit|veterinary|vet.?cert)\b/i, type: "health_cert", confidence: 0.75 },
+      { pattern: /(^|[_\s])(health|sanit|veterinary|vet[_\s]?cert)([_\s]|$|\.)/i, type: "health_cert", confidence: 0.75 },
       // Draft/Bill of Exchange
-      { pattern: /\b(draft|bill.?of.?exchange|boe)\b/i, type: "draft", confidence: 0.8 },
+      { pattern: /(^|[_\s])(draft|bill[_\s]?of[_\s]?exchange|boe)([_\s]|$|\.)/i, type: "draft", confidence: 0.8 },
       // Beneficiary certificate
-      { pattern: /\b(beneficiary.?cert|benef)\b/i, type: "beneficiary_cert", confidence: 0.8 },
+      { pattern: /(^|[_\s])(beneficiary[_\s]?cert|benef)([_\s]|$|\.)/i, type: "beneficiary_cert", confidence: 0.8 },
       // Air waybill
-      { pattern: /\b(awb|air.?waybill|airway)\b/i, type: "awb", confidence: 0.85 },
+      { pattern: /(^|[_\s])(awb|air[_\s]?waybill|airway)([_\s]|$|\.)/i, type: "awb", confidence: 0.85 },
       // FCR
-      { pattern: /\b(fcr|forwarder|freight.?receipt)\b/i, type: "fcr", confidence: 0.75 },
+      { pattern: /(^|[_\s])(fcr|forwarder|freight[_\s]?receipt)([_\s]|$|\.)/i, type: "fcr", confidence: 0.75 },
     ];
     
     // Check for non-trade document indicators

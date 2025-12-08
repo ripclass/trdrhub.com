@@ -1397,12 +1397,37 @@ async def validate_doc(
         # =====================================================================
         try:
             from app.services.validation.crossdoc_validator import validate_document_set_completeness
-            
+
+            # Map frontend document type values to backend normalized values
+            DOCTYPE_MAPPING = {
+                "lc": "letter_of_credit",
+                "invoice": "commercial_invoice",
+                "bl": "bill_of_lading",
+                "packing_list": "packing_list",
+                "coo": "certificate_of_origin",
+                "insurance": "insurance_certificate",
+                "inspection": "inspection_certificate",
+                "weight_cert": "weight_certificate",
+                "quality_cert": "quality_certificate",
+                "fumigation": "fumigation_certificate",
+                "phytosanitary": "phytosanitary_certificate",
+                "health_cert": "health_certificate",
+                "draft": "draft_bill_of_exchange",
+                "beneficiary_cert": "beneficiary_certificate",
+                "awb": "air_waybill",
+                "fcr": "forwarder_certificate",
+                "shipping_cert": "shipping_certificate",
+                "other": "supporting_document",
+            }
+
             # Build document list for composition analysis
             doc_list_for_composition = []
             for doc in structured_result.get("documents", []):
+                raw_type = doc.get("documentType", doc.get("type", "supporting_document"))
+                # Normalize the type using mapping
+                normalized_type = DOCTYPE_MAPPING.get(raw_type, raw_type)
                 doc_list_for_composition.append({
-                    "document_type": doc.get("documentType", doc.get("type", "supporting_document")),
+                    "document_type": normalized_type,
                     "filename": doc.get("name", "unknown"),
                 })
             

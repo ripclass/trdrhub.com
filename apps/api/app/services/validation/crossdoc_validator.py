@@ -406,6 +406,27 @@ class CrossDocValidator:
                 "LC expiring soon: %s (in %d days)",
                 expiry_date.isoformat(), days_until_expiry
             )
+            return CrossDocIssue(
+                rule_id="CROSSDOC-LC-002",
+                title="LC Expiring Soon",
+                severity=IssueSeverity.MAJOR if days_until_expiry > 3 else IssueSeverity.CRITICAL,
+                message=(
+                    f"Letter of Credit expires on {expiry_date.isoformat()} "
+                    f"({days_until_expiry} day(s) remaining). "
+                    f"Documents must be presented before expiry per UCP600."
+                ),
+                expected="LC with sufficient validity period",
+                found=f"LC expires in {days_until_expiry} day(s) on {expiry_date.isoformat()}",
+                suggestion="Expedite document presentation or request LC amendment to extend expiry date.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.LC,
+                source_field="expiry_date",
+                target_field="expiry_date",
+                ucp_article="UCP600 Article 6(d)(i)",
+                isbp_paragraph="ISBP745 A14",
+                source_value=expiry_date,
+                target_value=today,
+            )
         
         return None
     
