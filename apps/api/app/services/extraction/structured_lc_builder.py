@@ -139,7 +139,7 @@ def build_unified_structured_result(
         "applicant": extractor_outputs.get("applicant"),
         "beneficiary": extractor_outputs.get("beneficiary"),
         "ports": extractor_outputs.get("ports"),
-        "additional_conditions": extractor_outputs.get("clauses_47a"),
+        "additional_conditions": extractor_outputs.get("additional_conditions"),  # Canonical name
         "hs_codes": extractor_outputs.get("hs_codes"),
         "dates": dates if dates else None,
     }

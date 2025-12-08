@@ -643,8 +643,8 @@ def create_lc_baseline_from_extraction(
     # UCP Reference
     set_field(baseline.ucp_reference, extraction_result.get("ucp_reference"))
     
-    # Additional conditions (47A clauses)
-    conditions = extraction_result.get("clauses_47a", [])
+    # Additional conditions (47A clauses) - canonical name is "additional_conditions"
+    conditions = extraction_result.get("additional_conditions", []) or extraction_result.get("clauses_47a", [])
     baseline._conditions_list = conditions if isinstance(conditions, list) else []
     set_field(baseline.additional_conditions, conditions if conditions else None)
     

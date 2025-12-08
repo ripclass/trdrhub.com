@@ -249,7 +249,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         } if goods_items else None,
         "hs_codes": hs_codes,
         "documents_required": docs46a.get("documents_required", []),
-        "clauses_47a": clauses47a.get("conditions", []),
+        "additional_conditions": clauses47a.get("conditions", []),  # Canonical name for 47A
         "ucp_reference": (
             mt_fields.get("applicable_rules") or
             (mt_core.get("ucp_reference") if mt_core else None) or
