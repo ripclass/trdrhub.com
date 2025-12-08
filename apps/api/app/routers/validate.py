@@ -489,6 +489,58 @@ async def validate_doc(
         if payload.get("lc"):
             payload["lc"] = _normalize_lc_payload_structures(payload["lc"])
         
+        # =====================================================================
+        # NO LC FOUND GATE - Block early if no LC document detected
+        # This prevents expensive validation on incomplete document sets
+        # =====================================================================
+        user_type = payload.get("userType") or payload.get("user_type")
+        documents_presence = (
+            extracted_context.get("documents_presence") if extracted_context else {}
+        ) or {}
+        detected_doc_types = [
+            doc.get("documentType") or doc.get("document_type")
+            for doc in (extracted_context.get("documents") if extracted_context else []) or []
+        ]
+        
+        # Check if any LC-like document was found
+        lc_document_types = {"letter_of_credit", "swift_message", "lc_application"}
+        has_lc_document = (
+            any(documents_presence.get(dt, {}).get("present") for dt in lc_document_types) or
+            any(dt in lc_document_types for dt in detected_doc_types) or
+            bool(payload.get("lc", {}).get("raw_text"))  # Also check if LC data exists
+        )
+        
+        # Block if no LC found on Exporter dashboard (LC is required for validation)
+        if user_type == "exporter" and not has_lc_document and len(files_list) > 0:
+            logger.warning(
+                f"No LC document found in {len(files_list)} uploaded files. "
+                f"Detected types: {detected_doc_types}"
+            )
+            return {
+                "status": "blocked",
+                "block_reason": "no_lc_found",
+                "error": {
+                    "error_code": "NO_LC_FOUND",
+                    "title": "No Letter of Credit Found",
+                    "message": "We couldn't detect a Letter of Credit in your uploaded documents.",
+                    "detail": f"Detected document types: {', '.join(set(detected_doc_types)) or 'None identified'}",
+                    "action": "Add Letter of Credit",
+                    "help_text": (
+                        "The Letter of Credit (MT700/MT760/SWIFT message) is required "
+                        "as the baseline for compliance checking. Please upload your LC document."
+                    ),
+                },
+                "detected_documents": [
+                    {"type": dt, "filename": doc.get("name") or doc.get("filename")}
+                    for doc, dt in zip(
+                        (extracted_context.get("documents") if extracted_context else []) or [],
+                        detected_doc_types
+                    )
+                ],
+                "message": "Please upload your Letter of Credit (MT700/MT760) to proceed with validation.",
+                "action_required": "Add Letter of Credit",
+            }
+        
         context_contains_structured_data = any(
             key in payload for key in ("lc", "invoice", "bill_of_lading", "documents")
         )

@@ -18,3 +18,5 @@ export {
   type IssueData,
 } from "./IssueCard";
 
+export { BlockedUploadModal } from "./BlockedUploadModal";
+

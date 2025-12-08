@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
+import { BlockedUploadModal } from "@/components/validation";
 import { 
   FileText, 
   Upload, 
@@ -173,6 +174,28 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const [versionInfo, setVersionInfo] = useState<{ exists: boolean; nextVersion: string; currentVersions: number } | null>(null);
   const [isCheckingLC, setIsCheckingLC] = useState(false);
   const [showDocTypeErrors, setShowDocTypeErrors] = useState(false);
+  
+  // Blocked upload modal state
+  const [blockedModal, setBlockedModal] = useState<{
+    open: boolean;
+    blockReason?: string;
+    error?: {
+      error_code: string;
+      title: string;
+      message: string;
+      detail?: string;
+      action?: string;
+      redirect_url?: string;
+      help_text?: string;
+    };
+    detectedDocuments?: Array<{ type: string; filename?: string }>;
+    lcDetection?: {
+      lc_type?: string;
+      confidence?: number;
+      reason?: string;
+      is_draft?: boolean;
+    };
+  }>({ open: false });
 
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -517,6 +540,19 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         workflowType: "export-lc-upload",
         lcTypeOverride,
       });
+      
+      // Check for blocked response (wrong LC type, no LC found, etc.)
+      if (response.status === "blocked") {
+        console.log('⚠️ Validation blocked:', response.block_reason);
+        setBlockedModal({
+          open: true,
+          blockReason: response.block_reason,
+          error: response.error,
+          detectedDocuments: response.detected_documents,
+          lcDetection: response.lc_detection,
+        });
+        return;
+      }
       
       const jobId = response.jobId || response.job_id;
       
@@ -1022,6 +1058,16 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         </Card>
         </div>
       )}
+      
+      {/* Blocked Upload Modal - Shows when LC type mismatch or no LC found */}
+      <BlockedUploadModal
+        open={blockedModal.open}
+        onClose={() => setBlockedModal({ open: false })}
+        blockReason={blockedModal.blockReason}
+        error={blockedModal.error}
+        detectedDocuments={blockedModal.detectedDocuments}
+        lcDetection={blockedModal.lcDetection}
+      />
     </div>
   );
 }
