@@ -1378,14 +1378,26 @@ async def validate_doc(
 
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
+        # FIX: Merge ALL fields including status counts, verified, warnings, etc.
         if structured_result.get("processing_summary") and processing_summary:
             structured_result["processing_summary"].update({
+                # Timing fields
                 "processing_time_seconds": processing_summary.get("processing_time_seconds"),
                 "processing_time_display": processing_summary.get("processing_time_display"),
                 "processing_time_ms": processing_summary.get("processing_time_ms"),
                 "extraction_quality": processing_summary.get("extraction_quality"),
+                # Status counts - CRITICAL for frontend display
+                "verified": processing_summary.get("verified", 0),
+                "warnings": processing_summary.get("warnings", 0),
+                "errors": processing_summary.get("errors", 0),
                 "successful_extractions": processing_summary.get("verified", 0),
                 "failed_extractions": processing_summary.get("errors", 0),
+                # Status distribution for SummaryStrip
+                "status_counts": processing_summary.get("status_counts", {}),
+                "document_status": processing_summary.get("document_status", {}),
+                # Compliance (will be overwritten by v2 scorer later, but set baseline)
+                "compliance_rate": processing_summary.get("compliance_rate", 0),
+                "discrepancies": processing_summary.get("discrepancies", 0),
             })
         # Also update analytics with processing time
         if structured_result.get("analytics"):
@@ -3207,17 +3219,30 @@ def _resolve_issue_stats(
     issue_by_type: Dict[str, Dict[str, Any]],
     issue_by_id: Dict[str, Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
+    """
+    Resolve issue stats for a specific document.
+    
+    Matches by document ID, filename, or document type.
+    
+    NOTE: Cross-doc issues now use 'affected_documents' field which only
+    contains the document with the actual issue (not both source and target).
+    This ensures issues are correctly attributed.
+    """
+    # Match by specific document ID
     if detail_id and detail_id in issue_by_id:
         return issue_by_id[detail_id]
 
+    # Match by specific filename
     if filename:
         name_key = filename.strip().lower()
         if name_key in issue_by_name:
             return issue_by_name[name_key]
+        # Also check if filename (without extension) matches a type
         inferred_type = _label_to_doc_type(name_key)
         if inferred_type and inferred_type in issue_by_type:
             return issue_by_type[inferred_type]
 
+    # Match by document type
     if doc_type and doc_type in issue_by_type:
         return issue_by_type[doc_type]
 
@@ -3227,6 +3252,16 @@ def _resolve_issue_stats(
 def _collect_document_issue_stats(
     results: List[Dict[str, Any]]
 ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """
+    Collect issue statistics by document.
+    
+    IMPORTANT: Uses 'affected_documents' field if present (from crossdoc issues)
+    to correctly attribute issues ONLY to the document with the problem,
+    not to all documents referenced in a cross-doc check.
+    
+    For example, "B/L Missing Voyage Number" should only count against B/L,
+    not against both B/L and LC (even though the rule references both).
+    """
     issue_by_name: Dict[str, Dict[str, Any]] = {}
     issue_by_type: Dict[str, Dict[str, Any]] = {}
     issue_by_id: Dict[str, Dict[str, Any]] = {}
@@ -3236,7 +3271,17 @@ def _collect_document_issue_stats(
             continue
 
         severity = (result.get("severity") or "minor").lower()
-        doc_names = _extract_document_names(result)
+        
+        # Use affected_documents if present (crossdoc issues), else fall back to documents
+        # affected_documents contains ONLY the document with the actual issue
+        affected_docs = result.get("affected_documents")
+        if affected_docs is not None:
+            # Crossdoc issue with explicit affected documents
+            doc_names = affected_docs if isinstance(affected_docs, list) else [affected_docs]
+        else:
+            # Legacy issue format - use documents field
+            doc_names = _extract_document_names(result)
+        
         doc_types = _extract_document_types(result)
         doc_ids = _extract_document_ids(result)
 
@@ -3245,15 +3290,18 @@ def _collect_document_issue_stats(
 
         for name in doc_names:
             name_key = name.strip().lower()
-            entry = _bump_issue_entry(issue_by_name, name_key, severity)
+            _bump_issue_entry(issue_by_name, name_key, severity)
             inferred_type = _label_to_doc_type(name)
             if inferred_type:
                 _bump_issue_entry(issue_by_type, inferred_type, severity)
 
-        for doc_type in doc_types:
-            canonical = _normalize_doc_type_key(doc_type)
-            if canonical:
-                _bump_issue_entry(issue_by_type, canonical, severity)
+        # Only add to issue_by_type if no affected_documents was specified
+        # (affected_documents already handles type-based attribution correctly)
+        if affected_docs is None:
+            for doc_type in doc_types:
+                canonical = _normalize_doc_type_key(doc_type)
+                if canonical:
+                    _bump_issue_entry(issue_by_type, canonical, severity)
 
     return issue_by_name, issue_by_type, issue_by_id
 

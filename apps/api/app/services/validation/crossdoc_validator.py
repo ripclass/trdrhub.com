@@ -78,6 +78,21 @@ class CrossDocIssue:
     tolerance_applied: Optional[float] = None
     
     def to_dict(self) -> Dict[str, Any]:
+        # Determine which document(s) to attribute this issue to
+        # For stats purposes, only the TARGET document has the issue
+        # The SOURCE document is just context (where the requirement comes from)
+        is_missing_doc_issue = self.rule_id.startswith("DOCSET-MISSING")
+        
+        if is_missing_doc_issue:
+            # Missing document issues shouldn't be attributed to any uploaded document
+            # They're about the document SET, not individual docs
+            affected_documents = []
+            affected_doc_names = []
+        else:
+            # Regular issues: only the TARGET document has the problem
+            affected_documents = [self.target_doc.value]
+            affected_doc_names = [self._doc_display_name(self.target_doc)]
+        
         return {
             "rule": self.rule_id,
             "title": self.title,
@@ -87,11 +102,15 @@ class CrossDocIssue:
             "actual": self.found,
             "suggestion": self.suggestion,
             "passed": False,
+            # For display/relationship context - shows both docs involved
             "documents": [self.source_doc.value, self.target_doc.value],
             "document_names": [
                 self._doc_display_name(self.source_doc),
                 self._doc_display_name(self.target_doc),
             ],
+            # For STATS attribution - only the document with the actual issue
+            "affected_documents": affected_documents,
+            "affected_document_names": affected_doc_names,
             "source_field": self.source_field,
             "target_field": self.target_field,
             "ucp_reference": self.ucp_article,
