@@ -1410,18 +1410,30 @@ async def validate_doc(
         try:
             from app.services.validation.crossdoc_validator import validate_document_set_completeness
             
-            # Import shared document type normalizer - SINGLE SOURCE OF TRUTH
-            # This handles all aliases and legacy values automatically
-            try:
-                from packages.shared_types.python.document_types import normalize_document_type
-            except ImportError:
-                # Fallback if shared-types not in path
-                import sys
-                import os
-                shared_types_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "packages", "shared-types", "python")
-                if shared_types_path not in sys.path:
-                    sys.path.insert(0, shared_types_path)
-                from document_types import normalize_document_type
+            # Document type normalizer - handles aliases like "lc" -> "letter_of_credit"
+            def normalize_document_type(doc_type: str) -> str:
+                """Normalize document type to canonical form."""
+                if not doc_type:
+                    return "unknown"
+                normalized = doc_type.lower().strip().replace("-", "_").replace(" ", "_")
+                
+                # Alias mapping
+                aliases = {
+                    "lc": "letter_of_credit",
+                    "l/c": "letter_of_credit",
+                    "mt700": "letter_of_credit",
+                    "mt760": "letter_of_credit",
+                    "invoice": "commercial_invoice",
+                    "bl": "bill_of_lading",
+                    "b/l": "bill_of_lading",
+                    "bol": "bill_of_lading",
+                    "coo": "certificate_of_origin",
+                    "co": "certificate_of_origin",
+                    "pl": "packing_list",
+                    "insurance": "insurance_certificate",
+                    "inspection": "inspection_certificate",
+                }
+                return aliases.get(normalized, normalized)
 
             # Build document list for composition analysis
             doc_list_for_composition = []
