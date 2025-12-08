@@ -1397,35 +1397,26 @@ async def validate_doc(
         # =====================================================================
         try:
             from app.services.validation.crossdoc_validator import validate_document_set_completeness
-
-            # Map frontend document type values to backend normalized values
-            DOCTYPE_MAPPING = {
-                "lc": "letter_of_credit",
-                "invoice": "commercial_invoice",
-                "bl": "bill_of_lading",
-                "packing_list": "packing_list",
-                "coo": "certificate_of_origin",
-                "insurance": "insurance_certificate",
-                "inspection": "inspection_certificate",
-                "weight_cert": "weight_certificate",
-                "quality_cert": "quality_certificate",
-                "fumigation": "fumigation_certificate",
-                "phytosanitary": "phytosanitary_certificate",
-                "health_cert": "health_certificate",
-                "draft": "draft_bill_of_exchange",
-                "beneficiary_cert": "beneficiary_certificate",
-                "awb": "air_waybill",
-                "fcr": "forwarder_certificate",
-                "shipping_cert": "shipping_certificate",
-                "other": "supporting_document",
-            }
+            
+            # Import shared document type normalizer - SINGLE SOURCE OF TRUTH
+            # This handles all aliases and legacy values automatically
+            try:
+                from packages.shared_types.python.document_types import normalize_document_type
+            except ImportError:
+                # Fallback if shared-types not in path
+                import sys
+                import os
+                shared_types_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "packages", "shared-types", "python")
+                if shared_types_path not in sys.path:
+                    sys.path.insert(0, shared_types_path)
+                from document_types import normalize_document_type
 
             # Build document list for composition analysis
             doc_list_for_composition = []
             for doc in structured_result.get("documents", []):
                 raw_type = doc.get("documentType", doc.get("type", "supporting_document"))
-                # Normalize the type using mapping
-                normalized_type = DOCTYPE_MAPPING.get(raw_type, raw_type)
+                # Normalize using shared document types (handles ALL aliases)
+                normalized_type = normalize_document_type(raw_type)
                 doc_list_for_composition.append({
                     "document_type": normalized_type,
                     "filename": doc.get("name", "unknown"),

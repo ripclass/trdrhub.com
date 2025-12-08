@@ -1,6 +1,9 @@
 // Export all API types and schemas
 export * from './api';
 
+// Export document types - SINGLE SOURCE OF TRUTH
+export * from './document-types';
+
 // V2 removed - using enhanced V1
 
 // Re-export zod for convenience

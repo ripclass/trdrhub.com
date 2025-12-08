@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,16 @@ import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { BlockedUploadModal } from "@/components/validation";
+// Shared document types - SINGLE SOURCE OF TRUTH
+import { 
+  DOCUMENT_TYPES, 
+  DOCUMENT_TYPE_VALUES,
+  DOCUMENT_CATEGORIES,
+  normalizeDocumentType,
+  getDocumentsByCategory,
+  type DocumentTypeValue,
+  type DocumentCategory,
+} from "@shared/types";
 import { 
   FileText, 
   Upload, 
@@ -46,36 +56,17 @@ interface UploadedFile {
   relevanceWarning?: string;
 }
 
-// Expanded document types covering UCP600/ISBP745 requirements
-const exportDocumentTypes = [
-  // Core LC Documents
-  { value: "lc", label: "Letter of Credit", category: "core" },
-  { value: "invoice", label: "Commercial Invoice", category: "core" },
-  { value: "bl", label: "Bill of Lading", category: "core" },
-  { value: "packing_list", label: "Packing List", category: "core" },
-  { value: "coo", label: "Certificate of Origin", category: "core" },
-  { value: "insurance", label: "Insurance Certificate", category: "core" },
-  
-  // Inspection & Quality Certificates
-  { value: "inspection", label: "Inspection Certificate", category: "certificate" },
-  { value: "weight_cert", label: "Weight/Measurement Certificate", category: "certificate" },
-  { value: "quality_cert", label: "Quality/Analysis Certificate", category: "certificate" },
-  { value: "fumigation", label: "Fumigation Certificate", category: "certificate" },
-  { value: "phytosanitary", label: "Phytosanitary Certificate", category: "certificate" },
-  { value: "health_cert", label: "Health/Sanitary Certificate", category: "certificate" },
-  
-  // Financial Documents
-  { value: "draft", label: "Draft/Bill of Exchange", category: "financial" },
-  { value: "beneficiary_cert", label: "Beneficiary Certificate", category: "financial" },
-  
-  // Transport Documents
-  { value: "awb", label: "Air Waybill", category: "transport" },
-  { value: "fcr", label: "Forwarder's Certificate of Receipt", category: "transport" },
-  { value: "shipping_cert", label: "Shipping Company Certificate", category: "transport" },
-  
-  // Other
-  { value: "other", label: "Other Supporting Document", category: "other" },
-];
+// Generate document type options from SHARED TYPES - SINGLE SOURCE OF TRUTH
+// This ensures frontend and backend always use the same values
+const exportDocumentTypes = Object.values(DOCUMENT_TYPES)
+  .filter(info => info.value !== DOCUMENT_TYPE_VALUES.UNKNOWN)
+  .map(info => ({
+    value: info.value,
+    label: info.label,
+    shortLabel: info.shortLabel,
+    category: info.category,
+    emoji: info.emoji,
+  }));
 
 // Processing phases with estimated durations (based on typical timing data)
 const PROCESSING_PHASES = [
@@ -393,43 +384,67 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   };
 
   // Auto-detect document type from filename (fast, client-side)
-  const detectDocumentType = (filename: string): { type: string; confidence: number; isTradeDoc: boolean; warning?: string } => {
+  // Returns CANONICAL document type values from shared-types
+  const detectDocumentType = (filename: string): { type: DocumentTypeValue; confidence: number; isTradeDoc: boolean; warning?: string } => {
     const name = filename.toLowerCase();
     
-    // Define patterns for detection (using word boundaries OR underscores)
-    const patterns: Array<{ pattern: RegExp; type: string; confidence: number }> = [
+    // Define patterns for detection - returns CANONICAL values from DOCUMENT_TYPE_VALUES
+    const patterns: Array<{ pattern: RegExp; type: DocumentTypeValue; confidence: number }> = [
       // LC patterns
-      { pattern: /(^|[_\s])(lc|letter[_\s]?of[_\s]?credit|mt700|mt760|swift|documentary[_\s]?credit)([_\s]|$|\.)/i, type: "lc", confidence: 0.9 },
+      { pattern: /(^|[_\s])(lc|letter[_\s]?of[_\s]?credit|mt700|mt760|swift|documentary[_\s]?credit)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT, confidence: 0.9 },
       // Invoice patterns  
-      { pattern: /(^|[_\s])(invoice|inv|commercial[_\s]?invoice|proforma)([_\s]|$|\.)/i, type: "invoice", confidence: 0.85 },
+      { pattern: /(^|[_\s])(invoice|inv|commercial[_\s]?invoice)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.COMMERCIAL_INVOICE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(proforma)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.PROFORMA_INVOICE, confidence: 0.85 },
       // B/L patterns
-      { pattern: /(^|[_\s])(b[\/.]?l|bill[_\s]?of[_\s]?lading|bol|ocean[_\s]?bill|sea[_\s]?waybill)([_\s]|$|\.)/i, type: "bl", confidence: 0.85 },
+      { pattern: /(^|[_\s])(b[\/.]?l|bill[_\s]?of[_\s]?lading|bol|lading)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.BILL_OF_LADING, confidence: 0.85 },
+      { pattern: /(^|[_\s])(ocean[_\s]?bill|ocean[_\s]?bl)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.OCEAN_BILL_OF_LADING, confidence: 0.85 },
+      { pattern: /(^|[_\s])(sea[_\s]?waybill|swb)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.SEA_WAYBILL, confidence: 0.85 },
       // Packing list
-      { pattern: /(^|[_\s])(packing[_\s]?list|pack[_\s]?list|plist)([_\s]|$|\.)/i, type: "packing_list", confidence: 0.85 },
+      { pattern: /(^|[_\s])(packing[_\s]?list|pack[_\s]?list|plist)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.PACKING_LIST, confidence: 0.85 },
       // Certificate of Origin
-      { pattern: /(^|[_\s])(coo|certificate[_\s]?of[_\s]?origin|origin[_\s]?cert|form[_\s]?a)([_\s]|$|\.)/i, type: "coo", confidence: 0.85 },
-      // Insurance - match insurance_certificate, insurance.pdf, etc.
-      { pattern: /(^|[_\s])(insurance|ins[_\s]?cert|marine[_\s]?insurance|cargo[_\s]?insurance)([_\s]|$|\.)/i, type: "insurance", confidence: 0.85 },
-      // Inspection
-      { pattern: /(^|[_\s])(inspection|sgs|bureau[_\s]?veritas|intertek|quality[_\s]?control)([_\s]|$|\.)/i, type: "inspection", confidence: 0.8 },
-      // Weight certificate
-      { pattern: /(^|[_\s])(weight|measurement|weighing|tonnage)([_\s]|$|\.)/i, type: "weight_cert", confidence: 0.75 },
-      // Quality certificate
-      { pattern: /(^|[_\s])(quality|analysis|test[_\s]?report|lab[_\s]?report)([_\s]|$|\.)/i, type: "quality_cert", confidence: 0.75 },
-      // Fumigation
-      { pattern: /(^|[_\s])(fumigat|pest[_\s]?control)([_\s]|$|\.)/i, type: "fumigation", confidence: 0.8 },
-      // Phytosanitary
-      { pattern: /(^|[_\s])(phyto|sanitary|plant[_\s]?health)([_\s]|$|\.)/i, type: "phytosanitary", confidence: 0.8 },
-      // Health certificate
-      { pattern: /(^|[_\s])(health|sanit|veterinary|vet[_\s]?cert)([_\s]|$|\.)/i, type: "health_cert", confidence: 0.75 },
-      // Draft/Bill of Exchange
-      { pattern: /(^|[_\s])(draft|bill[_\s]?of[_\s]?exchange|boe)([_\s]|$|\.)/i, type: "draft", confidence: 0.8 },
-      // Beneficiary certificate
-      { pattern: /(^|[_\s])(beneficiary[_\s]?cert|benef)([_\s]|$|\.)/i, type: "beneficiary_cert", confidence: 0.8 },
-      // Air waybill
-      { pattern: /(^|[_\s])(awb|air[_\s]?waybill|airway)([_\s]|$|\.)/i, type: "awb", confidence: 0.85 },
-      // FCR
-      { pattern: /(^|[_\s])(fcr|forwarder|freight[_\s]?receipt)([_\s]|$|\.)/i, type: "fcr", confidence: 0.75 },
+      { pattern: /(^|[_\s])(coo|certificate[_\s]?of[_\s]?origin|origin[_\s]?cert)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.CERTIFICATE_OF_ORIGIN, confidence: 0.85 },
+      { pattern: /(^|[_\s])(form[_\s]?a|gsp)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.GSP_FORM_A, confidence: 0.85 },
+      // Insurance
+      { pattern: /(^|[_\s])(insurance[_\s]?cert|insurance|ins[_\s]?cert|marine[_\s]?insurance|cargo[_\s]?insurance)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.INSURANCE_CERTIFICATE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(insurance[_\s]?policy|policy)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.INSURANCE_POLICY, confidence: 0.85 },
+      // Inspection certificates
+      { pattern: /(^|[_\s])(inspection|insp[_\s]?cert|survey)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.INSPECTION_CERTIFICATE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(sgs)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.SGS_CERTIFICATE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(bureau[_\s]?veritas|bv)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.BUREAU_VERITAS_CERTIFICATE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(intertek)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.INTERTEK_CERTIFICATE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(psi|pre[_\s]?shipment)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.PRE_SHIPMENT_INSPECTION, confidence: 0.8 },
+      // Weight/measurement
+      { pattern: /(^|[_\s])(weight[_\s]?cert|weight|weighment)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.WEIGHT_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(measurement|dimension)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.MEASUREMENT_CERTIFICATE, confidence: 0.75 },
+      // Quality/Analysis
+      { pattern: /(^|[_\s])(quality[_\s]?cert|quality)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.QUALITY_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(analysis|chemical[_\s]?analysis)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.ANALYSIS_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(lab[_\s]?test|lab[_\s]?report|test[_\s]?report)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.LAB_TEST_REPORT, confidence: 0.75 },
+      // Health certificates
+      { pattern: /(^|[_\s])(fumigat|pest[_\s]?control)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.FUMIGATION_CERTIFICATE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(phyto|phytosanitary|plant[_\s]?health)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.PHYTOSANITARY_CERTIFICATE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(health[_\s]?cert|health)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.HEALTH_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(sanitary|sanit)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.SANITARY_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(vet|veterinary)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.VETERINARY_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(halal)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.HALAL_CERTIFICATE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(kosher)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.KOSHER_CERTIFICATE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(organic)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.ORGANIC_CERTIFICATE, confidence: 0.8 },
+      // Financial documents
+      { pattern: /(^|[_\s])(draft|bill[_\s]?of[_\s]?exchange|boe)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.DRAFT_BILL_OF_EXCHANGE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(beneficiary[_\s]?cert|benef)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.BENEFICIARY_CERTIFICATE, confidence: 0.8 },
+      // Transport documents
+      { pattern: /(^|[_\s])(awb|air[_\s]?waybill|airway)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.AIR_WAYBILL, confidence: 0.85 },
+      { pattern: /(^|[_\s])(fcr|forwarder|freight[_\s]?receipt)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.FORWARDER_CERTIFICATE_OF_RECEIPT, confidence: 0.75 },
+      { pattern: /(^|[_\s])(shipping[_\s]?cert|carrier[_\s]?cert)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.SHIPPING_COMPANY_CERTIFICATE, confidence: 0.75 },
+      { pattern: /(^|[_\s])(cmr|road[_\s]?transport)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.ROAD_TRANSPORT_DOCUMENT, confidence: 0.8 },
+      { pattern: /(^|[_\s])(rail|railway)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.RAILWAY_CONSIGNMENT_NOTE, confidence: 0.8 },
+      // Customs documents
+      { pattern: /(^|[_\s])(customs|declaration)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.CUSTOMS_DECLARATION, confidence: 0.75 },
+      { pattern: /(^|[_\s])(export[_\s]?license)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.EXPORT_LICENSE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(import[_\s]?license)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.IMPORT_LICENSE, confidence: 0.8 },
+      { pattern: /(^|[_\s])(eur[_\s]?1|eur\.1)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.EUR1_MOVEMENT_CERTIFICATE, confidence: 0.85 },
+      { pattern: /(^|[_\s])(warehouse[_\s]?receipt)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.WAREHOUSE_RECEIPT, confidence: 0.8 },
+      { pattern: /(^|[_\s])(manifest|cargo[_\s]?manifest)([_\s]|$|\.)/i, type: DOCUMENT_TYPE_VALUES.CARGO_MANIFEST, confidence: 0.75 },
     ];
     
     // Check for non-trade document indicators
@@ -443,7 +458,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     for (const pattern of nonTradePatterns) {
       if (pattern.test(name)) {
         return {
-          type: "other",
+          type: DOCUMENT_TYPE_VALUES.OTHER,
           confidence: 0.3,
           isTradeDoc: false,
           warning: "This file doesn't appear to be a trade document. Please verify.",
@@ -459,7 +474,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     }
     
     // No pattern matched - might be trade doc but unknown type
-    return { type: "other", confidence: 0.5, isTradeDoc: true };
+    return { type: DOCUMENT_TYPE_VALUES.OTHER, confidence: 0.5, isTradeDoc: true };
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -1047,32 +1062,76 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                               >
                                 <SelectValue placeholder="Select type" />
                               </SelectTrigger>
-                              <SelectContent className="max-h-60">
-                                {/* Group by category */}
-                                <SelectItem value="lc" className="font-medium">📄 Letter of Credit</SelectItem>
-                                <SelectItem value="invoice">📋 Commercial Invoice</SelectItem>
-                                <SelectItem value="bl">🚢 Bill of Lading</SelectItem>
-                                <SelectItem value="packing_list">📦 Packing List</SelectItem>
-                                <SelectItem value="coo">🌍 Certificate of Origin</SelectItem>
-                                <SelectItem value="insurance">🛡️ Insurance Certificate</SelectItem>
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                              <SelectContent className="max-h-80 overflow-y-auto">
+                                {/* Core Documents */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                                  Core Documents
+                                </div>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.CORE).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Transport Documents */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
+                                  Transport Documents
+                                </div>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.TRANSPORT).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Inspection & Quality */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
                                   Inspection & Quality
                                 </div>
-                                <SelectItem value="inspection">🔍 Inspection Certificate</SelectItem>
-                                <SelectItem value="weight_cert">⚖️ Weight Certificate</SelectItem>
-                                <SelectItem value="quality_cert">✅ Quality Certificate</SelectItem>
-                                <SelectItem value="fumigation">🧪 Fumigation Certificate</SelectItem>
-                                <SelectItem value="phytosanitary">🌱 Phytosanitary Certificate</SelectItem>
-                                <SelectItem value="health_cert">❤️ Health Certificate</SelectItem>
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
-                                  Other Documents
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.INSPECTION).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Health Certificates */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
+                                  Health & Agricultural
                                 </div>
-                                <SelectItem value="draft">💵 Draft/Bill of Exchange</SelectItem>
-                                <SelectItem value="beneficiary_cert">📜 Beneficiary Certificate</SelectItem>
-                                <SelectItem value="awb">✈️ Air Waybill</SelectItem>
-                                <SelectItem value="fcr">📝 Forwarder's Certificate</SelectItem>
-                                <SelectItem value="shipping_cert">🚚 Shipping Certificate</SelectItem>
-                                <SelectItem value="other">📎 Other Document</SelectItem>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.HEALTH).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Financial Documents */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
+                                  Financial Documents
+                                </div>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.FINANCIAL).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Customs Documents */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
+                                  Customs & Trade
+                                </div>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.CUSTOMS).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
+                                
+                                {/* Other Documents */}
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
+                                  Other
+                                </div>
+                                {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.OTHER).map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.emoji} {t.label}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                             {showDocTypeErrors && !file.documentType && (
