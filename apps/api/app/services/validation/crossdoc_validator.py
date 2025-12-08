@@ -1990,10 +1990,17 @@ def validate_document_set_completeness(
     documents: List[Dict[str, Any]],
     lc_terms: Optional[Dict[str, Any]] = None,
     page_counts: Optional[Dict[str, int]] = None,
+    skip_lc_check: bool = False,
 ) -> Dict[str, Any]:
     """
     Convenience function to validate document set completeness.
-    
+
+    Args:
+        documents: List of document info dicts with 'document_type', 'filename'
+        lc_terms: Optional LC terms for requirement detection
+        page_counts: Optional dict mapping filename to page count
+        skip_lc_check: If True, skip "Missing Letter of Credit" check (useful when LC is already confirmed)
+
     Returns dict with composition analytics and any issues.
     """
     validator = DocumentSetValidator(lc_terms=lc_terms)
@@ -2002,11 +2009,18 @@ def validate_document_set_completeness(
         page_counts=page_counts,
     )
     
+    # Filter out "Missing Letter of Credit" if LC is already confirmed
+    if skip_lc_check:
+        issues = [
+            issue for issue in issues
+            if issue.rule_id != "DOCSET-MISSING-LETTER-OF-CREDIT"
+        ]
+
     return {
         "composition": composition.to_dict(),
         "issues": [i.to_dict() for i in issues],
         "is_complete": len(issues) == 0 or all(
-            i.severity in [IssueSeverity.INFO, IssueSeverity.MINOR] 
+            i.severity in [IssueSeverity.INFO, IssueSeverity.MINOR]
             for i in issues
         ),
     }

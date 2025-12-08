@@ -1413,22 +1413,39 @@ async def validate_doc(
 
             # Build document list for composition analysis
             doc_list_for_composition = []
+            detected_types_debug = []
             for doc in structured_result.get("documents", []):
-                raw_type = doc.get("documentType", doc.get("type", "supporting_document"))
+                raw_type = doc.get("documentType", doc.get("type", doc.get("document_type", "supporting_document")))
                 # Normalize using shared document types (handles ALL aliases)
                 normalized_type = normalize_document_type(raw_type)
+                detected_types_debug.append(f"{raw_type} -> {normalized_type}")
                 doc_list_for_composition.append({
                     "document_type": normalized_type,
-                    "filename": doc.get("name", "unknown"),
+                    "filename": doc.get("name", doc.get("filename", "unknown")),
                 })
             
+            logger.info(f"Document composition analysis: {detected_types_debug}")
+
             # Extract LC terms for requirement detection
             lc_terms = structured_result.get("lc_data", {})
             
+            # Check if LC is already confirmed present (from earlier checks or extraction)
+            # This prevents duplicate "Missing LC" issues
+            lc_types = {"letter_of_credit", "swift_message", "lc_application"}
+            lc_confirmed = (
+                any(d["document_type"] in lc_types for d in doc_list_for_composition) or
+                bool(structured_result.get("lc_data", {}).get("lc_number")) or
+                bool(structured_result.get("lc_structured"))
+            )
+            
+            if lc_confirmed:
+                logger.info("LC document confirmed present - will skip 'Missing LC' check in composition validator")
+
             # Validate document set completeness
             composition_result = validate_document_set_completeness(
                 documents=doc_list_for_composition,
                 lc_terms=lc_terms,
+                skip_lc_check=lc_confirmed,  # Skip if LC already confirmed
             )
             
             # Add composition to analytics
