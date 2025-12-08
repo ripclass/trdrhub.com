@@ -777,10 +777,10 @@ for doc_type, info in DOCUMENT_TYPE_INFO.items():
 def normalize_document_type(input_value: str) -> str:
     """
     Normalize any document type value to the canonical form.
-    Handles aliases, legacy values, and case variations.
+    Handles aliases, legacy values, case variations, and display labels.
     
     Args:
-        input_value: Raw document type string (e.g., "lc", "invoice", "bl")
+        input_value: Raw document type string (e.g., "lc", "invoice", "Letter of Credit")
         
     Returns:
         Canonical document type value (e.g., "letter_of_credit")
@@ -790,11 +790,28 @@ def normalize_document_type(input_value: str) -> str:
     
     normalized = input_value.lower().strip()
     
-    # Direct match via alias lookup
+    # Handle display labels by converting spaces to underscores
+    # e.g., "Letter of Credit" -> "letter_of_credit"
+    normalized_underscored = normalized.replace(" ", "_").replace("-", "_")
+    
+    # Direct match via alias lookup (original)
     if normalized in _ALIAS_TO_DOCTYPE:
         return _ALIAS_TO_DOCTYPE[normalized]
     
+    # Direct match via alias lookup (underscored version)
+    if normalized_underscored in _ALIAS_TO_DOCTYPE:
+        return _ALIAS_TO_DOCTYPE[normalized_underscored]
+    
+    # Check if it's already a valid document type
+    try:
+        DocumentType(normalized_underscored)
+        return normalized_underscored
+    except ValueError:
+        pass
+    
     # Fuzzy match on common patterns
+    if "letter" in normalized and "credit" in normalized:
+        return DocumentType.LETTER_OF_CREDIT.value
     if "lc" in normalized or "credit" in normalized:
         return DocumentType.LETTER_OF_CREDIT.value
     if "invoice" in normalized or normalized == "inv":
@@ -807,6 +824,26 @@ def normalize_document_type(input_value: str) -> str:
         return DocumentType.CERTIFICATE_OF_ORIGIN.value
     if "insurance" in normalized:
         return DocumentType.INSURANCE_CERTIFICATE.value
+    if "inspection" in normalized:
+        return DocumentType.INSPECTION_CERTIFICATE.value
+    if "weight" in normalized:
+        return DocumentType.WEIGHT_CERTIFICATE.value
+    if "quality" in normalized:
+        return DocumentType.QUALITY_CERTIFICATE.value
+    if "phyto" in normalized or "sanitary" in normalized:
+        return DocumentType.PHYTOSANITARY_CERTIFICATE.value
+    if "health" in normalized:
+        return DocumentType.HEALTH_CERTIFICATE.value
+    if "fumigat" in normalized:
+        return DocumentType.FUMIGATION_CERTIFICATE.value
+    if "draft" in normalized or "exchange" in normalized:
+        return DocumentType.DRAFT_BILL_OF_EXCHANGE.value
+    if "beneficiary" in normalized:
+        return DocumentType.BENEFICIARY_CERTIFICATE.value
+    if "air" in normalized and "waybill" in normalized:
+        return DocumentType.AIR_WAYBILL.value
+    if "awb" in normalized:
+        return DocumentType.AIR_WAYBILL.value
     
     return DocumentType.UNKNOWN.value
 
