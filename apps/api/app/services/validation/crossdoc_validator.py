@@ -241,6 +241,50 @@ class CrossDocValidator:
             rules_executed += inv_bl_exec
             rules_passed += inv_bl_pass
         
+        # =========================================================================
+        # 47A ADDITIONAL CONDITIONS VALIDATION
+        # Check PO Number, BIN, TIN requirements from LC clause 47A
+        # =========================================================================
+        requirements = self._parse_47a_requirements(lc_data)
+        
+        # Collect all available documents for cross-check
+        all_docs = {
+            "invoice": invoice,
+            "bill_of_lading": bill_of_lading,
+            "insurance": insurance,
+            "certificate_of_origin": certificate_of_origin,
+            "packing_list": packing_list,
+        }
+        available_docs = {k: v for k, v in all_docs.items() if v is not None}
+        
+        if available_docs:
+            # CROSSDOC-PO-NUMBER: Check PO number on all documents
+            if requirements.get("po_number") and requirements.get("all_docs_require_po"):
+                po_issues, po_exec, po_pass = self._validate_po_number_all_docs(
+                    requirements["po_number"], available_docs, lc_data
+                )
+                all_issues.extend(po_issues)
+                rules_executed += po_exec
+                rules_passed += po_pass
+            
+            # CROSSDOC-BIN: Check BIN on all documents
+            if requirements.get("bin_number") and requirements.get("all_docs_require_bin"):
+                bin_issues, bin_exec, bin_pass = self._validate_bin_all_docs(
+                    requirements["bin_number"], available_docs, lc_data
+                )
+                all_issues.extend(bin_issues)
+                rules_executed += bin_exec
+                rules_passed += bin_pass
+            
+            # CROSSDOC-TIN: Check TIN on all documents
+            if requirements.get("tin_number") and requirements.get("all_docs_require_tin"):
+                tin_issues, tin_exec, tin_pass = self._validate_tin_all_docs(
+                    requirements["tin_number"], available_docs, lc_data
+                )
+                all_issues.extend(tin_issues)
+                rules_executed += tin_exec
+                rules_passed += tin_pass
+        
         # Build result
         result = self._build_result(all_issues, rules_executed, rules_passed)
         
@@ -1497,6 +1541,8 @@ class CrossDocValidator:
             "port_of_discharge": baseline.port_of_discharge.value,
             "goods_description": baseline.goods_description.value,
             "incoterm": baseline.incoterm.value,
+            # 47A Additional Conditions
+            "additional_conditions": baseline._conditions_list or [],
         }
     
     def _parse_amount(self, value: Any) -> Optional[float]:
@@ -1530,6 +1576,364 @@ class CrossDocValidator:
                 except ValueError:
                     continue
         return None
+
+    # =========================================================================
+    # 47A ADDITIONAL CONDITIONS PARSING
+    # Extract BIN, TIN, PO requirements from LC additional conditions
+    # =========================================================================
+    
+    def _parse_47a_requirements(self, lc_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Parse 47A Additional Conditions to extract specific requirements.
+        
+        Extracts:
+        - PO/Purchase Order numbers
+        - BIN (Business Identification Number)
+        - TIN (Tax Identification Number)
+        - LC number requirements
+        
+        Returns dict with extracted requirements and which documents need them.
+        """
+        requirements = {
+            "po_number": None,
+            "bin_number": None,
+            "tin_number": None,
+            "lc_number_required_on_all": False,
+            "all_docs_require_po": False,
+            "all_docs_require_bin": False,
+            "all_docs_require_tin": False,
+            "raw_conditions": [],
+        }
+        
+        conditions = lc_data.get("additional_conditions", [])
+        if not conditions:
+            return requirements
+        
+        # Join conditions into one text block for regex parsing
+        conditions_text = ""
+        if isinstance(conditions, list):
+            for cond in conditions:
+                if isinstance(cond, dict):
+                    conditions_text += " " + cond.get("text", "")
+                elif isinstance(cond, str):
+                    conditions_text += " " + cond
+            requirements["raw_conditions"] = conditions
+        elif isinstance(conditions, str):
+            conditions_text = conditions
+            requirements["raw_conditions"] = [conditions]
+        
+        conditions_text = conditions_text.upper()
+        
+        # Extract PO/Purchase Order Number
+        # Patterns: "BUYER PURCHASE ORDER NO. GBE-44592", "PO NUMBER: ABC123", "PURCHASE ORDER NO GBE-44592"
+        po_patterns = [
+            r"(?:BUYER\s+)?PURCHASE\s+ORDER\s+(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-]+)",
+            r"P\.?O\.?\s+(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-]+)",
+            r"PO[:\s]+([A-Z0-9\-]+)",
+        ]
+        for pattern in po_patterns:
+            match = re.search(pattern, conditions_text)
+            if match:
+                requirements["po_number"] = match.group(1).strip()
+                break
+        
+        # Extract BIN (Business Identification Number)
+        # Pattern: "BIN: 000334455-0103", "EXPORTER BIN: 000334455-0103"
+        bin_patterns = [
+            r"(?:EXPORTER\s+)?BIN[:\s]+([0-9\-]+)",
+            r"BUSINESS\s+IDENTIFICATION\s+(?:NO\.?|NUMBER)[:\s]*([0-9\-]+)",
+        ]
+        for pattern in bin_patterns:
+            match = re.search(pattern, conditions_text)
+            if match:
+                requirements["bin_number"] = match.group(1).strip()
+                break
+        
+        # Extract TIN (Tax Identification Number)
+        # Pattern: "TIN: 545342112233", "EXPORTER TIN: 545342112233"
+        tin_patterns = [
+            r"(?:EXPORTER\s+)?TIN[:\s]+([0-9\-]+)",
+            r"TAX\s+IDENTIFICATION\s+(?:NO\.?|NUMBER)[:\s]*([0-9\-]+)",
+        ]
+        for pattern in tin_patterns:
+            match = re.search(pattern, conditions_text)
+            if match:
+                requirements["tin_number"] = match.group(1).strip()
+                break
+        
+        # Check if requirements apply to ALL documents
+        all_docs_patterns = [
+            r"ALL\s+DOCUMENTS\s+MUST\s+SHOW",
+            r"MUST\s+APPEAR\s+ON\s+ALL\s+DOCUMENTS",
+            r"ON\s+ALL\s+DOCUMENTS",
+        ]
+        all_docs_required = any(re.search(p, conditions_text) for p in all_docs_patterns)
+        
+        if all_docs_required:
+            if requirements["po_number"]:
+                requirements["all_docs_require_po"] = True
+            if requirements["bin_number"]:
+                requirements["all_docs_require_bin"] = True
+            if requirements["tin_number"]:
+                requirements["all_docs_require_tin"] = True
+        
+        # Check for LC number on all docs requirement
+        if re.search(r"LC\s+(?:NO\.?|NUMBER)[:\s]+[A-Z0-9]+", conditions_text):
+            requirements["lc_number_required_on_all"] = all_docs_required
+        
+        return requirements
+    
+    def _check_value_in_document(
+        self, 
+        doc: Dict[str, Any], 
+        value_to_find: str,
+        field_names: List[str] = None,
+    ) -> bool:
+        """
+        Check if a specific value appears in a document.
+        
+        Searches in:
+        1. Specific field names if provided
+        2. raw_text field
+        3. All string values in the document
+        """
+        if not value_to_find:
+            return True  # Nothing to check
+        
+        value_normalized = value_to_find.upper().replace("-", "").replace(" ", "")
+        
+        # Check specific fields first
+        if field_names:
+            for fname in field_names:
+                field_val = doc.get(fname)
+                if field_val:
+                    if isinstance(field_val, str):
+                        if value_normalized in field_val.upper().replace("-", "").replace(" ", ""):
+                            return True
+                    elif isinstance(field_val, list):
+                        for item in field_val:
+                            if isinstance(item, str):
+                                if value_normalized in item.upper().replace("-", "").replace(" ", ""):
+                                    return True
+        
+        # Check raw_text
+        raw_text = doc.get("raw_text", "")
+        if raw_text and value_normalized in raw_text.upper().replace("-", "").replace(" ", ""):
+            return True
+        
+        # Check all string values recursively
+        def search_in_dict(d: Dict) -> bool:
+            for k, v in d.items():
+                if isinstance(v, str):
+                    if value_normalized in v.upper().replace("-", "").replace(" ", ""):
+                        return True
+                elif isinstance(v, dict):
+                    if search_in_dict(v):
+                        return True
+                elif isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, str):
+                            if value_normalized in item.upper().replace("-", "").replace(" ", ""):
+                                return True
+                        elif isinstance(item, dict):
+                            if search_in_dict(item):
+                                return True
+            return False
+        
+        return search_in_dict(doc)
+
+    # =========================================================================
+    # 47A VALIDATION RULES
+    # =========================================================================
+    
+    def _validate_po_number_all_docs(
+        self,
+        po_number: str,
+        docs: Dict[str, Dict[str, Any]],
+        lc_data: Dict[str, Any],
+    ) -> Tuple[List[CrossDocIssue], int, int]:
+        """
+        CROSSDOC-PO-NUMBER: Validate PO number appears on all documents.
+        
+        LC Clause 46A(8) or 47A typically requires:
+        "ALL DOCUMENTS MUST SHOW... BUYER PURCHASE ORDER NO. GBE-44592"
+        """
+        issues: List[CrossDocIssue] = []
+        executed = 0
+        passed = 0
+        
+        doc_names = {
+            "invoice": ("Commercial Invoice", DocumentType.INVOICE),
+            "bill_of_lading": ("Bill of Lading", DocumentType.BILL_OF_LADING),
+            "packing_list": ("Packing List", DocumentType.PACKING_LIST),
+            "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
+            "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+        }
+        
+        missing_on = []
+        
+        for doc_key, doc_data in docs.items():
+            if doc_data is None:
+                continue
+            
+            executed += 1
+            found = self._check_value_in_document(
+                doc_data, 
+                po_number,
+                field_names=["po_number", "purchase_order", "buyer_reference", "reference"]
+            )
+            
+            if found:
+                passed += 1
+            else:
+                doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
+                missing_on.append(doc_name)
+        
+        # Create a single issue listing all documents missing the PO number
+        if missing_on:
+            issues.append(CrossDocIssue(
+                rule_id="CROSSDOC-PO-NUMBER",
+                title="Purchase Order Number Missing from Documents",
+                severity=IssueSeverity.CRITICAL,
+                message=f"LC requires PO Number '{po_number}' on ALL documents per clause 46A(8)/47A, but it is missing from: {', '.join(missing_on)}.",
+                expected=f"PO Number '{po_number}' on all documents",
+                found=f"Missing on: {', '.join(missing_on)}",
+                suggestion=f"Add Purchase Order Number '{po_number}' to {', '.join(missing_on)}. Bank will reject documents without this reference.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.INVOICE,  # Primary target
+                source_field="47A/46A(8)",
+                target_field="PO Reference",
+                ucp_article="14(d)",
+                isbp_paragraph="A33",
+            ))
+        
+        return issues, executed, passed
+    
+    def _validate_bin_all_docs(
+        self,
+        bin_number: str,
+        docs: Dict[str, Dict[str, Any]],
+        lc_data: Dict[str, Any],
+    ) -> Tuple[List[CrossDocIssue], int, int]:
+        """
+        CROSSDOC-BIN: Validate BIN (Business Identification Number) appears on all documents.
+        
+        LC Clause 47A typically requires:
+        "EXPORTER BIN: 000334455-0103... MUST APPEAR ON ALL DOCUMENTS"
+        Common in Bangladesh LCs.
+        """
+        issues: List[CrossDocIssue] = []
+        executed = 0
+        passed = 0
+        
+        doc_names = {
+            "invoice": ("Commercial Invoice", DocumentType.INVOICE),
+            "bill_of_lading": ("Bill of Lading", DocumentType.BILL_OF_LADING),
+            "packing_list": ("Packing List", DocumentType.PACKING_LIST),
+            "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
+            "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+        }
+        
+        missing_on = []
+        
+        for doc_key, doc_data in docs.items():
+            if doc_data is None:
+                continue
+            
+            executed += 1
+            found = self._check_value_in_document(
+                doc_data, 
+                bin_number,
+                field_names=["bin", "bin_number", "business_identification", "exporter_bin"]
+            )
+            
+            if found:
+                passed += 1
+            else:
+                doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
+                missing_on.append(doc_name)
+        
+        if missing_on:
+            issues.append(CrossDocIssue(
+                rule_id="CROSSDOC-BIN",
+                title="Exporter BIN Missing from Documents",
+                severity=IssueSeverity.CRITICAL,
+                message=f"LC requires Exporter BIN '{bin_number}' on ALL documents per clause 47A, but it is missing from: {', '.join(missing_on)}.",
+                expected=f"BIN '{bin_number}' on all documents",
+                found=f"Missing on: {', '.join(missing_on)}",
+                suggestion=f"Add Exporter BIN '{bin_number}' to {', '.join(missing_on)}. This is a mandatory Bangladesh export requirement.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.INVOICE,
+                source_field="47A(6)",
+                target_field="BIN",
+                ucp_article="14(d)",
+                isbp_paragraph="A33",
+            ))
+        
+        return issues, executed, passed
+    
+    def _validate_tin_all_docs(
+        self,
+        tin_number: str,
+        docs: Dict[str, Dict[str, Any]],
+        lc_data: Dict[str, Any],
+    ) -> Tuple[List[CrossDocIssue], int, int]:
+        """
+        CROSSDOC-TIN: Validate TIN (Tax Identification Number) appears on all documents.
+        
+        LC Clause 47A typically requires:
+        "EXPORTER TIN: 545342112233... MUST APPEAR ON ALL DOCUMENTS"
+        Common in Bangladesh LCs.
+        """
+        issues: List[CrossDocIssue] = []
+        executed = 0
+        passed = 0
+        
+        doc_names = {
+            "invoice": ("Commercial Invoice", DocumentType.INVOICE),
+            "bill_of_lading": ("Bill of Lading", DocumentType.BILL_OF_LADING),
+            "packing_list": ("Packing List", DocumentType.PACKING_LIST),
+            "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
+            "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+        }
+        
+        missing_on = []
+        
+        for doc_key, doc_data in docs.items():
+            if doc_data is None:
+                continue
+            
+            executed += 1
+            found = self._check_value_in_document(
+                doc_data, 
+                tin_number,
+                field_names=["tin", "tin_number", "tax_identification", "exporter_tin"]
+            )
+            
+            if found:
+                passed += 1
+            else:
+                doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
+                missing_on.append(doc_name)
+        
+        if missing_on:
+            issues.append(CrossDocIssue(
+                rule_id="CROSSDOC-TIN",
+                title="Exporter TIN Missing from Documents",
+                severity=IssueSeverity.CRITICAL,
+                message=f"LC requires Exporter TIN '{tin_number}' on ALL documents per clause 47A, but it is missing from: {', '.join(missing_on)}.",
+                expected=f"TIN '{tin_number}' on all documents",
+                found=f"Missing on: {', '.join(missing_on)}",
+                suggestion=f"Add Exporter TIN '{tin_number}' to {', '.join(missing_on)}. This is a mandatory Bangladesh export requirement.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.INVOICE,
+                source_field="47A(6)",
+                target_field="TIN",
+                ucp_article="14(d)",
+                isbp_paragraph="A33",
+            ))
+        
+        return issues, executed, passed
     
     def _normalize_text(self, text: Any) -> str:
         """Normalize text for comparison."""
