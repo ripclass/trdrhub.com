@@ -52,8 +52,9 @@ class Settings(BaseSettings):
     OCR_ENABLED: bool = True  # Enable OCR fallback when pdfminer/PyPDF2 return empty
     OCR_PROVIDER_ORDER: List[str] = ["gdocai", "textract"]  # Order to try providers
     OCR_MAX_PAGES: int = 50  # Maximum pages for OCR processing
-    OCR_TIMEOUT_SEC: int = 60  # Timeout for OCR operations
+    OCR_TIMEOUT_SEC: int = 120  # Timeout for OCR operations (increased for 30+ page docs)
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
+    OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
     
     # DeepSeek OCR Configuration
     USE_DEEPSEEK_OCR: bool = False  # Enable DeepSeek OCR as primary provider

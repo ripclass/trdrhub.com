@@ -34,7 +34,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["document-processing"])
-OCR_CONCURRENCY_LIMIT = max(1, int(os.getenv("OCR_MAX_CONCURRENCY", "3")))
+# Use setting from config, with env override capability
+OCR_CONCURRENCY_LIMIT = max(1, int(os.getenv("OCR_MAX_CONCURRENCY", str(settings.OCR_MAX_CONCURRENCY))))
 
 
 @router.post("/process-document", response_model=DocumentProcessingResponse, status_code=status.HTTP_200_OK)
