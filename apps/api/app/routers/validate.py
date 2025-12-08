@@ -936,6 +936,53 @@ async def validate_doc(
         
         checkpoint("pre_issue_conversion")
         
+        # =================================================================
+        # BATCH LOOKUP: Collect all UCP/ISBP refs FIRST, then ONE query each
+        # This replaces N individual DB queries with just 2 batch queries
+        # =================================================================
+        from app.services.rules_service import batch_lookup_descriptions
+        
+        all_ucp_refs = []
+        all_isbp_refs = []
+        
+        # Collect refs from v2_issues
+        if v2_issues:
+            for issue in v2_issues:
+                issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                ucp_ref = issue_dict.get("ucp_reference")
+                isbp_ref = issue_dict.get("isbp_reference")
+                if ucp_ref and not issue_dict.get("ucp_description"):
+                    all_ucp_refs.append(ucp_ref)
+                if isbp_ref and not issue_dict.get("isbp_description"):
+                    all_isbp_refs.append(isbp_ref)
+        
+        # Collect refs from crossdoc issues
+        if v2_crossdoc_issues:
+            for issue in v2_crossdoc_issues:
+                issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
+                ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
+                isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
+                if ucp_ref and not issue_dict.get("ucp_description"):
+                    all_ucp_refs.append(ucp_ref)
+                if isbp_ref and not issue_dict.get("isbp_description"):
+                    all_isbp_refs.append(isbp_ref)
+        
+        # BATCH LOOKUP: 2 queries instead of N
+        ucp_desc_cache, isbp_desc_cache = batch_lookup_descriptions(all_ucp_refs, all_isbp_refs)
+        logger.info(f"Batch lookup: {len(ucp_desc_cache)} UCP refs, {len(isbp_desc_cache)} ISBP refs")
+        
+        # Helper to get description from cache
+        def _get_ucp_desc(ref: str) -> Optional[str]:
+            if not ref:
+                return None
+            # Try cache first, no fallback to individual query
+            return ucp_desc_cache.get(ref) or ucp_desc_cache.get(ref.replace("Article ", "").replace("UCP600 ", ""))
+        
+        def _get_isbp_desc(ref: str) -> Optional[str]:
+            if not ref:
+                return None
+            return isbp_desc_cache.get(ref) or isbp_desc_cache.get(ref.replace("ISBP745 ", "").replace("¶", ""))
+        
         # Convert v2 issues to legacy format for compatibility
         if v2_issues:
             for issue in v2_issues:
@@ -954,8 +1001,8 @@ async def validate_doc(
                     "documents": issue_dict.get("documents", []),
                     "ucp_reference": ucp_ref,
                     "isbp_reference": isbp_ref,
-                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description_sync(ucp_ref),
-                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description_sync(isbp_ref),
+                    "ucp_description": issue_dict.get("ucp_description") or _get_ucp_desc(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
                 })
@@ -982,8 +1029,8 @@ async def validate_doc(
                     "documents": issue_dict.get("documents") or issue_dict.get("document_names") or [issue_dict.get("source_doc", ""), issue_dict.get("target_doc", "")],
                     "ucp_reference": ucp_ref,
                     "isbp_reference": isbp_ref,
-                    "ucp_description": issue_dict.get("ucp_description") or get_ucp_description_sync(ucp_ref),
-                    "isbp_description": issue_dict.get("isbp_description") or get_isbp_description_sync(isbp_ref),
+                    "ucp_description": issue_dict.get("ucp_description") or _get_ucp_desc(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                     "auto_generated": issue_dict.get("auto_generated", False),

@@ -424,6 +424,75 @@ class DBRulesAdapter(RulesService):
         finally:
             db.close()
     
+    def _batch_lookup_descriptions_from_db(
+        self, 
+        articles: List[str], 
+        domain: str
+    ) -> Dict[str, Optional[str]]:
+        """
+        Batch query rules database for multiple descriptions in ONE query.
+        
+        Args:
+            articles: List of article references (e.g., ["14", "14(a)", "18"])
+            domain: Rule domain (e.g., "icc.ucp600", "icc.isbp745")
+            
+        Returns:
+            Dict mapping article -> description (or None if not found)
+        """
+        if not articles:
+            return {}
+        
+        # Normalize all articles
+        normalized_articles = [self._normalize_article_reference(a) for a in articles if a]
+        unique_articles = list(set(a for a in normalized_articles if a))
+        
+        if not unique_articles:
+            return {}
+        
+        result: Dict[str, Optional[str]] = {a: None for a in unique_articles}
+        
+        db = SessionLocal()
+        try:
+            from sqlalchemy import or_
+            
+            # Build OR conditions for all articles at once
+            conditions = []
+            for article in unique_articles:
+                conditions.append(RuleRecord.article == article)
+                
+                # Also try rule_id pattern
+                if domain == "icc.ucp600":
+                    conditions.append(RuleRecord.rule_id.ilike(f"UCP600-{article}%"))
+                elif domain == "icc.isbp745":
+                    conditions.append(RuleRecord.rule_id.ilike(f"ISBP745-{article}%"))
+            
+            # Single query for all articles
+            records = db.query(RuleRecord).filter(
+                or_(*conditions),
+                RuleRecord.domain == domain,
+                RuleRecord.is_active == True,
+            ).all()
+            
+            # Map results back to articles
+            for record in records:
+                # Check if this record matches any of our articles
+                for article in unique_articles:
+                    if result[article] is None:  # Only set if not already found
+                        if record.article == article:
+                            result[article] = record.description or record.title
+                        elif record.rule_id and article in record.rule_id:
+                            result[article] = record.description or record.title
+            
+            found_count = sum(1 for v in result.values() if v is not None)
+            logger.debug(f"Batch lookup: {found_count}/{len(unique_articles)} descriptions found for {domain}")
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Error in batch rule description lookup: {e}")
+            return result
+        finally:
+            db.close()
+    
     async def _generate_description_with_ai(self, article: str, domain: str) -> Optional[str]:
         """Generate rule description using AI as fallback."""
         try:
@@ -672,3 +741,39 @@ def get_isbp_description_sync(article: str, use_ai_fallback: bool = False) -> Op
     except RuntimeError:
         # No event loop - create one
         return asyncio.run(get_isbp_description(article, use_ai_fallback))
+
+
+def batch_lookup_descriptions(
+    ucp_refs: List[str],
+    isbp_refs: List[str]
+) -> tuple[Dict[str, Optional[str]], Dict[str, Optional[str]]]:
+    """
+    Batch lookup UCP600 and ISBP745 descriptions in TWO queries instead of N queries.
+    
+    This is a MAJOR performance optimization - replaces N individual DB queries
+    with just 2 batch queries.
+    
+    Args:
+        ucp_refs: List of UCP600 article references (e.g., ["14", "14(a)", "18"])
+        isbp_refs: List of ISBP745 paragraph references (e.g., ["A14", "E2"])
+        
+    Returns:
+        Tuple of (ucp_descriptions, isbp_descriptions) dicts
+        Each dict maps reference -> description (or None)
+    """
+    service = get_rules_service()
+    
+    ucp_descriptions: Dict[str, Optional[str]] = {}
+    isbp_descriptions: Dict[str, Optional[str]] = {}
+    
+    if isinstance(service, DBRulesAdapter):
+        if ucp_refs:
+            ucp_descriptions = service._batch_lookup_descriptions_from_db(
+                ucp_refs, "icc.ucp600"
+            )
+        if isbp_refs:
+            isbp_descriptions = service._batch_lookup_descriptions_from_db(
+                isbp_refs, "icc.isbp745"
+            )
+    
+    return ucp_descriptions, isbp_descriptions

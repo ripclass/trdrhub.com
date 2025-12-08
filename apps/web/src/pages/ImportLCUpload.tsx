@@ -58,6 +58,101 @@ const supplierDocTypes = [
   { value: "other", label: "Other Trade Documents" }
 ];
 
+// Processing phases with estimated durations
+const PROCESSING_PHASES = [
+  { id: 'upload', label: 'Uploading documents', duration: 2, icon: Upload },
+  { id: 'ocr', label: 'Extracting text (OCR)', duration: 35, icon: FileText },
+  { id: 'validation', label: 'Running compliance checks', duration: 5, icon: FileCheck },
+  { id: 'sanctions', label: 'Screening parties', duration: 10, icon: AlertTriangle },
+  { id: 'complete', label: 'Building results', duration: 3, icon: CheckCircle },
+];
+
+function ValidationProgressIndicator({ fileCount, variant = 'importer' }: { fileCount: number; variant?: 'importer' | 'exporter' }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [startTime] = useState(() => Date.now());
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [startTime]);
+  
+  let accumulatedTime = 0;
+  let currentPhaseIndex = 0;
+  
+  for (let i = 0; i < PROCESSING_PHASES.length; i++) {
+    const phase = PROCESSING_PHASES[i];
+    const phaseDuration = phase.id === 'ocr' 
+      ? phase.duration * Math.max(1, fileCount * 0.7) 
+      : phase.duration;
+    
+    if (elapsedSeconds < accumulatedTime + phaseDuration) {
+      currentPhaseIndex = i;
+      break;
+    }
+    accumulatedTime += phaseDuration;
+    currentPhaseIndex = i;
+  }
+  
+  const totalEstimated = PROCESSING_PHASES.reduce((sum, p) => 
+    sum + (p.id === 'ocr' ? p.duration * Math.max(1, fileCount * 0.7) : p.duration), 0
+  );
+  const overallProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
+  
+  const currentPhase = PROCESSING_PHASES[currentPhaseIndex];
+  const CurrentIcon = currentPhase.icon;
+  const colorClass = variant === 'importer' ? 'importer' : 'exporter';
+  
+  return (
+    <div className={`bg-${colorClass}/5 border border-${colorClass}/20 rounded-lg p-4 space-y-4`}>
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <div className={`animate-spin w-5 h-5 border-2 border-${colorClass} border-t-transparent rounded-full`}></div>
+          <CurrentIcon className={`absolute inset-0 w-3 h-3 m-auto text-${colorClass}/60`} />
+        </div>
+        <div className="flex-1">
+          <span className={`font-medium text-${colorClass}`}>
+            {currentPhase.label}...
+          </span>
+          <span className="text-sm text-muted-foreground ml-2">
+            ({elapsedSeconds}s)
+          </span>
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <Progress value={overallProgress} className="h-2" />
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Processing {fileCount} document{fileCount !== 1 ? 's' : ''}</span>
+          <span>~{Math.max(0, Math.ceil(totalEstimated - elapsedSeconds))}s remaining</span>
+        </div>
+      </div>
+      
+      <div className="flex gap-1">
+        {PROCESSING_PHASES.map((phase, idx) => {
+          const isComplete = idx < currentPhaseIndex;
+          const isCurrent = idx === currentPhaseIndex;
+          
+          return (
+            <div 
+              key={phase.id}
+              className={`flex-1 h-1 rounded-full transition-colors ${
+                isComplete ? `bg-${colorClass}` : isCurrent ? `bg-${colorClass}/50` : 'bg-gray-200'
+              }`}
+              title={phase.label}
+            />
+          );
+        })}
+      </div>
+      
+      <p className="text-xs text-muted-foreground">
+        Analyzing LC terms, checking compliance with UCP600 & ISBP745, and screening parties.
+      </p>
+    </div>
+  );
+}
+
 type ImportLCUploadProps = {
   embedded?: boolean;
   onComplete?: (payload: { jobId: string; lcNumber: string; mode: "draft" | "supplier" }) => void;
@@ -714,20 +809,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
               </div>
 
               {isProcessing && (
-                <div className="bg-importer/5 border border-importer/20 rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="animate-spin w-5 h-5 border-2 border-importer border-t-transparent rounded-full"></div>
-                    <span className="font-medium text-importer">
-                      {fileType === "draft" ? "Analyzing LC terms for risks..." : "Checking document compliance..."}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {fileType === "draft" 
-                      ? "Reviewing LC clauses for potential risks, timeline issues, and unfavorable terms that may cause supplier rejections."
-                      : "Validating supplier documents against LC requirements and checking for discrepancies."
-                    }
-                  </p>
-                </div>
+                <ValidationProgressIndicator fileCount={completedFiles.length} variant="importer" />
               )}
             </div>
           </CardContent>

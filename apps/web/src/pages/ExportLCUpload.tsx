@@ -50,6 +50,111 @@ const exportDocumentTypes = [
   { value: "other", label: "Other Trade Documents" }
 ];
 
+// Processing phases with estimated durations (based on typical timing data)
+const PROCESSING_PHASES = [
+  { id: 'upload', label: 'Uploading documents', duration: 2, icon: Upload },
+  { id: 'ocr', label: 'Extracting text (OCR)', duration: 35, icon: FileText },
+  { id: 'validation', label: 'Running compliance checks', duration: 5, icon: FileCheck },
+  { id: 'sanctions', label: 'Screening parties', duration: 10, icon: AlertTriangle },
+  { id: 'complete', label: 'Building results', duration: 3, icon: CheckCircle },
+];
+
+function ValidationProgressIndicator({ fileCount }: { fileCount: number }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [startTime] = useState(() => Date.now());
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [startTime]);
+  
+  // Calculate which phase we're in based on elapsed time
+  let accumulatedTime = 0;
+  let currentPhaseIndex = 0;
+  let phaseProgress = 0;
+  
+  for (let i = 0; i < PROCESSING_PHASES.length; i++) {
+    const phase = PROCESSING_PHASES[i];
+    // Scale OCR phase duration by file count
+    const phaseDuration = phase.id === 'ocr' 
+      ? phase.duration * Math.max(1, fileCount * 0.7) 
+      : phase.duration;
+    
+    if (elapsedSeconds < accumulatedTime + phaseDuration) {
+      currentPhaseIndex = i;
+      phaseProgress = ((elapsedSeconds - accumulatedTime) / phaseDuration) * 100;
+      break;
+    }
+    accumulatedTime += phaseDuration;
+    currentPhaseIndex = i;
+    phaseProgress = 100;
+  }
+  
+  // Overall progress (capped at 95% to avoid false completion)
+  const totalEstimated = PROCESSING_PHASES.reduce((sum, p) => 
+    sum + (p.id === 'ocr' ? p.duration * Math.max(1, fileCount * 0.7) : p.duration), 0
+  );
+  const overallProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
+  
+  const currentPhase = PROCESSING_PHASES[currentPhaseIndex];
+  const CurrentIcon = currentPhase.icon;
+  
+  return (
+    <div className="bg-exporter/5 border border-exporter/20 rounded-lg p-4 space-y-4">
+      {/* Current phase */}
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
+          <CurrentIcon className="absolute inset-0 w-3 h-3 m-auto text-exporter/60" />
+        </div>
+        <div className="flex-1">
+          <span className="font-medium text-exporter">
+            {currentPhase.label}...
+          </span>
+          <span className="text-sm text-muted-foreground ml-2">
+            ({elapsedSeconds}s)
+          </span>
+        </div>
+      </div>
+      
+      {/* Overall progress bar */}
+      <div className="space-y-2">
+        <Progress value={overallProgress} className="h-2" />
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Processing {fileCount} document{fileCount !== 1 ? 's' : ''}</span>
+          <span>~{Math.max(0, Math.ceil(totalEstimated - elapsedSeconds))}s remaining</span>
+        </div>
+      </div>
+      
+      {/* Phase indicators */}
+      <div className="flex gap-1">
+        {PROCESSING_PHASES.map((phase, idx) => {
+          const PhaseIcon = phase.icon;
+          const isComplete = idx < currentPhaseIndex;
+          const isCurrent = idx === currentPhaseIndex;
+          
+          return (
+            <div 
+              key={phase.id}
+              className={cn(
+                "flex-1 h-1 rounded-full transition-colors",
+                isComplete ? "bg-exporter" : isCurrent ? "bg-exporter/50" : "bg-gray-200"
+              )}
+              title={phase.label}
+            />
+          );
+        })}
+      </div>
+      
+      <p className="text-xs text-muted-foreground">
+        Analyzing LC terms, checking compliance with UCP600 & ISBP745, and screening parties.
+      </p>
+    </div>
+  );
+}
+
 type ExportLCUploadProps = {
   embedded?: boolean;
   onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
@@ -898,17 +1003,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
               </div>
 
               {isProcessing && (
-                <div className="bg-exporter/5 border border-exporter/20 rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
-                    <span className="font-medium text-exporter">
-                      Validating your documents...
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Checking compliance, completeness, and regulatory requirements. This may take a few moments.
-                  </p>
-                </div>
+                <ValidationProgressIndicator fileCount={completedFiles.length} />
               )}
 
               {showRateLimit && (
