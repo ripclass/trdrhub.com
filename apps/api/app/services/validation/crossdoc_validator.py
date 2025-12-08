@@ -1696,3 +1696,297 @@ def get_crossdoc_validator() -> CrossDocValidator:
         _crossdoc_validator = CrossDocValidator()
     return _crossdoc_validator
 
+
+# =============================================================================
+# DOCUMENT SET VALIDATOR
+# Validates completeness and composition of document sets per UCP600/ISBP745
+# =============================================================================
+
+@dataclass
+class DocumentSetComposition:
+    """Analytics for document set composition."""
+    total_documents: int
+    total_pages: int
+    document_types: Dict[str, int]  # type -> count
+    missing_common: List[str]  # commonly expected but missing
+    missing_required: List[str]  # required by LC terms but missing
+    completeness_score: float  # 0-100
+    lc_only_mode: bool  # True if only LC document present
+    estimated_processing_time_sec: float
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total_documents": self.total_documents,
+            "total_pages": self.total_pages,
+            "document_types": self.document_types,
+            "missing_common": self.missing_common,
+            "missing_required": self.missing_required,
+            "completeness_score": self.completeness_score,
+            "lc_only_mode": self.lc_only_mode,
+            "estimated_processing_time_sec": self.estimated_processing_time_sec,
+            "completeness_grade": _completeness_grade(self.completeness_score),
+        }
+
+
+def _completeness_grade(score: float) -> str:
+    """Convert completeness score to letter grade."""
+    if score >= 90:
+        return "A"
+    elif score >= 75:
+        return "B"
+    elif score >= 50:
+        return "C"
+    elif score >= 25:
+        return "D"
+    return "F"
+
+
+class DocumentSetValidator:
+    """
+    Validates document set completeness per UCP600/ISBP745 norms.
+    
+    International norms for LC document sets:
+    - Minimum: LC document (MT700/MT760)
+    - Standard: LC + Invoice + B/L + Packing List (4 docs)
+    - Full: LC + Invoice + B/L + Packing + Insurance + CoO (6 docs)
+    - Complex: Above + Inspection + Certificates (8+ docs)
+    """
+    
+    # Common documents expected in most LC transactions
+    COMMON_DOCUMENTS = {
+        "letter_of_credit": {"weight": 30, "required": True, "aliases": ["lc", "swift", "mt700", "mt760"]},
+        "commercial_invoice": {"weight": 25, "required": True, "aliases": ["invoice", "proforma"]},
+        "bill_of_lading": {"weight": 20, "required": False, "aliases": ["bl", "bol", "shipping"]},
+        "packing_list": {"weight": 10, "required": False, "aliases": ["packing", "packlist"]},
+        "insurance_certificate": {"weight": 10, "required": False, "aliases": ["insurance", "policy"]},
+        "certificate_of_origin": {"weight": 5, "required": False, "aliases": ["coo", "origin", "gsp"]},
+    }
+    
+    # Additional documents for complex trades
+    OPTIONAL_DOCUMENTS = {
+        "inspection_certificate": {"weight": 3, "aliases": ["inspection", "quality", "analysis"]},
+        "weight_certificate": {"weight": 2, "aliases": ["weight", "weighment"]},
+        "fumigation_certificate": {"weight": 2, "aliases": ["fumigation", "phyto"]},
+        "health_certificate": {"weight": 2, "aliases": ["health", "sanitary"]},
+        "beneficiary_certificate": {"weight": 2, "aliases": ["beneficiary", "attestation"]},
+    }
+    
+    # Average pages per document type (based on international norms)
+    AVG_PAGES_BY_TYPE = {
+        "letter_of_credit": 6,  # MT700/MT760 typically 2-10 pages
+        "commercial_invoice": 2,
+        "bill_of_lading": 3,
+        "packing_list": 3,
+        "insurance_certificate": 2,
+        "certificate_of_origin": 2,
+        "inspection_certificate": 2,
+        "supporting_document": 2,
+    }
+    
+    # Processing time estimates (seconds per page)
+    PROCESSING_TIME_PER_PAGE = 5.0  # Conservative estimate with OCR
+
+    def __init__(self, lc_terms: Optional[Dict[str, Any]] = None):
+        """
+        Initialize with optional LC terms for requirement detection.
+        
+        Args:
+            lc_terms: Extracted LC fields to detect required documents
+        """
+        self.lc_terms = lc_terms or {}
+        self._detect_required_documents()
+    
+    def _detect_required_documents(self):
+        """Detect which documents are required based on LC terms."""
+        self.required_docs: Set[str] = {"letter_of_credit"}  # Always required
+        
+        # Field 46A (Documents Required) parsing
+        docs_required_field = self.lc_terms.get("documents_required", "") or ""
+        docs_required_lower = docs_required_field.lower()
+        
+        # Add required docs based on LC terms
+        if "invoice" in docs_required_lower or "commercial" in docs_required_lower:
+            self.required_docs.add("commercial_invoice")
+        
+        if any(x in docs_required_lower for x in ["bill of lading", "b/l", "bol", "shipping"]):
+            self.required_docs.add("bill_of_lading")
+        
+        if any(x in docs_required_lower for x in ["insurance", "policy", "coverage"]):
+            self.required_docs.add("insurance_certificate")
+        
+        if any(x in docs_required_lower for x in ["packing", "weight list"]):
+            self.required_docs.add("packing_list")
+        
+        if any(x in docs_required_lower for x in ["origin", "gsp", "certificate of origin"]):
+            self.required_docs.add("certificate_of_origin")
+        
+        if any(x in docs_required_lower for x in ["inspection", "quality", "analysis"]):
+            self.required_docs.add("inspection_certificate")
+        
+        # Incoterms-based requirements
+        incoterms = (self.lc_terms.get("incoterms", "") or "").upper()
+        if incoterms in ["CIF", "CIP"]:
+            self.required_docs.add("insurance_certificate")
+    
+    def validate_document_set(
+        self,
+        documents: List[Dict[str, Any]],
+        page_counts: Optional[Dict[str, int]] = None,
+    ) -> Tuple[DocumentSetComposition, List[CrossDocIssue]]:
+        """
+        Validate a document set for completeness.
+        
+        Args:
+            documents: List of document info dicts with 'document_type', 'filename', etc.
+            page_counts: Optional dict mapping filename to page count
+        
+        Returns:
+            Tuple of (composition analytics, list of issues/warnings)
+        """
+        page_counts = page_counts or {}
+        issues: List[CrossDocIssue] = []
+        
+        # Count document types
+        doc_type_counts: Dict[str, int] = {}
+        total_pages = 0
+        
+        for doc in documents:
+            doc_type = doc.get("document_type", "supporting_document")
+            doc_type_counts[doc_type] = doc_type_counts.get(doc_type, 0) + 1
+            
+            # Estimate pages if not provided
+            filename = doc.get("filename", "")
+            if filename in page_counts:
+                total_pages += page_counts[filename]
+            else:
+                # Use average for document type
+                total_pages += self.AVG_PAGES_BY_TYPE.get(doc_type, 2)
+        
+        # Determine missing documents
+        present_types = set(doc_type_counts.keys())
+        
+        # Check for missing common documents
+        missing_common = []
+        for doc_type, info in self.COMMON_DOCUMENTS.items():
+            if doc_type not in present_types:
+                missing_common.append(doc_type)
+        
+        # Check for missing required documents (per LC terms)
+        missing_required = []
+        for doc_type in self.required_docs:
+            if doc_type not in present_types:
+                missing_required.append(doc_type)
+                
+                # Create issue for missing required document
+                issues.append(CrossDocIssue(
+                    rule_id=f"DOCSET-MISSING-{doc_type.upper().replace('_', '-')}",
+                    title=f"Missing {doc_type.replace('_', ' ').title()}",
+                    severity=IssueSeverity.MAJOR if doc_type != "letter_of_credit" else IssueSeverity.CRITICAL,
+                    message=f"The {doc_type.replace('_', ' ')} is required by LC terms but was not provided.",
+                    expected=f"{doc_type.replace('_', ' ').title()} document",
+                    found="Not provided",
+                    suggestion=f"Upload the {doc_type.replace('_', ' ')} to complete the document set.",
+                    source_doc=DocumentType.LC,
+                    target_doc=DocumentType.LC,
+                    source_field="46A",
+                    target_field="document_set",
+                    ucp_article="14(a)",
+                    isbp_paragraph="A14",
+                ))
+        
+        # Calculate completeness score
+        completeness_score = self._calculate_completeness_score(
+            present_types, missing_common, missing_required
+        )
+        
+        # Detect LC-only mode
+        lc_only_mode = (
+            len(documents) == 1 and 
+            "letter_of_credit" in present_types
+        )
+        
+        # Add info issue if LC-only
+        if lc_only_mode and not missing_required:
+            issues.append(CrossDocIssue(
+                rule_id="DOCSET-LC-ONLY-MODE",
+                title="LC Document Only",
+                severity=IssueSeverity.INFO,
+                message="Only the Letter of Credit was uploaded. Cross-document validation is limited.",
+                expected="Full document set (LC + Invoice + B/L + supporting docs)",
+                found="LC document only",
+                suggestion="Upload supporting documents for comprehensive compliance checking.",
+                source_doc=DocumentType.LC,
+                target_doc=DocumentType.LC,
+                source_field="document_set",
+                target_field="document_set",
+                ucp_article="14(d)",
+                isbp_paragraph="A3",
+            ))
+        
+        # Estimate processing time
+        estimated_time = total_pages * self.PROCESSING_TIME_PER_PAGE
+        
+        composition = DocumentSetComposition(
+            total_documents=len(documents),
+            total_pages=total_pages,
+            document_types=doc_type_counts,
+            missing_common=missing_common,
+            missing_required=missing_required,
+            completeness_score=completeness_score,
+            lc_only_mode=lc_only_mode,
+            estimated_processing_time_sec=estimated_time,
+        )
+        
+        return composition, issues
+    
+    def _calculate_completeness_score(
+        self,
+        present_types: Set[str],
+        missing_common: List[str],
+        missing_required: List[str],
+    ) -> float:
+        """Calculate document set completeness score (0-100)."""
+        # Start with 100
+        score = 100.0
+        
+        # Heavy penalty for missing required documents
+        score -= len(missing_required) * 20
+        
+        # Lighter penalty for missing common documents
+        for doc_type in missing_common:
+            if doc_type not in self.required_docs:
+                weight = self.COMMON_DOCUMENTS.get(doc_type, {}).get("weight", 5)
+                score -= weight * 0.5  # Half weight since not required
+        
+        # Bonus for having more than minimum
+        if len(present_types) >= 6:
+            score = min(100, score + 5)
+        
+        return max(0, min(100, score))
+
+
+def validate_document_set_completeness(
+    documents: List[Dict[str, Any]],
+    lc_terms: Optional[Dict[str, Any]] = None,
+    page_counts: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
+    """
+    Convenience function to validate document set completeness.
+    
+    Returns dict with composition analytics and any issues.
+    """
+    validator = DocumentSetValidator(lc_terms=lc_terms)
+    composition, issues = validator.validate_document_set(
+        documents=documents,
+        page_counts=page_counts,
+    )
+    
+    return {
+        "composition": composition.to_dict(),
+        "issues": [i.to_dict() for i in issues],
+        "is_complete": len(issues) == 0 or all(
+            i.severity in [IssueSeverity.INFO, IssueSeverity.MINOR] 
+            for i in issues
+        ),
+    }
+

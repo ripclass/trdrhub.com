@@ -1258,6 +1258,45 @@ async def validate_doc(
         # Also update analytics with processing time
         if structured_result.get("analytics"):
             structured_result["analytics"]["processing_time_display"] = processing_summary.get("processing_time_display")
+        
+        # =====================================================================
+        # DOCUMENT SET COMPOSITION ANALYTICS
+        # Track document types, missing docs, and completeness per UCP600 norms
+        # =====================================================================
+        try:
+            from app.services.validation.crossdoc_validator import validate_document_set_completeness
+            
+            # Build document list for composition analysis
+            doc_list_for_composition = []
+            for doc in structured_result.get("documents", []):
+                doc_list_for_composition.append({
+                    "document_type": doc.get("documentType", doc.get("type", "supporting_document")),
+                    "filename": doc.get("name", "unknown"),
+                })
+            
+            # Extract LC terms for requirement detection
+            lc_terms = structured_result.get("lc_data", {})
+            
+            # Validate document set completeness
+            composition_result = validate_document_set_completeness(
+                documents=doc_list_for_composition,
+                lc_terms=lc_terms,
+            )
+            
+            # Add composition to analytics
+            if structured_result.get("analytics"):
+                structured_result["analytics"]["document_composition"] = composition_result.get("composition", {})
+                structured_result["analytics"]["lc_only_mode"] = composition_result.get("composition", {}).get("lc_only_mode", False)
+            
+            # Add composition issues to the issues list (informational warnings)
+            composition_issues = composition_result.get("issues", [])
+            if composition_issues:
+                existing_issues = structured_result.get("issues") or []
+                structured_result["issues"] = existing_issues + composition_issues
+                logger.info(f"Added {len(composition_issues)} document composition warnings")
+                
+        except Exception as comp_error:
+            logger.warning(f"Document composition analytics failed: {comp_error}")
 
         # =====================================================================
         # MERGE ISSUE CARDS INTO STRUCTURED RESULT

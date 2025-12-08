@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
     
+    # Document Set Configuration (based on UCP600/ISBP745 norms)
+    DOC_SET_MIN_DOCS: int = 1  # Minimum docs for validation (LC-only mode)
+    DOC_SET_MAX_DOCS: int = 15  # Maximum docs per validation
+    DOC_SET_RECOMMENDED_MIN: int = 4  # Recommended minimum for full compliance check
+    DOC_SET_LC_AVG_PAGES: int = 6  # Average pages per LC document (MT700/MT760)
+    DOC_SET_FULL_AVG_PAGES: int = 20  # Average pages for full document set
+    DOC_SET_WARN_MISSING: bool = True  # Warn when common documents are missing
+    
     # DeepSeek OCR Configuration
     USE_DEEPSEEK_OCR: bool = False  # Enable DeepSeek OCR as primary provider
     DEEPSEEK_OCR_MODEL_NAME: str = "deepseek-ai/deepseek-ocr"  # Hugging Face model identifier
