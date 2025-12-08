@@ -3827,15 +3827,27 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     # =====================================================================
     # Additional Conditions (MT700 Field 47A)
     # =====================================================================
-    additional_conditions = get_value("additional_conditions", "conditions")
+    # Look in multiple places - extraction stores as clauses_47a, structured as additional_conditions
+    additional_conditions = get_value("additional_conditions", "conditions", "clauses_47a", "clauses")
     if not additional_conditions:
         additional_conditions = blocks.get("47A")  # MT700 field 47A - Additional Conditions
+    # Also check inside lc_structured if present
+    if not additional_conditions:
+        lc_structured = lc_context.get("lc_structured", {})
+        additional_conditions = lc_structured.get("additional_conditions") or lc_structured.get("clauses_47a")
     
     if additional_conditions:
         if isinstance(additional_conditions, list):
             baseline._conditions_list = additional_conditions
         elif isinstance(additional_conditions, str):
             baseline._conditions_list = [additional_conditions]
+        logger.info(
+            "47A Additional Conditions found: %d condition(s), sample: %s",
+            len(baseline._conditions_list) if baseline._conditions_list else 0,
+            str(baseline._conditions_list[0])[:100] if baseline._conditions_list else "none",
+        )
+    else:
+        logger.warning("47A Additional Conditions NOT FOUND in LC context")
     set_field(baseline.additional_conditions, additional_conditions)
     
     # =====================================================================

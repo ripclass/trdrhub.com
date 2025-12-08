@@ -1625,7 +1625,13 @@ class CrossDocValidator:
         }
         
         conditions = lc_data.get("additional_conditions", [])
+        logger.info(
+            "47A Parser: additional_conditions=%s (type=%s)",
+            str(conditions)[:200] if conditions else "EMPTY",
+            type(conditions).__name__,
+        )
         if not conditions:
+            logger.warning("47A Parser: No additional_conditions found in lc_data keys=%s", list(lc_data.keys())[:10])
             return requirements
         
         # Join conditions into one text block for regex parsing
@@ -1699,6 +1705,16 @@ class CrossDocValidator:
         # Check for LC number on all docs requirement
         if re.search(r"LC\s+(?:NO\.?|NUMBER)[:\s]+[A-Z0-9]+", conditions_text):
             requirements["lc_number_required_on_all"] = all_docs_required
+        
+        logger.info(
+            "47A Parser Result: PO=%s, BIN=%s, TIN=%s, all_docs_po=%s, all_docs_bin=%s, all_docs_tin=%s",
+            requirements["po_number"],
+            requirements["bin_number"],
+            requirements["tin_number"],
+            requirements["all_docs_require_po"],
+            requirements["all_docs_require_bin"],
+            requirements["all_docs_require_tin"],
+        )
         
         return requirements
     
