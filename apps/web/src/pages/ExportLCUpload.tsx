@@ -39,16 +39,42 @@ interface UploadedFile {
   progress: number;
   preview?: string;
   documentType?: string; // Selected document type
+  // Auto-detection fields
+  detectedType?: string;
+  detectedConfidence?: number;
+  isTradeDocument?: boolean;
+  relevanceWarning?: string;
 }
 
+// Expanded document types covering UCP600/ISBP745 requirements
 const exportDocumentTypes = [
-  { value: "lc", label: "Letter of Credit" },
-  { value: "invoice", label: "Commercial Invoice" },
-  { value: "packing_list", label: "Packing List" },
-  { value: "bl", label: "Bill of Lading" },
-  { value: "coo", label: "Certificate of Origin" },
-  { value: "insurance", label: "Insurance Certificate" },
-  { value: "other", label: "Other Trade Documents" }
+  // Core LC Documents
+  { value: "lc", label: "Letter of Credit", category: "core" },
+  { value: "invoice", label: "Commercial Invoice", category: "core" },
+  { value: "bl", label: "Bill of Lading", category: "core" },
+  { value: "packing_list", label: "Packing List", category: "core" },
+  { value: "coo", label: "Certificate of Origin", category: "core" },
+  { value: "insurance", label: "Insurance Certificate", category: "core" },
+  
+  // Inspection & Quality Certificates
+  { value: "inspection", label: "Inspection Certificate", category: "certificate" },
+  { value: "weight_cert", label: "Weight/Measurement Certificate", category: "certificate" },
+  { value: "quality_cert", label: "Quality/Analysis Certificate", category: "certificate" },
+  { value: "fumigation", label: "Fumigation Certificate", category: "certificate" },
+  { value: "phytosanitary", label: "Phytosanitary Certificate", category: "certificate" },
+  { value: "health_cert", label: "Health/Sanitary Certificate", category: "certificate" },
+  
+  // Financial Documents
+  { value: "draft", label: "Draft/Bill of Exchange", category: "financial" },
+  { value: "beneficiary_cert", label: "Beneficiary Certificate", category: "financial" },
+  
+  // Transport Documents
+  { value: "awb", label: "Air Waybill", category: "transport" },
+  { value: "fcr", label: "Forwarder's Certificate of Receipt", category: "transport" },
+  { value: "shipping_cert", label: "Shipping Company Certificate", category: "transport" },
+  
+  // Other
+  { value: "other", label: "Other Supporting Document", category: "other" },
 ];
 
 // Processing phases with estimated durations (based on typical timing data)
@@ -366,17 +392,96 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     }
   };
 
+  // Auto-detect document type from filename (fast, client-side)
+  const detectDocumentType = (filename: string): { type: string; confidence: number; isTradeDoc: boolean; warning?: string } => {
+    const name = filename.toLowerCase();
+    
+    // Define patterns for detection
+    const patterns: Array<{ pattern: RegExp; type: string; confidence: number }> = [
+      // LC patterns
+      { pattern: /\b(lc|letter.?of.?credit|mt700|mt760|swift|documentary.?credit)\b/i, type: "lc", confidence: 0.9 },
+      // Invoice patterns  
+      { pattern: /\b(invoice|inv|commercial.?invoice|proforma)\b/i, type: "invoice", confidence: 0.85 },
+      // B/L patterns
+      { pattern: /\b(b[\/.]?l|bill.?of.?lading|bol|ocean.?bill|sea.?waybill)\b/i, type: "bl", confidence: 0.85 },
+      // Packing list
+      { pattern: /\b(packing.?list|pack.?list|plist)\b/i, type: "packing_list", confidence: 0.85 },
+      // Certificate of Origin
+      { pattern: /\b(coo|certificate.?of.?origin|origin.?cert|form.?a)\b/i, type: "coo", confidence: 0.85 },
+      // Insurance
+      { pattern: /\b(insurance|ins.?cert|marine.?insurance|cargo.?insurance)\b/i, type: "insurance", confidence: 0.85 },
+      // Inspection
+      { pattern: /\b(inspection|sgs|bureau.?veritas|intertek|quality.?control)\b/i, type: "inspection", confidence: 0.8 },
+      // Weight certificate
+      { pattern: /\b(weight|measurement|weighing|tonnage)\b/i, type: "weight_cert", confidence: 0.75 },
+      // Quality certificate
+      { pattern: /\b(quality|analysis|test.?report|lab.?report)\b/i, type: "quality_cert", confidence: 0.75 },
+      // Fumigation
+      { pattern: /\b(fumigat|pest.?control)\b/i, type: "fumigation", confidence: 0.8 },
+      // Phytosanitary
+      { pattern: /\b(phyto|sanitary|plant.?health)\b/i, type: "phytosanitary", confidence: 0.8 },
+      // Health certificate
+      { pattern: /\b(health|sanit|veterinary|vet.?cert)\b/i, type: "health_cert", confidence: 0.75 },
+      // Draft/Bill of Exchange
+      { pattern: /\b(draft|bill.?of.?exchange|boe)\b/i, type: "draft", confidence: 0.8 },
+      // Beneficiary certificate
+      { pattern: /\b(beneficiary.?cert|benef)\b/i, type: "beneficiary_cert", confidence: 0.8 },
+      // Air waybill
+      { pattern: /\b(awb|air.?waybill|airway)\b/i, type: "awb", confidence: 0.85 },
+      // FCR
+      { pattern: /\b(fcr|forwarder|freight.?receipt)\b/i, type: "fcr", confidence: 0.75 },
+    ];
+    
+    // Check for non-trade document indicators
+    const nonTradePatterns = [
+      /\b(brochure|catalog|presentation|company.?profile|resume|cv)\b/i,
+      /\b(contract|agreement|mou|nda)\b/i, // contracts need review
+      /\b(photo|image|picture|selfie)\b/i,
+      /\b(screenshot|screen.?shot)\b/i,
+    ];
+    
+    for (const pattern of nonTradePatterns) {
+      if (pattern.test(name)) {
+        return {
+          type: "other",
+          confidence: 0.3,
+          isTradeDoc: false,
+          warning: "This file doesn't appear to be a trade document. Please verify.",
+        };
+      }
+    }
+    
+    // Find best match
+    for (const { pattern, type, confidence } of patterns) {
+      if (pattern.test(name)) {
+        return { type, confidence, isTradeDoc: true };
+      }
+    }
+    
+    // No pattern matched - might be trade doc but unknown type
+    return { type: "other", confidence: 0.5, isTradeDoc: true };
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles: UploadedFile[] = acceptedFiles.map(file => ({
-      id: Math.random().toString(36).substring(2, 11),
-      file,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      status: "pending" as const,
-      progress: 0,
-      documentType: "other",
-    }));
+    const newFiles: UploadedFile[] = acceptedFiles.map(file => {
+      // Auto-detect document type from filename
+      const detection = detectDocumentType(file.name);
+      
+      return {
+        id: Math.random().toString(36).substring(2, 11),
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: "pending" as const,
+        progress: 0,
+        documentType: detection.type, // Auto-set from detection
+        detectedType: detection.type,
+        detectedConfidence: detection.confidence,
+        isTradeDocument: detection.isTradeDoc,
+        relevanceWarning: detection.warning,
+      };
+    });
 
     setUploadedFiles(prev => [...prev, ...newFiles]);
 
@@ -899,13 +1004,31 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                       
                       {file.status === "completed" && (
                         <div className="space-y-2">
-                          <div className="flex items-center gap-2">
+                          {/* Upload status + Auto-detection badge */}
+                          <div className="flex items-center gap-2 flex-wrap">
                             <CheckCircle className="w-4 h-4 text-success" />
                             <span className="text-xs text-success">Upload complete</span>
+                            {file.detectedType && file.detectedConfidence && file.detectedConfidence > 0.6 && (
+                              <Badge 
+                                variant="outline" 
+                                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                              >
+                                Auto-detected: {exportDocumentTypes.find(d => d.value === file.detectedType)?.label || file.detectedType}
+                                {file.detectedConfidence >= 0.8 && " ✓"}
+                              </Badge>
+                            )}
                           </div>
 
+                          {/* Relevance Warning */}
+                          {file.relevanceWarning && (
+                            <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200">
+                              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                              <span className="text-xs text-amber-700">{file.relevanceWarning}</span>
+                            </div>
+                          )}
+
                           {/* Document Type Selection */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Label className="text-xs text-muted-foreground whitespace-nowrap">
                               Document Type:
                             </Label>
@@ -915,20 +1038,41 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                             >
                               <SelectTrigger
                                 className={cn(
-                                  "h-7 text-xs",
+                                  "h-7 text-xs w-48",
                                   showDocTypeErrors &&
                                     !file.documentType &&
-                                    "border-destructive focus-visible:ring-destructive"
+                                    "border-destructive focus-visible:ring-destructive",
+                                  file.relevanceWarning && "border-amber-300"
                                 )}
                               >
                                 <SelectValue placeholder="Select type" />
                               </SelectTrigger>
-                              <SelectContent>
-                                {exportDocumentTypes.map((docType) => (
-                                  <SelectItem key={docType.value} value={docType.value}>
-                                    {docType.label}
-                                  </SelectItem>
-                                ))}
+                              <SelectContent className="max-h-60">
+                                {/* Group by category */}
+                                <SelectItem value="lc" className="font-medium">📄 Letter of Credit</SelectItem>
+                                <SelectItem value="invoice">📋 Commercial Invoice</SelectItem>
+                                <SelectItem value="bl">🚢 Bill of Lading</SelectItem>
+                                <SelectItem value="packing_list">📦 Packing List</SelectItem>
+                                <SelectItem value="coo">🌍 Certificate of Origin</SelectItem>
+                                <SelectItem value="insurance">🛡️ Insurance Certificate</SelectItem>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                                  Inspection & Quality
+                                </div>
+                                <SelectItem value="inspection">🔍 Inspection Certificate</SelectItem>
+                                <SelectItem value="weight_cert">⚖️ Weight Certificate</SelectItem>
+                                <SelectItem value="quality_cert">✅ Quality Certificate</SelectItem>
+                                <SelectItem value="fumigation">🧪 Fumigation Certificate</SelectItem>
+                                <SelectItem value="phytosanitary">🌱 Phytosanitary Certificate</SelectItem>
+                                <SelectItem value="health_cert">❤️ Health Certificate</SelectItem>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                                  Other Documents
+                                </div>
+                                <SelectItem value="draft">💵 Draft/Bill of Exchange</SelectItem>
+                                <SelectItem value="beneficiary_cert">📜 Beneficiary Certificate</SelectItem>
+                                <SelectItem value="awb">✈️ Air Waybill</SelectItem>
+                                <SelectItem value="fcr">📝 Forwarder's Certificate</SelectItem>
+                                <SelectItem value="shipping_cert">🚚 Shipping Certificate</SelectItem>
+                                <SelectItem value="other">📎 Other Document</SelectItem>
                               </SelectContent>
                             </Select>
                             {showDocTypeErrors && !file.documentType && (
