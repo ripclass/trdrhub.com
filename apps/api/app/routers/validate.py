@@ -4611,3 +4611,130 @@ async def generate_customs_pack(
         )
     
     return {"customs_pack": result}
+
+
+# =============================================================================
+# V2 ENDPOINT: SME-Focused Validation Response (Output-First)
+# =============================================================================
+# This endpoint returns the new SME contract format - cleaner, simpler, and
+# focused on what SME users actually need to see.
+# =============================================================================
+
+@router.post("/v2")
+async def validate_doc_v2(
+    request: Request,
+    current_user: User = Depends(get_user_optional),
+    db: Session = Depends(get_db),
+):
+    """
+    V2 Validation Endpoint - SME-focused response format.
+    
+    This endpoint runs the same validation logic but returns a cleaner,
+    more focused response designed for SME/Corporation users.
+    
+    Response follows the SMEValidationResponse contract:
+    - lc_summary: LC header info
+    - verdict: The big answer (PASS/FIX_REQUIRED/LIKELY_REJECT)
+    - issues: Grouped by must_fix and should_fix
+    - documents: Grouped by good, has_issues, missing
+    - processing: Metadata
+    """
+    from app.services.validation.sme_response_builder import adapt_from_structured_result
+    
+    # Run the existing validation
+    try:
+        v1_response = await validate_doc(request, current_user, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"V2 validation failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Validation failed: {str(e)}"
+        )
+    
+    # Extract job_id and structured_result
+    job_id = v1_response.get("job_id", "unknown")
+    structured_result = v1_response.get("structured_result", {})
+    
+    # Transform to SME contract format
+    try:
+        sme_response = adapt_from_structured_result(
+            structured_result=structured_result,
+            session_id=job_id,
+        )
+        
+        # Return the clean SME response
+        return {
+            "version": "2.0",
+            "job_id": job_id,
+            "data": sme_response.to_dict(),
+            # Also include v1 for debugging during transition
+            "_v1_structured_result": structured_result if request.headers.get("X-Include-V1") else None,
+        }
+    except Exception as e:
+        logger.error(f"V2 response transformation failed: {e}", exc_info=True)
+        # Fall back to v1 response
+        return {
+            "version": "1.0",
+            "job_id": job_id,
+            "data": structured_result,
+            "_transformation_error": str(e),
+        }
+
+
+@router.get("/v2/session/{session_id}")
+async def get_validation_result_v2(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get validation results in V2 SME format for an existing session.
+    """
+    from app.services.validation.sme_response_builder import adapt_from_structured_result
+    
+    # Get the session
+    session = db.query(ValidationSession).filter(
+        ValidationSession.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation session {session_id} not found"
+        )
+    
+    # Check access
+    if session.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Get stored validation results
+    structured_result = session.validation_results or {}
+    if not structured_result:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Session has no validation results yet"
+        )
+    
+    # Transform to SME format
+    try:
+        sme_response = adapt_from_structured_result(
+            structured_result=structured_result,
+            session_id=session_id,
+        )
+        
+        return {
+            "version": "2.0",
+            "session_id": session_id,
+            "data": sme_response.to_dict(),
+        }
+    except Exception as e:
+        logger.error(f"V2 transformation failed for session {session_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to transform results: {str(e)}"
+        )

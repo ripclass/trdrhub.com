@@ -107,6 +107,7 @@ import ImportResults from './pages/ImportResults'
 import ImportResultsSimple from './pages/ImportResultsSimple'
 import ExporterDashboard from './pages/ExporterDashboard'
 import ExporterResults from './pages/ExporterResults'
+import ExporterResultsV2 from './pages/ExporterResultsV2'
 import ExporterAnalytics from './pages/ExporterAnalytics'
 import ImporterAnalytics from './pages/ImporterAnalytics'
 import AnalyticsPage from './pages/dashboard/analytics/index'
@@ -333,6 +334,8 @@ function App() {
         <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
         <Route path="/lcopilot/results" element={<ExporterResults />} />
         <Route path="/lcopilot/results/:jobId" element={<ExporterResults />} />
+        {/* V2 Results - Output-First SME-focused design */}
+        <Route path="/lcopilot/results-v2/:sessionId" element={<ExporterResultsV2 />} />
         <Route path="/lcopilot/draft-corrections" element={<DraftLCCorrections />} />
         <Route path="/lcopilot/draft-risk-results" element={<DraftLCRiskResults />} />
         <Route path="/export-lc-upload" element={<ExportLCUpload />} />
