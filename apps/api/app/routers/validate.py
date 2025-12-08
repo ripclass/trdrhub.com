@@ -528,6 +528,28 @@ async def validate_doc(
             lc_type = lc_type_guess["lc_type"]
             lc_type_reason = lc_type_guess["reason"]
             lc_type_confidence = lc_type_guess["confidence"]
+            
+            # AI Enhancement: If rule-based confidence is low, use AI for better accuracy
+            if lc_type_confidence < 0.70 or lc_type == LCType.UNKNOWN.value:
+                try:
+                    from app.services.document_intelligence import detect_lc_type_ai
+                    lc_text = context.get("lc_text") or lc_context.get("raw_text", "")
+                    if lc_text and len(lc_text) > 100:
+                        ai_result = await detect_lc_type_ai(lc_text)
+                        if ai_result.get("confidence", 0) > lc_type_confidence:
+                            lc_type = ai_result.get("lc_type", lc_type)
+                            lc_type_reason = ai_result.get("reason", lc_type_reason)
+                            lc_type_confidence = ai_result.get("confidence", lc_type_confidence)
+                            lc_type_source = "ai"
+                            lc_type_guess = {
+                                "lc_type": lc_type,
+                                "reason": lc_type_reason,
+                                "confidence": lc_type_confidence,
+                                "is_draft": ai_result.get("is_draft", False),
+                            }
+                            logger.info(f"AI improved LC type detection: {lc_type} (confidence={lc_type_confidence})")
+                except Exception as ai_err:
+                    logger.warning(f"AI LC type detection failed, using rule-based: {ai_err}")
         
         # Override takes precedence
         if override_lc_type:
@@ -551,13 +573,71 @@ async def validate_doc(
             lc_type_reason,
         )
         lc_type_is_unknown = lc_type == LCType.UNKNOWN.value
+        is_draft_lc = lc_type_guess.get("is_draft", False) or lc_type == "draft"
         checkpoint("lc_type_detected")
+
+        # =====================================================================
+        # DASHBOARD/LC TYPE VALIDATION
+        # Ensure LC type matches the dashboard being used
+        # =====================================================================
+        user_type = payload.get("userType") or payload.get("user_type")
+        
+        # Check for mismatched dashboard/LC type
+        dashboard_lc_mismatch = None
+        if user_type == "exporter" and lc_type == "import":
+            dashboard_lc_mismatch = {
+                "error_code": "WRONG_DASHBOARD",
+                "title": "Import LC on Exporter Dashboard",
+                "message": "This appears to be an Import Letter of Credit where you are the APPLICANT (buyer).",
+                "detail": f"Detection: {lc_type_reason}",
+                "action": "Go to Importer Dashboard",
+                "redirect_url": "/importer/upload",
+            }
+        elif user_type == "exporter" and is_draft_lc:
+            dashboard_lc_mismatch = {
+                "error_code": "DRAFT_LC_ON_EXPORTER",
+                "title": "Draft LC Detected",
+                "message": "This appears to be a Draft Letter of Credit that hasn't been issued yet.",
+                "detail": "The Exporter Dashboard validates documents against ISSUED LCs. For draft LC review, use the Importer Dashboard.",
+                "action": "Go to Importer Dashboard",
+                "redirect_url": "/importer/upload",
+            }
+        elif user_type == "importer" and lc_type == "export" and lc_type_confidence > 0.75:
+            dashboard_lc_mismatch = {
+                "error_code": "WRONG_DASHBOARD",
+                "title": "Export LC on Importer Dashboard",
+                "message": "This appears to be an Export Letter of Credit where you are the BENEFICIARY (seller).",
+                "detail": f"Detection: {lc_type_reason}",
+                "action": "Go to Exporter Dashboard",
+                "redirect_url": "/exporter/upload",
+            }
+        
+        # If mismatch detected with high confidence, return early with clear message
+        if dashboard_lc_mismatch and lc_type_confidence > 0.70:
+            logger.warning(
+                f"Dashboard/LC type mismatch: user_type={user_type}, lc_type={lc_type}, "
+                f"confidence={lc_type_confidence}, is_draft={is_draft_lc}"
+            )
+            return {
+                "status": "blocked",
+                "block_reason": "dashboard_lc_mismatch",
+                "error": dashboard_lc_mismatch,
+                "lc_detection": {
+                    "lc_type": lc_type,
+                    "confidence": lc_type_confidence,
+                    "reason": lc_type_reason,
+                    "is_draft": is_draft_lc,
+                    "source": lc_type_source,
+                },
+                "message": dashboard_lc_mismatch["message"],
+                "action_required": dashboard_lc_mismatch["action"],
+                "redirect_url": dashboard_lc_mismatch["redirect_url"],
+            }
 
         # =====================================================================
         # CREATE VALIDATION SESSION EARLY
         # We need a database record BEFORE gating so blocked validations can be retrieved
         # =====================================================================
-        user_type = payload.get("userType") or payload.get("user_type")
         metadata = payload.get("metadata")
         validation_session = None
         job_id = None
