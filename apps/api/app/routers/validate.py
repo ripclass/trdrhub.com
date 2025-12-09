@@ -855,21 +855,122 @@ async def validate_doc(
             db_rule_issues = []
             db_rules_debug = {"enabled": False, "status": "not_started"}
             try:
-                # Detect jurisdiction from LC data
+                # =============================================================
+                # DYNAMIC JURISDICTION & DOMAIN DETECTION
+                # Detects relevant rulesets based on LC and document content
+                # =============================================================
                 lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
-                detected_jurisdiction = (
-                    lc_ctx.get("jurisdiction") or
-                    lc_ctx.get("country") or
-                    lc_ctx.get("issuing_bank_country") or
-                    "global"
+                mt700 = lc_ctx.get("mt700") or {}
+                coo = payload.get("certificate_of_origin") or {}
+                invoice = payload.get("invoice") or {}
+                bl = payload.get("bill_of_lading") or {}
+                
+                # Country code mapping (common variations)
+                COUNTRY_CODE_MAP = {
+                    "bangladesh": "bd", "peoples republic of bangladesh": "bd",
+                    "india": "in", "republic of india": "in",
+                    "china": "cn", "peoples republic of china": "cn", "prc": "cn",
+                    "united states": "us", "usa": "us", "united states of america": "us",
+                    "united arab emirates": "ae", "uae": "ae",
+                    "saudi arabia": "sa", "kingdom of saudi arabia": "sa",
+                    "singapore": "sg", "republic of singapore": "sg",
+                    "hong kong": "hk", "hong kong sar": "hk",
+                    "germany": "de", "federal republic of germany": "de",
+                    "united kingdom": "uk", "great britain": "uk", "gb": "uk",
+                    "japan": "jp", "turkey": "tr", "pakistan": "pk",
+                    "indonesia": "id", "malaysia": "my", "thailand": "th",
+                    "vietnam": "vn", "philippines": "ph", "south korea": "kr",
+                    "brazil": "br", "mexico": "mx", "egypt": "eg",
+                }
+                
+                def normalize_country(country_str: str) -> str:
+                    """Convert country name/code to 2-letter ISO code."""
+                    if not country_str:
+                        return ""
+                    country_lower = country_str.lower().strip()
+                    # Already a 2-letter code?
+                    if len(country_lower) == 2:
+                        return country_lower
+                    return COUNTRY_CODE_MAP.get(country_lower, "")
+                
+                # Detect jurisdictions from multiple sources
+                detected_jurisdictions = set()
+                
+                # From LC
+                for field in ["jurisdiction", "country", "issuing_bank_country", "advising_bank_country"]:
+                    val = normalize_country(lc_ctx.get(field, "") or mt700.get(field, ""))
+                    if val:
+                        detected_jurisdictions.add(val)
+                
+                # From beneficiary (exporter) - usually the exporter's country matters most
+                beneficiary = lc_ctx.get("beneficiary") or mt700.get("beneficiary") or {}
+                if isinstance(beneficiary, dict):
+                    val = normalize_country(beneficiary.get("country", ""))
+                    if val:
+                        detected_jurisdictions.add(val)
+                elif isinstance(beneficiary, str):
+                    # Try to extract country from address string
+                    for country, code in COUNTRY_CODE_MAP.items():
+                        if country in beneficiary.lower():
+                            detected_jurisdictions.add(code)
+                            break
+                
+                # From Certificate of Origin
+                origin_country = normalize_country(
+                    coo.get("country_of_origin") or 
+                    coo.get("origin_country") or 
+                    coo.get("country") or ""
+                )
+                if origin_country:
+                    detected_jurisdictions.add(origin_country)
+                
+                # From Invoice seller address
+                seller_country = normalize_country(
+                    invoice.get("seller_country") or
+                    invoice.get("exporter_country") or ""
+                )
+                if seller_country:
+                    detected_jurisdictions.add(seller_country)
+                
+                # From B/L port of loading (often indicates export country)
+                port_of_loading = (bl.get("port_of_loading") or "").lower()
+                if "chittagong" in port_of_loading or "dhaka" in port_of_loading or "mongla" in port_of_loading:
+                    detected_jurisdictions.add("bd")
+                elif "shanghai" in port_of_loading or "shenzhen" in port_of_loading or "ningbo" in port_of_loading:
+                    detected_jurisdictions.add("cn")
+                elif "mumbai" in port_of_loading or "chennai" in port_of_loading or "nhava sheva" in port_of_loading:
+                    detected_jurisdictions.add("in")
+                
+                # Build supplement domains dynamically
+                supplement_domains = ["icc.isbp745", "icc.lcopilot.crossdoc"]
+                
+                # Add jurisdiction-specific regulations
+                for jur in detected_jurisdictions:
+                    if jur and jur != "global":
+                        supplement_domains.append(f"regulations.{jur}")
+                
+                # Add sanctions screening
+                supplement_domains.append("sanctions.screening")
+                
+                # Primary jurisdiction (prefer exporter's country)
+                primary_jurisdiction = "global"
+                if origin_country:
+                    primary_jurisdiction = origin_country
+                elif seller_country:
+                    primary_jurisdiction = seller_country
+                elif detected_jurisdictions:
+                    primary_jurisdiction = list(detected_jurisdictions)[0]
+                
+                logger.info(
+                    "Dynamic jurisdiction detection: primary=%s, all=%s, supplements=%s",
+                    primary_jurisdiction, list(detected_jurisdictions), supplement_domains
                 )
                 
                 # Build document data for rule engine
-                # Domain "icc.ucp600" matches what's in the rulesets table
                 db_rule_payload = {
-                    "jurisdiction": detected_jurisdiction,
-                    "domain": "icc.ucp600",  # Matches DB rulesets table
-                    "supplement_domains": ["icc.isbp745"],  # Also load ISBP rules
+                    "jurisdiction": primary_jurisdiction,
+                    "domain": "icc.ucp600",
+                    "supplement_domains": supplement_domains,
                     # LC data
                     "lc": lc_ctx,
                     "lc_number": v2_baseline.lc_number if v2_baseline else None,
@@ -892,8 +993,8 @@ async def validate_doc(
                     primary_doc_type = "commercial_invoice"
                 
                 logger.info(
-                    "Executing DB rules: jurisdiction=%s, domain=icc.ucp600+isbp745, doc_type=%s",
-                    detected_jurisdiction, primary_doc_type
+                    "Executing DB rules: jurisdiction=%s, domain=icc.ucp600, supplements=%s, doc_type=%s",
+                    primary_jurisdiction, supplement_domains, primary_doc_type
                 )
                 
                 db_rule_issues = await validate_document_async(
@@ -913,8 +1014,9 @@ async def validate_doc(
                 db_rules_debug = {
                     "enabled": True,
                     "domain": "icc.ucp600",
-                    "supplements": ["icc.isbp745"],
-                    "jurisdiction": detected_jurisdiction,
+                    "supplements": supplement_domains,
+                    "primary_jurisdiction": primary_jurisdiction,
+                    "detected_jurisdictions": list(detected_jurisdictions),
                     "issues_found": len(db_rule_issues),
                 }
                 
