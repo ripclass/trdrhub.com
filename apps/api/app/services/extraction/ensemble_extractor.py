@@ -140,6 +140,7 @@ OPTIONAL FIELDS:
 - transshipment: "ALLOWED" or "NOT ALLOWED"
 - goods_description: Full description of goods
 - documents_required: List of required documents
+- additional_conditions: Array of additional conditions from Field 47A (e.g., ["DOCS WITHIN 21 DAYS", "INDICATE PO NUMBER"])
 - payment_terms: Payment conditions
 - available_with: How the LC is available
 

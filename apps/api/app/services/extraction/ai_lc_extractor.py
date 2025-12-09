@@ -67,6 +67,7 @@ OPTIONAL FIELDS:
 - transshipment: "ALLOWED" or "NOT ALLOWED"
 - goods_description: Full description of goods including HS codes if present
 - documents_required: List of required documents (e.g., "Commercial Invoice", "Bill of Lading", etc.)
+- additional_conditions: Array of additional conditions from Field 47A (e.g., ["DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS", "ALL DOCS MUST INDICATE PO NUMBER 12345"])
 - payment_terms: Payment conditions (e.g., "AT SIGHT", "60 DAYS AFTER B/L DATE")
 - available_with: How the LC is available (e.g., "BY NEGOTIATION", "BY PAYMENT", "BY ACCEPTANCE")
 

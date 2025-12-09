@@ -3876,7 +3876,16 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             str(baseline._conditions_list[0])[:100] if baseline._conditions_list else "none",
         )
     else:
+        # Enhanced debugging for missing 47A
         logger.warning("47A Additional Conditions NOT FOUND in LC context")
+        # Log what keys are available for debugging
+        context_keys = list(lc_context.keys()) if lc_context else []
+        lc_struct_keys = list((lc_context.get("lc_structured") or {}).keys())
+        blocks_keys = list(blocks.keys())
+        logger.debug(
+            "47A DEBUG: context_keys=%s, lc_structured_keys=%s, blocks_keys=%s",
+            context_keys[:20], lc_struct_keys[:20], blocks_keys[:20]
+        )
     set_field(baseline.additional_conditions, additional_conditions)
     
     # =====================================================================

@@ -104,7 +104,13 @@ def build_unified_structured_result(
 
     mt700_block = extractor_outputs.get("mt700") or _default_mt700()
     goods = extractor_outputs.get("goods", [])
-    clauses = extractor_outputs.get("clauses", [])
+    # Support both canonical name "additional_conditions" and legacy "clauses"
+    clauses = (
+        extractor_outputs.get("additional_conditions") or 
+        extractor_outputs.get("clauses") or 
+        extractor_outputs.get("clauses_47a") or 
+        []
+    )
     timeline = extractor_outputs.get("timeline") or _default_timeline(len(docs_structured))
     issues = extractor_outputs.get("issues", [])
 
