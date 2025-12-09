@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck } from "lucide-react";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
+import { type EmailDraftContext } from "@/components/exporter/HowToFixSection";
 import { normalizeDiscrepancySeverity } from "../utils";
 import type { IssueCard } from "@/types/lcopilot";
 
@@ -27,6 +28,9 @@ interface IssuesTabProps {
   documentStatusMap: Map<string, { status?: string; type?: string }>;
   renderAIInsightsCard: () => ReactNode;
   renderReferenceIssuesCard: () => ReactNode;
+  lcNumber?: string;
+  companyName?: string;
+  onDraftEmail?: (context: EmailDraftContext) => void;
 }
 
 export function IssuesTab({
@@ -39,6 +43,9 @@ export function IssuesTab({
   documentStatusMap,
   renderAIInsightsCard,
   renderReferenceIssuesCard,
+  lcNumber,
+  companyName,
+  onDraftEmail,
 }: IssuesTabProps) {
   if (!hasIssueCards) {
     return (
@@ -118,6 +125,9 @@ export function IssuesTab({
               normalizedSeverity={normalizedSeverity}
               documentStatusMap={documentStatusMap}
               fallbackId={fallbackId}
+              lcNumber={lcNumber}
+              companyName={companyName}
+              onDraftEmail={onDraftEmail}
             />
           );
         })

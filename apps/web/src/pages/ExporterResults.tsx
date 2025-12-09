@@ -87,6 +87,8 @@ import {
   type ToleranceApplied,
 } from "./exporter/results";
 import { HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
+import type { EmailDraftContext } from "@/components/exporter/HowToFixSection";
+import { EmailDraftDialog } from "@/components/exporter/EmailDraftDialog";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
@@ -1284,6 +1286,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       // Error handling is done in mutations
     }
   };
+
+  // Handle draft email request from HowToFix section
+  const [emailDraftContext, setEmailDraftContext] = useState<EmailDraftContext | null>(null);
+  const [showEmailDraftDialog, setShowEmailDraftDialog] = useState(false);
+  
+  const handleDraftEmail = (context: EmailDraftContext) => {
+    setEmailDraftContext(context);
+    setShowEmailDraftDialog(true);
+  };
   
   const handleSubmitToBank = async () => {
     if (!enableBankSubmission) {
@@ -2077,6 +2088,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               documentStatusMap={documentStatusMap}
               renderAIInsightsCard={renderAIInsightsCard}
               renderReferenceIssuesCard={renderReferenceIssuesCard}
+              lcNumber={lcNumber}
+              onDraftEmail={handleDraftEmail}
             />
           </TabsContent>
         </Tabs>
@@ -2227,6 +2240,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        
+        {/* Email Draft Dialog for How to Fix section */}
+        <EmailDraftDialog
+          open={showEmailDraftDialog}
+          onOpenChange={setShowEmailDraftDialog}
+          context={emailDraftContext}
+          lcNumber={lcNumber}
+        />
       </div>
     </div>
   );

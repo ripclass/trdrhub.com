@@ -9,6 +9,7 @@ import {
 import type { IssueCard } from '@/types/lcopilot';
 import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HowToFixSection, type EmailDraftContext } from './HowToFixSection';
 
 /**
  * Humanize rule IDs for display
@@ -180,6 +181,9 @@ type ExporterIssueCardProps = {
   normalizedSeverity: 'critical' | 'major' | 'minor';
   documentStatusMap: Map<string, { status?: string; type?: string }>;
   fallbackId: string;
+  lcNumber?: string;
+  companyName?: string;
+  onDraftEmail?: (context: EmailDraftContext) => void;
 };
 
 const formatValue = (value?: string) => {
@@ -207,6 +211,9 @@ export function ExporterIssueCard({
   normalizedSeverity,
   documentStatusMap,
   fallbackId,
+  lcNumber,
+  companyName,
+  onDraftEmail,
 }: ExporterIssueCardProps) {
   const severity = severityTokens[normalizedSeverity] ?? severityTokens.minor;
   const Icon = severity.Icon;
@@ -371,8 +378,10 @@ export function ExporterIssueCard({
         {/* Tolerance & Confidence Metadata */}
         {(issue.tolerance_applied || issue.extraction_confidence !== undefined) && (
           <div className="flex flex-wrap gap-2 mt-2">
-            {issue.tolerance_applied && (
-              <ToleranceExplanationBadge tolerance={issue.tolerance_applied} />
+            {issue.tolerance_applied && 
+             typeof issue.tolerance_applied.tolerance_percent === 'number' && 
+             typeof issue.tolerance_applied.source === 'string' && (
+              <ToleranceExplanationBadge tolerance={issue.tolerance_applied as { tolerance_percent: number; source: string; explicit?: boolean }} />
             )}
             {issue.extraction_confidence !== undefined && issue.extraction_confidence < 0.7 && (
               <TooltipProvider>
@@ -418,6 +427,15 @@ export function ExporterIssueCard({
             </div>
           </div>
         )}
+        
+        {/* How to Fix Section - Actionable guidance */}
+        <HowToFixSection 
+          issue={issue}
+          lcNumber={lcNumber}
+          companyName={companyName}
+          onDraftEmail={onDraftEmail}
+        />
+        
         {/* Rule Category - shows the validation source */}
         {issue.rule && (
           <div className="text-xs text-muted-foreground pt-2 border-t border-border/50 flex items-center gap-2">
