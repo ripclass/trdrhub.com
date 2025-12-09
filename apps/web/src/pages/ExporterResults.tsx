@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import { 
   FileText, 
   Download, 
@@ -1742,27 +1743,40 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Readiness</p>
                     <div className="flex items-center gap-3">
-                      <div className="text-2xl font-semibold">{customsReadyScore}%</div>
+                      <div className={cn(
+                        "text-2xl font-semibold",
+                        customsReadyScore >= 80 ? "text-success" : customsReadyScore >= 50 ? "text-warning" : "text-destructive"
+                      )}>{customsReadyScore}%</div>
                       <Badge variant="outline">Customs Ready Score</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Derived from structured_result.analytics.customs_ready_score
+                      {customsReadyScore >= 80 
+                        ? "Documents are ready for customs clearance." 
+                        : customsReadyScore >= 50 
+                        ? "Some issues need review before customs clearance."
+                        : "Critical issues must be resolved before customs clearance."}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
                     <div className="flex flex-col gap-2">
-                      {/* Always show Generate button */}
+                      {/* Generate Pack Button - different text based on state */}
                       <Button
                         size="sm"
+                        variant={manifestData ? "outline" : "default"}
                         className="w-full"
                         onClick={() => generateCustomsPackMutation.mutate()}
                         disabled={generateCustomsPackMutation.isPending}
                       >
-                        {generateCustomsPackMutation.isPending ? "Generating..." : packGenerated ? "Re-generate Pack" : "Generate Customs Pack"}
+                        <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
+                        {generateCustomsPackMutation.isPending 
+                          ? "Generating..." 
+                          : manifestData 
+                          ? "Regenerate Pack" 
+                          : "Generate Customs Pack"}
                       </Button>
-                      {/* Show Download when pack exists */}
-                      {packGenerated && (
+                      {/* Show Download only when manifest exists (pack was generated) */}
+                      {manifestData && (
                         <Button
                           size="sm"
                           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1807,25 +1821,41 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-sm font-semibold">Manifest</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Manifest</p>
+                    {manifestData && (
+                      <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Generated
+                      </Badge>
+                    )}
+                  </div>
                   {manifestData ? (
-                    <div className="rounded-lg border border-border/60 p-4 space-y-2">
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>LC Number</span>
-                        <span className="font-medium text-foreground">{manifestData.lc_number}</span>
+                    <div className="rounded-lg border border-border/60 p-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide">LC Number</p>
+                          <p className="font-medium">{manifestData.lc_number}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide">Generated</p>
+                          <p className="font-medium">
+                            {format(new Date(manifestData.generated_at), "MMM d, yyyy HH:mm")}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>Generated</span>
-                        <span className="font-medium text-foreground">
-                          {format(new Date(manifestData.generated_at), "MMM d, yyyy HH:mm")}
-                        </span>
-                      </div>
+                      <Separator />
                       <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Documents</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Documents Included ({manifestData.documents.length})
+                        </p>
                         <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
                           {manifestData.documents.map((doc, idx) => (
                             <li key={`${doc.name}-${idx}`} className="flex items-center justify-between px-3 py-2 text-sm">
-                              <span className="font-medium">{doc.name}</span>
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-muted-foreground" />
+                                <span className="font-medium">{doc.name}</span>
+                              </div>
                               <Badge variant="outline">{safeString(doc.type)}</Badge>
                             </li>
                           ))}
@@ -1833,9 +1863,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </div>
                     </div>
                   ) : (
-                    <Card className="border-dashed">
-                      <CardContent className="py-6 text-sm text-muted-foreground">
-                        Generate a customs pack to view the manifest.
+                    <Card className="border-dashed bg-muted/20">
+                      <CardContent className="py-8 text-center">
+                        <Package className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground mb-1">No manifest generated yet</p>
+                        <p className="text-xs text-muted-foreground">
+                          Click "Generate Customs Pack" above to create your customs manifest.
+                        </p>
                       </CardContent>
                     </Card>
                   )}
