@@ -25,6 +25,49 @@ import {
   getSeverityLabel,
 } from "@/lib/validation/validationState";
 
+/**
+ * Humanize rule IDs for display
+ * CROSSDOC-BIN → Cross-Document Check
+ * AI-MISSING-INSPECTION_CERTIFICATE → AI Validation
+ * BL-VOYAGE-001 → Bill of Lading Check
+ */
+function humanizeRuleId(ruleId: string): string {
+  if (!ruleId) return "";
+  
+  // Rule category mappings
+  const categoryMap: Record<string, string> = {
+    "CROSSDOC": "Cross-Document",
+    "AI-MISSING": "AI Detection",
+    "AI-": "AI Validation",
+    "BL-": "Bill of Lading",
+    "INV-": "Invoice",
+    "LC-": "LC Requirement",
+    "COO-": "Certificate of Origin",
+    "PL-": "Packing List",
+    "INS-": "Insurance",
+    "SANCTIONS": "Sanctions Check",
+    "UCP-": "UCP600",
+    "ISBP-": "ISBP745",
+  };
+  
+  // Find matching category
+  for (const [prefix, label] of Object.entries(categoryMap)) {
+    if (ruleId.toUpperCase().startsWith(prefix)) {
+      return label;
+    }
+  }
+  
+  // Fallback: clean up the rule ID
+  return ruleId
+    .replace(/-/g, " ")
+    .replace(/_/g, " ")
+    .replace(/\d+$/, "")
+    .trim()
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export interface IssueData {
   rule?: string;
   title?: string;
@@ -215,10 +258,11 @@ export function IssueCard({
             </div>
           )}
 
-          {/* Rule ID */}
+          {/* Rule Category */}
           {issue.rule && (
-            <div className="text-xs text-gray-400 font-mono">
-              Rule: {issue.rule}
+            <div className="text-xs text-gray-400">
+              <span className="font-medium">{humanizeRuleId(issue.rule)}</span>
+              <span className="ml-2 font-mono text-gray-500 text-[10px]">({issue.rule})</span>
             </div>
           )}
         </div>

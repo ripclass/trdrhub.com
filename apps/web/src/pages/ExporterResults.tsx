@@ -1160,29 +1160,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       );
     }
     
-    // Show placeholder when issues exist but no AI insights (feature not enabled)
-    if (hasIssueCards && !aiInsights) {
-      return (
-        <Card className="shadow-soft border border-dashed border-muted-foreground/30 bg-muted/20">
-          <CardContent className="py-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-muted">
-                <Lightbulb className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-sm text-muted-foreground">AI Risk Insights Available</p>
-                <p className="text-xs text-muted-foreground/70 mt-0.5">
-                  Enable AI enrichment to get context-aware explanations, fix suggestions, and UCP600/ISBP745 references for your {issueCards.length} issue{issueCards.length !== 1 ? 's' : ''}.
-                </p>
-              </div>
-              <Badge variant="outline" className="text-xs">
-                Enterprise Feature
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
+    // AI insights placeholder removed - feature is enabled but backend integration pending
+    // The issues are already validated with AI through the AI Validation layer
     
     return null;
   };
