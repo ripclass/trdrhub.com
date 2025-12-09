@@ -66,63 +66,111 @@ const StatusIcon = ({ status }: { status: string }) => {
 // Fields that should be displayed as bullet lists
 const BULLET_LIST_FIELDS = [
   "goods_description",
+  "goods",
+  "description",
   "documents_required",
+  "documents",
+  "required",
   "additional_conditions",
   "conditions",
   "clauses",
   "requirements",
   "instructions",
+  "47a",
+  "terms",
+  "charges",
 ];
 
-const formatFieldValue = (value: any): string | string[] => {
+// Parse a single item, cleaning up any array-like formatting
+const cleanItemText = (item: string): string => {
+  return item
+    .replace(/^\[['"]?|['"]?\]$/g, '') // Remove array brackets
+    .replace(/^['"]|['"]$/g, '')        // Remove quotes
+    .replace(/^[•\-\*]\s*/, '')         // Remove existing bullets
+    .replace(/^\d+[.)]\s*/, '')         // Remove numbered prefixes
+    .trim();
+};
+
+const formatFieldValue = (value: any, fieldKey?: string): string | string[] => {
   if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value.trim() || "—";
+  
+  // Handle string values
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "—";
+    
+    // Check if it looks like a stringified array: ['item1', 'item2']
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed.replace(/'/g, '"'));
+        if (Array.isArray(parsed)) {
+          return parsed.map(v => cleanItemText(String(v))).filter(Boolean);
+        }
+      } catch {
+        // Not valid JSON, continue with string parsing
+      }
+    }
+    
+    // Split long text by common delimiters for better readability
+    if (trimmed.length > 150) {
+      // Try splitting by periods followed by space and capital letter (sentences)
+      const sentencePattern = /\.\s+(?=[A-Z0-9])/;
+      // Try splitting by numbered items
+      const numberedPattern = /\s*\d+[.)]\s+/;
+      // Try splitting by semicolons
+      const semicolonPattern = /;\s*/;
+      
+      if (numberedPattern.test(trimmed)) {
+        const parts = trimmed.split(numberedPattern).map(cleanItemText).filter(s => s.length > 0);
+        if (parts.length > 1) return parts;
+      }
+      
+      if (semicolonPattern.test(trimmed) && trimmed.split(semicolonPattern).length > 2) {
+        const parts = trimmed.split(semicolonPattern).map(cleanItemText).filter(s => s.length > 0);
+        if (parts.length > 1) return parts;
+      }
+    }
+    
+    return trimmed;
+  }
+  
   if (typeof value === "number") return value.toLocaleString();
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  
   if (Array.isArray(value)) {
     if (value.length === 0) return "—";
     // Return as array for bullet rendering
-    return value.map(v => {
-      if (typeof v === "string") return v.trim();
-      if (v && typeof v.text === "string") return v.text.trim();
-      if (v && typeof v.value === "string") return v.value.trim();
-      return String(v);
-    }).filter(Boolean);
+    const items = value.map(v => {
+      if (typeof v === "string") return cleanItemText(v);
+      if (v && typeof v.text === "string") return cleanItemText(v.text);
+      if (v && typeof v.value === "string") return cleanItemText(v.value);
+      if (v && typeof v.condition === "string") return cleanItemText(v.condition);
+      return cleanItemText(String(v));
+    }).filter(s => s.length > 0);
+    
+    return items.length > 0 ? items : "—";
   }
+  
   if (typeof value === "object") {
     // Handle common nested structures
-    if ("value" in value) return formatFieldValue(value.value);
-    if ("name" in value) return formatFieldValue(value.name);
-    if ("text" in value) return formatFieldValue(value.text);
+    if ("value" in value) return formatFieldValue(value.value, fieldKey);
+    if ("name" in value) return formatFieldValue(value.name, fieldKey);
+    if ("text" in value) return formatFieldValue(value.text, fieldKey);
     // Otherwise show as JSON
     return JSON.stringify(value, null, 2);
   }
+  
   return String(value);
 };
 
-// Parse long text into bullet points
-const parseTextToBullets = (text: string): string[] => {
-  if (!text || text.length < 100) return [];
+// Check if a field should be displayed as a bullet list
+const shouldBeBulletList = (key: string, value: any): boolean => {
+  // Always bullet arrays with multiple items
+  if (Array.isArray(value) && value.length > 1) return true;
   
-  // Check for numbered items: 1) 2) or 1. 2. patterns
-  const numberedPattern = /(?:^|\n)\s*\d+[.)]\s*/;
-  if (numberedPattern.test(text)) {
-    return text
-      .split(/(?:^|\n)\s*\d+[.)]\s*/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  }
-  
-  // Check for uppercase labeled items
-  const labelPattern = /(?:^|\n)([A-Z][A-Z\s]+:)/;
-  if (labelPattern.test(text)) {
-    return text
-      .split(/(?=(?:^|\n)[A-Z][A-Z\s]+:)/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  }
-  
-  return [];
+  // Check if field name suggests it should be a list
+  const keyLower = key.toLowerCase();
+  return BULLET_LIST_FIELDS.some(f => keyLower.includes(f));
 };
 
 const humanizeFieldName = (key: string): string => {
@@ -267,33 +315,37 @@ export function DocumentDetailsDrawer({
         </h4>
         <div className="space-y-2">
           {fields.map(([key, value]) => {
-            const formatted = formatFieldValue(value);
-            const isBulletField = BULLET_LIST_FIELDS.some(f => key.toLowerCase().includes(f));
+            const formatted = formatFieldValue(value, key);
+            const isBulletField = shouldBeBulletList(key, value);
             
-            // Check if we should render as bullet list
-            let bulletItems: string[] = [];
-            if (Array.isArray(formatted)) {
-              bulletItems = formatted;
-            } else if (isBulletField && typeof formatted === "string") {
-              bulletItems = parseTextToBullets(formatted);
-            }
+            // Determine if we should render as bullet list
+            const bulletItems: string[] = Array.isArray(formatted) 
+              ? formatted 
+              : (isBulletField && typeof formatted === "string" && formatted.length > 100)
+                ? [formatted] // Single long item still gets special treatment
+                : [];
+            
+            const showAsBullets = bulletItems.length > 1;
             
             return (
               <div
                 key={key}
-                className="flex flex-col gap-1 p-2 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
+                className="flex flex-col gap-1 p-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
               >
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {humanizeFieldName(key)}
                 </span>
-                {bulletItems.length > 1 ? (
-                  <ul className="text-sm font-medium space-y-1 list-disc list-inside pl-1">
+                {showAsBullets ? (
+                  <ul className="text-sm space-y-2 mt-1">
                     {bulletItems.map((item, idx) => (
-                      <li key={idx} className="break-words">{item}</li>
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-primary mt-1.5 flex-shrink-0">•</span>
+                        <span className="break-words leading-relaxed">{item}</span>
+                      </li>
                     ))}
                   </ul>
                 ) : (
-                  <span className="text-sm font-medium break-words whitespace-pre-wrap">
+                  <span className="text-sm break-words whitespace-pre-wrap leading-relaxed">
                     {Array.isArray(formatted) ? formatted.join(", ") : formatted}
                   </span>
                 )}
