@@ -4726,12 +4726,25 @@ async def get_validation_result_v2(
     # TODO: Add stricter access control once session ownership is properly tracked
     
     # Get stored validation results
-    structured_result = session.validation_results or {}
-    if not structured_result:
+    raw_results = session.validation_results or {}
+    if not raw_results:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Session has no validation results yet"
         )
+    
+    # Unwrap if stored in nested format: {"structured_result": {...}}
+    if "structured_result" in raw_results:
+        structured_result = raw_results["structured_result"]
+    else:
+        structured_result = raw_results
+    
+    # Debug: Log what keys are available in structured_result
+    logger.info(f"V2 session {session_id} - stored keys: {list(structured_result.keys())}")
+    logger.info(f"V2 session {session_id} - lc_data keys: {list(structured_result.get('lc_data', {}).keys()) if isinstance(structured_result.get('lc_data'), dict) else 'N/A'}")
+    logger.info(f"V2 session {session_id} - documents count: {len(structured_result.get('documents_structured', []))}")
+    logger.info(f"V2 session {session_id} - issues count: {len(structured_result.get('issues', []))}")
+    logger.info(f"V2 session {session_id} - crossdoc count: {len(structured_result.get('crossdoc_issues', []))}")
     
     # Transform to SME format
     try:
