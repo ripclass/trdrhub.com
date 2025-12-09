@@ -886,36 +886,77 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
-  const { successCount, errorCount, warningCount, successRate } = useMemo(() => {
-    const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
-    const summarySuccessCount =
-      typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
-    const resolvedSuccessCount =
-      derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+  const { successCount, errorCount, warningCount, successRate, extractionRate } = useMemo(() => {
+    // Use authoritative document_status from backend (same source as SummaryStrip)
+    const statusDistribution = 
+      analyticsData?.document_status_distribution ?? 
+      summary?.document_status ?? 
+      summary?.status_counts ?? 
+      {};
+    
+    const fromDistSuccess = typeof statusDistribution.success === 'number' ? statusDistribution.success : 0;
+    const fromDistWarning = typeof statusDistribution.warning === 'number' ? statusDistribution.warning : 0;
+    const fromDistError = typeof statusDistribution.error === 'number' ? statusDistribution.error : 0;
+    
+    // Check if we have real distribution data
+    const hasDistribution = fromDistSuccess > 0 || fromDistWarning > 0 || fromDistError > 0;
+    
+    let resolvedSuccessCount: number;
+    let resolvedErrorCount: number;
+    let resolvedWarningCount: number;
+    
+    if (hasDistribution) {
+      // Use backend's authoritative counts
+      resolvedSuccessCount = fromDistSuccess;
+      resolvedErrorCount = fromDistError;
+      resolvedWarningCount = fromDistWarning;
+    } else {
+      // Fallback to document array or summary fields
+      const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
+      const summarySuccessCount =
+        typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
+      resolvedSuccessCount =
+        derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
 
-    const resolvedErrorCount =
-      typeof summary?.failed_extractions === "number"
-        ? summary.failed_extractions
-        : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
+      resolvedErrorCount =
+        typeof summary?.failed_extractions === "number"
+          ? summary.failed_extractions
+          : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
 
-    const resolvedWarningCount =
-      typeof documentStatusCounts.warning === "number"
-        ? documentStatusCounts.warning
-        : documents.filter((doc) => doc.status === "warning").length;
+      resolvedWarningCount =
+        typeof documentStatusCounts.warning === "number"
+          ? documentStatusCounts.warning
+          : documents.filter((doc) => doc.status === "warning").length;
+    }
 
+    // Validation success rate (based on validation status)
     const resolvedSuccessRate =
       totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
+
+    // Extraction success rate (OCR extraction - separate from validation)
+    // This measures how many docs were successfully extracted, regardless of validation status
+    const extractionSuccessful = 
+      typeof summary?.successful_extractions === "number" 
+        ? summary.successful_extractions 
+        : totalDocuments; // Default to all if not specified
+    const extractionRate = totalDocuments > 0 
+      ? Math.round((extractionSuccessful / totalDocuments) * 100) 
+      : 100;
 
     return {
       successCount: resolvedSuccessCount,
       errorCount: resolvedErrorCount,
       warningCount: resolvedWarningCount,
       successRate: resolvedSuccessRate,
+      extractionRate, // New: for Document Extraction progress bar
     };
   }, [
     documents,
     summary?.successful_extractions,
     summary?.failed_extractions,
+    summary?.document_status,
+    summary?.status_counts,
+    analyticsData?.document_status_distribution,
     documentStatusCounts.warning,
     totalDocuments,
   ]);
@@ -941,7 +982,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       })),
     [analyticsData?.document_risk, documents],
   );
-  const extractionAccuracy = useMemo(() => successRate, [successRate]);
+  const extractionAccuracy = useMemo(() => extractionRate, [extractionRate]);
   const customsReadyScore = useMemo(
     () => Math.max(0, complianceScore - warningCount * 5),
     [complianceScore, warningCount],
@@ -1633,24 +1674,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
                       </span>
                     </div>
+                    {warningCount > 0 && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">Needs Review</span>
+                        <span className="text-sm">With Warnings</span>
                       </div>
                       <span className="text-sm font-medium">
                         {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
                       </span>
                     </div>
+                    )}
+                    {errorCount > 0 && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                        <span className="text-sm">Critical Issues</span>
+                        <span className="text-sm">With Errors</span>
                       </div>
                       <span className="text-sm font-medium">
                         {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
                       </span>
                     </div>
+                    )}
                   </div>
                   <div className="mt-4 p-3 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
