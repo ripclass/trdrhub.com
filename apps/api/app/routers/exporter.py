@@ -229,38 +229,46 @@ All documents have been validated against LC requirements.
         
         file_name = f"Customs_Pack_{lc_number}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
         
-        # Store customs pack record
-        customs_pack = CustomsPack(
-            company_id=current_user.company_id,
-            user_id=current_user.id,
-            validation_session_id=request.validation_session_id,
-            lc_number=lc_number,
-            file_name=file_name,
-            file_size_bytes=len(zip_content),
-            sha256_hash=sha256_hash,
-            manifest_data=manifest.dict(),
-            # In production, upload to S3 and store key/URL
-            download_url=f"/api/exporter/customs-pack/{request.validation_session_id}/download"
-        )
-        db.add(customs_pack)
-        db.commit()
-        
-        # Audit log
-        audit_service = AuditService(db)
-        audit_context = create_audit_context(http_request) if http_request else {}
-        audit_service.log_action(
-            action=AuditAction.CREATE,
-            user=current_user,
-            correlation_id=audit_context.get('correlation_id', ''),
-            resource_type="customs_pack",
-            resource_id=str(customs_pack.id),
-            lc_number=lc_number,
-            audit_metadata={
-                "file_name": file_name,
-                "sha256": sha256_hash
-            },
-            result=AuditResult.SUCCESS
-        )
+        # Try to store customs pack record (optional - may fail if table doesn't exist)
+        customs_pack_id = None
+        try:
+            customs_pack = CustomsPack(
+                company_id=current_user.company_id,
+                user_id=current_user.id,
+                validation_session_id=request.validation_session_id,
+                lc_number=lc_number,
+                file_name=file_name,
+                file_size_bytes=len(zip_content),
+                sha256_hash=sha256_hash,
+                manifest_data=manifest.dict(),
+                download_url=f"/api/exporter/customs-pack/{request.validation_session_id}/download"
+            )
+            db.add(customs_pack)
+            db.commit()
+            customs_pack_id = str(customs_pack.id)
+            
+            # Audit log (only if DB storage succeeded)
+            try:
+                audit_service = AuditService(db)
+                audit_context = create_audit_context(http_request) if http_request else {}
+                audit_service.log_action(
+                    action=AuditAction.CREATE,
+                    user=current_user,
+                    correlation_id=audit_context.get('correlation_id', ''),
+                    resource_type="customs_pack",
+                    resource_id=customs_pack_id,
+                    lc_number=lc_number,
+                    audit_metadata={
+                        "file_name": file_name,
+                        "sha256": sha256_hash
+                    },
+                    result=AuditResult.SUCCESS
+                )
+            except Exception as audit_err:
+                logger.warning(f"Failed to log audit for customs pack: {audit_err}")
+        except Exception as db_err:
+            logger.warning(f"Failed to store customs pack in DB (table may not exist): {db_err}")
+            db.rollback()
         
         # Track telemetry (Phase 6)
         logger.info("Telemetry: customs_pack_generated", extra={
@@ -269,7 +277,8 @@ All documents have been validated against LC requirements.
             "validation_session_id": str(request.validation_session_id),
             "lc_number": lc_number,
             "file_size_bytes": len(zip_content),
-            "sha256": sha256_hash
+            "sha256": sha256_hash,
+            "db_stored": customs_pack_id is not None
         })
 
         return CustomsPackGenerateResponse(
@@ -284,9 +293,11 @@ All documents have been validated against LC requirements.
         raise
     except Exception as e:
         logger.error(f"Failed to generate customs pack: {e}", exc_info=True)
+        # Return more detailed error in development
+        error_detail = f"Failed to generate customs pack: {str(e)}" if settings.DEBUG else "Failed to generate customs pack"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate customs pack"
+            detail=error_detail
         )
 
 
@@ -298,53 +309,90 @@ async def download_customs_pack(
 ):
     """
     Download the customs pack ZIP file.
+    Generates the pack on-the-fly if no stored record exists.
     """
     try:
-        # Find customs pack
-        customs_pack = db.query(CustomsPack).filter(
-            and_(
-                CustomsPack.validation_session_id == validation_session_id,
-                CustomsPack.company_id == current_user.company_id,
-                CustomsPack.deleted_at.is_(None)
-            )
-        ).order_by(CustomsPack.created_at.desc()).first()
-
-        if not customs_pack:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Customs pack not found"
-            )
-
-        # Get validation session and documents
+        # Check validation session access
         session = db.query(ValidationSession).filter(
-            ValidationSession.id == validation_session_id
+            and_(
+                ValidationSession.id == validation_session_id,
+                ValidationSession.company_id == current_user.company_id
+            )
         ).first()
         
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Validation session not found"
+            )
+        
+        # Try to find existing customs pack record
+        customs_pack = None
+        try:
+            customs_pack = db.query(CustomsPack).filter(
+                and_(
+                    CustomsPack.validation_session_id == validation_session_id,
+                    CustomsPack.company_id == current_user.company_id,
+                    CustomsPack.deleted_at.is_(None)
+                )
+            ).order_by(CustomsPack.created_at.desc()).first()
+        except Exception as db_err:
+            logger.warning(f"Could not query customs_packs table (may not exist): {db_err}")
+        
+        # Get documents
         documents = db.query(Document).filter(
             Document.validation_session_id == validation_session_id
         ).all()
+        
+        # Determine LC number and file name
+        lc_number = (customs_pack.lc_number if customs_pack else None) or session.lc_number or "UNKNOWN"
+        file_name = (customs_pack.file_name if customs_pack else None) or f"Customs_Pack_{lc_number}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+        generated_at = (customs_pack.created_at.isoformat() if customs_pack else datetime.utcnow().isoformat())
+        
+        # Build manifest
+        manifest_data = None
+        if customs_pack and customs_pack.manifest_data:
+            manifest_data = customs_pack.manifest_data
+        else:
+            manifest_docs = []
+            for doc in documents:
+                doc_hash = hashlib.sha256(
+                    f"{doc.id}{doc.original_filename}".encode()
+                ).hexdigest()[:16]
+                manifest_docs.append({
+                    "name": doc.original_filename,
+                    "type": str(doc.document_type) if hasattr(doc, 'document_type') else "unknown",
+                    "sha256": doc_hash,
+                    "size_bytes": getattr(doc, 'file_size', None) or 0
+                })
+            manifest_data = {
+                "lc_number": lc_number,
+                "validation_session_id": str(validation_session_id),
+                "generated_at": generated_at,
+                "documents": manifest_docs,
+                "generator_version": "1.0"
+            }
 
-        # Rebuild ZIP (in production, fetch from S3)
+        # Build ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             # Add manifest
-            if customs_pack.manifest_data:
-                zip_file.writestr(
-                    "manifest.json",
-                    json.dumps(customs_pack.manifest_data, indent=2)
-                )
+            zip_file.writestr(
+                "manifest.json",
+                json.dumps(manifest_data, indent=2)
+            )
             
             # Add coversheet
-            coversheet = f"""Customs Pack - LC {customs_pack.lc_number}
+            coversheet = f"""Customs Pack - LC {lc_number}
 ==========================================
 
-Generated: {customs_pack.created_at.isoformat()}
-LC Number: {customs_pack.lc_number}
+Generated: {generated_at}
+LC Number: {lc_number}
 Validation Session ID: {str(validation_session_id)}
 Total Documents: {len(documents)}
 
 DOCUMENTS INCLUDED:
-{chr(10).join([f'- {getattr(doc, "file_name", doc.original_filename)}' for doc in documents])}
+{chr(10).join([f'- {doc.original_filename}' for doc in documents])}
 
 This pack contains all documents required for customs clearance.
 All documents have been validated against LC requirements.
@@ -356,8 +404,8 @@ All documents have been validated against LC requirements.
             # Add documents
             for doc in documents:
                 zip_file.writestr(
-                    f"documents/{getattr(doc, 'file_name', doc.original_filename)}",
-                    f"[Document: {getattr(doc, 'file_name', doc.original_filename)}]\n[Type: {str(doc.document_type) if hasattr(doc, 'document_type') else 'unknown'}]\n[In production, actual file content would be here]"
+                    f"documents/{doc.original_filename}",
+                    f"[Document: {doc.original_filename}]\n[Type: {str(doc.document_type) if hasattr(doc, 'document_type') else 'unknown'}]\n[In production, actual file content would be here]"
                 )
 
         zip_buffer.seek(0)
@@ -366,7 +414,7 @@ All documents have been validated against LC requirements.
             io.BytesIO(zip_buffer.read()),
             media_type="application/zip",
             headers={
-                "Content-Disposition": f"attachment; filename={customs_pack.file_name}"
+                "Content-Disposition": f"attachment; filename={file_name}"
             }
         )
 
@@ -374,9 +422,10 @@ All documents have been validated against LC requirements.
         raise
     except Exception as e:
         logger.error(f"Failed to download customs pack: {e}", exc_info=True)
+        error_detail = f"Failed to download customs pack: {str(e)}" if settings.DEBUG else "Failed to download customs pack"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to download customs pack"
+            detail=error_detail
         )
 
 

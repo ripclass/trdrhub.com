@@ -1782,8 +1782,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
                         {generateCustomsPackMutation.isPending 
                           ? "Generating..." 
-                          : manifestData 
-                          ? "Regenerate Pack" 
                           : "Generate Customs Pack"}
                       </Button>
                       {/* Show Download only when manifest exists (pack was generated) */}
