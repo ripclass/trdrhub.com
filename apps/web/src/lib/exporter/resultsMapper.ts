@@ -292,6 +292,10 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const sanctionsBlocked = Boolean(structured.sanctions_blocked);
   const sanctionsBlockReason = structured.sanctions_block_reason ?? null;
 
+  // Contract Validation fields (Output-First layer)
+  const contractWarnings = ensureArray((structured as any)._contract_warnings ?? []);
+  const contractValidation = (structured as any)._contract_validation ?? null;
+
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
     summary,
@@ -316,5 +320,9 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     sanctionsScreening,
     sanctionsBlocked,
     sanctionsBlockReason,
+    
+    // Contract Validation additions (Output-First layer)
+    contractWarnings,
+    contractValidation,
   };
 };

@@ -155,6 +155,24 @@ export type StructuredResultPayload = SharedStructuredResultPayload;
 export type SanctionsScreeningIssue = SharedSanctionsScreeningIssue;
 export type SanctionsScreeningSummary = SharedSanctionsScreeningSummary;
 
+// Contract Validation Types (Output-First layer)
+export type ContractWarningSeverity = 'error' | 'warning' | 'info';
+
+export interface ContractWarning {
+  field: string;
+  message: string;
+  severity: ContractWarningSeverity;
+  source: string;  // lc_data, processing_summary, analytics, issues
+  suggestion?: string | null;
+}
+
+export interface ContractValidation {
+  valid: boolean;
+  error_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
 export interface ValidationResults {
   jobId: string;
   summary: ProcessingSummaryPayload;
@@ -181,4 +199,8 @@ export interface ValidationResults {
   sanctionsScreening?: SanctionsScreeningSummary | null;
   sanctionsBlocked?: boolean;
   sanctionsBlockReason?: string | null;
+  
+  // Contract Validation additions (Output-First layer)
+  contractWarnings?: ContractWarning[];
+  contractValidation?: ContractValidation;
 }

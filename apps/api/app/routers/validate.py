@@ -141,6 +141,9 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
+from app.services.validation.response_contract_validator import (
+    validate_and_annotate_response,
+)
 from app.services.rules_service import get_ucp_description_sync, get_isbp_description_sync
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
@@ -1835,6 +1838,20 @@ async def validate_doc(
                 )
             except Exception as usage_err:
                 logger.warning(f"Failed to track usage: {usage_err}")
+
+        # =====================================================================
+        # CONTRACT VALIDATION (Output-First Layer)
+        # Validates response completeness and adds warnings for missing data
+        # =====================================================================
+        try:
+            structured_result = validate_and_annotate_response(structured_result)
+            if structured_result.get("_contract_warnings"):
+                logger.info(
+                    "Contract validation: %d warnings added to response",
+                    len(structured_result.get("_contract_warnings", []))
+                )
+        except Exception as contract_err:
+            logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
 
         return {
             "job_id": str(job_id),

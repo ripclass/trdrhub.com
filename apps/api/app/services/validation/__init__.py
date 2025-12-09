@@ -140,6 +140,15 @@ from .confidence_weighting import (
     calculate_overall_extraction_confidence,
 )
 
+from .response_contract_validator import (
+    ContractSeverity,
+    ContractWarning,
+    ContractValidationResult,
+    validate_response_contract,
+    add_contract_warnings_to_response,
+    validate_and_annotate_response,
+)
+
 __all__ = [
     # Validation Gate
     "ValidationGate",
@@ -242,5 +251,12 @@ __all__ = [
     "get_field_confidence",
     "batch_adjust_issues",
     "calculate_overall_extraction_confidence",
+    # Response Contract Validator
+    "ContractSeverity",
+    "ContractWarning",
+    "ContractValidationResult",
+    "validate_response_contract",
+    "add_contract_warnings_to_response",
+    "validate_and_annotate_response",
 ]
 

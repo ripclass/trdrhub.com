@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 const resultsLogger = logger.createLogger('LCopilot');
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -968,6 +969,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
   }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
 
+  // Contract Validation warnings (Output-First layer)
+  const contractWarnings = resultData?.contractWarnings ?? [];
+  const hasContractWarnings = contractWarnings.length > 0;
+  const contractWarningsByLevel = useMemo(() => {
+    const errors = contractWarnings.filter((w) => w.severity === 'error');
+    const warnings = contractWarnings.filter((w) => w.severity === 'warning');
+    const infos = contractWarnings.filter((w) => w.severity === 'info');
+    return { errors, warnings, infos };
+  }, [contractWarnings]);
+
   // Early returns AFTER all hooks are called
   if (!resultData) {
     if (!validationSessionId) {
@@ -1446,6 +1457,47 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            {/* Contract Validation Warnings (Output-First Layer) */}
+            {hasContractWarnings && (
+              <Alert variant={contractWarningsByLevel.errors.length > 0 ? "destructive" : "default"} className="border-amber-500/50 bg-amber-500/5">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle className="font-semibold">
+                  Extraction Notice
+                  {contractWarningsByLevel.errors.length > 0 && (
+                    <Badge variant="destructive" className="ml-2 text-xs">{contractWarningsByLevel.errors.length} critical</Badge>
+                  )}
+                  {contractWarningsByLevel.warnings.length > 0 && (
+                    <Badge variant="outline" className="ml-2 text-xs border-amber-500/50 text-amber-600">{contractWarningsByLevel.warnings.length} warning{contractWarningsByLevel.warnings.length > 1 ? 's' : ''}</Badge>
+                  )}
+                </AlertTitle>
+                <AlertDescription className="mt-2">
+                  <ul className="space-y-1 text-sm">
+                    {contractWarningsByLevel.errors.map((w, i) => (
+                      <li key={`err-${i}`} className="flex items-start gap-2">
+                        <XCircle className="w-3.5 h-3.5 mt-0.5 text-destructive shrink-0" />
+                        <span>{w.message}</span>
+                      </li>
+                    ))}
+                    {contractWarningsByLevel.warnings.map((w, i) => (
+                      <li key={`warn-${i}`} className="flex items-start gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-500 shrink-0" />
+                        <span>{w.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {contractWarningsByLevel.infos.length > 0 && (
+                    <details className="mt-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">Show {contractWarningsByLevel.infos.length} info message{contractWarningsByLevel.infos.length > 1 ? 's' : ''}</summary>
+                      <ul className="mt-1 space-y-0.5 pl-2">
+                        {contractWarningsByLevel.infos.map((w, i) => (
+                          <li key={`info-${i}`}>• {w.message}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
