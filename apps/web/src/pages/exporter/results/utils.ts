@@ -101,6 +101,57 @@ export const formatExtractedValue = (value: any): string => {
 };
 
 /**
+ * Format long text as bullet points
+ * Splits by numbered items (1), 2), etc.), dashes, or newlines
+ */
+export const formatAsBulletPoints = (text: any): string[] => {
+  if (!text) return [];
+  
+  const str = typeof text === "string" ? text : 
+              typeof text === "object" && text.text ? text.text :
+              typeof text === "object" && text.value ? text.value :
+              String(text);
+  
+  // Check for numbered items: 1) 2) or 1. 2. patterns
+  const numberedPattern = /(?:^|\n)\s*\d+[.)]\s*/;
+  if (numberedPattern.test(str)) {
+    return str
+      .split(/(?:^|\n)\s*\d+[.)]\s*/)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+  }
+  
+  // Check for dash/bullet items
+  if (str.includes('\n-') || str.includes('\n•') || str.includes('\n*')) {
+    return str
+      .split(/\n[-•*]\s*/)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+  }
+  
+  // Check for uppercase labeled items (e.g., "PACKING: ..." or "MARKING: ...")
+  const labelPattern = /(?:^|\n)([A-Z][A-Z\s]+:)/;
+  if (labelPattern.test(str)) {
+    return str
+      .split(/(?=(?:^|\n)[A-Z][A-Z\s]+:)/)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+  }
+  
+  // Check for period-separated sentences if text is long
+  if (str.length > 200 && str.includes('. ')) {
+    const sentences = str
+      .split(/\.\s+(?=[A-Z])/)
+      .map((s: string) => s.trim().replace(/\.$/, ''))
+      .filter((s: string) => s.length > 10);
+    if (sentences.length > 1) return sentences;
+  }
+  
+  // Return as single item if no splitting pattern found
+  return str.length > 0 ? [str] : [];
+};
+
+/**
  * Format additional conditions as a readable list
  * Handles multiple formats:
  * - Array of strings: ["condition 1", "condition 2"]

@@ -63,14 +63,31 @@ const StatusIcon = ({ status }: { status: string }) => {
   }
 };
 
-const formatFieldValue = (value: any): string => {
+// Fields that should be displayed as bullet lists
+const BULLET_LIST_FIELDS = [
+  "goods_description",
+  "documents_required",
+  "additional_conditions",
+  "conditions",
+  "clauses",
+  "requirements",
+  "instructions",
+];
+
+const formatFieldValue = (value: any): string | string[] => {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value.trim() || "—";
   if (typeof value === "number") return value.toLocaleString();
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) {
     if (value.length === 0) return "—";
-    return value.map(v => formatFieldValue(v)).join(", ");
+    // Return as array for bullet rendering
+    return value.map(v => {
+      if (typeof v === "string") return v.trim();
+      if (v && typeof v.text === "string") return v.text.trim();
+      if (v && typeof v.value === "string") return v.value.trim();
+      return String(v);
+    }).filter(Boolean);
   }
   if (typeof value === "object") {
     // Handle common nested structures
@@ -81,6 +98,31 @@ const formatFieldValue = (value: any): string => {
     return JSON.stringify(value, null, 2);
   }
   return String(value);
+};
+
+// Parse long text into bullet points
+const parseTextToBullets = (text: string): string[] => {
+  if (!text || text.length < 100) return [];
+  
+  // Check for numbered items: 1) 2) or 1. 2. patterns
+  const numberedPattern = /(?:^|\n)\s*\d+[.)]\s*/;
+  if (numberedPattern.test(text)) {
+    return text
+      .split(/(?:^|\n)\s*\d+[.)]\s*/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+  
+  // Check for uppercase labeled items
+  const labelPattern = /(?:^|\n)([A-Z][A-Z\s]+:)/;
+  if (labelPattern.test(text)) {
+    return text
+      .split(/(?=(?:^|\n)[A-Z][A-Z\s]+:)/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+  
+  return [];
 };
 
 const humanizeFieldName = (key: string): string => {
@@ -224,19 +266,40 @@ export function DocumentDetailsDrawer({
           {title}
         </h4>
         <div className="space-y-2">
-          {fields.map(([key, value]) => (
-            <div
-              key={key}
-              className="flex flex-col gap-1 p-2 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
-            >
-              <span className="text-xs text-muted-foreground">
-                {humanizeFieldName(key)}
-              </span>
-              <span className="text-sm font-medium break-words whitespace-pre-wrap">
-                {formatFieldValue(value)}
-              </span>
-            </div>
-          ))}
+          {fields.map(([key, value]) => {
+            const formatted = formatFieldValue(value);
+            const isBulletField = BULLET_LIST_FIELDS.some(f => key.toLowerCase().includes(f));
+            
+            // Check if we should render as bullet list
+            let bulletItems: string[] = [];
+            if (Array.isArray(formatted)) {
+              bulletItems = formatted;
+            } else if (isBulletField && typeof formatted === "string") {
+              bulletItems = parseTextToBullets(formatted);
+            }
+            
+            return (
+              <div
+                key={key}
+                className="flex flex-col gap-1 p-2 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
+                <span className="text-xs text-muted-foreground">
+                  {humanizeFieldName(key)}
+                </span>
+                {bulletItems.length > 1 ? (
+                  <ul className="text-sm font-medium space-y-1 list-disc list-inside pl-1">
+                    {bulletItems.map((item, idx) => (
+                      <li key={idx} className="break-words">{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-sm font-medium break-words whitespace-pre-wrap">
+                    {Array.isArray(formatted) ? formatted.join(", ") : formatted}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );

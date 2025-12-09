@@ -1563,8 +1563,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
-                      <span className={`font-medium ${successRate >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {successRate}%
+                      <span className={`font-medium ${lcComplianceScore >= 70 ? 'text-success' : lcComplianceScore >= 30 ? 'text-warning' : 'text-destructive'}`}>
+                        {lcComplianceScore}%
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
