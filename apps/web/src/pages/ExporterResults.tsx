@@ -458,6 +458,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [manifestConfirmed, setManifestConfirmed] = useState(false);
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
+  const [emailDraftContext, setEmailDraftContext] = useState<EmailDraftContext | null>(null);
+  const [showEmailDraftDialog, setShowEmailDraftDialog] = useState(false);
   const [showRawLcJson, setShowRawLcJson] = useState(false);
   const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -1288,9 +1290,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
 
   // Handle draft email request from HowToFix section
-  const [emailDraftContext, setEmailDraftContext] = useState<EmailDraftContext | null>(null);
-  const [showEmailDraftDialog, setShowEmailDraftDialog] = useState(false);
-  
   const handleDraftEmail = (context: EmailDraftContext) => {
     setEmailDraftContext(context);
     setShowEmailDraftDialog(true);
