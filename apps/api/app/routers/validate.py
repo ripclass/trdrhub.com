@@ -846,24 +846,69 @@ async def validate_doc(
             issue_engine = IssueEngine()
             
             v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
-            logger.info("V2 IssueEngine generated %d extraction issues (rule execution disabled)", len(v2_issues))
+            logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
             
             # =================================================================
-            # EXECUTE DATABASE RULES - DISABLED
-            # Running all 2,159 database rules creates too many false positives
-            # because many are country-specific (Saudi, UAE, etc.) and trigger
-            # when fields are simply not present.
-            # 
-            # For now, we rely on:
-            # - IssueEngine extraction issues (v2_issues)
-            # - CrossDocValidator (crossdoc checks)
-            # - Fatal Four checks
-            # 
-            # Full rule engine requires proper field mapping and filtering.
+            # EXECUTE DATABASE RULES (2500+ rules from DB)
+            # Filters by jurisdiction, document_type, and domain
             # =================================================================
-            # TEMPORARILY DISABLED - Causes 2000+ false positive issues
-            # TODO: Add rule filtering by country, document type, required fields
-            logger.info("Database rule execution SKIPPED (disabled to prevent false positives)")
+            db_rule_issues = []
+            try:
+                # Detect jurisdiction from LC data
+                lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
+                detected_jurisdiction = (
+                    lc_ctx.get("jurisdiction") or
+                    lc_ctx.get("country") or
+                    lc_ctx.get("issuing_bank_country") or
+                    "global"
+                )
+                
+                # Build document data for rule engine
+                db_rule_payload = {
+                    "jurisdiction": detected_jurisdiction,
+                    "domain": "icc.ucp600",  # Base domain
+                    "supplement_domains": [],  # Add bank-specific if needed
+                    # LC data
+                    "lc": lc_ctx,
+                    "lc_number": v2_baseline.lc_number if v2_baseline else None,
+                    "amount": v2_baseline.amount if v2_baseline else None,
+                    "currency": v2_baseline.currency if v2_baseline else None,
+                    "expiry_date": v2_baseline.expiry_date if v2_baseline else None,
+                    # Documents
+                    "invoice": payload.get("invoice"),
+                    "bill_of_lading": payload.get("bill_of_lading"),
+                    "insurance": payload.get("insurance"),
+                    "certificate_of_origin": payload.get("certificate_of_origin"),
+                    "packing_list": payload.get("packing_list"),
+                    # Extracted context
+                    "extracted_context": extracted_context,
+                }
+                
+                # Determine primary document type for filtering
+                primary_doc_type = "letter_of_credit"
+                if payload.get("invoice"):
+                    primary_doc_type = "commercial_invoice"
+                
+                logger.info(
+                    "Executing DB rules: jurisdiction=%s, domain=icc.ucp600, doc_type=%s",
+                    detected_jurisdiction, primary_doc_type
+                )
+                
+                db_rule_issues = await validate_document_async(
+                    document_data=db_rule_payload,
+                    document_type=primary_doc_type,
+                )
+                
+                # Filter out N/A and passed rules, keep only failures
+                db_rule_issues = [
+                    issue for issue in db_rule_issues
+                    if not issue.get("passed", False) and not issue.get("not_applicable", False)
+                ]
+                
+                logger.info("DB rules executed: %d issues found (after filtering)", len(db_rule_issues))
+                
+            except Exception as db_rule_err:
+                logger.warning("DB rule execution failed (continuing with other validators): %s", str(db_rule_err))
             
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
@@ -1103,6 +1148,17 @@ async def validate_doc(
                 if isbp_ref and not issue_dict.get("isbp_description"):
                     all_isbp_refs.append(isbp_ref)
         
+        # Collect refs from DB rule issues
+        if db_rule_issues:
+            for issue in db_rule_issues:
+                issue_dict = issue if isinstance(issue, dict) else issue.to_dict() if hasattr(issue, 'to_dict') else {}
+                ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
+                isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
+                if ucp_ref and not issue_dict.get("ucp_description"):
+                    all_ucp_refs.append(ucp_ref)
+                if isbp_ref and not issue_dict.get("isbp_description"):
+                    all_isbp_refs.append(isbp_ref)
+        
         # BATCH LOOKUP: 2 queries instead of N
         ucp_desc_cache, isbp_desc_cache = batch_lookup_descriptions(all_ucp_refs, all_isbp_refs)
         logger.info(f"Batch lookup: {len(ucp_desc_cache)} UCP refs, {len(isbp_desc_cache)} ISBP refs")
@@ -1172,6 +1228,31 @@ async def validate_doc(
                     "auto_generated": issue_dict.get("auto_generated", False),
                 })
         
+        # Add DB rule issues (2500+ rules from database)
+        if db_rule_issues:
+            for issue in db_rule_issues:
+                issue_dict = issue if isinstance(issue, dict) else issue.to_dict() if hasattr(issue, 'to_dict') else {}
+                ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
+                isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
+                failed_results.append({
+                    "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "DB-RULE",
+                    "title": issue_dict.get("title", "Validation Rule"),
+                    "passed": False,
+                    "severity": issue_dict.get("severity", "major"),
+                    "message": issue_dict.get("message", ""),
+                    "expected": issue_dict.get("expected", ""),
+                    "found": issue_dict.get("actual") or issue_dict.get("found") or "",
+                    "suggested_fix": issue_dict.get("suggestion") or issue_dict.get("suggested_fix") or "",
+                    "documents": issue_dict.get("documents") or [],
+                    "ucp_reference": ucp_ref,
+                    "isbp_reference": isbp_ref,
+                    "ucp_description": issue_dict.get("ucp_description") or _get_ucp_desc(ucp_ref),
+                    "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
+                    "display_card": True,
+                    "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.ucp600",
+                })
+            logger.info("Added %d DB rule issues to failed_results", len(db_rule_issues))
+        
         # Add LC type unknown warning if applicable
         if lc_type_is_unknown:
             failed_results.append(
@@ -1212,10 +1293,11 @@ async def validate_doc(
             )
         
         logger.info(
-            "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d) after_dedup=%d",
+            "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d db_rules=%d) after_dedup=%d",
             len(failed_results),
             len(v2_issues) if v2_issues else 0,
             len(v2_crossdoc_issues) if v2_crossdoc_issues else 0,
+            len(db_rule_issues) if db_rule_issues else 0,
             len(deduplicated_results),
         )
         
