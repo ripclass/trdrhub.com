@@ -864,9 +864,11 @@ async def validate_doc(
                 )
                 
                 # Build document data for rule engine
+                # NOTE: Domain "icc" matches what import_rules.py stores in DB
+                # (import maps UCP600/ISBP/ICC sources to "icc" domain)
                 db_rule_payload = {
                     "jurisdiction": detected_jurisdiction,
-                    "domain": "icc.ucp600",  # Base domain
+                    "domain": "icc",  # Matches DB - rules imported with domain="icc"
                     "supplement_domains": [],  # Add bank-specific if needed
                     # LC data
                     "lc": lc_ctx,
@@ -890,7 +892,7 @@ async def validate_doc(
                     primary_doc_type = "commercial_invoice"
                 
                 logger.info(
-                    "Executing DB rules: jurisdiction=%s, domain=icc.ucp600, doc_type=%s",
+                    "Executing DB rules: jurisdiction=%s, domain=icc, doc_type=%s",
                     detected_jurisdiction, primary_doc_type
                 )
                 
