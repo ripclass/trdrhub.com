@@ -102,13 +102,39 @@ export const formatExtractedValue = (value: any): string => {
 
 /**
  * Format additional conditions as a readable list
+ * Handles multiple formats:
+ * - Array of strings: ["condition 1", "condition 2"]
+ * - Array of objects: [{text: "condition 1"}, {text: "condition 2"}]
+ * - Single string (pipe or semicolon separated)
  */
 export const formatConditions = (conditions: any): string[] => {
   if (!conditions) return [];
+  
+  // Handle single string (pipe or semicolon separated)
+  if (typeof conditions === "string") {
+    const delimiter = conditions.includes("|") ? "|" : 
+                      conditions.includes(";") ? ";" : "\n";
+    return conditions
+      .split(delimiter)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+  }
+  
   if (!Array.isArray(conditions)) return [];
+  
   return conditions
-    .filter((c: any) => c && typeof c.text === "string")
-    .map((c: any) => c.text);
+    .map((c: any) => {
+      // Handle plain strings
+      if (typeof c === "string") return c.trim();
+      // Handle objects with text property
+      if (c && typeof c.text === "string") return c.text.trim();
+      // Handle objects with value property
+      if (c && typeof c.value === "string") return c.value.trim();
+      // Handle objects with condition property
+      if (c && typeof c.condition === "string") return c.condition.trim();
+      return null;
+    })
+    .filter((c: string | null): c is string => c !== null && c.length > 0);
 };
 
 /**

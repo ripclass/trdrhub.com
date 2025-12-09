@@ -3252,10 +3252,11 @@ def _resolve_issue_stats(
     Resolve issue stats for a specific document.
     
     Matches by document ID, filename, or document type.
+    Uses fuzzy matching to connect issues to documents.
     
-    NOTE: Cross-doc issues now use 'affected_documents' field which only
-    contains the document with the actual issue (not both source and target).
-    This ensures issues are correctly attributed.
+    NOTE: Cross-doc issues use 'affected_documents' field which contains
+    document types (e.g., 'invoice', 'bill_of_lading'). This function
+    matches these to actual filenames like "Invoice.pdf".
     """
     # Match by specific document ID
     if detail_id and detail_id in issue_by_id:
@@ -3266,14 +3267,41 @@ def _resolve_issue_stats(
         name_key = filename.strip().lower()
         if name_key in issue_by_name:
             return issue_by_name[name_key]
+        
+        # Try filename without extension (e.g., "Invoice.pdf" -> "invoice")
+        name_no_ext = name_key.rsplit(".", 1)[0] if "." in name_key else name_key
+        if name_no_ext in issue_by_name:
+            return issue_by_name[name_no_ext]
+        
+        # Try matching display names (e.g., "invoice" matches "commercial invoice")
+        for key in issue_by_name:
+            if name_no_ext in key or key in name_no_ext:
+                return issue_by_name[key]
+        
+        # Try underscore variants (e.g., "bill_of_lading" -> "bill of lading")
+        name_spaced = name_no_ext.replace("_", " ")
+        if name_spaced in issue_by_name:
+            return issue_by_name[name_spaced]
+        
         # Also check if filename (without extension) matches a type
         inferred_type = _label_to_doc_type(name_key)
         if inferred_type and inferred_type in issue_by_type:
             return issue_by_type[inferred_type]
+        
+        # Try the name without extension for type matching
+        inferred_type_no_ext = _label_to_doc_type(name_no_ext)
+        if inferred_type_no_ext and inferred_type_no_ext in issue_by_type:
+            return issue_by_type[inferred_type_no_ext]
 
     # Match by document type
-    if doc_type and doc_type in issue_by_type:
-        return issue_by_type[doc_type]
+    if doc_type:
+        doc_type_lower = doc_type.lower()
+        if doc_type_lower in issue_by_type:
+            return issue_by_type[doc_type_lower]
+        # Try snake_case version
+        doc_type_snake = doc_type_lower.replace(" ", "_")
+        if doc_type_snake in issue_by_type:
+            return issue_by_type[doc_type_snake]
 
     return None
 
@@ -3320,6 +3348,21 @@ def _collect_document_issue_stats(
         for name in doc_names:
             name_key = name.strip().lower()
             _bump_issue_entry(issue_by_name, name_key, severity)
+            
+            # Also add by display name variants for better matching
+            # e.g., 'invoice' -> also add 'commercial invoice', 'commercial_invoice'
+            display_name = _doc_type_to_display_name(name_key)
+            if display_name and display_name.lower() != name_key:
+                _bump_issue_entry(issue_by_name, display_name.lower(), severity)
+            
+            # Add snake_case and space variants
+            name_snake = name_key.replace(" ", "_")
+            if name_snake != name_key:
+                _bump_issue_entry(issue_by_name, name_snake, severity)
+            name_spaced = name_key.replace("_", " ")
+            if name_spaced != name_key:
+                _bump_issue_entry(issue_by_name, name_spaced, severity)
+            
             inferred_type = _label_to_doc_type(name)
             if inferred_type:
                 _bump_issue_entry(issue_by_type, inferred_type, severity)
@@ -3421,6 +3464,37 @@ def _label_to_doc_type(label: Optional[str]) -> Optional[str]:
             return canonical
         if normalized.replace(" ", "_") == canonical:
             return canonical
+    return None
+
+
+def _doc_type_to_display_name(doc_type: Optional[str]) -> Optional[str]:
+    """Convert document type (e.g., 'invoice') to display name (e.g., 'Commercial Invoice')."""
+    if not doc_type:
+        return None
+    normalized = str(doc_type).strip().lower().replace(" ", "_")
+    
+    # Common mappings from doc types to display names
+    type_to_display = {
+        "invoice": "Commercial Invoice",
+        "commercial_invoice": "Commercial Invoice",
+        "bill_of_lading": "Bill of Lading",
+        "bl": "Bill of Lading",
+        "certificate_of_origin": "Certificate of Origin",
+        "coo": "Certificate of Origin",
+        "packing_list": "Packing List",
+        "insurance": "Insurance Certificate",
+        "insurance_certificate": "Insurance Certificate",
+        "lc": "Letter of Credit",
+        "letter_of_credit": "Letter of Credit",
+    }
+    
+    if normalized in type_to_display:
+        return type_to_display[normalized]
+    
+    # Try DEFAULT_LABELS
+    if normalized in DEFAULT_LABELS:
+        return DEFAULT_LABELS[normalized]
+    
     return None
 
 
