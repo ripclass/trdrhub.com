@@ -16,6 +16,7 @@ import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { BlockedUploadModal } from "@/components/validation";
+import { PreparationGuide } from "@/components/exporter/PreparationGuide";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
   DOCUMENT_TYPES, 
@@ -937,6 +938,11 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
             </CardContent>
           </Card>
         )}
+
+        {/* Preparation Guide - Static checklist before upload */}
+        <div className="mb-6">
+          <PreparationGuide />
+        </div>
 
         {/* File Upload Area */}
         <Card className="mb-8 shadow-soft border-0">
