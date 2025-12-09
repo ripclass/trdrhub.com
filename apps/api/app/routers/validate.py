@@ -853,6 +853,7 @@ async def validate_doc(
             # Filters by jurisdiction, document_type, and domain
             # =================================================================
             db_rule_issues = []
+            db_rules_debug = {"enabled": False, "status": "not_started"}
             try:
                 # Detect jurisdiction from LC data
                 lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
@@ -908,8 +909,21 @@ async def validate_doc(
                 
                 logger.info("DB rules executed: %d issues found (after filtering)", len(db_rule_issues))
                 
+                # Store debug info for response
+                db_rules_debug = {
+                    "enabled": True,
+                    "domain": "icc.ucp600",
+                    "supplements": ["icc.isbp745"],
+                    "jurisdiction": detected_jurisdiction,
+                    "issues_found": len(db_rule_issues),
+                }
+                
             except Exception as db_rule_err:
                 logger.warning("DB rule execution failed (continuing with other validators): %s", str(db_rule_err))
+                db_rules_debug = {
+                    "enabled": False,
+                    "error": str(db_rule_err),
+                }
             
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
@@ -1935,6 +1949,9 @@ async def validate_doc(
                 )
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
+
+        # Add DB rules debug info to response
+        structured_result["_db_rules_debug"] = db_rules_debug
 
         return {
             "job_id": str(job_id),
