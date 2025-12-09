@@ -1316,10 +1316,10 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     jurisdiction = document_data.get("jurisdiction", "global")
     extra_supplements = document_data.get("supplement_domains", []) or []
 
-    # NOTE: DB rules are stored with domain="icc" (from import_rules.py)
-    # When requested_domain is "icc", use it directly - don't detect "icc.ucp600"
+    # When requested_domain is provided (e.g., "icc.ucp600"), use it directly
+    # This allows callers to specify exact domain without auto-detection
     if requested_domain:
-        # Use requested domain directly (e.g., "icc" from DB)
+        # Use requested domain directly (matches DB rulesets table)
         domain_sequence = _unique_preserve(
             [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
         )
