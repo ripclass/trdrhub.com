@@ -2,9 +2,6 @@ export type ResultsTab =
   | "overview"
   | "documents"
   | "discrepancies"
-  | "extracted-data"
-  | "history"
-  | "analytics"
   | "customs";
 
 export type DashboardTabDefinition = {
@@ -15,13 +12,10 @@ export type DashboardTabDefinition = {
 };
 
 export const DASHBOARD_TABS: DashboardTabDefinition[] = [
-  { id: "overview", label: "Overview", description: "Processing summary & LC header" },
-  { id: "documents", label: "Documents", description: "Document status & extraction health", requiresJob: true },
+  { id: "overview", label: "Overview", description: "Processing summary, analytics & compliance" },
+  { id: "documents", label: "Documents", description: "Document status & extracted data", requiresJob: true },
   { id: "discrepancies", label: "Issues", description: "Deterministic + AI issue review", requiresJob: true },
-  { id: "extracted-data", label: "Extracted Data", description: "Structured MT700 + document fields", requiresJob: true },
-  { id: "history", label: "Submission History", description: "Bank submission timeline", requiresJob: true },
-  { id: "analytics", label: "Analytics", description: "Compliance, customs, readiness", requiresJob: true },
-  { id: "customs", label: "Customs Pack", description: "Manifest & customs-ready files", requiresJob: true },
+  { id: "customs", label: "Customs Pack", description: "Manifest, customs files & submission history", requiresJob: true },
 ];
 
 export const DEFAULT_TAB: ResultsTab = "overview";
@@ -30,4 +24,3 @@ export const isResultsTab = (value: string | null | undefined): value is Results
   if (!value) return false;
   return DASHBOARD_TABS.some((tab) => tab.id === value);
 };
-

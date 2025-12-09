@@ -89,6 +89,7 @@ import { HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
+import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
 
 type ExporterResultsProps = {
@@ -455,6 +456,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [manifestData, setManifestData] = useState<CustomsPackManifest | null>(null);
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
   const [showRawLcJson, setShowRawLcJson] = useState(false);
+  const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   
   const resultData = liveResults ?? cachedResults;
 
@@ -1441,7 +1444,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-7 md:grid-cols-7">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
             <TabsTrigger value="discrepancies" className="relative">
@@ -1450,9 +1453,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
               )}
             </TabsTrigger>
-            <TabsTrigger value="extracted-data">Extracted Data</TabsTrigger>
-            <TabsTrigger value="history">Submission History</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="customs">Customs Pack</TabsTrigger>
           </TabsList>
 
@@ -1589,6 +1589,104 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardContent>
               </Card>
             </div>
+            
+            {/* Analytics Summary (merged from Analytics tab) */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Processing Performance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm">Document Extraction</span>
+                        <span className="text-sm font-medium">{extractionAccuracy}%</span>
+                      </div>
+                      <Progress value={extractionAccuracy} className="h-2" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm">LC Compliance</span>
+                        <span className="text-sm font-medium">{lcComplianceScore}%</span>
+                      </div>
+                      <Progress value={lcComplianceScore} className="h-2" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm">Customs Readiness</span>
+                        <span className="text-sm font-medium">{customsReadyScore}%</span>
+                      </div>
+                      <Progress value={customsReadyScore} className="h-2" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="text-center p-2 bg-success/5 border border-success/20 rounded-lg">
+                      <div className="text-lg font-bold text-success">{processingTime}</div>
+                      <div className="text-xs text-muted-foreground">Processing Time</div>
+                    </div>
+                    <div className="text-center p-2 bg-primary/5 border border-primary/20 rounded-lg">
+                      <div className="text-lg font-bold text-primary">{totalDocuments}</div>
+                      <div className="text-xs text-muted-foreground">Documents</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <PieChart className="w-5 h-5" />
+                    Document Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-success rounded-full"></div>
+                        <span className="text-sm">Verified</span>
+                      </div>
+                      <span className="text-sm font-medium">
+                        {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-warning rounded-full"></div>
+                        <span className="text-sm">Needs Review</span>
+                      </div>
+                      <span className="text-sm font-medium">
+                        {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-destructive rounded-full"></div>
+                        <span className="text-sm">Critical Issues</span>
+                      </div>
+                      <span className="text-sm font-medium">
+                        {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 p-3 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium text-primary">Performance Insights</span>
+                    </div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      {performanceInsights.slice(0, 3).map((insight, idx) => (
+                        <li key={idx}>• {insight}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
           <TabsContent value="customs" className="space-y-6">
             <Card className="shadow-soft border border-border/60">
@@ -1720,6 +1818,45 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
               </CardContent>
             </Card>
+            
+            {/* Submission History (moved from separate tab) */}
+            <Card className="shadow-soft border border-border/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                  <History className="w-5 h-5" />
+                  Submission History
+                </CardTitle>
+                <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Bank submission timeline
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {submissionsLoading ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
+                    <p className="text-muted-foreground">Loading submission history...</p>
+                  </div>
+                ) : !submissionsData || submissionsData.items.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Building2 className="w-10 h-10 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground mb-1">No submissions yet</p>
+                    <p className="text-sm text-muted-foreground">
+                      Submit this LC to a bank to track its submission history
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {submissionsData.items.map((submission) => (
+                      <SubmissionHistoryCard 
+                        key={submission.id} 
+                        submission={submission}
+                        validationSessionId={validationSessionId || ''}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
@@ -1758,9 +1895,29 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             {discrepancyCount === 1 ? 'Minor Issues' : `${discrepancyCount} Issues`}
                           </span>
                         )}
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedDocumentForDrawer({
+                              id: document.id,
+                              name: document.name,
+                              filename: document.filename,
+                              type: document.type,
+                              typeKey: document.typeKey,
+                              status: document.status,
+                              extractionStatus: document.extractionStatus,
+                              issuesCount: document.issuesCount,
+                              extractedFields: document.extractedFields,
+                              ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
+                              sourceFormat: (document.extractedFields as any)?._source_format,
+                              isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
+                            });
+                            setIsDrawerOpen(true);
+                          }}
+                        >
                           <Eye className="w-4 h-4 mr-2" />
-                          View
+                          View Details
                         </Button>
                       </div>
                     </div>
@@ -1864,326 +2021,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               renderReferenceIssuesCard={renderReferenceIssuesCard}
             />
           </TabsContent>
-          <TabsContent value="extracted-data" className="space-y-4">
-            <Card className="shadow-soft border-0">
-              <CardHeader>
-                <CardTitle>Extracted Document Data</CardTitle>
-                <CardDescription>
-                  Structured data extracted from your uploaded documents using OCR and text extraction.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Two-Stage Validation Summary */}
-                {(() => {
-                  // Get two-stage validation data from any document
-                  const twoStageData = structuredResult?._two_stage_validation as { 
-                    total_fields?: number; 
-                    trusted?: number; 
-                    review?: number; 
-                    untrusted?: number;
-                  } | undefined;
-                  
-                  if (twoStageData && typeof twoStageData.total_fields === 'number') {
-                    const total = twoStageData.total_fields || 0;
-                    const trusted = twoStageData.trusted || 0;
-                    const review = twoStageData.review || 0;
-                    const untrusted = twoStageData.untrusted || 0;
-                    
-                    return (
-                      <div className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-lg">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="w-5 h-5 text-primary" />
-                            <span className="font-semibold">Two-Stage Validation</span>
-                          </div>
-                          <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
-                            AI + Deterministic
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          Fields are extracted by AI and then validated against reference data (ports, currencies, dates, etc.)
-                        </p>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="text-center p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                            <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{trusted}</div>
-                            <div className="text-xs text-muted-foreground">Trusted</div>
-                          </div>
-                          <div className="text-center p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                            <div className="text-lg font-bold text-amber-600 dark:text-amber-400">{review}</div>
-                            <div className="text-xs text-muted-foreground">Review</div>
-                          </div>
-                          <div className="text-center p-2 bg-red-500/10 rounded-lg border border-red-500/20">
-                            <div className="text-lg font-bold text-red-600 dark:text-red-400">{untrusted}</div>
-                            <div className="text-xs text-muted-foreground">Low Confidence</div>
-                          </div>
-                        </div>
-                        {review > 0 || untrusted > 0 ? (
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" />
-                            {review + untrusted} field(s) may need manual verification
-                          </p>
-                        ) : total > 0 ? (
-                          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3" />
-                            All extracted fields verified against reference data
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-                
-                {/* Extraction Status */}
-                <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
-                  <div className="font-semibold">Extraction Status:</div>
-                  <Badge
-                    variant={
-                      extractionStatus === "success"
-                        ? "default"
-                        : extractionStatus === "partial"
-                        ? "outline"
-                        : extractionStatus === "pending"
-                        ? "destructive"
-                        : "secondary"
-                    }
-                  >
-                    {extractionStatus || "unknown"}
-                  </Badge>
-                  {extractionStatus === "pending" && (
-                    <p className="text-sm text-muted-foreground ml-2">
-                      No text could be extracted from the documents. This may indicate scanned images that require OCR.
-                    </p>
-                  )}
-                  {extractionStatus === "partial" && (
-                    <p className="text-sm text-muted-foreground ml-2">
-                      Some text was extracted, but structured fields could not be fully parsed.
-                    </p>
-                  )}
-                  {extractionStatus === "error" && (
-                    <p className="text-sm text-muted-foreground ml-2">
-                      An error occurred during extraction. Please try uploading the documents again.
-                    </p>
-                  )}
-                </div>
-
-                {/* Extracted Data Display */}
-                {lcData || Object.keys(extractedDocumentsMap).length > 0 ? (
-                  <div className="space-y-4">
-                    {lcData && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <div className="flex items-center gap-3">
-                            <h3 className="font-semibold text-lg">Letter of Credit Data</h3>
-                            {/* Source Format Badge */}
-                            {(lcData as any)?._source_format && (
-                              <Badge 
-                                variant="outline" 
-                                className={cn(
-                                  "text-xs font-medium",
-                                  (lcData as any)._source_format === "ISO20022" 
-                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                    : (lcData as any)._source_format === "MT700"
-                                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
-                                    : "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/30"
-                                )}
-                              >
-                                {(lcData as any)._source_format === "ISO20022" ? "📄 ISO 20022" 
-                                  : (lcData as any)._source_format === "MT700" ? "📨 SWIFT MT700" 
-                                  : "📷 PDF/OCR"}
-                              </Badge>
-                            )}
-                            {(lcData as any)?._source_message_type && (
-                              <span className="text-xs text-muted-foreground">
-                                ({(lcData as any)._source_message_type})
-                              </span>
-                            )}
-                          </div>
-                          <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                            {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
-                          </Button>
-                        </div>
-                        <div className="rounded-md border bg-card/50 p-4 space-y-4">
-                          {lcSummaryRows.length > 0 && (
-                            <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
-                          )}
-                          {lcDateRows.length > 0 && (
-                            <div>
-                              <p className="text-sm font-semibold mb-2">Key Dates</p>
-                              <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
-                            </div>
-                          )}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {lcApplicantCard}
-                            {lcBeneficiaryCard}
-                          </div>
-                          {lcPortsCard}
-                          {lcGoodsItemsList}
-                          {lcAdditionalConditions && (
-                            <div>
-                              <p className="text-sm font-semibold mb-2">Additional Conditions (47A)</p>
-                              <ul className="text-sm space-y-1.5 list-disc list-inside">
-                                {formatConditions(lcAdditionalConditions).map((condition, idx) => (
-                                  <li key={idx} className="text-muted-foreground">{condition}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                        {showRawLcJson && (
-                          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                            <Table>
-                              <TableBody>
-                                {Object.entries(lcData || {}).map(([key, val]) => (
-                                  <TableRow key={key}>
-                                    <TableCell className="font-medium capitalize w-1/3">
-                                      {key.replace(/([A-Z])/g, " $1").trim()}
-                                    </TableCell>
-                                    <TableCell className="text-sm">
-                                      {typeof val === "object" && val !== null
-                                        ? JSON.stringify(val, null, 2)
-                                        : String(val || "")}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {Object.entries(extractedDocumentsMap)
-                      .filter(([key]) => key !== "letter_of_credit" && key !== "lc")
-                      .map(([key, value]) => renderGenericExtractedSection(key, value))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-2">No extracted data available</p>
-                    <p className="text-sm text-muted-foreground">
-                      {extractionStatus === "pending"
-                        ? "The documents may be scanned images that require OCR processing. Please ensure OCR is enabled in the system settings."
-                        : "Data extraction may still be in progress or failed. Please check the extraction status above."}
-                    </p>
-                  </div>
-                )}
-
-                {/* Per-document OCR summary */}
-                {extractedDocuments.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-lg">Document OCR Overview</h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {extractedDocuments.map((doc, index) => {
-                        const cardTitle = doc.filename || doc.name || `Document ${index + 1}`;
-                        const docType = (doc.document_type || "supporting_document").toString().replace(/_/g, " ");
-                        const extractionStatus = doc.extraction_status || "unknown";
-                        const fieldEntries = Object.entries(doc.extracted_fields || {});
-
-                        // Check for eBL or source format
-                        const sourceFormat = (doc.extracted_fields as any)?._source_format;
-                        const isElectronicBL = (doc.extracted_fields as any)?._is_electronic_bl;
-                        
-                        return (
-                          <div key={`${cardTitle}-${index}`} className="border rounded-lg p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div>
-                                  <p className="font-semibold">{cardTitle}</p>
-                                  <p className="text-xs text-muted-foreground capitalize">{docType}</p>
-                                </div>
-                                {/* Source Format Badge (eBL indicator) */}
-                                {sourceFormat && (
-                                  <Badge 
-                                    variant="outline" 
-                                    className={cn(
-                                      "text-xs font-medium ml-2",
-                                      isElectronicBL
-                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                        : sourceFormat.includes("ISO20022")
-                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                        : sourceFormat.includes("MT")
-                                        ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
-                                        : "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/30"
-                                    )}
-                                    title={isElectronicBL ? "Electronic Bill of Lading - 100% accuracy" : ""}
-                                  >
-                                    {isElectronicBL ? "🔗 " : ""}{sourceFormat}
-                                  </Badge>
-                                )}
-                              </div>
-                              <Badge
-                                variant={
-                                  extractionStatus === "success"
-                                    ? "default"
-                                    : extractionStatus === "empty"
-                                    ? "destructive"
-                                    : "secondary"
-                                }
-                              >
-                                {extractionStatus}
-                              </Badge>
-                            </div>
-
-                            {fieldEntries.length > 0 ? (
-                              <div className="space-y-2 text-sm">
-                                {fieldEntries
-                                  // Filter out internal/technical fields that aren't user-friendly
-                                  .filter(([key]) => !['mt700', 'mt700_raw', 'source', 'timeline', 'blocks', 'raw', 
-                                    '_extraction_confidence', '_extraction_method', '_ai_provider', '_ai_confidence',
-                                    'lc_type_source', 'lc_classification'].includes(key))
-                                  .map(([key, value]) => (
-                                  <div key={key} className="flex flex-col">
-                                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                                      {key.replace(/([A-Z_])/g, " $1").replace(/_/g, " ").trim()}
-                                    </span>
-                                    <span className="font-medium whitespace-pre-wrap break-words">
-                                      {formatExtractedValue(value)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                No structured fields extracted for this document. OCR text is still available for
-                                AI-assisted explanations.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="history" className="space-y-6">
-            <HistoryTab
-              submissionsLoading={submissionsLoading}
-              submissionsData={submissionsData}
-              validationSessionId={validationSessionId || ''}
-            />
-          </TabsContent>
-
-          <TabsContent value="analytics" className="space-y-6">
-            <AnalyticsTab
-              analyticsAvailable={analyticsAvailable}
-              extractionAccuracy={extractionAccuracy}
-              lcComplianceScore={lcComplianceScore}
-              customsReadyScore={customsReadyScore}
-              processingTime={processingTime}
-              totalDocuments={totalDocuments}
-              successCount={successCount}
-              warningCount={warningCount}
-              errorCount={errorCount}
-              performanceInsights={performanceInsights}
-              documentProcessingList={documentProcessingList}
-              documents={documents}
-            />
-          </TabsContent>
         </Tabs>
+        
+        {/* Document Details Drawer */}
+        <DocumentDetailsDrawer
+          document={selectedDocumentForDrawer}
+          open={isDrawerOpen}
+          onOpenChange={setIsDrawerOpen}
+        />
 
         {/* Bank Selector Dialog (Phase 3) */}
         <Dialog open={showBankSelector} onOpenChange={setShowBankSelector}>

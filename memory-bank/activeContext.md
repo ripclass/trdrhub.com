@@ -1,9 +1,28 @@
 # Active Context - December 2024
 
 ## Current Focus
-LCopilot V1 Enhancement - Contract Validation + 47A Parser Debug
+LCopilot V1 Enhancement - All Phases Complete
 
 ## Recent Work
+
+### Phase 2: V1 Tab Cleanup (COMPLETED)
+Streamlined UI from 7 tabs to 4 tabs, merged related functionality.
+
+**Tab Structure Changes:**
+- **Overview** - Now includes Analytics progress bars (extraction, compliance, customs readiness)
+- **Documents** - Now has "View Details" button opening DocumentDetailsDrawer
+- **Issues** - Unchanged (working well)
+- **Customs Pack** - Now includes Submission History card
+
+**Removed Tabs:**
+- Extracted Data - Merged into Documents via drawer
+- Submission History - Merged into Customs Pack
+- Analytics - Merged into Overview with progress bars
+
+**Files Modified:**
+- `apps/web/src/components/lcopilot/dashboardTabs.ts` - Reduced from 7 to 4 tabs
+- `apps/web/src/components/lcopilot/DocumentDetailsDrawer.tsx` (NEW) - Drawer for extracted data
+- `apps/web/src/pages/ExporterResults.tsx` - Updated TabsList, added drawer, enhanced Overview
 
 ### Phase 3: 47A Parser Debug (COMPLETED)
 Fixed 47A Additional Conditions extraction issues across multiple extraction pipelines.
@@ -20,23 +39,6 @@ Fixed 47A Additional Conditions extraction issues across multiple extraction pip
 - `apps/api/app/services/extraction/structured_lc_builder.py` - Now checks `additional_conditions`, `clauses`, and `clauses_47a`
 - `apps/api/app/routers/validate.py` - Enhanced 47A debug logging
 
-**47A Parser Patterns (7 total):**
-1. SWIFT `:47A:content` - MT700 format
-2. `47A Additional Conditions` - Traditional format
-3. `ADDITIONAL CONDITIONS` header - Generic
-4. `Field 47A:` - Scanned PDFs
-5. `47A\n` with content on next line - Bank PDFs
-6. `47A:` catch-all - Simple format
-7. `ADDL CONDS` - Abbreviated format
-
-**Item Extraction Methods:**
-- Numbered items: `1)`, `2)`, etc.
-- Letter items: `a)`, `b)`, etc.
-- Dash/bullet items: `-`, `•`
-- Semicolon-separated
-- Newline-separated
-- Whole block fallback
-
 ### Phase 1: Contract Validation Layer (COMPLETED)
 Implemented Output-First validation layer.
 
@@ -49,13 +51,46 @@ Implemented Output-First validation layer.
 - `apps/web/src/pages/ExporterResults.tsx` (Alert component in Overview)
 
 ## Next Steps
-### Phase 2: V1 Tab Cleanup
-- Remove "Extracted Data" tab (merge into Documents with drawer)
-- Remove "Submission History" tab (move to Customs Pack)
-- Remove "Analytics" tab (merge into Overview with progress bars)
-- Update `dashboardTabs.ts` to reflect 4-tab structure
+All requested phases complete. Potential follow-ups:
+- Test with real LC documents to verify 47A extraction
+- Monitor contract warnings in production
+- Consider adding more advanced analytics charts
 
 ## Architecture Notes
+
+### V1 Tab Structure (Post-Cleanup)
+```
+┌──────────────────────────────────────────────────────────────┐
+│ TABS: [ Overview ] [ Documents (N) ] [ Issues (N) ] [ Customs Pack ]
+└──────────────────────────────────────────────────────────────┘
+
+Overview:
+├── Contract Warnings Alert (if any)
+├── Verdict Card (Pass/Fail/Fix Required)
+├── Quick Stats Row: [N docs] [N issues] [N critical] [time]
+├── Export Document Statistics Card
+└── Analytics Summary (2 cards with progress bars)
+
+Documents:
+├── Document cards with status badges
+├── "View Details" button → Opens DocumentDetailsDrawer
+└── LC extraction shown inline for letter_of_credit documents
+
+Issues:
+├── Severity tabs: All | Critical | Major | Minor
+└── Issue cards with full detail
+
+Customs Pack:
+├── Status/Readiness/Actions
+├── Manifest Card
+└── Submission History Card (moved from separate tab)
+```
+
+### DocumentDetailsDrawer Features
+- Status badges (source format, eBL, OCR confidence)
+- Grouped fields: Identification, Dates, Parties, Locations, Other
+- Raw JSON toggle with copy button
+- Automatic field name humanization
 
 ### 47A Extraction Flow
 ```
@@ -80,9 +115,3 @@ Backend Processing → Contract Validation → Response
                            ↓
                     Overview Alert UI
 ```
-
-### Warning Severity Levels
-- `error`: Critical field missing (may cause downstream failures)
-- `warning`: Recommended field missing (functionality degraded)
-- `info`: Optional field missing (noted for completeness)
-
