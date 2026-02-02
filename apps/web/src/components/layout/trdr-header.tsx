@@ -19,13 +19,13 @@ export function TRDRHeader() {
   const { user, isLoading } = useAuth();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/50">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-[#00261C]/80 backdrop-blur-md border-b border-[#EDF5F2]/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-white">TRDR</span>
-            <span className="text-xl font-bold text-blue-500">Hub</span>
+            <span className="text-xl font-bold text-white font-display">TRDR</span>
+            <span className="text-xl font-bold text-[#F25E3D] font-display">Hub</span>
           </Link>
 
           {/* Desktop navigation */}
@@ -34,7 +34,7 @@ export function TRDRHeader() {
               <Link
                 key={item.name}
                 to={item.href}
-                className="text-sm font-medium text-slate-400 hover:text-white transition-colors"
+                className="text-sm font-medium text-[#C2B894] hover:text-white transition-colors"
               >
                 {item.name}
               </Link>
@@ -49,15 +49,15 @@ export function TRDRHeader() {
                 <Link to="/hub">
                   <Button 
                     size="sm" 
-                    className="bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white font-medium"
+                    className="bg-[#F25E3D] hover:bg-[#D94E30] text-white font-medium border-none"
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
                     Go to Hub
                   </Button>
                 </Link>
                 <Link to="/hub">
-                  <Avatar className="h-8 w-8 cursor-pointer">
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-emerald-500 text-white text-sm">
+                  <Avatar className="h-8 w-8 cursor-pointer border border-[#EDF5F2]/20">
+                    <AvatarFallback className="bg-[#00382E] text-[#B2F273] text-sm">
                       {(user.full_name || user.email || "U").charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -70,7 +70,7 @@ export function TRDRHeader() {
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-slate-400 hover:text-white hover:bg-slate-800"
+                    className="text-[#C2B894] hover:text-white hover:bg-[#00382E]"
                   >
                     Login
                   </Button>
@@ -78,7 +78,7 @@ export function TRDRHeader() {
                 <Link to="/lcopilot">
                   <Button 
                     size="sm" 
-                    className="bg-white text-slate-900 hover:bg-slate-100 font-medium"
+                    className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-medium border-none"
                   >
                     Get Started
                   </Button>
@@ -90,7 +90,7 @@ export function TRDRHeader() {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-slate-400 hover:text-white"
+            className="md:hidden p-2 text-[#C2B894] hover:text-white"
           >
             {mobileMenuOpen ? (
               <X className="w-6 h-6" />
@@ -104,7 +104,7 @@ export function TRDRHeader() {
       {/* Mobile menu */}
       <div
         className={cn(
-          "md:hidden absolute top-16 left-0 right-0 bg-slate-950 border-b border-slate-800 transition-all duration-300",
+          "md:hidden absolute top-16 left-0 right-0 bg-[#00261C] border-b border-[#EDF5F2]/10 transition-all duration-300",
           mobileMenuOpen ? "opacity-100 visible" : "opacity-0 invisible"
         )}
       >
@@ -115,7 +115,7 @@ export function TRDRHeader() {
                 key={item.name}
                 to={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg transition-colors"
+                className="px-4 py-3 text-[#C2B894] hover:text-white hover:bg-[#00382E] rounded-lg transition-colors"
               >
                 {item.name}
               </Link>
@@ -125,7 +125,7 @@ export function TRDRHeader() {
                 // Logged in user - mobile
                 <Link to="/hub" className="flex-1">
                   <Button 
-                    className="w-full bg-gradient-to-r from-blue-500 to-emerald-500 text-white"
+                    className="w-full bg-[#F25E3D] text-white hover:bg-[#D94E30]"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
@@ -138,7 +138,7 @@ export function TRDRHeader() {
                   <Link to="/login" className="flex-1">
                     <Button 
                       variant="outline" 
-                      className="w-full border-slate-700 text-slate-300"
+                      className="w-full border-[#EDF5F2]/20 text-[#C2B894] hover:bg-[#00382E] hover:text-white bg-transparent"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Login
@@ -146,7 +146,7 @@ export function TRDRHeader() {
                   </Link>
                   <Link to="/lcopilot" className="flex-1">
                     <Button 
-                      className="w-full bg-white text-slate-900"
+                      className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Get Started

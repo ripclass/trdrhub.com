@@ -28,19 +28,19 @@ const navigation = {
 
 export function TRDRFooter() {
   return (
-    <footer className="bg-slate-950 border-t border-slate-900">
+    <footer className="bg-[#00261C] border-t border-[#EDF5F2]/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1">
             <Link to="/" className="inline-block mb-4">
-              <span className="text-2xl font-bold text-white">TRDR</span>
-              <span className="text-2xl font-bold text-blue-500">Hub</span>
+              <span className="text-2xl font-bold text-white font-display">TRDR</span>
+              <span className="text-2xl font-bold text-[#F25E3D] font-display">Hub</span>
             </Link>
-            <p className="text-slate-500 text-sm mb-4">
+            <p className="text-[#C2B894] text-sm mb-4">
               Zero-Error Trade Documents
             </p>
-            <div className="text-slate-500 text-sm">
+            <div className="text-[#EDF5F2]/60 text-sm">
               <a href="mailto:hello@trdrhub.com" className="hover:text-white transition-colors">
                 hello@trdrhub.com
               </a>
@@ -49,13 +49,13 @@ export function TRDRFooter() {
 
           {/* Navigation columns */}
           <div>
-            <h3 className="text-white font-semibold mb-4">Product</h3>
+            <h3 className="text-white font-semibold mb-4 font-display">Product</h3>
             <ul className="space-y-3">
               {navigation.product.map((item) => (
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-slate-500 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
                   >
                     {item.name}
                   </Link>
@@ -65,13 +65,13 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4">Resources</h3>
+            <h3 className="text-white font-semibold mb-4 font-display">Resources</h3>
             <ul className="space-y-3">
               {navigation.resources.map((item) => (
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-slate-500 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
                   >
                     {item.name}
                   </Link>
@@ -81,13 +81,13 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4">Company</h3>
+            <h3 className="text-white font-semibold mb-4 font-display">Company</h3>
             <ul className="space-y-3">
               {navigation.company.map((item) => (
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-slate-500 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
                   >
                     {item.name}
                   </Link>
@@ -97,13 +97,13 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4">Legal</h3>
+            <h3 className="text-white font-semibold mb-4 font-display">Legal</h3>
             <ul className="space-y-3">
               {navigation.legal.map((item) => (
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-slate-500 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
                   >
                     {item.name}
                   </Link>
@@ -114,8 +114,8 @@ export function TRDRFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-8 border-t border-slate-900 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-slate-600 text-sm">
+        <div className="pt-8 border-t border-[#EDF5F2]/10 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-[#C2B894] text-sm">
             © 2025 TRDR Hub. All rights reserved.
           </p>
           
@@ -125,7 +125,7 @@ export function TRDRFooter() {
               href="https://linkedin.com/company/trdrhub"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-slate-500 hover:text-white transition-colors"
+              className="text-[#EDF5F2]/60 hover:text-white transition-colors"
             >
               <span className="sr-only">LinkedIn</span>
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -136,7 +136,7 @@ export function TRDRFooter() {
               href="https://twitter.com/trdrhub"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-slate-500 hover:text-white transition-colors"
+              className="text-[#EDF5F2]/60 hover:text-white transition-colors"
             >
               <span className="sr-only">Twitter</span>
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
