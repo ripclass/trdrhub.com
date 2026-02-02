@@ -16,11 +16,11 @@ export function TRDRHeroSection() {
       {/* Grid pattern overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)]" />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-20">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-32 md:pt-48 pb-20">
         <div className="text-center max-w-5xl mx-auto">
           
           {/* Backed by badge */}
-          <div className="mb-8 animate-fade-in-up">
+          <div className="mb-10 animate-fade-in-up">
             <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-[#B2F273]/20 bg-[#B2F273]/5 backdrop-blur-sm">
               <span className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">Global Trade Operating System</span>
             </div>

@@ -32,12 +32,12 @@ export function TRDRHeader() {
           </Link>
 
           {/* Desktop navigation */}
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden md:flex items-center gap-10">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 to={item.href}
-                className="text-sm font-medium text-[#EDF5F2]/60 hover:text-[#B2F273] transition-colors"
+                className="text-xs font-mono font-medium tracking-widest uppercase text-[#EDF5F2]/70 hover:text-[#B2F273] transition-colors"
               >
                 {item.name}
               </Link>
@@ -118,7 +118,7 @@ export function TRDRHeader() {
                 key={item.name}
                 to={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-4 py-3 text-[#EDF5F2]/60 hover:text-[#B2F273] hover:bg-[#00382E] rounded-lg transition-colors"
+                className="px-4 py-3 text-xs font-mono font-medium tracking-widest uppercase text-[#EDF5F2]/70 hover:text-[#B2F273] hover:bg-[#00382E] rounded-lg transition-colors"
               >
                 {item.name}
               </Link>
