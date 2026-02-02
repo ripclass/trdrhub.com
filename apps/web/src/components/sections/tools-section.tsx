@@ -15,8 +15,7 @@ import {
   BarChart3,
   AlertTriangle,
   Umbrella,
-  DollarSign,
-  Anchor
+  DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -32,7 +31,6 @@ const tools = [
     status: "live" as const,
     href: "/lcopilot",
     category: "Document & Validation",
-    color: "blue",
   },
   {
     icon: FileText,
@@ -43,7 +41,6 @@ const tools = [
     status: "live" as const,
     href: "/doc-generator/dashboard",
     category: "Document & Validation",
-    color: "blue",
   },
   {
     icon: Receipt,
@@ -54,7 +51,6 @@ const tools = [
     status: "live" as const,
     href: "/lc-builder/dashboard",
     category: "Document & Validation",
-    color: "emerald",
   },
   
   // Compliance & Screening
@@ -67,7 +63,6 @@ const tools = [
     status: "live" as const,
     href: "/sanctions",
     category: "Compliance & Screening",
-    color: "red",
   },
   {
     icon: AlertTriangle,
@@ -78,7 +73,6 @@ const tools = [
     status: "coming" as const,
     href: "/risk",
     category: "Compliance & Screening",
-    color: "orange",
   },
   {
     icon: Shield,
@@ -89,7 +83,6 @@ const tools = [
     status: "coming" as const,
     href: "/dual-use",
     category: "Compliance & Screening",
-    color: "red",
   },
 
   // Classification & Customs
@@ -102,7 +95,6 @@ const tools = [
     status: "live" as const,
     href: "/hs-code/dashboard",
     category: "Classification & Customs",
-    color: "purple",
   },
   {
     icon: Globe,
@@ -113,7 +105,6 @@ const tools = [
     status: "coming" as const,
     href: "/customs",
     category: "Classification & Customs",
-    color: "cyan",
   },
   {
     icon: Scale,
@@ -124,7 +115,6 @@ const tools = [
     status: "coming" as const,
     href: "/duty-calc",
     category: "Classification & Customs",
-    color: "green",
   },
 
   // Logistics & Tracking
@@ -137,7 +127,6 @@ const tools = [
     status: "live" as const,
     href: "/tracking/dashboard",
     category: "Logistics & Tracking",
-    color: "blue",
     badge: "🏦 Bank Requested",
   },
   {
@@ -149,7 +138,6 @@ const tools = [
     status: "coming" as const,
     href: "/routes",
     category: "Logistics & Tracking",
-    color: "purple",
   },
 
   // Finance & Banking
@@ -162,7 +150,6 @@ const tools = [
     status: "coming" as const,
     href: "/bank-fees",
     category: "Finance & Banking",
-    color: "yellow",
   },
   {
     icon: CreditCard,
@@ -173,7 +160,6 @@ const tools = [
     status: "coming" as const,
     href: "/finance",
     category: "Finance & Banking",
-    color: "emerald",
   },
   {
     icon: Umbrella,
@@ -184,7 +170,6 @@ const tools = [
     status: "coming" as const,
     href: "/insurance",
     category: "Finance & Banking",
-    color: "teal",
   },
 
   // Intelligence
@@ -197,7 +182,6 @@ const tools = [
     status: "live" as const,
     href: "/price-verify/dashboard",
     category: "Intelligence",
-    color: "green",
     badge: "🏦 Bank Requested",
   },
   {
@@ -209,7 +193,6 @@ const tools = [
     status: "coming" as const,
     href: "/analytics",
     category: "Intelligence",
-    color: "indigo",
   },
 ];
 
@@ -222,22 +205,9 @@ const categories = [
   "Intelligence",
 ];
 
-const colorMap: Record<string, { bg: string; border: string; text: string; iconBg: string }> = {
-  blue: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  emerald: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  red: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  orange: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  purple: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  cyan: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  green: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  yellow: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  teal: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  indigo: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-};
-
 export function ToolsSection() {
   return (
-    <section className="py-16 sm:py-24 md:py-32 bg-[#00261C] relative">
+    <section className="py-24 sm:py-32 bg-[#00261C] relative">
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
       <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl" />
@@ -245,86 +215,90 @@ export function ToolsSection() {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section header */}
-        <div className="text-center mb-10 sm:mb-16">
-          <p className="text-[#B2F273] font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 sm:mb-6 leading-tight font-display">
+        <div className="text-center mb-20">
+          <p className="text-[#B2F273] font-mono text-xs tracking-widest uppercase mb-4">Platform Architecture</p>
+          <h2 className="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight font-display">
             7 Live. 9 Coming.
             <br />
-            <span className="text-[#B2F273]">One Platform.</span>
+            <span className="text-[#B2F273] text-glow-sm">One Platform.</span>
           </h2>
-          <p className="text-base sm:text-xl text-[#EDF5F2]/80 max-w-2xl mx-auto px-4">
+          <p className="text-lg text-[#EDF5F2]/60 max-w-2xl mx-auto px-4 font-light">
             Everything you need for trade operations - from document validation to customs clearance.
           </p>
         </div>
 
         {/* Tools by category */}
-        <div className="max-w-7xl mx-auto space-y-10 sm:space-y-16">
+        <div className="max-w-7xl mx-auto space-y-20">
           {categories.map((category) => {
             const categoryTools = tools.filter(t => t.category === category);
             return (
               <div key={category}>
-                <h3 className="text-xs sm:text-sm font-semibold text-[#EDF5F2]/60 uppercase tracking-wider mb-6 sm:mb-8 pl-3 border-l-2 border-[#B2F273]">
-                  {category}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {categoryTools.map((tool, index) => {
-                    const colors = colorMap[tool.color] || colorMap.blue;
-                    return (
-                      <Link
-                        key={index}
-                        to={tool.href}
-                        className={`group bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-5 sm:p-6 hover:bg-[#00382E]/80 transition-all duration-300 relative flex flex-col min-h-[240px] sm:min-h-[280px] ${colors.border} ${colors.bg}`}
-                      >
-                        {/* Status badge */}
-                        <div className="absolute top-5 right-5 flex flex-col items-end gap-1">
-                          {tool.status === "live" ? (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#B2F273]/20 text-[#B2F273] border border-[#B2F273]/30">
-                              Live
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#00261C] text-[#EDF5F2]/40 border border-[#EDF5F2]/10">
-                              Coming Soon
-                            </span>
-                          )}
-                          {(tool as any).badge && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#EDF5F2]/20 text-[#EDF5F2] border border-[#EDF5F2]/30">
-                              {(tool as any).badge}
-                            </span>
-                          )}
-                        </div>
+                <div className="flex items-center gap-4 mb-8 pl-2">
+                  <div className="w-1 h-6 bg-[#B2F273]" />
+                  <h3 className="text-sm font-semibold text-[#EDF5F2]/80 uppercase tracking-wider font-mono">
+                    {category}
+                  </h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {categoryTools.map((tool, index) => (
+                    <Link
+                      key={index}
+                      to={tool.href}
+                      className="group bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-6 hover:border-[#B2F273]/50 transition-all duration-300 relative flex flex-col min-h-[280px] hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] overflow-hidden"
+                    >
+                      {/* Hover Gradient Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-[#B2F273]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
-                        {/* Icon */}
-                        <div className={`w-12 sm:w-14 h-12 sm:h-14 bg-[#00261C] rounded-xl flex items-center justify-center mb-4 sm:mb-5 transition-colors ${colors.iconBg}`}>
-                          <tool.icon className={`w-6 sm:w-7 h-6 sm:h-7 text-[#EDF5F2]/60 transition-colors ${colors.text}`} />
-                        </div>
+                      {/* Status badge */}
+                      <div className="absolute top-5 right-5 flex flex-col items-end gap-2 z-10">
+                        {tool.status === "live" ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[#B2F273]/10 text-[#B2F273] border border-[#B2F273]/20">
+                            Live
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[#EDF5F2]/5 text-[#EDF5F2]/40 border border-[#EDF5F2]/10">
+                            Coming Soon
+                          </span>
+                        )}
+                        {(tool as any).badge && (
+                          <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide bg-[#F25E3D]/10 text-[#F25E3D] border border-[#F25E3D]/20">
+                            {(tool as any).badge}
+                          </span>
+                        )}
+                      </div>
 
-                        {/* Content */}
-                        <div className="flex-1">
-                          <h4 className={`text-base sm:text-lg font-bold text-white mb-1 transition-colors ${colors.text} font-display`}>
-                            {tool.name}
-                          </h4>
-                          <p className="text-xs sm:text-sm font-medium text-[#B2F273] mb-2 sm:mb-3">
-                            {tool.tagline}
-                          </p>
-                          <p className="text-xs sm:text-sm text-[#EDF5F2]/60 leading-relaxed mb-3 sm:mb-4">
-                            {tool.description}
-                          </p>
-                        </div>
+                      {/* Icon */}
+                      <div className="w-14 h-14 bg-[#00382E] rounded-xl flex items-center justify-center mb-6 group-hover:bg-[#B2F273] transition-colors duration-300 relative z-10">
+                        <tool.icon className="w-7 h-7 text-[#EDF5F2]/60 group-hover:text-[#00261C] transition-colors duration-300" />
+                      </div>
 
-                        {/* Highlights */}
-                        <div className="flex flex-wrap gap-2 mt-auto pt-4 border-t border-[#EDF5F2]/10">
-                          {tool.highlights.map((highlight, i) => (
-                            <span 
-                              key={i} 
-                              className="px-2.5 py-1 bg-[#00261C]/80 rounded-lg text-xs text-[#EDF5F2]/50 font-medium"
-                            >
-                              {highlight}
-                            </span>
-                          ))}
-                        </div>
-                      </Link>
-                    );
-                  })}
+                      {/* Content */}
+                      <div className="flex-1 relative z-10">
+                        <h4 className="text-xl font-bold text-white mb-2 group-hover:text-[#B2F273] transition-colors duration-300 font-display">
+                          {tool.name}
+                        </h4>
+                        <p className="text-xs font-mono text-[#B2F273] mb-3 opacity-80">
+                          {tool.tagline}
+                        </p>
+                        <p className="text-sm text-[#EDF5F2]/60 leading-relaxed mb-4 font-light">
+                          {tool.description}
+                        </p>
+                      </div>
+
+                      {/* Highlights */}
+                      <div className="flex flex-wrap gap-2 mt-auto pt-4 border-t border-[#EDF5F2]/10 relative z-10">
+                        {tool.highlights.map((highlight, i) => (
+                          <span 
+                            key={i} 
+                            className="px-2 py-1 bg-[#00382E] rounded text-[10px] text-[#EDF5F2]/50 font-medium group-hover:text-[#EDF5F2]/80 transition-colors"
+                          >
+                            {highlight}
+                          </span>
+                        ))}
+                      </div>
+                    </Link>
+                  ))}
                 </div>
               </div>
             );
@@ -332,16 +306,16 @@ export function ToolsSection() {
         </div>
 
         {/* CTA */}
-        <div className="text-center mt-20">
-          <p className="text-[#EDF5F2]/60 mb-6">Start with LCopilot today. More tools launching every month.</p>
+        <div className="text-center mt-32">
+          <p className="text-[#EDF5F2]/60 mb-8 font-light">Start with LCopilot today. More tools launching every month.</p>
           <Button 
             size="lg" 
-            className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-8 h-12 font-semibold border-none"
+            className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-10 py-7 h-auto font-bold text-lg border-none shadow-[0_0_20px_rgba(178,242,115,0.2)] hover:shadow-[0_0_30px_rgba(178,242,115,0.4)] transition-all duration-300"
             asChild
           >
             <Link to="/lcopilot">
               Try LCopilot Free
-              <ArrowRight className="w-4 h-4 ml-2" />
+              <ArrowRight className="w-5 h-5 ml-2" />
             </Link>
           </Button>
         </div>
