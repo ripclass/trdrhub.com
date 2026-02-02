@@ -34,8 +34,11 @@ export function TRDRFooter() {
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1">
             <Link to="/" className="inline-block mb-4">
-              <span className="text-2xl font-bold text-white font-display">TRDR</span>
-              <span className="text-2xl font-bold text-[#F25E3D] font-display">Hub</span>
+              <img 
+                src="/logo-dark.jpg" 
+                alt="TRDR Hub" 
+                className="h-10 w-auto object-contain"
+              />
             </Link>
             <p className="text-[#C2B894] text-sm mb-4">
               Zero-Error Trade Documents

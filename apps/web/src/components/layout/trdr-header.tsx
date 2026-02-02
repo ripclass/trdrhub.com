@@ -24,8 +24,11 @@ export function TRDRHeader() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-white font-display">TRDR</span>
-            <span className="text-xl font-bold text-[#F25E3D] font-display">Hub</span>
+            <img 
+              src="/logo-dark.jpg" 
+              alt="TRDR Hub" 
+              className="h-8 w-auto object-contain"
+            />
           </Link>
 
           {/* Desktop navigation */}
