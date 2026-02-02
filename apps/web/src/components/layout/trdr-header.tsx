@@ -25,7 +25,7 @@ export function TRDRHeader() {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <img 
-              src="/logo-dark.png" 
+              src="/logo-dark-v2.png" 
               alt="TRDR Hub" 
               className="h-8 w-auto object-contain"
             />

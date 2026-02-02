@@ -35,7 +35,7 @@ export function TRDRFooter() {
           <div className="col-span-2 md:col-span-1">
             <Link to="/" className="inline-block mb-4">
               <img 
-                src="/logo-dark.png" 
+                src="/logo-dark-v2.png" 
                 alt="TRDR Hub" 
                 className="h-10 w-auto object-contain"
               />
