@@ -48,7 +48,7 @@ export function TechnologySection() {
   return (
     <section className="py-24 md:py-32 bg-[#00261C] relative">
       {/* Top border */}
-      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#F25E3D]/30 to-transparent" />
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section header */}
@@ -57,7 +57,7 @@ export function TechnologySection() {
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
             The most comprehensive
             <br />
-            <span className="text-[#C2B894]">trade rules engine ever built</span>
+            <span className="text-[#EDF5F2]/60">trade rules engine ever built</span>
           </h2>
         </div>
 
@@ -74,7 +74,7 @@ export function TechnologySection() {
               <div className="text-4xl md:text-5xl font-bold text-white mb-2 font-display">
                 {feature.stat}
               </div>
-              <div className="text-lg font-semibold text-[#F25E3D] mb-2 font-display">
+              <div className="text-lg font-semibold text-[#B2F273] mb-2 font-display">
                 {feature.label}
               </div>
               <p className="text-[#EDF5F2]/60 text-sm">
@@ -87,7 +87,7 @@ export function TechnologySection() {
         {/* Standards banner */}
         <div className="max-w-5xl mx-auto bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
           {/* Decorative elements */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#F25E3D]/5 rounded-full blur-3xl" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
           
           <div className="relative z-10 text-center">
@@ -104,7 +104,7 @@ export function TechnologySection() {
               {standards.map((standard, index) => (
                 <span 
                   key={index}
-                  className="px-4 py-2 bg-[#00261C]/50 rounded-full text-sm font-medium text-[#C2B894] border border-[#C2B894]/20"
+                  className="px-4 py-2 bg-[#00261C]/50 rounded-full text-sm font-medium text-[#EDF5F2]/80 border border-[#EDF5F2]/20"
                 >
                   {standard}
                 </span>

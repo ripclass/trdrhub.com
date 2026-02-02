@@ -223,34 +223,34 @@ const categories = [
 ];
 
 const colorMap: Record<string, { bg: string; border: string; text: string; iconBg: string }> = {
-  blue: { bg: "group-hover:bg-[#F25E3D]/5", border: "group-hover:border-[#F25E3D]/40", text: "group-hover:text-[#F25E3D]", iconBg: "group-hover:bg-[#F25E3D]/20" },
+  blue: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
   emerald: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  red: { bg: "group-hover:bg-[#F25E3D]/5", border: "group-hover:border-[#F25E3D]/40", text: "group-hover:text-[#F25E3D]", iconBg: "group-hover:bg-[#F25E3D]/20" },
-  orange: { bg: "group-hover:bg-[#C2B894]/5", border: "group-hover:border-[#C2B894]/40", text: "group-hover:text-[#C2B894]", iconBg: "group-hover:bg-[#C2B894]/20" },
-  purple: { bg: "group-hover:bg-[#C2B894]/5", border: "group-hover:border-[#C2B894]/40", text: "group-hover:text-[#C2B894]", iconBg: "group-hover:bg-[#C2B894]/20" },
+  red: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
+  orange: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
+  purple: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
   cyan: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
   green: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  yellow: { bg: "group-hover:bg-[#C2B894]/5", border: "group-hover:border-[#C2B894]/40", text: "group-hover:text-[#C2B894]", iconBg: "group-hover:bg-[#C2B894]/20" },
+  yellow: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
   teal: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
-  indigo: { bg: "group-hover:bg-[#F25E3D]/5", border: "group-hover:border-[#F25E3D]/40", text: "group-hover:text-[#F25E3D]", iconBg: "group-hover:bg-[#F25E3D]/20" },
+  indigo: { bg: "group-hover:bg-[#B2F273]/5", border: "group-hover:border-[#B2F273]/40", text: "group-hover:text-[#B2F273]", iconBg: "group-hover:bg-[#B2F273]/20" },
 };
 
 export function ToolsSection() {
   return (
     <section className="py-16 sm:py-24 md:py-32 bg-[#00261C] relative">
       {/* Background decoration */}
-      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#F25E3D]/30 to-transparent" />
-      <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#F25E3D]/5 rounded-full blur-3xl" />
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+      <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl" />
       <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl" />
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section header */}
         <div className="text-center mb-10 sm:mb-16">
-          <p className="text-[#F25E3D] font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
+          <p className="text-[#B2F273] font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Platform</p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 sm:mb-6 leading-tight font-display">
             7 Live. 9 Coming.
             <br />
-            <span className="text-[#C2B894]">One Platform.</span>
+            <span className="text-[#B2F273]">One Platform.</span>
           </h2>
           <p className="text-base sm:text-xl text-[#EDF5F2]/80 max-w-2xl mx-auto px-4">
             Everything you need for trade operations - from document validation to customs clearance.
@@ -263,7 +263,7 @@ export function ToolsSection() {
             const categoryTools = tools.filter(t => t.category === category);
             return (
               <div key={category}>
-                <h3 className="text-xs sm:text-sm font-semibold text-[#EDF5F2]/60 uppercase tracking-wider mb-6 sm:mb-8 pl-3 border-l-2 border-[#F25E3D]">
+                <h3 className="text-xs sm:text-sm font-semibold text-[#EDF5F2]/60 uppercase tracking-wider mb-6 sm:mb-8 pl-3 border-l-2 border-[#B2F273]">
                   {category}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -287,7 +287,7 @@ export function ToolsSection() {
                             </span>
                           )}
                           {(tool as any).badge && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#C2B894]/20 text-[#C2B894] border border-[#C2B894]/30">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#EDF5F2]/20 text-[#EDF5F2] border border-[#EDF5F2]/30">
                               {(tool as any).badge}
                             </span>
                           )}
@@ -303,7 +303,7 @@ export function ToolsSection() {
                           <h4 className={`text-base sm:text-lg font-bold text-white mb-1 transition-colors ${colors.text} font-display`}>
                             {tool.name}
                           </h4>
-                          <p className="text-xs sm:text-sm font-medium text-[#C2B894] mb-2 sm:mb-3">
+                          <p className="text-xs sm:text-sm font-medium text-[#B2F273] mb-2 sm:mb-3">
                             {tool.tagline}
                           </p>
                           <p className="text-xs sm:text-sm text-[#EDF5F2]/60 leading-relaxed mb-3 sm:mb-4">
@@ -336,7 +336,7 @@ export function ToolsSection() {
           <p className="text-[#EDF5F2]/60 mb-6">Start with LCopilot today. More tools launching every month.</p>
           <Button 
             size="lg" 
-            className="bg-[#F25E3D] text-white hover:bg-[#D94E30] px-8 h-12 font-semibold border-none"
+            className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-8 h-12 font-semibold border-none"
             asChild
           >
             <Link to="/lcopilot">

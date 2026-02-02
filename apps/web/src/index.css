@@ -14,13 +14,13 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --brand-lime: 82 81% 70%;        /* #B2F273 - Primary Accent */
     --brand-mint: 156 33% 95%;       /* #EDF5F2 - Light Neutral / Text */
     
-    /* Secondary/Muted colors for UI depth - derived from main palette */
-    --brand-green-muted: 164 100% 12%; /* Lighter green for cards/hovers */
-    --brand-lime-muted: 82 81% 20%;    /* Darker lime for text on light */
+    /* Secondary/Muted colors for UI depth */
+    --brand-green-muted: 164 100% 12%; 
+    --brand-lime-muted: 82 81% 20%;
 
     /* Base semantic tokens */
     --background: 0 0% 100%;
-    --foreground: 164 100% 7%; /* Brand Green text */
+    --foreground: 164 100% 7%; 
 
     --card: 0 0% 100%;
     --card-foreground: 164 100% 7%;
@@ -31,13 +31,13 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --primary: 164 100% 7%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 156 33% 95%; /* Mint */
+    --secondary: 156 33% 95%; 
     --secondary-foreground: 164 100% 7%;
 
-    --muted: 156 33% 95%; /* Pale Mint */
+    --muted: 156 33% 95%; 
     --muted-foreground: 164 30% 40%;
 
-    --accent: 82 81% 70%; /* Lime */
+    --accent: 82 81% 70%; 
     --accent-foreground: 164 100% 7%;
 
     --destructive: 0 84% 60%;
@@ -133,33 +133,33 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --brand-lime-muted: 82 81% 20%;
 
     /* Bloomberg-style dark: deep backgrounds, high contrast */
-    --background: 164 100% 5%; /* Very dark green almost black */
-    --foreground: 156 33% 95%; /* Mint text */
+    --background: 164 100% 5%; 
+    --foreground: 156 33% 95%; 
 
-    --card: 164 80% 8%; /* Slightly elevated from canvas */
+    --card: 164 80% 8%; 
     --card-foreground: 156 33% 95%;
 
     --popover: 164 80% 8%;
     --popover-foreground: 156 33% 95%;
 
-    --primary: 156 33% 95%; /* Mint */
+    --primary: 156 33% 95%; 
     --primary-foreground: 164 100% 7%;
 
     --secondary: 164 40% 15%;
     --secondary-foreground: 156 33% 95%;
 
     --muted: 164 40% 15%;
-    --muted-foreground: 164 20% 70%; /* Better readability */
+    --muted-foreground: 164 20% 70%; 
 
-    --accent: 164 40% 15%; /* Darker green for accents */
+    --accent: 164 40% 15%; 
     --accent-foreground: 156 33% 95%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 164 40% 15%; /* Subtle borders */
+    --border: 164 40% 15%; 
     --input: 164 40% 15%;
-    --ring: 82 81% 70%; /* Lime for focus */
+    --ring: 82 81% 70%;
 
     --success: 142 76% 42%;
     --success-foreground: 0 0% 98%;

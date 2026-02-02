@@ -22,17 +22,17 @@ export function WhyTRDRSection() {
   return (
     <section className="py-24 md:py-32 bg-[#00261C] relative overflow-hidden">
       {/* Background decoration */}
-      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#F25E3D]/30 to-transparent" />
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section header */}
         <div className="text-center mb-16">
-          <p className="text-[#F25E3D] font-semibold mb-4 tracking-wide uppercase text-sm">Why Us</p>
+          <p className="text-[#B2F273] font-semibold mb-4 tracking-wide uppercase text-sm">Why Us</p>
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
             Transforming a trillion-dollar
             <br />
-            <span className="text-[#C2B894]">paper-pushing industry</span>
+            <span className="text-[#EDF5F2]/60">paper-pushing industry</span>
           </h2>
         </div>
 
@@ -43,8 +43,8 @@ export function WhyTRDRSection() {
               key={index}
               className="text-center p-8"
             >
-              <div className="w-16 h-16 bg-gradient-to-br from-[#F25E3D]/20 to-[#B2F273]/20 rounded-2xl flex items-center justify-center mb-6 mx-auto">
-                <item.icon className="w-8 h-8 text-[#F25E3D]" />
+              <div className="w-16 h-16 bg-gradient-to-br from-[#B2F273]/20 to-[#00382E]/20 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                <item.icon className="w-8 h-8 text-[#B2F273]" />
               </div>
               <h3 className="text-xl font-bold text-white mb-4 font-display">
                 {item.title}
@@ -62,7 +62,7 @@ export function WhyTRDRSection() {
             "We validated 247 LCs last quarter with TRDR Hub. Zero discrepancy fees. 
             <span className="text-[#B2F273]"> That's $18,000 saved.</span>"
           </blockquote>
-          <div className="text-[#C2B894]">
+          <div className="text-[#EDF5F2]/60">
             <span className="font-semibold text-white">Sarah Chen</span>
             <span className="mx-2">•</span>
             <span>Trade Finance Manager, Singapore</span>
