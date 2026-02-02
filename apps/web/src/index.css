@@ -18,6 +18,11 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --brand-green-muted: 164 100% 12%; 
     --brand-lime-muted: 82 81% 20%;
 
+    /* Glassmorphism tokens */
+    --glass-border: 164 20% 90% / 0.1;
+    --glass-bg: 164 100% 7% / 0.7;
+    --glass-shine: 255 100% 100% / 0.05;
+
     /* Base semantic tokens */
     --background: 0 0% 100%;
     --foreground: 164 100% 7%; 
@@ -131,6 +136,11 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     
     --brand-green-muted: 164 100% 12%; 
     --brand-lime-muted: 82 81% 20%;
+
+    /* Glassmorphism tokens - Dark Mode */
+    --glass-border: 156 33% 95% / 0.1;
+    --glass-bg: 164 100% 5% / 0.6;
+    --glass-shine: 82 81% 70% / 0.05;
 
     /* Bloomberg-style dark: deep backgrounds, high contrast */
     --background: 164 100% 5%; 
@@ -274,6 +284,29 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
 
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* Utility classes for glassmorphism and effects */
+@layer utilities {
+  .bg-glass {
+    @apply bg-[#00261C]/80 backdrop-blur-md border border-[#EDF5F2]/10;
+  }
+  
+  .bg-glass-hover {
+    @apply hover:bg-[#00261C]/90 hover:border-[#B2F273]/30 transition-all duration-300;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px rgba(178, 242, 115, 0.3);
+  }
+
+  .text-glow-sm {
+    text-shadow: 0 0 10px rgba(178, 242, 115, 0.2);
+  }
+
+  .border-glow {
+    box-shadow: 0 0 15px -3px rgba(178, 242, 115, 0.15);
   }
 }
 
