@@ -142,9 +142,11 @@ export function SolutionSection() {
                   "Live container tracking dashboard",
                   "AI-powered HS code classification"
                 ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-4 text-white font-medium text-sm">
-                    <span className="text-[#B2F273] text-lg leading-none">✓</span>
-                    <span>{item}</span>
+                  <li key={i} className="flex items-start gap-4 text-white font-medium text-sm group">
+                    <div className="w-6 h-6 rounded-full bg-[#B2F273]/20 flex items-center justify-center shrink-0 group-hover:bg-[#B2F273] transition-colors duration-300">
+                      <Check className="w-3.5 h-3.5 text-[#B2F273] group-hover:text-[#00261C] transition-colors duration-300" />
+                    </div>
+                    <span className="pt-0.5 group-hover:text-[#B2F273] transition-colors duration-300">{item}</span>
                   </li>
                 ))}
               </ul>

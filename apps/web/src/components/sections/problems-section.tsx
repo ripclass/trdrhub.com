@@ -66,19 +66,19 @@ export function ProblemsSection() {
         </div>
 
         {/* Problem cards grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1 bg-[#00261C]/10 p-[1px] rounded-3xl overflow-hidden border border-[#00261C]/5 shadow-xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto mb-24">
           {problems.map((problem, index) => (
             <div
               key={index}
-              className="group relative bg-[#EDF5F2] p-8 md:p-10 hover:bg-white transition-all duration-500 ease-out"
+              className="group bg-[#EDF5F2] border border-[#00261C]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(0,38,28,0.1)] relative overflow-hidden"
             >
               {/* Hover Glow Effect */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#B2F273]/20 rounded-bl-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#B2F273]/10 rounded-bl-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
               
               {/* Header: Icon & Label */}
-              <div className="flex items-start justify-between mb-8">
-                <div className="w-12 h-12 rounded-lg bg-[#00261C]/5 flex items-center justify-center border border-[#00261C]/10 group-hover:bg-[#00261C] group-hover:border-[#00261C] transition-all duration-300">
-                  <problem.icon className="w-6 h-6 text-[#00261C] group-hover:text-[#B2F273] transition-colors duration-300" />
+              <div className="flex items-start justify-between mb-6">
+                <div className="w-14 h-14 bg-[#00261C]/5 rounded-xl flex items-center justify-center border border-[#00261C]/10 group-hover:bg-[#00261C] group-hover:border-[#00261C] transition-all duration-300">
+                  <problem.icon className="w-7 h-7 text-[#00261C] group-hover:text-[#B2F273] transition-colors duration-300" />
                 </div>
                 <span className="text-[#00261C]/40 font-mono text-xs tracking-widest group-hover:text-[#00261C] transition-colors duration-300">
                   {problem.label}
@@ -86,7 +86,7 @@ export function ProblemsSection() {
               </div>
 
               {/* Content */}
-              <h3 className="text-xl md:text-2xl font-bold text-[#00261C] mb-4 font-display transition-colors duration-300">
+              <h3 className="text-xl md:text-2xl font-bold text-[#00261C] mb-3 font-display transition-colors duration-300">
                 {problem.title}
               </h3>
               <p className="text-[#00261C]/70 leading-relaxed text-sm md:text-base group-hover:text-[#00261C] transition-colors duration-300">
