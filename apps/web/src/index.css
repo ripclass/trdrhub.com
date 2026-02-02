@@ -297,6 +297,11 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     @apply hover:bg-[#00261C]/90 hover:border-[#B2F273]/30 transition-all duration-300;
   }
 
+  /* Problem Card Specific Utilities */
+  .problem-card-gradient {
+    background: linear-gradient(180deg, rgba(0, 38, 28, 0.4) 0%, rgba(0, 38, 28, 0.8) 100%);
+  }
+
   .text-glow {
     text-shadow: 0 0 20px rgba(178, 242, 115, 0.3);
   }
