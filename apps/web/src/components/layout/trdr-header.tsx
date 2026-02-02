@@ -37,7 +37,7 @@ export function TRDRHeader() {
               <Link
                 key={item.name}
                 to={item.href}
-                className="text-sm font-medium text-[#C2B894] hover:text-white transition-colors"
+                className="text-sm font-medium text-[#EDF5F2]/60 hover:text-[#B2F273] transition-colors"
               >
                 {item.name}
               </Link>
@@ -52,7 +52,7 @@ export function TRDRHeader() {
                 <Link to="/hub">
                   <Button 
                     size="sm" 
-                    className="bg-[#F25E3D] hover:bg-[#D94E30] text-white font-medium border-none"
+                    className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-medium border-none"
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
                     Go to Hub
@@ -73,7 +73,7 @@ export function TRDRHeader() {
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-[#C2B894] hover:text-white hover:bg-[#00382E]"
+                    className="text-[#EDF5F2]/60 hover:text-[#B2F273] hover:bg-[#00382E]"
                   >
                     Login
                   </Button>
@@ -93,7 +93,7 @@ export function TRDRHeader() {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-[#C2B894] hover:text-white"
+            className="md:hidden p-2 text-[#EDF5F2]/60 hover:text-[#B2F273]"
           >
             {mobileMenuOpen ? (
               <X className="w-6 h-6" />
@@ -118,7 +118,7 @@ export function TRDRHeader() {
                 key={item.name}
                 to={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-4 py-3 text-[#C2B894] hover:text-white hover:bg-[#00382E] rounded-lg transition-colors"
+                className="px-4 py-3 text-[#EDF5F2]/60 hover:text-[#B2F273] hover:bg-[#00382E] rounded-lg transition-colors"
               >
                 {item.name}
               </Link>
@@ -128,7 +128,7 @@ export function TRDRHeader() {
                 // Logged in user - mobile
                 <Link to="/hub" className="flex-1">
                   <Button 
-                    className="w-full bg-[#F25E3D] text-white hover:bg-[#D94E30]"
+                    className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
@@ -141,7 +141,7 @@ export function TRDRHeader() {
                   <Link to="/login" className="flex-1">
                     <Button 
                       variant="outline" 
-                      className="w-full border-[#EDF5F2]/20 text-[#C2B894] hover:bg-[#00382E] hover:text-white bg-transparent"
+                      className="w-full border-[#EDF5F2]/20 text-[#EDF5F2]/60 hover:bg-[#00382E] hover:text-[#B2F273] bg-transparent"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Login

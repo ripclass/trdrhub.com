@@ -40,11 +40,11 @@ export function TRDRFooter() {
                 className="h-10 w-auto object-contain"
               />
             </Link>
-            <p className="text-[#C2B894] text-sm mb-4">
+            <p className="text-[#EDF5F2]/60 text-sm mb-4">
               Zero-Error Trade Documents
             </p>
-            <div className="text-[#EDF5F2]/60 text-sm">
-              <a href="mailto:hello@trdrhub.com" className="hover:text-white transition-colors">
+            <div className="text-[#EDF5F2]/40 text-sm">
+              <a href="mailto:hello@trdrhub.com" className="hover:text-[#B2F273] transition-colors">
                 hello@trdrhub.com
               </a>
             </div>
@@ -52,7 +52,7 @@ export function TRDRFooter() {
 
           {/* Navigation columns */}
           <div>
-            <h3 className="text-white font-semibold mb-4 font-display">Product</h3>
+            <h3 className="text-[#B2F273] font-semibold mb-4 font-display">Product</h3>
             <ul className="space-y-3">
               {navigation.product.map((item) => (
                 <li key={item.name}>
@@ -68,7 +68,7 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4 font-display">Resources</h3>
+            <h3 className="text-[#B2F273] font-semibold mb-4 font-display">Resources</h3>
             <ul className="space-y-3">
               {navigation.resources.map((item) => (
                 <li key={item.name}>
@@ -84,7 +84,7 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4 font-display">Company</h3>
+            <h3 className="text-[#B2F273] font-semibold mb-4 font-display">Company</h3>
             <ul className="space-y-3">
               {navigation.company.map((item) => (
                 <li key={item.name}>
@@ -100,7 +100,7 @@ export function TRDRFooter() {
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-4 font-display">Legal</h3>
+            <h3 className="text-[#B2F273] font-semibold mb-4 font-display">Legal</h3>
             <ul className="space-y-3">
               {navigation.legal.map((item) => (
                 <li key={item.name}>
@@ -118,7 +118,7 @@ export function TRDRFooter() {
 
         {/* Bottom bar */}
         <div className="pt-8 border-t border-[#EDF5F2]/10 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[#C2B894] text-sm">
+          <p className="text-[#EDF5F2]/40 text-sm">
             © 2025 TRDR Hub. All rights reserved.
           </p>
           
@@ -128,7 +128,7 @@ export function TRDRFooter() {
               href="https://linkedin.com/company/trdrhub"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#EDF5F2]/60 hover:text-white transition-colors"
+              className="text-[#EDF5F2]/40 hover:text-[#B2F273] transition-colors"
             >
               <span className="sr-only">LinkedIn</span>
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -139,7 +139,7 @@ export function TRDRFooter() {
               href="https://twitter.com/trdrhub"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#EDF5F2]/60 hover:text-white transition-colors"
+              className="text-[#EDF5F2]/40 hover:text-[#B2F273] transition-colors"
             >
               <span className="sr-only">Twitter</span>
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
