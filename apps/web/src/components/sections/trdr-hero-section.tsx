@@ -9,12 +9,23 @@ export function TRDRHeroSection() {
 
   return (
     <section className="relative min-h-screen flex flex-col justify-center overflow-hidden bg-[#00261C]">
+      {/* Background Image with Overlay */}
+      <div className="absolute inset-0 z-0">
+        <img 
+          src="https://images.unsplash.com/photo-1494412574643-35d324698b93?q=80&w=2070&auto=format&fit=crop" 
+          alt="Global Trade" 
+          className="w-full h-full object-cover opacity-20"
+        />
+        <div className="absolute inset-0 bg-[#00261C]/90 mix-blend-multiply" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#00261C] via-transparent to-[#00261C]" />
+      </div>
+
       {/* Animated gradient orbs - Updated to strict brand colors */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-[#B2F273]/5 rounded-full blur-[120px] animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-[#B2F273]/5 rounded-full blur-[120px] animate-pulse delay-1000" />
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-[#B2F273]/10 rounded-full blur-[120px] animate-pulse z-0" />
+      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-[#B2F273]/5 rounded-full blur-[120px] animate-pulse delay-1000 z-0" />
       
       {/* Grid pattern overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] z-0" />
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-32 md:pt-48 pb-20">
         <div className="text-center max-w-5xl mx-auto">
