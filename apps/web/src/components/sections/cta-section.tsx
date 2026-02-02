@@ -28,7 +28,7 @@ export function CTASection() {
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
             Ready to validate your
             <br />
-            <span className="bg-gradient-to-r from-[#F25E3D] to-[#B2F273] bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-[#B2F273] to-[#EDF5F2] bg-clip-text text-transparent">
               first LC for free?
             </span>
           </h2>
@@ -39,7 +39,7 @@ export function CTASection() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
             <Button 
               size="lg" 
-              className="bg-[#F25E3D] text-white hover:bg-[#D94E30] text-lg px-8 py-6 h-auto font-semibold group border-none"
+              className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] text-lg px-8 py-6 h-auto font-semibold group border-none"
               asChild
             >
               <Link to="/lcopilot">
@@ -50,7 +50,7 @@ export function CTASection() {
             <Button 
               variant="outline" 
               size="lg" 
-              className="border-[#B2F273] text-[#B2F273] hover:bg-[#B2F273] hover:text-[#00261C] text-lg px-8 py-6 h-auto bg-transparent"
+              className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/10 text-lg px-8 py-6 h-auto bg-transparent"
               asChild
             >
               <Link to="/contact">
@@ -85,7 +85,7 @@ export function CTASection() {
                     placeholder="your@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-[#00382E] border border-[#EDF5F2]/10 rounded-lg pl-10 pr-4 py-3 text-white placeholder-[#EDF5F2]/40 focus:outline-none focus:border-[#F25E3D] transition-colors"
+                    className="w-full bg-[#00382E] border border-[#EDF5F2]/10 rounded-lg pl-10 pr-4 py-3 text-white placeholder-[#EDF5F2]/40 focus:outline-none focus:border-[#B2F273] transition-colors"
                     required
                   />
                 </div>

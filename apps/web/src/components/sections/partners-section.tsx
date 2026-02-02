@@ -13,7 +13,7 @@ export function PartnersSection() {
     <section className="py-16 bg-[#00261C] border-y border-[#EDF5F2]/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
-          <p className="text-[#EDF5F2]/40 text-sm font-medium tracking-wide uppercase">
+          <p className="text-[#B2F273] text-sm font-medium tracking-wide uppercase">
             Trusted by trade professionals worldwide
           </p>
         </div>
@@ -23,7 +23,7 @@ export function PartnersSection() {
           {banks.map((bank) => (
             <div
               key={bank}
-              className="text-[#C2B894] font-bold text-lg tracking-tight hover:text-white transition-colors cursor-default"
+              className="text-[#EDF5F2]/60 font-bold text-lg tracking-tight hover:text-[#B2F273] transition-colors cursor-default"
             >
               {bank}
             </div>
@@ -36,9 +36,9 @@ export function PartnersSection() {
             {[...standards, ...standards].map((item, index) => (
               <span
                 key={index}
-                className="text-[#EDF5F2]/60 text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                className="text-[#EDF5F2]/40 text-sm font-medium whitespace-nowrap flex items-center gap-2"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#B2F273]/50" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#B2F273]/30" />
                 {item}
               </span>
             ))}
