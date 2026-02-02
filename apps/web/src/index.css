@@ -9,12 +9,14 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
 
 @layer base {
   :root {
-    /* Brand Colors (Derived from Brand Guidelines) */
-    --brand-green: 164 100% 7%;      /* #00261C */
-    --brand-salmon: 11 87% 59%;      /* #F25E3D */
-    --brand-beige: 47 26% 67%;       /* #C2B894 */
-    --brand-lime: 82 81% 70%;        /* #B2F273 */
-    --brand-mint: 156 33% 95%;       /* #EDF5F2 */
+    /* Brand Colors (Derived from Brand Guidelines - STRICT PALETTE) */
+    --brand-green: 164 100% 7%;      /* #00261C - Primary Background */
+    --brand-lime: 82 81% 70%;        /* #B2F273 - Primary Accent */
+    --brand-mint: 156 33% 95%;       /* #EDF5F2 - Light Neutral / Text */
+    
+    /* Secondary/Muted colors for UI depth - derived from main palette */
+    --brand-green-muted: 164 100% 12%; /* Lighter green for cards/hovers */
+    --brand-lime-muted: 82 81% 20%;    /* Darker lime for text on light */
 
     /* Base semantic tokens */
     --background: 0 0% 100%;
@@ -29,7 +31,7 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --primary: 164 100% 7%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 47 26% 67%; /* Beige */
+    --secondary: 156 33% 95%; /* Mint */
     --secondary-foreground: 164 100% 7%;
 
     --muted: 156 33% 95%; /* Pale Mint */
@@ -38,11 +40,11 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     --accent: 82 81% 70%; /* Lime */
     --accent-foreground: 164 100% 7%;
 
-    --destructive: 11 87% 59%; /* Salmon */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 47 20% 85%;
-    --input: 47 20% 85%;
+    --border: 164 20% 90%;
+    --input: 164 20% 90%;
     --ring: 164 100% 7%;
 
     --success: 142 76% 36%;
@@ -95,7 +97,7 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
     /* Professional gradients */
     --gradient-primary: linear-gradient(135deg, hsl(164 100% 7%), hsl(164 90% 15%));
     --gradient-secondary: linear-gradient(135deg, hsl(156 33% 95%), hsl(156 33% 90%));
-    --gradient-hero: linear-gradient(135deg, hsl(164 100% 7%) 0%, hsl(11 87% 59%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(164 100% 7%) 0%, hsl(82 81% 70%) 100%);
     --gradient-exporter: linear-gradient(135deg, hsl(var(--exporter-primary)) 0%, hsl(210 80% 60%) 100%);
     --gradient-importer: linear-gradient(135deg, hsl(var(--importer-primary)) 0%, hsl(142 60% 55%) 100%);
 
@@ -122,36 +124,37 @@ Version: 2025-11-05 - Bloomberg-style dark/light theme
   }
 
   .dark {
-    /* Brand Colors Dark Mode */
+    /* Brand Colors Dark Mode - STRICT */
     --brand-green: 164 100% 7%;      /* #00261C */
-    --brand-salmon: 11 87% 59%;      /* #F25E3D */
-    --brand-beige: 47 26% 67%;       /* #C2B894 */
     --brand-lime: 82 81% 70%;        /* #B2F273 */
     --brand-mint: 156 33% 95%;       /* #EDF5F2 */
+    
+    --brand-green-muted: 164 100% 12%; 
+    --brand-lime-muted: 82 81% 20%;
 
     /* Bloomberg-style dark: deep backgrounds, high contrast */
     --background: 164 100% 5%; /* Very dark green almost black */
-    --foreground: 0 0% 98%; /* Bright text */
+    --foreground: 156 33% 95%; /* Mint text */
 
     --card: 164 80% 8%; /* Slightly elevated from canvas */
-    --card-foreground: 0 0% 98%;
+    --card-foreground: 156 33% 95%;
 
     --popover: 164 80% 8%;
-    --popover-foreground: 0 0% 98%;
+    --popover-foreground: 156 33% 95%;
 
-    --primary: 0 0% 98%; /* Brighter for dark mode */
+    --primary: 156 33% 95%; /* Mint */
     --primary-foreground: 164 100% 7%;
 
     --secondary: 164 40% 15%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary-foreground: 156 33% 95%;
 
     --muted: 164 40% 15%;
     --muted-foreground: 164 20% 70%; /* Better readability */
 
     --accent: 164 40% 15%; /* Darker green for accents */
-    --accent-foreground: 0 0% 98%;
+    --accent-foreground: 156 33% 95%;
 
-    --destructive: 11 87% 59%; /* Salmon */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 164 40% 15%; /* Subtle borders */
