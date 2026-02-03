@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 const navigation = [
   { name: "Home", href: "/" },
   { name: "Tools", href: "/tools" },
-  { name: "Technology", href: "#technology" },
+  { name: "Technology", href: "/technology" },
   { name: "Pricing", href: "/pricing" },
   { name: "About", href: "/about" },
 ];

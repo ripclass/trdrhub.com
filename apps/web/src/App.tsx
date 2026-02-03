@@ -6,6 +6,7 @@ import UploadPage from './pages/UploadPage'
 import ReviewPage from './pages/ReviewPage'
 import ReportPage from './pages/ReportPage'
 import ToolsPage from './pages/ToolsPage'
+import TechnologyPage from './pages/TechnologyPage'
 import PricingPage from './pages/PricingPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
@@ -179,6 +180,7 @@ function App() {
         <Route path="/lc-demo" element={<Index />} />
         <Route path="/trdr" element={<TRDRHub />} />
         <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/technology" element={<TechnologyPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
