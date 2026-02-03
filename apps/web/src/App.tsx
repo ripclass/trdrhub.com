@@ -10,6 +10,9 @@ import TechnologyPage from './pages/TechnologyPage'
 import PricingPage from './pages/PricingPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
+import PrivacyPage from './pages/legal/PrivacyPage'
+import TermsPage from './pages/legal/TermsPage'
+import SecurityPage from './pages/legal/SecurityPage'
 // Tool landing pages
 import SanctionsScreenerLanding from './pages/tools/SanctionsScreenerLanding'
 import HSCodeFinderLanding from './pages/tools/HSCodeFinderLanding'
@@ -184,6 +187,9 @@ function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/security" element={<SecurityPage />} />
         
         {/* Tool Landing Pages - Live */}
         <Route path="/sanctions" element={<SanctionsScreenerLanding />} />
