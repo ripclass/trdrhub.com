@@ -6,8 +6,10 @@ import UploadPage from './pages/UploadPage'
 import ReviewPage from './pages/ReviewPage'
 import ReportPage from './pages/ReportPage'
 import ToolsPage from './pages/ToolsPage'
-import TechnologyPage from './pages/TechnologyPage'
-import PricingPage from './pages/PricingPage'
+import DocsPage from './pages/resources/DocsPage'
+import APIPage from './pages/resources/APIPage'
+import UCP600Page from './pages/resources/UCP600Page'
+import BlogPage from './pages/resources/BlogPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import PrivacyPage from './pages/legal/PrivacyPage'
@@ -185,6 +187,10 @@ function App() {
         <Route path="/trdr" element={<TRDRHub />} />
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/technology" element={<TechnologyPage />} />
+        <Route path="/docs" element={<DocsPage />} />
+        <Route path="/api" element={<APIPage />} />
+        <Route path="/guides/ucp600" element={<UCP600Page />} />
+        <Route path="/blog" element={<BlogPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/careers" element={<CareersPage />} />
