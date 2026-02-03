@@ -58,7 +58,7 @@ export function TRDRFooter() {
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-xs font-mono uppercase tracking-wider"
                   >
                     {item.name}
                   </Link>
@@ -74,7 +74,7 @@ export function TRDRFooter() {
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-xs font-mono uppercase tracking-wider"
                   >
                     {item.name}
                   </Link>
@@ -90,7 +90,7 @@ export function TRDRFooter() {
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-xs font-mono uppercase tracking-wider"
                   >
                     {item.name}
                   </Link>
@@ -106,7 +106,7 @@ export function TRDRFooter() {
                 <li key={item.name}>
                   <Link
                     to={item.href}
-                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-sm"
+                    className="text-[#EDF5F2]/60 hover:text-white transition-colors text-xs font-mono uppercase tracking-wider"
                   >
                     {item.name}
                   </Link>

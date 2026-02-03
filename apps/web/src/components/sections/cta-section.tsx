@@ -89,7 +89,7 @@ export function CTASection() {
                     required
                   />
                 </div>
-                <Button type="submit" className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-6 border-none font-bold">
+                <Button type="submit" className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-6 border-none font-bold font-mono uppercase tracking-wider">
                   Subscribe
                 </Button>
               </form>

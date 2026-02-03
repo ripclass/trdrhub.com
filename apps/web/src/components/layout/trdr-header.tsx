@@ -52,7 +52,7 @@ export function TRDRHeader() {
                 <Link to="/hub">
                   <Button 
                     size="sm" 
-                    className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-medium border-none"
+                    className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-medium border-none font-mono uppercase tracking-wider text-xs"
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
                     Go to Hub
@@ -73,7 +73,7 @@ export function TRDRHeader() {
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-[#EDF5F2]/60 hover:text-[#B2F273] hover:bg-[#00382E]"
+                    className="text-[#EDF5F2]/60 hover:text-[#B2F273] hover:bg-[#00382E] font-mono uppercase tracking-wider text-xs"
                   >
                     Login
                   </Button>
@@ -81,7 +81,7 @@ export function TRDRHeader() {
                 <Link to="/lcopilot">
                   <Button 
                     size="sm" 
-                    className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-medium border-none"
+                    className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-medium border-none font-mono uppercase tracking-wider text-xs"
                   >
                     Get Started
                   </Button>
@@ -128,7 +128,7 @@ export function TRDRHeader() {
                 // Logged in user - mobile
                 <Link to="/hub" className="flex-1">
                   <Button 
-                    className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]"
+                    className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-mono uppercase tracking-wider text-xs"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
@@ -141,7 +141,7 @@ export function TRDRHeader() {
                   <Link to="/login" className="flex-1">
                     <Button 
                       variant="outline" 
-                      className="w-full border-[#EDF5F2]/20 text-[#EDF5F2]/60 hover:bg-[#00382E] hover:text-[#B2F273] bg-transparent"
+                      className="w-full border-[#EDF5F2]/20 text-[#EDF5F2]/60 hover:bg-[#00382E] hover:text-[#B2F273] bg-transparent font-mono uppercase tracking-wider text-xs"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Login
@@ -149,7 +149,7 @@ export function TRDRHeader() {
                   </Link>
                   <Link to="/lcopilot" className="flex-1">
                     <Button 
-                      className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]"
+                      className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-mono uppercase tracking-wider text-xs"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Get Started
