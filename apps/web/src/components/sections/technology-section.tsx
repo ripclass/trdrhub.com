@@ -46,21 +46,21 @@ const standards = [
 
 export function TechnologySection() {
   return (
-    <section className="py-24 md:py-32 bg-[#00261C] relative">
+    <section className="py-24 md:py-32 bg-[#EDF5F2] relative">
       {/* Grid pattern overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(0,38,28,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,38,28,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
 
       {/* Top border */}
-      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+      <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#00261C]/10 to-transparent" />
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section header */}
         <div className="text-center mb-16">
-          <p className="text-[#B2F273] font-semibold mb-4 tracking-wide uppercase text-sm">Technology</p>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
+          <p className="text-[#00261C] font-mono text-xs tracking-widest uppercase mb-4">Technology</p>
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-[#00261C] mb-6 leading-tight font-display">
             The most comprehensive
             <br />
-            <span className="text-[#EDF5F2]/60">trade rules engine ever built</span>
+            <span className="text-[#00261C]/60">trade rules engine ever built</span>
           </h2>
         </div>
 
@@ -71,16 +71,16 @@ export function TechnologySection() {
               key={index}
               className="text-center p-6 group"
             >
-              <div className="w-16 h-16 bg-[#00382E] rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:bg-[#B2F273]/20 transition-colors">
-                <feature.icon className="w-8 h-8 text-[#EDF5F2]/60 group-hover:text-[#B2F273] transition-colors" />
+              <div className="w-16 h-16 bg-[#00261C]/5 rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:bg-[#00261C]/10 transition-colors border border-[#00261C]/5">
+                <feature.icon className="w-8 h-8 text-[#00261C]/60 group-hover:text-[#00261C] transition-colors" />
               </div>
-              <div className="text-4xl md:text-5xl font-bold text-white mb-2 font-display">
+              <div className="text-4xl md:text-5xl font-bold text-[#00261C] mb-2 font-display">
                 {feature.stat}
               </div>
-              <div className="text-lg font-semibold text-[#B2F273] mb-2 font-display">
+              <div className="text-lg font-semibold text-[#00261C]/80 mb-2 font-display">
                 {feature.label}
               </div>
-              <p className="text-[#EDF5F2]/60 text-sm">
+              <p className="text-[#00261C]/60 text-sm">
                 {feature.description}
               </p>
             </div>
@@ -88,16 +88,16 @@ export function TechnologySection() {
         </div>
 
         {/* Standards banner */}
-        <div className="max-w-5xl mx-auto bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
+        <div className="max-w-5xl mx-auto bg-white border border-[#00261C]/10 rounded-3xl p-12 relative overflow-hidden shadow-sm">
           {/* Decorative elements */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#B2F273]/10 rounded-full blur-3xl" />
           
           <div className="relative z-10 text-center">
-            <h3 className="text-2xl md:text-3xl font-bold text-white mb-4 font-display">
+            <h3 className="text-2xl md:text-3xl font-bold text-[#00261C] mb-4 font-display">
               Built on International Standards
             </h3>
-            <p className="text-[#EDF5F2]/80 mb-8 max-w-2xl mx-auto">
+            <p className="text-[#00261C]/70 mb-8 max-w-2xl mx-auto">
               Our engine incorporates every major ICC publication, SWIFT messaging standard, 
               and regulatory framework used in international trade finance.
             </p>
@@ -107,7 +107,7 @@ export function TechnologySection() {
               {standards.map((standard, index) => (
                 <span 
                   key={index}
-                  className="px-4 py-2 bg-[#00261C]/50 rounded-full text-sm font-medium text-[#EDF5F2]/80 border border-[#EDF5F2]/20"
+                  className="px-4 py-2 bg-[#EDF5F2] rounded-full text-sm font-medium text-[#00261C]/80 border border-[#00261C]/10 hover:border-[#00261C]/20 transition-colors"
                 >
                   {standard}
                 </span>
