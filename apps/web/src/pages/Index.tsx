@@ -1,4 +1,4 @@
-// Force rebuild 2
+// Force rebuild 5
 import { Link } from "react-router-dom";
 import { 
   ArrowRight, 
@@ -312,7 +312,7 @@ const Index = () => {
             <div className="text-center mb-12">
               <p className="text-[#B2F273] font-mono font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
               <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 font-display">
-                Manual checking is <span className="text-red-400 line-through">broken</span>
+                Manual checking is <span className="text-[#EDF5F2]/40 line-through decoration-[#EDF5F2]/40">broken</span>
               </h2>
               <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-lg">
                 See how LCopilot transforms your LC validation workflow
@@ -323,7 +323,7 @@ const Index = () => {
               {/* Comparison header - hidden on mobile */}
               <div className="hidden md:grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
                 <div className="text-[#EDF5F2]/40 pl-4 font-mono uppercase tracking-wider">Aspect</div>
-                <div className="text-center text-red-400 font-mono uppercase tracking-wider">Without LCopilot</div>
+                <div className="text-center text-[#EDF5F2]/40 font-mono uppercase tracking-wider">Without LCopilot</div>
                 <div className="text-center text-[#B2F273] font-mono uppercase tracking-wider">With LCopilot</div>
               </div>
 
