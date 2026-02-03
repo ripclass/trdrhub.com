@@ -414,35 +414,38 @@ export default function Register() {
   // ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
+    <div className="grid min-h-screen lg:grid-cols-2 bg-[#00261C]">
       {/* Left Column - Registration Form */}
-      <div className="relative flex flex-col bg-slate-950 p-6 md:p-10 overflow-y-auto">
+      <div className="relative flex flex-col p-6 md:p-10 overflow-y-auto">
         {/* Background effects */}
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
         
         {/* Header with logo */}
-        <div className="flex items-center justify-between relative z-10">
+        <div className="flex items-center justify-between relative z-10 mb-8">
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-white">TRDR</span>
-            <span className="text-xl font-bold text-blue-500">Hub</span>
+            <img 
+              src="/logo-dark-v2.png" 
+              alt="TRDR Hub" 
+              className="h-8 w-auto object-contain"
+            />
           </Link>
           
           {/* Progress Indicator */}
           <div className="flex items-center gap-2">
             <div className={cn(
               "flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium transition-colors",
-              step >= 1 ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-400"
+              step >= 1 ? "bg-[#B2F273] text-[#00261C]" : "bg-[#00382E] text-[#EDF5F2]/40"
             )}>
               {step > 1 ? <Check className="w-3.5 h-3.5" /> : "1"}
             </div>
             <div className={cn(
               "w-8 h-0.5 rounded-full transition-colors",
-              step >= 2 ? "bg-blue-500" : "bg-slate-800"
+              step >= 2 ? "bg-[#B2F273]" : "bg-[#00382E]"
             )} />
             <div className={cn(
               "flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium transition-colors",
-              step >= 2 ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-400"
+              step >= 2 ? "bg-[#B2F273] text-[#00261C]" : "bg-[#00382E] text-[#EDF5F2]/40"
             )}>
               2
             </div>
@@ -456,11 +459,11 @@ export default function Register() {
             {/* Step 1: Business Context */}
             {step === 1 && (
               <>
-                <div className="mb-6 text-center md:text-left">
-                  <h1 className="text-2xl font-bold text-white mb-2">
+                <div className="mb-8 text-center md:text-left">
+                  <h1 className="text-3xl font-bold text-white mb-2 font-display">
                     What does your company do?
                   </h1>
-                  <p className="text-slate-400">
+                  <p className="text-[#EDF5F2]/60">
                     This helps us personalize your experience
                   </p>
                 </div>
@@ -468,8 +471,8 @@ export default function Register() {
                 <div className="space-y-6">
                   {/* Company Type Selection */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-medium text-slate-300">Business Type</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <Label className="text-sm font-medium text-[#EDF5F2]/80">Business Type</Label>
+                    <div className="grid grid-cols-2 gap-3">
                       {COMPANY_TYPES.map((option) => {
                         const Icon = option.icon;
                         const isSelected = companyType === option.value;
@@ -481,30 +484,30 @@ export default function Register() {
                             className={cn(
                               "relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all text-center",
                               isSelected 
-                                ? "border-blue-500 bg-blue-500/10" 
-                                : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
+                                ? "border-[#B2F273] bg-[#B2F273]/10" 
+                                : "border-[#EDF5F2]/10 bg-[#00382E]/30 hover:border-[#EDF5F2]/20"
                             )}
                           >
                             {isSelected && (
                               <div className="absolute top-2 right-2">
-                                <Check className="w-3.5 h-3.5 text-blue-400" />
+                                <Check className="w-3.5 h-3.5 text-[#B2F273]" />
                               </div>
                             )}
                             <div className={cn(
-                              "w-10 h-10 rounded-lg flex items-center justify-center",
-                              isSelected ? "bg-blue-500/20" : "bg-slate-800"
+                              "w-10 h-10 rounded-lg flex items-center justify-center transition-colors",
+                              isSelected ? "bg-[#B2F273]/20" : "bg-[#00382E]"
                             )}>
                               <Icon className={cn(
-                                "w-5 h-5",
-                                isSelected ? "text-blue-400" : "text-slate-400"
+                                "w-5 h-5 transition-colors",
+                                isSelected ? "text-[#B2F273]" : "text-[#EDF5F2]/40"
                               )} />
                             </div>
                             <div>
                               <p className={cn(
-                                "font-medium text-sm",
-                                isSelected ? "text-white" : "text-slate-300"
+                                "font-medium text-sm transition-colors",
+                                isSelected ? "text-white" : "text-[#EDF5F2]/80"
                               )}>{option.label}</p>
-                              <p className="text-xs text-slate-500">{option.description}</p>
+                              <p className="text-xs text-[#EDF5F2]/40 mt-1">{option.description}</p>
                             </div>
                           </button>
                         );
@@ -514,8 +517,8 @@ export default function Register() {
 
                   {/* Company Size Selection */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-medium text-slate-300">Team Size</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <Label className="text-sm font-medium text-[#EDF5F2]/80">Team Size</Label>
+                    <div className="grid grid-cols-2 gap-3">
                       {COMPANY_SIZES.map((option) => {
                         const Icon = option.icon;
                         const isSelected = companySize === option.value;
@@ -527,30 +530,30 @@ export default function Register() {
                             className={cn(
                               "relative flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
                               isSelected 
-                                ? "border-emerald-500 bg-emerald-500/10" 
-                                : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
+                                ? "border-[#B2F273] bg-[#B2F273]/10" 
+                                : "border-[#EDF5F2]/10 bg-[#00382E]/30 hover:border-[#EDF5F2]/20"
                             )}
                           >
                             {isSelected && (
                               <div className="absolute top-2 right-2">
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <Check className="w-3.5 h-3.5 text-[#B2F273]" />
                               </div>
                             )}
                             <div className={cn(
-                              "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0",
-                              isSelected ? "bg-emerald-500/20" : "bg-slate-800"
+                              "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors",
+                              isSelected ? "bg-[#B2F273]/20" : "bg-[#00382E]"
                             )}>
                               <Icon className={cn(
-                                "w-4 h-4",
-                                isSelected ? "text-emerald-400" : "text-slate-400"
+                                "w-4 h-4 transition-colors",
+                                isSelected ? "text-[#B2F273]" : "text-[#EDF5F2]/40"
                               )} />
                             </div>
                             <div>
                               <p className={cn(
-                                "font-medium text-sm",
-                                isSelected ? "text-white" : "text-slate-300"
+                                "font-medium text-sm transition-colors",
+                                isSelected ? "text-white" : "text-[#EDF5F2]/80"
                               )}>{option.label}</p>
-                              <p className="text-xs text-slate-500">{option.employees}</p>
+                              <p className="text-xs text-[#EDF5F2]/40">{option.employees}</p>
                             </div>
                           </button>
                         );
@@ -560,7 +563,7 @@ export default function Register() {
 
                   {/* Country Selection */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-medium text-slate-300">
+                    <Label className="text-sm font-medium text-[#EDF5F2]/80">
                       <Globe className="w-4 h-4 inline mr-2" />
                       Where is your company based?
                     </Label>
@@ -571,27 +574,27 @@ export default function Register() {
                         className={cn(
                           "w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left",
                           country 
-                            ? "border-purple-500 bg-purple-500/10" 
-                            : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
+                            ? "border-[#B2F273] bg-[#B2F273]/10" 
+                            : "border-[#EDF5F2]/10 bg-[#00382E]/30 hover:border-[#EDF5F2]/20"
                         )}
                       >
                         {selectedCountry ? (
                           <span className="flex items-center gap-2">
                             <span className="text-xl">{selectedCountry.flag}</span>
                             <span className="text-white">{selectedCountry.name}</span>
-                            <span className="text-slate-500 text-sm">({selectedCountry.currency})</span>
+                            <span className="text-[#EDF5F2]/40 text-sm">({selectedCountry.currency})</span>
                           </span>
                         ) : (
-                          <span className="text-slate-500">Select your country</span>
+                          <span className="text-[#EDF5F2]/40">Select your country</span>
                         )}
                         <ChevronDown className={cn(
-                          "w-4 h-4 text-slate-400 transition-transform",
+                          "w-4 h-4 text-[#EDF5F2]/40 transition-transform",
                           countryDropdownOpen && "rotate-180"
                         )} />
                       </button>
                       
                       {countryDropdownOpen && (
-                        <div className="absolute z-50 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+                        <div className="absolute z-50 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-[#EDF5F2]/10 bg-[#00261C] shadow-xl">
                           {COUNTRIES.map((c) => (
                             <button
                               key={c.code}
@@ -601,18 +604,18 @@ export default function Register() {
                                 setCountryDropdownOpen(false);
                               }}
                               className={cn(
-                                "w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-800 transition-colors",
-                                country === c.code && "bg-purple-500/10"
+                                "w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[#00382E] transition-colors",
+                                country === c.code && "bg-[#B2F273]/10"
                               )}
                             >
                               <span className="text-xl">{c.flag}</span>
                               <span className={cn(
                                 "flex-1",
-                                country === c.code ? "text-white" : "text-slate-300"
+                                country === c.code ? "text-white" : "text-[#EDF5F2]/80"
                               )}>{c.name}</span>
-                              <span className="text-slate-500 text-sm">{c.currencySymbol}</span>
+                              <span className="text-[#EDF5F2]/40 text-sm">{c.currencySymbol}</span>
                               {country === c.code && (
-                                <Check className="w-4 h-4 text-purple-400" />
+                                <Check className="w-4 h-4 text-[#B2F273]" />
                               )}
                             </button>
                           ))}
@@ -620,7 +623,7 @@ export default function Register() {
                       )}
                     </div>
                     {selectedCountry && selectedCountry.paymentGateway !== "stripe" && (
-                      <p className="text-xs text-emerald-400">
+                      <p className="text-xs text-[#B2F273]">
                         ✓ Local payment options available in {selectedCountry.currency}
                       </p>
                     )}
@@ -629,7 +632,7 @@ export default function Register() {
                   {/* Continue Button */}
                   <Button 
                     onClick={handleContinue}
-                    className="w-full h-11 bg-white text-slate-900 hover:bg-slate-100 font-medium"
+                    className="w-full h-11 bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-bold rounded-xl"
                   >
                     Continue
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -652,9 +655,9 @@ export default function Register() {
                   </div>
 
                   {/* Login Link */}
-                  <p className="text-center text-sm text-slate-400">
+                  <p className="text-center text-sm text-[#EDF5F2]/60">
                     Already have an account?{" "}
-                    <Link to="/login" className="text-blue-400 hover:text-blue-300 font-medium">
+                    <Link to="/login" className="text-[#B2F273] hover:text-[#a3e662] font-medium">
                       Sign in
                     </Link>
                   </p>
@@ -665,11 +668,11 @@ export default function Register() {
             {/* Step 2: Account Details */}
             {step === 2 && (
               <>
-                <div className="mb-6 text-center md:text-left">
-                  <h1 className="text-2xl font-bold text-white mb-2">
+                <div className="mb-8 text-center md:text-left">
+                  <h1 className="text-3xl font-bold text-white mb-2 font-display">
                     Create your account
                   </h1>
-                  <p className="text-slate-400">
+                  <p className="text-[#EDF5F2]/60">
                     {companyType === "both" ? "Exporter & Importer" : COMPANY_TYPES.find(t => t.value === companyType)?.label} • {COMPANY_SIZES.find(s => s.value === companySize)?.label} Team
                   </p>
                 </div>
@@ -677,17 +680,17 @@ export default function Register() {
                 <form onSubmit={handleRegister} className="space-y-4">
                   {/* Company Name */}
                   <div className="space-y-2">
-                    <Label htmlFor="companyName" className="text-sm font-medium text-slate-300">
+                    <Label htmlFor="companyName" className="text-sm font-medium text-[#EDF5F2]/80">
                       Company Name
                     </Label>
                     <div className="relative">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
                       <Input
                         id="companyName"
                         placeholder="Your Company Ltd."
                         value={formData.companyName}
                         onChange={(e) => handleInputChange("companyName", e.target.value)}
-                        className="pl-10 bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500"
+                        className="pl-10 h-11 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/30 focus:border-[#B2F273]/50 focus:ring-[#B2F273]/20 rounded-xl"
                         required
                       />
                     </div>
@@ -695,17 +698,17 @@ export default function Register() {
 
                   {/* Contact Person */}
                   <div className="space-y-2">
-                    <Label htmlFor="contactPerson" className="text-sm font-medium text-slate-300">
+                    <Label htmlFor="contactPerson" className="text-sm font-medium text-[#EDF5F2]/80">
                       Your Name
                     </Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
                       <Input
                         id="contactPerson"
                         placeholder="John Smith"
                         value={formData.contactPerson}
                         onChange={(e) => handleInputChange("contactPerson", e.target.value)}
-                        className="pl-10 bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500"
+                        className="pl-10 h-11 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/30 focus:border-[#B2F273]/50 focus:ring-[#B2F273]/20 rounded-xl"
                         required
                       />
                     </div>
@@ -713,18 +716,18 @@ export default function Register() {
 
                   {/* Email */}
                   <div className="space-y-2">
-                    <Label htmlFor="email" className="text-sm font-medium text-slate-300">
+                    <Label htmlFor="email" className="text-sm font-medium text-[#EDF5F2]/80">
                       Work Email
                     </Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
                       <Input
                         id="email"
                         type="email"
                         placeholder="john@company.com"
                         value={formData.email}
                         onChange={(e) => handleInputChange("email", e.target.value)}
-                        className="pl-10 bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500"
+                        className="pl-10 h-11 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/30 focus:border-[#B2F273]/50 focus:ring-[#B2F273]/20 rounded-xl"
                         required
                       />
                     </div>
@@ -733,18 +736,18 @@ export default function Register() {
                   {/* Password Fields */}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="password" className="text-sm font-medium text-slate-300">
+                      <Label htmlFor="password" className="text-sm font-medium text-[#EDF5F2]/80">
                         Password
                       </Label>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
                         <Input
                           id="password"
                           type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
                           value={formData.password}
                           onChange={(e) => handleInputChange("password", e.target.value)}
-                          className="pl-10 pr-10 bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500"
+                          className="pl-10 pr-10 h-11 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/30 focus:border-[#B2F273]/50 focus:ring-[#B2F273]/20 rounded-xl"
                           required
                         />
                         <Button
@@ -752,7 +755,7 @@ export default function Register() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-500 hover:text-slate-300 hover:bg-transparent"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-[#EDF5F2]/40 hover:text-white hover:bg-transparent"
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </Button>
@@ -760,18 +763,18 @@ export default function Register() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="confirmPassword" className="text-sm font-medium text-slate-300">
+                      <Label htmlFor="confirmPassword" className="text-sm font-medium text-[#EDF5F2]/80">
                         Confirm
                       </Label>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
                         <Input
                           id="confirmPassword"
                           type={showConfirmPassword ? "text" : "password"}
                           placeholder="••••••••"
                           value={formData.confirmPassword}
                           onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                          className="pl-10 pr-10 bg-slate-900 border-slate-800 text-white placeholder:text-slate-500 focus:border-blue-500"
+                          className="pl-10 pr-10 h-11 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/30 focus:border-[#B2F273]/50 focus:ring-[#B2F273]/20 rounded-xl"
                           required
                         />
                         <Button
@@ -779,7 +782,7 @@ export default function Register() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-500 hover:text-slate-300 hover:bg-transparent"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-[#EDF5F2]/40 hover:text-white hover:bg-transparent"
                         >
                           {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </Button>
@@ -788,13 +791,13 @@ export default function Register() {
                   </div>
 
                   {/* Free Credits Banner */}
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                      <Gift className="w-4 h-4 text-emerald-400" />
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#B2F273]/10 border border-[#B2F273]/20">
+                    <div className="w-9 h-9 rounded-lg bg-[#B2F273]/20 flex items-center justify-center flex-shrink-0">
+                      <Gift className="w-4 h-4 text-[#B2F273]" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-emerald-200">$100 in free credits</p>
-                      <p className="text-xs text-emerald-400">No credit card • Use across all tools</p>
+                      <p className="text-sm font-medium text-white">$100 in free credits</p>
+                      <p className="text-xs text-[#B2F273]">No credit card • Use across all tools</p>
                     </div>
                   </div>
 
@@ -804,14 +807,14 @@ export default function Register() {
                       id="terms"
                       checked={formData.agreedToTerms}
                       onCheckedChange={(checked) => handleInputChange("agreedToTerms", Boolean(checked))}
-                      className="mt-0.5 border-slate-700 data-[state=checked]:bg-blue-500"
+                      className="mt-0.5 border-[#EDF5F2]/40 data-[state=checked]:bg-[#B2F273] data-[state=checked]:border-[#B2F273]"
                     />
-                    <Label htmlFor="terms" className="text-sm text-slate-400 leading-relaxed">
+                    <Label htmlFor="terms" className="text-sm text-[#EDF5F2]/60 leading-relaxed">
                       I agree to the{" "}
-                      <a href="/legal/terms" target="_blank" className="text-blue-400 hover:underline">
+                      <a href="/legal/terms" target="_blank" className="text-[#B2F273] hover:underline">
                         Terms
                       </a>{" "}and{" "}
-                      <a href="/legal/privacy" target="_blank" className="text-blue-400 hover:underline">
+                      <a href="/legal/privacy" target="_blank" className="text-[#B2F273] hover:underline">
                         Privacy Policy
                       </a>
                     </Label>
@@ -823,7 +826,7 @@ export default function Register() {
                       type="button"
                       variant="outline"
                       onClick={handleBack}
-                      className="flex-1 h-11 border-slate-800 text-slate-300 hover:bg-slate-900 hover:text-white"
+                      className="flex-1 h-11 border-[#EDF5F2]/10 text-[#EDF5F2]/80 hover:bg-[#00382E] hover:text-white bg-transparent rounded-xl"
                     >
                       <ArrowLeft className="w-4 h-4 mr-2" />
                       Back
@@ -831,7 +834,7 @@ export default function Register() {
                     <Button 
                       type="submit"
                       disabled={isLoading}
-                      className="flex-[2] h-11 bg-white text-slate-900 hover:bg-slate-100 font-medium"
+                      className="flex-[2] h-11 bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-bold rounded-xl"
                     >
                       {isLoading ? "Creating..." : "Create Account"}
                     </Button>
@@ -843,62 +846,59 @@ export default function Register() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-center gap-6 text-xs text-slate-500 relative z-10">
-          <Link to="/legal/terms" className="hover:text-slate-400">Terms</Link>
-          <Link to="/legal/privacy" className="hover:text-slate-400">Privacy</Link>
-          <a href="mailto:support@trdrhub.com" className="hover:text-slate-400">Contact</a>
+        <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-6 text-xs text-[#EDF5F2]/40">
+          <Link to="/legal/terms" className="hover:text-white transition-colors">Terms</Link>
+          <Link to="/legal/privacy" className="hover:text-white transition-colors">Privacy</Link>
+          <a href="mailto:support@trdrhub.com" className="hover:text-white transition-colors">Contact</a>
         </div>
       </div>
 
       {/* Right Column - Feature showcase */}
-      <div className="relative hidden lg:flex flex-col justify-center p-12 overflow-hidden bg-slate-900">
+      <div className="relative hidden lg:flex flex-col justify-center p-12 overflow-hidden bg-[#001E16]">
         {/* Background image */}
         <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20 mix-blend-luminosity"
           style={{ 
             backgroundImage: `url('https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?q=80&w=2070&auto=format&fit=crop')`,
           }}
         />
         
-        {/* Dark overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/80 via-slate-900/70 to-slate-950/75" />
-        
-        {/* Background pattern */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px]" />
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:48px_48px]" />
         
         {/* Gradient orbs */}
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl animate-pulse delay-700" />
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-[#B2F273]/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl animate-pulse delay-700" />
         
         <div className="relative z-10 max-w-lg">
           {/* Headline */}
-          <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
+          <h2 className="text-4xl font-bold text-white mb-6 leading-tight font-display">
             Everything Trade.
             <br />
-            <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+            <span className="text-[#B2F273] text-glow-sm">
               One Platform.
             </span>
           </h2>
           
-          <p className="text-slate-400 text-lg mb-10">
+          <p className="text-[#EDF5F2]/60 text-lg mb-12 font-light">
             Join thousands of traders who validate documents, verify prices, and manage compliance in one place.
           </p>
 
           {/* Features list */}
-          <div className="space-y-4 mb-10">
+          <div className="space-y-4 mb-12">
             {FEATURES.map((feature) => {
               const Icon = feature.icon;
               return (
                 <div 
                   key={feature.label}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-slate-800/50 border border-slate-700/50"
+                  className="flex items-center gap-4 p-4 rounded-xl bg-[#00382E]/50 border border-[#EDF5F2]/10 backdrop-blur-sm"
                 >
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-emerald-500/20 flex items-center justify-center">
-                    <Icon className="w-6 h-6 text-blue-400" />
+                  <div className="w-12 h-12 rounded-xl bg-[#B2F273]/10 flex items-center justify-center shrink-0">
+                    <Icon className="w-6 h-6 text-[#B2F273]" />
                   </div>
                   <div>
                     <p className="font-medium text-white">{feature.label}</p>
-                    <p className="text-sm text-slate-400">{feature.desc}</p>
+                    <p className="text-sm text-[#EDF5F2]/60">{feature.desc}</p>
                   </div>
                 </div>
               );
@@ -906,36 +906,36 @@ export default function Register() {
           </div>
 
           {/* Stats */}
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-8 border-t border-[#EDF5F2]/10 pt-8">
             <div>
-              <div className="text-2xl font-bold text-white">3,500+</div>
-              <div className="text-sm text-slate-500">Validation Rules</div>
+              <div className="text-3xl font-bold text-white font-display">3.5k+</div>
+              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Rules</div>
             </div>
-            <div className="w-px h-10 bg-slate-700" />
+            <div className="w-px h-12 bg-[#EDF5F2]/10" />
             <div>
-              <div className="text-2xl font-bold text-white">60+</div>
-              <div className="text-sm text-slate-500">Countries</div>
+              <div className="text-3xl font-bold text-white font-display">60+</div>
+              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Countries</div>
             </div>
-            <div className="w-px h-10 bg-slate-700" />
+            <div className="w-px h-12 bg-[#EDF5F2]/10" />
             <div>
-              <div className="text-2xl font-bold text-white">$0</div>
-              <div className="text-sm text-slate-500">To Start</div>
+              <div className="text-3xl font-bold text-white font-display">99.9%</div>
+              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Uptime</div>
             </div>
           </div>
         </div>
 
         {/* Trust badges */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center justify-between text-xs text-slate-500">
+        <div className="absolute bottom-8 left-12 right-12 flex items-center justify-between text-xs text-[#EDF5F2]/40 font-mono uppercase tracking-widest">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+            <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
             SOC2 Aligned
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+            <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
             Bank Approved
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+            <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
             UCP600 Compliant
           </div>
         </div>
