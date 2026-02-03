@@ -71,8 +71,8 @@ export function TechnologySection() {
               key={index}
               className="text-center p-6 group"
             >
-              <div className="w-16 h-16 bg-[#00261C]/5 rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:bg-[#00261C]/10 transition-colors border border-[#00261C]/5">
-                <feature.icon className="w-8 h-8 text-[#00261C]/60 group-hover:text-[#00261C] transition-colors" />
+              <div className="w-16 h-16 bg-[#00261C]/5 rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:bg-[#00261C] transition-all duration-300 border border-[#00261C]/5 group-hover:border-[#00261C]">
+                <feature.icon className="w-8 h-8 text-[#00261C]/60 group-hover:text-[#B2F273] transition-colors duration-300" />
               </div>
               <div className="text-4xl md:text-5xl font-bold text-[#00261C] mb-2 font-display">
                 {feature.stat}
@@ -107,7 +107,7 @@ export function TechnologySection() {
               {standards.map((standard, index) => (
                 <span 
                   key={index}
-                  className="px-4 py-2 bg-[#EDF5F2] rounded-full text-sm font-medium text-[#00261C]/80 border border-[#00261C]/10 hover:border-[#00261C]/20 transition-colors"
+                  className="px-4 py-2 bg-[#EDF5F2] rounded-full text-sm font-medium text-[#00261C]/80 border border-[#00261C]/10 hover:bg-[#00261C] hover:text-[#B2F273] hover:border-[#00261C] transition-all duration-300 cursor-default"
                 >
                   {standard}
                 </span>
