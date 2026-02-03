@@ -18,7 +18,7 @@ const UCP600Page = () => {
   return (
     <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
-      <main className="pt-32 md:pt-48 pb-24 relative min-h-screen">
+      <main className="pt-40 md:pt-48 pb-24 relative min-h-screen">
         {/* Grid pattern overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none fixed" />
 
