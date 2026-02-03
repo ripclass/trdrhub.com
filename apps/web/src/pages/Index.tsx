@@ -755,7 +755,7 @@ const Index = () => {
               <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
                 Ready to stop paying
                 <br />
-                <span className="bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">discrepancy fees?</span>
+                <span className="bg-gradient-to-r from-[#B2F273] to-[#a3e662] bg-clip-text text-transparent">discrepancy fees?</span>
               </h2>
               
               <p className="text-xl text-[#EDF5F2]/60 mb-8 max-w-xl mx-auto">
