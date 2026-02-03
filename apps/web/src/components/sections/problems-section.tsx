@@ -42,11 +42,9 @@ const problems = [
 export function ProblemsSection() {
   return (
     <section id="problems" className="py-24 sm:py-32 bg-[#EDF5F2] relative overflow-hidden">
-      {/* Background Noise/Grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(0,38,28,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,38,28,0.03)_1px,transparent_1px)] bg-[size:40px_40px] opacity-100" />
-      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#EDF5F2] to-transparent z-10" />
-      <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#EDF5F2] to-transparent z-10" />
-
+      {/* Grid pattern overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(0,38,28,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,38,28,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+      
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
         {/* Section header */}
         <div className="text-center mb-20">
