@@ -36,6 +36,9 @@ const solutions = [
 export function SolutionSection() {
   return (
     <section className="py-24 sm:py-32 bg-[#00261C] relative overflow-hidden">
+      {/* Grid pattern overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+      
       {/* Background decoration */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#B2F273]/5 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3" />
       <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-[#B2F273]/5 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/3" />

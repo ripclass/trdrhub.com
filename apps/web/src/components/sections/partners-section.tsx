@@ -10,8 +10,11 @@ export function PartnersSection() {
   ];
 
   return (
-    <section className="py-16 bg-[#00261C] border-y border-[#EDF5F2]/10">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="py-16 bg-[#00261C] border-y border-[#EDF5F2]/10 relative overflow-hidden">
+      {/* Grid pattern overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+      
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-8">
           <p className="text-[#B2F273] text-sm font-medium tracking-wide uppercase">
             Trusted by trade professionals worldwide
