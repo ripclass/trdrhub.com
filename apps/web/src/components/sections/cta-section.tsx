@@ -50,7 +50,7 @@ export function CTASection() {
             <Button 
               variant="outline" 
               size="lg" 
-              className="border-[#00261C]/20 text-[#00261C] hover:bg-[#00261C]/5 hover:border-[#00261C] text-lg px-8 py-6 h-auto bg-transparent"
+              className="border-[#00261C]/20 text-[#00261C] hover:bg-[#00261C] hover:text-[#B2F273] hover:border-[#00261C] text-lg px-8 py-6 h-auto bg-transparent transition-colors"
               asChild
             >
               <Link to="/contact">
@@ -77,7 +77,7 @@ export function CTASection() {
                 Thanks for subscribing! We'll keep you posted.
               </div>
             ) : (
-              <form onSubmit={handleSubscribe} className="flex gap-2">
+              <form onSubmit={handleSubscribe} className="flex gap-2 items-stretch">
                 <div className="relative flex-1">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#00261C]/40" />
                   <input
@@ -85,11 +85,11 @@ export function CTASection() {
                     placeholder="your@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-white border border-[#00261C]/10 rounded-lg pl-10 pr-4 py-3 text-[#00261C] placeholder-[#00261C]/30 focus:outline-none focus:border-[#00261C] focus:ring-1 focus:ring-[#00261C] transition-all shadow-sm"
+                    className="w-full h-12 bg-white border border-[#00261C]/10 rounded-lg pl-10 pr-4 text-[#00261C] placeholder-[#00261C]/30 focus:outline-none focus:border-[#00261C] focus:ring-1 focus:ring-[#00261C] transition-all shadow-sm"
                     required
                   />
                 </div>
-                <Button type="submit" className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-6 border-none font-bold font-mono uppercase tracking-wider">
+                <Button type="submit" className="h-12 bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-6 border-none font-bold font-mono uppercase tracking-wider">
                   Subscribe
                 </Button>
               </form>
