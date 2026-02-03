@@ -1,4 +1,4 @@
-import { FileCode, Database, Brain, Globe2, Shield, Zap } from "lucide-react";
+import { FileCode, Database, Brain, Globe2, Shield, Zap, ArrowRight } from "lucide-react";
 
 const techFeatures = [
   {

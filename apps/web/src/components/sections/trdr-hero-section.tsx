@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function TRDRHeroSection() {
@@ -98,7 +98,7 @@ export function TRDRHeroSection() {
       </div>
 
       {/* Scroll indicator */}
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 animate-bounce opacity-50 hover:opacity-100 transition-opacity">
+      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 animate-bounce opacity-50 hover:opacity-100 transition-opacity pointer-events-none md:pointer-events-auto">
         <span className="text-[#EDF5F2] text-xs font-mono tracking-widest uppercase">Scroll</span>
         <div className="w-[1px] h-12 bg-gradient-to-b from-[#B2F273] to-transparent"></div>
       </div>

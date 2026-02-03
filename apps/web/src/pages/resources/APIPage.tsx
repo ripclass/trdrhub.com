@@ -13,6 +13,7 @@ const endpoints = [
 ];
 
 const APIPage = () => {
+  // Force rebuild
   const [copied, setCopied] = useState(false);
 
   const copyCode = () => {

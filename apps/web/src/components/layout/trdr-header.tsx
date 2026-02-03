@@ -32,7 +32,7 @@ export function TRDRHeader() {
           </Link>
 
           {/* Desktop navigation */}
-          <nav className="hidden md:flex items-center gap-10">
+          <nav className="hidden lg:flex items-center gap-10">
             {navigation.map((item) => (
               <Link
                 key={item.name}
@@ -45,7 +45,7 @@ export function TRDRHeader() {
           </nav>
 
           {/* Desktop CTAs - Show different buttons based on auth state */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-3">
             {!isLoading && user ? (
               // Logged in user
               <>
@@ -93,7 +93,7 @@ export function TRDRHeader() {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-[#EDF5F2]/60 hover:text-[#B2F273]"
+            className="lg:hidden p-2 text-[#EDF5F2]/60 hover:text-[#B2F273]"
           >
             {mobileMenuOpen ? (
               <X className="w-6 h-6" />
@@ -107,7 +107,7 @@ export function TRDRHeader() {
       {/* Mobile menu */}
       <div
         className={cn(
-          "md:hidden absolute top-16 left-0 right-0 bg-[#00261C] border-b border-[#EDF5F2]/10 transition-all duration-300",
+          "lg:hidden absolute top-16 left-0 right-0 bg-[#00261C] border-b border-[#EDF5F2]/10 transition-all duration-300",
           mobileMenuOpen ? "opacity-100 visible" : "opacity-0 invisible"
         )}
       >

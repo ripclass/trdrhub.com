@@ -1,7 +1,7 @@
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { Button } from "@/components/ui/button";
-import { BookOpen, AlertTriangle, CheckCircle2, ChevronRight } from "lucide-react";
+import { BookOpen, AlertTriangle, CheckCircle2, ChevronRight, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const articles = [

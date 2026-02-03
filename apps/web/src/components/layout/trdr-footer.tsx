@@ -29,9 +29,9 @@ export function TRDRFooter() {
   return (
     <footer className="bg-[#00261C] border-t border-[#EDF5F2]/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 mb-12">
           {/* Brand column */}
-          <div className="col-span-2 md:col-span-1">
+          <div className="col-span-1 md:col-span-2 lg:col-span-1">
             <Link to="/" className="inline-block mb-4">
               <img 
                 src="/logo-dark-v2.png" 
@@ -116,8 +116,8 @@ export function TRDRFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-8 border-t border-[#EDF5F2]/10 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[#EDF5F2]/40 text-sm">
+        <div className="pt-8 border-t border-[#EDF5F2]/10 flex flex-col-reverse md:flex-row justify-between items-center gap-4">
+          <p className="text-[#EDF5F2]/40 text-sm text-center md:text-left">
             © 2025 TRDR Hub. All rights reserved.
           </p>
           

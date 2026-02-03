@@ -82,6 +82,7 @@ const architectureSteps = [
 ];
 
 const TechnologyPage = () => {
+  // Force rebuild
   return (
     <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
