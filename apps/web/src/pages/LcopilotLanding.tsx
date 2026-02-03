@@ -126,6 +126,49 @@ export default function LcopilotLanding() {
             ))}
           </div>
 
+          {/* How It Works Section */}
+          <div className="mb-32">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-5xl font-bold text-white mb-6 font-display">From Chaos to Compliance</h2>
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
+                Stop manually cross-referencing documents. Let our AI handle the heavy lifting.
+              </p>
+            </div>
+            
+            <div className="grid md:grid-cols-3 gap-8 relative">
+              {/* Connector Line */}
+              <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-[#B2F273]/0 via-[#B2F273]/20 to-[#B2F273]/0 border-t border-dashed border-[#EDF5F2]/20" />
+              
+              {[
+                {
+                  step: "01",
+                  title: "Upload Documents",
+                  desc: "Drag & drop your LC, Bill of Lading, Invoice, and Packing List. Any format.",
+                },
+                {
+                  step: "02",
+                  title: "AI Analysis",
+                  desc: "Our engine extracts data and checks against 3,500+ rules (UCP600, ISBP745) in seconds.",
+                },
+                {
+                  step: "03",
+                  title: "Resolve & Export",
+                  desc: "Review discrepancies with suggested fixes. Download a clean, bank-ready report.",
+                }
+              ].map((item, i) => (
+                <div key={i} className="relative text-center group">
+                  <div className="w-24 h-24 mx-auto bg-[#00261C] border border-[#EDF5F2]/10 rounded-full flex items-center justify-center mb-6 relative z-10 group-hover:border-[#B2F273]/50 transition-colors">
+                    <span className="text-3xl font-bold text-[#EDF5F2]/20 font-display group-hover:text-[#B2F273] transition-colors">{item.step}</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-3 font-display">{item.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm leading-relaxed px-4">
+                    {item.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Highlights Section */}
           <div className="grid gap-6 lg:grid-cols-3 mb-24">
             {highlights.map((item, idx) => (
