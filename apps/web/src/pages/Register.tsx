@@ -811,12 +811,12 @@ export default function Register() {
                     />
                     <Label htmlFor="terms" className="text-sm text-[#EDF5F2]/60 leading-relaxed">
                       I agree to the{" "}
-                      <a href="/legal/terms" target="_blank" className="text-[#B2F273] hover:underline">
+                      <Link to="/terms" target="_blank" className="text-[#B2F273] hover:underline">
                         Terms
-                      </a>{" "}and{" "}
-                      <a href="/legal/privacy" target="_blank" className="text-[#B2F273] hover:underline">
+                      </Link>{" "}and{" "}
+                      <Link to="/privacy" target="_blank" className="text-[#B2F273] hover:underline">
                         Privacy Policy
-                      </a>
+                      </Link>
                     </Label>
                   </div>
 
@@ -847,9 +847,9 @@ export default function Register() {
 
         {/* Footer */}
         <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-6 text-xs text-[#EDF5F2]/40">
-          <Link to="/legal/terms" className="hover:text-white transition-colors">Terms</Link>
-          <Link to="/legal/privacy" className="hover:text-white transition-colors">Privacy</Link>
-          <a href="mailto:support@trdrhub.com" className="hover:text-white transition-colors">Contact</a>
+          <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
+          <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+          <Link to="/contact" className="hover:text-white transition-colors">Contact</Link>
         </div>
       </div>
 
