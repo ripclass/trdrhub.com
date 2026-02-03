@@ -97,6 +97,7 @@ import RouteOptimizerLanding from './pages/tools/RouteOptimizerLanding'
 import BankFeeComparatorLanding from './pages/tools/BankFeeComparatorLanding'
 import TradeFinanceLanding from './pages/tools/TradeFinanceLanding'
 import InsuranceQuoteLanding from './pages/tools/InsuranceQuoteLanding'
+import CareersPage from './pages/CareersPage'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
@@ -186,6 +187,7 @@ function App() {
         <Route path="/technology" element={<TechnologyPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/careers" element={<CareersPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
