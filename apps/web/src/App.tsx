@@ -105,6 +105,7 @@ import CareersPage from './pages/CareersPage'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
+import LcopilotLanding from './pages/LcopilotLanding'
 import LcopilotRouter from './pages/LcopilotRouter'
 import Dashboard from './pages/Dashboard'
 import UploadLC from './pages/UploadLC'
@@ -329,7 +330,7 @@ function App() {
         <Route path="/bank-fees" element={<BankFeeComparatorLanding />} />
         <Route path="/finance" element={<TradeFinanceLanding />} />
         <Route path="/insurance" element={<InsuranceQuoteLanding />} />
-        <Route path="/lcopilot" element={<Index />} />
+        <Route path="/lcopilot" element={<LcopilotLanding />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/onboarding" element={<Onboarding />} />

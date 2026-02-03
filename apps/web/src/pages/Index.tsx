@@ -220,7 +220,7 @@ const Index = () => {
       
       <main>
         {/* Hero Section */}
-        <section className="relative pt-20 pb-16 lg:pt-28 lg:pb-24 overflow-hidden">
+        <section className="relative pt-40 pb-16 lg:pt-48 lg:pb-24 overflow-hidden">
           {/* Background effects */}
           <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
           <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[100px]" />
