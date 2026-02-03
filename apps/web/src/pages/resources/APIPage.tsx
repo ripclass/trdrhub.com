@@ -2,7 +2,7 @@ import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Terminal, Copy, Check, Server, Lock, Zap } from "lucide-react";
+import { Terminal, Copy, Check, Server, Lock, Zap, ArrowRight } from "lucide-react";
 import { useState } from "react";
 
 const endpoints = [
