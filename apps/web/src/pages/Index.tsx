@@ -480,7 +480,7 @@ const Index = () => {
                   className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-2xl p-6 hover:border-[#B2F273]/30 transition-colors group"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 bg-[#B2F273]/10 rounded-xl flex items-center justify-center group-hover:bg-[#B2F273]/20 transition-colors">
+                    <div className="w-12 h-12 bg-[#B2F273]/10 rounded-xl flex items-center justify-center group-hover:bg-[#B2F273]/20 transition-colors border border-[#B2F273]/10">
                       <feature.icon className="w-6 h-6 text-[#B2F273]" />
                     </div>
                     <span className="px-2.5 py-1 bg-[#B2F273]/10 rounded-full text-xs font-medium text-[#B2F273] border border-[#B2F273]/20 font-mono">
@@ -524,9 +524,7 @@ const Index = () => {
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                       <span className={cn(
                         "px-3 py-1 rounded-full text-xs font-semibold font-mono uppercase tracking-wider",
-                        plan.badge === "Most Popular" 
-                          ? "bg-[#B2F273] text-[#00261C]" 
-                          : "bg-blue-500 text-white"
+                        "bg-[#B2F273] text-[#00261C]"
                       )}>
                         {plan.badge}
                       </span>
@@ -610,7 +608,7 @@ const Index = () => {
                   </div>
                 </div>
                 <Button 
-                  className="bg-white hover:bg-[#EDF5F2] text-[#00261C] px-8 h-12 font-bold shrink-0 border-none"
+                  className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] px-8 h-12 font-bold shrink-0 border-none"
                   asChild
                 >
                   <Link to="/contact">Contact Sales</Link>
