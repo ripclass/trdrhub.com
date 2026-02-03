@@ -180,6 +180,7 @@ import {
   CertificatesPage,
 } from './pages/tools/doc-generator'
 
+// Main App Component
 function App() {
   return (
     <>
