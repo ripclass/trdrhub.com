@@ -6,9 +6,9 @@ const navigation = {
     { name: "Sanctions Screener", href: "/sanctions" },
     { name: "HS Code Finder", href: "/hs-code" },
     { name: "All Tools", href: "/tools" },
-    { name: "Pricing", href: "/pricing" },
   ],
   resources: [
+    { name: "Pricing", href: "/pricing" },
     { name: "Documentation", href: "/docs" },
     { name: "API Reference", href: "/api" },
     { name: "UCP600 Guide", href: "/guides/ucp600" },
@@ -41,7 +41,7 @@ export function TRDRFooter() {
               />
             </Link>
             <p className="text-[#EDF5F2]/60 text-sm mb-4">
-              Zero-Error Trade Documents
+              Transactional Risk & Data Reconciliation
             </p>
             <div className="text-[#EDF5F2]/40 text-sm">
               <a href="mailto:hello@trdrhub.com" className="hover:text-[#B2F273] transition-colors">
