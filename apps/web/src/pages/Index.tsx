@@ -215,34 +215,33 @@ const Index = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
       
       <main>
-        {/* Hero Section */}
-        <section className="relative pt-40 pb-16 lg:pt-48 lg:pb-24 overflow-hidden">
+        <section className="relative pt-40 md:pt-48 pb-16 lg:pb-24 overflow-hidden">
           {/* Background effects */}
-          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[100px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#B2F273]/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-[#B2F273]/5 rounded-full blur-[100px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-4xl mx-auto text-center">
               {/* Trust badge */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-8">
-                <BadgeCheck className="w-4 h-4 text-emerald-400" />
-                <span className="text-emerald-400 text-sm font-medium">Saved exporters $1.2M this quarter</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-8">
+                <BadgeCheck className="w-4 h-4 text-[#B2F273]" />
+                <span className="text-[#B2F273] text-sm font-medium">Saved exporters $1.2M this quarter</span>
               </div>
               
               {/* Main headline */}
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight font-display">
                 We catch LC discrepancies
                 <br />
-                <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">before banks do.</span>
+                <span className="text-[#B2F273] text-glow-sm">before banks do.</span>
               </h1>
               
               {/* Subheadline */}
-              <p className="text-xl lg:text-2xl text-slate-400 mb-8 max-w-2xl mx-auto leading-relaxed">
+              <p className="text-xl lg:text-2xl text-[#EDF5F2]/60 mb-8 max-w-2xl mx-auto leading-relaxed">
                 45 seconds. 3,500+ rules. 99% accuracy.
                 <br className="hidden sm:block" />
                 <span className="text-white font-medium">Stop paying $75 discrepancy fees.</span>
@@ -252,7 +251,7 @@ const Index = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                 <Button 
                   size="lg" 
-                  className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-8 h-14 font-semibold shadow-lg shadow-white/10"
+                  className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] text-lg px-8 h-14 font-bold shadow-[0_0_20px_rgba(178,242,115,0.3)] border-none"
                   asChild
                 >
                   <Link to="/lcopilot/exporter-dashboard">
@@ -263,7 +262,7 @@ const Index = () => {
                 <Button 
                   variant="outline" 
                   size="lg" 
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-lg px-8 h-14"
+                  className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 text-lg px-8 h-14 bg-transparent"
                   asChild
                 >
                   <Link to="#demo">
@@ -274,17 +273,17 @@ const Index = () => {
               </div>
 
               {/* Trust indicators */}
-              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-slate-500">
+              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-[#EDF5F2]/60">
                 <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
                   <span>No credit card</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
                   <span>2 free LCs</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
                   <span>45-second results</span>
                 </div>
               </div>
@@ -295,10 +294,10 @@ const Index = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                 {stats.map((stat, idx) => (
                   <div key={idx} className="text-center">
-                    <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">
-                      {stat.value}<span className="text-emerald-400">{stat.unit}</span>
+                    <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-display">
+                      {stat.value}<span className="text-[#B2F273]">{stat.unit}</span>
                     </div>
-                    <div className="text-xs sm:text-sm text-slate-500 mt-1">{stat.label}</div>
+                    <div className="text-xs sm:text-sm text-[#EDF5F2]/40 mt-1 font-mono uppercase tracking-wider">{stat.label}</div>
                   </div>
                 ))}
               </div>
@@ -307,14 +306,14 @@ const Index = () => {
         </section>
 
         {/* Before/After Comparison */}
-        <section className="py-20 bg-slate-900 border-y border-slate-800">
+        <section className="py-20 bg-[#00261C] border-y border-[#EDF5F2]/10">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <p className="text-emerald-400 font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+              <p className="text-[#B2F273] font-mono font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 font-display">
                 Manual checking is <span className="text-red-400 line-through">broken</span>
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-lg">
                 See how LCopilot transforms your LC validation workflow
               </p>
             </div>
@@ -322,9 +321,9 @@ const Index = () => {
             <div className="max-w-4xl mx-auto">
               {/* Comparison header - hidden on mobile */}
               <div className="hidden md:grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
-                <div className="text-slate-500 pl-4">Aspect</div>
-                <div className="text-center text-red-400">Without LCopilot</div>
-                <div className="text-center text-emerald-400">With LCopilot</div>
+                <div className="text-[#EDF5F2]/40 pl-4 font-mono uppercase tracking-wider">Aspect</div>
+                <div className="text-center text-red-400 font-mono uppercase tracking-wider">Without LCopilot</div>
+                <div className="text-center text-[#B2F273] font-mono uppercase tracking-wider">With LCopilot</div>
               </div>
 
               {/* Comparison rows */}
@@ -332,22 +331,22 @@ const Index = () => {
                 {beforeAfter.map((item, idx) => (
                   <div 
                     key={idx} 
-                    className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
+                    className="bg-[#00382E]/50 rounded-xl p-4 border border-[#EDF5F2]/10"
                   >
                     {/* Mobile layout */}
                     <div className="md:hidden">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
-                          <item.icon className="w-5 h-5 text-slate-400" />
+                        <div className="w-10 h-10 bg-[#00261C] rounded-lg flex items-center justify-center shrink-0 border border-[#EDF5F2]/10">
+                          <item.icon className="w-5 h-5 text-[#EDF5F2]/60" />
                         </div>
                         <span className="text-white font-medium text-sm">{item.aspect}</span>
                       </div>
                       <div className="flex gap-2">
-                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500/10 rounded-lg text-red-400 text-xs border border-red-500/20">
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500/10 rounded-lg text-red-400 text-xs border border-red-500/20 font-mono">
                           <X className="w-3.5 h-3.5" />
                           {item.before}
                         </span>
-                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 rounded-lg text-emerald-400 text-xs border border-emerald-500/20">
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#B2F273]/10 rounded-lg text-[#B2F273] text-xs border border-[#B2F273]/20 font-mono">
                           <CheckCircle className="w-3.5 h-3.5" />
                           {item.after}
                         </span>
@@ -357,19 +356,19 @@ const Index = () => {
                     {/* Desktop layout */}
                     <div className="hidden md:grid grid-cols-3 gap-4 items-center">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
-                          <item.icon className="w-5 h-5 text-slate-400" />
+                        <div className="w-10 h-10 bg-[#00261C] rounded-lg flex items-center justify-center shrink-0 border border-[#EDF5F2]/10">
+                          <item.icon className="w-5 h-5 text-[#EDF5F2]/60" />
                         </div>
                         <span className="text-white font-medium text-sm">{item.aspect}</span>
                       </div>
                       <div className="text-center">
-                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg text-red-400 text-sm border border-red-500/20">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg text-red-400 text-sm border border-red-500/20 font-mono">
                           <X className="w-4 h-4" />
                           {item.before}
                         </span>
                       </div>
                       <div className="text-center">
-                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-lg text-emerald-400 text-sm border border-emerald-500/20">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#B2F273]/10 rounded-lg text-[#B2F273] text-sm border border-[#B2F273]/20 font-mono">
                           <CheckCircle className="w-4 h-4" />
                           {item.after}
                         </span>
@@ -383,14 +382,14 @@ const Index = () => {
         </section>
 
         {/* How It Works - Single clean version */}
-        <section className="py-20 bg-slate-950">
+        <section className="py-20 bg-[#00261C]">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12 sm:mb-16">
-              <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">How It Works</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">How It Works</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
                 Three steps. 45 seconds.
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Know exactly what banks will flag - before you submit.
               </p>
             </div>
@@ -423,19 +422,19 @@ const Index = () => {
                   <div key={idx} className="relative">
                     {/* Connector line */}
                     {idx < 2 && (
-                      <div className="hidden md:block absolute top-16 left-[60%] w-[80%] h-px bg-gradient-to-r from-slate-700 to-transparent" />
+                      <div className="hidden md:block absolute top-16 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#EDF5F2]/10 to-transparent" />
                     )}
                     
-                    <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-8 hover:border-blue-500/30 transition-colors h-full">
+                    <div className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/30 transition-colors h-full">
                       <div className="flex items-center justify-between mb-6">
-                        <span className="text-5xl font-bold text-slate-800">{item.step}</span>
-                        <div className="w-14 h-14 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
-                          <item.icon className="w-7 h-7 text-blue-400" />
+                        <span className="text-5xl font-bold text-[#EDF5F2]/10 font-display">{item.step}</span>
+                        <div className="w-14 h-14 bg-[#B2F273]/10 rounded-xl flex items-center justify-center border border-[#B2F273]/20">
+                          <item.icon className="w-7 h-7 text-[#B2F273]" />
                         </div>
                       </div>
-                      <h3 className="text-xl font-bold text-white mb-3">{item.title}</h3>
-                      <p className="text-slate-400 text-sm leading-relaxed mb-4">{item.description}</p>
-                      <div className="inline-flex items-center gap-2 text-xs text-slate-500">
+                      <h3 className="text-xl font-bold text-white mb-3 font-display">{item.title}</h3>
+                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed mb-4">{item.description}</p>
+                      <div className="inline-flex items-center gap-2 text-xs text-[#EDF5F2]/40 font-mono">
                         <Clock className="w-3 h-3" />
                         {item.time}
                       </div>
@@ -449,7 +448,7 @@ const Index = () => {
             <div className="text-center mt-12">
               <Button 
                 size="lg" 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 font-semibold"
+                className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] px-8 h-12 font-bold border-none"
                 asChild
               >
                 <Link to="/lcopilot/exporter-dashboard">
@@ -462,14 +461,14 @@ const Index = () => {
         </section>
 
         {/* Features Grid */}
-        <section className="py-20 bg-slate-900 border-y border-slate-800">
+        <section className="py-20 bg-[#00261C] border-y border-[#EDF5F2]/10">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12 sm:mb-16">
-              <p className="text-emerald-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
                 Built for trade professionals
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Everything you need to validate LCs with confidence
               </p>
             </div>
@@ -478,18 +477,18 @@ const Index = () => {
               {features.map((feature, idx) => (
                 <div 
                   key={idx} 
-                  className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6 hover:border-emerald-500/30 transition-colors group"
+                  className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-2xl p-6 hover:border-[#B2F273]/30 transition-colors group"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                      <feature.icon className="w-6 h-6 text-emerald-400" />
+                    <div className="w-12 h-12 bg-[#B2F273]/10 rounded-xl flex items-center justify-center group-hover:bg-[#B2F273]/20 transition-colors">
+                      <feature.icon className="w-6 h-6 text-[#B2F273]" />
                     </div>
-                    <span className="px-2.5 py-1 bg-emerald-500/10 rounded-full text-xs font-medium text-emerald-400 border border-emerald-500/20">
+                    <span className="px-2.5 py-1 bg-[#B2F273]/10 rounded-full text-xs font-medium text-[#B2F273] border border-[#B2F273]/20 font-mono">
                       {feature.highlight}
                     </span>
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2 font-display">{feature.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm leading-relaxed">{feature.description}</p>
                 </div>
               ))}
             </div>
@@ -497,14 +496,14 @@ const Index = () => {
         </section>
 
         {/* Pricing */}
-        <section className="py-20 bg-slate-950">
+        <section className="py-20 bg-[#00261C]">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10 sm:mb-16">
-              <p className="text-blue-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Pricing</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Pricing</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
                 Pay per LC. Save with volume.
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-base sm:text-lg px-4">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Start with 2 free LCs. Scale as you grow.
               </p>
             </div>
@@ -515,18 +514,18 @@ const Index = () => {
                 <div 
                   key={idx} 
                   className={cn(
-                    "relative bg-slate-900/50 border rounded-2xl p-6 flex flex-col",
+                    "relative bg-[#00382E]/50 border rounded-2xl p-6 flex flex-col",
                     plan.popular 
-                      ? "border-emerald-500/50 shadow-lg shadow-emerald-500/10" 
-                      : "border-slate-800"
+                      ? "border-[#B2F273] shadow-lg shadow-[#B2F273]/10" 
+                      : "border-[#EDF5F2]/10"
                   )}
                 >
                   {plan.badge && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                       <span className={cn(
-                        "px-3 py-1 rounded-full text-xs font-semibold",
+                        "px-3 py-1 rounded-full text-xs font-semibold font-mono uppercase tracking-wider",
                         plan.badge === "Most Popular" 
-                          ? "bg-emerald-500 text-white" 
+                          ? "bg-[#B2F273] text-[#00261C]" 
                           : "bg-blue-500 text-white"
                       )}>
                         {plan.badge}
@@ -535,27 +534,27 @@ const Index = () => {
                   )}
                   
                   <div className="text-center mb-5">
-                    <h3 className="text-lg font-bold text-white mb-1">{plan.name}</h3>
-                    <p className="text-slate-500 text-xs mb-3">{plan.description}</p>
+                    <h3 className="text-lg font-bold text-white mb-1 font-display">{plan.name}</h3>
+                    <p className="text-[#EDF5F2]/40 text-xs mb-3">{plan.description}</p>
                     <div className="flex items-baseline justify-center gap-1">
-                      <span className="text-3xl font-bold text-white">{plan.price}</span>
-                      <span className="text-slate-500 text-sm">{plan.period}</span>
+                      <span className="text-3xl font-bold text-white font-display">{plan.price}</span>
+                      <span className="text-[#EDF5F2]/40 text-sm font-mono">{plan.period}</span>
                     </div>
                     {plan.perLc && (
-                      <p className="text-emerald-400 text-sm mt-1 font-medium">
+                      <p className="text-[#B2F273] text-sm mt-1 font-medium font-mono">
                         {plan.perLc}/LC effective
                       </p>
                     )}
                   </div>
 
-                  <div className="bg-slate-800/50 rounded-lg px-3 py-2 mb-4 text-center">
-                    <span className="text-slate-300 text-sm font-medium">{plan.included}</span>
+                  <div className="bg-[#00261C] rounded-lg px-3 py-2 mb-4 text-center border border-[#EDF5F2]/5">
+                    <span className="text-[#EDF5F2]/80 text-sm font-medium">{plan.included}</span>
                   </div>
 
                   <ul className="space-y-2 mb-6 flex-1">
                     {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                      <li key={i} className="flex items-start gap-2 text-xs text-[#EDF5F2]/60">
+                        <CheckCircle className="w-3.5 h-3.5 text-[#B2F273] shrink-0 mt-0.5" />
                         {feature}
                       </li>
                     ))}
@@ -563,10 +562,10 @@ const Index = () => {
 
                   <Button 
                     className={cn(
-                      "w-full h-10 font-semibold text-sm",
+                      "w-full h-10 font-bold text-sm border-none",
                       plan.popular 
-                        ? "bg-emerald-500 hover:bg-emerald-600 text-white" 
-                        : "bg-slate-800 hover:bg-slate-700 text-white"
+                        ? "bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C]" 
+                        : "bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white"
                     )}
                     asChild
                   >
@@ -578,40 +577,40 @@ const Index = () => {
 
             {/* Enterprise CTA */}
             <div className="max-w-6xl mx-auto">
-              <div className="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="bg-gradient-to-r from-[#00382E] to-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
                   <div className="flex items-center gap-2 justify-center md:justify-start mb-2">
-                    <Building2 className="w-5 h-5 text-purple-400" />
-                    <h3 className="text-xl font-bold text-white">Enterprise</h3>
+                    <Building2 className="w-5 h-5 text-[#B2F273]" />
+                    <h3 className="text-xl font-bold text-white font-display">Enterprise</h3>
                   </div>
-                  <p className="text-slate-400 text-sm mb-2">
+                  <p className="text-[#EDF5F2]/60 text-sm mb-2">
                     For banks, large trading houses, and high-volume operations (100+ LCs/month)
                   </p>
-                  <div className="flex flex-wrap gap-4 justify-center md:justify-start text-xs text-slate-500">
+                  <div className="flex flex-wrap gap-4 justify-center md:justify-start text-xs text-[#EDF5F2]/40 font-mono">
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-purple-400" />
+                      <CheckCircle className="w-3 h-3 text-[#B2F273]" />
                       Unlimited LCs
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-purple-400" />
+                      <CheckCircle className="w-3 h-3 text-[#B2F273]" />
                       White-label option
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-purple-400" />
+                      <CheckCircle className="w-3 h-3 text-[#B2F273]" />
                       Dedicated CSM
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-purple-400" />
+                      <CheckCircle className="w-3 h-3 text-[#B2F273]" />
                       SLA guarantee
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-purple-400" />
+                      <CheckCircle className="w-3 h-3 text-[#B2F273]" />
                       On-premise option
                     </span>
                   </div>
                 </div>
                 <Button 
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-8 h-12 font-semibold shrink-0"
+                  className="bg-white hover:bg-[#EDF5F2] text-[#00261C] px-8 h-12 font-bold shrink-0 border-none"
                   asChild
                 >
                   <Link to="/contact">Contact Sales</Link>
@@ -621,16 +620,16 @@ const Index = () => {
 
             {/* Volume calculator hint */}
             <div className="mt-8 text-center">
-              <p className="text-slate-500 text-sm mb-4">
-                Processing <strong className="text-white">50+ LCs/month</strong>? Business plan saves you <strong className="text-emerald-400">$350+</strong> vs pay-as-you-go.
+              <p className="text-[#EDF5F2]/40 text-sm mb-4">
+                Processing <strong className="text-white">50+ LCs/month</strong>? Business plan saves you <strong className="text-[#B2F273]">$350+</strong> vs pay-as-you-go.
               </p>
             </div>
 
             {/* Guarantee */}
             <div className="mt-8 text-center">
-              <div className="inline-flex items-center gap-3 px-6 py-3 bg-slate-900 rounded-xl border border-slate-800">
-                <Shield className="w-5 h-5 text-emerald-400" />
-                <span className="text-slate-300 text-sm">
+              <div className="inline-flex items-center gap-3 px-6 py-3 bg-[#00261C] rounded-xl border border-[#EDF5F2]/10">
+                <Shield className="w-5 h-5 text-[#B2F273]" />
+                <span className="text-[#EDF5F2]/60 text-sm">
                   <strong className="text-white">Accuracy Guarantee:</strong> If we miss a discrepancy a bank catches, your next month is free.
                 </span>
               </div>
@@ -639,11 +638,11 @@ const Index = () => {
         </section>
 
         {/* Social Proof / Testimonials */}
-        <section className="py-20 bg-slate-900 border-y border-slate-800">
+        <section className="py-20 bg-[#00261C] border-y border-[#EDF5F2]/10">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10 sm:mb-12">
-              <p className="text-emerald-400 font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Trusted Worldwide</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 px-4">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Trusted Worldwide</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 px-4 font-display">
                 Results that speak for themselves
               </h2>
             </div>
@@ -657,11 +656,11 @@ const Index = () => {
                 { icon: Star, value: "4.9/5", label: "User Rating" },
               ].map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mx-auto mb-3">
-                    <stat.icon className="w-6 h-6 text-emerald-400" />
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <stat.icon className="w-6 h-6 text-[#B2F273]" />
                   </div>
-                  <div className="text-2xl md:text-3xl font-bold text-white">{stat.value}</div>
-                  <div className="text-sm text-slate-500">{stat.label}</div>
+                  <div className="text-2xl md:text-3xl font-bold text-white font-display">{stat.value}</div>
+                  <div className="text-sm text-[#EDF5F2]/60 font-mono">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -669,11 +668,11 @@ const Index = () => {
             {/* Testimonials */}
             <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {testimonials.map((t, idx) => (
-                <div key={idx} className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6">
+                <div key={idx} className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-2xl p-6">
                   {/* Metric badge */}
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full mb-4 border border-emerald-500/20">
-                    <TrendingUp className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400 text-sm font-semibold">{t.metric}</span>
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#B2F273]/10 rounded-full mb-4 border border-[#B2F273]/20">
+                    <TrendingUp className="w-4 h-4 text-[#B2F273]" />
+                    <span className="text-[#B2F273] text-sm font-semibold font-mono">{t.metric}</span>
                   </div>
                   
                   {/* Stars */}
@@ -683,15 +682,15 @@ const Index = () => {
                     ))}
                   </div>
                   
-                  <p className="text-slate-300 text-sm mb-6 leading-relaxed">"{t.quote}"</p>
+                  <p className="text-[#EDF5F2]/80 text-sm mb-6 leading-relaxed">"{t.quote}"</p>
                   
-                  <div className="flex items-center gap-3 pt-4 border-t border-slate-700/50">
-                    <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center">
-                      <Building2 className="w-5 h-5 text-slate-400" />
+                  <div className="flex items-center gap-3 pt-4 border-t border-[#EDF5F2]/10">
+                    <div className="w-10 h-10 bg-[#00261C] rounded-full flex items-center justify-center border border-[#EDF5F2]/5">
+                      <Building2 className="w-5 h-5 text-[#EDF5F2]/40" />
                     </div>
                     <div>
                       <div className="text-white font-medium text-sm">{t.author}</div>
-                      <div className="text-slate-500 text-xs">{t.company}</div>
+                      <div className="text-[#EDF5F2]/40 text-xs">{t.company}</div>
                     </div>
                   </div>
                 </div>
@@ -701,19 +700,19 @@ const Index = () => {
         </section>
 
         {/* FAQ */}
-        <section className="py-20 bg-slate-950">
+        <section className="py-20 bg-[#00261C]">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto">
               <div className="text-center mb-12">
-                <p className="text-blue-400 font-semibold mb-4 tracking-wide uppercase text-sm">FAQ</p>
-                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Common Questions</h2>
+                <p className="text-[#B2F273] font-mono font-semibold mb-4 tracking-wide uppercase text-sm">FAQ</p>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 font-display">Common Questions</h2>
               </div>
               
               <div className="space-y-3">
                 {faqs.map((faq, idx) => (
                   <div 
                     key={idx} 
-                    className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-colors"
+                    className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl overflow-hidden hover:border-[#B2F273]/30 transition-colors"
                   >
                     <button
                       onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
@@ -722,7 +721,7 @@ const Index = () => {
                       <span className="font-medium text-white pr-4">{faq.question}</span>
                       <ChevronDown 
                         className={cn(
-                          "w-5 h-5 text-slate-400 transition-transform shrink-0", 
+                          "w-5 h-5 text-[#EDF5F2]/40 transition-transform shrink-0", 
                           openFaq === idx && "rotate-180"
                         )} 
                       />
@@ -732,7 +731,7 @@ const Index = () => {
                       openFaq === idx ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                     )}>
                       <div className="overflow-hidden">
-                        <p className="px-5 pb-5 text-slate-400 text-sm leading-relaxed">{faq.answer}</p>
+                        <p className="px-5 pb-5 text-[#EDF5F2]/60 text-sm leading-relaxed">{faq.answer}</p>
                       </div>
                     </div>
                   </div>
@@ -743,41 +742,41 @@ const Index = () => {
         </section>
 
         {/* Final CTA */}
-        <section className="py-20 bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
+        <section className="py-20 bg-gradient-to-b from-[#00382E] to-[#00261C] border-t border-[#EDF5F2]/10">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mx-auto text-center">
               {/* Urgency badge */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-8">
-                <Zap className="w-4 h-4 text-blue-400" />
-                <span className="text-blue-400 text-sm font-medium">Takes 45 seconds to validate your first LC</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-8">
+                <Zap className="w-4 h-4 text-[#B2F273]" />
+                <span className="text-[#B2F273] text-sm font-medium">Takes 45 seconds to validate your first LC</span>
               </div>
 
-              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
                 Ready to stop paying
                 <br />
                 <span className="bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">discrepancy fees?</span>
               </h2>
               
-              <p className="text-xl text-slate-400 mb-8 max-w-xl mx-auto">
+              <p className="text-xl text-[#EDF5F2]/60 mb-8 max-w-xl mx-auto">
                 Join 500+ exporters who validate LCs with confidence. Start free, no credit card required.
               </p>
 
               {/* Trust checklist */}
-              <div className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8 text-sm text-slate-400">
+              <div className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8 text-sm text-[#EDF5F2]/40">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   5 free validations
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   No credit card
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   45-second results
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   Accuracy guarantee
                 </div>
               </div>
@@ -785,7 +784,7 @@ const Index = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button 
                   size="lg" 
-                  className="bg-white text-slate-900 hover:bg-slate-100 text-lg px-10 h-14 font-semibold shadow-lg shadow-white/10"
+                  className="bg-white text-[#00261C] hover:bg-[#EDF5F2] text-lg px-10 h-14 font-bold shadow-lg shadow-white/10 border-none"
                   asChild
                 >
                   <Link to="/lcopilot/exporter-dashboard">
@@ -796,7 +795,7 @@ const Index = () => {
                 <Button 
                   variant="outline" 
                   size="lg" 
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-lg px-10 h-14"
+                  className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 text-lg px-10 h-14 bg-transparent"
                   asChild
                 >
                   <Link to="/contact">Talk to Sales</Link>

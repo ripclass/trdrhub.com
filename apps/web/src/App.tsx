@@ -330,7 +330,7 @@ function App() {
         <Route path="/bank-fees" element={<BankFeeComparatorLanding />} />
         <Route path="/finance" element={<TradeFinanceLanding />} />
         <Route path="/insurance" element={<InsuranceQuoteLanding />} />
-        <Route path="/lcopilot" element={<LcopilotLanding />} />
+        <Route path="/lcopilot" element={<Index />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/onboarding" element={<Onboarding />} />
