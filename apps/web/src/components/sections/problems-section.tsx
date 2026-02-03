@@ -75,7 +75,7 @@ export function ProblemsSection() {
               
               {/* Header: Icon & Label */}
               <div className="flex items-start justify-between mb-6">
-                <div className="w-14 h-14 bg-[#00261C]/5 rounded-xl flex items-center justify-center border border-[#00261C]/10 group-hover:bg-[#00261C] group-hover:border-[#00261C] transition-all duration-300">
+                <div className="w-14 h-14 bg-[#00261C]/5 rounded-xl flex items-center justify-center border border-[#00261C]/10 group-hover:bg-[#00261C] group-hover:border-[#00261C] transition-all duration-300 relative z-10">
                   <problem.icon className="w-7 h-7 text-[#00261C] group-hover:text-[#B2F273] transition-colors duration-300" />
                 </div>
                 <span className="text-[#00261C]/40 font-mono text-xs tracking-widest group-hover:text-[#00261C] transition-colors duration-300">
