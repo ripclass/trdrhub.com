@@ -175,25 +175,28 @@ export default function LcopilotLanding() {
                     time: "5 sec",
                   }
                 ].map((item, idx) => (
-                  <div key={idx} className="relative">
-                    {/* Connector line */}
-                    {idx < 2 && (
-                      <div className="hidden md:block absolute top-16 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#EDF5F2]/10 to-transparent" />
-                    )}
-                    
-                    <div className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/30 transition-colors h-full group">
+                  <div key={idx} className="relative h-full">
+                    <div className="group bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] relative overflow-hidden h-full">
+                      {/* Hover Glow Effect */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[#B2F273]/10 rounded-bl-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                      
                       <div className="flex items-center justify-between mb-6">
                         <span className="text-5xl font-bold text-[#EDF5F2]/10 font-display group-hover:text-[#B2F273]/20 transition-colors">{item.step}</span>
-                        <div className="w-14 h-14 bg-[#B2F273]/10 rounded-xl flex items-center justify-center border border-[#B2F273]/20 group-hover:bg-[#B2F273] group-hover:text-[#00261C] transition-all duration-300">
+                        <div className="w-14 h-14 bg-[#B2F273]/10 rounded-xl flex items-center justify-center border border-[#B2F273]/20 group-hover:bg-[#B2F273] group-hover:text-[#00261C] transition-all duration-300 relative z-10">
                           <item.icon className="w-7 h-7 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
                         </div>
                       </div>
-                      <h3 className="text-xl font-bold text-white mb-3 font-display">{item.title}</h3>
+                      
+                      <h3 className="text-xl font-bold text-white mb-3 font-display transition-colors duration-300 group-hover:text-[#B2F273]">{item.title}</h3>
                       <p className="text-[#EDF5F2]/60 text-sm leading-relaxed mb-4">{item.description}</p>
+                      
                       <div className="inline-flex items-center gap-2 text-xs text-[#EDF5F2]/40 font-mono">
                         <Clock className="w-3 h-3" />
                         {item.time}
                       </div>
+
+                      {/* Bottom Decorative Line */}
+                      <div className="absolute bottom-0 left-0 w-0 h-[3px] bg-[#B2F273] group-hover:w-full transition-all duration-500 ease-in-out" />
                     </div>
                   </div>
                 ))}
