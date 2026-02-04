@@ -221,7 +221,7 @@ export function ImportFromLCopilot({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-white">{session.lc_number}</span>
-                          <Badge variant={session.status === "completed" ? "default" : "secondary"} className="bg-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/20">
+                          <Badge variant={session.status === "completed" ? "default" : "secondary"} className="bg-[#B2F273]/10 text-[#B2F273] hover:bg-[#B2F273]/20 border border-[#B2F273]/20">
                             {session.status}
                           </Badge>
                         </div>
@@ -259,11 +259,11 @@ export function ImportFromLCopilot({
           </div>
 
           {/* Info */}
-          <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-200">
-              <p className="font-medium text-blue-100">What gets imported:</p>
-              <ul className="list-disc list-inside mt-1 text-blue-300/80">
+          <div className="flex items-start gap-2 p-3 bg-[#B2F273]/5 border border-[#B2F273]/20 rounded-lg">
+            <AlertCircle className="h-5 w-5 text-[#B2F273] flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-[#EDF5F2]/80">
+              <p className="font-medium text-[#EDF5F2]">What gets imported:</p>
+              <ul className="list-disc list-inside mt-1 text-[#EDF5F2]/60">
                 <li>LC number, date, amount, currency</li>
                 <li>Beneficiary and applicant details</li>
                 <li>Ports, incoterms, and shipping details</li>
