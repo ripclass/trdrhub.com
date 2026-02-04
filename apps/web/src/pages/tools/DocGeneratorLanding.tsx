@@ -455,11 +455,14 @@ const DocGeneratorLanding = () => {
                       </li>
                     ))}
                   </ul>
-                  <Button className={cn(
-                    "w-full font-bold border-none",
-                    plan.popular ? "bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C]" : "bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white"
-                  )} asChild>
-                    <Link to="/waitlist?tool=doc-generator">Join Waitlist</Link>
+                  <Button 
+                    className={cn(
+                      "w-full font-bold border-none",
+                      plan.popular ? "bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C]" : "bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white"
+                    )}
+                    asChild
+                  >
+                    <Link to="/doc-generator/dashboard">Get Started</Link>
                   </Button>
                 </div>
               ))}
@@ -513,14 +516,14 @@ const DocGeneratorLanding = () => {
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6 font-display">
-                Be First to Know When We Launch
+                Ready to generate your first document?
               </h2>
               <p className="text-lg text-[#EDF5F2]/60 mb-8">
-                Join the waitlist for early access and launch pricing.
+                Start creating bank-compliant trade documents in minutes.
               </p>
               <Button size="lg" className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
-                <Link to="/waitlist?tool=doc-generator">
-                  Join Waitlist <ArrowRight className="w-5 h-5 ml-2" />
+                <Link to="/doc-generator/dashboard">
+                  Start Generating <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
               </Button>
             </div>
