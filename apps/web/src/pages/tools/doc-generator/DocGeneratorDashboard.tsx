@@ -257,7 +257,13 @@ export default function DocGeneratorDashboard() {
   const draftSets = documentSets.filter((s) => s.status === "draft").length;
 
   return (
-    <div className="p-6 space-y-6 bg-[#00261C] min-h-full">
+    <div className="-mt-6 -mx-4 p-8 space-y-8 bg-[#00261C] min-h-[calc(100vh-3.5rem)] text-[#EDF5F2]">
+      {/* Header Section */}
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold font-display text-white">Doc Generator</h1>
+        <p className="text-[#EDF5F2]/60">Manage and generate your trade documents.</p>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
