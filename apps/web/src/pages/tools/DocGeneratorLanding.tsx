@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award, ClipboardCheck } from "lucide-react";
+import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award, ClipboardCheck, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
@@ -58,19 +58,25 @@ const features = [
 
 const process = [
   {
-    step: "1",
+    step: "01",
+    icon: Package,
     title: "Upload Your LC",
     description: "Upload your Letter of Credit or enter shipment details manually",
+    time: "30 sec"
   },
   {
-    step: "2",
+    step: "02",
+    icon: Brain,
     title: "Select Documents",
     description: "Choose which documents you need - invoice, packing list, COO, etc.",
+    time: "10 sec"
   },
   {
-    step: "3",
+    step: "03",
+    icon: Download,
     title: "Review & Download",
     description: "Preview each document, make adjustments, and download bank-ready PDFs",
+    time: "20 sec"
   },
 ];
 
@@ -110,6 +116,13 @@ const faqs = [
   },
 ];
 
+const beforeAfter = [
+  { aspect: "Time to prepare", before: "2-4 hours", after: "15 minutes", icon: Clock },
+  { aspect: "Data entry errors", before: "Frequent", after: "Zero", icon: FileText },
+  { aspect: "Document consistency", before: "Manual check", after: "Auto-synced", icon: CheckCircle },
+  { aspect: "Bank rejection rate", before: "High", after: "<1%", icon: Shield },
+];
+
 const DocGeneratorLanding = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
@@ -117,39 +130,51 @@ const DocGeneratorLanding = () => {
     <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
       
-      <main>
+      <main className="relative min-h-screen">
         {/* Hero Section */}
-        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden bg-[#00261C]">
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#B2F273]/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-[100px]" />
+        <section className="relative pt-48 md:pt-48 pb-24">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
-
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="max-w-3xl mx-auto text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
-                <CheckCircle className="w-4 h-4 text-[#B2F273]" />
-                <span className="text-[#B2F273] text-sm font-medium">Now Available</span>
+            <div className="max-w-4xl mx-auto text-center">
+              <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-[#B2F273]/20 bg-[#B2F273]/5 backdrop-blur-sm mb-6">
+                <span className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">AI-Powered Document Generation</span>
               </div>
               
-              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
-                Generate Trade Docs in{" "}
-                <span className="text-[#B2F273] text-glow-sm">Minutes, Not Hours</span>
+              <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-8 leading-tight font-display">
+                Generate Trade Docs in
+                <br />
+                <span className="text-[#B2F273] text-glow-sm">Minutes, Not Hours.</span>
               </h1>
               
-              <p className="text-lg text-[#EDF5F2]/60 mb-8 leading-relaxed max-w-2xl mx-auto">
+              <p className="text-lg text-[#EDF5F2]/60 max-w-2xl mx-auto font-light leading-relaxed mb-10">
                 Bank-compliant commercial invoices, packing lists, and certificates of origin - 
                 all pre-filled from your LC data. No more manual entry, no more typos.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-                <Button size="lg" className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
+                <Button 
+                  size="lg" 
+                  className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] text-lg px-8 h-14 font-bold shadow-[0_0_20px_rgba(178,242,115,0.3)] border-none"
+                  asChild
+                >
                   <Link to="/doc-generator/dashboard">
-                    Start Generating <ArrowRight className="w-5 h-5 ml-2" />
+                    Start Generating
+                    <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
-                <Button variant="outline" size="lg" className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent" asChild>
-                  <Link to="/doc-generator/dashboard/new">Create First Document</Link>
+                <Button 
+                  variant="outline" 
+                  size="lg" 
+                  className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 text-lg px-8 h-14 bg-transparent"
+                  asChild
+                >
+                  <Link to="/doc-generator/dashboard/new">
+                    Create First Document
+                  </Link>
                 </Button>
               </div>
 
@@ -168,8 +193,15 @@ const DocGeneratorLanding = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
 
-            {/* Document Types Grid */}
+        {/* Document Types Grid */}
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
               {documentTypes.map((doc, idx) => (
                 <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-4 hover:border-[#B2F273]/30 transition-colors backdrop-blur-sm group">
@@ -189,140 +221,207 @@ const DocGeneratorLanding = () => {
         </section>
 
         {/* Stats */}
-        <section className="relative py-12 bg-[#00261C] border-y border-[#EDF5F2]/10 overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
-              {stats.map((stat, idx) => (
-                <div key={idx} className="text-center">
-                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1 font-display">{stat.value}</div>
-                  <div className="text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Problem Statement */}
-        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
-          
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12 font-display">
-                Document Prep is a{" "}
-                <span className="text-[#B2F273]">Time Sink</span>
-              </h2>
+            <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
               
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 backdrop-blur-sm">
-                  <h3 className="text-lg font-bold text-white mb-4 font-display">The Old Way</h3>
-                  <ul className="space-y-3 text-[#EDF5F2]/60">
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400">✗</span>
-                      Hours copying data between Word docs
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400">✗</span>
-                      Typos and inconsistencies across documents
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400">✗</span>
-                      Wrong COO format for the destination
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400">✗</span>
-                      Bank rejects for formatting issues
-                    </li>
-                  </ul>
+              <div className="flex flex-col lg:flex-row items-center justify-between gap-12 relative z-10">
+                <div className="lg:max-w-xl">
+                  <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6 font-display">
+                    Built for global trade.
+                    <br />
+                    <span className="text-[#B2F273]">Works everywhere.</span>
+                  </h2>
+                  <p className="text-[#EDF5F2]/60 leading-relaxed text-lg">
+                    Whether you process one shipment a month or hundreds per day, Doc Generator pairs AI automation 
+                    with human-ready workflows so your teams can ship documents without fear of rejection.
+                  </p>
                 </div>
-                <div className="bg-[#B2F273]/5 border border-[#B2F273]/20 rounded-xl p-6 backdrop-blur-sm">
-                  <h3 className="text-lg font-bold text-white mb-4 font-display">With Doc Generator</h3>
-                  <ul className="space-y-3 text-[#EDF5F2]/60">
-                    <li className="flex items-start gap-2">
-                      <span className="text-[#B2F273]">✓</span>
-                      Upload LC once, generate all docs
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-[#B2F273]">✓</span>
-                      Auto-consistency across every document
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-[#B2F273]">✓</span>
-                      Smart COO format selection
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-[#B2F273]">✓</span>
-                      Bank-tested templates
-                    </li>
-                  </ul>
+                
+                <div className="grid grid-cols-2 gap-6 w-full lg:w-auto">
+                  {stats.map((stat) => (
+                    <div 
+                      key={stat.label} 
+                      className="bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-6 text-center min-w-[140px]"
+                    >
+                      <div className="text-3xl font-bold text-white mb-2 font-display">{stat.value}</div>
+                      <div className="text-xs text-[#EDF5F2]/40 font-mono uppercase tracking-wider">{stat.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* How It Works */}
-        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+        {/* Problem Statement (Before/After) */}
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
-                From LC to Documents in Three Steps
+              <p className="text-[#B2F273] font-mono font-semibold mb-4 tracking-wide uppercase text-sm">The Difference</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 font-display">
+                Document Prep is a <span className="text-[#EDF5F2]/40 line-through decoration-[#EDF5F2]/40">Time Sink</span>
               </h2>
-              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
-                Upload your LC, select documents, download. That's it.
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-lg">
+                See how Doc Generator transforms your workflow
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              {process.map((step, idx) => (
-                <div key={idx} className="text-center group">
-                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors duration-300">
-                    <span className="text-[#B2F273] font-bold font-display group-hover:text-[#00261C] transition-colors">{step.step}</span>
+            <div className="max-w-4xl mx-auto">
+              {/* Comparison header - hidden on mobile */}
+              <div className="hidden md:grid grid-cols-3 gap-4 mb-4 text-sm font-semibold">
+                <div className="text-[#EDF5F2]/40 pl-4 font-mono uppercase tracking-wider">Aspect</div>
+                <div className="text-center text-[#EDF5F2]/40 font-mono uppercase tracking-wider">The Old Way</div>
+                <div className="text-center text-[#B2F273] font-mono uppercase tracking-wider">With Doc Generator</div>
+              </div>
+
+              {/* Comparison rows */}
+              <div className="space-y-3">
+                {beforeAfter.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    className="bg-[#00382E]/50 rounded-xl p-4 border border-[#EDF5F2]/10"
+                  >
+                    {/* Mobile layout */}
+                    <div className="md:hidden">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-[#00261C] rounded-lg flex items-center justify-center shrink-0 border border-[#EDF5F2]/10">
+                          <item.icon className="w-5 h-5 text-[#EDF5F2]/60" />
+                        </div>
+                        <span className="text-white font-medium text-sm">{item.aspect}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#EDF5F2]/5 rounded-lg text-[#EDF5F2]/40 text-xs border border-[#EDF5F2]/10 font-mono">
+                          <span className="text-[#EDF5F2]/40">✗</span>
+                          {item.before}
+                        </span>
+                        <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#B2F273]/10 rounded-lg text-[#B2F273] text-xs border border-[#B2F273]/20 font-mono">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {item.after}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Desktop layout */}
+                    <div className="hidden md:grid grid-cols-3 gap-4 items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#00261C] rounded-lg flex items-center justify-center shrink-0 border border-[#EDF5F2]/10">
+                          <item.icon className="w-5 h-5 text-[#EDF5F2]/60" />
+                        </div>
+                        <span className="text-white font-medium text-sm">{item.aspect}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#EDF5F2]/5 rounded-lg text-[#EDF5F2]/40 text-sm border border-[#EDF5F2]/10 font-mono">
+                          <span className="w-4 h-4 text-[#EDF5F2]/40">✗</span>
+                          {item.before}
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#B2F273]/10 rounded-lg text-[#B2F273] text-sm border border-[#B2F273]/20 font-mono">
+                          <CheckCircle className="w-4 h-4" />
+                          {item.after}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-2 font-display">{step.title}</h3>
-                  <p className="text-[#EDF5F2]/60 text-sm">{step.description}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Features */}
-        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+        {/* How It Works */}
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-5xl font-bold text-white mb-6 font-display">From LC to Documents in Three Steps</h2>
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
+                Upload your LC, select documents, download. That's it.
+              </p>
+            </div>
+            
+            <div className="max-w-5xl mx-auto">
+              <div className="grid md:grid-cols-3 gap-8">
+                {process.map((item, idx) => (
+                  <div key={idx} className="relative h-full">
+                    <div className="group bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] relative overflow-hidden h-full">
+                      {/* Hover Glow Effect */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[#B2F273]/10 rounded-bl-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                      
+                      <div className="flex items-center justify-between mb-6">
+                        <span className="text-5xl font-bold text-[#EDF5F2]/10 font-display group-hover:text-[#B2F273]/20 transition-colors">{item.step}</span>
+                        <div className="w-14 h-14 bg-[#B2F273]/10 rounded-xl flex items-center justify-center border border-[#B2F273]/20 group-hover:bg-[#B2F273] group-hover:text-[#00261C] transition-all duration-300 relative z-10">
+                          <item.icon className="w-7 h-7 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
+                        </div>
+                      </div>
+                      
+                      <h3 className="text-xl font-bold text-white mb-3 font-display transition-colors duration-300 group-hover:text-[#B2F273]">{item.title}</h3>
+                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed mb-4">{item.description}</p>
+                      
+                      <div className="inline-flex items-center gap-2 text-xs text-[#EDF5F2]/40 font-mono">
+                        <Clock className="w-3 h-3" />
+                        {item.time}
+                      </div>
+
+                      {/* Bottom Decorative Line */}
+                      <div className="absolute bottom-0 left-0 w-0 h-[3px] bg-[#B2F273] group-hover:w-full transition-all duration-500 ease-in-out" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features Grid */}
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center mb-12 sm:mb-16">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
                 Everything You Need for Document Prep
               </h2>
-              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Professional templates, smart auto-fill, and cross-document validation.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
               {features.map((feature, idx) => (
-                <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 hover:border-[#B2F273]/30 transition-colors group backdrop-blur-sm">
-                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-lg flex items-center justify-center mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
-                    <feature.icon className="w-6 h-6 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
+                <div 
+                  key={idx} 
+                  className="group bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] overflow-hidden"
+                >
+                  {/* Hover Gradient Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#B2F273]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="w-14 h-14 bg-[#00382E] rounded-xl flex items-center justify-center group-hover:bg-[#B2F273] transition-colors duration-300 relative z-10">
+                      <feature.icon className="w-7 h-7 text-[#EDF5F2]/60 group-hover:text-[#00261C] transition-colors duration-300" />
+                    </div>
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-2 font-display">{feature.title}</h3>
-                  <p className="text-[#EDF5F2]/60 text-sm mb-4">{feature.description}</p>
-                  <ul className="space-y-2">
-                    {feature.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-[#EDF5F2]/50">
-                        <CheckCircle className="w-4 h-4 text-[#B2F273] shrink-0" />
-                        {bullet}
-                      </li>
-                    ))}
-                  </ul>
+                  <h3 className="text-xl font-bold text-white mb-3 font-display group-hover:text-[#B2F273] transition-colors duration-300">{feature.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm leading-relaxed font-light">{feature.description}</p>
                 </div>
               ))}
             </div>
@@ -330,16 +429,19 @@ const DocGeneratorLanding = () => {
         </section>
 
         {/* Pricing */}
-        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
+            <div className="text-center mb-10 sm:mb-16">
+              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Pricing</p>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
                 Simple Pricing
               </h2>
-              <p className="text-[#EDF5F2]/60">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
                 Pay for what you use. No long-term contracts.
               </p>
             </div>
@@ -443,4 +545,3 @@ const DocGeneratorLanding = () => {
 };
 
 export default DocGeneratorLanding;
-
