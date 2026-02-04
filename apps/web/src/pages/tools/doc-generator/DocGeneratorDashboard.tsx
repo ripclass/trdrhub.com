@@ -20,6 +20,7 @@ import {
   Filter,
   Import,
   Copy,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { ImportFromLCopilot } from "./ImportFromLCopilot";
-import { PDFPreview } from "./PDFPreview";
+import { AppShellToolbar, AppShellToolbarSection } from "@/components/layout/AppShell";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://trdrhub-api.onrender.com";
 
@@ -256,42 +257,42 @@ export default function DocGeneratorDashboard() {
   const draftSets = documentSets.filter((s) => s.status === "draft").length;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 bg-[#00261C] min-h-full">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Total Document Sets</CardDescription>
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader className="pb-2" dense>
+            <CardDescription className="text-[#EDF5F2]/60">Total Document Sets</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white">{totalSets}</div>
+          <CardContent dense>
+            <div className="text-2xl font-bold text-white font-display">{totalSets}</div>
           </CardContent>
         </Card>
         
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Generated</CardDescription>
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader className="pb-2" dense>
+            <CardDescription className="text-[#EDF5F2]/60">Generated</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-400">{generatedSets}</div>
+          <CardContent dense>
+            <div className="text-2xl font-bold text-[#B2F273] font-display">{generatedSets}</div>
           </CardContent>
         </Card>
         
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Drafts</CardDescription>
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader className="pb-2" dense>
+            <CardDescription className="text-[#EDF5F2]/60">Drafts</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-400">{draftSets}</div>
+          <CardContent dense>
+            <div className="text-2xl font-bold text-amber-400 font-display">{draftSets}</div>
           </CardContent>
         </Card>
         
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">This Month</CardDescription>
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader className="pb-2" dense>
+            <CardDescription className="text-[#EDF5F2]/60">This Month</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-400">
+          <CardContent dense>
+            <div className="text-2xl font-bold text-blue-400 font-display">
               {documentSets.filter((s) => {
                 const created = new Date(s.created_at);
                 const now = new Date();
@@ -303,24 +304,25 @@ export default function DocGeneratorDashboard() {
       </div>
 
       {/* Document Sets List */}
-      <Card className="bg-slate-900/50 border-slate-800">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+      <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4" dense>
           <div>
-            <CardTitle className="text-white">Document Sets</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardTitle className="text-white font-display" dense>Document Sets</CardTitle>
+            <CardDescription className="text-[#EDF5F2]/60">
               Manage your shipping document sets
             </CardDescription>
           </div>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
-              className="border-slate-700 hover:bg-slate-800"
+              className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
               onClick={() => setShowImportDialog(true)}
+              size="sm"
             >
               <Import className="w-4 h-4 mr-2" />
               Import from LC
             </Button>
-            <Button asChild className="bg-blue-600 hover:bg-blue-700">
+            <Button asChild className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold" size="sm">
               <Link to="/doc-generator/dashboard/new">
                 <Plus className="w-4 h-4 mr-2" />
                 Create New
@@ -329,46 +331,52 @@ export default function DocGeneratorDashboard() {
           </div>
         </CardHeader>
         
-        <CardContent>
+        <CardContent dense>
           {/* Filters */}
-          <div className="flex gap-4 mb-4">
-            <div className="flex-1">
-              <Input
-                placeholder="Search by LC number, beneficiary, or applicant..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-800 border-slate-700 text-white"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px] bg-slate-800 border-slate-700 text-white">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="generated">Generated</SelectItem>
-                <SelectItem value="finalized">Finalized</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <AppShellToolbar className="mb-4">
+            <AppShellToolbarSection className="flex-1">
+              <div className="relative w-full max-w-sm">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#EDF5F2]/40" />
+                <Input
+                  placeholder="Search by LC number, beneficiary, or applicant..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40 h-9 text-sm"
+                  dense
+                />
+              </div>
+            </AppShellToolbarSection>
+            <AppShellToolbarSection>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px] bg-[#00261C]/50 border-[#EDF5F2]/10 text-white h-9 text-sm">
+                  <Filter className="w-4 h-4 mr-2 text-[#EDF5F2]/40" />
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#00261C] border-[#EDF5F2]/10 text-white">
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="generated">Generated</SelectItem>
+                  <SelectItem value="finalized">Finalized</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </AppShellToolbarSection>
+          </AppShellToolbar>
 
           {/* Table */}
           {isLoading ? (
-            <div className="text-center py-12 text-slate-400">Loading...</div>
+            <div className="text-center py-12 text-[#EDF5F2]/40">Loading...</div>
           ) : filteredSets.length === 0 ? (
             <div className="text-center py-12">
-              <FileSpreadsheet className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-white mb-2">No document sets found</h3>
-              <p className="text-slate-400 mb-4">
+              <FileSpreadsheet className="w-12 h-12 text-[#EDF5F2]/20 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-white mb-2 font-display">No document sets found</h3>
+              <p className="text-[#EDF5F2]/40 mb-4">
                 {searchQuery || statusFilter !== "all"
                   ? "Try adjusting your filters"
                   : "Create your first document set to get started"}
               </p>
               {!searchQuery && statusFilter === "all" && (
-                <Button asChild className="bg-blue-600 hover:bg-blue-700">
+                <Button asChild className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold">
                   <Link to="/doc-generator/dashboard/new">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Document Set
@@ -377,73 +385,73 @@ export default function DocGeneratorDashboard() {
               )}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-800 hover:bg-transparent">
-                  <TableHead className="text-slate-400">Name / LC</TableHead>
-                  <TableHead className="text-slate-400">Beneficiary</TableHead>
-                  <TableHead className="text-slate-400">Applicant</TableHead>
-                  <TableHead className="text-slate-400 text-right">Amount</TableHead>
-                  <TableHead className="text-slate-400">Status</TableHead>
-                  <TableHead className="text-slate-400">Created</TableHead>
-                  <TableHead className="text-slate-400 text-right">Actions</TableHead>
+            <Table dense sticky>
+              <TableHeader sticky className="bg-[#00261C] hover:bg-[#00261C]">
+                <TableRow className="border-[#EDF5F2]/10 hover:bg-transparent" dense>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs" dense>Name / LC</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs" dense>Beneficiary</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs" dense>Applicant</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs text-right" dense>Amount</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs" dense>Status</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs" dense>Created</TableHead>
+                  <TableHead className="text-[#EDF5F2]/40 font-mono uppercase text-xs text-right" dense>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredSets.map((set) => {
                   const StatusIcon = statusIcons[set.status] || Clock;
                   return (
-                    <TableRow key={set.id} className="border-slate-800 hover:bg-slate-800/50">
-                      <TableCell className="text-white font-medium">
+                    <TableRow key={set.id} className="border-[#EDF5F2]/5 hover:bg-[#B2F273]/5 transition-colors" dense>
+                      <TableCell className="text-white font-medium" dense>
                         <div>
                           {set.name || "Untitled"}
                           {set.lc_number && (
-                            <div className="text-xs text-slate-400">LC: {set.lc_number}</div>
+                            <div className="text-xs text-[#EDF5F2]/40 font-mono mt-0.5">LC: {set.lc_number}</div>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-slate-300">{set.beneficiary_name}</TableCell>
-                      <TableCell className="text-slate-300">{set.applicant_name}</TableCell>
-                      <TableCell className="text-slate-300 text-right">
+                      <TableCell className="text-[#EDF5F2]/80" dense>{set.beneficiary_name}</TableCell>
+                      <TableCell className="text-[#EDF5F2]/80" dense>{set.applicant_name}</TableCell>
+                      <TableCell className="text-[#EDF5F2]/80 text-right font-mono" dense>
                         ${set.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariants[set.status] || "default"} className="gap-1">
+                      <TableCell dense>
+                        <Badge variant={statusBadgeVariants[set.status] || "default"} className="gap-1 bg-[#00261C] border-[#EDF5F2]/10 text-[#EDF5F2]/80 hover:bg-[#00261C]">
                           <StatusIcon className="w-3 h-3" />
                           {set.status.charAt(0).toUpperCase() + set.status.slice(1)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-slate-400 text-sm">
+                      <TableCell className="text-[#EDF5F2]/40 text-xs font-mono" dense>
                         {new Date(set.created_at).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" dense>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#EDF5F2]/40 hover:text-white hover:bg-[#EDF5F2]/5">
                               <MoreHorizontal className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => navigate(`/doc-generator/dashboard/edit/${set.id}`)}>
+                          <DropdownMenuContent align="end" className="bg-[#00261C] border-[#EDF5F2]/10 text-white">
+                            <DropdownMenuItem onClick={() => navigate(`/doc-generator/dashboard/edit/${set.id}`)} className="hover:bg-[#EDF5F2]/5 hover:text-white focus:bg-[#EDF5F2]/5 focus:text-white">
                               <Eye className="w-4 h-4 mr-2" />
                               View / Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setPreviewDocSetId(set.id)}>
+                            <DropdownMenuItem onClick={() => setPreviewDocSetId(set.id)} className="hover:bg-[#EDF5F2]/5 hover:text-white focus:bg-[#EDF5F2]/5 focus:text-white">
                               <FileText className="w-4 h-4 mr-2" />
                               Preview PDF
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDownload(set.id)}>
+                            <DropdownMenuItem onClick={() => handleDownload(set.id)} className="hover:bg-[#EDF5F2]/5 hover:text-white focus:bg-[#EDF5F2]/5 focus:text-white">
                               <Download className="w-4 h-4 mr-2" />
                               Download All
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDuplicate(set.id)}>
+                            <DropdownMenuItem onClick={() => handleDuplicate(set.id)} className="hover:bg-[#EDF5F2]/5 hover:text-white focus:bg-[#EDF5F2]/5 focus:text-white">
                               <Copy className="w-4 h-4 mr-2" />
                               Duplicate
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
+                            <DropdownMenuSeparator className="bg-[#EDF5F2]/10" />
                             <DropdownMenuItem
                               onClick={() => handleDelete(set.id)}
-                              className="text-red-500 focus:text-red-500"
+                              className="text-red-400 focus:text-red-400 hover:bg-red-500/10 focus:bg-red-500/10"
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
                               Delete
