@@ -256,7 +256,7 @@ const Index = () => {
                   className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] text-lg px-8 h-14 font-bold shadow-[0_0_20px_rgba(178,242,115,0.3)] border-none"
                   asChild
                 >
-                  <Link to="/lcopilot/exporter-dashboard">
+                  <Link to="/login">
                     Validate Your LC Free
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
@@ -825,7 +825,7 @@ const Index = () => {
                   className="bg-white text-[#00261C] hover:bg-[#EDF5F2] text-lg px-10 h-14 font-bold shadow-lg shadow-white/10 border-none"
                   asChild
                 >
-                  <Link to="/lcopilot/exporter-dashboard">
+                  <Link to="/login">
                     Validate Your LC Free
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
