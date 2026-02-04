@@ -263,6 +263,7 @@ To complete the rollout:
 
 ## Resources
 
+- **Brand Guidelines**: `docs/BRAND_GUIDELINES.md` (Visual identity, colors, typography)
 - Component Gallery: `/lcopilot/component-gallery`
 - Theme Provider: `apps/web/src/providers/ThemeProvider.tsx`
 - Chart Theme: `apps/web/src/lib/chart-theme.ts`
