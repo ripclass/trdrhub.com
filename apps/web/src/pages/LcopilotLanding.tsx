@@ -63,19 +63,16 @@ export default function LcopilotLanding() {
   return (
     <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
-      <main className="pt-48 md:pt-48 pb-24 relative min-h-screen">
-        {/* Grid pattern overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none fixed" />
-
-        {/* Background decoration */}
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
-        <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <main className="relative min-h-screen">
+        {/* Hero Section */}
+        <section className="relative pt-48 md:pt-48 pb-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
           
-          {/* Hero Section */}
-          <div className="max-w-4xl mx-auto mb-24 text-center">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-[#B2F273]/20 bg-[#B2F273]/5 backdrop-blur-sm mb-6">
               <span className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">AI-Powered LC Validation</span>
             </div>
@@ -88,10 +85,15 @@ export default function LcopilotLanding() {
               LCopilot checks your documents against UCP600, ISBP745, and 3,500+ validation rules. 
               Catch discrepancies before banks do. Stop paying $75 rejection fees.
             </p>
+            </div>
           </div>
+        </section>
 
-          {/* Role Cards */}
-          <div className="grid gap-6 lg:grid-cols-3 mb-24">
+        {/* Role Cards */}
+        <section className="relative py-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="grid gap-6 lg:grid-cols-3">
             {roles.map((role) => (
               <div 
                 key={role.id} 
@@ -124,10 +126,15 @@ export default function LcopilotLanding() {
                 </Button>
               </div>
             ))}
+            </div>
           </div>
+        </section>
 
-          {/* How It Works Section */}
-          <div className="mb-32">
+        {/* How It Works Section */}
+        <section className="relative py-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-5xl font-bold text-white mb-6 font-display">From Chaos to Compliance</h2>
               <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
@@ -184,10 +191,15 @@ export default function LcopilotLanding() {
                 ))}
               </div>
             </div>
+            </div>
           </div>
+        </section>
 
-          {/* Highlights Section */}
-          <div className="grid gap-6 lg:grid-cols-3 mb-24">
+        {/* Highlights Section */}
+        <section className="relative py-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="grid gap-6 lg:grid-cols-3">
             {highlights.map((item, idx) => (
               <div 
                 key={idx} 
@@ -204,10 +216,15 @@ export default function LcopilotLanding() {
                 </p>
               </div>
             ))}
+            </div>
           </div>
+        </section>
 
-          {/* Stats Section */}
-          <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden mb-24">
+        {/* Stats Section */}
+        <section className="relative py-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
             
             <div className="flex flex-col lg:flex-row items-center justify-between gap-12 relative z-10">
@@ -235,10 +252,15 @@ export default function LcopilotLanding() {
                 ))}
               </div>
             </div>
+            </div>
           </div>
+        </section>
 
-          {/* Bottom CTA */}
-          <div className="text-center max-w-3xl mx-auto">
+        {/* Bottom CTA */}
+        <section className="relative py-24">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-8 font-display">
               Ready to validate your first LC?
             </h2>
@@ -267,9 +289,9 @@ export default function LcopilotLanding() {
                 </Link>
               </Button>
             </div>
+            </div>
           </div>
-
-        </div>
+        </section>
       </main>
       <TRDRFooter />
     </div>
