@@ -525,7 +525,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={() => setStep(2)}
                 disabled={!formData.beneficiary_name || !formData.applicant_name}
-                className="bg-blue-600 hover:bg-blue-700 font-bold"
+                className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold"
               >
                 Next: Shipment Details
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -618,7 +618,7 @@ export default function CreateDocumentWizard() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium text-white font-display">Line Items (Goods)</h3>
-                <Button onClick={addLineItem} className="bg-blue-600 hover:bg-blue-700 font-bold" size="sm">
+                <Button onClick={addLineItem} className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold" size="sm">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Item
                 </Button>
@@ -812,7 +812,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={() => setStep(3)}
                 disabled={formData.line_items.length === 0}
-                className="bg-blue-600 hover:bg-blue-700 font-bold"
+                className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold"
               >
                 Next: Generate Documents
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -941,7 +941,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={handleCreateAndGenerate}
                 disabled={isSubmitting || selectedDocTypes.length === 0}
-                className="bg-green-600 hover:bg-green-700 font-bold"
+                className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold"
               >
                 {isSubmitting ? (
                   <>
@@ -972,7 +972,7 @@ export default function CreateDocumentWizard() {
               Your shipping documents have been created successfully.
             </p>
             <div className="flex justify-center gap-4">
-              <Button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700 font-bold">
+              <Button onClick={handleDownload} className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold">
                 <Download className="w-4 h-4 mr-2" />
                 Download All (ZIP)
               </Button>
