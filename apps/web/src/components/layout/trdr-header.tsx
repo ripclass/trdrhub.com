@@ -78,7 +78,7 @@ export function TRDRHeader() {
                     Login
                   </Button>
                 </Link>
-                <Link to="/lcopilot">
+                <Link to="/register">
                   <Button 
                     size="sm" 
                     className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-medium border-none font-mono uppercase tracking-wider text-xs"
@@ -147,7 +147,7 @@ export function TRDRHeader() {
                       Login
                     </Button>
                   </Link>
-                  <Link to="/lcopilot" className="flex-1">
+                  <Link to="/register" className="flex-1">
                     <Button 
                       className="w-full bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] font-mono uppercase tracking-wider text-xs"
                       onClick={() => setMobileMenuOpen(false)}

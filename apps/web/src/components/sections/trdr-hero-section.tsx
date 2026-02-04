@@ -59,7 +59,7 @@ export function TRDRHeroSection() {
               className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] text-lg px-8 py-7 h-auto font-bold group border-none shadow-[0_0_20px_rgba(178,242,115,0.3)] hover:shadow-[0_0_30px_rgba(178,242,115,0.5)] transition-all duration-300"
               asChild
             >
-              <Link to="/lcopilot">
+              <Link to="/login">
                 Start Free
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Link>

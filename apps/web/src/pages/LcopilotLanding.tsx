@@ -296,7 +296,7 @@ export default function LcopilotLanding() {
                 className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] px-10 py-6 h-auto font-bold text-lg border-none shadow-[0_0_20px_rgba(178,242,115,0.2)]"
                 asChild
               >
-                <Link to="/lcopilot/exporter-dashboard">
+                <Link to="/login">
                   Start Free
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
