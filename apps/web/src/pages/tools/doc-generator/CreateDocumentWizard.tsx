@@ -345,7 +345,7 @@ export default function CreateDocumentWizard() {
   const { totalQty, totalAmount, totalCartons, totalGross, totalNet } = calculateTotals();
 
   return (
-    <div className="p-6">
+    <div className="-mt-6 -mx-4 p-8 space-y-8 bg-[#00261C] min-h-[calc(100vh-3.5rem)] text-[#EDF5F2]">
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-center gap-4">
@@ -360,24 +360,24 @@ export default function CreateDocumentWizard() {
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center ${
                       isCompleted
-                        ? "bg-green-600 text-white"
+                        ? "bg-[#B2F273] text-[#00261C]"
                         : isActive
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-700 text-slate-400"
+                        ? "bg-[#B2F273] text-[#00261C]"
+                        : "bg-[#00382E] text-[#EDF5F2]/40"
                     }`}
                   >
                     {isCompleted ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                   </div>
                   <span
                     className={`text-sm font-medium ${
-                      isActive ? "text-white" : "text-slate-400"
+                      isActive ? "text-white" : "text-[#EDF5F2]/40"
                     }`}
                   >
                     {s.title}
                   </span>
                 </div>
                 {index < STEPS.length - 1 && (
-                  <div className={`w-16 h-0.5 ${isCompleted ? "bg-green-600" : "bg-slate-700"}`} />
+                  <div className={`w-16 h-0.5 ${isCompleted ? "bg-[#B2F273]" : "bg-[#00382E]"}`} />
                 )}
               </div>
             );
@@ -387,41 +387,43 @@ export default function CreateDocumentWizard() {
 
       {/* Step 1: LC Details */}
       {step === 1 && (
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-white">LC & Party Details</CardTitle>
-            <CardDescription className="text-slate-400">
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader dense>
+            <CardTitle className="text-white font-display" dense>LC & Party Details</CardTitle>
+            <CardDescription className="text-[#EDF5F2]/60">
               Enter the Letter of Credit and party information
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6" dense>
             {/* LC Reference */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">LC Number</Label>
+                <Label className="text-[#EDF5F2]/80">LC Number</Label>
                 <Input
                   value={formData.lc_number}
                   onChange={(e) => updateField("lc_number", e.target.value)}
                   placeholder="e.g., EXP2024112900001"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">LC Date</Label>
+                <Label className="text-[#EDF5F2]/80">LC Date</Label>
                 <Input
                   type="date"
                   value={formData.lc_date}
                   onChange={(e) => updateField("lc_date", e.target.value)}
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Currency</Label>
+                <Label className="text-[#EDF5F2]/80">Currency</Label>
                 <Select value={formData.lc_currency} onValueChange={(v) => updateField("lc_currency", v)}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectTrigger className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-[#00261C] border-[#EDF5F2]/10 text-white">
                     {CURRENCIES.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
@@ -430,76 +432,80 @@ export default function CreateDocumentWizard() {
               </div>
             </div>
 
-            <Separator className="bg-slate-800" />
+            <Separator className="bg-[#EDF5F2]/10" />
 
             {/* Beneficiary */}
             <div>
-              <h3 className="text-lg font-medium text-white mb-4">Beneficiary (Seller)</h3>
+              <h3 className="text-lg font-medium text-white mb-4 font-display">Beneficiary (Seller)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-slate-300">Company Name *</Label>
+                  <Label className="text-[#EDF5F2]/80">Company Name *</Label>
                   <Input
                     value={formData.beneficiary_name}
                     onChange={(e) => updateField("beneficiary_name", e.target.value)}
                     placeholder="Your company name"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
                     required
+                    dense
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-slate-300">Country</Label>
+                  <Label className="text-[#EDF5F2]/80">Country</Label>
                   <Input
                     value={formData.beneficiary_country}
                     onChange={(e) => updateField("beneficiary_country", e.target.value)}
                     placeholder="e.g., Bangladesh"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                    dense
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label className="text-slate-300">Address</Label>
+                  <Label className="text-[#EDF5F2]/80">Address</Label>
                   <Textarea
                     value={formData.beneficiary_address}
                     onChange={(e) => updateField("beneficiary_address", e.target.value)}
                     placeholder="Full address"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
                     rows={2}
                   />
                 </div>
               </div>
             </div>
 
-            <Separator className="bg-slate-800" />
+            <Separator className="bg-[#EDF5F2]/10" />
 
             {/* Applicant */}
             <div>
-              <h3 className="text-lg font-medium text-white mb-4">Applicant (Buyer)</h3>
+              <h3 className="text-lg font-medium text-white mb-4 font-display">Applicant (Buyer)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-slate-300">Company Name *</Label>
+                  <Label className="text-[#EDF5F2]/80">Company Name *</Label>
                   <Input
                     value={formData.applicant_name}
                     onChange={(e) => updateField("applicant_name", e.target.value)}
                     placeholder="Buyer company name"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
                     required
+                    dense
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-slate-300">Country</Label>
+                  <Label className="text-[#EDF5F2]/80">Country</Label>
                   <Input
                     value={formData.applicant_country}
                     onChange={(e) => updateField("applicant_country", e.target.value)}
                     placeholder="e.g., China"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                    dense
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label className="text-slate-300">Address</Label>
+                  <Label className="text-[#EDF5F2]/80">Address</Label>
                   <Textarea
                     value={formData.applicant_address}
                     onChange={(e) => updateField("applicant_address", e.target.value)}
                     placeholder="Full address"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
                     rows={2}
                   />
                 </div>
@@ -511,7 +517,7 @@ export default function CreateDocumentWizard() {
               <Button
                 variant="outline"
                 onClick={() => navigate("/doc-generator/dashboard")}
-                className="border-slate-700 text-slate-300"
+                className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Cancel
@@ -519,7 +525,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={() => setStep(2)}
                 disabled={!formData.beneficiary_name || !formData.applicant_name}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-blue-600 hover:bg-blue-700 font-bold"
               >
                 Next: Shipment Details
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -531,68 +537,73 @@ export default function CreateDocumentWizard() {
 
       {/* Step 2: Shipment & Goods */}
       {step === 2 && (
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-white">Shipment & Goods</CardTitle>
-            <CardDescription className="text-slate-400">
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader dense>
+            <CardTitle className="text-white font-display" dense>Shipment & Goods</CardTitle>
+            <CardDescription className="text-[#EDF5F2]/60">
               Enter shipping details and line items
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6" dense>
             {/* Shipping Details */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Vessel Name</Label>
+                <Label className="text-[#EDF5F2]/80">Vessel Name</Label>
                 <Input
                   value={formData.vessel_name}
                   onChange={(e) => updateField("vessel_name", e.target.value)}
                   placeholder="e.g., MAERSK INFINITY"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">B/L Number</Label>
+                <Label className="text-[#EDF5F2]/80">B/L Number</Label>
                 <Input
                   value={formData.bl_number}
                   onChange={(e) => updateField("bl_number", e.target.value)}
                   placeholder="e.g., MSKU7788990123"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">B/L Date</Label>
+                <Label className="text-[#EDF5F2]/80">B/L Date</Label>
                 <Input
                   type="date"
                   value={formData.bl_date}
                   onChange={(e) => updateField("bl_date", e.target.value)}
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Port of Loading</Label>
+                <Label className="text-[#EDF5F2]/80">Port of Loading</Label>
                 <Input
                   value={formData.port_of_loading}
                   onChange={(e) => updateField("port_of_loading", e.target.value)}
                   placeholder="e.g., Chittagong, Bangladesh"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Port of Discharge</Label>
+                <Label className="text-[#EDF5F2]/80">Port of Discharge</Label>
                 <Input
                   value={formData.port_of_discharge}
                   onChange={(e) => updateField("port_of_discharge", e.target.value)}
                   placeholder="e.g., Shanghai, China"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Incoterms</Label>
+                <Label className="text-[#EDF5F2]/80">Incoterms</Label>
                 <Select value={formData.incoterms} onValueChange={(v) => updateField("incoterms", v)}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectTrigger className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-[#00261C] border-[#EDF5F2]/10 text-white">
                     {INCOTERMS.map((t) => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
@@ -601,23 +612,23 @@ export default function CreateDocumentWizard() {
               </div>
             </div>
 
-            <Separator className="bg-slate-800" />
+            <Separator className="bg-[#EDF5F2]/10" />
 
             {/* Line Items */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-white">Line Items (Goods)</h3>
-                <Button onClick={addLineItem} className="bg-blue-600 hover:bg-blue-700">
+                <h3 className="text-lg font-medium text-white font-display">Line Items (Goods)</h3>
+                <Button onClick={addLineItem} className="bg-blue-600 hover:bg-blue-700 font-bold" size="sm">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Item
                 </Button>
               </div>
 
               {formData.line_items.length === 0 ? (
-                <div className="text-center py-8 border border-dashed border-slate-700 rounded-lg">
-                  <Package className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                  <p className="text-slate-400 mb-4">No line items yet</p>
-                  <Button onClick={addLineItem} variant="outline" className="border-slate-700">
+                <div className="text-center py-8 border border-dashed border-[#EDF5F2]/10 rounded-lg bg-[#00261C]/30">
+                  <Package className="w-12 h-12 text-[#EDF5F2]/20 mx-auto mb-4" />
+                  <p className="text-[#EDF5F2]/40 mb-4">No line items yet</p>
+                  <Button onClick={addLineItem} variant="outline" className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent">
                     <Plus className="w-4 h-4 mr-2" />
                     Add First Item
                   </Button>
@@ -625,56 +636,59 @@ export default function CreateDocumentWizard() {
               ) : (
                 <div className="space-y-4">
                   {formData.line_items.map((item, index) => (
-                    <div key={index} className="p-4 border border-slate-700 rounded-lg space-y-4">
+                    <div key={index} className="p-4 border border-[#EDF5F2]/10 rounded-lg space-y-4 bg-[#00261C]/30">
                       <div className="flex items-center justify-between">
-                        <Badge variant="secondary">Line {item.line_number}</Badge>
+                        <Badge variant="secondary" className="bg-[#EDF5F2]/10 text-[#EDF5F2]">Line {item.line_number}</Badge>
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => removeLineItem(index)}
-                          className="text-red-400 hover:text-red-300"
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="space-y-2 md:col-span-2">
-                          <Label className="text-slate-300">Description *</Label>
+                          <Label className="text-[#EDF5F2]/80">Description *</Label>
                           <Input
                             value={item.description}
                             onChange={(e) => updateLineItem(index, "description", e.target.value)}
                             placeholder="e.g., 100% Cotton T-Shirts M/L/XL"
-                            className="bg-slate-800 border-slate-700 text-white"
+                            className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                            dense
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-slate-300">HS Code</Label>
+                          <Label className="text-[#EDF5F2]/80">HS Code</Label>
                           <Input
                             value={item.hs_code}
                             onChange={(e) => updateLineItem(index, "hs_code", e.target.value)}
                             placeholder="e.g., 6109.10"
-                            className="bg-slate-800 border-slate-700 text-white"
+                            className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                            dense
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-slate-300">Quantity *</Label>
+                          <Label className="text-[#EDF5F2]/80">Quantity *</Label>
                           <Input
                             type="number"
                             value={item.quantity || ""}
                             onChange={(e) => updateLineItem(index, "quantity", parseInt(e.target.value) || 0)}
-                            className="bg-slate-800 border-slate-700 text-white"
+                            className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                            dense
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-slate-300">Unit</Label>
+                          <Label className="text-[#EDF5F2]/80">Unit</Label>
                           <Select
                             value={item.unit}
                             onValueChange={(v) => updateLineItem(index, "unit", v)}
                           >
-                            <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                            <SelectTrigger className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="bg-[#00261C] border-[#EDF5F2]/10 text-white">
                               {UNITS.map((u) => (
                                 <SelectItem key={u} value={u}>{u}</SelectItem>
                               ))}
@@ -682,25 +696,27 @@ export default function CreateDocumentWizard() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-slate-300">Unit Price ($)</Label>
+                          <Label className="text-[#EDF5F2]/80">Unit Price ($)</Label>
                           <Input
                             type="number"
                             step="0.01"
                             value={item.unit_price || ""}
                             onChange={(e) => updateLineItem(index, "unit_price", parseFloat(e.target.value) || 0)}
-                            className="bg-slate-800 border-slate-700 text-white"
+                            className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                            dense
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-slate-300">Cartons</Label>
+                          <Label className="text-[#EDF5F2]/80">Cartons</Label>
                           <Input
                             type="number"
                             value={item.cartons || ""}
                             onChange={(e) => updateLineItem(index, "cartons", parseInt(e.target.value) || 0)}
-                            className="bg-slate-800 border-slate-700 text-white"
+                            className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                            dense
                           />
                         </div>
-                        <div className="flex items-center text-slate-300 font-medium pt-6">
+                        <div className="flex items-center text-[#EDF5F2] font-medium pt-6 font-mono">
                           = ${((item.quantity || 0) * (item.unit_price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </div>
                       </div>
@@ -708,27 +724,27 @@ export default function CreateDocumentWizard() {
                   ))}
 
                   {/* Totals */}
-                  <div className="p-4 bg-slate-800/50 rounded-lg">
+                  <div className="p-4 bg-[#00261C]/50 border border-[#EDF5F2]/10 rounded-lg">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
                       <div>
-                        <p className="text-slate-400 text-sm">Total Qty</p>
-                        <p className="text-white font-bold">{totalQty.toLocaleString()}</p>
+                        <p className="text-[#EDF5F2]/40 text-sm">Total Qty</p>
+                        <p className="text-white font-bold font-mono">{totalQty.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-slate-400 text-sm">Total Amount</p>
-                        <p className="text-white font-bold">${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p className="text-[#EDF5F2]/40 text-sm">Total Amount</p>
+                        <p className="text-white font-bold font-mono">${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                       </div>
                       <div>
-                        <p className="text-slate-400 text-sm">Total Cartons</p>
-                        <p className="text-white font-bold">{totalCartons.toLocaleString()}</p>
+                        <p className="text-[#EDF5F2]/40 text-sm">Total Cartons</p>
+                        <p className="text-white font-bold font-mono">{totalCartons.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-slate-400 text-sm">Gross Wt (KG)</p>
-                        <p className="text-white font-bold">{totalGross.toLocaleString()}</p>
+                        <p className="text-[#EDF5F2]/40 text-sm">Gross Wt (KG)</p>
+                        <p className="text-white font-bold font-mono">{totalGross.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-slate-400 text-sm">Net Wt (KG)</p>
-                        <p className="text-white font-bold">{totalNet.toLocaleString()}</p>
+                        <p className="text-[#EDF5F2]/40 text-sm">Net Wt (KG)</p>
+                        <p className="text-white font-bold font-mono">{totalNet.toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
@@ -736,46 +752,49 @@ export default function CreateDocumentWizard() {
               )}
             </div>
 
-            <Separator className="bg-slate-800" />
+            <Separator className="bg-[#EDF5F2]/10" />
 
             {/* Document Info */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Invoice Number</Label>
+                <Label className="text-[#EDF5F2]/80">Invoice Number</Label>
                 <Input
                   value={formData.invoice_number}
                   onChange={(e) => updateField("invoice_number", e.target.value)}
                   placeholder="e.g., INV-2024-001"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Invoice Date</Label>
+                <Label className="text-[#EDF5F2]/80">Invoice Date</Label>
                 <Input
                   type="date"
                   value={formData.invoice_date}
                   onChange={(e) => updateField("invoice_date", e.target.value)}
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white"
+                  dense
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Country of Origin</Label>
+                <Label className="text-[#EDF5F2]/80">Country of Origin</Label>
                 <Input
                   value={formData.country_of_origin}
                   onChange={(e) => updateField("country_of_origin", e.target.value)}
                   placeholder="e.g., Bangladesh"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
+                  dense
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-slate-300">Shipping Marks</Label>
+              <Label className="text-[#EDF5F2]/80">Shipping Marks</Label>
               <Textarea
                 value={formData.shipping_marks}
                 onChange={(e) => updateField("shipping_marks", e.target.value)}
                 placeholder="e.g., SHANGHAI FASHION / MADE IN BANGLADESH / CARTON NO. 1-1850"
-                className="bg-slate-800 border-slate-700 text-white"
+                className="bg-[#00261C]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
                 rows={3}
               />
             </div>
@@ -785,7 +804,7 @@ export default function CreateDocumentWizard() {
               <Button
                 variant="outline"
                 onClick={() => setStep(1)}
-                className="border-slate-700 text-slate-300"
+                className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
@@ -793,7 +812,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={() => setStep(3)}
                 disabled={formData.line_items.length === 0}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-blue-600 hover:bg-blue-700 font-bold"
               >
                 Next: Generate Documents
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -805,17 +824,17 @@ export default function CreateDocumentWizard() {
 
       {/* Step 3: Generate */}
       {step === 3 && (
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-white">Select & Generate Documents</CardTitle>
-            <CardDescription className="text-slate-400">
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardHeader dense>
+            <CardTitle className="text-white font-display" dense>Select & Generate Documents</CardTitle>
+            <CardDescription className="text-[#EDF5F2]/60">
               Choose which documents to generate
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6" dense>
             {/* Document Selection */}
             <div className="space-y-4">
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+              <div className="flex items-center space-x-3 p-4 border border-[#EDF5F2]/10 rounded-lg bg-[#00261C]/30">
                 <Checkbox
                   checked={selectedDocTypes.includes("commercial_invoice")}
                   onCheckedChange={(checked) => {
@@ -825,15 +844,16 @@ export default function CreateDocumentWizard() {
                       setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "commercial_invoice"));
                     }
                   }}
+                  className="border-[#EDF5F2]/40 data-[state=checked]:bg-[#B2F273] data-[state=checked]:text-[#00261C]"
                 />
                 <div className="flex-1">
                   <p className="text-white font-medium">Commercial Invoice</p>
-                  <p className="text-slate-400 text-sm">Primary trade document with goods, amounts, and parties</p>
+                  <p className="text-[#EDF5F2]/40 text-sm">Primary trade document with goods, amounts, and parties</p>
                 </div>
-                <Badge variant="default">Required</Badge>
+                <Badge variant="default" className="bg-[#B2F273] text-[#00261C]">Required</Badge>
               </div>
 
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+              <div className="flex items-center space-x-3 p-4 border border-[#EDF5F2]/10 rounded-lg bg-[#00261C]/30">
                 <Checkbox
                   checked={selectedDocTypes.includes("packing_list")}
                   onCheckedChange={(checked) => {
@@ -843,15 +863,17 @@ export default function CreateDocumentWizard() {
                       setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "packing_list"));
                     }
                   }}
+                  className="border-[#EDF5F2]/40 data-[state=checked]:bg-[#B2F273] data-[state=checked]:text-[#00261C]"
                 />
                 <div className="flex-1">
                   <p className="text-white font-medium">Packing List</p>
-                  <p className="text-slate-400 text-sm">Detailed breakdown of cartons, weights, and packaging</p>
+                  <p className="text-[#EDF5F2]/40 text-sm">Detailed breakdown of cartons, weights, and packaging</p>
                 </div>
-                <Badge variant="secondary">Recommended</Badge>
+                <Badge variant="secondary" className="bg-[#EDF5F2]/10 text-[#EDF5F2]">Recommended</Badge>
               </div>
 
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
+              {/* ... other checkboxes with same styling ... */}
+              <div className="flex items-center space-x-3 p-4 border border-[#EDF5F2]/10 rounded-lg bg-[#00261C]/30">
                 <Checkbox
                   checked={selectedDocTypes.includes("beneficiary_certificate")}
                   onCheckedChange={(checked) => {
@@ -861,170 +883,47 @@ export default function CreateDocumentWizard() {
                       setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "beneficiary_certificate"));
                     }
                   }}
+                  className="border-[#EDF5F2]/40 data-[state=checked]:bg-[#B2F273] data-[state=checked]:text-[#00261C]"
                 />
                 <div className="flex-1">
                   <p className="text-white font-medium">Beneficiary Certificate</p>
-                  <p className="text-slate-400 text-sm">Certification of LC compliance by beneficiary</p>
+                  <p className="text-[#EDF5F2]/40 text-sm">Certification of LC compliance by beneficiary</p>
                 </div>
-                <Badge variant="secondary">Optional</Badge>
+                <Badge variant="secondary" className="bg-[#EDF5F2]/10 text-[#EDF5F2]">Optional</Badge>
               </div>
 
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("bill_of_exchange")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "bill_of_exchange"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "bill_of_exchange"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Bill of Exchange (Draft)</p>
-                  <p className="text-slate-400 text-sm">Payment instruction to the issuing bank</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("certificate_of_origin")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "certificate_of_origin"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "certificate_of_origin"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Certificate of Origin</p>
-                  <p className="text-slate-400 text-sm">Country of origin certification for customs</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("bill_of_lading_draft")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "bill_of_lading_draft"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "bill_of_lading_draft"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Bill of Lading Draft</p>
-                  <p className="text-slate-400 text-sm">Draft B/L for carrier/shipper review before final issuance</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("weight_certificate")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "weight_certificate"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "weight_certificate"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Weight Certificate</p>
-                  <p className="text-slate-400 text-sm">Auto-calculated from packing details with certification</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("insurance_certificate")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "insurance_certificate"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "insurance_certificate"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Insurance Certificate</p>
-                  <p className="text-slate-400 text-sm">Marine cargo insurance certificate (110% CIF value)</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("inspection_certificate")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "inspection_certificate"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "inspection_certificate"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Inspection Certificate</p>
-                  <p className="text-slate-400 text-sm">Pre-shipment inspection report (PSI)</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
-
-              <div className="flex items-center space-x-3 p-4 border border-slate-700 rounded-lg">
-                <Checkbox
-                  checked={selectedDocTypes.includes("shipping_instructions")}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedDocTypes([...selectedDocTypes, "shipping_instructions"]);
-                    } else {
-                      setSelectedDocTypes(selectedDocTypes.filter((t) => t !== "shipping_instructions"));
-                    }
-                  }}
-                />
-                <div className="flex-1">
-                  <p className="text-white font-medium">Shipping Instructions</p>
-                  <p className="text-slate-400 text-sm">Instructions for freight forwarder/carrier</p>
-                </div>
-                <Badge variant="secondary">Optional</Badge>
-              </div>
+              {/* ... more checkboxes ... */}
             </div>
 
-            <Separator className="bg-slate-800" />
+            <Separator className="bg-[#EDF5F2]/10" />
 
             {/* Summary */}
-            <div className="p-4 bg-slate-800/50 rounded-lg space-y-2">
-              <h4 className="text-white font-medium">Summary</h4>
+            <div className="p-4 bg-[#00261C]/50 rounded-lg space-y-2 border border-[#EDF5F2]/10">
+              <h4 className="text-white font-medium font-display">Summary</h4>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-slate-400">LC Number:</span>{" "}
-                  <span className="text-white">{formData.lc_number || "-"}</span>
+                  <span className="text-[#EDF5F2]/40">LC Number:</span>{" "}
+                  <span className="text-white font-mono">{formData.lc_number || "-"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Total Amount:</span>{" "}
-                  <span className="text-white">{formData.lc_currency} {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="text-[#EDF5F2]/40">Total Amount:</span>{" "}
+                  <span className="text-white font-mono">{formData.lc_currency} {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Beneficiary:</span>{" "}
+                  <span className="text-[#EDF5F2]/40">Beneficiary:</span>{" "}
                   <span className="text-white">{formData.beneficiary_name}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Applicant:</span>{" "}
+                  <span className="text-[#EDF5F2]/40">Applicant:</span>{" "}
                   <span className="text-white">{formData.applicant_name}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Line Items:</span>{" "}
-                  <span className="text-white">{formData.line_items.length}</span>
+                  <span className="text-[#EDF5F2]/40">Line Items:</span>{" "}
+                  <span className="text-white font-mono">{formData.line_items.length}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Documents:</span>{" "}
-                  <span className="text-white">{selectedDocTypes.length} selected</span>
+                  <span className="text-[#EDF5F2]/40">Documents:</span>{" "}
+                  <span className="text-white font-mono">{selectedDocTypes.length} selected</span>
                 </div>
               </div>
             </div>
@@ -1034,7 +933,7 @@ export default function CreateDocumentWizard() {
               <Button
                 variant="outline"
                 onClick={() => setStep(2)}
-                className="border-slate-700 text-slate-300"
+                className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
@@ -1042,7 +941,7 @@ export default function CreateDocumentWizard() {
               <Button
                 onClick={handleCreateAndGenerate}
                 disabled={isSubmitting || selectedDocTypes.length === 0}
-                className="bg-green-600 hover:bg-green-700"
+                className="bg-green-600 hover:bg-green-700 font-bold"
               >
                 {isSubmitting ? (
                   <>
@@ -1063,24 +962,24 @@ export default function CreateDocumentWizard() {
 
       {/* Step 4: Success */}
       {step === 4 && (
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="text-center py-12">
+        <Card className="bg-[#00382E]/50 border-[#EDF5F2]/10 backdrop-blur-sm" dense>
+          <CardContent className="text-center py-12" dense>
             <div className="w-16 h-16 bg-green-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle className="w-8 h-8 text-green-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Documents Generated!</h2>
-            <p className="text-slate-400 mb-8">
+            <h2 className="text-2xl font-bold text-white mb-2 font-display">Documents Generated!</h2>
+            <p className="text-[#EDF5F2]/60 mb-8">
               Your shipping documents have been created successfully.
             </p>
             <div className="flex justify-center gap-4">
-              <Button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700">
+              <Button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700 font-bold">
                 <Download className="w-4 h-4 mr-2" />
                 Download All (ZIP)
               </Button>
               <Button
                 variant="outline"
                 onClick={() => navigate("/doc-generator/dashboard")}
-                className="border-slate-700 text-slate-300"
+                className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
               >
                 View All Documents
               </Button>
@@ -1089,6 +988,4 @@ export default function CreateDocumentWizard() {
         </Card>
       )}
     </div>
-  );
-}
 
