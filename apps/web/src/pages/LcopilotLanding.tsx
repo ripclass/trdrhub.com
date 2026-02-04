@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle, Shield, Zap, Globe, FileCheck, Brain, LayoutDashboard } from "lucide-react";
+import { ArrowRight, CheckCircle, Shield, Zap, Globe, FileCheck, Brain, LayoutDashboard, Upload, Download, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
@@ -135,37 +135,54 @@ export default function LcopilotLanding() {
               </p>
             </div>
             
-            <div className="grid md:grid-cols-3 gap-8 relative">
-              {/* Connector Line */}
-              <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-[#B2F273]/0 via-[#B2F273]/20 to-[#B2F273]/0 border-t border-dashed border-[#EDF5F2]/20" />
-              
-              {[
-                {
-                  step: "01",
-                  title: "Upload Documents",
-                  desc: "Drag & drop your LC, Bill of Lading, Invoice, and Packing List. Any format.",
-                },
-                {
-                  step: "02",
-                  title: "AI Analysis",
-                  desc: "Our engine extracts data and checks against 3,500+ rules (UCP600, ISBP745) in seconds.",
-                },
-                {
-                  step: "03",
-                  title: "Resolve & Export",
-                  desc: "Review discrepancies with suggested fixes. Download a clean, bank-ready report.",
-                }
-              ].map((item, i) => (
-                <div key={i} className="relative text-center group">
-                  <div className="w-24 h-24 mx-auto bg-[#00261C] border border-[#EDF5F2]/10 rounded-full flex items-center justify-center mb-6 relative z-10 group-hover:border-[#B2F273]/50 transition-colors">
-                    <span className="text-3xl font-bold text-[#EDF5F2]/20 font-display group-hover:text-[#B2F273] transition-colors">{item.step}</span>
+            <div className="max-w-5xl mx-auto">
+              <div className="grid md:grid-cols-3 gap-8">
+                {[
+                  {
+                    step: "01",
+                    icon: Upload,
+                    title: "Upload Documents",
+                    description: "Drag & drop your LC, Bill of Lading, Invoice, and Packing List. Any format.",
+                    time: "10 sec",
+                  },
+                  {
+                    step: "02",
+                    icon: Brain,
+                    title: "AI Analysis",
+                    description: "Our engine extracts data and checks against 3,500+ rules (UCP600, ISBP745) in seconds.",
+                    time: "30 sec",
+                  },
+                  {
+                    step: "03",
+                    icon: Download,
+                    title: "Resolve & Export",
+                    description: "Review discrepancies with suggested fixes. Download a clean, bank-ready report.",
+                    time: "5 sec",
+                  }
+                ].map((item, idx) => (
+                  <div key={idx} className="relative">
+                    {/* Connector line */}
+                    {idx < 2 && (
+                      <div className="hidden md:block absolute top-16 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#EDF5F2]/10 to-transparent" />
+                    )}
+                    
+                    <div className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/30 transition-colors h-full group">
+                      <div className="flex items-center justify-between mb-6">
+                        <span className="text-5xl font-bold text-[#EDF5F2]/10 font-display group-hover:text-[#B2F273]/20 transition-colors">{item.step}</span>
+                        <div className="w-14 h-14 bg-[#B2F273]/10 rounded-xl flex items-center justify-center border border-[#B2F273]/20 group-hover:bg-[#B2F273] group-hover:text-[#00261C] transition-all duration-300">
+                          <item.icon className="w-7 h-7 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
+                        </div>
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-3 font-display">{item.title}</h3>
+                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed mb-4">{item.description}</p>
+                      <div className="inline-flex items-center gap-2 text-xs text-[#EDF5F2]/40 font-mono">
+                        <Clock className="w-3 h-3" />
+                        {item.time}
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-xl font-bold text-white mb-3 font-display">{item.title}</h3>
-                  <p className="text-[#EDF5F2]/60 text-sm leading-relaxed px-4">
-                    {item.desc}
-                  </p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 
