@@ -74,7 +74,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <div className="flex items-center gap-3">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-[#B2F273]/10 text-[#B2F273]">
                   <FileText className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
@@ -87,7 +87,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
         </SidebarMenu>
       </SidebarHeader>
       
-      <SidebarContent>
+      <SidebarContent className="px-2">
         <SidebarGroup>
           <SidebarGroupLabel>Documents</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -96,6 +96,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard") && location.pathname === "/doc-generator/dashboard"}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard">
                     <FolderOpen />
@@ -107,6 +108,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/new")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/new">
                     <Plus />
@@ -126,6 +128,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/templates")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/templates">
                     <LayoutTemplate />
@@ -137,6 +140,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/products")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/products">
                     <Package />
@@ -148,6 +152,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/buyers")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/buyers">
                     <Users />
@@ -167,6 +172,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/signatures")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/signatures">
                     <PenTool />
@@ -178,6 +184,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/bank-formats")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/bank-formats">
                     <Building2 />
@@ -189,6 +196,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/certificates")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/certificates">
                     <Award />
@@ -207,6 +215,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/branding")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/branding">
                     <Palette />
@@ -218,6 +227,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/help")}
                   asChild
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Link to="/doc-generator/dashboard/help">
                     <HelpCircle />
