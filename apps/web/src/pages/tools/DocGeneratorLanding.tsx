@@ -178,7 +178,7 @@ const DocGeneratorLanding = () => {
                 </Button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-[#EDF5F2]/60">
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-[#EDF5F2]/60 mb-16">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   UCP600 Compliant
@@ -192,84 +192,24 @@ const DocGeneratorLanding = () => {
                   20+ Document Types
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Document Types Grid */}
-        <section className="relative py-24 bg-[#00261C] overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
-          
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
-                Supported Documents
-              </h2>
-              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
-                Generate any of these documents instantly from your LC data.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-              {documentTypes.map((doc, idx) => (
-                <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-4 hover:border-[#B2F273]/30 transition-colors backdrop-blur-sm group">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-[#B2F273]/10 rounded-lg flex items-center justify-center shrink-0 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
-                      <doc.icon className="w-5 h-5 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
+              {/* Stats bar inside Hero */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 border-t border-[#EDF5F2]/10 pt-12">
+                {stats.map((stat, idx) => (
+                  <div key={idx} className="text-center">
+                    <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-display">
+                      {stat.value}<span className="text-[#B2F273]">{stat.unit}</span>
                     </div>
-                    <div>
-                      <h3 className="text-white font-bold text-sm font-display">{doc.name}</h3>
-                      <p className="text-[#EDF5F2]/60 text-xs mt-1">{doc.description}</p>
-                    </div>
+                    <div className="text-xs sm:text-sm text-[#EDF5F2]/40 mt-1 font-mono uppercase tracking-wider">{stat.label}</div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Stats */}
-        <section className="relative py-24 bg-[#00261C] overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
-          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
-              
-              <div className="flex flex-col lg:flex-row items-center justify-between gap-12 relative z-10">
-                <div className="lg:max-w-xl">
-                  <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6 font-display">
-                    Built for global trade.
-                    <br />
-                    <span className="text-[#B2F273]">Works everywhere.</span>
-                  </h2>
-                  <p className="text-[#EDF5F2]/60 leading-relaxed text-lg">
-                    Whether you process one shipment a month or hundreds per day, Doc Generator pairs AI automation 
-                    with human-ready workflows so your teams can ship documents without fear of rejection.
-                  </p>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-6 w-full lg:w-auto">
-                  {stats.map((stat) => (
-                    <div 
-                      key={stat.label} 
-                      className="bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-6 text-center min-w-[140px]"
-                    >
-                      <div className="text-3xl font-bold text-white mb-2 font-display">{stat.value}</div>
-                      <div className="text-xs text-[#EDF5F2]/40 font-mono uppercase tracking-wider">{stat.label}</div>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
             </div>
           </div>
         </section>
 
         {/* Problem Statement (Before/After) */}
-        <section className="relative py-24 bg-[#00261C] overflow-hidden">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden border-y border-[#EDF5F2]/10">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
           <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
@@ -397,6 +337,38 @@ const DocGeneratorLanding = () => {
           </div>
         </section>
 
+        {/* Document Types Grid */}
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
+                Supported Documents
+              </h2>
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
+                Generate any of these documents instantly from your LC data.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+              {documentTypes.map((doc, idx) => (
+                <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-4 hover:border-[#B2F273]/30 transition-colors backdrop-blur-sm group">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-[#B2F273]/10 rounded-lg flex items-center justify-center shrink-0 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
+                      <doc.icon className="w-5 h-5 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-sm font-display">{doc.name}</h3>
+                      <p className="text-[#EDF5F2]/60 text-xs mt-1">{doc.description}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* Features Grid */}
         <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
@@ -405,33 +377,42 @@ const DocGeneratorLanding = () => {
           <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-12 sm:mb-16">
-              <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
-                Everything You Need for Document Prep
-              </h2>
-              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
-                Professional templates, smart auto-fill, and cross-document validation.
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-              {features.map((feature, idx) => (
-                <div 
-                  key={idx} 
-                  className="group bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] overflow-hidden"
-                >
-                  {/* Hover Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#B2F273]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="w-14 h-14 bg-[#00382E] rounded-xl flex items-center justify-center group-hover:bg-[#B2F273] transition-colors duration-300 relative z-10">
-                      <feature.icon className="w-7 h-7 text-[#EDF5F2]/60 group-hover:text-[#00261C] transition-colors duration-300" />
-                    </div>
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-3 font-display group-hover:text-[#B2F273] transition-colors duration-300">{feature.title}</h3>
-                  <p className="text-[#EDF5F2]/60 text-sm leading-relaxed font-light">{feature.description}</p>
+            <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
+              
+              <div className="relative z-10">
+                <div className="text-center mb-12 sm:mb-16">
+                  <p className="text-[#B2F273] font-mono font-semibold mb-3 sm:mb-4 tracking-wide uppercase text-xs sm:text-sm">Features</p>
+                  <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3 sm:mb-4 font-display">
+                    Everything You Need for Document Prep
+                  </h2>
+                  <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
+                    Professional templates, smart auto-fill, and cross-document validation.
+                  </p>
                 </div>
-              ))}
+
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+                  {features.map((feature, idx) => (
+                    <div 
+                      key={idx} 
+                      className="group bg-[#00261C] border border-[#EDF5F2]/10 rounded-2xl p-8 hover:border-[#B2F273]/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(178,242,115,0.1)] overflow-hidden"
+                    >
+                      {/* Hover Gradient Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-[#B2F273]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="w-14 h-14 bg-[#00382E] rounded-xl flex items-center justify-center group-hover:bg-[#B2F273] transition-colors duration-300 relative z-10">
+                          <feature.icon className="w-7 h-7 text-[#EDF5F2]/60 group-hover:text-[#00261C] transition-colors duration-300" />
+                        </div>
+                        <span className="px-2.5 py-1 bg-[#B2F273]/10 rounded-full text-xs font-medium text-[#B2F273] border border-[#B2F273]/20 font-mono">
+                          {feature.highlight}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-3 font-display group-hover:text-[#B2F273] transition-colors duration-300">{feature.title}</h3>
+                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed font-light">{feature.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -523,7 +504,7 @@ const DocGeneratorLanding = () => {
         </section>
 
         {/* CTA */}
-        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+        <section className="relative py-20 bg-gradient-to-b from-[#00382E] to-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
           <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
