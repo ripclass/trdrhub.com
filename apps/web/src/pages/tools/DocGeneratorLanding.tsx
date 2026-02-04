@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award, ClipboardCheck, Brain } from "lucide-react";
+import { ArrowRight, CheckCircle, FileText, Clock, Zap, Shield, Globe, Download, ChevronDown, FileCheck, Package, Receipt, ScrollText, Award, ClipboardCheck, Brain, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
@@ -202,6 +202,14 @@ const DocGeneratorLanding = () => {
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
           
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
+                Supported Documents
+              </h2>
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
+                Generate any of these documents instantly from your LC data.
+              </p>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
               {documentTypes.map((doc, idx) => (
                 <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-4 hover:border-[#B2F273]/30 transition-colors backdrop-blur-sm group">
@@ -303,7 +311,7 @@ const DocGeneratorLanding = () => {
                       </div>
                       <div className="flex gap-2">
                         <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#EDF5F2]/5 rounded-lg text-[#EDF5F2]/40 text-xs border border-[#EDF5F2]/10 font-mono">
-                          <span className="text-[#EDF5F2]/40">✗</span>
+                          <X className="w-3.5 h-3.5" />
                           {item.before}
                         </span>
                         <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#B2F273]/10 rounded-lg text-[#B2F273] text-xs border border-[#B2F273]/20 font-mono">
@@ -323,7 +331,7 @@ const DocGeneratorLanding = () => {
                       </div>
                       <div className="text-center">
                         <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#EDF5F2]/5 rounded-lg text-[#EDF5F2]/40 text-sm border border-[#EDF5F2]/10 font-mono">
-                          <span className="w-4 h-4 text-[#EDF5F2]/40">✗</span>
+                          <X className="w-4 h-4" />
                           {item.before}
                         </span>
                       </div>
