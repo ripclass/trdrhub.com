@@ -330,7 +330,7 @@ export default function DocGeneratorDashboard() {
             </Button>
             <Button asChild className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold" size="sm">
               <Link to="/doc-generator/dashboard/new">
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 mr-1" />
                 Create New
               </Link>
             </Button>
@@ -384,7 +384,7 @@ export default function DocGeneratorDashboard() {
               {!searchQuery && statusFilter === "all" && (
                 <Button asChild className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold">
                   <Link to="/doc-generator/dashboard/new">
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4 mr-1" />
                     Create Document Set
                   </Link>
                 </Button>

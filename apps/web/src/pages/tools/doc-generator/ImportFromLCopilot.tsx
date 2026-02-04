@@ -168,13 +168,13 @@ export function ImportFromLCopilot({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl bg-[#00261C] border-[#EDF5F2]/10 text-[#EDF5F2]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-white font-display">
+            <Download className="h-5 w-5 text-[#B2F273]" />
             Import from LCopilot
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-[#EDF5F2]/60">
             Select a validated LC to pre-fill document data
           </DialogDescription>
         </DialogHeader>
@@ -182,61 +182,61 @@ export function ImportFromLCopilot({
         <div className="space-y-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#EDF5F2]/40" />
             <Input
               placeholder="Search by LC number, beneficiary, or applicant..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-[#00382E]/50 border-[#EDF5F2]/10 text-white placeholder:text-[#EDF5F2]/40"
             />
           </div>
 
           {/* Sessions List */}
-          <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+          <div className="border border-[#EDF5F2]/10 rounded-lg max-h-[300px] overflow-y-auto bg-[#00382E]/30">
             {loading ? (
               <div className="flex items-center justify-center p-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Loader2 className="h-6 w-6 animate-spin text-[#B2F273]" />
               </div>
             ) : filteredSessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center">
-                <FileText className="h-12 w-12 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
+                <FileText className="h-12 w-12 text-[#EDF5F2]/20 mb-2" />
+                <p className="text-sm text-[#EDF5F2]/60">
                   No validated LCs found
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-[#EDF5F2]/40 mt-1">
                   Validate an LC in LCopilot first
                 </p>
               </div>
             ) : (
-              <div className="divide-y">
+              <div className="divide-y divide-[#EDF5F2]/10">
                 {filteredSessions.map((session) => (
                   <div
                     key={session.id}
-                    className={`p-4 cursor-pointer hover:bg-muted/50 transition-colors ${
-                      selectedSession === session.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
+                    className={`p-4 cursor-pointer hover:bg-[#00382E] transition-colors ${
+                      selectedSession === session.id ? "bg-[#B2F273]/10 border-l-2 border-l-[#B2F273]" : ""
                     }`}
                     onClick={() => setSelectedSession(session.id)}
                   >
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{session.lc_number}</span>
-                          <Badge variant={session.status === "completed" ? "default" : "secondary"}>
+                          <span className="font-medium text-white">{session.lc_number}</span>
+                          <Badge variant={session.status === "completed" ? "default" : "secondary"} className="bg-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/20">
                             {session.status}
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-[#EDF5F2]/60 mt-1">
                           {session.beneficiary_name} → {session.applicant_name}
                         </p>
-                        <p className="text-sm font-medium mt-1">
+                        <p className="text-sm font-medium mt-1 text-[#EDF5F2]/80">
                           {session.currency} {session.lc_amount?.toLocaleString()}
                         </p>
                       </div>
                       {selectedSession === session.id && (
-                        <CheckCircle className="h-5 w-5 text-primary" />
+                        <CheckCircle className="h-5 w-5 text-[#B2F273]" />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
+                    <p className="text-xs text-[#EDF5F2]/40 mt-2">
                       {new Date(session.created_at).toLocaleDateString()}
                     </p>
                   </div>
@@ -251,18 +251,19 @@ export function ImportFromLCopilot({
               id="include-goods"
               checked={includeGoods}
               onCheckedChange={(checked) => setIncludeGoods(checked === true)}
+              className="border-[#EDF5F2]/40 data-[state=checked]:bg-[#B2F273] data-[state=checked]:text-[#00261C]"
             />
-            <Label htmlFor="include-goods" className="text-sm">
+            <Label htmlFor="include-goods" className="text-sm text-[#EDF5F2]/80">
               Include goods description as line item
             </Label>
           </div>
 
           {/* Info */}
-          <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800">
-              <p className="font-medium">What gets imported:</p>
-              <ul className="list-disc list-inside mt-1 text-blue-700">
+          <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <AlertCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-200">
+              <p className="font-medium text-blue-100">What gets imported:</p>
+              <ul className="list-disc list-inside mt-1 text-blue-300/80">
                 <li>LC number, date, amount, currency</li>
                 <li>Beneficiary and applicant details</li>
                 <li>Ports, incoterms, and shipping details</li>
@@ -272,13 +273,14 @@ export function ImportFromLCopilot({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="flex justify-end gap-2 pt-4 border-t border-[#EDF5F2]/10">
+            <Button variant="outline" onClick={() => onOpenChange(false)} className="border-[#EDF5F2]/10 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent">
               Cancel
             </Button>
             <Button
               onClick={handleImport}
               disabled={!selectedSession || importing}
+              className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold"
             >
               {importing ? (
                 <>
