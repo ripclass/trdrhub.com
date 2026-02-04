@@ -89,7 +89,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
       
       <SidebarContent className="px-2">
         <SidebarGroup>
-          <SidebarGroupLabel>Documents</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">Documents</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -121,14 +121,14 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
         </SidebarGroup>
         
         <SidebarGroup>
-          <SidebarGroupLabel>Quick Entry</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">Quick Entry</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/templates")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/templates">
                     <LayoutTemplate />
@@ -140,7 +140,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/products")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/products">
                     <Package />
@@ -152,7 +152,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/buyers")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/buyers">
                     <Users />
@@ -165,14 +165,14 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Advanced</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">Advanced</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/signatures")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/signatures">
                     <PenTool />
@@ -184,7 +184,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/bank-formats")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/bank-formats">
                     <Building2 />
@@ -196,7 +196,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/certificates")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/certificates">
                     <Award />
@@ -215,7 +215,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/branding")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/branding">
                     <Palette />
@@ -227,7 +227,7 @@ export function DocGeneratorSidebar({ ...props }: DocGeneratorSidebarProps) {
                 <SidebarMenuButton
                   isActive={isActive("/doc-generator/dashboard/help")}
                   asChild
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273] font-display"
                 >
                   <Link to="/doc-generator/dashboard/help">
                     <HelpCircle />
