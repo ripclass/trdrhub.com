@@ -90,8 +90,12 @@ export default function LcopilotLanding() {
         </section>
 
         {/* Role Cards */}
-        <section className="relative py-24">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid gap-6 lg:grid-cols-3">
             {roles.map((role) => (
@@ -131,8 +135,12 @@ export default function LcopilotLanding() {
         </section>
 
         {/* How It Works Section */}
-        <section className="relative py-24">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="">
             <div className="text-center mb-16">
@@ -196,8 +204,12 @@ export default function LcopilotLanding() {
         </section>
 
         {/* Highlights Section */}
-        <section className="relative py-24">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid gap-6 lg:grid-cols-3">
             {highlights.map((item, idx) => (
@@ -221,8 +233,12 @@ export default function LcopilotLanding() {
         </section>
 
         {/* Stats Section */}
-        <section className="relative py-24">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-12 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
@@ -257,8 +273,12 @@ export default function LcopilotLanding() {
         </section>
 
         {/* Bottom CTA */}
-        <section className="relative py-24">
+        <section className="relative py-24 bg-[#00261C] overflow-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-8 font-display">
