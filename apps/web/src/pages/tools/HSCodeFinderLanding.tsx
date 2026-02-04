@@ -117,45 +117,46 @@ const HSCodeFinderLanding = () => {
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
       
       <main>
         {/* Hero Section */}
-        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden">
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden bg-[#00261C]">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#B2F273]/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-[100px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 mb-6">
-                <Star className="w-4 h-4 text-purple-400" />
-                <span className="text-purple-400 text-sm font-medium">100% Free Tool</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
+                <Star className="w-4 h-4 text-[#B2F273]" />
+                <span className="text-[#B2F273] text-sm font-medium">100% Free Tool</span>
               </div>
               
-              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
                 Find the Right{" "}
-                <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">HS Code</span>{" "}
+                <span className="text-[#B2F273] text-glow-sm">HS Code</span>{" "}
                 in Seconds
               </h1>
               
-              <p className="text-lg text-slate-400 mb-8 leading-relaxed max-w-2xl mx-auto">
+              <p className="text-lg text-[#EDF5F2]/60 mb-8 leading-relaxed max-w-2xl mx-auto">
                 Stop guessing tariff codes. Our AI classifies your products with duty rates, FTA eligibility, 
                 and import restrictions for 100+ countries. Free, instant, accurate.
               </p>
 
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400 mb-12">
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-[#EDF5F2]/60 mb-12">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   100% Free
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   No Sign-Up Required
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   Instant Results
                 </div>
               </div>
@@ -163,29 +164,29 @@ const HSCodeFinderLanding = () => {
 
             {/* Search Box */}
             <div className="max-w-2xl mx-auto">
-              <div className="bg-slate-900/80 border border-slate-700 rounded-2xl p-6 backdrop-blur">
-                <p className="text-slate-400 text-sm mb-4">Describe your product in plain language:</p>
+              <div className="bg-[#00382E]/80 border border-[#EDF5F2]/10 rounded-2xl p-6 backdrop-blur-md shadow-xl">
+                <p className="text-[#EDF5F2]/60 text-sm mb-4">Describe your product in plain language:</p>
                 <div className="flex gap-3">
                   <input
                     type="text"
                     placeholder="e.g., Cotton t-shirts for men, made in Bangladesh"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                    className="flex-1 bg-[#00261C] border border-[#EDF5F2]/10 rounded-lg px-4 py-3 text-white placeholder-[#EDF5F2]/30 focus:outline-none focus:border-[#B2F273]/50 transition-colors"
                   />
-                  <Button className="bg-purple-500 hover:bg-purple-600 px-6" asChild>
+                  <Button className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] px-6 font-bold" asChild>
                     <Link to={`/hs-code/search?q=${encodeURIComponent(searchQuery)}`}>
                       <Search className="w-5 h-5" />
                     </Link>
                   </Button>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2 items-center">
-                  <span className="text-xs text-slate-500">Popular:</span>
+                  <span className="text-xs text-[#EDF5F2]/40">Popular:</span>
                   {popularSearches.map((term, idx) => (
                     <button 
                       key={idx}
                       onClick={() => setSearchQuery(term)}
-                      className="text-xs text-purple-400 hover:text-purple-300 hover:underline transition-colors"
+                      className="text-xs text-[#B2F273] hover:text-[#a3e662] hover:underline transition-colors"
                     >
                       {term}
                     </button>
@@ -197,13 +198,14 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* Stats */}
-        <section className="py-12 bg-slate-900 border-y border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-12 bg-[#00261C] border-y border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
-                  <div className="text-sm text-slate-500">{stat.label}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1 font-display">{stat.value}</div>
+                  <div className="text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -211,12 +213,15 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* Problem Statement */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12 font-display">
                 HS Code Classification is{" "}
-                <span className="text-purple-400">Confusing</span>
+                <span className="text-[#B2F273]">Confusing</span>
               </h2>
               
               <div className="grid md:grid-cols-2 gap-8 mb-12">
@@ -225,52 +230,52 @@ const HSCodeFinderLanding = () => {
                     <span className="text-red-400 mt-1">✗</span>
                     <div>
                       <p className="text-white font-medium">5,000+ codes to choose from</p>
-                      <p className="text-slate-500 text-sm">Complex hierarchy, overlapping categories, endless notes</p>
+                      <p className="text-[#EDF5F2]/60 text-sm">Complex hierarchy, overlapping categories, endless notes</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <span className="text-red-400 mt-1">✗</span>
                     <div>
                       <p className="text-white font-medium">Wrong code = wrong duties</p>
-                      <p className="text-slate-500 text-sm">Overpay or face penalties and delays for underpayment</p>
+                      <p className="text-[#EDF5F2]/60 text-sm">Overpay or face penalties and delays for underpayment</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <span className="text-red-400 mt-1">✗</span>
                     <div>
                       <p className="text-white font-medium">Codes differ by country</p>
-                      <p className="text-slate-500 text-sm">6-digit WCO → 8/10-digit national codes with different rules</p>
+                      <p className="text-[#EDF5F2]/60 text-sm">6-digit WCO → 8/10-digit national codes with different rules</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <span className="text-red-400 mt-1">✗</span>
                     <div>
                       <p className="text-white font-medium">FTA savings left on the table</p>
-                      <p className="text-slate-500 text-sm">Most traders don't know which FTAs apply or how to qualify</p>
+                      <p className="text-[#EDF5F2]/60 text-sm">Most traders don't know which FTAs apply or how to qualify</p>
                     </div>
                   </div>
                 </div>
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">TRDR HS Code Finder solves this</h3>
-                  <ul className="space-y-3 text-slate-400">
+                <div className="bg-[#B2F273]/5 border border-[#B2F273]/20 rounded-xl p-6 backdrop-blur-sm">
+                  <h3 className="text-lg font-bold text-white mb-4 font-display">TRDR HS Code Finder solves this</h3>
+                  <ul className="space-y-3 text-[#EDF5F2]/60">
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Describe products in plain language
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       AI suggests best matches with confidence scores
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       See duty rates for any country instantly
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Check FTA eligibility and save thousands
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Know restrictions before you ship
                     </li>
                   </ul>
@@ -281,25 +286,28 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* How It Works */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 Classification in Three Steps
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
                 No training required. No customs expertise needed. Just type and get results.
               </p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
               {process.map((step, idx) => (
-                <div key={idx} className="text-center">
-                  <div className="w-12 h-12 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-purple-500/20">
-                    <span className="text-purple-400 font-bold">{step.step}</span>
+                <div key={idx} className="text-center group">
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors duration-300">
+                    <span className="text-[#B2F273] font-bold font-display group-hover:text-[#00261C] transition-colors">{step.step}</span>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{step.title}</h3>
-                  <p className="text-slate-400 text-sm">{step.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2 font-display">{step.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm">{step.description}</p>
                 </div>
               ))}
             </div>
@@ -307,29 +315,32 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* Features */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 More Than Just HS Codes
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
                 Get duty rates, FTA eligibility, and import restrictions - everything for customs clearance.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
               {features.map((feature, idx) => (
-                <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-purple-500/30 transition-colors">
-                  <div className="w-12 h-12 bg-purple-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-purple-400" />
+                <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 hover:border-[#B2F273]/30 transition-colors group backdrop-blur-sm">
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-lg flex items-center justify-center mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
+                    <feature.icon className="w-6 h-6 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm mb-4">{feature.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2 font-display">{feature.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm mb-4">{feature.description}</p>
                   <ul className="space-y-2">
                     {feature.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-slate-500">
-                        <CheckCircle className="w-4 h-4 text-purple-500 shrink-0" />
+                      <li key={i} className="flex items-center gap-2 text-sm text-[#EDF5F2]/50">
+                        <CheckCircle className="w-4 h-4 text-[#B2F273] shrink-0" />
                         {bullet}
                       </li>
                     ))}
@@ -341,13 +352,16 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* Pricing */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 Free Forever, Upgrade for More
               </h2>
-              <p className="text-slate-400">
+              <p className="text-[#EDF5F2]/60">
                 Basic HS code lookup is always free. Pay only for advanced features.
               </p>
             </div>
@@ -355,26 +369,26 @@ const HSCodeFinderLanding = () => {
             <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
               {pricing.map((plan, idx) => (
                 <div key={idx} className={cn(
-                  "bg-slate-800/50 border rounded-xl p-6",
-                  plan.popular ? "border-purple-500/50 bg-purple-500/5" : "border-slate-700"
+                  "bg-[#00382E]/50 border rounded-xl p-6 backdrop-blur-sm",
+                  plan.popular ? "border-[#B2F273] shadow-[0_0_20px_rgba(178,242,115,0.1)]" : "border-[#EDF5F2]/10"
                 )}>
                   {plan.popular && (
-                    <span className="text-xs text-purple-400 font-medium">MOST POPULAR</span>
+                    <span className="text-xs text-[#B2F273] font-mono uppercase tracking-wider font-medium">MOST POPULAR</span>
                   )}
-                  <h3 className="text-lg font-semibold text-white mt-2">{plan.tier}</h3>
-                  <div className="text-3xl font-bold text-white my-4">{plan.price}</div>
-                  <p className="text-slate-400 text-sm mb-4">{plan.description}</p>
+                  <h3 className="text-lg font-bold text-white mt-2 font-display">{plan.tier}</h3>
+                  <div className="text-3xl font-bold text-white my-4 font-display">{plan.price}</div>
+                  <p className="text-[#EDF5F2]/60 text-sm mb-4">{plan.description}</p>
                   <ul className="space-y-2 mb-6">
                     {plan.features.map((f, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-slate-400">
-                        <CheckCircle className="w-4 h-4 text-purple-500" />
+                      <li key={i} className="flex items-center gap-2 text-sm text-[#EDF5F2]/50">
+                        <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                         {f}
                       </li>
                     ))}
                   </ul>
                   <Button className={cn(
-                    "w-full",
-                    plan.popular ? "bg-purple-500 hover:bg-purple-600" : "bg-slate-700 hover:bg-slate-600"
+                    "w-full font-bold border-none",
+                    plan.popular ? "bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C]" : "bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white"
                   )} asChild>
                     <Link to="/hs-code/dashboard">Get Started</Link>
                   </Button>
@@ -385,29 +399,32 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* FAQ */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12 font-display">
                 Frequently Asked Questions
               </h2>
 
               <div className="space-y-4">
                 {faqs.map((faq, idx) => (
-                  <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+                  <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl overflow-hidden backdrop-blur-sm">
                     <button
                       className="w-full px-6 py-4 text-left flex items-center justify-between"
                       onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
                     >
-                      <span className="text-white font-medium">{faq.q}</span>
+                      <span className="text-white font-medium font-display">{faq.q}</span>
                       <ChevronDown className={cn(
-                        "w-5 h-5 text-slate-400 transition-transform shrink-0 ml-4",
+                        "w-5 h-5 text-[#EDF5F2]/40 transition-transform shrink-0 ml-4",
                         openFaq === idx && "rotate-180"
                       )} />
                     </button>
                     {openFaq === idx && (
                       <div className="px-6 pb-4">
-                        <p className="text-slate-400 text-sm leading-relaxed">{faq.a}</p>
+                        <p className="text-[#EDF5F2]/60 text-sm leading-relaxed">{faq.a}</p>
                       </div>
                     )}
                   </div>
@@ -418,16 +435,21 @@ const HSCodeFinderLanding = () => {
         </section>
 
         {/* CTA */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6 font-display">
                 Stop Guessing HS Codes
               </h2>
-              <p className="text-lg text-slate-400 mb-8">
+              <p className="text-lg text-[#EDF5F2]/60 mb-8">
                 Free, instant, accurate. The way tariff classification should be.
               </p>
-              <Button size="lg" className="bg-purple-500 hover:bg-purple-600 text-white font-semibold" asChild>
+              <Button size="lg" className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
                 <Link to="/hs-code/dashboard">
                   Start Classifying Free <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>

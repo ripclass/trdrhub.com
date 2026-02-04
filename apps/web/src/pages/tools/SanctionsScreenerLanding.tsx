@@ -131,44 +131,45 @@ const SanctionsScreenerLanding = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#00261C]">
       <TRDRHeader />
       
       <main>
         {/* Hero Section */}
-        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden">
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-red-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl" />
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden bg-[#00261C]">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#B2F273]/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-[100px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center mb-16">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20 mb-6">
-                <Shield className="w-4 h-4 text-red-400" />
-                <span className="text-red-400 text-sm font-medium">Compliance Tool</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
+                <Shield className="w-4 h-4 text-[#B2F273]" />
+                <span className="text-[#B2F273] text-sm font-medium">Compliance Tool</span>
               </div>
               
-              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
                 Screen Parties & Goods in{" "}
-                <span className="bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">Seconds</span>
+                <span className="text-[#B2F273] text-glow-sm">Seconds</span>
               </h1>
               
-              <p className="text-lg text-slate-400 mb-8 leading-relaxed max-w-2xl mx-auto">
+              <p className="text-lg text-[#EDF5F2]/60 mb-8 leading-relaxed max-w-2xl mx-auto">
                 Enterprise sanctions screening without the enterprise price tag. Check parties, vessels, 
                 and goods against OFAC, EU, UN, and 50+ global sanctions lists.
               </p>
 
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400 mb-12">
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-[#EDF5F2]/60 mb-12">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   OFAC SDN + Sectoral
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   EU 14 Russia Packages
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
                   Vessel Dark Activity
                 </div>
               </div>
@@ -177,13 +178,13 @@ const SanctionsScreenerLanding = () => {
             {/* Screening Type Cards */}
             <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {screeningTypes.map((type) => (
-                <div key={type.id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-red-500/30 transition-all group">
-                  <div className={`w-12 h-12 bg-gradient-to-br ${type.accent} rounded-lg flex items-center justify-center mb-4`}>
-                    <type.icon className="w-6 h-6 text-white" />
+                <div key={type.id} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 hover:border-[#B2F273]/30 transition-all group backdrop-blur-sm">
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-lg flex items-center justify-center mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
+                    <type.icon className="w-6 h-6 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">{type.title}</h3>
-                  <p className="text-slate-400 text-sm mb-4">{type.description}</p>
-                  <Button className="w-full bg-slate-800 hover:bg-slate-700 text-white group-hover:bg-red-500/20 group-hover:text-red-400 group-hover:border-red-500/30" asChild>
+                  <h3 className="text-xl font-bold text-white mb-2 font-display">{type.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm mb-4">{type.description}</p>
+                  <Button className="w-full bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
                     <Link to={type.to}>
                       Start Screening <ArrowRight className="w-4 h-4 ml-2" />
                     </Link>
@@ -195,13 +196,14 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* Stats */}
-        <section className="py-12 bg-slate-900 border-y border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-12 bg-[#00261C] border-y border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
               {stats.map((stat, idx) => (
                 <div key={idx} className="text-center">
-                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1">{stat.value}</div>
-                  <div className="text-sm text-slate-500">{stat.label}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1 font-display">{stat.value}</div>
+                  <div className="text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -209,18 +211,21 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* Problem Statement */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12 font-display">
                 Enterprise Tools at Enterprise Prices?{" "}
-                <span className="text-red-400">Not Anymore.</span>
+                <span className="text-[#B2F273]">Not Anymore.</span>
               </h2>
               
               <div className="grid md:grid-cols-2 gap-8">
-                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">Without TRDR</h3>
-                  <ul className="space-y-3 text-slate-400">
+                <div className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 backdrop-blur-sm">
+                  <h3 className="text-lg font-bold text-white mb-4 font-display">Without TRDR</h3>
+                  <ul className="space-y-3 text-[#EDF5F2]/60">
                     <li className="flex items-start gap-2">
                       <span className="text-red-400">✗</span>
                       Dow Jones/World-Check costs $10K+/year
@@ -239,23 +244,23 @@ const SanctionsScreenerLanding = () => {
                     </li>
                   </ul>
                 </div>
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">With TRDR</h3>
-                  <ul className="space-y-3 text-slate-400">
+                <div className="bg-[#B2F273]/5 border border-[#B2F273]/20 rounded-xl p-6 backdrop-blur-sm">
+                  <h3 className="text-lg font-bold text-white mb-4 font-display">With TRDR</h3>
+                  <ul className="space-y-3 text-[#EDF5F2]/60">
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Starting at $29/month (not $10K)
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Fuzzy matching catches 98% of variations
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Party + vessel + goods in one tool
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-emerald-400">✓</span>
+                      <span className="text-[#B2F273]">✓</span>
                       Downloadable compliance certificates
                     </li>
                   </ul>
@@ -266,25 +271,28 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* How It Works */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 Screen in Three Steps
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
                 No training required. No complex setup. Just type and screen.
               </p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
               {process.map((step, idx) => (
-                <div key={idx} className="text-center">
-                  <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
-                    <span className="text-red-400 font-bold">{step.step}</span>
+                <div key={idx} className="text-center group">
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors duration-300">
+                    <span className="text-[#B2F273] font-bold font-display group-hover:text-[#00261C] transition-colors">{step.step}</span>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{step.title}</h3>
-                  <p className="text-slate-400 text-sm">{step.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2 font-display">{step.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm">{step.description}</p>
                 </div>
               ))}
             </div>
@@ -292,29 +300,32 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* Features */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 Comprehensive Sanctions Coverage
               </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto">
+              <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto">
                 More lists, better matching, faster results than tools costing 10x more.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
               {features.map((feature, idx) => (
-                <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-red-500/30 transition-colors">
-                  <div className="w-12 h-12 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-red-400" />
+                <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 hover:border-[#B2F273]/30 transition-colors group backdrop-blur-sm">
+                  <div className="w-12 h-12 bg-[#B2F273]/10 rounded-lg flex items-center justify-center mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
+                    <feature.icon className="w-6 h-6 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm mb-4">{feature.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2 font-display">{feature.title}</h3>
+                  <p className="text-[#EDF5F2]/60 text-sm mb-4">{feature.description}</p>
                   <ul className="space-y-2">
                     {feature.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm text-slate-500">
-                        <CheckCircle className="w-4 h-4 text-red-500 shrink-0" />
+                      <li key={i} className="flex items-center gap-2 text-sm text-[#EDF5F2]/50">
+                        <CheckCircle className="w-4 h-4 text-[#B2F273] shrink-0" />
                         {bullet}
                       </li>
                     ))}
@@ -326,13 +337,16 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* Pricing */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-4 font-display">
                 Simple, Transparent Pricing
               </h2>
-              <p className="text-slate-400">
+              <p className="text-[#EDF5F2]/60">
                 Start free. Upgrade when you need more.
               </p>
             </div>
@@ -340,16 +354,16 @@ const SanctionsScreenerLanding = () => {
             <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
               {pricing.map((plan, idx) => (
                 <div key={idx} className={cn(
-                  "bg-slate-800/50 border rounded-xl p-6 text-center",
-                  plan.popular ? "border-red-500/50 bg-red-500/5" : "border-slate-700"
+                  "bg-[#00382E]/50 border rounded-xl p-6 text-center backdrop-blur-sm",
+                  plan.popular ? "border-[#B2F273] shadow-[0_0_20px_rgba(178,242,115,0.1)]" : "border-[#EDF5F2]/10"
                 )}>
                   {plan.popular && (
-                    <span className="text-xs text-red-400 font-medium">MOST POPULAR</span>
+                    <span className="text-xs text-[#B2F273] font-mono uppercase tracking-wider font-medium">MOST POPULAR</span>
                   )}
-                  <h3 className="text-lg font-semibold text-white mt-2">{plan.tier}</h3>
-                  <div className="text-3xl font-bold text-white my-4">{plan.price}</div>
-                  <p className="text-slate-400 text-sm mb-2">{plan.screens} screens/mo</p>
-                  <p className="text-slate-500 text-xs">{plan.description}</p>
+                  <h3 className="text-lg font-bold text-white mt-2 font-display">{plan.tier}</h3>
+                  <div className="text-3xl font-bold text-white my-4 font-display">{plan.price}</div>
+                  <p className="text-[#EDF5F2]/60 text-sm mb-2">{plan.screens} screens/mo</p>
+                  <p className="text-[#EDF5F2]/40 text-xs">{plan.description}</p>
                 </div>
               ))}
             </div>
@@ -357,29 +371,32 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* FAQ */}
-        <section className="py-20 bg-slate-950">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center mb-12 font-display">
                 Frequently Asked Questions
               </h2>
 
               <div className="space-y-4">
                 {faqs.map((faq, idx) => (
-                  <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+                  <div key={idx} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl overflow-hidden backdrop-blur-sm">
                     <button
                       className="w-full px-6 py-4 text-left flex items-center justify-between"
                       onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
                     >
-                      <span className="text-white font-medium">{faq.q}</span>
+                      <span className="text-white font-medium font-display">{faq.q}</span>
                       <ChevronDown className={cn(
-                        "w-5 h-5 text-slate-400 transition-transform shrink-0 ml-4",
+                        "w-5 h-5 text-[#EDF5F2]/40 transition-transform shrink-0 ml-4",
                         openFaq === idx && "rotate-180"
                       )} />
                     </button>
                     {openFaq === idx && (
                       <div className="px-6 pb-4">
-                        <p className="text-slate-400 text-sm leading-relaxed">{faq.a}</p>
+                        <p className="text-[#EDF5F2]/60 text-sm leading-relaxed">{faq.a}</p>
                       </div>
                     )}
                   </div>
@@ -390,22 +407,27 @@ const SanctionsScreenerLanding = () => {
         </section>
 
         {/* CTA */}
-        <section className="py-20 bg-slate-900 border-t border-slate-800">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative py-20 bg-[#00261C] border-t border-[#EDF5F2]/10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
+          <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-0 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6 font-display">
                 Don't Risk Sanctions Violations
               </h2>
-              <p className="text-lg text-slate-400 mb-8">
+              <p className="text-lg text-[#EDF5F2]/60 mb-8">
                 Screen every party, every vessel, every transaction. Start free today.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button size="lg" className="bg-red-500 hover:bg-red-600 text-white font-semibold" asChild>
+                <Button size="lg" className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
                   <Link to="/sanctions/dashboard">
                     Start Free Screening <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
-                <Button variant="outline" size="lg" className="border-slate-700 text-slate-300 hover:bg-slate-800" asChild>
+                <Button variant="outline" size="lg" className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent" asChild>
                   <Link to="/contact">Request Demo</Link>
                 </Button>
               </div>
