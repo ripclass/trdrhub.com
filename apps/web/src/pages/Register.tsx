@@ -639,15 +639,15 @@ export default function Register() {
                   </Button>
 
                   {/* Bank CTA */}
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                    <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                      <Landmark className="w-4 h-4 text-amber-400" />
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#00382E]/50 border border-[#EDF5F2]/10">
+                    <div className="w-9 h-9 rounded-lg bg-[#B2F273]/10 flex items-center justify-center flex-shrink-0 border border-[#B2F273]/20">
+                      <Landmark className="w-4 h-4 text-[#B2F273]" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-amber-200">Bank or Financial Institution?</p>
+                      <p className="text-sm font-medium text-[#EDF5F2]">Bank or Financial Institution?</p>
                       <a 
                         href="mailto:enterprise@trdrhub.com?subject=Bank%20Inquiry"
-                        className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1"
+                        className="text-xs text-[#B2F273] hover:text-[#a3e662] inline-flex items-center gap-1 transition-colors"
                       >
                         Contact our enterprise team <ArrowRight className="w-3 h-3" />
                       </a>
