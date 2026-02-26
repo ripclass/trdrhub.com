@@ -14,7 +14,11 @@
       "destination": "https://trdrhub-api.onrender.com/$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ],
