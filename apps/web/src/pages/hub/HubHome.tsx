@@ -41,9 +41,9 @@ const TOOLS = [
     name: "LCopilot",
     description: "AI-powered LC validation against UCP600/ISBP rules",
     icon: FileCheck,
-    color: "from-blue-500 to-blue-600",
-    bgColor: "bg-blue-500/10",
-    borderColor: "border-blue-500/20",
+    color: "from-[#B2F273] to-[#7ea94e]",
+    bgColor: "bg-[#d8b56a]/10",
+    borderColor: "border-[#d8b56a]/25",
     href: "/lcopilot/dashboard",
     operation: "lc_validations",
     pricePerUnit: 5.00,
@@ -53,9 +53,9 @@ const TOOLS = [
     name: "LC Builder",
     description: "Guided LC application builder with clause library",
     icon: Receipt,
-    color: "from-emerald-500 to-emerald-600",
-    bgColor: "bg-emerald-500/10",
-    borderColor: "border-emerald-500/20",
+    color: "from-[#B2F273] to-[#7ea94e]",
+    bgColor: "bg-[#B2F273]/10",
+    borderColor: "border-[#B2F273]/25",
     href: "/lc-builder/dashboard",
     operation: "lc_applications",
     pricePerUnit: 2.00,
@@ -65,9 +65,9 @@ const TOOLS = [
     name: "Doc Generator",
     description: "Generate LC-compliant shipping documents",
     icon: FileText,
-    color: "from-indigo-500 to-indigo-600",
-    bgColor: "bg-indigo-500/10",
-    borderColor: "border-indigo-500/20",
+    color: "from-[#d8b56a] to-[#a88947]",
+    bgColor: "bg-[#d8b56a]/10",
+    borderColor: "border-[#d8b56a]/25",
     href: "/doc-generator/dashboard",
     operation: "doc_sets",
     pricePerUnit: 0.25,
@@ -77,9 +77,9 @@ const TOOLS = [
     name: "Sanctions Screener",
     description: "Real-time screening against global sanctions lists",
     icon: Shield,
-    color: "from-red-500 to-red-600",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
+    color: "from-[#d8b56a] to-[#a88947]",
+    bgColor: "bg-[#d8b56a]/10",
+    borderColor: "border-[#d8b56a]/25",
     href: "/sanctions/dashboard",
     operation: "sanctions_screens",
     pricePerUnit: 0.50,
@@ -89,9 +89,9 @@ const TOOLS = [
     name: "HS Code Finder",
     description: "AI classification for customs tariff codes",
     icon: Package,
-    color: "from-purple-500 to-purple-600",
-    bgColor: "bg-purple-500/10",
-    borderColor: "border-purple-500/20",
+    color: "from-[#d8b56a] to-[#a88947]",
+    bgColor: "bg-[#d8b56a]/10",
+    borderColor: "border-[#d8b56a]/25",
     href: "/hs-code/dashboard",
     operation: "hs_lookups",
     pricePerUnit: 0.25,
@@ -101,9 +101,9 @@ const TOOLS = [
     name: "Container Tracker",
     description: "Real-time shipment tracking across carriers",
     icon: Ship,
-    color: "from-cyan-500 to-cyan-600",
-    bgColor: "bg-cyan-500/10",
-    borderColor: "border-cyan-500/20",
+    color: "from-[#B2F273] to-[#7ea94e]",
+    bgColor: "bg-[#B2F273]/10",
+    borderColor: "border-[#B2F273]/25",
     href: "/tracking/dashboard",
     operation: "container_tracks",
     pricePerUnit: 1.00,
@@ -293,12 +293,12 @@ export default function HubHome() {
       </div>
 
       {/* Usage Overview Card */}
-      <Card className="mb-8 bg-slate-900/50 border-white/5 overflow-hidden">
+      <Card className="mb-8 bg-[#0f1a16]/65 border-white/5 overflow-hidden">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-white flex items-center gap-2">
-                <Activity className="w-5 h-5 text-emerald-400" />
+                <Activity className="w-5 h-5 text-[#B2F273]" />
                 Usage This Month
               </CardTitle>
               <CardDescription className="text-slate-400">
@@ -367,7 +367,7 @@ export default function HubHome() {
                 className={`group relative overflow-hidden transition-all duration-300 ${
                   isLocked 
                     ? "bg-slate-900/30 border-white/5 opacity-60" 
-                    : `bg-slate-900/50 border-white/5 hover:border-white/20 hover:shadow-lg cursor-pointer`
+                    : `bg-[#0f1a16]/65 border-white/5 hover:border-white/20 hover:shadow-lg cursor-pointer`
                 }`}
                 onClick={() => !isLocked && navigate(tool.href)}
               >
@@ -387,7 +387,7 @@ export default function HubHome() {
                         Coming Soon
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 text-xs">
+                      <Badge variant="outline" className="border-emerald-500/30 text-[#B2F273] text-xs">
                         <Zap className="w-3 h-3 mr-1" />
                         Active
                       </Badge>
@@ -427,10 +427,10 @@ export default function HubHome() {
       {/* Bottom Section: Recent Activity + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2 bg-slate-900/50 border-white/5">
+        <Card className="lg:col-span-2 bg-[#0f1a16]/65 border-white/5">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-400" />
+              <Clock className="w-5 h-5 text-[#d8b56a]" />
               Recent Activity
             </CardTitle>
           </CardHeader>
@@ -444,16 +444,16 @@ export default function HubHome() {
                   >
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${
-                        activity.operation === "lc_validation" ? "bg-blue-500/10" :
-                        activity.operation === "price_check" ? "bg-emerald-500/10" :
-                        "bg-purple-500/10"
+                        activity.operation === "lc_validation" ? "bg-[#d8b56a]/10" :
+                        activity.operation === "price_check" ? "bg-[#B2F273]/10" :
+                        "bg-[#d8b56a]/10"
                       }`}>
                         {activity.operation === "lc_validation" ? (
-                          <FileCheck className="w-4 h-4 text-blue-400" />
+                          <FileCheck className="w-4 h-4 text-[#d8b56a]" />
                         ) : activity.operation === "price_check" ? (
-                          <DollarSign className="w-4 h-4 text-emerald-400" />
+                          <DollarSign className="w-4 h-4 text-[#B2F273]" />
                         ) : (
-                          <Package className="w-4 h-4 text-purple-400" />
+                          <Package className="w-4 h-4 text-[#d8b56a]" />
                         )}
                       </div>
                       <div>
@@ -487,7 +487,7 @@ export default function HubHome() {
         </Card>
 
         {/* Quick Actions */}
-        <Card className="bg-slate-900/50 border-white/5">
+        <Card className="bg-[#0f1a16]/65 border-white/5">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
               <Zap className="w-5 h-5 text-amber-400" />
@@ -496,7 +496,7 @@ export default function HubHome() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button 
-              className="w-full justify-start bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20"
+              className="w-full justify-start bg-[#d8b56a]/10 hover:bg-blue-500/20 text-[#d8b56a] border border-[#d8b56a]/25"
               variant="outline"
               onClick={() => navigate("/lcopilot/dashboard")}
             >
@@ -505,7 +505,7 @@ export default function HubHome() {
             </Button>
             
             <Button 
-              className="w-full justify-start bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
+              className="w-full justify-start bg-[#B2F273]/10 hover:bg-emerald-500/20 text-[#B2F273] border border-[#B2F273]/25"
               variant="outline"
               onClick={() => navigate("/price-verify/dashboard/verify")}
             >

@@ -204,7 +204,7 @@ export default function HubLayout() {
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading...</p>
+          <p className="text-[#9fb3aa]">Loading...</p>
         </div>
       </div>
     );
@@ -223,28 +223,28 @@ export default function HubLayout() {
 
   return (
     <TooltipProvider>
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="min-h-screen bg-gradient-to-br from-[#050b09] via-[#0b1713] to-[#050b09]">
         {/* Mobile Header */}
-        <header className="lg:hidden border-b border-white/5 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="lg:hidden border-b border-[#B2F273]/10 bg-[#0b1713]/90 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setMobileOpen(!mobileOpen)}
-                className="text-slate-400"
+                className="text-[#9fb3aa]"
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </Button>
               <Link to="/hub" className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#B2F273] to-[#6d9447] flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-white" />
                 </div>
                 <span className="text-lg font-bold text-white">TRDR Hub</span>
               </Link>
             </div>
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-emerald-500 text-white text-sm">
+              <AvatarFallback className="bg-gradient-to-br from-[#B2F273] to-[#6d9447] text-white text-sm">
                 {userName.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -255,7 +255,7 @@ export default function HubLayout() {
           {/* Sidebar */}
           <aside
             className={cn(
-              "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-white/5 bg-slate-900/95 backdrop-blur-xl transition-all duration-300",
+              "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[#B2F273]/10 bg-[#0b1713]/95 backdrop-blur-xl transition-all duration-300",
               collapsed ? "w-[70px]" : "w-[260px]",
               "hidden lg:flex",
               mobileOpen && "flex lg:hidden w-[280px]"
@@ -267,7 +267,7 @@ export default function HubLayout() {
               collapsed && "justify-center px-2"
             )}>
               <Link to="/hub" className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#B2F273] to-[#6d9447] flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-5 h-5 text-white" />
                 </div>
                 {!collapsed && (
@@ -275,7 +275,7 @@ export default function HubLayout() {
                     <span className="text-lg font-bold text-white">TRDR Hub</span>
                     <Badge 
                       variant="outline" 
-                      className="ml-2 text-[10px] border-emerald-500/30 text-emerald-400"
+                      className="ml-2 text-[10px] border-emerald-500/30 text-[#B2F273]"
                     >
                       {planName}
                     </Badge>
@@ -289,7 +289,7 @@ export default function HubLayout() {
               {filteredSections.map((section, sectionIdx) => (
                 <div key={sectionIdx} className={cn(sectionIdx > 0 && "mt-6")}>
                   {section.title && !collapsed && (
-                    <h3 className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <h3 className="px-3 mb-2 text-xs font-semibold text-[#7d8f87] uppercase tracking-wider">
                       {section.title}
                     </h3>
                   )}
@@ -307,16 +307,16 @@ export default function HubLayout() {
                           className={cn(
                             "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all",
                             active
-                              ? "bg-gradient-to-r from-blue-500/20 to-emerald-500/20 text-white"
+                              ? "bg-gradient-to-r from-[#B2F273]/15 to-[#6d9447]/15 text-white"
                               : item.disabled
                               ? "text-slate-600 cursor-not-allowed"
-                              : "text-slate-400 hover:text-white hover:bg-white/5",
+                              : "text-[#9fb3aa] hover:text-white hover:bg-white/5",
                             collapsed && "justify-center px-2"
                           )}
                         >
                           <Icon className={cn(
                             "w-5 h-5 flex-shrink-0",
-                            active && "text-emerald-400"
+                            active && "text-[#B2F273]"
                           )} />
                           {!collapsed && (
                             <>
@@ -326,9 +326,9 @@ export default function HubLayout() {
                                   variant="outline"
                                   className={cn(
                                     "text-[10px] px-1.5",
-                                    item.badgeVariant === "success" && "border-emerald-500/30 text-emerald-400",
+                                    item.badgeVariant === "success" && "border-emerald-500/30 text-[#B2F273]",
                                     item.badgeVariant === "warning" && "border-amber-500/30 text-amber-400",
-                                    item.badgeVariant === "default" && "border-slate-500/30 text-slate-500"
+                                    item.badgeVariant === "default" && "border-slate-500/30 text-[#7d8f87]"
                                   )}
                                 >
                                   {item.disabled && <Lock className="w-2.5 h-2.5 mr-0.5" />}
@@ -350,10 +350,10 @@ export default function HubLayout() {
                                 <Link to={item.href}>{linkContent}</Link>
                               )}
                             </TooltipTrigger>
-                            <TooltipContent side="right" className="bg-slate-800 border-white/10">
+                            <TooltipContent side="right" className="bg-[#13221d] border-white/10">
                               <p>{item.label}</p>
                               {item.badge && (
-                                <span className="text-xs text-slate-400 ml-1">({item.badge})</span>
+                                <span className="text-xs text-[#9fb3aa] ml-1">({item.badge})</span>
                               )}
                             </TooltipContent>
                           </Tooltip>
@@ -379,7 +379,7 @@ export default function HubLayout() {
                 <>
                   <Link
                     to="/support"
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#9fb3aa] hover:text-white hover:bg-white/5 transition-colors"
                   >
                     <HelpCircle className="w-5 h-5" />
                     <span className="text-sm">Help & Support</span>
@@ -389,11 +389,11 @@ export default function HubLayout() {
               
               {/* User Profile */}
               <div className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/50",
+                "flex items-center gap-3 px-3 py-2 rounded-lg bg-[#111d19]/70",
                 collapsed && "justify-center px-2"
               )}>
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-emerald-500 text-white text-sm">
+                  <AvatarFallback className="bg-gradient-to-br from-[#B2F273] to-[#6d9447] text-white text-sm">
                     {userName.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -410,14 +410,14 @@ export default function HubLayout() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400 truncate">{planName}</p>
+                    <p className="text-xs text-[#9fb3aa] truncate">{planName}</p>
                   </div>
                 )}
                 {!collapsed && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-slate-400 hover:text-white h-8 w-8"
+                    className="text-[#9fb3aa] hover:text-white h-8 w-8"
                     onClick={handleLogout}
                   >
                     <LogOut className="w-4 h-4" />
@@ -431,7 +431,7 @@ export default function HubLayout() {
                 size="sm"
                 onClick={() => setCollapsed(!collapsed)}
                 className={cn(
-                  "w-full text-slate-400 hover:text-white hover:bg-white/5",
+                  "w-full text-[#9fb3aa] hover:text-white hover:bg-white/5",
                   collapsed && "px-2"
                 )}
               >
