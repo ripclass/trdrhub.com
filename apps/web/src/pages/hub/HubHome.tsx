@@ -44,7 +44,7 @@ const TOOLS = [
     color: "from-[#B2F273] to-[#7ea94e]",
     bgColor: "bg-[#d8b56a]/10",
     borderColor: "border-[#d8b56a]/25",
-    href: "/lcopilot/dashboard",
+    href: "/lcopilot/exporter-dashboard",
     operation: "lc_validations",
     pricePerUnit: 5.00,
   },
@@ -498,7 +498,7 @@ export default function HubHome() {
             <Button 
               className="w-full justify-start bg-[#d8b56a]/10 hover:bg-blue-500/20 text-[#d8b56a] border border-[#d8b56a]/25"
               variant="outline"
-              onClick={() => navigate("/lcopilot/dashboard")}
+              onClick={() => navigate("/lcopilot/exporter-dashboard")}
             >
               <FileCheck className="w-4 h-4 mr-2" />
               Validate New LC
