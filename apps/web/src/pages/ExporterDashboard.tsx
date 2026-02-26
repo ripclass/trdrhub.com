@@ -123,13 +123,12 @@ function DashboardContent() {
     : (activeSection as SidebarSection);
 
   // Redirect to login if not authenticated
+  // Private-beta access mode: do not hard-redirect from exporter dashboard.
+  // Hub/login flow can be unstable while auth providers are being unified.
+  // Keep users in-dashboard and rely on backend endpoint auth for data protection.
   useEffect(() => {
-    if (!authLoading && !coreAuthLoading && !isSessionAuthenticated) {
-      // Redirect to main login with return URL
-      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
-      navigate(`/login?returnUrl=${returnUrl}`);
-    }
-  }, [isSessionAuthenticated, authLoading, coreAuthLoading, navigate]);
+    // no-op
+  }, []);
 
   // Sync jobId from URL to context
   useEffect(() => {
