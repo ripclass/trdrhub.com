@@ -156,12 +156,22 @@ export default function HubLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [planName, setPlanName] = useState("Pay-as-you-go");
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated.
+  // Guard: wait until BOTH auth and role loading have settled before deciding to redirect.
+  // Without this guard a brief null-user window during JWT-fallback setup triggers a
+  // spurious login bounce even though the user is actually authenticated.
   useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+    // Only redirect once both loading phases are complete and user is definitively absent.
+    if (!isLoading && !roleLoading && !user) {
+      // Extra safety: small debounce to absorb React async state propagation.
+      const timer = setTimeout(() => {
+        if (!user) {
+          navigate("/login?returnUrl=" + encodeURIComponent(location.pathname));
+        }
+      }, 150);
+      return () => clearTimeout(timer);
     }
-  }, [user, isLoading, navigate, location.pathname]);
+  }, [user, isLoading, roleLoading, navigate, location.pathname]);
 
   // Filter navigation items based on user role
   // Default to showing all items if role data is unavailable (legacy users)

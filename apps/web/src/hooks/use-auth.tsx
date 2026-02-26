@@ -371,24 +371,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (mounted) setIsLoading(false)
           }
         } else {
-          // No session found - wait a bit for onAuthStateChange to fire
-          // If it doesn't fire within 2 seconds, assume no session
+          // No session found - wait a bit for onAuthStateChange to fire.
+          // Use 3s to match the getSession timeout above; this gives Supabase
+          // enough time to restore a session from storage before we give up.
           initTimeout = setTimeout(() => {
             if (mounted && !profileFetchedRef.current) {
               if (GUEST_MODE) setGuest()
               setIsLoading(false)
             }
-          }, 2000)
+          }, 3000)
         }
       } catch (error: any) {
         authLogger.warn('Auth init: Failed to get session:', error?.message)
         if (!mounted) return
+        // On timeout/error: give onAuthStateChange a chance to fire first
+        // before declaring no session. 3 seconds is generous enough.
         initTimeout = setTimeout(() => {
           if (mounted && !profileFetchedRef.current) {
             if (GUEST_MODE) setGuest()
             setIsLoading(false)
           }
-        }, 2000)
+        }, 3000)
       }
     }
 
@@ -445,6 +448,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       authLogger.debug('Supabase session obtained')
+      
+      // Mark profile as being fetched BEFORE the async call so that the concurrent
+      // onAuthStateChange handler (which also fires on SIGNED_IN) skips its own
+      // fetchUserProfile call and avoids a double-fetch race that can end with
+      // user=null if one of the two concurrent calls fails.
+      profileFetchedRef.current = true
       
       // For Supabase users: Skip /auth/login (it expects email/password, not Supabase tokens)
       // The /auth/login endpoint is for backend-managed users only

@@ -87,7 +87,10 @@ export default function Login() {
       }
       
       setIsLoading(false);
-      navigate(destination);
+      // Use hard redirect (window.location) instead of React Router navigate for post-login
+      // routing. This ensures the AuthProvider re-initializes cleanly from Supabase storage
+      // so HubLayout doesn't see a stale null-user state and bounce back to /login.
+      window.location.href = destination;
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({

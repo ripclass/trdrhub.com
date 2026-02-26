@@ -123,44 +123,59 @@ export function useUserRole(): UseUserRoleReturn {
       return;
     }
 
+    // Build owner-level fallback role data used when RBAC endpoint is unavailable.
+    // Private-beta: all users get full access until RBAC is fully propagated.
+    const ownerFallback: UserRoleData = {
+      user_id: user.id,
+      company_id: "",
+      role: "owner",
+      tool_access: ALL_TOOLS as unknown as string[],
+      permissions: {
+        ...DEFAULT_PERMISSIONS,
+        manage_team: true,
+        view_billing: true,
+        manage_billing: true,
+        view_usage: true,
+        view_org_usage: true,
+        access_all_tools: true,
+        admin_panels: true,
+        api_access: true,
+      },
+      is_owner: true,
+      is_admin: true,
+      can_manage_team: true,
+      can_view_billing: true,
+      can_manage_billing: true,
+    };
+
     try {
       setIsLoading(true);
       setError(null);
 
+      // Attach Supabase JWT so the request is authenticated even without cookies.
+      let authHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          authHeaders["Authorization"] = `Bearer ${token}`;
+        }
+      } catch {
+        // Non-critical — fall through without auth header
+      }
+
       const response = await fetch(`${API_BASE}/members/me/permissions`, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders,
         credentials: "include",
       });
 
       if (!response.ok) {
-        // User might not be part of a company yet (legacy user or no RBAC record)
-        if (response.status === 403 || response.status === 404) {
-          // Treat legacy users as OWNERS of their company
-          // This ensures they can see all tabs until RBAC is fully set up
-          setRoleData({
-            user_id: user.id,
-            company_id: "",
-            role: "owner",
-            tool_access: ALL_TOOLS as unknown as string[],
-            permissions: {
-              ...DEFAULT_PERMISSIONS,
-              manage_team: true,
-              view_billing: true,
-              manage_billing: true,
-              view_usage: true,
-              view_org_usage: true,
-              access_all_tools: true,
-              admin_panels: true,
-              api_access: true,
-            },
-            is_owner: true,
-            is_admin: true,
-            can_manage_team: true,
-            can_view_billing: true,
-            can_manage_billing: true,
-          });
+        // 401/403/404 → user not in RBAC yet (legacy user) — treat as owner.
+        // This prevents a spurious redirect-to-login when the RBAC record hasn't
+        // been created yet for a user that authenticated successfully via Supabase.
+        if (response.status === 401 || response.status === 403 || response.status === 404) {
+          setRoleData(ownerFallback);
           return;
         }
         throw new Error("Failed to fetch permissions");
@@ -171,8 +186,9 @@ export function useUserRole(): UseUserRoleReturn {
     } catch (err) {
       console.error("Failed to fetch user role:", err);
       setError(err instanceof Error ? err.message : "Unknown error");
-      // Set default permissions on error
-      setRoleData(null);
+      // On any error, default to owner-level access so the UI remains usable.
+      // This prevents blank/bouncing states when the permissions API is unreachable.
+      setRoleData(ownerFallback);
     } finally {
       setIsLoading(false);
     }

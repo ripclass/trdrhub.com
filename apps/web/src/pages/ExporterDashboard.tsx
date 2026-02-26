@@ -259,8 +259,11 @@ function DashboardContent() {
     [effectiveJobId, urlLc, handleSectionChange]
   );
 
-  // Show loading state while checking authentication
-  if (authLoading) {
+  // Show loading state while checking authentication.
+  // Also show spinner when auth has finished but session check is still resolving
+  // (coreAuthLoading false but no user yet) to avoid brief null renders that cause
+  // the parent ExporterAuthProvider to think the user is unauthenticated.
+  if (authLoading || coreAuthLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -271,9 +274,22 @@ function DashboardContent() {
     );
   }
 
-  // Redirect if not authenticated (handled by useEffect)
+  // Private-beta guard: if session has settled and there is no authenticated user,
+  // show a minimal prompt instead of rendering null (which causes blank-screen loops).
   if (!isSessionAuthenticated) {
-    return null;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <p className="text-muted-foreground">Please log in to access the exporter dashboard.</p>
+          <a
+            href={`/login?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+            className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+          >
+            Go to Login
+          </a>
+        </div>
+      </div>
+    );
   }
 
   // Determine which ResultsTab to show for results sections
