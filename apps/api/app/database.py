@@ -11,6 +11,15 @@ from .config import settings
 # Get DATABASE_URL from settings (should already be normalized by Pydantic validator)
 DATABASE_URL = settings.DATABASE_URL
 
+# If pooled Supabase port 6543 is unreachable in runtime, prefer DIRECT_DATABASE_URL (5432)
+# when it is explicitly configured. This keeps production alive during pooler network incidents.
+if (
+    isinstance(DATABASE_URL, str)
+    and ':6543' in DATABASE_URL
+    and settings.DIRECT_DATABASE_URL
+):
+    DATABASE_URL = settings.DIRECT_DATABASE_URL
+
 # Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
 # SQLAlchemy expects postgresql:// protocol, but Supabase uses postgres://
 # This is a safety check in case the validator didn't run
