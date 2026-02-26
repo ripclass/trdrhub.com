@@ -82,7 +82,7 @@ function DashboardContent() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { jobId: contextJobId, setJobId } = useResultsContext();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isLoading: coreAuthLoading } = useAuth();
   const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
   const isSessionAuthenticated = isAuthenticated || !!currentUser;
   const { toast } = useToast();
@@ -124,12 +124,12 @@ function DashboardContent() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!authLoading && !isSessionAuthenticated) {
+    if (!authLoading && !coreAuthLoading && !isSessionAuthenticated) {
       // Redirect to main login with return URL
       const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
       navigate(`/login?returnUrl=${returnUrl}`);
     }
-  }, [isSessionAuthenticated, authLoading, navigate]);
+  }, [isSessionAuthenticated, authLoading, coreAuthLoading, navigate]);
 
   // Sync jobId from URL to context
   useEffect(() => {
