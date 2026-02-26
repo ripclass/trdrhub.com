@@ -258,10 +258,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Resilience fallback: if backend /auth/me returns 401 but Supabase login succeeded,
       // derive a temporary profile from Supabase user so dashboards remain accessible.
-      const status = error?.response?.status
-      if (status === 401 && supabaseToken) {
+      if (supabaseToken) {
         try {
-          // Network-free fallback: decode JWT locally to avoid extra auth endpoint failures.
+          // Network-free fallback: decode JWT locally to avoid auth endpoint instability.
           const parts = supabaseToken.split('.')
           if (parts.length >= 2) {
             const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
@@ -278,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               role: mapBackendRole(String(rawRole)),
               isActive: true,
             }
-            authLogger.warn('Using JWT-decoded fallback profile due to /auth/me 401')
+            authLogger.warn('Using JWT-decoded fallback profile due to profile fetch failure')
             setUser(fallbackUser)
             return fallbackUser
           }
