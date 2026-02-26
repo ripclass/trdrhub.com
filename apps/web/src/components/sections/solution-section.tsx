@@ -25,7 +25,7 @@ const solutions = [
     icon: Shield,
     name: "Security First",
     description: "Encrypted in transit and at rest, with controlled access and auditable workflows for sensitive trade documents.",
-  }
+  },
   {
     icon: Check,
     name: "Decision Intelligence",

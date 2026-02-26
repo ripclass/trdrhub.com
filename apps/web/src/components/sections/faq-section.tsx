@@ -22,7 +22,7 @@ const faqs = [
   {
     question: "What happens if the AI misses a discrepancy?",
     answer: "TRDR Hub is currently in private beta. Validation output should be reviewed by your operations team before final submission to counterparties or banks.",
-  }
+  },
   {
     question: "Can I integrate this with my existing systems?",
     answer: "Yes. We offer a REST API for programmatic access, webhook notifications for automated workflows, and direct integrations with popular ERP systems. Enterprise customers get custom integration support.",
@@ -30,7 +30,7 @@ const faqs = [
   {
     question: "Is my data secure?",
     answer: "Yes. Documents are encrypted in transit and at rest, with role-based access controls. We are continuously hardening controls as part of private beta operations.",
-  }
+  },
   {
     question: "What's the pricing model?",
     answer: "We offer flexible pricing: Free tier for up to 5 validations/month, Pro at $49/month for unlimited validations, and Enterprise with custom pricing for high-volume users. No per-document fees on paid plans.",
