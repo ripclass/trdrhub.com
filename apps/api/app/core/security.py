@@ -43,27 +43,30 @@ _PROVIDER_CACHE: Optional[List[ProviderConfig]] = None
 
 
 def _build_provider_configs() -> List[ProviderConfig]:
+    """Build provider configs for Supabase-only authentication."""
     global _PROVIDER_CACHE  # pylint: disable=global-statement
     if _PROVIDER_CACHE is not None:
         return _PROVIDER_CACHE
 
     providers: List[ProviderConfig] = []
-    if settings.supabase_configured():
+
+    # Supabase-only mode: derive issuer/JWKS from SUPABASE_URL when explicit vars are missing.
+    supabase_url = (settings.SUPABASE_URL or "").rstrip("/")
+    issuer = (settings.SUPABASE_ISSUER or "").rstrip("/")
+    jwks_url = (settings.SUPABASE_JWKS_URL or "").rstrip("/")
+
+    if not issuer and supabase_url:
+        issuer = f"{supabase_url}/auth/v1"
+    if not jwks_url and supabase_url:
+        jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+
+    if issuer and jwks_url:
         providers.append(
             ProviderConfig(
                 name="supabase",
-                issuer=settings.SUPABASE_ISSUER or "",
-                jwks_url=settings.SUPABASE_JWKS_URL or "",
+                issuer=issuer,
+                jwks_url=jwks_url,
                 audience=settings.SUPABASE_AUDIENCE,
-            )
-        )
-    if settings.auth0_configured():
-        providers.append(
-            ProviderConfig(
-                name="auth0",
-                issuer=settings.AUTH0_ISSUER or "",
-                jwks_url=settings.AUTH0_JWKS_URL or "",
-                audience=settings.AUTH0_AUDIENCE,
             )
         )
 
@@ -254,7 +257,7 @@ def infer_effective_role(user: User) -> str:
 
 
 async def authenticate_external_token(token: str, db: Session) -> Optional[User]:
-    """Authenticate user via external provider token (Supabase uses ES256/JWKS, Auth0, etc.)."""
+    """Authenticate user via Supabase token (ES256/JWKS)."""
     logger = logging.getLogger(__name__)
     
     # Extract issuer from token to help with provider detection

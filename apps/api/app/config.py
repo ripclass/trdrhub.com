@@ -202,8 +202,10 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT.lower() == "development"
 
     def supabase_configured(self) -> bool:
-        """Check if Supabase auth provider is configured."""
-        return bool(self.SUPABASE_ISSUER and self.SUPABASE_JWKS_URL)
+        """Check if Supabase auth provider is configured (explicit or derivable from URL)."""
+        if self.SUPABASE_ISSUER and self.SUPABASE_JWKS_URL:
+            return True
+        return bool(self.SUPABASE_URL)
 
     def auth0_configured(self) -> bool:
         """Check if Auth0 provider is configured."""
