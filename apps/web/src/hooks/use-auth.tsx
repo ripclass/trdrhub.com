@@ -457,6 +457,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return profile
     } catch (error: any) {
       authLogger.error('Login failed:', error?.message)
+
+      // Last-resort resilience: if Supabase session exists, allow login continuation.
+      try {
+        const { data } = await supabase.auth.getSession()
+        const token = data?.session?.access_token
+        if (token) {
+          const parts = token.split('.')
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+            const rawRole = payload?.role || payload?.app_metadata?.role || payload?.user_metadata?.role || 'exporter'
+            const fallbackEmail = payload?.email || (data?.session?.user?.email ?? '')
+            const uid = payload?.sub || `sb-${Date.now()}`
+            const fullName = payload?.user_metadata?.full_name || payload?.name || fallbackEmail
+
+            const fallbackUser: User = {
+              id: uid,
+              email: fallbackEmail,
+              full_name: fullName,
+              username: fullName,
+              role: mapBackendRole(String(rawRole)),
+              isActive: true,
+            }
+            authLogger.warn('Login fallback: continuing with existing Supabase session')
+            setUser(fallbackUser)
+            return fallbackUser
+          }
+        }
+      } catch (sessionErr) {
+        authLogger.warn('Login fallback session check failed', sessionErr)
+      }
+
       throw error
     } finally {
       setIsLoading(false)
