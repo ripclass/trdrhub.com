@@ -261,28 +261,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const status = error?.response?.status
       if (status === 401 && supabaseToken) {
         try {
-          const { data: userResp } = await supabase.auth.getUser(supabaseToken)
-          const sbUser: any = userResp?.user
-          if (sbUser?.id && sbUser?.email) {
-            const rawRole =
-              sbUser?.user_metadata?.role ||
-              sbUser?.app_metadata?.role ||
-              'exporter'
+          // Network-free fallback: decode JWT locally to avoid extra auth endpoint failures.
+          const parts = supabaseToken.split('.')
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+            const rawRole = payload?.role || payload?.app_metadata?.role || payload?.user_metadata?.role || 'exporter'
+            const email = payload?.email || 'user@trdrhub.com'
+            const uid = payload?.sub || `sb-${Date.now()}`
+            const fullName = payload?.user_metadata?.full_name || payload?.name || email
 
             const fallbackUser: User = {
-              id: sbUser.id,
-              email: sbUser.email,
-              full_name: sbUser.user_metadata?.full_name || sbUser.email,
-              username: sbUser.user_metadata?.full_name || sbUser.email,
+              id: uid,
+              email,
+              full_name: fullName,
+              username: fullName,
               role: mapBackendRole(String(rawRole)),
               isActive: true,
             }
-            authLogger.warn('Using Supabase profile fallback due to /auth/me 401')
+            authLogger.warn('Using JWT-decoded fallback profile due to /auth/me 401')
             setUser(fallbackUser)
             return fallbackUser
           }
         } catch (fallbackErr) {
-          authLogger.warn('Supabase fallback profile failed', fallbackErr)
+          authLogger.warn('JWT decode fallback failed', fallbackErr)
         }
       }
 
