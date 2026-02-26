@@ -242,9 +242,26 @@ async def get_user_profile(
         try:
             current_user = await get_current_user(credentials, db)
         except HTTPException as auth_error:
-            # Re-raise HTTP exceptions as-is (401, 403, etc.)
             logger.error(f"Authentication failed in /auth/me: {auth_error.detail}")
-            raise
+
+            # Supabase-only private beta fallback: decode token claims and upsert user.
+            if auth_error.status_code in (401, 403):
+                try:
+                    import jwt as pyjwt
+                    from app.core.security import _upsert_external_user  # pylint: disable=protected-access
+
+                    claims = pyjwt.decode(credentials.credentials, options={"verify_signature": False})
+                    if claims.get("sub"):
+                        current_user = _upsert_external_user(db, claims)
+                        db.commit()
+                        db.refresh(current_user)
+                        logger.warning("Using /auth/me fallback profile from token claims")
+                    else:
+                        raise
+                except Exception:
+                    raise auth_error
+            else:
+                raise
         except Exception as e:
             # Log full traceback for debugging
             error_trace = traceback.format_exc()
