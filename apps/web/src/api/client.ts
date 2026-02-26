@@ -178,8 +178,17 @@ api.interceptors.response.use(
     const isAdminEndpoint = urlPath.startsWith('/admin')
 
     if (error?.response?.status === 401) {
+      // Soft-401 endpoints are allowed to fail without forcing logout/redirect.
+      // AuthProvider and onboarding layers handle graceful fallback for these.
+      const soft401Endpoints = [
+        '/auth/me',
+        '/onboarding/status',
+        '/members/me/permissions',
+      ]
+      const isSoft401 = soft401Endpoints.some((p) => urlPath.includes(p))
+
       // In guest mode, do not redirect on 401; allow pages to continue.
-      if (!GUEST_MODE) {
+      if (!GUEST_MODE && !isSoft401) {
         const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
         const onAdminRoute = currentPath.startsWith('/admin')
 
