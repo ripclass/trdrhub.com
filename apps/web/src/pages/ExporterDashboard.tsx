@@ -123,12 +123,20 @@ function DashboardContent() {
     : (activeSection as SidebarSection);
 
   // Redirect to login if not authenticated
-  // Private-beta access mode: do not hard-redirect from exporter dashboard.
-  // Hub/login flow can be unstable while auth providers are being unified.
-  // Keep users in-dashboard and rely on backend endpoint auth for data protection.
+  // Hardened auth guard: allow short stabilization window, then redirect if truly unauthenticated.
   useEffect(() => {
-    // no-op
-  }, []);
+    if (authLoading || coreAuthLoading) return;
+
+    const demoMode = typeof window !== 'undefined' && localStorage.getItem('demo_mode') === 'true';
+    if (isSessionAuthenticated || demoMode) return;
+
+    const timer = window.setTimeout(() => {
+      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      navigate(`/login?returnUrl=${returnUrl}`);
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, [isSessionAuthenticated, authLoading, coreAuthLoading, navigate]);
 
   // Sync jobId from URL to context
   useEffect(() => {
