@@ -176,10 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const fetchUserProfile = React.useCallback(async (providedToken?: string) => {
+    let supabaseToken = providedToken
     try {
       authLogger.debug('fetchUserProfile starting', providedToken ? 'with token' : 'will get token')
-      
-      let supabaseToken = providedToken
       
       if (!supabaseToken) {
         // Fallback: get token from session if not provided (with timeout)
@@ -254,8 +253,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       return mapped
-    } catch (error) {
+    } catch (error: any) {
       authLogger.error('Failed to load user profile', error)
+
+      // Resilience fallback: if backend /auth/me returns 401 but Supabase login succeeded,
+      // derive a temporary profile from Supabase user so dashboards remain accessible.
+      const status = error?.response?.status
+      if (status === 401 && supabaseToken) {
+        try {
+          const { data: userResp } = await supabase.auth.getUser(supabaseToken)
+          const sbUser: any = userResp?.user
+          if (sbUser?.id && sbUser?.email) {
+            const rawRole =
+              sbUser?.user_metadata?.role ||
+              sbUser?.app_metadata?.role ||
+              'exporter'
+
+            const fallbackUser: User = {
+              id: sbUser.id,
+              email: sbUser.email,
+              full_name: sbUser.user_metadata?.full_name || sbUser.email,
+              username: sbUser.user_metadata?.full_name || sbUser.email,
+              role: mapBackendRole(String(rawRole)),
+              isActive: true,
+            }
+            authLogger.warn('Using Supabase profile fallback due to /auth/me 401')
+            setUser(fallbackUser)
+            return fallbackUser
+          }
+        } catch (fallbackErr) {
+          authLogger.warn('Supabase fallback profile failed', fallbackErr)
+        }
+      }
+
       if (GUEST_MODE) {
         setGuest()
         return {
