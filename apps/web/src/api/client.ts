@@ -187,13 +187,15 @@ api.interceptors.response.use(
       ]
       const isSoft401 = soft401Endpoints.some((p) => urlPath.includes(p))
 
-      // In guest mode, do not redirect on 401; allow pages to continue.
+      // Private beta auth mode:
+      // - Never force global logout for non-admin 401s from API calls.
+      // - Keep session alive and let feature-level UI handle missing permissions.
       if (!GUEST_MODE && !isSoft401) {
         const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
         const onAdminRoute = currentPath.startsWith('/admin')
 
         if (isAdminEndpoint || onAdminRoute) {
-          // Admin endpoints use backend JWT, so clear that token specifically
+          // Admin endpoints use backend JWT, so keep strict redirect behavior.
           if (typeof window !== 'undefined') {
             localStorage.removeItem('trdrhub_api_token')
             if (!currentPath.startsWith('/admin/login')) {
@@ -201,10 +203,9 @@ api.interceptors.response.use(
             }
           }
         } else {
-          clearSupabaseSession()
-          if (typeof window !== 'undefined' && !currentPath.startsWith('/login')) {
-            window.location.href = '/login'
-          }
+          // Non-admin: do not sign out on 401 during auth unification.
+          // eslint-disable-next-line no-console
+          console.warn('[API] Non-admin 401 received; preserving Supabase session')
         }
       }
     } else if (error?.response?.status === 403) {
