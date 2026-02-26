@@ -23,7 +23,7 @@ const techStack = [
   {
     icon: Brain,
     title: "Context-Aware AI",
-    description: "Our proprietary LLM models don't just read text; they understand trade context. Trained on 2M+ trade documents to distinguish between 'Port of Loading' and 'Place of Receipt' with 99.9% accuracy.",
+    description: "Our proprietary LLM models don't just read text; they understand trade context. Tuned on real-world trade document patterns to distinguish critical field differences with high practical accuracy.",
     tags: ["LLM", "NLP", "Computer Vision"]
   },
   {
@@ -34,9 +34,9 @@ const techStack = [
   },
   {
     icon: Shield,
-    title: "Bank-Grade Security",
-    description: "SOC 2 Type II compliant infrastructure with AES-256 encryption at rest and TLS 1.3 in transit. Your trade data is isolated in dedicated tenant enclaves.",
-    tags: ["SOC 2", "AES-256", "Zero Trust"]
+    title: "Security-Centric Architecture",
+    description: "Encryption in transit and at rest, isolated tenant boundaries, and auditable controls designed for sensitive trade data workflows.",
+    tags: ["AES-256", "TLS 1.3", "Zero Trust"]
   },
   {
     icon: Zap,
@@ -219,11 +219,11 @@ const TechnologyPage = () => {
                 
                 <ul className="space-y-4">
                   {[
-                    "SOC 2 Type II Certified",
-                    "GDPR & CCPA Compliant",
                     "Role-Based Access Control (RBAC)",
                     "Audit Logs for Every Action",
-                    "Data Residency Options"
+                    "Encryption in Transit and at Rest",
+                    "Tenant Data Segmentation",
+                    "Private Beta Security Hardening"
                   ].map((item, i) => (
                     <li key={i} className="flex items-center gap-3 text-white">
                       <CheckCircle2 className="w-5 h-5 text-[#B2F273]" />

@@ -57,16 +57,13 @@ export function WhyTRDRSection() {
           ))}
         </div>
 
-        {/* Quote/Testimonial */}
+        {/* Beta note */}
         <div className="mt-20 max-w-3xl mx-auto text-center">
-          <blockquote className="text-2xl md:text-3xl text-white font-medium leading-relaxed mb-6 font-display">
-            "We validated 247 LCs last quarter with TRDR Hub. Zero discrepancy fees. 
-            <span className="text-[#B2F273]"> That's $18,000 saved.</span>"
+          <blockquote className="text-xl md:text-2xl text-white font-medium leading-relaxed mb-4 font-display">
+            "TRDR Hub is currently in private beta with selected trade operators."
           </blockquote>
-          <div className="text-[#EDF5F2]/60">
-            <span className="font-semibold text-white">Sarah Chen</span>
-            <span className="mx-2">•</span>
-            <span>Trade Finance Manager, Singapore</span>
+          <div className="text-[#EDF5F2]/60 text-sm">
+            Early access is being rolled out in stages while we harden reliability on real-world documents.
           </div>
         </div>
       </div>
