@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import User, UserRole
+from ..models.company import Company
 from ..services.audit_service import AuditService
 from ..models.audit_log import AuditAction, AuditResult
 from .jwt_verifier import ProviderConfig, verify_jwt
@@ -172,6 +173,18 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         user.is_active = True
         if auth_user_id and user.auth_user_id != auth_user_id:
             user.auth_user_id = auth_user_id
+
+    # Bootstrap default company membership for private beta continuity.
+    if not getattr(user, "company_id", None):
+        company_name = (full_name or email.split("@")[0] or "TRDR User").strip()
+        company = Company(
+            name=f"{company_name} Company",
+            contact_email=email,
+            billing_email=email,
+        )
+        db.add(company)
+        db.flush()
+        user.company_id = company.id
 
     return user
 
