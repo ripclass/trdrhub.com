@@ -430,7 +430,6 @@ app.add_middleware(
 
 
 # Error handling middleware with structured logging
-@app.exception_handler((OperationalError, DisconnectionError, SATimeoutError))
 async def database_exception_handler(request: Request, exc: Exception):
     """Return explicit 503 for database connectivity outages."""
     from datetime import datetime, timezone
@@ -465,6 +464,12 @@ async def database_exception_handler(request: Request, exc: Exception):
             **cors_headers,
         }
     )
+
+
+# Register DB-related exception handlers explicitly (FastAPI requires one class per registration)
+app.add_exception_handler(OperationalError, database_exception_handler)
+app.add_exception_handler(DisconnectionError, database_exception_handler)
+app.add_exception_handler(SATimeoutError, database_exception_handler)
 
 
 @app.exception_handler(Exception)
