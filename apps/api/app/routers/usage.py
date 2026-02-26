@@ -63,6 +63,18 @@ class RecordUsageRequest(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
+def _resolve_company_id(current_user: User, db: Session) -> Optional[UUID]:
+    """Return company_id for the user, re-querying from DB if the object is stale."""
+    if current_user.company_id:
+        return current_user.company_id
+    # Re-query in case the in-memory object missed a commit from the auth path.
+    from app.models import User as UserModel
+    fresh = db.query(UserModel).filter(UserModel.id == current_user.id).first()
+    if fresh and fresh.company_id:
+        return fresh.company_id
+    return None
+
+
 @router.get("/current")
 async def get_current_usage(
     db: Session = Depends(get_db),
@@ -73,12 +85,13 @@ async def get_current_usage(
     
     Returns usage counts for all operations and any overage charges.
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
-        usage = await service.get_current_usage(current_user.company_id)
+        usage = await service.get_current_usage(company_id)
         
         if "error" in usage:
             raise HTTPException(status_code=500, detail=usage["error"])
@@ -102,12 +115,13 @@ async def get_remaining_limits(
     
     Shows plan limits, current usage, and remaining quota for each tool.
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
-        limits = await service.get_remaining_limits(current_user.company_id)
+        limits = await service.get_remaining_limits(company_id)
         
         if "error" in limits:
             raise HTTPException(status_code=500, detail=limits["error"])
@@ -132,12 +146,13 @@ async def get_usage_history(
     
     Returns monthly usage summaries and overage charges.
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
-        history = await service.get_usage_history(current_user.company_id, months)
+        history = await service.get_usage_history(company_id, months)
         return {"history": history, "months_requested": months}
         
     except Exception as e:
@@ -159,13 +174,14 @@ async def get_usage_logs(
     
     Shows individual operations with timestamps, costs, and metadata.
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
         logs = await service.get_usage_logs(
-            current_user.company_id,
+            company_id,
             limit=limit,
             offset=offset,
             tool=tool,
@@ -192,13 +208,14 @@ async def check_usage_limit(
     2. Calculate potential overage charges
     3. Allow frontend to show confirmation for overages
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
         allowed, message, info = await service.check_limit(
-            current_user.company_id,
+            company_id,
             request.operation,
             request.quantity
         )
@@ -230,13 +247,14 @@ async def record_usage(
     This is typically called automatically by tool endpoints after
     completing billable operations. Not intended for direct use.
     """
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         service = get_usage_service(db)
         success, message, overage_cost = await service.record_usage(
-            company_id=current_user.company_id,
+            company_id=company_id,
             user_id=current_user.id,
             operation=request.operation,
             tool=request.tool,
@@ -278,14 +296,15 @@ async def get_subscription_info(
     from app.models.hub import HubSubscription, HubPlan
     from sqlalchemy import select, and_
     
-    if not current_user.company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company")
+    company_id = _resolve_company_id(current_user, db)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
     
     try:
         # Get active subscription
         query = select(HubSubscription).where(
             and_(
-                HubSubscription.company_id == current_user.company_id,
+                HubSubscription.company_id == company_id,
                 HubSubscription.status == "active"
             )
         )

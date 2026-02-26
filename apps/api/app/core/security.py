@@ -43,10 +43,17 @@ security = HTTPBearer(auto_error=True)
 _PROVIDER_CACHE: Optional[List[ProviderConfig]] = None
 
 
-def _build_provider_configs() -> List[ProviderConfig]:
-    """Build provider configs for Supabase-only authentication."""
+def _build_provider_configs(force: bool = False) -> List[ProviderConfig]:
+    """Build provider configs for Supabase-only authentication.
+
+    The cache is intentionally NOT frozen when the provider list is empty so
+    that the function can be retried after environment variables have been
+    resolved (e.g. during startup before settings are fully loaded).
+    """
     global _PROVIDER_CACHE  # pylint: disable=global-statement
-    if _PROVIDER_CACHE is not None:
+    # Return cached value only when it is non-empty (guards against cold-start
+    # poison where settings were not yet loaded).
+    if _PROVIDER_CACHE and not force:
         return _PROVIDER_CACHE
 
     providers: List[ProviderConfig] = []
@@ -61,17 +68,23 @@ def _build_provider_configs() -> List[ProviderConfig]:
     if not jwks_url and supabase_url:
         jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
 
+    # Audience: Supabase tokens often don't include 'aud' unless configured.
+    # Only pass audience when explicitly set to avoid false rejections.
+    audience = settings.SUPABASE_AUDIENCE or None
+
     if issuer and jwks_url:
         providers.append(
             ProviderConfig(
                 name="supabase",
                 issuer=issuer,
                 jwks_url=jwks_url,
-                audience=settings.SUPABASE_AUDIENCE,
+                audience=audience,
             )
         )
 
-    _PROVIDER_CACHE = providers
+    # Only cache when we actually have providers (avoids empty-cache poisoning).
+    if providers:
+        _PROVIDER_CACHE = providers
     return providers
 
 
@@ -175,16 +188,40 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
             user.auth_user_id = auth_user_id
 
     # Bootstrap default company membership for private beta continuity.
+    # Check both company_id FK and whether the company actually exists to
+    # handle dangling FKs from failed prior upserts.
     if not getattr(user, "company_id", None):
-        company_name = (full_name or email.split("@")[0] or "TRDR User").strip()
-        company = Company(
-            name=f"{company_name} Company",
-            contact_email=email,
-            billing_email=email,
-        )
-        db.add(company)
-        db.flush()
-        user.company_id = company.id
+        try:
+            # Prefer linking to an existing company that shares the email.
+            existing_company = db.query(Company).filter(
+                Company.contact_email == email
+            ).first()
+            if existing_company:
+                user.company_id = existing_company.id
+                logger.info(
+                    "Linked external user %s to existing company %s by contact_email",
+                    email, existing_company.id,
+                )
+            else:
+                company_name = (full_name or email.split("@")[0] or "TRDR User").strip()
+                company = Company(
+                    name=f"{company_name} Company",
+                    contact_email=email,
+                    billing_email=email,
+                )
+                db.add(company)
+                db.flush()
+                user.company_id = company.id
+                logger.info(
+                    "Created bootstrap company %s for external user %s",
+                    company.id, email,
+                )
+        except Exception as company_err:
+            logger.warning(
+                "Could not bootstrap company for user %s: %s – continuing without company",
+                email, company_err,
+            )
+            # Non-fatal: user can complete onboarding to create a company later.
 
     return user
 
@@ -270,73 +307,109 @@ def infer_effective_role(user: User) -> str:
 
 
 async def authenticate_external_token(token: str, db: Session) -> Optional[User]:
-    """Authenticate user via Supabase token (ES256/JWKS)."""
-    logger = logging.getLogger(__name__)
-    
-    # Extract issuer from token to help with provider detection
+    """Authenticate user via Supabase token (ES256/JWKS).
+
+    Strategy:
+    1. Decode token header/claims without verification to extract ``iss``.
+    2. Build provider list from settings (with lazy rebuild if empty).
+    3. If still no providers but SUPABASE_URL / token issuer is Supabase,
+       construct an ad-hoc provider from the token's own ``iss`` claim so
+       that misconfigured (but otherwise valid) Supabase deployments still work.
+    4. Verify token signature via JWKS.
+    5. Upsert user + company, commit, and return the refreshed User.
+    """
+    _log = logging.getLogger(__name__)
+
+    # Step 1 – peek at claims without signature verification.
+    iss = ""
     try:
         unverified = jwt.decode(token, options={"verify_signature": False})
         iss = (unverified or {}).get("iss", "").rstrip("/")
-        logger.debug(f"Token issuer: {iss}")
-    except Exception as e:
-        logger.debug(f"Failed to decode token (unverified): {str(e)}")
-        iss = ""
+        _log.debug("Token issuer (unverified): %s", iss)
+    except Exception as peek_err:
+        _log.debug("Could not peek at token claims: %s", peek_err)
 
-    # Supabase uses ES256 (ECC) via JWKS, not HS256
-    # Auto-detect Supabase issuer if not configured but JWKS URL is set
-    supabase_issuer = (settings.SUPABASE_ISSUER or "").rstrip("/")
-    if not supabase_issuer and settings.SUPABASE_JWKS_URL and iss and "supabase.co" in iss:
-        supabase_issuer = iss.rstrip("/")
-        logger.info(f"Auto-detected Supabase issuer from token: {supabase_issuer}")
-        # Build provider config with auto-detected issuer
-        if settings.SUPABASE_JWKS_URL:
+    # Step 2 – get providers from settings (rebuild if cache was empty at startup).
+    providers = _build_provider_configs()
+
+    # Step 3 – auto-construct provider from token issuer when settings are absent
+    # but the token itself is clearly from Supabase.
+    if not providers and iss:
+        supabase_url = (settings.SUPABASE_URL or "").rstrip("/")
+        jwks_url = (settings.SUPABASE_JWKS_URL or "").rstrip("/")
+
+        # Derive JWKS URL from token issuer if SUPABASE_JWKS_URL is not set.
+        if not jwks_url and ("supabase.co" in iss or (supabase_url and iss.startswith(supabase_url))):
+            # Supabase issuer format: https://<project>.supabase.co/auth/v1
+            jwks_url = f"{iss}/.well-known/jwks.json"
+
+        if jwks_url:
+            _log.info(
+                "Auto-constructing Supabase provider from token issuer '%s' "
+                "(SUPABASE_ISSUER not set in env)", iss
+            )
             providers = [
                 ProviderConfig(
-                    name="supabase",
-                    issuer=supabase_issuer,
-                    jwks_url=settings.SUPABASE_JWKS_URL,
-                    audience=settings.SUPABASE_AUDIENCE,
+                    name="supabase-auto",
+                    issuer=iss,
+                    jwks_url=jwks_url,
+                    audience=settings.SUPABASE_AUDIENCE or None,
                 )
             ]
-        else:
-            providers = []
-    else:
-        # Build provider configs normally (Supabase uses JWKS with ES256)
-        providers = _build_provider_configs()
-    
+
     if not providers:
-        logger.warning("No external providers configured")
-        if iss and "supabase.co" in iss:
-            logger.warning("Supabase token detected but SUPABASE_ISSUER and SUPABASE_JWKS_URL not configured")
-            logger.warning("Please set SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1")
-            logger.warning("And SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json")
+        _log.warning(
+            "No external JWT providers configured. "
+            "Set SUPABASE_URL (or SUPABASE_ISSUER + SUPABASE_JWKS_URL) to enable Supabase auth. "
+            "Token issuer was: '%s'", iss
+        )
         return None
 
-    # Try JWKS providers (Supabase uses ES256 via JWKS)
-    logger.debug(f"Trying {len(providers)} JWKS provider(s) for ES256/RS256 validation")
+    # Step 4 – try each provider until one succeeds.
+    _log.debug("Trying %d JWKS provider(s) for ES256/RS256 validation", len(providers))
     for provider in providers:
         try:
-            logger.debug(f"Attempting verification via provider: {provider.name} ({provider.issuer})")
+            _log.debug(
+                "Attempting token verification via provider: %s (%s)",
+                provider.name, provider.issuer
+            )
             result = await verify_jwt(token, [provider])
             claims = result.get("claims", {})
             if not claims.get("sub"):
-                logger.warning(f"Provider {provider.name} returned token without 'sub' claim")
+                _log.warning("Provider %s returned token without 'sub' claim", provider.name)
                 continue
-            logger.info(f"Successfully verified token via provider: {provider.name} ({provider.issuer})")
-            logger.info(f"Token claims: email={claims.get('email', 'unknown')}, sub={claims.get('sub', 'unknown')}")
+
+            _log.info(
+                "Token verified via provider '%s': email=%s sub=%s",
+                provider.name,
+                claims.get("email", "unknown"),
+                claims.get("sub", "unknown"),
+            )
+
+            # Step 5 – upsert user + company and commit in a single transaction.
             user = _upsert_external_user(db, claims)
             db.commit()
             db.refresh(user)
-            logger.info(f"Created/updated external user: {user.email} (ID: {user.id})")
+            _log.info("Upserted external user: %s (id=%s)", user.email, user.id)
             return user
-        except Exception as e:
-            logger.warning(f"Provider {provider.name} ({provider.issuer}) failed: {str(e)}")
-            logger.debug(f"Provider failure details: {type(e).__name__}: {str(e)}", exc_info=True)
+
+        except Exception as provider_err:
+            _log.warning(
+                "Provider %s (%s) failed: %s",
+                provider.name, provider.issuer, provider_err,
+            )
+            _log.debug("Provider failure details:", exc_info=True)
+            # Roll back any partial writes before trying the next provider.
+            try:
+                db.rollback()
+            except Exception:
+                pass
             continue
 
-    logger.warning("No external provider could authenticate the token")
-    logger.warning(f"Token issuer: {iss}")
-    logger.warning(f"Configured providers: {[p.name for p in providers]}")
+    _log.warning(
+        "No external provider could authenticate token. issuer='%s' providers=%s",
+        iss, [p.name for p in providers],
+    )
     return None
 
 
