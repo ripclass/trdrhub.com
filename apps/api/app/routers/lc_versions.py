@@ -13,6 +13,7 @@ from .. import models
 from ..auth import get_current_user
 from .validate import get_user_optional
 from ..crud.lc_versions import LCVersionCRUD
+from ..utils.db_resilience import raise_db_http_503_if_unavailable
 from ..schemas.lc_versions import (
     LCVersionCreate, LCVersionRead, LCVersionUpdate, LCVersionsList,
     LCVersionComparison, AmendedLCInfo, LCExistsResponse
@@ -44,6 +45,7 @@ async def create_lc_version(
         )
         return version
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to create LC version: {str(e)}"

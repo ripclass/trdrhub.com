@@ -23,6 +23,7 @@ from app.database import get_db
 from app.core.security import get_current_user
 from app.models import User
 from app.services.usage_service import get_usage_service
+from app.utils.db_resilience import raise_db_http_503_if_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ async def get_current_usage(
     except HTTPException:
         raise
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get current usage: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -131,6 +133,7 @@ async def get_remaining_limits(
     except HTTPException:
         raise
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get remaining limits: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -156,6 +159,7 @@ async def get_usage_history(
         return {"history": history, "months_requested": months}
         
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get usage history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -190,6 +194,7 @@ async def get_usage_logs(
         return {"logs": logs, "limit": limit, "offset": offset}
         
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get usage logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -231,6 +236,7 @@ async def check_usage_limit(
         )
         
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to check usage limit: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -275,6 +281,7 @@ async def record_usage(
     except HTTPException:
         raise
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to record usage: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -346,6 +353,7 @@ async def get_subscription_info(
         }
         
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get subscription info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -383,6 +391,6 @@ async def list_available_plans(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to list plans: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

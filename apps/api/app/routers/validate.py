@@ -42,6 +42,7 @@ from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
+from app.utils.db_resilience import is_database_unavailable_error
 from app.config import settings
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.lc_classifier import detect_lc_type
@@ -2182,6 +2183,18 @@ async def validate_doc(
                 "message": "Validation quota issue. Please check your plan or contact support.",
                 "error_type": error_type,
             }
+
+        if is_database_unavailable_error(e):
+            actionable_detail = {
+                "error_code": "database_unavailable",
+                "message": "Validation is temporarily unavailable due to database connectivity.",
+                "action": "Retry in 30-60 seconds. If persistent, verify DB networking on port 6543 and credentials.",
+                "error_type": error_type,
+            }
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=actionable_detail,
+            ) from e
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

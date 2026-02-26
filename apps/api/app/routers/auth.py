@@ -6,6 +6,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from app.utils.db_resilience import raise_db_http_503_if_unavailable
 
 from ..database import get_db
 from app.models import User, Company
@@ -263,6 +264,7 @@ async def get_user_profile(
             else:
                 raise
         except Exception as e:
+            raise_db_http_503_if_unavailable(e)
             # Log full traceback for debugging
             error_trace = traceback.format_exc()
             logger.error(f"Unexpected error during authentication: {str(e)}\n{error_trace}")
@@ -304,6 +306,7 @@ async def get_user_profile(
         # Re-raise HTTP exceptions (401, 403, 500 from auth, etc.)
         raise
     except Exception as e:
+        raise_db_http_503_if_unavailable(e)
         # Log the error for debugging
         error_trace = traceback.format_exc()
         logger.error(f"Error in /auth/me: {str(e)}\n{error_trace}")
