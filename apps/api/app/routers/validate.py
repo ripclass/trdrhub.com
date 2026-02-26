@@ -588,7 +588,7 @@ async def validate_doc(
             if lc_type_confidence < 0.70 or lc_type == LCType.UNKNOWN.value:
                 try:
                     from app.services.document_intelligence import detect_lc_type_ai
-                    lc_text = context.get("lc_text") or lc_context.get("raw_text", "")
+                    lc_text = extracted_context.get("lc_text") or lc_context.get("raw_text", "") if extracted_context else lc_context.get("raw_text", "")
                     if lc_text and len(lc_text) > 100:
                         ai_result = await detect_lc_type_ai(lc_text)
                         if ai_result.get("confidence", 0) > lc_type_confidence:
@@ -1209,18 +1209,29 @@ async def validate_doc(
         # Skip quota checks for demo user (allows validation to work without billing)
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
-            try:
-                entitlements.enforce_quota(current_user.company, UsageAction.VALIDATE)
-            except EntitlementError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail={
-                        "code": "quota_exceeded",
-                        "message": exc.message,
-                        "quota": exc.result.to_dict(),
-                        "next_action_url": exc.next_action_url,
-                    },
-                ) from exc
+            # Guard: company may not be loaded yet after first-login bootstrap
+            _quota_company = current_user.company
+            if _quota_company is None and current_user.company_id:
+                from app.models.company import Company as _Company
+                _quota_company = db.query(_Company).filter(_Company.id == current_user.company_id).first()
+            if _quota_company is not None:
+                try:
+                    entitlements.enforce_quota(_quota_company, UsageAction.VALIDATE)
+                except EntitlementError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail={
+                            "code": "quota_exceeded",
+                            "message": exc.message,
+                            "quota": exc.result.to_dict(),
+                            "next_action_url": exc.next_action_url,
+                        },
+                    ) from exc
+            else:
+                logger.warning(
+                    "Skipping quota enforcement for user %s: no company found (company_id=%s)",
+                    current_user.email, current_user.company_id
+                )
 
         # =====================================================================
         # V2 VALIDATION - PRIMARY PATH (Legacy disabled)
@@ -1436,14 +1447,23 @@ async def validate_doc(
         
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
-            quota = entitlements.record_usage(
-                current_user.company,
-                UsageAction.VALIDATE,
-                user_id=current_user.id,
-                cost=Decimal("0.00"),
-                description=f"Validation request for document type {doc_type}",
-                session_id=validation_session.id if validation_session else None,
-            )
+            # Re-fetch company relationship in case it was not loaded after bootstrap
+            _user_company = current_user.company
+            if _user_company is None and current_user.company_id:
+                from app.models.company import Company as _Company
+                _user_company = db.query(_Company).filter(_Company.id == current_user.company_id).first()
+            try:
+                quota = entitlements.record_usage(
+                    _user_company,
+                    UsageAction.VALIDATE,
+                    user_id=current_user.id,
+                    cost=Decimal("0.00"),
+                    description=f"Validation request for document type {doc_type}",
+                    session_id=validation_session.id if validation_session else None,
+                ) if _user_company else None
+            except Exception as usage_record_err:
+                logger.warning("record_usage failed (non-blocking): %s", usage_record_err)
+                quota = None
 
         document_details_for_summaries = payload.get("documents")
         logger.info(
@@ -2075,11 +2095,13 @@ async def validate_doc(
         # Log the full error with stack trace
         import traceback
         error_traceback = traceback.format_exc()
+        error_type = type(e).__name__
+        error_message = str(e)
         logger.error(
-            f"Validation endpoint exception: {type(e).__name__}: {str(e)}",
+            f"Validation endpoint exception: {error_type}: {error_message}",
             extra={
-                "error_type": type(e).__name__,
-                "error_message": str(e),
+                "error_type": error_type,
+                "error_message": error_message,
                 "user_id": current_user.id if current_user else None,
                 "endpoint": "/api/validate",
                 "traceback": error_traceback,
@@ -2091,21 +2113,80 @@ async def validate_doc(
         user_type = payload.get("userType") or payload.get("user_type") if 'payload' in locals() else None
         if user_type == "bank" and 'validation_session' in locals() and validation_session:
             duration_ms = int((time.time() - start_time) * 1000)
-            audit_service.log_action(
-                action=AuditAction.UPLOAD,
-                user=current_user,
-                correlation_id=audit_context['correlation_id'],
-                resource_type="bank_validation",
-                resource_id=str(validation_session.id) if validation_session else "unknown",
-                ip_address=audit_context['ip_address'],
-                user_agent=audit_context['user_agent'],
-                endpoint=audit_context['endpoint'],
-                http_method=audit_context['http_method'],
-                result=AuditResult.ERROR,
-                duration_ms=duration_ms,
-                error_message=str(e),
-            )
-        raise
+            try:
+                audit_service.log_action(
+                    action=AuditAction.UPLOAD,
+                    user=current_user,
+                    correlation_id=audit_context['correlation_id'],
+                    resource_type="bank_validation",
+                    resource_id=str(validation_session.id) if validation_session else "unknown",
+                    ip_address=audit_context['ip_address'],
+                    user_agent=audit_context['user_agent'],
+                    endpoint=audit_context['endpoint'],
+                    http_method=audit_context['http_method'],
+                    result=AuditResult.ERROR,
+                    duration_ms=duration_ms,
+                    error_message=error_message,
+                )
+            except Exception as audit_err:
+                logger.warning("Audit log failed during error handler: %s", audit_err)
+
+        # Map common error types to actionable HTTP responses instead of bare 500s.
+        # This ensures the frontend receives a useful error message rather than
+        # the generic production "unexpected error" from the global exception handler.
+        actionable_detail: dict = {
+            "error_code": "validation_internal_error",
+            "message": "Validation processing failed. Please retry or contact support.",
+            "error_type": error_type,
+        }
+
+        if isinstance(e, AttributeError) and "NoneType" in error_message:
+            actionable_detail = {
+                "error_code": "company_not_configured",
+                "message": (
+                    "Your account is missing a company profile. "
+                    "Please complete onboarding before submitting documents."
+                ),
+                "error_type": error_type,
+            }
+        elif isinstance(e, (ImportError, ModuleNotFoundError)):
+            actionable_detail = {
+                "error_code": "service_unavailable",
+                "message": (
+                    "A required validation service is unavailable. "
+                    "Please retry in a few moments."
+                ),
+                "error_type": error_type,
+            }
+        elif "timeout" in error_message.lower() or "TimeoutError" in error_type:
+            actionable_detail = {
+                "error_code": "ocr_timeout",
+                "message": (
+                    "Document processing timed out. Try reducing file sizes "
+                    "or uploading fewer documents at once (max 6 recommended)."
+                ),
+                "error_type": error_type,
+            }
+        elif "encode" in error_message.lower() or "decode" in error_message.lower() or "unicode" in error_message.lower():
+            actionable_detail = {
+                "error_code": "file_encoding_error",
+                "message": (
+                    "One or more files could not be read. "
+                    "Please ensure all files are valid PDFs or images."
+                ),
+                "error_type": error_type,
+            }
+        elif "quota" in error_message.lower() or "limit" in error_message.lower():
+            actionable_detail = {
+                "error_code": "quota_error",
+                "message": "Validation quota issue. Please check your plan or contact support.",
+                "error_type": error_type,
+            }
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=actionable_detail,
+        ) from e
 
 
 def _build_document_summaries(
