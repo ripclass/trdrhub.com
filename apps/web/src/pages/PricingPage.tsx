@@ -110,7 +110,7 @@ const PricingPage = () => {
               <span className="text-[#B2F273] text-glow-sm">with your trade volume.</span>
             </h1>
             <p className="text-lg text-[#EDF5F2]/60 max-w-2xl mx-auto font-light leading-relaxed mb-10">
-              Start with a 14-day free trial. No credit card required. Cancel anytime.
+              Private beta access is currently rolling out in stages. Request access and we will onboard qualified teams.
             </p>
 
             {/* Controls */}
@@ -338,14 +338,12 @@ const PricingPage = () => {
 
           {/* Trust Footer */}
           <div className="text-center border-t border-[#EDF5F2]/10 pt-16">
-            <p className="text-[#EDF5F2]/40 text-sm font-mono uppercase tracking-widest mb-8">
-              Trusted by trade teams at
+            <p className="text-[#EDF5F2]/40 text-sm font-mono uppercase tracking-widest mb-2">
+              Private Beta
             </p>
-            <div className="flex flex-wrap justify-center gap-x-12 gap-y-8 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-              {["HSBC", "Standard Chartered", "Maersk", "CMA CGM", "DB Schenker"].map((brand) => (
-                <span key={brand} className="text-xl font-bold text-white/80">{brand}</span>
-              ))}
-            </div>
+            <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-sm">
+              We are onboarding selected exporters, importers, and trade operators in controlled batches while hardening reliability.
+            </p>
           </div>
 
         </div>

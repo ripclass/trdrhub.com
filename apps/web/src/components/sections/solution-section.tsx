@@ -23,9 +23,9 @@ const solutions = [
   },
   {
     icon: Shield,
-    name: "Defense Grade",
-    description: "Bank-level encryption (AES-256) and SOC 2 Type II compliance. Your data is safer than in a filing cabinet.",
-  },
+    name: "Security First",
+    description: "Encrypted in transit and at rest, with controlled access and auditable workflows for sensitive trade documents.",
+  }
   {
     icon: Check,
     name: "Decision Intelligence",

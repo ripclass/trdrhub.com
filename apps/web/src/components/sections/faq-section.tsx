@@ -21,16 +21,16 @@ const faqs = [
   },
   {
     question: "What happens if the AI misses a discrepancy?",
-    answer: "While rare, if our system misses a discrepancy that results in a bank rejection, we offer a discrepancy fee guarantee for Pro and Enterprise customers. We'll reimburse the bank's discrepancy fee up to $150 per incident.",
-  },
+    answer: "TRDR Hub is currently in private beta. Validation output should be reviewed by your operations team before final submission to counterparties or banks.",
+  }
   {
     question: "Can I integrate this with my existing systems?",
     answer: "Yes. We offer a REST API for programmatic access, webhook notifications for automated workflows, and direct integrations with popular ERP systems. Enterprise customers get custom integration support.",
   },
   {
     question: "Is my data secure?",
-    answer: "Absolutely. All documents are encrypted in transit (TLS 1.3) and at rest (AES-256). We're SOC 2 Type II compliant and GDPR ready. Documents are automatically deleted after 30 days unless you choose to retain them longer.",
-  },
+    answer: "Yes. Documents are encrypted in transit and at rest, with role-based access controls. We are continuously hardening controls as part of private beta operations.",
+  }
   {
     question: "What's the pricing model?",
     answer: "We offer flexible pricing: Free tier for up to 5 validations/month, Pro at $49/month for unlimited validations, and Enterprise with custom pricing for high-volume users. No per-document fees on paid plans.",
