@@ -33,7 +33,8 @@ export default function ExporterLogin() {
       }
 
       await login(email, password);
-      // Navigation will be handled by the login method
+      // Ensure deterministic redirect after successful login
+      window.location.href = '/lcopilot/exporter-dashboard';
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Login failed';
       if (/invalid login credentials|invalid_credentials|email or password/i.test(raw)) {
