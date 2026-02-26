@@ -2455,7 +2455,11 @@ async def _build_document_context(
             logger.info(f"[OCR {idx+1}/{len(files_list)}] Starting extraction for {filename}")
             try:
                 text = await _extract_text_from_upload(upload_file)
-                logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text) if text else 0} chars")
+                if not text:
+                    msg = "No readable text extracted. Try higher resolution scan, reduce stamp overlap, or upload cleaner PDF."
+                    logger.warning(f"[OCR {idx+1}/{len(files_list)}] Empty OCR output for {filename}: {msg}")
+                    return (idx, None, msg)
+                logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text)} chars")
                 return (idx, text, None)
             except Exception as e:
                 logger.warning(f"[OCR {idx+1}/{len(files_list)}] Failed {filename}: {e}")
@@ -2505,6 +2509,7 @@ async def _build_document_context(
         extracted_text = extracted_texts.get(idx)
         if idx in extraction_errors:
             logger.warning(f"⚠ OCR extraction error for {filename}: {extraction_errors[idx]}")
+            doc_info["extraction_error"] = extraction_errors[idx]
         if not extracted_text:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
@@ -3360,6 +3365,9 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         # Create a map of provider names to adapters
         adapter_map = {adapter.provider_name: adapter for adapter in all_adapters}
         
+        best_low_confidence_text = ""
+        best_low_confidence_score = 0.0
+
         # Try providers in configured order
         for provider_name in provider_order:
             # Map short name to full provider name
@@ -3387,12 +3395,27 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                 )
                 
                 if result and result.full_text and not result.error:
+                    confidence = float(result.overall_confidence or 0.0)
                     logger.info(
                         f"OCR provider {full_provider_name} extracted {len(result.full_text)} characters "
-                        f"from {filename} (confidence: {result.overall_confidence:.2f}, "
+                        f"from {filename} (confidence: {confidence:.2f}, "
                         f"time: {result.processing_time_ms}ms)"
                     )
-                    return result.full_text
+
+                    if confidence >= settings.OCR_MIN_CONFIDENCE:
+                        return result.full_text
+
+                    logger.warning(
+                        "Low OCR confidence from %s for %s (%.2f < %.2f). Trying fallback provider.",
+                        full_provider_name,
+                        filename,
+                        confidence,
+                        settings.OCR_MIN_CONFIDENCE,
+                    )
+
+                    if confidence > best_low_confidence_score:
+                        best_low_confidence_score = confidence
+                        best_low_confidence_text = result.full_text
                 elif result and result.error:
                     logger.warning(f"OCR provider {full_provider_name} returned error: {result.error}")
                 else:
@@ -3405,6 +3428,14 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                 logger.warning(f"OCR provider {full_provider_name} failed: {e}", exc_info=True)
                 continue
         
+        if best_low_confidence_text:
+            logger.warning(
+                "Using low-confidence OCR output for %s (best confidence: %.2f).",
+                filename,
+                best_low_confidence_score,
+            )
+            return best_low_confidence_text
+
         logger.warning(f"All OCR providers failed for {filename}")
         return ""
         

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     OCR_TIMEOUT_SEC: int = 120  # Timeout for OCR operations (increased for 30+ page docs)
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
+    OCR_MIN_CONFIDENCE: float = 0.55  # Minimum confidence before accepting OCR output without fallback
     
     # Document Set Configuration (based on UCP600/ISBP745 norms)
     DOC_SET_MIN_DOCS: int = 1  # Minimum docs for validation (LC-only mode)
