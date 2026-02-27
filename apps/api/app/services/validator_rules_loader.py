@@ -27,29 +27,31 @@ async def load_rules_with_provenance(
 
     for idx, domain_key in enumerate(domain_sequence):
         is_primary_domain = idx == 0
+        normalized_domain = (domain_key or "").strip().lower()
+        requested_jurisdiction = (jurisdiction or "global").strip().lower()
         try:
             logger.info(
                 "Fetching ruleset from DB",
                 extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
+                    "domain": normalized_domain,
+                    "jurisdiction": requested_jurisdiction,
                     "document_type": document_type,
                     "index": idx,
                     "is_primary_domain": is_primary_domain,
                 },
             )
             ruleset_data = await rules_service.get_active_ruleset(
-                domain_key,
-                jurisdiction,
+                normalized_domain,
+                requested_jurisdiction,
                 document_type=document_type,
             )
 
             # For ICC global rulebooks, gracefully fallback to global jurisdiction
             # when country-specific jurisdiction has no published ruleset.
-            effective_jurisdiction = jurisdiction
-            if ruleset_data is None and domain_key.startswith("icc.") and jurisdiction != "global":
+            effective_jurisdiction = requested_jurisdiction
+            if ruleset_data is None and normalized_domain.startswith("icc.") and requested_jurisdiction != "global":
                 ruleset_data = await rules_service.get_active_ruleset(
-                    domain_key,
+                    normalized_domain,
                     "global",
                     document_type=document_type,
                 )
@@ -58,8 +60,8 @@ async def load_rules_with_provenance(
                     logger.info(
                         "Using global ICC ruleset fallback",
                         extra={
-                            "domain": domain_key,
-                            "requested_jurisdiction": jurisdiction,
+                            "domain": normalized_domain,
+                            "requested_jurisdiction": requested_jurisdiction,
                             "fallback_jurisdiction": "global",
                             "document_type": document_type,
                         },
@@ -69,13 +71,13 @@ async def load_rules_with_provenance(
             if ruleset_data is None:
                 if is_primary_domain:
                     raise RuntimeError(
-                        f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
+                        f"No active ruleset found for domain={normalized_domain}, jurisdiction={requested_jurisdiction}"
                     )
                 logger.warning(
                     "Supplement ruleset unavailable; continuing with primary ruleset",
                     extra={
-                        "domain": domain_key,
-                        "jurisdiction": jurisdiction,
+                        "domain": normalized_domain,
+                        "jurisdiction": requested_jurisdiction,
                         "document_type": document_type,
                     },
                 )
@@ -84,8 +86,8 @@ async def load_rules_with_provenance(
             logger.info(
                 "Loaded ruleset from DB",
                 extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
+                    "domain": normalized_domain,
+                    "jurisdiction": effective_jurisdiction,
                     "document_type": document_type,
                     "rule_count": len(ruleset_data.get("rules", [])),
                 },
@@ -95,13 +97,13 @@ async def load_rules_with_provenance(
             # ruleset, attempt a global fallback before fail-closing.
             if (
                 is_primary_domain
-                and domain_key.startswith("icc.")
-                and jurisdiction != "global"
+                and normalized_domain.startswith("icc.")
+                and requested_jurisdiction != "global"
                 and "No active ruleset found" in str(e)
             ):
                 try:
                     ruleset_data = await rules_service.get_active_ruleset(
-                        domain_key,
+                        normalized_domain,
                         "global",
                         document_type=document_type,
                     )
@@ -110,8 +112,8 @@ async def load_rules_with_provenance(
                         logger.info(
                             "Recovered via global ICC ruleset fallback after exception",
                             extra={
-                                "domain": domain_key,
-                                "requested_jurisdiction": jurisdiction,
+                                "domain": normalized_domain,
+                                "requested_jurisdiction": requested_jurisdiction,
                                 "fallback_jurisdiction": "global",
                                 "document_type": document_type,
                             },
@@ -123,23 +125,23 @@ async def load_rules_with_provenance(
                         "Ruleset fetch failed (fail-closed)",
                         exc_info=True,
                         extra={
-                            "domain": domain_key,
-                            "jurisdiction": jurisdiction,
+                            "domain": normalized_domain,
+                            "jurisdiction": requested_jurisdiction,
                             "document_type": document_type,
                             "is_primary_domain": is_primary_domain,
                             "error": str(e),
                         },
                     )
                     raise RuntimeError(
-                        f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+                        f"Ruleset fetch failed for domain={normalized_domain}, jurisdiction={requested_jurisdiction}: {e}"
                     ) from e
             else:
                 logger.error(
                     "Ruleset fetch failed (fail-closed)",
                     exc_info=True,
                     extra={
-                        "domain": domain_key,
-                        "jurisdiction": jurisdiction,
+                        "domain": normalized_domain,
+                        "jurisdiction": requested_jurisdiction,
                         "document_type": document_type,
                         "is_primary_domain": is_primary_domain,
                         "error": str(e),
@@ -148,7 +150,7 @@ async def load_rules_with_provenance(
                 # Preserve strict fail-closed behavior for primary ruleset.
                 if is_primary_domain:
                     raise RuntimeError(
-                        f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+                        f"Ruleset fetch failed for domain={normalized_domain}, jurisdiction={requested_jurisdiction}: {e}"
                     ) from e
 
                 # Supplements are additive and should not block core validation verdict.
@@ -157,7 +159,7 @@ async def load_rules_with_provenance(
         ruleset_meta = ruleset_data.get("ruleset") or {}
         meta = {
             "ruleset_id": ruleset_meta.get("id"),
-            "domain": domain_key,
+            "domain": normalized_domain,
             "jurisdiction": effective_jurisdiction,
             "ruleset_version": ruleset_data.get("ruleset_version"),
             "rulebook_version": ruleset_data.get("rulebook_version"),

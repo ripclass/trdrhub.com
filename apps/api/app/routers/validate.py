@@ -4405,6 +4405,17 @@ def _build_db_rules_blocked_structured_result(
         "rule_count_used": provenance.get("rule_count_used", 0),
     }
 
+    docs_structured = documents or []
+    status_counts = _summarize_document_statuses(docs_structured)
+    total_docs = len(docs_structured)
+    verified = status_counts.get("success", 0)
+    warnings = status_counts.get("warning", 0)
+    errors = status_counts.get("error", 0)
+
+    extraction_quality = 0
+    if total_docs > 0:
+        extraction_quality = int(round((verified / total_docs) * 100))
+
     return {
         "version": "structured_result_v1",
         "validation_blocked": True,
@@ -4418,6 +4429,7 @@ def _build_db_rules_blocked_structured_result(
                 "message": reason,
             }
         ],
+        "documents_structured": docs_structured,
         "lc_baseline": {
             "lc_number": lc_baseline.lc_number.value if lc_baseline else None,
             "amount": lc_baseline.amount.value if lc_baseline else None,
@@ -4425,12 +4437,27 @@ def _build_db_rules_blocked_structured_result(
         },
         "validation_provenance": normalized_provenance,
         "processing_summary": {
-            "total_documents": len(documents),
+            "documents": total_docs,
+            "documents_found": total_docs,
+            "total_documents": total_docs,
+            "verified": verified,
+            "warnings": warnings,
+            "errors": errors,
+            "successful_extractions": verified,
+            "failed_extractions": errors,
+            "status_counts": dict(status_counts),
+            "document_status": dict(status_counts),
             "total_issues": 1,
-            "compliance_rate": 0,
+            "discrepancies": 1,
+            "compliance_rate": extraction_quality,
+            "extraction_quality": extraction_quality,
             "processing_time_seconds": round(processing_duration, 2),
             "processing_time_display": time_display,
             "bank_verdict": "BLOCKED",
+        },
+        "analytics": {
+            "document_status_distribution": dict(status_counts),
+            "processing_time_display": time_display,
         },
         "bank_verdict": {
             "verdict": "BLOCKED",
