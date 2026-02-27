@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import mimetypes
 import os
 import random
 import re
@@ -37,6 +38,15 @@ TARGET_COUNTS = {
 
 TEXT_EXTS = {".txt", ".csv", ".json", ".xml", ".md", ".log"}
 FILE_EXT_ALLOWLIST = {".txt", ".csv", ".json", ".xml", ".md", ".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+VALIDATE_UPLOAD_MIME_BY_EXT = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+}
+CANONICAL_VERDICTS = {"pass", "warn", "reject", "blocked", "unknown"}
 
 MANIFEST_FIELDS = [
     "case_id",
@@ -191,7 +201,7 @@ def synthesize_manifest(rows: List[Dict[str, str]], seed: int = 42) -> List[Dict
         "pass": "pass",
         "warn": "warn",
         "reject": "reject",
-        "ocr_noise": "warn",
+        "ocr_noise": "blocked",
         "sanctions_tbml_shell": "reject",
     }
     for scenario, count in TARGET_COUNTS.items():
@@ -231,10 +241,11 @@ def _multipart_post(url: str, fields: Dict[str, str], files: List[Path], token: 
 
     for fp in files:
         content = fp.read_bytes()
+        content_type = VALIDATE_UPLOAD_MIME_BY_EXT.get(fp.suffix.lower()) or mimetypes.guess_type(fp.name)[0] or "application/octet-stream"
         chunks += [
             f"--{boundary}\r\n".encode(),
             f'Content-Disposition: form-data; name="files"; filename="{fp.name}"\r\n'.encode(),
-            b"Content-Type: application/octet-stream\r\n\r\n",
+            f"Content-Type: {content_type}\r\n\r\n".encode(),
             content,
             b"\r\n",
         ]
@@ -253,41 +264,125 @@ def _multipart_post(url: str, fields: Dict[str, str], files: List[Path], token: 
     return json.loads(txt) if txt.strip() else {}
 
 
+def _normalize_verdict_label(value: str | None) -> str:
+    if not value:
+        return "unknown"
+    v = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    mapping = {
+        "pass": "pass",
+        "passed": "pass",
+        "ok": "pass",
+        "success": "pass",
+        "approved": "pass",
+        "compliant": "pass",
+        "warn": "warn",
+        "warning": "warn",
+        "warnings": "warn",
+        "manual_review": "warn",
+        "review": "warn",
+        "reject": "reject",
+        "rejected": "reject",
+        "fail": "reject",
+        "failed": "reject",
+        "non_compliant": "reject",
+        "discrepant": "reject",
+        "discrepancy": "reject",
+        "blocked": "blocked",
+        "block": "blocked",
+        "blocked_by_gate": "blocked",
+        "fail_closed": "blocked",
+        "unknown": "unknown",
+        "not_run": "unknown",
+    }
+    return mapping.get(v, "unknown")
+
+
+def _deep_get(data: Dict, path: Tuple[str, ...]):
+    node = data
+    for key in path:
+        if isinstance(node, dict) and key in node:
+            node = node[key]
+        else:
+            return None
+    return node
+
+
+def normalize_expected_verdict(value: str | None, scenario: str | None = None) -> str:
+    normalized = _normalize_verdict_label(value)
+    if normalized != "unknown":
+        return normalized
+    by_scenario = {
+        "pass": "pass",
+        "warn": "warn",
+        "reject": "reject",
+        "ocr_noise": "blocked",
+        "sanctions_tbml_shell": "reject",
+    }
+    return by_scenario.get((scenario or "").strip().lower(), "unknown")
+
+
 def extract_actual_verdict(resp: Dict) -> str:
-    for key in ["verdict", "final_verdict", "status"]:
-        if isinstance(resp.get(key), str):
-            return resp[key].lower()
-    for path in [("structured_result", "verdict"), ("result", "verdict")]:
-        node = resp
-        ok = True
-        for k in path:
-            if isinstance(node, dict) and k in node:
-                node = node[k]
-            else:
-                ok = False
-                break
-        if ok and isinstance(node, str):
-            return node.lower()
+    structured = resp.get("structured_result") if isinstance(resp.get("structured_result"), dict) else {}
+
+    blocked_signals = [
+        structured.get("validation_blocked"),
+        _deep_get(structured, ("gate_result", "status")),
+        _deep_get(structured, ("gate_result", "can_proceed")),
+    ]
+    if any(v is True for v in blocked_signals):
+        return "blocked"
+    gate_status = _normalize_verdict_label(_deep_get(structured, ("gate_result", "status")))
+    if gate_status == "blocked":
+        return "blocked"
+    can_proceed = _deep_get(structured, ("gate_result", "can_proceed"))
+    if can_proceed is False:
+        return "blocked"
+
+    candidate_paths = [
+        ("final_verdict",),
+        ("verdict",),
+        ("status",),
+        ("validation_status",),
+        ("structured_result", "final_verdict"),
+        ("structured_result", "verdict"),
+        ("structured_result", "validation_status"),
+        ("result", "verdict"),
+    ]
+    for path in candidate_paths:
+        val = _deep_get(resp, path)
+        label = _normalize_verdict_label(val if isinstance(val, str) else None)
+        if label != "unknown":
+            return label
+
+    issues = structured.get("issues") if isinstance(structured.get("issues"), list) else []
+    severities = {str(i.get("severity", "")).lower() for i in issues if isinstance(i, dict)}
+    if "critical" in severities:
+        return "reject"
+    if severities.intersection({"major", "minor", "warning"}):
+        return "warn"
     return "unknown"
 
 
-def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry_run: bool = False) -> List[Dict]:
+def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry_run: bool = False, limit: int | None = None) -> List[Dict]:
     results = []
     command_stubs = []
     jsonl_path = RESULTS / "day3_results.jsonl"
 
-    for row in rows:
+    run_rows = rows[:limit] if limit and limit > 0 else rows
+
+    for row in run_rows:
         if row.get("run_enabled", "1") != "1":
             continue
         cleaned = row.get("cleaned_path", "")
         files = [ROOT / cleaned] if cleaned else []
         files = [f for f in files if f.exists() and f.is_file()]
+        valid_files = [f for f in files if f.suffix.lower() in VALIDATE_UPLOAD_MIME_BY_EXT]
 
         record = {
             "timestamp": _now(),
             "case_id": row["case_id"],
             "scenario": row["scenario"],
-            "expected_verdict": row["expected_verdict"],
+            "expected_verdict": normalize_expected_verdict(row.get("expected_verdict"), row.get("scenario")),
             "jobId": None,
             "actual_verdict": "not_run",
             "severities": [],
@@ -296,19 +391,29 @@ def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry
             "error": None,
         }
 
-        if dry_run or not files:
+        if dry_run:
             cmd = f"curl -X POST \"{api_url}\" -F \"files=@{cleaned}\""
             command_stubs.append(cmd)
             record["status"] = "stub_command"
+        elif not valid_files:
+            record["status"] = "error"
+            record["error"] = "No API-compatible files (.pdf/.png/.jpg/.jpeg/.tif/.tiff)"
         else:
             try:
                 resp = _multipart_post(
                     api_url,
-                    fields={"scenario": row["scenario"], "case_id": row["case_id"]},
-                    files=files,
+                    fields={
+                        "document_type": "letter_of_credit",
+                        "user_type": "exporter",
+                        "workflow_type": "export-lc-upload",
+                        "metadata": json.dumps({"case_id": row["case_id"], "scenario": row["scenario"]}),
+                        "document_tags": json.dumps({f.name: "lc" for f in valid_files}),
+                    },
+                    files=valid_files,
                     token=api_token,
                 )
-                issues = resp.get("issues") or resp.get("structured_result", {}).get("issues") or []
+                structured = resp.get("structured_result") if isinstance(resp.get("structured_result"), dict) else {}
+                issues = resp.get("issues") or structured.get("issues") or []
                 record.update(
                     {
                         "jobId": resp.get("jobId") or resp.get("job_id"),
@@ -333,7 +438,7 @@ def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry
 
 
 def compute_metrics(results: List[Dict]) -> Dict:
-    comparable = [r for r in results if r.get("actual_verdict") not in {"not_run", "unknown"}]
+    comparable = [r for r in results if r.get("actual_verdict") in {"pass", "warn", "reject", "blocked"}]
     total = len(comparable)
     correct = sum(1 for r in comparable if r.get("actual_verdict") == r.get("expected_verdict"))
     accuracy = (correct / total) if total else 0.0
@@ -352,7 +457,7 @@ def compute_metrics(results: List[Dict]) -> Dict:
             consistency_scores.append(1.0 if len(set(verdicts)) == 1 else 0.0)
     rerun_consistency = sum(consistency_scores) / len(consistency_scores) if consistency_scores else 1.0
 
-    labels = ["pass", "warn", "reject", "unknown"]
+    labels = ["pass", "warn", "reject", "blocked", "unknown"]
     matrix = {e: {a: 0 for a in labels} for e in labels}
     for r in results:
         e = r.get("expected_verdict", "unknown")
@@ -363,7 +468,12 @@ def compute_metrics(results: List[Dict]) -> Dict:
             a = "unknown"
         matrix[e][a] += 1
 
-    failed = [r for r in comparable if r.get("expected_verdict") != r.get("actual_verdict")]
+    failed = [
+        r for r in results
+        if r.get("status") != "ok"
+        or r.get("actual_verdict") in {"unknown", "not_run"}
+        or r.get("expected_verdict") != r.get("actual_verdict")
+    ]
 
     summary = {
         "generated_at": _now(),
@@ -384,7 +494,7 @@ def compute_metrics(results: List[Dict]) -> Dict:
 
 
 def _write_confusion_csv(matrix: Dict[str, Dict[str, int]]) -> None:
-    labels = ["pass", "warn", "reject", "unknown"]
+    labels = ["pass", "warn", "reject", "blocked", "unknown"]
     path = RESULTS / "confusion_matrix.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

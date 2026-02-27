@@ -20,13 +20,14 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Skip live API calls and emit command stubs")
     parser.add_argument("--api-url", default=os.getenv("DAY3_API_URL", "http://localhost:8000/api/validate/"))
     parser.add_argument("--api-token", default=os.getenv("DAY3_API_TOKEN", ""))
+    parser.add_argument("--limit", type=int, default=None, help="Run first N synthetic rows (smoke mode)")
     args = parser.parse_args()
 
     bootstrap_dirs()
     discovered = discover_inputs()
     cleaned = clean_and_redact(discovered)
     final_manifest = synthesize_manifest(cleaned)
-    results = run_batch(final_manifest, api_url=args.api_url, api_token=args.api_token, dry_run=args.dry_run)
+    results = run_batch(final_manifest, api_url=args.api_url, api_token=args.api_token, dry_run=args.dry_run, limit=args.limit)
     summary = compute_metrics(results)
 
     print("Day-3 pipeline complete")
