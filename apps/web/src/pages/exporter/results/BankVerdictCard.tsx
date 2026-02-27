@@ -61,6 +61,10 @@ interface BankVerdictCardProps {
 }
 
 export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
+  const issueSummary = verdict?.issue_summary ?? { critical: 0, major: 0, minor: 0, total: 0 };
+  const actionItems = verdict?.action_items ?? [];
+  const actionItemsCount = typeof verdict?.action_items_count === "number" ? verdict.action_items_count : actionItems.length;
+
   return (
     <Card className={cn(
       "mt-4 border-2 shadow-lg transition-all",
@@ -97,21 +101,21 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
           
           {/* Issue Summary */}
           <div className="flex items-center gap-4 text-xs">
-            {verdict.issue_summary.critical > 0 && (
+            {issueSummary.critical > 0 && (
               <div className="flex items-center gap-1 text-red-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.critical}</span>
+                <span className="font-bold text-lg">{issueSummary.critical}</span>
                 <span>Critical</span>
               </div>
             )}
-            {verdict.issue_summary.major > 0 && (
+            {issueSummary.major > 0 && (
               <div className="flex items-center gap-1 text-orange-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.major}</span>
+                <span className="font-bold text-lg">{issueSummary.major}</span>
                 <span>Major</span>
               </div>
             )}
-            {verdict.issue_summary.minor > 0 && (
+            {issueSummary.minor > 0 && (
               <div className="flex items-center gap-1 text-yellow-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.minor}</span>
+                <span className="font-bold text-lg">{issueSummary.minor}</span>
                 <span>Minor</span>
               </div>
             )}
@@ -119,13 +123,13 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
         </div>
         
         {/* Action Items */}
-        {verdict.action_items.length > 0 && (
+        {actionItems.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/30">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Required Actions ({verdict.action_items_count})
+              Required Actions ({actionItemsCount})
             </p>
             <div className="space-y-2">
-              {verdict.action_items.slice(0, 3).map((item, idx) => (
+              {actionItems.slice(0, 3).map((item, idx) => (
                 <div key={idx} className="flex items-start gap-2 text-sm">
                   <span className={cn(
                     "mt-0.5 w-2 h-2 rounded-full flex-shrink-0",
@@ -137,9 +141,9 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
                   </div>
                 </div>
               ))}
-              {verdict.action_items_count > 3 && (
+              {actionItemsCount > 3 && (
                 <p className="text-xs text-muted-foreground pl-4">
-                  + {verdict.action_items_count - 3} more action(s) in Issues tab
+                  + {actionItemsCount - 3} more action(s) in Issues tab
                 </p>
               )}
             </div>
