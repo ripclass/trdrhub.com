@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, desc, nullslast
+from sqlalchemy import and_, case, desc, nullslast
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -137,23 +137,40 @@ class DBRulesAdapter(RulesService):
         
         db = SessionLocal()
         try:
-            # 1) Find the active ruleset for domain/jurisdiction
-            # Order by effective_from (newest first), then created_at (newest first)
-            ruleset = (
-                db.query(Ruleset)
-                .filter(
-                    and_(
-                        Ruleset.domain == domain,
-                        Ruleset.jurisdiction == (jurisdiction or "global"),
-                        Ruleset.status == RulesetStatus.ACTIVE.value,
-                    )
+            # 1) Find the active ruleset for domain/jurisdiction.
+            # For ICC domains, allow global fallback directly at query layer.
+            requested_jurisdiction = (jurisdiction or "global").strip().lower()
+            is_icc_domain = (domain or "").strip().lower().startswith("icc.")
+
+            base_query = db.query(Ruleset).filter(
+                and_(
+                    Ruleset.domain == domain,
+                    Ruleset.status == RulesetStatus.ACTIVE.value,
                 )
-                .order_by(
-                    nullslast(desc(Ruleset.effective_from)),
-                    desc(Ruleset.created_at)
-                )
-                .first()
             )
+
+            if is_icc_domain and requested_jurisdiction != "global":
+                # Prefer exact jurisdiction first, then fallback to global.
+                ruleset = (
+                    base_query
+                    .filter(Ruleset.jurisdiction.in_([requested_jurisdiction, "global"]))
+                    .order_by(
+                        case((Ruleset.jurisdiction == requested_jurisdiction, 0), else_=1),
+                        nullslast(desc(Ruleset.effective_from)),
+                        desc(Ruleset.created_at),
+                    )
+                    .first()
+                )
+            else:
+                ruleset = (
+                    base_query
+                    .filter(Ruleset.jurisdiction == requested_jurisdiction)
+                    .order_by(
+                        nullslast(desc(Ruleset.effective_from)),
+                        desc(Ruleset.created_at)
+                    )
+                    .first()
+                )
             
             if not ruleset:
                 logger.warning(
