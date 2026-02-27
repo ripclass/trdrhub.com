@@ -20,14 +20,28 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Skip live API calls and emit command stubs")
     parser.add_argument("--api-url", default=os.getenv("DAY3_API_URL", "http://localhost:8000/api/validate/"))
     parser.add_argument("--api-token", default=os.getenv("DAY3_API_TOKEN", ""))
-    parser.add_argument("--limit", type=int, default=None, help="Run first N synthetic rows (smoke mode)")
+    parser.add_argument("--limit", type=int, default=None, help="Run first N synthetic rows")
+    parser.add_argument("--smoke20", action="store_true", help="Shortcut for safe 20-case smoke run")
+    parser.add_argument("--no-resume", action="store_true", help="Disable resume-safe mode")
+    parser.add_argument("--min-interval", type=float, default=1.2, help="Minimum seconds between requests")
+    parser.add_argument("--retries-429", type=int, default=5, help="Max retries for HTTP 429")
     args = parser.parse_args()
 
     bootstrap_dirs()
     discovered = discover_inputs()
     cleaned = clean_and_redact(discovered)
     final_manifest = synthesize_manifest(cleaned)
-    results = run_batch(final_manifest, api_url=args.api_url, api_token=args.api_token, dry_run=args.dry_run, limit=args.limit)
+    run_limit = 20 if args.smoke20 else args.limit
+    results = run_batch(
+        final_manifest,
+        api_url=args.api_url,
+        api_token=args.api_token,
+        dry_run=args.dry_run,
+        limit=run_limit,
+        resume_safe=not args.no_resume,
+        max_retries_429=args.retries_429,
+        min_interval_seconds=args.min_interval,
+    )
     summary = compute_metrics(results)
 
     print("Day-3 pipeline complete")

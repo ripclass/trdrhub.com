@@ -10,13 +10,15 @@ import random
 import re
 import shutil
 import sys
+import time
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
+from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
@@ -242,9 +244,14 @@ def _multipart_post(url: str, fields: Dict[str, str], files: List[Path], token: 
     for fp in files:
         content = fp.read_bytes()
         content_type = VALIDATE_UPLOAD_MIME_BY_EXT.get(fp.suffix.lower()) or mimetypes.guess_type(fp.name)[0] or "application/octet-stream"
+        safe_name = fp.name.replace('"', "")
+        filename_star = quote(fp.name, safe="")
         chunks += [
             f"--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="files"; filename="{fp.name}"\r\n'.encode(),
+            (
+                f'Content-Disposition: form-data; name="files"; filename="{safe_name}"; '
+                f"filename*=UTF-8''{filename_star}\r\n"
+            ).encode("utf-8"),
             f"Content-Type: {content_type}\r\n\r\n".encode(),
             content,
             b"\r\n",
@@ -363,16 +370,55 @@ def extract_actual_verdict(resp: Dict) -> str:
     return "unknown"
 
 
-def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry_run: bool = False, limit: int | None = None) -> List[Dict]:
-    results = []
-    command_stubs = []
+def run_batch(
+    rows: List[Dict[str, str]],
+    api_url: str,
+    api_token: str = "",
+    dry_run: bool = False,
+    limit: int | None = None,
+    *,
+    resume_safe: bool = True,
+    max_retries_429: int = 5,
+    base_backoff_seconds: float = 1.5,
+    max_backoff_seconds: float = 30.0,
+    min_interval_seconds: float = 1.0,
+) -> List[Dict]:
+    results: List[Dict] = []
+    command_stubs: List[str] = []
     jsonl_path = RESULTS / "day3_results.jsonl"
+    rate_limit_stats = {
+        "rate_limit_429_count": 0,
+        "rate_limit_retry_count": 0,
+        "max_retry_attempt_used": 0,
+        "cases_exhausted_after_429": 0,
+        "retry_sleep_seconds": 0.0,
+        "processed_cases": 0,
+        "resume_skipped_cases": 0,
+    }
+
+    previous_ok: Dict[str, Dict] = {}
+    if resume_safe and jsonl_path.exists():
+        for existing in read_jsonl(jsonl_path):
+            case_id = existing.get("case_id")
+            if case_id and existing.get("status") == "ok":
+                previous_ok[str(case_id)] = existing
 
     run_rows = rows[:limit] if limit and limit > 0 else rows
+    last_request_at = 0.0
 
     for row in run_rows:
         if row.get("run_enabled", "1") != "1":
             continue
+
+        case_id = row.get("case_id", "")
+        if resume_safe and case_id in previous_ok:
+            prev = dict(previous_ok[case_id])
+            prev["resumed_from_previous_success"] = True
+            prev["timestamp"] = _now()
+            results.append(prev)
+            rate_limit_stats["resume_skipped_cases"] += 1
+            continue
+
         cleaned = row.get("cleaned_path", "")
         files = [ROOT / cleaned] if cleaned else []
         files = [f for f in files if f.exists() and f.is_file()]
@@ -399,40 +445,105 @@ def run_batch(rows: List[Dict[str, str]], api_url: str, api_token: str = "", dry
             record["status"] = "error"
             record["error"] = "No API-compatible files (.pdf/.png/.jpg/.jpeg/.tif/.tiff)"
         else:
-            try:
-                resp = _multipart_post(
-                    api_url,
-                    fields={
-                        "document_type": "letter_of_credit",
-                        "user_type": "exporter",
-                        "workflow_type": "export-lc-upload",
-                        "metadata": json.dumps({"case_id": row["case_id"], "scenario": row["scenario"]}),
-                        "document_tags": json.dumps({f.name: "lc" for f in valid_files}),
-                    },
-                    files=valid_files,
-                    token=api_token,
-                )
-                structured = resp.get("structured_result") if isinstance(resp.get("structured_result"), dict) else {}
-                issues = resp.get("issues") or structured.get("issues") or []
-                record.update(
-                    {
-                        "jobId": resp.get("jobId") or resp.get("job_id"),
-                        "actual_verdict": extract_actual_verdict(resp),
-                        "severities": sorted({str(x.get('severity', 'unknown')).lower() for x in issues if isinstance(x, dict)}),
-                        "key_issues": [x.get("code") or x.get("rule_id") or x.get("message") for x in issues[:5] if isinstance(x, dict)],
-                        "status": "ok",
-                    }
-                )
-            except Exception as exc:
-                record["status"] = "error"
-                record["error"] = str(exc)
+            if min_interval_seconds > 0 and last_request_at > 0:
+                elapsed = time.time() - last_request_at
+                if elapsed < min_interval_seconds:
+                    time.sleep(min_interval_seconds - elapsed)
+            last_request_at = time.time()
+
+            attempt = 0
+            while True:
+                try:
+                    resp = _multipart_post(
+                        api_url,
+                        fields={
+                            "document_type": "letter_of_credit",
+                            "user_type": "exporter",
+                            "workflow_type": "export-lc-upload",
+                            "metadata": json.dumps({"case_id": row["case_id"], "scenario": row["scenario"]}),
+                            "document_tags": json.dumps({f.name: "lc" for f in valid_files}),
+                        },
+                        files=valid_files,
+                        token=api_token,
+                    )
+                    structured = resp.get("structured_result") if isinstance(resp.get("structured_result"), dict) else {}
+                    issues = resp.get("issues") or structured.get("issues") or []
+                    record.update(
+                        {
+                            "jobId": resp.get("jobId") or resp.get("job_id"),
+                            "actual_verdict": extract_actual_verdict(resp),
+                            "severities": sorted({str(x.get('severity', 'unknown')).lower() for x in issues if isinstance(x, dict)}),
+                            "key_issues": [x.get("code") or x.get("rule_id") or x.get("message") for x in issues[:5] if isinstance(x, dict)],
+                            "status": "ok",
+                        }
+                    )
+                    break
+                except urllib_error.HTTPError as exc:
+                    error_body = exc.read().decode("utf-8", errors="ignore") if hasattr(exc, "read") else ""
+                    if exc.code == 429 and attempt < max_retries_429:
+                        attempt += 1
+                        rate_limit_stats["rate_limit_429_count"] += 1
+                        rate_limit_stats["rate_limit_retry_count"] += 1
+                        rate_limit_stats["max_retry_attempt_used"] = max(rate_limit_stats["max_retry_attempt_used"], attempt)
+                        sleep_s = min(max_backoff_seconds, base_backoff_seconds * (2 ** (attempt - 1)))
+                        sleep_s += random.uniform(0.0, 0.4 * base_backoff_seconds)
+                        rate_limit_stats["retry_sleep_seconds"] += sleep_s
+                        time.sleep(sleep_s)
+                        continue
+
+                    if exc.code == 429:
+                        rate_limit_stats["rate_limit_429_count"] += 1
+                        rate_limit_stats["cases_exhausted_after_429"] += 1
+
+                    if exc.code == 422 and error_body and "document_tags" in error_body and valid_files:
+                        try:
+                            fallback_tags = {Path(row.get("source_path", "")).name or valid_files[0].name: "lc"}
+                            resp = _multipart_post(
+                                api_url,
+                                fields={
+                                    "document_type": "letter_of_credit",
+                                    "user_type": "exporter",
+                                    "workflow_type": "export-lc-upload",
+                                    "metadata": json.dumps({"case_id": row["case_id"], "scenario": row["scenario"]}),
+                                    "document_tags": json.dumps(fallback_tags),
+                                },
+                                files=valid_files,
+                                token=api_token,
+                            )
+                            structured = resp.get("structured_result") if isinstance(resp.get("structured_result"), dict) else {}
+                            issues = resp.get("issues") or structured.get("issues") or []
+                            record.update(
+                                {
+                                    "jobId": resp.get("jobId") or resp.get("job_id"),
+                                    "actual_verdict": extract_actual_verdict(resp),
+                                    "severities": sorted({str(x.get('severity', 'unknown')).lower() for x in issues if isinstance(x, dict)}),
+                                    "key_issues": [x.get("code") or x.get("rule_id") or x.get("message") for x in issues[:5] if isinstance(x, dict)],
+                                    "status": "ok",
+                                    "notes": "422_recovered_with_source_filename_tag",
+                                }
+                            )
+                            break
+                        except Exception:
+                            pass
+
+                    record["status"] = "error"
+                    detail = f" | body={error_body[:240]}" if error_body else ""
+                    record["error"] = f"HTTP Error {exc.code}: {exc.reason}{detail}"
+                    break
+                except Exception as exc:
+                    record["status"] = "error"
+                    record["error"] = str(exc)
+                    break
 
         results.append(record)
+        rate_limit_stats["processed_cases"] += 1
 
     with jsonl_path.open("w", encoding="utf-8") as f:
         for r in results:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
+    rate_limit_stats["generated_at"] = _now()
+    (RESULTS / "rate_limit_stats.json").write_text(json.dumps(rate_limit_stats, indent=2), encoding="utf-8")
     (RESULTS / "validation_commands.ps1").write_text("\n".join(command_stubs) + "\n", encoding="utf-8")
     return results
 
@@ -563,3 +674,19 @@ def read_csv(path: Path) -> List[Dict[str, str]]:
         return []
     with path.open("r", newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def read_jsonl(path: Path) -> List[Dict]:
+    if not path.exists():
+        return []
+    rows: List[Dict] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            t = line.strip()
+            if not t:
+                continue
+            try:
+                rows.append(json.loads(t))
+            except json.JSONDecodeError:
+                continue
+    return rows

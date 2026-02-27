@@ -64,3 +64,21 @@ If API call is not possible for a case, pipeline still emits runnable command st
 ```powershell
 python .\tools\day3_pipeline\run_day3_pipeline.py
 ```
+
+## Smoke presets (safe pacing)
+
+```powershell
+# 20-case smoke, resume-safe, low-rate to avoid 429
+python .\tools\day3_pipeline\run_batch_day3.py --smoke20 --min-interval 1.5 --retries-429 6
+
+# Full rerun with resume-safe (skips already successful cases)
+python .\tools\day3_pipeline\run_batch_day3.py --min-interval 1.2 --retries-429 5
+```
+
+Expected smoke criteria:
+- success_rate >= 90%
+- HTTP 429 <= 5%
+- blocked in PASS <= 20%
+
+Additional output:
+- `data/day3/results/rate_limit_stats.json`
