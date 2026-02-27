@@ -9,6 +9,8 @@ from uuid import UUID
 from app.core.lc_types import LCType
 from app.services.validator_rule_executor import execute_rules_with_semantics
 from app.services.validator_rules_loader import load_rules_with_provenance
+from app.services.validator_supplement_router import resolve_domain_sequence
+from app.services.validator_verdict_builder import build_validation_provenance, build_validation_results
 
 logger = logging.getLogger(__name__)
 
@@ -1314,32 +1316,8 @@ async def validate_document_async(
 
     rules_service = get_rules_service()
 
-    requested_domain = document_data.get("domain")
     jurisdiction = document_data.get("jurisdiction", "global")
-    extra_supplements = document_data.get("supplement_domains", []) or []
-
-    # When requested_domain is provided (e.g., "icc.ucp600"), use it directly
-    # This allows callers to specify exact domain without auto-detection
-    if requested_domain:
-        # Use requested domain directly (matches DB rulesets table)
-        domain_sequence = _unique_preserve(
-            [requested_domain, *[d for d in extra_supplements if isinstance(d, str)]]
-        )
-    else:
-        # No domain specified - detect from document content
-        base_domain, detected_supplements = _detect_icc_ruleset_domains(document_data)
-        domain_sequence = _unique_preserve(
-            [base_domain, *detected_supplements, *[d for d in extra_supplements if isinstance(d, str)]]
-        )
-
-    domain_sequence = [d for d in domain_sequence if isinstance(d, str) and d.strip()]
-    if not domain_sequence:
-        domain_sequence = ["icc.ucp600"]
-
-    if any(d.startswith("icc.") for d in domain_sequence):
-        crossdoc_domain = "icc.lcopilot.crossdoc"
-        if crossdoc_domain not in domain_sequence:
-            domain_sequence.append(crossdoc_domain)
+    domain_sequence = resolve_domain_sequence(document_data)
 
     aggregated_rules, base_metadata, provenance_rulesets = await load_rules_with_provenance(
         rules_service=rules_service,
@@ -1390,22 +1368,26 @@ async def validate_document_async(
             f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
         )
 
-    results, prepared_rule_count = await execute_rules_with_semantics(
+    outcomes, rule_envelopes, semantic_registry, prepared_rule_count = await execute_rules_with_semantics(
         activated_rules_with_meta,
         document_data,
         base_metadata,
         domain_sequence=domain_sequence,
         jurisdiction=jurisdiction,
     )
-    provenance_payload = {
-        "success": True,
-        "domain": base_metadata.get("domain") if base_metadata else None,
-        "jurisdiction": jurisdiction,
-        "ruleset_id": base_metadata.get("ruleset_id") if base_metadata else None,
-        "ruleset_version": base_metadata.get("ruleset_version") if base_metadata else None,
-        "rule_count_used": prepared_rule_count,
-        "rulesets": provenance_rulesets,
-    }
+    results = build_validation_results(
+        outcomes=outcomes,
+        rule_envelopes=rule_envelopes,
+        document_data=document_data,
+        semantic_registry=semantic_registry,
+        base_metadata=base_metadata,
+    )
+    provenance_payload = build_validation_provenance(
+        base_metadata=base_metadata,
+        jurisdiction=jurisdiction,
+        prepared_rule_count=prepared_rule_count,
+        provenance_rulesets=provenance_rulesets,
+    )
     document_data["_db_rules_execution"] = provenance_payload
     if return_provenance:
         return results, provenance_payload

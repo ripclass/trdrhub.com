@@ -14,6 +14,8 @@ from app.services import rules_service as rules_service_module
 from app.services import validator_rule_executor as executor_module
 from app.services.validator import validate_document_async
 from app.services.validator_rules_loader import load_rules_with_provenance
+from app.services.validator_supplement_router import resolve_domain_sequence
+from app.services.validator_verdict_builder import build_validation_provenance, build_validation_results
 from app.routers.validate import _build_db_rules_blocked_structured_result
 
 
@@ -388,6 +390,107 @@ async def test_phaseb_semantic_execution_snapshot(monkeypatch):
             "documents": ["commercial_invoice"],
             "semantic_match": False,
             "provenance_rule_count": 1,
+        },
+        sort_keys=True,
+        indent=2,
+    )
+
+
+def test_phasec_router_snapshot_detected_plus_explicit_supplements():
+    payload = {
+        "jurisdiction": "global",
+        "lc_text": "This credit is subject to UCP 600 and eUCP Version 2.1. Reimbursement under URR 725.",
+        "supplement_domains": ["regulations.bd"],
+    }
+
+    sequence = resolve_domain_sequence(payload)
+    assert json.dumps(sequence, sort_keys=True, indent=2) == json.dumps(
+        ["icc.ucp600", "icc.eucp2.1", "icc.urr725", "regulations.bd", "icc.lcopilot.crossdoc"],
+        sort_keys=True,
+        indent=2,
+    )
+
+
+def test_phasec_verdict_builder_snapshot():
+    outcomes = [{"rule_id": "UCP-TEST-1", "passed": False, "severity": "warning", "message": "failed"}]
+    rule_envelopes = [{
+        "rule": {
+            "rule_id": "UCP-TEST-1",
+            "title": "Primary Test Rule",
+            "document_type": "commercial_invoice",
+            "severity": "warning",
+            "documents": ["commercial_invoice"],
+        },
+        "meta": {
+            "ruleset_id": "11111111-1111-1111-1111-111111111111",
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "ruleset_version": "1.2.3",
+            "rulebook_version": "UCP600:2007",
+            "rule_count_used": 1,
+        },
+    }]
+    document_data = {}
+
+    results = build_validation_results(
+        outcomes=outcomes,
+        rule_envelopes=rule_envelopes,
+        document_data=document_data,
+        semantic_registry={},
+        base_metadata=rule_envelopes[0]["meta"],
+    )
+    provenance = build_validation_provenance(
+        base_metadata=rule_envelopes[0]["meta"],
+        jurisdiction="global",
+        prepared_rule_count=1,
+        provenance_rulesets=[{
+            "ruleset_id": "11111111-1111-1111-1111-111111111111",
+            "ruleset_version": "1.2.3",
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "rule_count_used": 1,
+        }],
+    )
+
+    snapshot = {"result": results[0], "provenance": provenance}
+    assert json.dumps(snapshot, sort_keys=True, indent=2) == json.dumps(
+        {
+            "result": {
+                "rule": "UCP-TEST-1",
+                "title": "Primary Test Rule",
+                "description": None,
+                "article": None,
+                "tags": None,
+                "documents": ["commercial_invoice"],
+                "display_card": None,
+                "expected_outcome": None,
+                "passed": False,
+                "severity": "warning",
+                "message": "failed",
+                "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                "ruleset_version": "1.2.3",
+                "rulebook_version": "UCP600:2007",
+                "ruleset_domain": "icc.ucp600",
+                "jurisdiction": "global",
+                "rule_count_used": 1,
+            },
+            "provenance": {
+                "success": True,
+                "domain": "icc.ucp600",
+                "jurisdiction": "global",
+                "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                "ruleset_version": "1.2.3",
+                "rule_count_used": 1,
+                "rulesets": [
+                    {
+                        "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                        "ruleset_version": "1.2.3",
+                        "domain": "icc.ucp600",
+                        "jurisdiction": "global",
+                        "rule_count_used": 1,
+                    }
+                ],
+            },
         },
         sort_keys=True,
         indent=2,

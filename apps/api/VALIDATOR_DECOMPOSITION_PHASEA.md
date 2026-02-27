@@ -1,13 +1,14 @@
-# Validator Decomposition Progress (P0) — Phases A+B
+# Validator Decomposition Progress (P0) — Phases A+B+C
 
 ## Scope completed in this run
 
 - Mapped current validator responsibilities and proposed strangler split targets.
-- Implemented **Phase A + Phase B extractions** with no contract drift:
+- Implemented **Phase A + Phase B + Phase C extractions** with no contract drift:
   - Phase A: DB rules loading + provenance assembly extracted to `validator_rules_loader.py`.
-  - Phase B: rule execution loop + semantic condition evaluation + issue emission extracted to `validator_rule_executor.py`.
-  - `validate_document_async` now orchestrates only: domain/rules selection → loader call → executor call → final provenance assembly.
-- Added/updated characterization snapshot tests for loader, end-to-end parity, and semantic issue fields.
+  - Phase B: rule execution loop + semantic condition evaluation extracted to `validator_rule_executor.py`.
+  - Phase C: supplement/domain routing extracted to `validator_supplement_router.py`; verdict/result payload + provenance construction extracted to `validator_verdict_builder.py`.
+  - `validate_document_async` now orchestrates: router → loader → activation → executor → verdict builder.
+- Added/updated characterization snapshot tests for loader, router/verdict parity, end-to-end parity, and semantic issue fields.
 - Re-verified fail-closed primary and supplemental-tolerant semantics remain unchanged.
 
 ---
@@ -31,10 +32,10 @@ Current module responsibilities (still mostly centralized):
 - `app/services/validator_rule_executor.py` ✅ (Phase B created)
   - Owns evaluator prep, semantic injection, rule evaluation invocation, and normalized issue row emission.
 
-- `app/services/validator_supplement_router.py` (Phase C target)
+- `app/services/validator_supplement_router.py` ✅ (Phase C created)
   - Owns requested/detected domain resolution and supplement routing logic.
 
-- `app/services/validator_verdict_builder.py` (Phase C/D target)
+- `app/services/validator_verdict_builder.py` ✅ (Phase C created)
   - Owns result payload composition and top-level provenance block generation.
 
 - `app/services/validator_audit_writer.py` (Phase D target)
@@ -128,14 +129,33 @@ Confirmed unchanged via extracted function and tests:
 
 ---
 
-## Next phases (C/D)
+## Phase C implementation details
 
-### Phase C — supplement router + verdict builder split
-- Move domain detection/routing into `validator_supplement_router.py`.
-- Move issue payload + provenance block assembly into `validator_verdict_builder.py`.
-- Add golden tests for domain sequence and final payload parity.
+### New modules
+- `app/services/validator_supplement_router.py`
+  - Added `resolve_domain_sequence(...)` and `detect_icc_ruleset_domains(...)`.
+  - Preserves sequencing semantics:
+    - explicit `domain` remains primary when provided
+    - detected ICC supplements are additive
+    - explicit `supplement_domains` are additive
+    - cross-doc ICC domain appended when any ICC domain is active
+
+- `app/services/validator_verdict_builder.py`
+  - Added `build_validation_results(...)` for normalized issue payload shaping (including semantic projection).
+  - Added `build_validation_provenance(...)` for top-level provenance payload assembly.
+
+### Orchestrator update
+- `app/services/validator.py`
+  - `validate_document_async` now delegates:
+    - domain routing → `resolve_domain_sequence`
+    - DB loading → `load_rules_with_provenance`
+    - execution → `execute_rules_with_semantics`
+    - verdict/provenance payload shaping → verdict builder module
+
+## Remaining Phase D tasks
 
 ### Phase D — audit/policy side-effects isolation
 - Isolate policy application analytics writes into `validator_audit_writer.py`.
 - Keep non-fatal semantics for audit failures.
 - Add contract tests around rollback/logging behavior.
+- Optionally clean deprecated helper duplicates from `validator.py` once downstream imports are confirmed absent.
