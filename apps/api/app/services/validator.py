@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import asyncio
 import os
 import re
@@ -1303,7 +1303,11 @@ async def enrich_validation_results_with_ai(
         return {}
 
 
-async def validate_document_async(document_data: Dict[str, Any], document_type: str) -> List[Dict[str, Any]]:
+async def validate_document_async(
+    document_data: Dict[str, Any],
+    document_type: str,
+    return_provenance: bool = False,
+) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
     """
     DB-backed validation pipeline that loads rules from the normalized rules table,
     filters them for the LC context, and evaluates outcomes.
@@ -1341,6 +1345,7 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
 
     aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     base_metadata: Optional[Dict[str, Any]] = None
+    provenance_rulesets: List[Dict[str, Any]] = []
 
     for idx, domain_key in enumerate(domain_sequence):
         try:
@@ -1361,23 +1366,9 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             
             # Handle None return (no active ruleset found)
             if ruleset_data is None:
-                logger.warning(
-                    f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}",
-                    extra={
-                        "domain": domain_key,
-                        "jurisdiction": jurisdiction,
-                        "document_type": document_type,
-                        "index": idx,
-                    },
+                raise RuntimeError(
+                    f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
                 )
-                if idx == 0:
-                    # First domain is required - raise error
-                    raise ValueError(
-                        f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
-                    )
-                # Supplements can be skipped
-                logger.warning(f"Skipping supplement domain={domain_key} (no active ruleset)")
-                continue
             
             logger.info(
                 "Loaded ruleset from DB",
@@ -1388,23 +1379,9 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                     "rule_count": len(ruleset_data.get("rules", [])),
                 },
             )
-        except ValueError as e:
-            logger.error(
-                "Failed to fetch ruleset",
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "error": str(e),
-                },
-            )
-            if idx == 0:
-                raise
-            logger.warning(f"No active ruleset found for supplement domain={domain_key}, skipping.")
-            continue
         except Exception as e:
             logger.error(
-                "Unexpected error fetching ruleset",
+                "Ruleset fetch failed (fail-closed)",
                 exc_info=True,
                 extra={
                     "domain": domain_key,
@@ -1413,16 +1390,26 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                     "error": str(e),
                 },
             )
-            if idx == 0:
-                raise
-            logger.warning(f"Error loading supplement domain={domain_key}, skipping.")
-            continue
+            raise RuntimeError(
+                f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+            ) from e
 
+        ruleset_meta = ruleset_data.get("ruleset") or {}
         meta = {
+            "ruleset_id": ruleset_meta.get("id"),
             "domain": domain_key,
+            "jurisdiction": jurisdiction,
             "ruleset_version": ruleset_data.get("ruleset_version"),
             "rulebook_version": ruleset_data.get("rulebook_version"),
+            "rule_count_used": len(ruleset_data.get("rules", []) or []),
         }
+        provenance_rulesets.append({
+            "ruleset_id": meta.get("ruleset_id"),
+            "ruleset_version": meta.get("ruleset_version"),
+            "domain": meta.get("domain"),
+            "jurisdiction": meta.get("jurisdiction"),
+            "rule_count_used": meta.get("rule_count_used"),
+        })
         if idx == 0:
             base_metadata = meta
 
@@ -1430,10 +1417,9 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             aggregated_rules.append((rule, meta))
 
     if not aggregated_rules:
-        logger.warning(
+        raise RuntimeError(
             f"No rules retrieved for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
         )
-        return []
 
     filtered_rules_with_meta = [
         (rule, meta)
@@ -1468,10 +1454,9 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     )
 
     if not activated_rules_with_meta:
-        logger.warning(
+        raise RuntimeError(
             f"No applicable rules after filtering for document_type={document_type}, domains={domain_sequence}, jurisdiction={jurisdiction}"
         )
-        return []
 
     evaluator = RuleEvaluator()
     filtered_rules_with_meta = activated_rules_with_meta
@@ -1514,9 +1499,12 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             "passed": outcome.get("passed", False),
             "severity": outcome.get("severity", rule_def.get("severity", "warning")),
             "message": outcome.get("message", rule_def.get("description") or ""),
+            "ruleset_id": meta.get("ruleset_id"),
             "ruleset_version": meta.get("ruleset_version"),
             "rulebook_version": meta.get("rulebook_version"),
             "ruleset_domain": meta.get("domain"),
+            "jurisdiction": meta.get("jurisdiction"),
+            "rule_count_used": meta.get("rule_count_used"),
         }
 
         sem_keys = semantic_registry.get(result_payload["rule"], [])
@@ -1547,6 +1535,18 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         domain_sequence,
         jurisdiction,
     )
+    provenance_payload = {
+        "success": True,
+        "domain": base_metadata.get("domain") if base_metadata else None,
+        "jurisdiction": jurisdiction,
+        "ruleset_id": base_metadata.get("ruleset_id") if base_metadata else None,
+        "ruleset_version": base_metadata.get("ruleset_version") if base_metadata else None,
+        "rule_count_used": len(prepared_rules),
+        "rulesets": provenance_rulesets,
+    }
+    document_data["_db_rules_execution"] = provenance_payload
+    if return_provenance:
+        return results, provenance_payload
     return results
 
 

@@ -854,6 +854,7 @@ async def validate_doc(
             # Filters by jurisdiction, document_type, and domain
             # =================================================================
             db_rule_issues = []
+            db_provenance = None
             db_rules_debug = {"enabled": False, "status": "not_started"}
             try:
                 # =============================================================
@@ -998,34 +999,88 @@ async def validate_doc(
                     primary_jurisdiction, supplement_domains, primary_doc_type
                 )
                 
-                db_rule_issues = await validate_document_async(
-                    document_data=db_rule_payload,
-                    document_type=primary_doc_type,
+                db_rule_issues_all = await asyncio.wait_for(
+                    validate_document_async(
+                        document_data=db_rule_payload,
+                        document_type=primary_doc_type,
+                    ),
+                    timeout=20.0,
                 )
-                
+
                 # Filter out N/A and passed rules, keep only failures
                 db_rule_issues = [
-                    issue for issue in db_rule_issues
+                    issue for issue in db_rule_issues_all
                     if not issue.get("passed", False) and not issue.get("not_applicable", False)
                 ]
-                
+
+                db_exec = db_rule_payload.get("_db_rules_execution") or {}
+                db_provenance = {
+                    "ruleset_id": db_exec.get("ruleset_id"),
+                    "ruleset_version": db_exec.get("ruleset_version"),
+                    "domain": db_exec.get("domain") or "icc.ucp600",
+                    "jurisdiction": db_exec.get("jurisdiction") or primary_jurisdiction,
+                    "rule_count_used": db_exec.get("rule_count_used") or len(db_rule_issues_all),
+                    "rulesets": db_exec.get("rulesets") or [],
+                }
+
                 logger.info("DB rules executed: %d issues found (after filtering)", len(db_rule_issues))
-                
+
                 # Store debug info for response
                 db_rules_debug = {
                     "enabled": True,
+                    "status": "success",
                     "domain": "icc.ucp600",
                     "supplements": supplement_domains,
                     "primary_jurisdiction": primary_jurisdiction,
                     "detected_jurisdictions": list(detected_jurisdictions),
                     "issues_found": len(db_rule_issues),
+                    "provenance": db_provenance,
                 }
-                
+
             except Exception as db_rule_err:
-                logger.warning("DB rule execution failed (continuing with other validators): %s", str(db_rule_err))
+                logger.error("DB rule execution failed (fail-closed): %s", str(db_rule_err), exc_info=True)
                 db_rules_debug = {
                     "enabled": False,
+                    "status": "failed",
                     "error": str(db_rule_err),
+                }
+
+                processing_duration = time.time() - start_time
+                blocked_result = _build_db_rules_blocked_structured_result(
+                    reason=f"DB rule execution failed: {db_rule_err}",
+                    processing_duration=processing_duration,
+                    documents=payload.get("documents") or [],
+                    lc_baseline=v2_baseline,
+                    provenance={
+                        "ruleset_id": None,
+                        "ruleset_version": None,
+                        "domain": "icc.ucp600",
+                        "jurisdiction": primary_jurisdiction,
+                        "rule_count_used": 0,
+                    },
+                )
+
+                if validation_session:
+                    validation_session.status = SessionStatus.COMPLETED.value
+                    validation_session.processing_completed_at = func.now()
+                    validation_session.validation_results = {
+                        "structured_result": blocked_result,
+                        "validation_blocked": True,
+                        "block_reason": "db_rules_execution_failed",
+                        "db_rules_debug": db_rules_debug,
+                    }
+                    db.commit()
+
+                return {
+                    "job_id": str(job_id),
+                    "jobId": str(job_id),
+                    "structured_result": blocked_result,
+                    "telemetry": {
+                        "validation_blocked": True,
+                        "block_reason": "db_rules_execution_failed",
+                        "timings": timings,
+                        "total_time_seconds": round(time.time() - start_time, 3),
+                    },
                 }
             
             # Run v2 CrossDocValidator
@@ -1987,8 +2042,17 @@ async def validate_doc(
             "total_time_seconds": round(time.time() - start_time, 3),
         }
 
+        # Add DB rules debug info + provenance to response/session payloads
+        structured_result["_db_rules_debug"] = db_rules_debug
+        if db_rules_debug.get("status") == "success" and db_rules_debug.get("provenance"):
+            structured_result["validation_provenance"] = db_rules_debug.get("provenance")
+
         if validation_session:
-            validation_session.validation_results = {"structured_result": structured_result}
+            validation_session.validation_results = {
+                "structured_result": structured_result,
+                "validation_provenance": structured_result.get("validation_provenance"),
+                "db_rules_debug": db_rules_debug,
+            }
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
             db.commit()
@@ -2022,6 +2086,11 @@ async def validate_doc(
                     "date_received": metadata_dict.get("dateReceived") or metadata_dict.get("date_received"),
                     "discrepancy_count": len(failed_results),
                     "document_count": len(payload.get("files", [])) if isinstance(payload.get("files"), list) else 0,
+                    "ruleset_id": (structured_result.get("validation_provenance") or {}).get("ruleset_id"),
+                    "ruleset_version": (structured_result.get("validation_provenance") or {}).get("ruleset_version"),
+                    "domain": (structured_result.get("validation_provenance") or {}).get("domain"),
+                    "jurisdiction": (structured_result.get("validation_provenance") or {}).get("jurisdiction"),
+                    "rule_count_used": (structured_result.get("validation_provenance") or {}).get("rule_count_used"),
                 },
             )
 
@@ -2072,9 +2141,6 @@ async def validate_doc(
                 )
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
-
-        # Add DB rules debug info to response
-        structured_result["_db_rules_debug"] = db_rules_debug
 
         return {
             "job_id": str(job_id),
@@ -4316,6 +4382,65 @@ def _summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, i
             counts[status] = 0
         counts[status] += 1
     return counts
+
+
+def _build_db_rules_blocked_structured_result(
+    reason: str,
+    processing_duration: float,
+    documents: List[Dict[str, Any]],
+    lc_baseline: Optional[LCBaseline] = None,
+    provenance: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if processing_duration < 1:
+        time_display = f"{int(processing_duration * 1000)}ms"
+    else:
+        time_display = f"{processing_duration:.1f}s"
+
+    provenance = provenance or {}
+    normalized_provenance = {
+        "ruleset_id": provenance.get("ruleset_id"),
+        "ruleset_version": provenance.get("ruleset_version"),
+        "domain": provenance.get("domain"),
+        "jurisdiction": provenance.get("jurisdiction"),
+        "rule_count_used": provenance.get("rule_count_used", 0),
+    }
+
+    return {
+        "version": "structured_result_v1",
+        "validation_blocked": True,
+        "validation_status": "blocked",
+        "block_reason": "db_rules_execution_failed",
+        "issues": [
+            {
+                "severity": "critical",
+                "rule": "db.rules.execution",
+                "title": "Validation blocked: rules engine unavailable",
+                "message": reason,
+            }
+        ],
+        "lc_baseline": {
+            "lc_number": lc_baseline.lc_number.value if lc_baseline else None,
+            "amount": lc_baseline.amount.value if lc_baseline else None,
+            "currency": lc_baseline.currency.value if lc_baseline else None,
+        },
+        "validation_provenance": normalized_provenance,
+        "processing_summary": {
+            "total_documents": len(documents),
+            "total_issues": 1,
+            "compliance_rate": 0,
+            "processing_time_seconds": round(processing_duration, 2),
+            "processing_time_display": time_display,
+            "bank_verdict": "BLOCKED",
+        },
+        "bank_verdict": {
+            "verdict": "BLOCKED",
+            "verdict_color": "red",
+            "verdict_message": "Validation blocked due to rule execution failure",
+            "recommendation": "Retry once platform rule services are healthy.",
+            "can_submit": False,
+            "will_be_rejected": True,
+        },
+    }
 
 
 def _build_processing_summary(
