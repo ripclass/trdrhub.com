@@ -6,7 +6,9 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "day3:run": "python .\\tools\\day3_pipeline\\run_day3_pipeline.py",
+    "day3:dry": "python .\\tools\\day3_pipeline\\run_day3_pipeline.py --dry-run"
   },
   "devDependencies": {
     "shadcn": "^3.5.0",

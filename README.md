@@ -182,6 +182,14 @@ cd apps/web && npm run build
 cd apps/api && alembic check
 ```
 
+## Day-3 Local Automation (Paste folders -> run 1 command)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\day3_pipeline\run_day3.ps1
+```
+
+Detailed quickstart: `tools/day3_pipeline/README_DAY3_AUTOPILOT.md`
+
 ---
 
 ## Support
