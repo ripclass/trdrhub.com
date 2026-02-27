@@ -1,4 +1,4 @@
-# Validator Decomposition Progress (P0) — Phases A+B+C
+# Validator Decomposition Progress (P0) — Phases A+B+C+D
 
 ## Scope completed in this run
 
@@ -152,10 +152,50 @@ Confirmed unchanged via extracted function and tests:
     - execution → `execute_rules_with_semantics`
     - verdict/provenance payload shaping → verdict builder module
 
-## Remaining Phase D tasks
+## Phase D implementation details
 
-### Phase D — audit/policy side-effects isolation
-- Isolate policy application analytics writes into `validator_audit_writer.py`.
-- Keep non-fatal semantics for audit failures.
-- Add contract tests around rollback/logging behavior.
-- Optionally clean deprecated helper duplicates from `validator.py` once downstream imports are confirmed absent.
+### New module
+- `app/services/validator_audit_writer.py`
+  - Extracted policy/audit side-effects from `validator.py`:
+    - overlay load (`get_active_overlay`)
+    - exception load (`get_active_exceptions`)
+    - policy transforms (`apply_policy_overlay`, `apply_policy_exceptions`)
+    - analytics/audit event persistence (`_write_policy_application_events`)
+    - orchestration entrypoint (`apply_bank_policy`)
+  - Preserves non-fatal behavior:
+    - policy apply failures return original/partially-transformed results (no hard fail)
+    - audit write failures are swallowed with warning + `db_session.rollback()`
+
+### Orchestrator finalization
+- `app/services/validator.py`
+  - now re-exports `apply_bank_policy` from `validator_audit_writer`.
+  - `validate_document_async` remains thin orchestration path:
+    - supplement router (`resolve_domain_sequence`)
+    - rules loader (`load_rules_with_provenance`)
+    - activation filter (`activate_rules_for_lc`)
+    - rule executor (`execute_rules_with_semantics`)
+    - verdict/provenance builder (`build_validation_results`, `build_validation_provenance`)
+  - removed obvious dead legacy helpers from pre-split path:
+    - duplicate ICC domain detector/helpers no longer used after router extraction
+
+## Final architecture map
+
+- `validator.py` (thin orchestrator + LC activation/filtering + AI enrichment)
+  - imports:
+    - `validator_supplement_router.py`
+    - `validator_rules_loader.py`
+    - `validator_rule_executor.py`
+    - `validator_verdict_builder.py`
+    - `validator_audit_writer.py`
+- `validator_supplement_router.py`: domain/supplement inference and sequence resolution
+- `validator_rules_loader.py`: primary fail-closed + supplement best-effort DB ruleset loading with provenance
+- `validator_rule_executor.py`: evaluator execution + semantic condition expansion
+- `validator_verdict_builder.py`: normalized issue payload + provenance payload construction
+- `validator_audit_writer.py`: policy overlay/exception application + audit analytics side-effects
+
+## Phase status
+
+- Phase A: ✅ Complete
+- Phase B: ✅ Complete
+- Phase C: ✅ Complete
+- Phase D: ✅ Complete

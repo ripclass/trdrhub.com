@@ -13,6 +13,7 @@ from app.services import validator as validator_module
 from app.services import rules_service as rules_service_module
 from app.services import validator_rule_executor as executor_module
 from app.services.validator import validate_document_async
+from app.services import validator_audit_writer as audit_module
 from app.services.validator_rules_loader import load_rules_with_provenance
 from app.services.validator_supplement_router import resolve_domain_sequence
 from app.services.validator_verdict_builder import build_validation_provenance, build_validation_results
@@ -495,3 +496,45 @@ def test_phasec_verdict_builder_snapshot():
         sort_keys=True,
         indent=2,
     )
+
+
+class _FakeDbSession:
+    def __init__(self):
+        self.rollbacks = 0
+
+    def rollback(self):
+        self.rollbacks += 1
+
+
+@pytest.mark.asyncio
+async def test_phased_apply_bank_policy_alias_and_nonfatal_audit_fail(monkeypatch):
+    assert validator_module.apply_bank_policy is audit_module.apply_bank_policy
+
+    monkeypatch.setattr(audit_module, "get_active_overlay", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(audit_module, "get_active_exceptions", lambda *_args, **_kwargs: [{
+        "id": "11111111-1111-1111-1111-111111111111",
+        "rule_code": "UCP-TEST-1",
+        "scope": {},
+        "effect": "waive",
+    }])
+
+    def _raise_on_write(**_kwargs):
+        raise RuntimeError("simulated audit write failure")
+
+    monkeypatch.setattr(audit_module, "_write_policy_application_events", _raise_on_write)
+
+    db_session = _FakeDbSession()
+    results = [{"rule": "UCP-TEST-1", "passed": False, "severity": "major"}]
+
+    updated = await validator_module.apply_bank_policy(
+        results,
+        bank_id="22222222-2222-2222-2222-222222222222",
+        document_data={"document_type": "commercial_invoice"},
+        db_session=db_session,
+        validation_session_id="33333333-3333-3333-3333-333333333333",
+        user_id="44444444-4444-4444-4444-444444444444",
+    )
+
+    assert updated[0]["passed"] is True
+    assert updated[0]["waived"] is True
+    assert db_session.rollbacks == 1
