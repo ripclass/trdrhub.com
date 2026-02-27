@@ -37,11 +37,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Allow same-origin, API endpoints, and common CDNs
         csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "  # Allow inline scripts for React/Vite
-            "style-src 'self' 'unsafe-inline'; "  # Allow inline styles
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "  # Allow inline scripts + Swagger CDN
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "  # Allow inline styles + Swagger CDN
             "img-src 'self' data: https: https://avatar.vercel.sh https://via.placeholder.com; "  # Allow images from same origin, data URIs, HTTPS, avatar service, and placeholder images
             "font-src 'self' data:; "  # Allow fonts from same origin and data URIs
-            "connect-src 'self' https://api.openai.com https://api.anthropic.com; "  # Allow API calls to AI providers
+            "connect-src 'self' https://trdrhub-api.onrender.com https://*.supabase.co wss://*.supabase.co https://api.openai.com https://api.anthropic.com; "  # Allow app/API/Supabase/AI provider calls
             "frame-ancestors 'none'; "  # Prevent embedding in frames (clickjacking protection)
             "base-uri 'self'; "  # Restrict base tag
             "form-action 'self'; "  # Restrict form submissions
