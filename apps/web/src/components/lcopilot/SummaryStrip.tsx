@@ -20,10 +20,10 @@ const formatNumber = (value?: number | null) => (typeof value === 'number' && !N
 
 export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
   const structured = data?.structured_result;
-  const summary = structured?.processing_summary;
-  const analytics = structured?.analytics;
+  const summary = data?.summary ?? structured?.processing_summary;
+  const analytics = data?.analytics ?? structured?.analytics;
 
-  if (!structured || !summary) {
+  if (!summary) {
     return null;
   }
 

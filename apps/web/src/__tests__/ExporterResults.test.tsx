@@ -270,4 +270,53 @@ describe('ExporterResults', () => {
       screen.getByText(/This document could not be fully parsed/i),
     ).toBeInTheDocument();
   });
+
+  it('keeps SummaryStrip, Overview, and Documents tab aligned to mapped document statuses', async () => {
+    const user = userEvent.setup();
+    const mismatchPayload = {
+      jobId: 'job-mismatch',
+      structured_result: {
+        version: 'structured_result_v1',
+        processing_summary: {
+          total_documents: 6,
+          successful_extractions: 6,
+          failed_extractions: 0,
+          total_issues: 0,
+          severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+          // intentionally stale backend summary to verify mapper/page canonicalization
+          canonical_document_status: { success: 6, warning: 0, error: 0 },
+        },
+        documents_structured: [
+          { document_id: 'd1', filename: 'LC.pdf', document_type: 'letter_of_credit', extraction_status: 'success', discrepancyCount: 0, extracted_fields: { x: 1 } },
+          { document_id: 'd2', filename: 'Insurance.pdf', document_type: 'insurance_certificate', extraction_status: 'partial', discrepancyCount: 0, extracted_fields: { x: 1 } },
+          { document_id: 'd3', filename: 'Invoice.pdf', document_type: 'commercial_invoice', extraction_status: 'success', discrepancyCount: 0, extracted_fields: { x: 1 } },
+          { document_id: 'd4', filename: 'Packing.pdf', document_type: 'packing_list', extraction_status: 'success', discrepancyCount: 1, extracted_fields: { x: 1 } },
+          { document_id: 'd5', filename: 'BL.pdf', document_type: 'bill_of_lading', extraction_status: 'success', discrepancyCount: 3, extracted_fields: { x: 1 } },
+          { document_id: 'd6', filename: 'COO.pdf', document_type: 'certificate_of_origin', extraction_status: 'error', discrepancyCount: 0, extracted_fields: { x: 1 } },
+        ],
+        lc_structured: { documents_structured: [] },
+        issues: [],
+        analytics: { compliance_score: 70 },
+      },
+    };
+
+    activeResults = buildValidationResponse(mismatchPayload as any);
+
+    render(renderWithProviders(<ExporterResults />));
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 extracted OK/i)).toBeInTheDocument();
+      expect(screen.getByText(/2 partial \/ issues/i)).toBeInTheDocument();
+      expect(screen.getByText(/2 extraction failed/i)).toBeInTheDocument();
+    });
+
+    const statsCard = findCardByTitle(/Export Document Statistics/i);
+    expect(within(statsCard).getByText(/^Docs Verified$/i).previousElementSibling?.textContent).toBe('2');
+    expect(within(statsCard).getByText(/^Docs Need Review$/i).previousElementSibling?.textContent).toBe('4');
+
+    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
+    expect(screen.getAllByText(/^Verified$/i)).toHaveLength(2);
+    expect(screen.getAllByText(/Issues$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/Error|Errors/i).length).toBeGreaterThanOrEqual(2);
+  });
 });

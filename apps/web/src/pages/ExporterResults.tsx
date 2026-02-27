@@ -649,125 +649,23 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   });
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
-  const structuredDocumentsPayload =
-    structuredResult?.documents_structured ??
-    structuredResult?.lc_structured?.documents_structured ??
-    [];
   const summary = structuredResult?.processing_summary;
   const lcStructured = structuredResult?.lc_structured ?? null;
-  const extractionStatus = useMemo(() => {
-    // Check document-level extraction statuses first
-    const docStatuses = structuredDocumentsPayload.map(
-      (doc) => (doc.extraction_status || "unknown").toLowerCase()
-    );
-    const hasSuccess = docStatuses.some((s) => s === "success");
-    const hasError = docStatuses.some((s) => s === "error" || s === "failed");
-    
-    // If we have document statuses, use them
-    if (docStatuses.length > 0 && (hasSuccess || hasError)) {
-      if (hasError && !hasSuccess) return "error";
-      if (hasSuccess && hasError) return "partial";
-      if (hasSuccess) return "success";
-    }
-    
-    // Fall back to summary counts if available
-    if (summary) {
-      const successExtractions = Number(summary.successful_extractions ?? summary.verified ?? 0);
-      const failedExtractions = Number(summary.failed_extractions ?? summary.errors ?? 0);
-      const totalDocs = Number(summary.total_documents ?? summary.documents ?? 0);
-      
-      // If we have documents processed, assume success
-      if (totalDocs > 0 && failedExtractions === 0) {
-        return "success";
-      }
-      if (successExtractions > 0 && failedExtractions === 0) {
-        return "success";
-      }
-      if (successExtractions > 0 && failedExtractions > 0) {
-        return "partial";
-      }
-      if (successExtractions === 0 && failedExtractions > 0) {
-        return "error";
-      }
-    }
-    
-    // If LC data exists, extraction worked
-    if (lcStructured && Object.keys(lcStructured).length > 0) {
-      return "success";
-    }
-    
-    return "unknown";
-  }, [summary, structuredDocumentsPayload, lcStructured]);
-  const documents = useMemo(() => {
-    return structuredDocumentsPayload.map((doc, index) => {
-      const docAny = doc as Record<string, any>;
-      const documentId = String(doc.document_id ?? docAny.id ?? index);
-      const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
-      const typeKeyRaw = doc.document_type ?? docAny.type ?? "supporting_document";
-      const typeKey = (typeKeyRaw || "supporting_document").toString();
-      // Check multiple keys - backend sends discrepancyCount (camelCase)
-      const issuesCount = Number(doc.discrepancyCount ?? doc.issues_count ?? docAny.discrepancyCount ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
-      const extractionStatus = (doc.extraction_status ?? docAny.extractionStatus ?? "unknown").toString().toLowerCase();
-      const status: "success" | "warning" | "error" = (() => {
-        if (extractionStatus === "error") return "error";
-        if (extractionStatus === "partial" || extractionStatus === "pending") return "warning";
-        const exempt = ["letter_of_credit", "insurance_certificate"];
-        if (issuesCount > 0 && !exempt.includes(typeKey)) return "warning";
-        return "success";
-      })();
-      // Ensure type is always a string to prevent React Error #31
-      const typeLabel = DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
-      return {
-        id: documentId,
-        documentId,
-        name: filename,
-        filename,
-        type: safeString(typeLabel),
-        typeKey,
-        extractionStatus,
-        status,
-        issuesCount,
-        extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
-      };
-    });
-  }, [structuredDocumentsPayload]);
+
+  // Single source of truth for all document rendering/counts on this page.
+  // Always consume mapper-normalized resultData.documents; never remap raw structured payload here.
+  const documents = useMemo(() => resultData?.documents ?? [], [resultData?.documents]);
   resultsLogger.debug('Documents loaded', { count: documents.length });
+
   const issueCards = resultData?.issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
-  const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
+  const totalDocuments = documents.length || summary?.total_documents || 0;
   // Use the higher of summary.total_issues or actual issueCards.length
   // This ensures we show the correct count even if backend summary is stale
   const totalDiscrepancies = Math.max(summary?.total_issues ?? 0, issueCards.length);
-  const severityBreakdown = summary?.severity_breakdown ?? {
-    critical: 0,
-    major: 0,
-    medium: 0,
-    minor: 0,
-  };
-  const extractedDocumentsMap = useMemo(() => {
-    const map: Record<string, any> = {};
-    structuredDocumentsPayload.forEach((doc, idx) => {
-      const docAny = doc as Record<string, any>;
-      const key = doc.document_type || doc.filename || `doc_${idx}`;
-      map[key] = doc.extracted_fields ?? docAny.extractedFields ?? {};
-    });
-    return map;
-  }, [structuredDocumentsPayload]);
-  const extractedDocuments = useMemo(
-    () =>
-      structuredDocumentsPayload.map((doc) => ({
-        filename: doc.filename,
-        name: doc.filename,
-        document_type: doc.document_type,
-        extraction_status: doc.extraction_status,
-        extractionStatus: doc.extraction_status,
-        extracted_fields: doc.extracted_fields ?? {},
-        extractedFields: doc.extracted_fields ?? {},
-      })),
-    [structuredDocumentsPayload],
-  );
-  // lcStructured is already defined above (line ~730) to avoid temporal dead zone issues
+
+  // lcStructured is already defined above to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
   const lcSummaryRows = lcData
     ? buildFieldRows(
@@ -855,21 +753,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
     return map;
   }, [documents]);
-  const documentStatusCounts = useMemo(
-    () =>
-      documents.reduce(
-        (acc, doc) => {
-          const key = doc.status ?? 'warning';
-          if (!(key in acc)) {
-            acc[key as keyof typeof acc] = 0;
-          }
-          acc[key as keyof typeof acc] += 1;
-          return acc;
-        },
-        { success: 0, warning: 0, error: 0 } as Record<'success' | 'warning' | 'error', number>,
-      ),
-    [documents],
-  );
   const severityCounts = useMemo(
     () =>
       issueCards.reduce(
@@ -2232,3 +2115,4 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 }
 
 // SubmissionHistoryCard is now imported from ./exporter/results
+
