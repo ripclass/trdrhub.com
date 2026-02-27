@@ -84,6 +84,11 @@ const mapDocuments = (docs: any[] = []) => {
     // Check multiple possible keys for issue count (backend uses discrepancyCount)
     const issuesCount = Number(doc?.discrepancyCount ?? doc?.issues_count ?? doc?.issuesCount ?? 0);
     const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
+    const canonicalStatus = (doc?.status ?? '').toString().toLowerCase();
+    const status =
+      canonicalStatus === 'success' || canonicalStatus === 'warning' || canonicalStatus === 'error'
+        ? canonicalStatus
+        : deriveDocumentStatus(extractionStatus, issuesCount);
 
     return {
       id: documentId,
@@ -93,7 +98,7 @@ const mapDocuments = (docs: any[] = []) => {
       type: normalizeDocType(typeKey),
       typeKey,
       extractionStatus,
-      status: deriveDocumentStatus(extractionStatus, issuesCount),
+      status,
       issuesCount,
       extractedFields: doc?.extracted_fields ?? {},
     };

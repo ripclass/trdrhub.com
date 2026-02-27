@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 OPTION_E_VERSION = "structured_result_v1"
+VALIDATION_CONTRACT_VERSION = "2026-02-27.p0"
 
 
 def _now_iso() -> str:
@@ -52,13 +53,14 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
     for idx, doc in enumerate(session_documents or []):
         extraction_status = doc.get("extractionStatus") or doc.get("extraction_status") or "unknown"
         issues_count = int(doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0)
+        derived_status = _derive_document_status(str(extraction_status), issues_count)
         normalized.append(
             {
                 "document_id": doc.get("document_id") or doc.get("id") or str(uuid4()),
                 "document_type": doc.get("documentType") or doc.get("type") or "supporting_document",
                 "filename": doc.get("name") or doc.get("filename") or doc.get("original_filename") or f"Document {idx + 1}",
                 "extraction_status": extraction_status,
-                "status": _derive_document_status(str(extraction_status), issues_count),
+                "status": derived_status,
                 "issues_count": issues_count,
                 "discrepancyCount": issues_count,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
@@ -181,8 +183,8 @@ def build_unified_structured_result(
         "verified": status_counts["success"],
         "warnings": status_counts["warning"],
         "errors": status_counts["error"],
-        "status_counts": status_counts,
-        "document_status": status_counts,
+        "status_counts": dict(status_counts),
+        "document_status": dict(status_counts),
         "compliance_rate": round((status_counts["success"] / len(docs_structured)) * 100) if docs_structured else 0,
         "processing_time_seconds": None,
         "processing_time_display": None,
@@ -196,7 +198,7 @@ def build_unified_structured_result(
         "lc_compliance_score": None,
         "customs_ready_score": None,
         "documents_processed": len(docs_structured),
-        "document_status_distribution": status_counts,
+        "document_status_distribution": dict(status_counts),
         "document_processing": [],
         "performance_insights": [],
         "processing_time_display": None,
@@ -207,6 +209,7 @@ def build_unified_structured_result(
 
     structured_result = {
         "version": OPTION_E_VERSION,
+        "validation_contract_version": VALIDATION_CONTRACT_VERSION,
         **lc_type_fields,
         "lc_structured": lc_structured,
         "documents_structured": docs_structured,

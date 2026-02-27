@@ -55,8 +55,12 @@ def test_processing_summary_and_documents_share_identical_status_source():
     assert dist_from_docs == {"success": 2, "warning": 2, "error": 2}
 
     summary = structured["processing_summary"]
+    analytics = structured["analytics"]
+
+    assert structured["validation_contract_version"] == "2026-02-27.p0"
     assert summary["status_counts"] == dist_from_docs
     assert summary["document_status"] == dist_from_docs
+    assert analytics["document_status_distribution"] == dist_from_docs
     assert summary["verified"] == dist_from_docs["success"]
     assert summary["warnings"] == dist_from_docs["warning"]
     assert summary["errors"] == dist_from_docs["error"]
