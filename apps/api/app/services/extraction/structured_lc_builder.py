@@ -37,15 +37,30 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
     }
 
 
+def _derive_document_status(extraction_status: str, issues_count: int) -> str:
+    """Canonical status derivation used by both summary and document rows."""
+    status = (extraction_status or "unknown").lower()
+    if status in {"failed", "error", "empty"} or issues_count >= 3:
+        return "error"
+    if issues_count > 0 or status in {"partial", "pending", "text_only"}:
+        return "warning"
+    return "success"
+
+
 def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for idx, doc in enumerate(session_documents or []):
+        extraction_status = doc.get("extractionStatus") or doc.get("extraction_status") or "unknown"
+        issues_count = int(doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0)
         normalized.append(
             {
                 "document_id": doc.get("document_id") or doc.get("id") or str(uuid4()),
                 "document_type": doc.get("documentType") or doc.get("type") or "supporting_document",
                 "filename": doc.get("name") or doc.get("filename") or doc.get("original_filename") or f"Document {idx + 1}",
-                "extraction_status": doc.get("extractionStatus") or doc.get("extraction_status") or "unknown",
+                "extraction_status": extraction_status,
+                "status": _derive_document_status(str(extraction_status), issues_count),
+                "issues_count": issues_count,
+                "discrepancyCount": issues_count,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
             }
         )
@@ -150,18 +165,25 @@ def build_unified_structured_result(
         "dates": dates if dates else None,
     }
 
+    status_counts = {"success": 0, "warning": 0, "error": 0}
+    for doc in docs_structured:
+        status = str(doc.get("status") or "success").lower()
+        status_counts[status if status in status_counts else "warning"] += 1
+
     processing_summary = {
         "total_documents": len(docs_structured),
-        "successful_extractions": 0,
-        "failed_extractions": 0,
+        "successful_extractions": status_counts["success"],
+        "failed_extractions": status_counts["error"],
         "total_issues": len(issues),
         "severity_breakdown": {"critical": 0, "major": 0, "medium": 0, "minor": 0},
         "documents": len(docs_structured),
         "documents_found": len(docs_structured),
-        "verified": len(docs_structured),
-        "warnings": 0,
-        "errors": 0,
-        "compliance_rate": 100,
+        "verified": status_counts["success"],
+        "warnings": status_counts["warning"],
+        "errors": status_counts["error"],
+        "status_counts": status_counts,
+        "document_status": status_counts,
+        "compliance_rate": round((status_counts["success"] / len(docs_structured)) * 100) if docs_structured else 0,
         "processing_time_seconds": None,
         "processing_time_display": None,
         "processing_time_ms": None,
@@ -174,7 +196,7 @@ def build_unified_structured_result(
         "lc_compliance_score": None,
         "customs_ready_score": None,
         "documents_processed": len(docs_structured),
-        "document_status_distribution": None,
+        "document_status_distribution": status_counts,
         "document_processing": [],
         "performance_insights": [],
         "processing_time_display": None,
