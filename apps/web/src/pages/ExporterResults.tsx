@@ -892,60 +892,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
   const { successCount, errorCount, warningCount, successRate, extractionRate } = useMemo(() => {
-    // Use authoritative document_status from backend (same source as SummaryStrip)
-    const statusDistribution = 
-      analyticsData?.document_status_distribution ?? 
-      summary?.document_status ?? 
-      summary?.status_counts ?? 
-      {};
-    
-    const fromDistSuccess = typeof statusDistribution.success === 'number' ? statusDistribution.success : 0;
-    const fromDistWarning = typeof statusDistribution.warning === 'number' ? statusDistribution.warning : 0;
-    const fromDistError = typeof statusDistribution.error === 'number' ? statusDistribution.error : 0;
-    
-    // Check if we have real distribution data
-    const hasDistribution = fromDistSuccess > 0 || fromDistWarning > 0 || fromDistError > 0;
-    
-    let resolvedSuccessCount: number;
-    let resolvedErrorCount: number;
-    let resolvedWarningCount: number;
-    
-    if (hasDistribution) {
-      // Use backend's authoritative counts
-      resolvedSuccessCount = fromDistSuccess;
-      resolvedErrorCount = fromDistError;
-      resolvedWarningCount = fromDistWarning;
-    } else {
-      // Fallback to document array or summary fields
-      const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
-      const summarySuccessCount =
-        typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
-      resolvedSuccessCount =
-        derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
-
-      resolvedErrorCount =
-        typeof summary?.failed_extractions === "number"
-          ? summary.failed_extractions
-          : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
-
-      resolvedWarningCount =
-        typeof documentStatusCounts.warning === "number"
-          ? documentStatusCounts.warning
-          : documents.filter((doc) => doc.status === "warning").length;
-    }
+    // Keep overview counts aligned with Documents tab by deriving from the same mapped documents.
+    const resolvedSuccessCount = documents.filter((doc) => doc.status === "success").length;
+    const resolvedErrorCount = documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
+    const resolvedWarningCount = documents.filter((doc) => doc.status === "warning").length;
 
     // Validation success rate (based on validation status)
     const resolvedSuccessRate =
       totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
 
     // Extraction success rate (OCR extraction - separate from validation)
-    // This measures how many docs were successfully extracted, regardless of validation status
-    const extractionSuccessful = 
-      typeof summary?.successful_extractions === "number" 
-        ? summary.successful_extractions 
-        : totalDocuments; // Default to all if not specified
-    const extractionRate = totalDocuments > 0 
-      ? Math.round((extractionSuccessful / totalDocuments) * 100) 
+    const extractionSuccessful =
+      typeof summary?.successful_extractions === "number"
+        ? summary.successful_extractions
+        : totalDocuments;
+    const extractionRate = totalDocuments > 0
+      ? Math.round((extractionSuccessful / totalDocuments) * 100)
       : 100;
 
     return {
@@ -953,18 +915,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       errorCount: resolvedErrorCount,
       warningCount: resolvedWarningCount,
       successRate: resolvedSuccessRate,
-      extractionRate, // New: for Document Extraction progress bar
+      extractionRate,
     };
-  }, [
-    documents,
-    summary?.successful_extractions,
-    summary?.failed_extractions,
-    summary?.document_status,
-    summary?.status_counts,
-    analyticsData?.document_status_distribution,
-    documentStatusCounts.warning,
-    totalDocuments,
-  ]);
+  }, [documents, summary?.successful_extractions, totalDocuments]);
   const complianceScore = useMemo(
     () => analyticsData?.compliance_score ?? analyticsData?.lc_compliance_score ?? summary?.compliance_rate ?? successRate,
     [analyticsData?.compliance_score, analyticsData?.lc_compliance_score, summary?.compliance_rate, successRate],
@@ -1950,15 +1903,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {discrepancyCount === 0 ? (
+                        {document.status === "success" ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
                             <CheckCircle className="w-3.5 h-3.5" />
                             Verified
                           </span>
+                        ) : document.status === "error" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">
+                            <XCircle className="w-3.5 h-3.5" />
+                            {discrepancyCount > 0 ? `${discrepancyCount} Errors` : 'Error'}
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            {discrepancyCount === 1 ? 'Minor Issues' : `${discrepancyCount} Issues`}
+                            {discrepancyCount === 1 ? 'Minor Issues' : `${Math.max(discrepancyCount, 1)} Issues`}
                           </span>
                         )}
                         <Button 

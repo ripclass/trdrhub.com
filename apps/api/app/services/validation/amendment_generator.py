@@ -557,6 +557,11 @@ def generate_amendment_for_discrepancy(
     # =========================================================================
     # PORT MISMATCH
     # =========================================================================
+    # Guard: identity/compliance text (BIN/TIN/etc.) must never be mapped as port amendments
+    identity_keywords = ["bin", "tin", "tax", "vat", "registration", "exporter bin", "exporter tin"]
+    if any(kw in combined_text for kw in identity_keywords):
+        return None
+
     port_keywords = ["port", "loading", "discharge", "destination", "place of", 
                     "origin port", "final destination"]
     if any(kw in combined_text for kw in port_keywords):

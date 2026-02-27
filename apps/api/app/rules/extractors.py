@@ -1207,18 +1207,48 @@ class DocumentFieldExtractor:
         return raw_value.strip()
     
     def _extract_date_field(self, text: str, specific_pattern: str = None) -> Optional[str]:
-        """Extract and normalize date field."""
+        """Extract and normalize date field to YYYY-MM-DD when possible."""
         patterns = [specific_pattern] if specific_pattern else []
         patterns.extend(self.DATE_PATTERNS)
-        
+
+        def _normalize_date(raw: str) -> str:
+            value = raw.strip()
+
+            # SWIFT YYMMDD (or compact YYYYMMDD)
+            if re.fullmatch(r"\d{6}", value):
+                yy = int(value[:2])
+                mm = int(value[2:4])
+                dd = int(value[4:6])
+                # Plausibility heuristic for LC workflows: 2000-2069, else 1900-1999
+                year = 2000 + yy if yy <= 69 else 1900 + yy
+                try:
+                    return datetime(year, mm, dd).strftime("%Y-%m-%d")
+                except ValueError:
+                    return value
+
+            if re.fullmatch(r"\d{8}", value):
+                for fmt in ("%Y%m%d", "%d%m%Y", "%m%d%Y"):
+                    try:
+                        return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+                    except ValueError:
+                        continue
+                return value
+
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y", "%m-%d-%Y", "%m/%d/%Y", "%d %b %Y", "%d %B %Y", "%d %b %y", "%d %B %y"):
+                try:
+                    return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+
+            return value
+
         for pattern in patterns:
             if pattern:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
                     date_str = match.group(1).strip()
-                    # Basic date normalization - could be enhanced
-                    return date_str
-        
+                    return _normalize_date(date_str)
+
         return None
     
     def _extract_amount_field(self, text: str) -> Optional[str]:
