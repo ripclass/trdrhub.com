@@ -1,13 +1,14 @@
-# Validator Decomposition Kickoff (P0) — Phase A
+# Validator Decomposition Progress (P0) — Phases A+B
 
 ## Scope completed in this run
 
 - Mapped current validator responsibilities and proposed strangler split targets.
-- Implemented **Phase A safe extraction only**:
-  - Extracted DB rules loading + provenance assembly to a dedicated module.
-  - Kept `validate_document_async` orchestration and verdict flow unchanged via wrapper call.
-- Added characterization/golden-style snapshot tests for loader + end-to-end validator behavior.
-- Re-verified fail-closed primary and supplemental-tolerant semantics.
+- Implemented **Phase A + Phase B extractions** with no contract drift:
+  - Phase A: DB rules loading + provenance assembly extracted to `validator_rules_loader.py`.
+  - Phase B: rule execution loop + semantic condition evaluation + issue emission extracted to `validator_rule_executor.py`.
+  - `validate_document_async` now orchestrates only: domain/rules selection → loader call → executor call → final provenance assembly.
+- Added/updated characterization snapshot tests for loader, end-to-end parity, and semantic issue fields.
+- Re-verified fail-closed primary and supplemental-tolerant semantics remain unchanged.
 
 ---
 
@@ -27,8 +28,8 @@ Current module responsibilities (still mostly centralized):
 - `app/services/validator_rules_loader.py` ✅ (Phase A created)
   - Owns domain loop, DB ruleset retrieval, fail-closed primary, supplemental tolerance, and provenance list assembly.
 
-- `app/services/validator_rule_executor.py` (Phase B target)
-  - Owns evaluator prep, semantic injection, and evaluation invocation.
+- `app/services/validator_rule_executor.py` ✅ (Phase B created)
+  - Owns evaluator prep, semantic injection, rule evaluation invocation, and normalized issue row emission.
 
 - `app/services/validator_supplement_router.py` (Phase C target)
   - Owns requested/detected domain resolution and supplement routing logic.
@@ -61,9 +62,28 @@ Current module responsibilities (still mostly centralized):
 
 ---
 
+## Phase B implementation details
+
+### New module
+- `app/services/validator_rule_executor.py`
+  - Added `execute_rules_with_semantics(...)`
+  - Extracted 1:1 logic for:
+    - evaluator wiring (`RuleEvaluator`)
+    - semantic_check expansion (`_inject_semantic_conditions`)
+    - outcomes loop + issue payload composition
+    - semantic issue field projection (`semantic_differences`, `expected`, `actual`, `suggestion`)
+
+### Orchestrator integration (no behavior change intent)
+- `app/services/validator.py`
+  - Added import: `execute_rules_with_semantics`
+  - Replaced inline execution + issue-generation block with executor call
+  - Kept final provenance assembly in orchestrator (`_db_rules_execution`, `return_provenance` path)
+
+---
+
 ## Characterization / parity tests
 
-Extended `tests/test_validator_fail_closed_and_provenance.py` with snapshot assertions:
+Extended `tests/day1_p0_failclosed_provenance_test.py` with snapshot assertions:
 
 1. `test_rules_loader_snapshot_primary_plus_supplements`
    - Verifies deterministic loader output snapshot:
@@ -73,11 +93,17 @@ Extended `tests/test_validator_fail_closed_and_provenance.py` with snapshot asse
 2. `test_rules_loader_fail_closed_primary_ruleset_missing`
    - Verifies primary ruleset missing remains fail-closed
 
-3. `test_validate_document_characterization_snapshot`
+3. `test_phasea_validate_document_snapshot_with_supplement_tolerance`
    - End-to-end snapshot of:
      - evaluated rule headers
      - `return_provenance` payload
      - `_db_rules_execution` payload injected into `document_data`
+
+4. `test_phaseb_semantic_execution_snapshot`
+   - Characterization of semantic rule path after extraction:
+     - semantic_check expansion + deterministic evaluate pass-through
+     - semantic fields emitted on issue (`semantic_differences`, `expected`, `actual`, `suggestion`)
+     - provenance `rule_count_used` parity
 
 ### Test command run
 
@@ -102,12 +128,7 @@ Confirmed unchanged via extracted function and tests:
 
 ---
 
-## Next phases (B/C/D)
-
-### Phase B — executor extraction (low-risk)
-- Extract semantic condition injection + evaluator invocation into `validator_rule_executor.py`.
-- Keep result shape unchanged.
-- Add characterization snapshots for outcome ordering and semantic fields.
+## Next phases (C/D)
 
 ### Phase C — supplement router + verdict builder split
 - Move domain detection/routing into `validator_supplement_router.py`.

@@ -11,6 +11,7 @@ if str(API_ROOT) not in sys.path:
 
 from app.services import validator as validator_module
 from app.services import rules_service as rules_service_module
+from app.services import validator_rule_executor as executor_module
 from app.services.validator import validate_document_async
 from app.services.validator_rules_loader import load_rules_with_provenance
 from app.routers.validate import _build_db_rules_blocked_structured_result
@@ -71,6 +72,46 @@ class _FakeRulesServicePrimaryOnly:
         return None
 
 
+class _FakeRulesServiceSemantic:
+    async def get_active_ruleset(self, domain, jurisdiction, document_type=None):
+        if domain != "icc.ucp600":
+            return None
+        return {
+            "ruleset": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "domain": domain,
+                "jurisdiction": jurisdiction,
+                "ruleset_version": "1.2.3",
+                "rulebook_version": "UCP600:2007",
+            },
+            "ruleset_version": "1.2.3",
+            "rulebook_version": "UCP600:2007",
+            "rules": [
+                {
+                    "rule_id": "SEM-TEST-1",
+                    "title": "Semantic goods consistency",
+                    "document_type": document_type,
+                    "severity": "major",
+                    "documents": ["commercial_invoice"],
+                    "conditions": [
+                        {
+                            "field": "invoice.goods_description",
+                            "value_ref": "bill_of_lading.goods_description",
+                            "operator": "semantic_check",
+                            "message": "Goods description mismatch",
+                            "semantic": {
+                                "context": "goods consistency",
+                                "documents": ["invoice", "bill_of_lading"],
+                                "threshold": 0.8,
+                                "enable_ai": False,
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+
 class _FakeEvaluator:
     async def evaluate_rules(self, rules, document_data):
         return {
@@ -91,7 +132,7 @@ class _FakeEvaluator:
 @pytest.mark.asyncio
 async def test_validate_document_async_returns_provenance_fields(monkeypatch):
     monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServiceSuccess())
-    monkeypatch.setattr(validator_module, "RuleEvaluator", lambda: _FakeEvaluator())
+    monkeypatch.setattr(executor_module, "RuleEvaluator", lambda: _FakeEvaluator())
 
     issues, provenance = await validate_document_async(
         {
@@ -138,7 +179,7 @@ async def test_validate_document_async_fail_closed_when_no_active_ruleset(monkey
 @pytest.mark.asyncio
 async def test_validate_document_async_skips_missing_supplement_rulesets(monkeypatch):
     monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServicePrimaryOnly())
-    monkeypatch.setattr(validator_module, "RuleEvaluator", lambda: _FakeEvaluator())
+    monkeypatch.setattr(executor_module, "RuleEvaluator", lambda: _FakeEvaluator())
 
     issues = await validate_document_async(
         {
@@ -219,7 +260,7 @@ async def test_phasea_loader_snapshot_primary_plus_supplements():
 @pytest.mark.asyncio
 async def test_phasea_validate_document_snapshot_with_supplement_tolerance(monkeypatch):
     monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServicePrimaryOnly())
-    monkeypatch.setattr(validator_module, "RuleEvaluator", lambda: _FakeEvaluator())
+    monkeypatch.setattr(executor_module, "RuleEvaluator", lambda: _FakeEvaluator())
 
     payload = {
         "domain": "icc.ucp600",
@@ -291,6 +332,62 @@ async def test_phasea_validate_document_snapshot_with_supplement_tolerance(monke
                     }
                 ],
             },
+        },
+        sort_keys=True,
+        indent=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_phaseb_semantic_execution_snapshot(monkeypatch):
+    async def _fake_semantic_compare(*_args, **_kwargs):
+        return {
+            "match": False,
+            "score": 0.32,
+            "expected": "LC says cotton shirts",
+            "found": "B/L says polyester shirts",
+            "documents": ["invoice", "bill_of_lading"],
+            "suggested_fix": "Align BL goods description with invoice and LC",
+        }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServiceSemantic())
+    monkeypatch.setattr(executor_module, "run_semantic_comparison", _fake_semantic_compare)
+
+    payload = {
+        "domain": "icc.ucp600",
+        "jurisdiction": "global",
+        "lc": {"goods_description": "cotton shirts"},
+        "invoice": {"goods_description": "cotton shirts"},
+        "bill_of_lading": {"goods_description": "polyester shirts"},
+    }
+
+    issues, provenance = await validate_document_async(payload, "commercial_invoice", return_provenance=True)
+
+    snapshot = {
+        "rule": issues[0]["rule"],
+        "passed": issues[0]["passed"],
+        "severity": issues[0]["severity"],
+        "message": issues[0]["message"],
+        "expected": issues[0].get("expected"),
+        "actual": issues[0].get("actual"),
+        "suggestion": issues[0].get("suggestion"),
+        "documents": issues[0].get("documents"),
+        "semantic_match": issues[0].get("semantic_differences", [{}])[0].get("match"),
+        "provenance_rule_count": provenance.get("rule_count_used"),
+    }
+
+    assert json.dumps(snapshot, sort_keys=True, indent=2) == json.dumps(
+        {
+            "rule": "SEM-TEST-1",
+            "passed": False,
+            "severity": "major",
+            "message": "Goods description mismatch",
+            "expected": "LC says cotton shirts",
+            "actual": "B/L says polyester shirts",
+            "suggestion": "Align BL goods description with invoice and LC",
+            "documents": ["commercial_invoice"],
+            "semantic_match": False,
+            "provenance_rule_count": 1,
         },
         sort_keys=True,
         indent=2,
