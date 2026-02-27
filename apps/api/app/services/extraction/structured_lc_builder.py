@@ -16,7 +16,13 @@ def _safe(value: Any, default: Any = None) -> Any:
     return value if value not in (None, "") else default
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    """Return a dict when possible; otherwise a safe empty mapping."""
+    return value if isinstance(value, dict) else {}
+
+
 def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    extractor_outputs = _as_dict(extractor_outputs)
     if not extractor_outputs:
         return {
             "lc_type": "unknown",
@@ -115,7 +121,7 @@ def build_unified_structured_result(
     Mirrors lc_structured.documents_structured to top-level documents_structured.
     """
 
-    extractor_outputs = extractor_outputs or {}
+    extractor_outputs = _as_dict(extractor_outputs)
     docs_structured = _normalize_documents_structured(session_documents or [])
     lc_type_fields = _pluck_lc_type(extractor_outputs)
 
@@ -128,14 +134,21 @@ def build_unified_structured_result(
         extractor_outputs.get("clauses_47a") or 
         []
     )
-    timeline = extractor_outputs.get("timeline") or _default_timeline(len(docs_structured))
+    timeline_raw = extractor_outputs.get("timeline")
+    timeline_dict = timeline_raw if isinstance(timeline_raw, dict) else {}
+    if isinstance(timeline_raw, list) and timeline_raw:
+        timeline = timeline_raw
+    elif isinstance(timeline_raw, dict) and isinstance(timeline_raw.get("events"), list) and timeline_raw.get("events"):
+        timeline = timeline_raw.get("events")
+    else:
+        timeline = _default_timeline(len(docs_structured))
     issues = extractor_outputs.get("issues", [])
 
     # Build dates object from extractor outputs
     dates = {
-        "issue": extractor_outputs.get("issue_date") or extractor_outputs.get("timeline", {}).get("issue_date"),
-        "expiry": extractor_outputs.get("expiry_date") or extractor_outputs.get("timeline", {}).get("expiry_date"),
-        "latest_shipment": extractor_outputs.get("latest_shipment") or extractor_outputs.get("timeline", {}).get("latest_shipment"),
+        "issue": extractor_outputs.get("issue_date") or timeline_dict.get("issue_date"),
+        "expiry": extractor_outputs.get("expiry_date") or timeline_dict.get("expiry_date"),
+        "latest_shipment": extractor_outputs.get("latest_shipment") or timeline_dict.get("latest_shipment"),
         "place_of_expiry": extractor_outputs.get("place_of_expiry"),
     }
     # Filter out None values from dates

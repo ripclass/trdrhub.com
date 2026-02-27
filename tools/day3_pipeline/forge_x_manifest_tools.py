@@ -91,6 +91,14 @@ def _pass_readiness(row: Dict[str, str]) -> tuple[bool, list[str]]:
     return (len(reasons) == 0, reasons)
 
 
+def _demote_pass_candidate(reasons: list[str]) -> tuple[str, str]:
+    """Fail-closed demotion of weak PASS candidates into warn/blocked buckets."""
+    hard_block_prefixes = ("missing_core_lc_fields:", "non_lc_doc_type")
+    if any(r.startswith(hard_block_prefixes) for r in reasons):
+        return "ocr_noise", "blocked"
+    return "warn", "warn"
+
+
 def build_parents(cleaned_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     stubs_dir = GENERATED / "stubs"
     upload_ready_dir = GENERATED / "upload_ready"
@@ -128,9 +136,14 @@ def build_parents(cleaned_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
         if row["scenario"] == "pass":
             ready, reasons = _pass_readiness(row)
             if not ready:
-                row["scenario"] = "warn"
-                row["expected_verdict"] = "warn"
-                row["notes"] = (row.get("notes", "") + f" | pass_quality_gate_failed:{';'.join(reasons)}").strip()
+                demoted_scenario, demoted_verdict = _demote_pass_candidate(reasons)
+                row["scenario"] = demoted_scenario
+                row["expected_verdict"] = demoted_verdict
+                row["notes"] = (
+                    row.get("notes", "")
+                    + f" | pass_quality_gate_failed:{';'.join(reasons)}"
+                    + f" | moved_to_{demoted_scenario}_candidate_bucket"
+                ).strip()
 
         row["run_enabled"] = "1"
         out.append(row)
