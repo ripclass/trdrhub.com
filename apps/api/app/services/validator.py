@@ -1348,6 +1348,7 @@ async def validate_document_async(
     provenance_rulesets: List[Dict[str, Any]] = []
 
     for idx, domain_key in enumerate(domain_sequence):
+        is_primary_domain = idx == 0
         try:
             logger.info(
                 "Fetching ruleset from DB",
@@ -1356,6 +1357,7 @@ async def validate_document_async(
                     "jurisdiction": jurisdiction,
                     "document_type": document_type,
                     "index": idx,
+                    "is_primary_domain": is_primary_domain,
                 },
             )
             ruleset_data = await rules_service.get_active_ruleset(
@@ -1363,13 +1365,23 @@ async def validate_document_async(
                 jurisdiction,
                 document_type=document_type,
             )
-            
-            # Handle None return (no active ruleset found)
+
+            # Fail-closed for primary domain only; supplements are best-effort.
             if ruleset_data is None:
-                raise RuntimeError(
-                    f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
+                if is_primary_domain:
+                    raise RuntimeError(
+                        f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
+                    )
+                logger.warning(
+                    "Supplement ruleset unavailable; continuing with primary ruleset",
+                    extra={
+                        "domain": domain_key,
+                        "jurisdiction": jurisdiction,
+                        "document_type": document_type,
+                    },
                 )
-            
+                continue
+
             logger.info(
                 "Loaded ruleset from DB",
                 extra={
@@ -1387,12 +1399,18 @@ async def validate_document_async(
                     "domain": domain_key,
                     "jurisdiction": jurisdiction,
                     "document_type": document_type,
+                    "is_primary_domain": is_primary_domain,
                     "error": str(e),
                 },
             )
-            raise RuntimeError(
-                f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
-            ) from e
+            # Preserve strict fail-closed behavior for primary ruleset.
+            if is_primary_domain:
+                raise RuntimeError(
+                    f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+                ) from e
+
+            # Supplements are additive and should not block core validation verdict.
+            continue
 
         ruleset_meta = ruleset_data.get("ruleset") or {}
         meta = {

@@ -43,6 +43,32 @@ class _FakeRulesServiceNone:
         return None
 
 
+class _FakeRulesServicePrimaryOnly:
+    async def get_active_ruleset(self, domain, jurisdiction, document_type=None):
+        if domain == "icc.ucp600":
+            return {
+                "ruleset": {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "domain": domain,
+                    "jurisdiction": jurisdiction,
+                    "ruleset_version": "1.2.3",
+                    "rulebook_version": "UCP600:2007",
+                },
+                "ruleset_version": "1.2.3",
+                "rulebook_version": "UCP600:2007",
+                "rules": [
+                    {
+                        "rule_id": "UCP-TEST-1",
+                        "title": "Primary Test Rule",
+                        "document_type": document_type,
+                        "severity": "warning",
+                        "conditions": [],
+                    }
+                ],
+            }
+        return None
+
+
 class _FakeEvaluator:
     async def evaluate_rules(self, rules, document_data):
         return {
@@ -105,6 +131,25 @@ async def test_validate_document_async_fail_closed_when_no_active_ruleset(monkey
             },
             "commercial_invoice",
         )
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_skips_missing_supplement_rulesets(monkeypatch):
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServicePrimaryOnly())
+    monkeypatch.setattr(validator_module, "RuleEvaluator", lambda: _FakeEvaluator())
+
+    issues = await validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "supplement_domains": ["regulations.bd", "sanctions.screening"],
+            "lc": {},
+        },
+        "commercial_invoice",
+    )
+
+    assert issues
+    assert issues[0]["ruleset_domain"] == "icc.ucp600"
 
 
 def test_db_blocked_result_has_blocked_verdict_and_provenance():
