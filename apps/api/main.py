@@ -54,7 +54,7 @@ except ImportError:
 
 # Import application modules
 from app.database import Base, engine
-from sqlalchemy.exc import UnsupportedCompilationError, CompileError, OperationalError, DisconnectionError, TimeoutError as SATimeoutError
+from sqlalchemy.exc import UnsupportedCompilationError, CompileError, OperationalError, DisconnectionError, TimeoutError as SATimeoutError, NoReferencedTableError
 from app.utils.db_resilience import DB_OUTAGE_MESSAGE
 from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions
 
@@ -211,6 +211,16 @@ if _auto_create_flag:
         Base.metadata.create_all(bind=engine)
     except (UnsupportedCompilationError, CompileError) as exc:
         print(f"Skipping automatic schema creation due to unsupported dialect features: {exc}")
+    except NoReferencedTableError as exc:
+        # FK target table (e.g. 'organizations') is not defined as a SQLAlchemy
+        # model but exists in the DB via Alembic migrations.  create_all cannot
+        # resolve the reference from metadata alone so we skip it here and rely
+        # on Alembic to manage the schema.  This is safe in production because
+        # the real schema is managed exclusively by Alembic migrations.
+        print(
+            f"WARNING: Base.metadata.create_all() skipped — FK resolution error: {exc}. "
+            "Schema is managed by Alembic migrations. This is expected in production."
+        )
 else:
     print("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
 
