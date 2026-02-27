@@ -91,25 +91,68 @@ async def load_rules_with_provenance(
                 },
             )
         except Exception as e:
-            logger.error(
-                "Ruleset fetch failed (fail-closed)",
-                exc_info=True,
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "is_primary_domain": is_primary_domain,
-                    "error": str(e),
-                },
-            )
-            # Preserve strict fail-closed behavior for primary ruleset.
-            if is_primary_domain:
-                raise RuntimeError(
-                    f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
-                ) from e
+            # For ICC primary rulesets, if country-jurisdiction lookup raises due missing active
+            # ruleset, attempt a global fallback before fail-closing.
+            if (
+                is_primary_domain
+                and domain_key.startswith("icc.")
+                and jurisdiction != "global"
+                and "No active ruleset found" in str(e)
+            ):
+                try:
+                    ruleset_data = await rules_service.get_active_ruleset(
+                        domain_key,
+                        "global",
+                        document_type=document_type,
+                    )
+                    if ruleset_data is not None:
+                        effective_jurisdiction = "global"
+                        logger.info(
+                            "Recovered via global ICC ruleset fallback after exception",
+                            extra={
+                                "domain": domain_key,
+                                "requested_jurisdiction": jurisdiction,
+                                "fallback_jurisdiction": "global",
+                                "document_type": document_type,
+                            },
+                        )
+                    else:
+                        raise e
+                except Exception:
+                    logger.error(
+                        "Ruleset fetch failed (fail-closed)",
+                        exc_info=True,
+                        extra={
+                            "domain": domain_key,
+                            "jurisdiction": jurisdiction,
+                            "document_type": document_type,
+                            "is_primary_domain": is_primary_domain,
+                            "error": str(e),
+                        },
+                    )
+                    raise RuntimeError(
+                        f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+                    ) from e
+            else:
+                logger.error(
+                    "Ruleset fetch failed (fail-closed)",
+                    exc_info=True,
+                    extra={
+                        "domain": domain_key,
+                        "jurisdiction": jurisdiction,
+                        "document_type": document_type,
+                        "is_primary_domain": is_primary_domain,
+                        "error": str(e),
+                    },
+                )
+                # Preserve strict fail-closed behavior for primary ruleset.
+                if is_primary_domain:
+                    raise RuntimeError(
+                        f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
+                    ) from e
 
-            # Supplements are additive and should not block core validation verdict.
-            continue
+                # Supplements are additive and should not block core validation verdict.
+                continue
 
         ruleset_meta = ruleset_data.get("ruleset") or {}
         meta = {
