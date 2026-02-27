@@ -162,23 +162,24 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   const severity = payload?.severity_breakdown ?? summarizeSeverity(issues);
   const totalDocuments =
     typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
-  const success =
-    typeof payload?.successful_extractions === 'number'
-      ? payload.successful_extractions
-      : documents.filter((doc) => doc.status === 'success').length;
   const failed =
     typeof payload?.failed_extractions === 'number'
       ? payload.failed_extractions
-      : Math.max(0, totalDocuments - success);
+      : documents.filter((doc) => doc.status === 'error').length;
   const totalIssues =
     typeof payload?.total_issues === 'number' ? payload.total_issues : issues.length;
 
-  // Get document status from backend or calculate from documents
-  const documentStatus = payload?.status_counts ?? payload?.document_status ?? {
+  // CANONICAL SOURCE OF TRUTH: Document status counts always derived from the
+  // mapped documents array. Never use backend status_counts/document_status
+  // directly — they may be stale or computed with different logic.
+  // This is the single place all widgets MUST read from.
+  const canonicalDocumentStatus = {
     success: documents.filter((d) => d.status === 'success').length,
     warning: documents.filter((d) => d.status === 'warning').length,
     error: documents.filter((d) => d.status === 'error').length,
   };
+
+  const success = canonicalDocumentStatus.success;
 
   return {
     total_documents: totalDocuments,
@@ -186,11 +187,12 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
     failed_extractions: failed,
     total_issues: totalIssues,
     severity_breakdown: severity,
-    // Pass through document status for SummaryStrip
-    document_status: documentStatus,
-    verified: documentStatus.success ?? 0,
-    warnings: documentStatus.warning ?? 0,
-    errors: documentStatus.error ?? 0,
+    // CANONICAL: document status distribution - computed from documents, not backend
+    document_status: canonicalDocumentStatus,
+    canonical_document_status: canonicalDocumentStatus,
+    verified: canonicalDocumentStatus.success,
+    warnings: canonicalDocumentStatus.warning,
+    errors: canonicalDocumentStatus.error,
     // Pass through other useful fields from backend
     compliance_rate: payload?.compliance_rate ?? 0,
     processing_time_display: payload?.processing_time_display ?? 'N/A',
@@ -215,8 +217,10 @@ const ensureAnalytics = (
         risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount >= 1 ? 'medium' : 'low',
       }));
 
-  // Get document status distribution from backend or calculate from documents
-  const documentStatusDistribution = payload?.document_status_distribution ?? {
+  // CANONICAL SOURCE OF TRUTH: Document status distribution always derived
+  // from mapped documents array — never from backend analytics field which
+  // may have been computed with different thresholds or be stale.
+  const canonicalDocumentStatus = {
     success: documents.filter((d) => d.status === 'success').length,
     warning: documents.filter((d) => d.status === 'warning').length,
     error: documents.filter((d) => d.status === 'error').length,
@@ -226,8 +230,8 @@ const ensureAnalytics = (
     compliance_score: Math.max(0, Math.min(100, compliance)),
     issue_counts: issueCounts,
     document_risk: documentRisk,
-    // Pass through document status distribution for consistent display
-    document_status_distribution: documentStatusDistribution,
+    // CANONICAL: document status distribution — same source as summary.canonical_document_status
+    document_status_distribution: canonicalDocumentStatus,
     documents_processed: payload?.documents_processed ?? documents.length,
     processing_time_display: payload?.processing_time_display ?? 'N/A',
   };

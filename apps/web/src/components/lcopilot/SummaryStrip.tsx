@@ -30,54 +30,29 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
   // Get document counts from multiple sources for robustness
   const documentsProcessed =
     analytics?.documents_processed ?? summary.total_documents ?? data?.documents?.length ?? 0;
-  // FIX: Backend sends both document_status and status_counts - check both
-  const statusDistribution = 
-    analytics?.document_status_distribution ?? 
-    summary?.document_status ?? 
-    summary?.status_counts ?? 
-    {};
+
+  // CANONICAL SOURCE: document status counts must come from the mapper's
+  // canonical_document_status field (always derived from documents array).
+  // Never estimate from issue counts or compliance rate — that causes drift
+  // between widgets showing different numbers for the same job.
+  const canonicalStatus =
+    summary?.canonical_document_status ??
+    summary?.document_status ??
+    analytics?.document_status_distribution ??
+    null;
+
+  // If canonical status is available, use it directly (no estimation fallback)
+  const verified   = formatNumber(canonicalStatus?.success);
+  const warnings   = formatNumber(canonicalStatus?.warning);
+  const errors     = formatNumber(canonicalStatus?.error);
+
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
   
   // Get issue counts - use actual count from parent if available
   const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
-  // Use passed compliance score, or calculate fallback
-  const complianceRate = complianceScore ?? summary.compliance_rate ?? 
-    (totalIssues === 0 ? 100 : Math.max(0, 100 - (totalIssues * 15)));
-  
-  // Document status - fallback to calculated values if distribution is empty
-  const successFromDist = formatNumber(statusDistribution.success);
-  const warningsFromDist = formatNumber(statusDistribution.warning);
-  const errorsFromDist = formatNumber(statusDistribution.error);
-  
-  // If distribution is all zeros but we have documents, calculate from compliance
-  const hasDistribution = successFromDist > 0 || warningsFromDist > 0 || errorsFromDist > 0;
-  
-  let verified: number;
-  let warnings: number;
-  let errors: number;
-  
-  if (hasDistribution) {
-    verified = successFromDist;
-    warnings = warningsFromDist;
-    errors = errorsFromDist;
-  } else {
-    // Fallback: estimate from compliance rate and total issues
-    if (complianceRate >= 100 && totalIssues === 0) {
-      verified = documentsProcessed;
-      warnings = 0;
-      errors = 0;
-    } else if (totalIssues > 0) {
-      // If there are issues, at least 1 doc has warnings
-      warnings = Math.min(totalIssues, documentsProcessed);
-      verified = Math.max(0, documentsProcessed - warnings);
-      errors = 0;
-    } else {
-      verified = documentsProcessed;
-      warnings = 0;
-      errors = 0;
-    }
-  }
+  // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
+  const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
   // Has issues if compliance < 100 or there are warnings/errors
   const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
@@ -149,24 +124,32 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
           {/* Divider */}
           <div className="hidden md:block w-px bg-border self-stretch" />
 
-          {/* Document Status */}
+          {/* Document Status — extraction quality, not LC compliance.
+               These numbers match the Documents tab and Overview stats card.
+               LC compliance is shown separately as "Compliance Rate" above. */}
           <div className="flex-1 space-y-3">
-            <h3 className="font-semibold text-foreground text-sm">Document Status</h3>
+            <h3 className="font-semibold text-foreground text-sm">Extraction Status</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>{verified} documents verified</span>
+                <span>{verified} extracted OK</span>
               </div>
               {warnings > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span>{warnings} with warnings</span>
+                  <span>{warnings} partial / issues</span>
                 </div>
               )}
               {errors > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span>{errors} with errors</span>
+                  <span>{errors} extraction failed</span>
+                </div>
+              )}
+              {totalIssues > 0 && (
+                <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span className="text-muted-foreground">{totalIssues} LC issue{totalIssues !== 1 ? 's' : ''} found</span>
                 </div>
               )}
             </div>

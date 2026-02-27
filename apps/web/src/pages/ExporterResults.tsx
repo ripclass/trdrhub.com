@@ -1534,16 +1534,26 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Document status grid — counts must match Documents tab and SummaryStrip.
+                      successCount / warningCount / errorCount are derived from the same
+                      mapped `documents` array (canonical source). totalDiscrepancies is
+                      the issue-card count and is shown separately with a distinct label. */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
                       <div className="text-2xl font-bold text-success">{successCount}</div>
-                      <div className="text-sm text-muted-foreground">Verified</div>
+                      <div className="text-sm text-muted-foreground">Docs Verified</div>
                     </div>
                     <div className="text-center p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                      <div className="text-2xl font-bold text-warning">{totalDiscrepancies}</div>
-                      <div className="text-sm text-muted-foreground">Warnings</div>
+                      <div className="text-2xl font-bold text-warning">{warningCount + errorCount}</div>
+                      <div className="text-sm text-muted-foreground">Docs Need Review</div>
                     </div>
                   </div>
+                  {totalDiscrepancies > 0 && (
+                    <div className="flex items-center justify-between text-sm px-1">
+                      <span className="text-muted-foreground">Issues found:</span>
+                      <span className="font-semibold text-warning">{totalDiscrepancies}</span>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
@@ -1626,13 +1636,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <PieChart className="w-5 h-5" />
                     Document Status
                   </CardTitle>
+                  {/* Note: "Verified" here means OCR extraction succeeded for the document.
+                      It does NOT indicate LC compliance — see Compliance score for that.
+                      A document can be "Verified" (extracted) yet still have LC issues. */}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-success rounded-full"></div>
-                        <span className="text-sm">Verified</span>
+                        <span className="text-sm">Extracted OK</span>
                       </div>
                       <span className="text-sm font-medium">
                         {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
@@ -1642,7 +1655,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">With Warnings</span>
+                        <span className="text-sm">Partial / With Issues</span>
                       </div>
                       <span className="text-sm font-medium">
                         {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
@@ -1653,13 +1666,23 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                        <span className="text-sm">With Errors</span>
+                        <span className="text-sm">Extraction Failed</span>
                       </div>
                       <span className="text-sm font-medium">
                         {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
                       </span>
                     </div>
                     )}
+                    {/* Compliance score is separate from extraction status */}
+                    <div className="border-t border-border/40 pt-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${lcComplianceScore >= 70 ? 'bg-success' : lcComplianceScore >= 30 ? 'bg-warning' : 'bg-destructive'}`}></div>
+                        <span className="text-sm">LC Compliance</span>
+                      </div>
+                      <span className={`text-sm font-medium ${lcComplianceScore >= 70 ? 'text-success' : lcComplianceScore >= 30 ? 'text-warning' : 'text-destructive'}`}>
+                        {lcComplianceScore}%
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-4 p-3 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
