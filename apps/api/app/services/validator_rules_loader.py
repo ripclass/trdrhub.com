@@ -44,6 +44,27 @@ async def load_rules_with_provenance(
                 document_type=document_type,
             )
 
+            # For ICC global rulebooks, gracefully fallback to global jurisdiction
+            # when country-specific jurisdiction has no published ruleset.
+            effective_jurisdiction = jurisdiction
+            if ruleset_data is None and domain_key.startswith("icc.") and jurisdiction != "global":
+                ruleset_data = await rules_service.get_active_ruleset(
+                    domain_key,
+                    "global",
+                    document_type=document_type,
+                )
+                if ruleset_data is not None:
+                    effective_jurisdiction = "global"
+                    logger.info(
+                        "Using global ICC ruleset fallback",
+                        extra={
+                            "domain": domain_key,
+                            "requested_jurisdiction": jurisdiction,
+                            "fallback_jurisdiction": "global",
+                            "document_type": document_type,
+                        },
+                    )
+
             # Fail-closed for primary domain only; supplements are best-effort.
             if ruleset_data is None:
                 if is_primary_domain:
@@ -94,7 +115,7 @@ async def load_rules_with_provenance(
         meta = {
             "ruleset_id": ruleset_meta.get("id"),
             "domain": domain_key,
-            "jurisdiction": jurisdiction,
+            "jurisdiction": effective_jurisdiction,
             "ruleset_version": ruleset_data.get("ruleset_version"),
             "rulebook_version": ruleset_data.get("rulebook_version"),
             "rule_count_used": len(ruleset_data.get("rules", []) or []),
