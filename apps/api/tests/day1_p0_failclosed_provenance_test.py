@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 import sys
 
@@ -11,6 +12,7 @@ if str(API_ROOT) not in sys.path:
 from app.services import validator as validator_module
 from app.services import rules_service as rules_service_module
 from app.services.validator import validate_document_async
+from app.services.validator_rules_loader import load_rules_with_provenance
 from app.routers.validate import _build_db_rules_blocked_structured_result
 
 
@@ -171,3 +173,125 @@ def test_db_blocked_result_has_blocked_verdict_and_provenance():
     assert result["validation_provenance"]["domain"] == "icc.ucp600"
     assert result["validation_provenance"]["jurisdiction"] == "global"
     assert result["validation_provenance"]["rule_count_used"] == 0
+
+
+@pytest.mark.asyncio
+async def test_phasea_loader_snapshot_primary_plus_supplements():
+    service = _FakeRulesServicePrimaryOnly()
+    aggregated, base_meta, provenance = await load_rules_with_provenance(
+        rules_service=service,
+        domain_sequence=["icc.ucp600", "icc.urr725"],
+        jurisdiction="global",
+        document_type="commercial_invoice",
+    )
+
+    snapshot = {
+        "rule_ids": [r.get("rule_id") for r, _ in aggregated],
+        "base_meta": base_meta,
+        "provenance": provenance,
+    }
+    assert json.dumps(snapshot, sort_keys=True, indent=2) == json.dumps(
+        {
+            "rule_ids": ["UCP-TEST-1"],
+            "base_meta": {
+                "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                "domain": "icc.ucp600",
+                "jurisdiction": "global",
+                "ruleset_version": "1.2.3",
+                "rulebook_version": "UCP600:2007",
+                "rule_count_used": 1,
+            },
+            "provenance": [
+                {
+                    "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                    "ruleset_version": "1.2.3",
+                    "domain": "icc.ucp600",
+                    "jurisdiction": "global",
+                    "rule_count_used": 1,
+                }
+            ],
+        },
+        sort_keys=True,
+        indent=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_phasea_validate_document_snapshot_with_supplement_tolerance(monkeypatch):
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServicePrimaryOnly())
+    monkeypatch.setattr(validator_module, "RuleEvaluator", lambda: _FakeEvaluator())
+
+    payload = {
+        "domain": "icc.ucp600",
+        "jurisdiction": "global",
+        "supplement_domains": ["regulations.bd"],
+        "lc": {},
+    }
+    issues, provenance = await validate_document_async(
+        payload,
+        "commercial_invoice",
+        return_provenance=True,
+    )
+
+    snapshot = {
+        "rules": [
+            {
+                "rule": i.get("rule"),
+                "ruleset_domain": i.get("ruleset_domain"),
+                "ruleset_version": i.get("ruleset_version"),
+                "jurisdiction": i.get("jurisdiction"),
+            }
+            for i in issues
+        ],
+        "provenance": provenance,
+        "execution": payload.get("_db_rules_execution"),
+    }
+
+    assert json.dumps(snapshot, sort_keys=True, indent=2) == json.dumps(
+        {
+            "rules": [
+                {
+                    "rule": "UCP-TEST-1",
+                    "ruleset_domain": "icc.ucp600",
+                    "ruleset_version": "1.2.3",
+                    "jurisdiction": "global",
+                }
+            ],
+            "provenance": {
+                "success": True,
+                "domain": "icc.ucp600",
+                "jurisdiction": "global",
+                "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                "ruleset_version": "1.2.3",
+                "rule_count_used": 1,
+                "rulesets": [
+                    {
+                        "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                        "ruleset_version": "1.2.3",
+                        "domain": "icc.ucp600",
+                        "jurisdiction": "global",
+                        "rule_count_used": 1,
+                    }
+                ],
+            },
+            "execution": {
+                "success": True,
+                "domain": "icc.ucp600",
+                "jurisdiction": "global",
+                "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                "ruleset_version": "1.2.3",
+                "rule_count_used": 1,
+                "rulesets": [
+                    {
+                        "ruleset_id": "11111111-1111-1111-1111-111111111111",
+                        "ruleset_version": "1.2.3",
+                        "domain": "icc.ucp600",
+                        "jurisdiction": "global",
+                        "rule_count_used": 1,
+                    }
+                ],
+            },
+        },
+        sort_keys=True,
+        indent=2,
+    )

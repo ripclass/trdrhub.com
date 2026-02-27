@@ -11,6 +11,7 @@ from app.config import settings
 from app.core.lc_types import LCType
 from app.services.semantic_compare import run_semantic_comparison
 from app.services.rule_evaluator import RuleEvaluator
+from app.services.validator_rules_loader import load_rules_with_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -1343,96 +1344,12 @@ async def validate_document_async(
         if crossdoc_domain not in domain_sequence:
             domain_sequence.append(crossdoc_domain)
 
-    aggregated_rules: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-    base_metadata: Optional[Dict[str, Any]] = None
-    provenance_rulesets: List[Dict[str, Any]] = []
-
-    for idx, domain_key in enumerate(domain_sequence):
-        is_primary_domain = idx == 0
-        try:
-            logger.info(
-                "Fetching ruleset from DB",
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "index": idx,
-                    "is_primary_domain": is_primary_domain,
-                },
-            )
-            ruleset_data = await rules_service.get_active_ruleset(
-                domain_key,
-                jurisdiction,
-                document_type=document_type,
-            )
-
-            # Fail-closed for primary domain only; supplements are best-effort.
-            if ruleset_data is None:
-                if is_primary_domain:
-                    raise RuntimeError(
-                        f"No active ruleset found for domain={domain_key}, jurisdiction={jurisdiction}"
-                    )
-                logger.warning(
-                    "Supplement ruleset unavailable; continuing with primary ruleset",
-                    extra={
-                        "domain": domain_key,
-                        "jurisdiction": jurisdiction,
-                        "document_type": document_type,
-                    },
-                )
-                continue
-
-            logger.info(
-                "Loaded ruleset from DB",
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "rule_count": len(ruleset_data.get("rules", [])),
-                },
-            )
-        except Exception as e:
-            logger.error(
-                "Ruleset fetch failed (fail-closed)",
-                exc_info=True,
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "is_primary_domain": is_primary_domain,
-                    "error": str(e),
-                },
-            )
-            # Preserve strict fail-closed behavior for primary ruleset.
-            if is_primary_domain:
-                raise RuntimeError(
-                    f"Ruleset fetch failed for domain={domain_key}, jurisdiction={jurisdiction}: {e}"
-                ) from e
-
-            # Supplements are additive and should not block core validation verdict.
-            continue
-
-        ruleset_meta = ruleset_data.get("ruleset") or {}
-        meta = {
-            "ruleset_id": ruleset_meta.get("id"),
-            "domain": domain_key,
-            "jurisdiction": jurisdiction,
-            "ruleset_version": ruleset_data.get("ruleset_version"),
-            "rulebook_version": ruleset_data.get("rulebook_version"),
-            "rule_count_used": len(ruleset_data.get("rules", []) or []),
-        }
-        provenance_rulesets.append({
-            "ruleset_id": meta.get("ruleset_id"),
-            "ruleset_version": meta.get("ruleset_version"),
-            "domain": meta.get("domain"),
-            "jurisdiction": meta.get("jurisdiction"),
-            "rule_count_used": meta.get("rule_count_used"),
-        })
-        if idx == 0:
-            base_metadata = meta
-
-        for rule in ruleset_data.get("rules", []) or []:
-            aggregated_rules.append((rule, meta))
+    aggregated_rules, base_metadata, provenance_rulesets = await load_rules_with_provenance(
+        rules_service=rules_service,
+        domain_sequence=domain_sequence,
+        jurisdiction=jurisdiction,
+        document_type=document_type,
+    )
 
     if not aggregated_rules:
         raise RuntimeError(
