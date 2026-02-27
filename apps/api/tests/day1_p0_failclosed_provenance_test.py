@@ -115,6 +115,41 @@ class _FakeRulesServiceSemantic:
         }
 
 
+class _FakeRulesServiceDocTypeStarvation:
+    async def get_active_ruleset(self, domain, jurisdiction, document_type=None):
+        if domain != "icc.ucp600":
+            return None
+
+        # Simulate production failure class:
+        # strict document_type fetch returns an active ruleset with zero rows,
+        # while unfiltered fetch returns core LC-scoped rules.
+        if document_type == "commercial_invoice":
+            rules = []
+        else:
+            rules = [
+                {
+                    "rule_id": "UCP-CORE-LC-1",
+                    "title": "Core LC Rule",
+                    "document_type": "lc",
+                    "severity": "warning",
+                    "conditions": [],
+                }
+            ]
+
+        return {
+            "ruleset": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "domain": domain,
+                "jurisdiction": jurisdiction,
+                "ruleset_version": "1.2.3",
+                "rulebook_version": "UCP600:2007",
+            },
+            "ruleset_version": "1.2.3",
+            "rulebook_version": "UCP600:2007",
+            "rules": rules,
+        }
+
+
 class _FakeEvaluator:
     async def evaluate_rules(self, rules, document_data):
         return {
@@ -196,6 +231,27 @@ async def test_validate_document_async_skips_missing_supplement_rulesets(monkeyp
 
     assert issues
     assert issues[0]["ruleset_domain"] == "icc.ucp600"
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_recovers_primary_rules_when_doc_type_filtered_fetch_is_empty(monkeypatch):
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FakeRulesServiceDocTypeStarvation())
+    monkeypatch.setattr(executor_module, "RuleEvaluator", lambda: _FakeEvaluator())
+
+    issues, provenance = await validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "supplement_domains": [],
+            "lc": {},
+        },
+        "commercial_invoice",
+        return_provenance=True,
+    )
+
+    assert issues
+    assert provenance["rule_count_used"] >= 1
+    assert provenance["ruleset_id"] == "11111111-1111-1111-1111-111111111111"
 
 
 def test_db_blocked_result_has_blocked_verdict_and_provenance():

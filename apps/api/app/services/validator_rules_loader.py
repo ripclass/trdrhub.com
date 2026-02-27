@@ -83,13 +83,43 @@ async def load_rules_with_provenance(
                 )
                 continue
 
+            loaded_rule_count = len(ruleset_data.get("rules", []) or [])
+            if is_primary_domain and loaded_rule_count == 0 and (document_type or "").strip().lower() not in ("", "lc"):
+                logger.warning(
+                    "Primary ruleset resolved with zero rules for document_type; retrying unfiltered fetch",
+                    extra={
+                        "domain": normalized_domain,
+                        "jurisdiction": effective_jurisdiction,
+                        "document_type": document_type,
+                    },
+                )
+                fallback_ruleset_data = await rules_service.get_active_ruleset(
+                    normalized_domain,
+                    effective_jurisdiction,
+                    document_type=None,
+                )
+                fallback_rule_count = len((fallback_ruleset_data or {}).get("rules", []) or [])
+                if fallback_ruleset_data is not None and fallback_rule_count > 0:
+                    logger.info(
+                        "Recovered primary ruleset via unfiltered fetch",
+                        extra={
+                            "domain": normalized_domain,
+                            "jurisdiction": effective_jurisdiction,
+                            "requested_document_type": document_type,
+                            "fallback_document_type": "*",
+                            "rule_count": fallback_rule_count,
+                        },
+                    )
+                    ruleset_data = fallback_ruleset_data
+                    loaded_rule_count = fallback_rule_count
+
             logger.info(
                 "Loaded ruleset from DB",
                 extra={
                     "domain": normalized_domain,
                     "jurisdiction": effective_jurisdiction,
                     "document_type": document_type,
-                    "rule_count": len(ruleset_data.get("rules", [])),
+                    "rule_count": loaded_rule_count,
                 },
             )
         except Exception as e:
