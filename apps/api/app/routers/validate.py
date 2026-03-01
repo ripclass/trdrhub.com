@@ -504,14 +504,16 @@ async def validate_doc(
         detected_doc_types = [
             doc.get("documentType") or doc.get("document_type")
             for doc in (extracted_context.get("documents") if extracted_context else []) or []
+            if isinstance(doc, dict)
         ]
         
         # Check if any LC-like document was found
         lc_document_types = {"letter_of_credit", "swift_message", "lc_application"}
+        lc_payload = payload.get("lc") if isinstance(payload.get("lc"), dict) else {}
         has_lc_document = (
             any(documents_presence.get(dt, {}).get("present") for dt in lc_document_types) or
             any(dt in lc_document_types for dt in detected_doc_types) or
-            bool(payload.get("lc", {}).get("raw_text"))  # Also check if LC data exists
+            bool(lc_payload.get("raw_text"))  # Also check if LC data exists
         )
         
         # Block if no LC found on Exporter dashboard (LC is required for validation)
