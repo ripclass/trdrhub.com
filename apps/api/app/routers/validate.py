@@ -794,6 +794,8 @@ async def validate_doc(
         v2_baseline = None
         v2_issues = []
         v2_crossdoc_issues = []
+        ai_metadata: Dict[str, Any] = {}
+        extraction_confidence_summary: Optional[Dict[str, Any]] = None
         
         try:
             # Build LCBaseline from extracted context
@@ -2003,7 +2005,32 @@ async def validate_doc(
             )
             if structured_result.get("processing_summary"):
                 structured_result["processing_summary"]["bank_verdict"] = bank_verdict.get("verdict")
-            
+
+            # Phase 1: dual-track decision fields (non-breaking, legacy final verdict preserved)
+            ai_verdict = _derive_ai_verdict(ai_metadata)
+            ruleset_verdict = _derive_ruleset_verdict(v2_score.critical_count, v2_score.major_count)
+            final_verdict = bank_verdict.get("verdict")
+            blocking_rules = sorted({
+                str((issue.get("rule") or issue.get("code") or "")).strip()
+                for issue in all_issues
+                if isinstance(issue, dict) and str(issue.get("severity", "")).lower() == "critical"
+                and (issue.get("rule") or issue.get("code"))
+            })
+            confidence_band, confidence_band_reason = _derive_confidence_band(extraction_confidence_summary)
+
+            structured_result["ai_verdict"] = ai_verdict
+            structured_result["ruleset_verdict"] = ruleset_verdict
+            structured_result["final_verdict"] = final_verdict
+            structured_result["override_reason"] = (
+                "legacy_final_verdict_preserved"
+                if (ruleset_verdict == "pass" and ai_verdict == "reject")
+                else None
+            )
+            structured_result["blocking_rules"] = blocking_rules
+            structured_result["confidence_band"] = confidence_band
+            if confidence_band is None and confidence_band_reason:
+                structured_result["confidence_band_reason"] = confidence_band_reason
+
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
                 bank_verdict.get("verdict"),
@@ -3947,6 +3974,43 @@ def _resolve_bank_verdict_class(
 
 
 
+def _derive_ai_verdict(ai_metadata: Optional[Dict[str, Any]]) -> str:
+    metadata = ai_metadata or {}
+    critical = int(metadata.get("critical_issues", 0) or 0)
+    major = int(metadata.get("major_issues", 0) or 0)
+    total = int(metadata.get("total_issues", critical + major) or (critical + major))
+    if critical > 0:
+        return "reject"
+    if major > 0 or total > 0:
+        return "review"
+    return "pass"
+
+
+def _derive_ruleset_verdict(critical_count: int, major_count: int) -> str:
+    if critical_count > 0:
+        return "reject"
+    if major_count > 0:
+        return "review"
+    return "pass"
+
+
+def _derive_confidence_band(extraction_confidence_summary: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
+    if not extraction_confidence_summary:
+        return None, "extraction_confidence_unavailable"
+    confidence = extraction_confidence_summary.get("average_confidence")
+    if confidence is None:
+        return None, "average_confidence_missing"
+    try:
+        score = float(confidence)
+    except (TypeError, ValueError):
+        return None, "average_confidence_invalid"
+    if score < 0.6:
+        return "low", None
+    if score < 0.85:
+        return "medium", None
+    return "high", None
+
+
 def _build_verdict_signature(
     *,
     source: str,
@@ -4129,6 +4193,16 @@ def _build_blocked_structured_result(
                 "reason": "blocking_gate_fields",
             },
         },
+        "ai_verdict": None,
+        "ruleset_verdict": "reject",
+        "final_verdict": "BLOCKED",
+        "override_reason": "validation_blocked_before_ai",
+        "blocking_rules": [
+            str((i.get("rule") or i.get("code") or "validation_gate")).strip()
+            for i in blocking_issues if isinstance(i, dict)
+        ],
+        "confidence_band": None,
+        "confidence_band_reason": "validation_blocked_no_confidence_band",
         
         # Gate result
         "gate_result": v2_gate_result.to_dict(),
@@ -4736,6 +4810,13 @@ def _build_db_rules_blocked_structured_result(
                 "reason": reason if isinstance(reason, str) else "rules_engine_unavailable",
             },
         },
+        "ai_verdict": None,
+        "ruleset_verdict": "reject",
+        "final_verdict": "BLOCKED",
+        "override_reason": "rules_engine_unavailable",
+        "blocking_rules": ["db.rules.execution"],
+        "confidence_band": None,
+        "confidence_band_reason": "rules_engine_failed_before_confidence_band",
         "issues": [
             {
                 "severity": "critical",
