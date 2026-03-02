@@ -167,10 +167,6 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   const severity = payload?.severity_breakdown ?? summarizeSeverity(issues);
   const totalDocuments =
     typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
-  const failed =
-    typeof payload?.failed_extractions === 'number'
-      ? payload.failed_extractions
-      : documents.filter((doc) => doc.status === 'error').length;
   const totalIssues =
     typeof payload?.total_issues === 'number' ? payload.total_issues : issues.length;
 
@@ -185,6 +181,7 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   };
 
   const success = canonicalDocumentStatus.success;
+  const failed = canonicalDocumentStatus.error;
 
   return {
     total_documents: totalDocuments,

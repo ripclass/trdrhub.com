@@ -81,7 +81,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
             {packGenerated && (
               <Badge className="bg-emerald-600 text-white border-0 hover:bg-emerald-700">
                 <CheckCircle className="w-3 h-3 mr-1" />
-                Customs Pack Ready
+                Customs Pack Generated
               </Badge>
             )}
             {lcTypeLabel && (

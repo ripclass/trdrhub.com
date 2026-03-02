@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, Literal, List
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # Role type definition
 Role = Literal[
@@ -66,7 +66,10 @@ class UserCreate(UserBase):
         description="Foreign key to auth.users for Supabase-managed identities",
     )
 
-    _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
 
 
 class UserCreateAdmin(UserBase):
@@ -78,7 +81,10 @@ class UserCreateAdmin(UserBase):
         description="Foreign key to auth.users for Supabase-managed identities",
     )
 
-    _role_validator = validator("role", pre=True, always=True, allow_reuse=True)(_validate_role)
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
 
 
 class UserRead(UserBase):
@@ -89,10 +95,12 @@ class UserRead(UserBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
-    _role_validator = validator("role", pre=True, allow_reuse=True)(_validate_role)
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
 
 
 class UserProfile(UserRead):
@@ -120,8 +128,9 @@ class RoleUpdateRequest(BaseModel):
     role: Role
     reason: Optional[str] = Field(None, max_length=500, description="Reason for role change")
 
-    @validator("role", pre=True, always=True)
-    def validate_role(cls, v):
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
         """Validate role is in allowed values."""
         normalized = _normalize_role(v)
         if normalized not in Role.__args__:  # type: ignore[attr-defined]
@@ -141,8 +150,15 @@ class RoleUpdateResponse(BaseModel):
     updated_by: UUID
     updated_at: datetime
 
-    _normalize_old_role = validator("old_role", allow_reuse=True, pre=True)(_validate_role)  # type: ignore[arg-type]
-    _normalize_new_role = validator("new_role", allow_reuse=True, pre=True)(_validate_role)  # type: ignore[arg-type]
+    @field_validator("old_role", mode="before")
+    @classmethod
+    def normalize_old_role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
+
+    @field_validator("new_role", mode="before")
+    @classmethod
+    def normalize_new_role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
 
 
 class UserListQuery(BaseModel):
@@ -155,8 +171,9 @@ class UserListQuery(BaseModel):
     sort_by: str = Field("created_at", description="Sort field")
     sort_order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
 
-    @validator("role", pre=True, always=True)
-    def normalize_role(cls, v):
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, v: Optional[str]) -> Optional[str]:
         return _validate_role(v)
 
 
@@ -255,9 +272,10 @@ class BankUserInviteRequest(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=8, max_length=128)
     role: Literal["bank_officer", "bank_admin"] = Field(..., description="Role must be bank_officer or bank_admin")
-    
-    @validator("role", pre=True, always=True)
-    def validate_bank_role(cls, v):
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_bank_role(cls, v: Optional[str]) -> Optional[str]:
         """Validate role is a bank role."""
         if v not in ["bank_officer", "bank_admin"]:
             raise ValueError("Role must be bank_officer or bank_admin")

@@ -838,7 +838,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
   const customsPack = structuredResult?.customs_pack;
-  const packGenerated = customsPack?.ready ?? false;
+  // Canonical manifest state: UI generation/availability derives from manifestData only.
+  // This keeps status label, helper copy, and preview enablement in sync.
+  const packGenerated = !!manifestData;
   const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
   const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
@@ -1459,8 +1461,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                   {packGenerated && (
                     <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <p className="text-sm font-medium text-primary">Customs-Ready Pack Generated</p>
-                      <p className="text-xs text-muted-foreground mt-1">All documents bundled for smooth customs clearance</p>
+                      <p className="text-sm font-medium text-primary">Customs Pack Generated</p>
+                      <p className="text-xs text-muted-foreground mt-1">Documents bundled; clearance still depends on validation/compliance state</p>
                     </div>
                   )}
                 </CardContent>
@@ -1596,35 +1598,43 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Customs Pack State</p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={packGenerated ? "success" : "warning"}>
-                        {packGenerated ? "Ready" : "Pending"}
+                        {packGenerated ? "Generated" : "Not Generated"}
                       </StatusBadge>
                       <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {packGenerated
-                        ? "Customs pack generated and ready to download."
-                        : "Generate your customs pack after resolving issues."}
+                        ? "Pack files are generated and available for download."
+                        : "Generate the customs pack files from current extracted data."}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Readiness</p>
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Validation & Clearance</p>
                     <div className="flex items-center gap-3">
                       <div className={cn(
                         "text-2xl font-semibold",
                         customsReadyScore >= 80 ? "text-success" : customsReadyScore >= 50 ? "text-warning" : "text-destructive"
                       )}>{customsReadyScore}%</div>
-                      <Badge variant="outline">Customs Ready Score</Badge>
+                      <Badge variant="outline">Customs Clearance Readiness</Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {customsReadyScore >= 80 
-                        ? "Documents are ready for customs clearance." 
-                        : customsReadyScore >= 50 
-                        ? "Some issues need review before customs clearance."
-                        : "Critical issues must be resolved before customs clearance."}
-                    </p>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <p>
+                        Validation decision:{" "}
+                        <span className={cn("font-medium", validationState?.isBlocked ? "text-destructive" : "text-foreground")}>
+                          {validationState?.isBlocked ? "Blocked" : "Review / Proceed"}
+                        </span>
+                      </p>
+                      <p>
+                        {customsReadyScore >= 80
+                          ? "Clearance readiness is high."
+                          : customsReadyScore >= 50
+                          ? "Clearance readiness is medium; resolve remaining issues."
+                          : "Clearance readiness is low; resolve critical issues first."}
+                      </p>
+                    </div>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>

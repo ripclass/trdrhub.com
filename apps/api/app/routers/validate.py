@@ -4270,6 +4270,44 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
                 if val is not None and val != "":
                     return val
         return None
+
+    def normalize_lc_date(raw: Any) -> Any:
+        """Normalize LC date values to YYYY-MM-DD without ambiguous day/month flips."""
+        if raw is None:
+            return raw
+        if not isinstance(raw, str):
+            return raw
+
+        value = raw.strip()
+        if not value:
+            return value
+
+        # ISO-first (most explicit)
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        # SWIFT MT700 field 31C/31D style: YYMMDD
+        if re.fullmatch(r"\d{6}", value):
+            yy = int(value[:2])
+            mm = int(value[2:4])
+            dd = int(value[4:6])
+            year = 2000 + yy if yy <= 69 else 1900 + yy
+            try:
+                return datetime(year, mm, dd).strftime("%Y-%m-%d")
+            except ValueError:
+                return value
+
+        # Unambiguous fallback formats (4-digit year only)
+        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%m-%d-%Y", "%m/%d/%Y", "%Y%m%d", "%d%m%Y", "%m%d%Y"):
+            try:
+                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        return value
     
     # =====================================================================
     # LC Number (MT700 Field 20)
@@ -4384,25 +4422,19 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     # =====================================================================
     dates_nested = lc_context.get("dates") or {}
     
-    issue_date = get_value("issue_date", "date_of_issue")
-    if not issue_date:
-        issue_date = blocks.get("31C")  # MT700 field 31C - Date of Issue
-    if not issue_date:
-        issue_date = dates_nested.get("issue")  # Legacy fallback: dates.issue
+    issue_date_primary = get_value("issue_date", "date_of_issue")
+    issue_date_fallback = blocks.get("31C") or dates_nested.get("issue")  # MT700 + legacy fallback
+    issue_date = normalize_lc_date(issue_date_primary if issue_date_primary else issue_date_fallback)
     set_field(baseline.issue_date, issue_date)
     
-    expiry_date = get_value("expiry_date", "expiry", "validity_date")
-    if not expiry_date:
-        expiry_date = blocks.get("31D")  # MT700 field 31D - Date and Place of Expiry
-    if not expiry_date:
-        expiry_date = dates_nested.get("expiry")  # Legacy fallback: dates.expiry
+    expiry_date_primary = get_value("expiry_date", "expiry", "validity_date")
+    expiry_date_fallback = blocks.get("31D") or dates_nested.get("expiry")  # MT700 + legacy fallback
+    expiry_date = normalize_lc_date(expiry_date_primary if expiry_date_primary else expiry_date_fallback)
     set_field(baseline.expiry_date, expiry_date)
     
-    latest_shipment = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
-    if not latest_shipment:
-        latest_shipment = blocks.get("44C")  # MT700 field 44C - Latest Date of Shipment
-    if not latest_shipment:
-        latest_shipment = dates_nested.get("latest_shipment")  # Legacy fallback: dates.latest_shipment
+    latest_shipment_primary = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
+    latest_shipment_fallback = blocks.get("44C") or dates_nested.get("latest_shipment")  # MT700 + legacy fallback
+    latest_shipment = normalize_lc_date(latest_shipment_primary if latest_shipment_primary else latest_shipment_fallback)
     set_field(baseline.latest_shipment, latest_shipment)
     
     # =====================================================================
