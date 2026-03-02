@@ -2072,6 +2072,10 @@ async def validate_doc(
                 if isinstance(trace, dict) and isinstance(ai_metadata, dict):
                     trace["provider_evidence"] = ai_metadata.get("llm_layer_payloads", {})
                 structured_result["decision_trace"] = trace
+            structured_result = _apply_pipeline_verification_gate(
+                structured_result,
+                mode=decision_mode,
+            )
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
@@ -4092,6 +4096,110 @@ def _attach_router_evidence_to_decision_trace(decision_trace: Optional[Dict[str,
     return enriched
 
 
+def _has_non_empty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    return bool(str(value).strip())
+
+
+def _build_pipeline_verification_checks(
+    *,
+    decision_trace: Optional[Dict[str, Any]],
+    ai_verdict: Optional[Any],
+    ruleset_verdict: Optional[Any],
+    final_verdict: Optional[Any],
+    mode: Optional[str],
+) -> List[Dict[str, Any]]:
+    trace = decision_trace if isinstance(decision_trace, dict) else {}
+    router_transport = str(trace.get("router_transport") or "").strip().lower()
+    layer_calls = trace.get("layer_calls")
+    layer_call_count = len(layer_calls) if isinstance(layer_calls, list) else 0
+
+    checks: List[Dict[str, Any]] = [
+        {
+            "check_name": "router_transport_openrouter",
+            "passed": router_transport == "openrouter",
+            "observed_value": trace.get("router_transport"),
+            "required_value": "openrouter",
+        },
+        {
+            "check_name": "layer_calls_present",
+            "passed": layer_call_count >= 1,
+            "observed_value": layer_call_count,
+            "required_value": ">=1",
+        },
+        {
+            "check_name": "ai_verdict_non_empty",
+            "passed": _has_non_empty_value(ai_verdict),
+            "observed_value": ai_verdict,
+            "required_value": "non-empty",
+        },
+        {
+            "check_name": "ruleset_verdict_non_empty",
+            "passed": _has_non_empty_value(ruleset_verdict),
+            "observed_value": ruleset_verdict,
+            "required_value": "non-empty",
+        },
+        {
+            "check_name": "final_verdict_non_empty",
+            "passed": _has_non_empty_value(final_verdict),
+            "observed_value": final_verdict,
+            "required_value": "non-empty",
+        },
+    ]
+
+    mode_token = str(mode or trace.get("mode") or "").strip().lower()
+    if mode_token == "hybrid_enforced":
+        enforcement_applied = trace.get("enforcement_applied")
+        checks.append(
+            {
+                "check_name": "enforcement_applied_for_hybrid_enforced",
+                "passed": enforcement_applied is True,
+                "observed_value": enforcement_applied,
+                "required_value": True,
+            }
+        )
+
+    return checks
+
+
+def _apply_pipeline_verification_gate(
+    structured_result: Dict[str, Any],
+    *,
+    mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    checks = _build_pipeline_verification_checks(
+        decision_trace=structured_result.get("decision_trace"),
+        ai_verdict=structured_result.get("ai_verdict"),
+        ruleset_verdict=structured_result.get("ruleset_verdict"),
+        final_verdict=structured_result.get("final_verdict"),
+        mode=mode,
+    )
+
+    fail_reasons = [
+        (
+            f"{check['check_name']} failed "
+            f"(observed={check.get('observed_value')!r}, required={check.get('required_value')!r})"
+        )
+        for check in checks
+        if not check.get("passed")
+    ]
+    status_token = "VERIFIED" if not fail_reasons else "UNVERIFIED"
+
+    structured_result["pipeline_verification_status"] = status_token
+    structured_result["pipeline_verification_checks"] = checks
+    structured_result["pipeline_verification_fail_reasons"] = fail_reasons
+    if fail_reasons:
+        structured_result["pipeline_verification_warnings"] = [
+            "WARNING: backend pipeline verification gate failed; verdict fields are preserved but unverified.",
+            *[f"WARNING: {reason}" for reason in fail_reasons],
+        ]
+    else:
+        structured_result["pipeline_verification_warnings"] = []
+
+    return structured_result
+
+
 def _derive_ai_verdict(ai_metadata: Optional[Dict[str, Any]]) -> str:
     metadata = ai_metadata or {}
     llm_verdict = str(metadata.get("llm_verdict") or "").strip().lower()
@@ -4300,7 +4408,7 @@ def _build_blocked_structured_result(
     else:
         time_display = f"{processing_duration:.1f}s"
     
-    return {
+    payload = {
         "version": "structured_result_v1",
         
         # V2 blocked status
@@ -4452,6 +4560,10 @@ def _build_blocked_structured_result(
             else None
         ),
     }
+    return _apply_pipeline_verification_gate(
+        payload,
+        mode=settings.VALIDATION_DECISION_MODE,
+    )
 
 
 def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
@@ -4934,7 +5046,7 @@ def _build_db_rules_blocked_structured_result(
     if total_docs > 0:
         extraction_quality = int(round((verified / total_docs) * 100))
 
-    return {
+    payload = {
         "version": "structured_result_v1",
         "validation_blocked": True,
         "validation_status": "blocked",
@@ -5026,6 +5138,10 @@ def _build_db_rules_blocked_structured_result(
             "will_be_rejected": True,
         },
     }
+    return _apply_pipeline_verification_gate(
+        payload,
+        mode=settings.VALIDATION_DECISION_MODE,
+    )
 
 
 def _build_processing_summary(

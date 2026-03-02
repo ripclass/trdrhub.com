@@ -7,7 +7,11 @@ if str(API_ROOT) not in sys.path:
 
 import pytest
 
-from app.routers.validate import _arbitration_to_final_verdict, _build_db_rules_blocked_structured_result
+from app.routers.validate import (
+    _apply_pipeline_verification_gate,
+    _arbitration_to_final_verdict,
+    _build_db_rules_blocked_structured_result,
+)
 from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
 from app.services.ai.model_router import ModelRouter, reset_router_evidence
 from app.services import llm_provider
@@ -98,6 +102,73 @@ def test_phase2_enforced_arbitration_policy_and_mapping():
     )
     assert trace["arbitration_verdict"] == "review"
     assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "SUBMIT") == "HOLD"
+
+
+def test_pipeline_verification_gate_verified_case():
+    payload = {
+        "ai_verdict": "pass",
+        "ruleset_verdict": "pass",
+        "final_verdict": "SUBMIT",
+        "decision_trace": {
+            "router_transport": "openrouter",
+            "layer_calls": [{"layer": "L1"}],
+            "mode": "hybrid_enforced",
+            "enforcement_applied": True,
+        },
+    }
+
+    verified = _apply_pipeline_verification_gate(payload, mode="hybrid_enforced")
+    assert verified["pipeline_verification_status"] == "VERIFIED"
+    assert verified["pipeline_verification_fail_reasons"] == []
+    assert verified["pipeline_verification_warnings"] == []
+    assert isinstance(verified["pipeline_verification_checks"], list)
+    for check in verified["pipeline_verification_checks"]:
+        assert {"check_name", "passed", "observed_value", "required_value"}.issubset(set(check.keys()))
+    assert any(
+        c.get("check_name") == "enforcement_applied_for_hybrid_enforced" and c.get("passed") is True
+        for c in verified["pipeline_verification_checks"]
+    )
+
+
+def test_pipeline_verification_gate_unverified_when_layer_calls_missing():
+    payload = {
+        "ai_verdict": "pass",
+        "ruleset_verdict": "pass",
+        "final_verdict": "SUBMIT",
+        "decision_trace": {
+            "router_transport": "openrouter",
+            "layer_calls": [],
+            "mode": "hybrid_shadow",
+        },
+    }
+
+    verified = _apply_pipeline_verification_gate(payload, mode="hybrid_shadow")
+    assert verified["pipeline_verification_status"] == "UNVERIFIED"
+    assert any("layer_calls_present" in reason for reason in verified["pipeline_verification_fail_reasons"])
+    assert len(verified["pipeline_verification_warnings"]) >= 1
+    assert verified["final_verdict"] == "SUBMIT"
+
+
+def test_pipeline_verification_gate_unverified_when_hybrid_enforced_not_applied():
+    payload = {
+        "ai_verdict": "pass",
+        "ruleset_verdict": "pass",
+        "final_verdict": "SUBMIT",
+        "decision_trace": {
+            "router_transport": "openrouter",
+            "layer_calls": [{"layer": "L1"}],
+            "mode": "hybrid_enforced",
+            "enforcement_applied": False,
+        },
+    }
+
+    verified = _apply_pipeline_verification_gate(payload, mode="hybrid_enforced")
+    assert verified["pipeline_verification_status"] == "UNVERIFIED"
+    assert any(
+        "enforcement_applied_for_hybrid_enforced" in reason
+        for reason in verified["pipeline_verification_fail_reasons"]
+    )
+    assert verified["final_verdict"] == "SUBMIT"
 
 
 @pytest.mark.asyncio
