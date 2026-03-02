@@ -661,9 +661,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = documents.length || summary?.total_documents || 0;
-  // Use the higher of summary.total_issues or actual issueCards.length
-  // This ensures we show the correct count even if backend summary is stale
-  const totalDiscrepancies = Math.max(summary?.total_issues ?? 0, issueCards.length);
+  // Keep user-visible counters aligned with visible issue cards.
+  const totalDiscrepancies = issueCards.length;
 
   // lcStructured is already defined above to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
@@ -699,6 +698,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
+  const filteredReferenceIssues = useMemo(() => {
+    const isConcreteReference = (issue: ReferenceIssue) => {
+      const details = [issue.message, issue.article, issue.title].filter(Boolean).join(' ');
+      return /\d|invoice|lc|bill of lading|packing|insurance|certificate|amount|date/i.test(details);
+    };
+    const isGenericDiscretionReference = (issue: ReferenceIssue) => {
+      const text = [issue.title, issue.rule, issue.message].filter(Boolean).join(' ').toLowerCase();
+      return /bank\s+discretion|at\s+discretion|refer\s+to\s+bank|subject\s+to\s+bank/.test(text);
+    };
+
+    return referenceIssues.filter((issue) => {
+      const hasAnyContent = [issue.title, issue.rule, issue.message, issue.article].some((value) => {
+        const v = (value ?? '').toString().trim();
+        return v && v !== '—';
+      });
+      if (!hasAnyContent) return false;
+      if (isGenericDiscretionReference(issue) && !isConcreteReference(issue)) {
+        return false;
+      }
+      return true;
+    });
+  }, [referenceIssues]);
   const rawAiInsights = structuredResult?.ai_enrichment ?? null;
   const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
     if (!rawAiInsights) {
@@ -1051,7 +1072,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
 
   const renderReferenceIssuesCard = () => {
-    if (!referenceIssues.length) {
+    if (!filteredReferenceIssues.length) {
       return null;
     }
 
@@ -1064,7 +1085,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
-          {referenceIssues.map((issue, index) => (
+          {filteredReferenceIssues.map((issue, index) => (
             <div key={index} className="p-3 rounded-lg bg-secondary/20 border border-secondary/40">
               <p className="font-medium text-foreground">
                 {issue.title || issue.rule || `Rule ${index + 1}`}
