@@ -144,6 +144,7 @@ from app.services.validation.confidence_weighting import (
     calculate_overall_extraction_confidence,
 )
 from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
+from app.services.ai.model_router import get_router_evidence
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
@@ -2057,7 +2058,7 @@ async def validate_doc(
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
             if decision_trace is not None:
-                structured_result["decision_trace"] = decision_trace
+                structured_result["decision_trace"] = _attach_router_evidence_to_decision_trace(decision_trace)
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
@@ -4063,6 +4064,21 @@ def _resolve_bank_verdict_class(
 
 
 
+def _attach_router_evidence_to_decision_trace(decision_trace: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if decision_trace is None:
+        return None
+
+    if not isinstance(decision_trace, dict):
+        return decision_trace
+
+    evidence = get_router_evidence()
+    enriched = dict(decision_trace)
+    enriched["router_transport"] = evidence.get("router_transport", "unknown")
+    layer_calls = evidence.get("layer_calls")
+    enriched["layer_calls"] = layer_calls if isinstance(layer_calls, list) else []
+    return enriched
+
+
 def _derive_ai_verdict(ai_metadata: Optional[Dict[str, Any]]) -> str:
     metadata = ai_metadata or {}
     critical = int(metadata.get("critical_issues", 0) or 0)
@@ -4403,15 +4419,17 @@ def _build_blocked_structured_result(
         "customs_pack": None,
         "ai_enrichment": None,
         "decision_trace": (
-            compute_shadow_arbitration(
-                ai_verdict=None,
-                ruleset_verdict="reject",
-                blocking_rules=[
-                    str((i.get("rule") or i.get("code") or "validation_gate")).strip()
-                    for i in blocking_issues if isinstance(i, dict)
-                ],
-                extraction_confidence=None,
-                mode=settings.VALIDATION_DECISION_MODE,
+            _attach_router_evidence_to_decision_trace(
+                compute_shadow_arbitration(
+                    ai_verdict=None,
+                    ruleset_verdict="reject",
+                    blocking_rules=[
+                        str((i.get("rule") or i.get("code") or "validation_gate")).strip()
+                        for i in blocking_issues if isinstance(i, dict)
+                    ],
+                    extraction_confidence=None,
+                    mode=settings.VALIDATION_DECISION_MODE,
+                )
             )
             if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
             else None
@@ -4932,12 +4950,14 @@ def _build_db_rules_blocked_structured_result(
         "confidence_band": None,
         "confidence_band_reason": "rules_engine_failed_before_confidence_band",
         "decision_trace": (
-            compute_shadow_arbitration(
-                ai_verdict=None,
-                ruleset_verdict="reject",
-                blocking_rules=["db.rules.execution"],
-                extraction_confidence=None,
-                mode=settings.VALIDATION_DECISION_MODE,
+            _attach_router_evidence_to_decision_trace(
+                compute_shadow_arbitration(
+                    ai_verdict=None,
+                    ruleset_verdict="reject",
+                    blocking_rules=["db.rules.execution"],
+                    extraction_confidence=None,
+                    mode=settings.VALIDATION_DECISION_MODE,
+                )
             )
             if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
             else None

@@ -3,16 +3,49 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...config import settings
 from ..llm_provider import LLMProviderFactory
 
 logger = logging.getLogger(__name__)
+
+_ROUTER_TRANSPORT_CTX: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "router_transport", default="unknown"
+)
+_LAYER_CALLS_CTX: contextvars.ContextVar[List[Dict[str, Any]]] = contextvars.ContextVar(
+    "layer_calls", default=[]
+)
+
+
+def _resolve_router_transport(provider_used: str, use_openrouter: bool) -> str:
+    provider = str(provider_used or "").strip().lower()
+    if use_openrouter:
+        return "openrouter"
+    if provider == "openai":
+        return "native_openai"
+    if provider == "anthropic":
+        return "native_anthropic"
+    if provider == "gemini":
+        return "native_gemini"
+    return "unknown"
+
+
+def get_router_evidence() -> Dict[str, Any]:
+    return {
+        "router_transport": _ROUTER_TRANSPORT_CTX.get(),
+        "layer_calls": list(_LAYER_CALLS_CTX.get()),
+    }
+
+
+def reset_router_evidence() -> None:
+    _ROUTER_TRANSPORT_CTX.set("unknown")
+    _LAYER_CALLS_CTX.set([])
 
 
 @dataclass(frozen=True)
@@ -36,6 +69,7 @@ class LayerCallResult:
     confidence_score: float
     confidence_band: str
     estimated_cost_usd: float
+    latency_ms: float
 
 
 class ModelRouter:
@@ -148,6 +182,7 @@ class ModelRouter:
     ) -> Tuple[Optional[Tuple[str, int, int, str, float]], Optional[str], bool]:
         started = time.perf_counter()
         try:
+            use_openrouter = bool(settings.OPENROUTER_API_KEY)
             output, tokens_in, tokens_out, provider_used = await asyncio.wait_for(
                 LLMProviderFactory.generate_with_fallback(
                     prompt=prompt,
@@ -156,10 +191,11 @@ class ModelRouter:
                     temperature=temperature,
                     primary_provider=primary_provider,
                     model_override=model_override,
-                    use_openrouter=bool(settings.OPENROUTER_API_KEY),
+                    use_openrouter=use_openrouter,
                 ),
                 timeout=max(timeout_ms / 1000.0, 0.1),
             )
+            _ROUTER_TRANSPORT_CTX.set(_resolve_router_transport(provider_used, use_openrouter))
             latency_ms = (time.perf_counter() - started) * 1000
             return (output, tokens_in, tokens_out, provider_used, latency_ms), None, False
         except asyncio.TimeoutError:
@@ -199,6 +235,19 @@ class ModelRouter:
         }
         logger.info(json.dumps(telemetry))
 
+        current_calls = list(_LAYER_CALLS_CTX.get())
+        current_calls.append(
+            {
+                "layer": config.layer,
+                "model_used": model_used,
+                "fallback_used": bool(fallback_used),
+                "provider_used": provider_used,
+                "latency_ms": round(latency_ms, 2),
+                "confidence_band": confidence_band,
+            }
+        )
+        _LAYER_CALLS_CTX.set(current_calls)
+
         return LayerCallResult(
             output_text=output_text,
             tokens_in=tokens_in,
@@ -210,6 +259,7 @@ class ModelRouter:
             confidence_score=confidence_score,
             confidence_band=confidence_band,
             estimated_cost_usd=estimated_cost,
+            latency_ms=latency_ms,
         )
 
     @staticmethod
