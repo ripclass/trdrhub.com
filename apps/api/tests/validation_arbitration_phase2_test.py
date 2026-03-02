@@ -5,8 +5,8 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from app.routers.validate import _build_db_rules_blocked_structured_result
-from app.services.validation.arbitration import compute_shadow_arbitration
+from app.routers.validate import _arbitration_to_final_verdict, _build_db_rules_blocked_structured_result
+from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
 
 
 def test_phase2_shadow_arbitration_policy_outcomes():
@@ -51,3 +51,37 @@ def test_phase2_shadow_wiring_present_in_blocked_payload():
     )
     assert "decision_trace" in payload
     assert payload["decision_trace"] is None or isinstance(payload["decision_trace"], dict)
+
+
+def test_phase2_enforced_arbitration_policy_and_mapping():
+    trace = compute_arbitration_decision(
+        ai_verdict="pass",
+        ruleset_verdict="pass",
+        blocking_rules=[],
+        extraction_confidence=0.95,
+        mode="hybrid_enforced",
+    )
+    assert trace["enforced"] is True
+    assert trace["enforcement_applied"] is True
+    assert trace["arbitration_verdict"] == "pass"
+    assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "CAUTION") == "SUBMIT"
+
+    trace = compute_arbitration_decision(
+        ai_verdict="pass",
+        ruleset_verdict="pass",
+        blocking_rules=["UCP600.14"],
+        extraction_confidence=0.95,
+        mode="hybrid_enforced",
+    )
+    assert trace["arbitration_verdict"] == "reject"
+    assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "SUBMIT") == "REJECT"
+
+    trace = compute_arbitration_decision(
+        ai_verdict="reject",
+        ruleset_verdict="pass",
+        blocking_rules=[],
+        extraction_confidence=0.95,
+        mode="hybrid_enforced",
+    )
+    assert trace["arbitration_verdict"] == "review"
+    assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "SUBMIT") == "HOLD"
