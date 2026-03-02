@@ -48,6 +48,28 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
 
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
+
+  const pipelineVerificationStatusRaw =
+    (structured as any)?.pipeline_verification_status ??
+    (summary as any)?.pipeline_verification_status;
+  const pipelineVerificationStatus =
+    typeof pipelineVerificationStatusRaw === 'string'
+      ? pipelineVerificationStatusRaw.toUpperCase()
+      : null;
+  const pipelineIsVerified = pipelineVerificationStatus === 'VERIFIED';
+  const pipelineIsUnverified = pipelineVerificationStatus === 'UNVERIFIED';
+
+  const pipelineFailReasons = (
+    (structured as any)?.pipeline_verification_fail_reasons ??
+    (summary as any)?.pipeline_verification_fail_reasons ??
+    []
+  ) as string[];
+  const pipelineChecks = (
+    (structured as any)?.pipeline_verification_checks ??
+    (summary as any)?.pipeline_verification_checks ??
+    []
+  ) as Array<Record<string, unknown>>;
+  const shortFailReasons = pipelineFailReasons.slice(0, 3);
   
   // Get issue counts - use actual count from parent if available
   const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
@@ -109,6 +131,48 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
           {/* Processing Summary */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Processing Summary</h3>
+            {(pipelineIsVerified || pipelineIsUnverified) && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">Trust Status</span>
+                  <Badge
+                    className={pipelineIsVerified
+                      ? 'bg-emerald-600 text-white border-0 hover:bg-emerald-700'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700'}
+                    title={pipelineIsUnverified ? 'Backend verification failed — not bank-ready' : 'Backend verification passed'}
+                  >
+                    {pipelineIsVerified ? 'VERIFIED' : 'UNVERIFIED'}
+                  </Badge>
+                  {pipelineIsUnverified && (
+                    <span className="text-xs text-amber-700 dark:text-amber-300">not bank-ready</span>
+                  )}
+                </div>
+                {pipelineIsUnverified && shortFailReasons.length > 0 && (
+                  <div className="rounded-md border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/30 p-2">
+                    <ul className="text-xs text-amber-900 dark:text-amber-100 space-y-1">
+                      {shortFailReasons.map((reason, index) => (
+                        <li key={`${reason}-${index}`}>• {reason}</li>
+                      ))}
+                    </ul>
+                    {(pipelineFailReasons.length > shortFailReasons.length || pipelineChecks.length > 0) && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-[11px] text-amber-800 dark:text-amber-200">
+                          View verification details
+                        </summary>
+                        <div className="mt-1 space-y-1 text-[11px] text-amber-900/90 dark:text-amber-100/90">
+                          {pipelineFailReasons.slice(shortFailReasons.length).map((reason, index) => (
+                            <p key={`extra-${index}`}>• {reason}</p>
+                          ))}
+                          {pipelineChecks.length > 0 && (
+                            <p className="text-amber-700 dark:text-amber-300">Checks: {pipelineChecks.length}</p>
+                          )}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Documents:</span>
