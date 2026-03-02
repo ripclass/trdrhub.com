@@ -1,0 +1,5 @@
+BL document for set 9 with MAJOR discrepancies:
+- Structural mismatch vs LC terms
+- Amount and shipment terms conflicts
+- Missing or wrong parties / ports / HS codes
+- Intended for hard-fail scenarios in LCopilot

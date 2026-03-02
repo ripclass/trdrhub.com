@@ -1,0 +1,6 @@
+expected\actual,pass,warn,reject,blocked,unknown
+pass,0,0,0,0,20
+warn,0,0,0,0,20
+reject,0,0,0,0,35
+blocked,0,0,0,0,15
+unknown,0,0,0,0,0

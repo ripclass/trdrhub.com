@@ -239,6 +239,12 @@ async def healthz() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/health", tags=["health"], summary="Docker-compatible health probe")
+async def health_check() -> Dict[str, str]:
+    """Compat endpoint for container health checks."""
+    return {"status": "ok"}
+
+
 # Include API routers
 app.include_router(auth.router)
 app.include_router(sessions.router)

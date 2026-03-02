@@ -1,0 +1,5 @@
+case_id,scenario,expected_verdict,actual_verdict,jobId,status,error
+forge_x_pass_001,pass,pass,warn,623d2776-bf90-426c-ba4c-df413f058edf,ok,
+forge_x_reject_002,reject,reject,warn,e3c26e16-251b-4347-afca-20dcc504d737,ok,
+forge_x_reject_005,reject,reject,warn,faead1ea-0527-40fd-a61a-dec112412251,ok,
+forge_x_ocr_noise_008,ocr_noise,blocked,warn,89cf24b4-055d-42a4-b2fb-0927e4a410f0,ok,

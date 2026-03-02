@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/lcopilot"
     DIRECT_DATABASE_URL: Optional[str] = None  # For migrations - direct connection (Supabase port 5432)
+    REDIS_URL: Optional[str] = None
     
     @field_validator('DATABASE_URL', mode='before')
     @classmethod

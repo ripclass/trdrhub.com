@@ -1,0 +1,5 @@
+case_id,scenario,expected_verdict,actual_verdict,jobId,status,error
+forge_x_reject_002,reject,reject,warn,0e22976f-6ca6-4182-a58f-b6a6e6541e88,ok,
+forge_x_ocr_noise_001,ocr_noise,blocked,reject,015779b5-fdac-4a4b-b9a0-7da9b7059332,ok,
+forge_x_ocr_noise_008,ocr_noise,blocked,warn,6bd297fd-af05-400d-b9cc-9927ed63e280,ok,
+forge_x_sanctions_tbml_shell_002,sanctions_tbml_shell,reject,warn,c0b7c6a7-03cd-47d3-8a56-b53ba823c4cd,ok,

@@ -38,10 +38,18 @@ def detect_lc_type(
         - Otherwise unknown.
     """
 
-    lc_context = lc_data or {}
+    if not isinstance(lc_data, dict):
+        lc_data = {}
+
+    if not isinstance(shipment_data, dict):
+        shipment_data = {}
+
+    lc_context = lc_data
     shipment_context = shipment_data or {}
 
     ports_context = lc_context.get("ports") or {}
+    if not isinstance(ports_context, dict):
+        ports_context = {}
     lc_format = (lc_context.get("format") or "").lower()
     loading_hint = ports_context.get("loading") or ports_context.get("port_of_loading")
     discharge_hint = ports_context.get("discharge") or ports_context.get("port_of_discharge")

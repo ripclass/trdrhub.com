@@ -178,16 +178,18 @@ def synthesize_90(parents: List[Dict[str, str]], seed: int = 99) -> List[Dict[st
     return rows
 
 
-def smoke10(parents: List[Dict[str, str]], seed: int = 7) -> List[Dict[str, str]]:
+def smoke20(parents: List[Dict[str, str]], seed: int = 7) -> List[Dict[str, str]]:
     random.seed(seed)
     by = defaultdict(list)
     for p in parents:
         by[p["scenario"]].append(p)
-    plan = [("pass", 2), ("warn", 2), ("reject", 2), ("ocr_noise", 2), ("sanctions_tbml_shell", 2)]
+    plan = [("pass", 4), ("warn", 4), ("reject", 4), ("ocr_noise", 4), ("sanctions_tbml_shell", 4)]
     rows = []
     for scenario, n in plan:
         pool = by.get(scenario) or parents
-        picks = random.sample(pool, k=min(n, len(pool)))
+        if not pool:
+            continue
+        picks = random.choices(pool, k=n)
         for i, parent in enumerate(picks, 1):
             row = dict(parent)
             row["case_id"] = f"smoke_{scenario}_{i:02d}"
@@ -212,7 +214,7 @@ def main() -> None:
     cleaned = read_csv(MANIFEST_DIR / "cleaned_manifest.csv")
     parents = build_parents(cleaned)
 
-    smoke_rows = smoke10(parents)
+    smoke_rows = smoke20(parents)
     write_csv(MANIFEST_DIR / "smoke_ready_manifest.csv", smoke_rows, MANIFEST_FIELDS)
 
     forge_rows = synthesize_90(parents)

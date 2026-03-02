@@ -1,0 +1,21 @@
+case_id,scenario,expected_verdict,actual_verdict,jobId,status,error
+forge_x_pass_001,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_002,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_003,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_004,pass,pass,blocked,553cdbf8-2b9f-426f-bc85-4ffc0c90b280,ok,
+forge_x_pass_005,pass,pass,blocked,1a5b7626-6208-4ed1-97c7-c0f7dc3fe23d,ok,
+forge_x_pass_006,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_007,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_008,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_009,pass,pass,blocked,2c24dff1-096f-4d55-84ef-15ef97841df7,ok,
+forge_x_pass_010,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_011,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_012,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_013,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_014,pass,pass,blocked,3f8adc2e-3019-4aef-8c20-a95a307f2b52,ok,
+forge_x_pass_015,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_016,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_017,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_018,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"
+forge_x_pass_019,pass,pass,blocked,add399eb-c724-4526-969b-48f9e9ebb430,ok,
+forge_x_pass_020,pass,pass,not_run,,error,"HTTP Error 500: Internal Server Error | body={""detail"":{""error_code"":""quota_error"",""message"":""Validation quota issue. Please check your plan or contact support."",""error_type"":""ProgrammingError""}}"

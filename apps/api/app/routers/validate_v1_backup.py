@@ -271,7 +271,7 @@ async def validate_doc(
             payload.update(extracted_context)
         else:
             logger.warning("No structured data extracted from %d uploaded files", len(files_list))
-        if payload.get("lc"):
+        if "lc" in payload:
             payload["lc"] = _normalize_lc_payload_structures(payload["lc"])
         
         context_contains_structured_data = any(
@@ -283,8 +283,17 @@ async def validate_doc(
         else:
             logger.warning("Payload does not contain structured data - JSON rules will be skipped")
 
-        lc_context = payload.get("lc") or {}
+        lc_context = _normalize_lc_payload_structures(payload.get("lc"))
+        if not isinstance(lc_context, dict):
+            logger.warning("LC context was non-dict after normalization: %s", type(lc_context).__name__)
+            lc_context = {}
         shipment_context = _resolve_shipment_context(payload)
+        if not isinstance(shipment_context, dict):
+            logger.warning(
+                "Shipment context was non-dict after resolution: %s",
+                type(shipment_context).__name__,
+            )
+            shipment_context = {}
         lc_type_guess = detect_lc_type(lc_context, shipment_context)
         override_lc_type = _extract_lc_type_override(payload)
         lc_type_source = "override" if override_lc_type else "auto"

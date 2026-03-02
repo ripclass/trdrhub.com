@@ -259,7 +259,17 @@ def validate_response_contract(
             source="processing_summary",
             suggestion="Ensure documents were uploaded and processed successfully",
         ))
-    
+
+    # Authoritative verdict contract for evaluation mode
+    if not structured_result.get("authoritative_verdict") and not structured_result.get("verdict_signature"):
+        warnings.append(ContractWarning(
+            field="authoritative_verdict",
+            message="Authoritative verdict contract field absent; evaluator uses fallback signal mapping",
+            severity=ContractSeverity.INFO,
+            source="structured_result",
+            suggestion="Add authoritative_verdict.label + source + rationale before client consumption",
+        ))
+
     # ==========================================================================
     # ANALYTICS VALIDATION
     # ==========================================================================

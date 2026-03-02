@@ -1,0 +1,5 @@
+PackingList document for set 8 with MAJOR discrepancies:
+- Structural mismatch vs LC terms
+- Amount and shipment terms conflicts
+- Missing or wrong parties / ports / HS codes
+- Intended for hard-fail scenarios in LCopilot
