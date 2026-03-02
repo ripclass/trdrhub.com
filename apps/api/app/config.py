@@ -144,6 +144,26 @@ class Settings(BaseSettings):
     AI_SEMANTIC_THRESHOLD_DEFAULT: float = 0.82
     AI_SEMANTIC_TIMEOUT_MS: int = 6000
 
+    # Layered model router (Phase A, non-breaking by default)
+    AI_LAYER_ROUTER_ENABLED: bool = False
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_API_KEY: Optional[str] = None
+
+    AI_ROUTER_L1_PRIMARY_MODEL: str = "gpt-4o-mini"
+    AI_ROUTER_L1_FALLBACK_MODEL: str = ""
+    AI_ROUTER_L2_PRIMARY_MODEL: str = "gpt-4o-mini"
+    AI_ROUTER_L2_FALLBACK_MODEL: str = ""
+    AI_ROUTER_L3_PRIMARY_MODEL: str = "gpt-4o"
+    AI_ROUTER_L3_FALLBACK_MODEL: str = ""
+
+    AI_ROUTER_L1_CONFIDENCE_THRESHOLD: float = 0.70
+    AI_ROUTER_L2_CONFIDENCE_THRESHOLD: float = 0.75
+    AI_ROUTER_L3_CONFIDENCE_THRESHOLD: float = 0.80
+
+    AI_ROUTER_L1_TIMEOUT_MS: int = 6000
+    AI_ROUTER_L2_TIMEOUT_MS: int = 9000
+    AI_ROUTER_L3_TIMEOUT_MS: int = 12000
+
     # Validation decisioning mode (future hybrid enforcement switch)
     # legacy: existing behavior only
     # hybrid_shadow: compute hybrid arbitration trace, do not enforce

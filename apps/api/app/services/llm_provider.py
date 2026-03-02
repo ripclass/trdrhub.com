@@ -55,6 +55,8 @@ class OpenAIProvider(LLMProviderInterface):
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+        self.openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         
         if not self.api_key:
             logger.warning("OpenAI API key not configured")
@@ -77,16 +79,27 @@ class OpenAIProvider(LLMProviderInterface):
             # Configure timeout for OpenAI client (20s total, 60s read timeout)
             import httpx
             timeout = httpx.Timeout(20.0, read=60.0)
-            client = openai.AsyncOpenAI(api_key=self.api_key, timeout=timeout)
+            use_openrouter = bool(kwargs.pop("use_openrouter", False))
+            model_override = kwargs.pop("model_override", None)
+            model_name = model_override or self.model
+
+            client_api_key = self.api_key
+            client_kwargs = {"timeout": timeout}
+            if use_openrouter:
+                client_api_key = self.openrouter_api_key or self.api_key
+                client_kwargs["base_url"] = self.openrouter_base_url
+                client_kwargs["default_headers"] = {
+                    "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://lcopilot.local"),
+                    "X-Title": os.getenv("OPENROUTER_TITLE", "LCopilot"),
+                }
+
+            client = openai.AsyncOpenAI(api_key=client_api_key, **client_kwargs)
             
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
             
-            model_override = kwargs.pop("model_override", None)
-            model_name = model_override or self.model
-
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=messages,
