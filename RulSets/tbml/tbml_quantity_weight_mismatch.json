@@ -1,0 +1,207 @@
+﻿[
+    {
+        "rule_id":  "TBML-QTY-001",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Invoice quantity exceeds LC tolerance",
+        "description":  "Invoice quantity must be inside LC tolerance band.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "invoice.quantity_vs_lc_ratio",
+                               "min":  0.95,
+                               "type":  "numeric_range",
+                               "max":  1.05
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Invoice quantity is within LC tolerance."
+                                           ],
+                                 "invalid":  [
+                                                 "Invoice quantity breaches LC tolerance band."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-002",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Bill of lading weight vs packing list mismatch",
+        "description":  "Gross/net weights should reconcile between B/L and packing list.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "bl.gross_weight",
+                               "tolerance_pct":  3,
+                               "compare_to":  "packing_list.gross_weight",
+                               "type":  "consistency_check"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Weight values reconcile across B/L and packing list."
+                                           ],
+                                 "invalid":  [
+                                                 "Weight mismatch above 3% across transport and packing docs."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-003",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Per-unit declared weight anomaly",
+        "description":  "Declared weight per unit should remain in expected commodity range.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.weight_per_unit_vs_historical_ratio",
+                               "min":  0.8,
+                               "type":  "numeric_range",
+                               "max":  1.25
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Per-unit weight is within expected range."
+                                           ],
+                                 "invalid":  [
+                                                 "Per-unit weight outside expected commodity bounds."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-004",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Container capacity breach check",
+        "description":  "Declared cargo weight should not exceed container legal/physical capacity.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "shipment.container_load_ratio",
+                               "type":  "numeric_range",
+                               "max":  1
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Declared weight within container capacity."
+                                           ],
+                                 "invalid":  [
+                                                 "Declared weight exceeds container capacity."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-005",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Net-to-gross weight ratio anomaly",
+        "description":  "Net/gross ratio outside normal range indicates potential manipulation.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.net_to_gross_ratio",
+                               "min":  0.7,
+                               "type":  "numeric_range",
+                               "max":  0.98
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Net-to-gross ratio is plausible."
+                                           ],
+                                 "invalid":  [
+                                                 "Net-to-gross ratio outside expected limits."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-006",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Quantity split pattern across invoices",
+        "description":  "Unusual micro-splitting of quantities across invoices under one shipment is flagged.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.invoice_split_count",
+                               "type":  "numeric_range",
+                               "max":  4
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Invoice split count is normal."
+                                           ],
+                                 "invalid":  [
+                                                 "Excessive invoice splitting on single shipment."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-007",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "UOM mismatch across key docs",
+        "description":  "Unit of measure should remain consistent across invoice, PO, and packing list.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "invoice.uom",
+                               "type":  "equality_match",
+                               "value_from":  "packing_list.uom"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "UOM is consistent across documents."
+                                           ],
+                                 "invalid":  [
+                                                 "UOM mismatch across key trade documents."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-QTY-008",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Declared volume-weight inconsistency",
+        "description":  "Volumetric expectation should broadly align with declared gross weight.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.volume_weight_consistency_ratio",
+                               "min":  0.6,
+                               "type":  "numeric_range",
+                               "max":  1.4
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Volume and weight relationship is plausible."
+                                           ],
+                                 "invalid":  [
+                                                 "Volume-weight relationship is inconsistent with commodity norms."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    }
+]

@@ -1,0 +1,205 @@
+﻿[
+    {
+        "rule_id":  "TBML-ROUTE-001",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Transit route detour risk",
+        "description":  "Flag if actual route deviates materially from standard trade lane.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.route_distance_vs_expected_ratio",
+                               "type":  "numeric_range",
+                               "max":  1.3
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Route distance is within expected lane variance."
+                                           ],
+                                 "invalid":  [
+                                                 "Route distance exceeds expected lane by \u003e30%."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-002",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Sanction-adjacent transshipment node exposure",
+        "description":  "Transshipment through high-risk node requires escalation.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "shipment.transshipment_node_risk",
+                               "allowed":  [
+                                               "low",
+                                               "medium"
+                                           ],
+                               "type":  "enum_value"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Transshipment nodes are low/medium risk."
+                                           ],
+                                 "invalid":  [
+                                                 "High-risk transshipment node detected."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-003",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Impossible timeline between ports",
+        "description":  "Elapsed time between departure and arrival must be physically plausible.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "shipment.transit_days_vs_minimum_ratio",
+                               "min":  1,
+                               "type":  "numeric_range"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Transit timeline is plausible."
+                                           ],
+                                 "invalid":  [
+                                                 "Transit timeline is below physical minimum."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-004",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "AIS blackout duration anomaly",
+        "description":  "Long vessel tracking blackout near sensitive zones is flagged.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "vessel.ais_blackout_hours",
+                               "type":  "numeric_range",
+                               "max":  36
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "AIS signal continuity is within tolerance."
+                                           ],
+                                 "invalid":  [
+                                                 "AIS blackout exceeds 36 hours."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-005",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Port sequence inconsistency",
+        "description":  "Documented port sequence should align across BL, manifest, and logistics feed.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "shipment.port_sequence_hash",
+                               "compare_to":  "logistics.port_sequence_hash",
+                               "type":  "consistency_check"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Port sequence is consistent across data sources."
+                                           ],
+                                 "invalid":  [
+                                                 "Port sequence mismatch across documents and logistics feed."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-006",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Unscheduled port call indicator",
+        "description":  "Unexpected intermediate port calls increase diversion risk.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.unscheduled_port_calls",
+                               "type":  "numeric_range",
+                               "max":  1
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "No excessive unscheduled port calls."
+                                           ],
+                                 "invalid":  [
+                                                 "Multiple unscheduled port calls detected."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-007",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Carrier handoff concentration anomaly",
+        "description":  "Too many carrier handoffs in one movement can hide beneficial ownership changes.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.carrier_handoff_count",
+                               "type":  "numeric_range",
+                               "max":  2
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Carrier handoffs are within norm."
+                                           ],
+                                 "invalid":  [
+                                                 "Excessive carrier handoffs detected."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-ROUTE-008",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Declared Incoterm vs route responsibility conflict",
+        "description":  "Route and document obligations should be coherent with declared Incoterm.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "shipment.incoterm_logistics_consistency",
+                               "compare_to":  "expected.true",
+                               "type":  "consistency_check"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Incoterm is consistent with observed logistics pattern."
+                                           ],
+                                 "invalid":  [
+                                                 "Incoterm obligations conflict with observed logistics events."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    }
+]

@@ -1,0 +1,201 @@
+﻿[
+    {
+        "rule_id":  "TBML-DOC-001",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Document amendment burst before presentation",
+        "description":  "Excessive last-minute edits across docs are suspicious.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "docs.amendments_last_72h",
+                               "type":  "numeric_range",
+                               "max":  2
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Amendment activity is within operational norm."
+                                           ],
+                                 "invalid":  [
+                                                 "Amendment burst detected within 72h of presentation."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-002",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Repeated OCR confidence suppression pattern",
+        "description":  "Consistently low OCR confidence in critical fields may indicate tampering.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "docs.low_confidence_critical_field_count",
+                               "type":  "numeric_range",
+                               "max":  1
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "OCR confidence profile appears normal."
+                                           ],
+                                 "invalid":  [
+                                                 "Multiple critical fields with low OCR confidence."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-003",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Invoice numbering sequence anomaly",
+        "description":  "Invoice sequence should align with issuer historical numbering logic.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "docs.invoice_sequence_gap_ratio",
+                               "type":  "numeric_range",
+                               "max":  0.25
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Invoice numbering sequence appears normal."
+                                           ],
+                                 "invalid":  [
+                                                 "Invoice sequence gap pattern is abnormal."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-004",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Issuer stamp/signature presence check",
+        "description":  "Mandatory issuer sign-off artifacts must be present where required.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "docs.required_signature_present",
+                               "type":  "field_presence"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Required signature/stamp artifacts are present."
+                                           ],
+                                 "invalid":  [
+                                                 "Required signature/stamp missing."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-005",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Duplicate template reuse across unrelated shipments",
+        "description":  "High template fingerprint reuse across unrelated trades is flagged.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "docs.template_fingerprint_reuse_count",
+                               "type":  "numeric_range",
+                               "max":  3
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Template reuse is within normal operational range."
+                                           ],
+                                 "invalid":  [
+                                                 "Template reuse suggests mass-generated documentation."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-006",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Document issue date order integrity",
+        "description":  "Issue dates should follow logical order across invoice, BL, and insurance docs.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "docs.invoice_date",
+                               "before":  "docs.presentation_date",
+                               "type":  "date_order"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Document dates follow valid chronological order."
+                                           ],
+                                 "invalid":  [
+                                                 "Document date order is inconsistent."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-007",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Metadata timezone inconsistency",
+        "description":  "Conflicting metadata timezone offsets across same issuer batch is suspicious.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "docs.metadata_timezone_offset_variants",
+                               "type":  "numeric_range",
+                               "max":  1
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Timezone metadata is consistent."
+                                           ],
+                                 "invalid":  [
+                                                 "Multiple timezone signatures found in same document batch."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-DOC-008",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Critical clause omission against LC requirements",
+        "description":  "Required LC clauses must appear in presented documents when mandated.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "document":  "required_lc_clause_attestation",
+                               "if":  "lc.clause_required=true",
+                               "type":  "doc_required"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "All required clauses are evidenced in documents."
+                                           ],
+                                 "invalid":  [
+                                                 "One or more required LC clauses are missing in documents."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    }
+]

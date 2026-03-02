@@ -1,0 +1,202 @@
+﻿[
+    {
+        "rule_id":  "TBML-CPN-001",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Shared director linkage across buyer and seller",
+        "description":  "Direct beneficial/control overlap between parties is a conflict risk.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "network.shared_director_count",
+                               "type":  "numeric_range",
+                               "max":  0
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "No shared directors between counterparties."
+                                           ],
+                                 "invalid":  [
+                                                 "Shared director linkage found between buyer and seller."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-002",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Common registered address reuse cluster",
+        "description":  "Address reuse across multiple counterparties may indicate shell network.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "network.shared_address_entity_count",
+                               "type":  "numeric_range",
+                               "max":  2
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Address usage concentration is acceptable."
+                                           ],
+                                 "invalid":  [
+                                                 "Address reused by high number of related entities."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-003",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Beneficial ownership opacity score",
+        "description":  "Counterparty BO transparency score must meet minimum threshold.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "counterparty.bo_transparency_score",
+                               "min":  60,
+                               "type":  "numeric_range"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "BO transparency is acceptable."
+                                           ],
+                                 "invalid":  [
+                                                 "BO transparency score below policy minimum."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-004",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Recently incorporated high-value counterparty",
+        "description":  "Newly formed entities handling large trade value are higher risk.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "counterparty.age_months",
+                               "min":  12,
+                               "type":  "numeric_range"
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Counterparty has sufficient operating history."
+                                           ],
+                                 "invalid":  [
+                                                 "Counterparty age below 12 months for current trade profile."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-005",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Frequent banking relationship turnover",
+        "description":  "Rapid bank account changes may indicate layering behavior.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "counterparty.bank_account_change_count_12m",
+                               "type":  "numeric_range",
+                               "max":  2
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Bank account changes are within norm."
+                                           ],
+                                 "invalid":  [
+                                                 "Frequent bank account changes detected in 12 months."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-006",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "High-risk intermediary dependence",
+        "description":  "Excessive use of opaque intermediaries raises network risk.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "network.high_risk_intermediary_ratio",
+                               "type":  "numeric_range",
+                               "max":  0.3
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Intermediary risk mix is acceptable."
+                                           ],
+                                 "invalid":  [
+                                                 "High-risk intermediary ratio exceeds threshold."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-007",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Counterparty adverse media event count",
+        "description":  "Multiple recent adverse events increase relationship risk.",
+        "severity":  "warn",
+        "conditions":  [
+                           {
+                               "field":  "counterparty.adverse_media_events_12m",
+                               "type":  "numeric_range",
+                               "max":  1
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "Adverse media profile is within tolerance."
+                                           ],
+                                 "invalid":  [
+                                                 "Multiple adverse media events in last 12 months."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    },
+    {
+        "rule_id":  "TBML-CPN-008",
+        "domain":  "tbml.v1",
+        "jurisdiction":  "global",
+        "title":  "Circular trade cycle indicator",
+        "description":  "Repeated closed-loop trade among same entities indicates round-tripping risk.",
+        "severity":  "fail",
+        "conditions":  [
+                           {
+                               "field":  "network.circular_trade_cycle_detected",
+                               "type":  "numeric_range",
+                               "max":  0
+                           }
+                       ],
+        "expected_outcome":  {
+                                 "valid":  [
+                                               "No circular trade cycle detected."
+                                           ],
+                                 "invalid":  [
+                                                 "Circular trade cycle pattern detected."
+                                             ]
+                             },
+        "deterministic":  true,
+        "requires_llm":  false
+    }
+]
