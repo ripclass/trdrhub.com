@@ -6,6 +6,7 @@ import json
 import copy
 import os
 import time
+import hashlib
 
 import logging
 from io import BytesIO
@@ -3517,17 +3518,57 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         )
 
     text_output = ""
+    extraction_cache_key = hashlib.sha256(file_bytes).hexdigest()
+    extraction_cache_enabled = os.getenv("OCR_EXTRACTION_CACHE_ENABLED", "1").lower() in ("1", "true", "yes", "on")
+    if extraction_cache_enabled:
+        try:
+            from app.cache import ocr_cache
+            cached = await ocr_cache.get(extraction_cache_key)
+            if cached and isinstance(cached, dict):
+                cached_text = str(cached.get("extracted_text") or "")
+                if cached_text.strip():
+                    logger.log(TRACE_LOG_LEVEL, "Extraction cache hit for %s", filename)
+                    return cached_text
+        except Exception as cache_err:
+            logger.debug("Extraction cache lookup failed for %s: %s", filename, cache_err)
+
+    min_native_chars = max(1, int(os.getenv("OCR_NATIVE_MIN_CHARS", "48")))
+
+    def _native_text_sufficient(text: str) -> bool:
+        stripped = (text or "").strip()
+        if len(stripped) < min_native_chars:
+            return False
+        alnum = sum(ch.isalnum() for ch in stripped)
+        ratio = (alnum / max(1, len(stripped)))
+        return ratio >= float(os.getenv("OCR_NATIVE_MIN_ALNUM_RATIO", "0.35"))
+
+    async def _cache_extraction(text: str, source: str) -> None:
+        if not extraction_cache_enabled:
+            return
+        if not text.strip():
+            return
+        try:
+            from app.cache import ocr_cache
+            await ocr_cache.set(extraction_cache_key, {
+                "success": True,
+                "extracted_text": text,
+                "source": source,
+                "cache_version": "extract-v1",
+            })
+        except Exception as cache_err:
+            logger.debug("Extraction cache write failed for %s: %s", filename, cache_err)
 
     # Try pdfminer first (better for complex layouts)
     logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
-        if text_output.strip():
+        if _native_text_sufficient(text_output):
             logger.log(TRACE_LOG_LEVEL, "pdfminer extracted %s characters from %s", len(text_output), filename)
+            await _cache_extraction(text_output, "pdfminer")
             return text_output
         else:
-            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty text for %s", filename)
+            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty/low-confidence text for %s", filename)
     except Exception as pdfminer_error:
         logger.log(TRACE_LOG_LEVEL, "pdfminer extraction failed for %s: %s", filename, pdfminer_error)
 
@@ -3545,11 +3586,12 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 logger.debug(f"Failed to extract text from page {page_num+1} of {filename}: {e}")
                 continue
         text_output = "\n".join(pieces)
-        if text_output.strip():
+        if _native_text_sufficient(text_output):
             logger.log(TRACE_LOG_LEVEL, "PyPDF2 extracted %s characters from %s (%s pages)", len(text_output), filename, len(reader.pages))
+            await _cache_extraction(text_output, "pypdf2")
             return text_output
         else:
-            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty text for %s (%s pages)", filename, len(reader.pages))
+            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty/low-confidence text for %s (%s pages)", filename, len(reader.pages))
     except Exception as pypdf_error:
         logger.warning(f"  ✗ PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
@@ -3583,9 +3625,10 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         else:
             # Try OCR providers in configured order
             logger.log(TRACE_LOG_LEVEL, "Attempting OCR with providers %s for %s", settings.OCR_PROVIDER_ORDER, filename)
-            text_output = await _try_ocr_providers(file_bytes, filename, content_type)
+            text_output = await _try_ocr_providers(file_bytes, filename, content_type, page_count=page_count)
             if text_output.strip():
                 logger.log(TRACE_LOG_LEVEL, "OCR extraction successful for %s (%s characters)", filename, len(text_output))
+                await _cache_extraction(text_output, "ocr")
                 return text_output
             else:
                 logger.warning(f"  ✗ OCR extraction returned empty")
@@ -3602,7 +3645,12 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     return text_output
 
 
-async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> str:
+async def _try_ocr_providers(
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+    page_count: Optional[int] = None,
+) -> str:
     """
     Try OCR providers in configured order until one succeeds.
     
@@ -3630,8 +3678,21 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         best_low_confidence_text = ""
         best_low_confidence_score = 0.0
 
+        page_count_est = max(1, int(page_count or 1))
+        per_page_timeout = float(os.getenv("OCR_TIMEOUT_PER_PAGE_SEC", "2.5"))
+        min_timeout = float(os.getenv("OCR_TIMEOUT_MIN_SEC", "10"))
+        max_timeout = float(os.getenv("OCR_TIMEOUT_MAX_SEC", str(settings.OCR_TIMEOUT_SEC)))
+        provider_timeout = min(max_timeout, max(min_timeout, per_page_timeout * page_count_est))
+        total_budget = float(os.getenv("OCR_TOTAL_BUDGET_SEC", str(provider_timeout + 5.0)))
+        budget_start = time.perf_counter()
+
         # Try providers in configured order
         for provider_name in provider_order:
+            elapsed = time.perf_counter() - budget_start
+            remaining_budget = total_budget - elapsed
+            if remaining_budget <= 0:
+                logger.warning("OCR budget exceeded for %s after %.2fs; returning best-effort result", filename, elapsed)
+                break
             # Map short name to full provider name
             full_provider_name = provider_map.get(provider_name, provider_name)
             
@@ -3651,9 +3712,10 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                 import asyncio
                 doc_id = uuid4()
                 
+                timeout_for_provider = min(provider_timeout, remaining_budget)
                 result = await asyncio.wait_for(
                     adapter.process_file_bytes(file_bytes, filename, content_type, doc_id),
-                    timeout=settings.OCR_TIMEOUT_SEC
+                    timeout=timeout_for_provider
                 )
                 
                 if result and result.full_text and not result.error:
@@ -3684,7 +3746,7 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                     logger.debug(f"OCR provider {full_provider_name} returned empty result")
                     
             except asyncio.TimeoutError:
-                logger.warning(f"OCR provider {full_provider_name} timed out after {settings.OCR_TIMEOUT_SEC}s")
+                logger.warning(f"OCR provider {full_provider_name} timed out after {timeout_for_provider:.1f}s")
                 continue
             except Exception as e:
                 logger.warning(f"OCR provider {full_provider_name} failed: {e}", exc_info=True)

@@ -1,10 +1,10 @@
 # DAY3_SIGNOFF
 
-Generated: 2026-03-02T03:11:23.448059+00:00
+Generated: 2026-03-02T14:11:53.343404+00:00
 
 ## Metrics Snapshot
-- Total records: 90
-- Comparable records: 90
+- Total records: 20
+- Comparable records: 20
 - Accuracy: 1.0
 - Critical false-pass: 0
 - Rerun consistency: 1.0

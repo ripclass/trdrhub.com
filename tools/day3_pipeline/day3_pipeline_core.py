@@ -514,9 +514,10 @@ def extract_actual_verdict(
     return "unknown"
 
 
-def _api_reachable(api_url: str, timeout_seconds: float = 2.0) -> tuple[bool, str | None]:
+def _api_reachable(api_url: str, timeout_seconds: float = 8.0) -> tuple[bool, str | None]:
     try:
-        parsed = urlparse(api_url)
+        normalized = api_url if "://" in (api_url or "") else f"http://{api_url}"
+        parsed = urlparse(normalized)
         host = parsed.hostname or "localhost"
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         with socket.create_connection((host, port), timeout=timeout_seconds):
@@ -563,34 +564,7 @@ def run_batch(
     last_request_at = 0.0
 
     reachable, reachability_error = _api_reachable(api_url)
-    if not dry_run and not reachable:
-        for row in run_rows:
-            if row.get("run_enabled", "1") != "1":
-                continue
-            results.append(
-                {
-                    "timestamp": _now(),
-                    "case_id": row.get("case_id", ""),
-                    "scenario": row.get("scenario", "unknown"),
-                    "expected_verdict": normalize_expected_verdict(row.get("expected_verdict"), row.get("scenario")),
-                    "jobId": None,
-                    "actual_verdict": "not_run",
-                    "severities": [],
-                    "key_issues": [],
-                    "status": "error",
-                    "error": f"API_UNREACHABLE preflight: {reachability_error}",
-                }
-            )
-            rate_limit_stats["processed_cases"] += 1
-
-        with jsonl_path.open("w", encoding="utf-8") as f:
-            for r in results:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-        rate_limit_stats["generated_at"] = _now()
-        (RESULTS / "rate_limit_stats.json").write_text(json.dumps(rate_limit_stats, indent=2), encoding="utf-8")
-        (RESULTS / "validation_commands.ps1").write_text("\n".join(command_stubs) + "\n", encoding="utf-8")
-        return results
+    preflight_note = None if (dry_run or reachable) else f"API_UNREACHABLE preflight: {reachability_error}"
 
     for row in run_rows:
         if row.get("run_enabled", "1") != "1":
@@ -732,11 +706,13 @@ def run_batch(
 
                     record["status"] = "error"
                     detail = f" | body={error_body[:240]}" if error_body else ""
-                    record["error"] = f"HTTP Error {exc.code}: {exc.reason}{detail}"
+                    base_error = f"HTTP Error {exc.code}: {exc.reason}{detail}"
+                    record["error"] = f"{preflight_note} | {base_error}" if preflight_note else base_error
                     break
                 except Exception as exc:
                     record["status"] = "error"
-                    record["error"] = str(exc)
+                    base_error = str(exc)
+                    record["error"] = f"{preflight_note} | {base_error}" if preflight_note else base_error
                     break
 
         results.append(record)
