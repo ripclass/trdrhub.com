@@ -27,12 +27,12 @@ const normalizeDocType = (value?: string | null) => {
   return DOC_LABELS[normalized] ?? value.toString().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
-const deriveDocumentStatus = (extractionStatus: string, issuesCount: number): 'success' | 'warning' | 'error' => {
+const deriveDocumentStatus = (extractionStatus: string): 'success' | 'warning' | 'error' => {
   const status = extractionStatus?.toLowerCase();
-  if (status === 'error' || issuesCount >= 3) {
+  if (status === 'error') {
     return 'error';
   }
-  if (issuesCount > 0 || status === 'partial' || status === 'pending') {
+  if (status === 'partial' || status === 'pending') {
     return 'warning';
   }
   return 'success';
@@ -88,7 +88,7 @@ const mapDocuments = (docs: any[] = []) => {
     const status =
       canonicalStatus === 'success' || canonicalStatus === 'warning' || canonicalStatus === 'error'
         ? canonicalStatus
-        : deriveDocumentStatus(extractionStatus, issuesCount);
+        : deriveDocumentStatus(extractionStatus);
 
     return {
       id: documentId,

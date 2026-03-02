@@ -80,5 +80,35 @@ describe('results mapper - option e payload', () => {
     expect(mapped.summary.successful_extractions).toBe(1);
     expect(mapped.summary.failed_extractions).toBe(1);
   });
+
+  it('keeps extraction status independent from discrepancy count', () => {
+    const payload: any = {
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          {
+            document_id: 'd1',
+            filename: 'Invoice.pdf',
+            document_type: 'commercial_invoice',
+            extraction_status: 'success',
+            discrepancyCount: 4,
+            extracted_fields: {},
+          },
+        ],
+        issues: [
+          { id: 'i1', title: 'Mismatch', severity: 'major' },
+        ],
+        processing_summary: { total_documents: 1, total_issues: 1 },
+        analytics: { compliance_score: 20 },
+        lc_structured: null,
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.documents[0].status).toBe('success');
+    expect(mapped.summary.canonical_document_status).toEqual({ success: 1, warning: 0, error: 0 });
+    expect(mapped.summary.total_issues).toBe(1);
+    expect(mapped.analytics.compliance_score).toBe(20);
+  });
 });
 

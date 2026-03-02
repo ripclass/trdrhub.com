@@ -1540,7 +1540,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">Partial / With Issues</span>
+                        <span className="text-sm">Partial Extraction</span>
                       </div>
                       <span className="text-sm font-medium">
                         {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)

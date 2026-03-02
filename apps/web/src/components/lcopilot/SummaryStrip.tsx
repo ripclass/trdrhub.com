@@ -54,11 +54,17 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
   // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
-  // Has issues if compliance < 100 or there are warnings/errors
+  // Extraction is independent from compliance findings.
   const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
-  
-  const progressValue = documentsProcessed > 0 
-    ? Math.round(((verified + warnings) / documentsProcessed) * 100) 
+  const complianceOutcome: 'clean' | 'warning' | 'reject' =
+    totalIssues === 0 && complianceRate >= 90
+      ? 'clean'
+      : complianceRate < 50
+      ? 'reject'
+      : 'warning';
+
+  const progressValue = documentsProcessed > 0
+    ? Math.round(((verified + warnings) / documentsProcessed) * 100)
     : 0;
 
   // Status icon based on overall status prop or calculated
@@ -137,7 +143,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
               {warnings > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span>{warnings} partial / issues</span>
+                  <span>{warnings} partial extraction</span>
                 </div>
               )}
               {errors > 0 && (
@@ -146,12 +152,16 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
                   <span>{errors} extraction failed</span>
                 </div>
               )}
-              {totalIssues > 0 && (
-                <div className="flex items-center gap-2 pt-1 border-t border-border/30">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span className="text-muted-foreground">{totalIssues} LC issue{totalIssues !== 1 ? 's' : ''} found</span>
+              <div className="pt-1 border-t border-border/30 space-y-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance Outcome</p>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${complianceOutcome === 'clean' ? 'bg-emerald-500' : complianceOutcome === 'warning' ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                  <span className="text-muted-foreground">
+                    {complianceOutcome === 'clean' ? 'Clean' : complianceOutcome === 'warning' ? 'Warning' : 'Reject'}
+                    {totalIssues > 0 ? ` · ${totalIssues} issue${totalIssues !== 1 ? 's' : ''}` : ''}
+                  </span>
                 </div>
-              )}
+              </div>
             </div>
             <Progress value={progressValue} className="h-2" />
           </div>

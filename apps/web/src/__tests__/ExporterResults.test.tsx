@@ -305,18 +305,19 @@ describe('ExporterResults', () => {
     render(renderWithProviders(<ExporterResults />));
 
     await waitFor(() => {
-      expect(screen.getByText(/2 extracted OK/i)).toBeInTheDocument();
-      expect(screen.getByText(/2 partial \/ issues/i)).toBeInTheDocument();
-      expect(screen.getByText(/2 extraction failed/i)).toBeInTheDocument();
+      expect(screen.getByText(/4 extracted OK/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 partial extraction/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 extraction failed/i)).toBeInTheDocument();
+      expect(screen.getByText(/Compliance Outcome/i)).toBeInTheDocument();
     });
 
     const statsCard = findCardByTitle(/Export Document Statistics/i);
-    expect(within(statsCard).getByText(/^Docs Verified$/i).previousElementSibling?.textContent).toBe('2');
-    expect(within(statsCard).getByText(/^Docs Need Review$/i).previousElementSibling?.textContent).toBe('4');
+    expect(within(statsCard).getByText(/^Docs Verified$/i).previousElementSibling?.textContent).toBe('4');
+    expect(within(statsCard).getByText(/^Docs Need Review$/i).previousElementSibling?.textContent).toBe('2');
 
     await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
-    expect(screen.getAllByText(/^Verified$/i)).toHaveLength(2);
-    expect(screen.getAllByText(/Issues$/i).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText(/Error|Errors/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/^Verified$/i)).toHaveLength(4);
+    expect(screen.getAllByText(/Issues$/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Error|Errors/i).length).toBeGreaterThanOrEqual(1);
   });
 });
