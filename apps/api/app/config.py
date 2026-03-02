@@ -176,6 +176,7 @@ class Settings(BaseSettings):
         env_file=".env.production" if os.getenv("ENVIRONMENT") == "production" else ".env",
         case_sensitive=True,
         env_ignore_empty=True,
+        extra="ignore",
     )
     
     @model_validator(mode='before')

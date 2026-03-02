@@ -12,11 +12,11 @@ from uuid import UUID
 try:
     from google.cloud import documentai
     from google.cloud.exceptions import GoogleCloudError
-    print("✓ google-cloud-documentai imported successfully")
+    print("[OK] google-cloud-documentai imported successfully")
 except ImportError as e:
     # Log the actual import error for debugging
     import traceback
-    print(f"✗ Failed to import google-cloud-documentai: {e}")
+    print(f"[ERR] Failed to import google-cloud-documentai: {e}")
     traceback.print_exc()
     
     # Mock Google Cloud imports for environments without credentials
