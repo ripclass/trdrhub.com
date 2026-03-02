@@ -11,12 +11,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
-    
+
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/lcopilot"
     DIRECT_DATABASE_URL: Optional[str] = None  # For migrations - direct connection (Supabase port 5432)
     REDIS_URL: Optional[str] = None
-    
+
     @field_validator('DATABASE_URL', mode='before')
     @classmethod
     def normalize_database_url(cls, v: Any) -> str:
@@ -36,19 +36,19 @@ class Settings(BaseSettings):
                 new_parsed = parsed._replace(query=new_query)
                 v = urlunparse(new_parsed)
         return v
-    
+
     # AWS Services
     AWS_REGION: str = "us-east-1"
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     S3_BUCKET_NAME: str = "lcopilot-documents"
-    
+
     # Google Cloud
     GOOGLE_CLOUD_PROJECT: Optional[str] = None
     GOOGLE_DOCUMENTAI_LOCATION: str = "eu"
     GOOGLE_DOCUMENTAI_PROCESSOR_ID: Optional[str] = None
     GOOGLE_APPLICATION_CREDENTIALS_JSON: Optional[str] = None  # JSON string for Render deployment
-    
+
     # OCR Configuration
     OCR_ENABLED: bool = True  # Enable OCR fallback when pdfminer/PyPDF2 return empty
     OCR_PROVIDER_ORDER: List[str] = ["gdocai", "textract"]  # Order to try providers
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
     OCR_MIN_CONFIDENCE: float = 0.55  # Minimum confidence before accepting OCR output without fallback
-    
+
     # Document Set Configuration (based on UCP600/ISBP745 norms)
     DOC_SET_MIN_DOCS: int = 1  # Minimum docs for validation (LC-only mode)
     DOC_SET_MAX_DOCS: int = 15  # Maximum docs per validation
@@ -65,12 +65,12 @@ class Settings(BaseSettings):
     DOC_SET_LC_AVG_PAGES: int = 6  # Average pages per LC document (MT700/MT760)
     DOC_SET_FULL_AVG_PAGES: int = 20  # Average pages for full document set
     DOC_SET_WARN_MISSING: bool = True  # Warn when common documents are missing
-    
+
     # DeepSeek OCR Configuration
     USE_DEEPSEEK_OCR: bool = False  # Enable DeepSeek OCR as primary provider
     DEEPSEEK_OCR_MODEL_NAME: str = "deepseek-ai/deepseek-ocr"  # Hugging Face model identifier
     DEEPSEEK_OCR_DEVICE: Optional[str] = None  # 'cuda', 'cpu', or None for auto-detect
-    
+
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     AUTH0_ISSUER: Optional[str] = None
     AUTH0_AUDIENCE: Optional[str] = None
     AUTH0_JWKS_URL: Optional[str] = None
-    
+
     # Stub Mode Configuration
     USE_STUBS: bool = False
     STUB_SCENARIO: str = "lc_happy.json"
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     STUB_FAIL_STORAGE: bool = False
     STUB_DATA_DIR: str = "./stubs"
     STUB_UPLOAD_DIR: str = "/tmp/lcopilot_uploads"
-    
+
     # Application Environment
     ENVIRONMENT: str = "development"  # development, staging, production
     DEBUG: bool = False
@@ -102,7 +102,7 @@ class Settings(BaseSettings):
 
     # RulHub Integration
     USE_RULHUB_API: bool = False
-    
+
     # Rules System
     USE_JSON_RULES: bool = True  # Enable JSON ruleset validation system
     RULESET_CACHE_TTL_MINUTES: int = 10  # Cache TTL for rulesets
@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     SSLCOMMERZ_STORE_ID: Optional[str] = None
     SSLCOMMERZ_STORE_PASSWORD: Optional[str] = None
     SSLCOMMERZ_SANDBOX: bool = True
-    
+
     # AI/LLM Configuration
     AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
     LLM_PROVIDER: str = "openai"  # openai|anthropic
@@ -143,34 +143,40 @@ class Settings(BaseSettings):
     AI_SEMANTIC_LOW_COST_MODEL: str = "gpt-4o-mini"
     AI_SEMANTIC_THRESHOLD_DEFAULT: float = 0.82
     AI_SEMANTIC_TIMEOUT_MS: int = 6000
-    
+
+    # Validation decisioning mode (future hybrid enforcement switch)
+    # legacy: existing behavior only
+    # hybrid_shadow: compute hybrid arbitration trace, do not enforce
+    # hybrid_enforced: reserved for future enforcement
+    VALIDATION_DECISION_MODE: str = "hybrid_shadow"
+
     # AI Rate Limits
     AI_RATE_LIMIT_PER_USER_PER_MIN: int = 10
     AI_RATE_LIMIT_PER_TENANT_PER_MIN: int = 50
     AI_MIN_INTERVAL_PER_LC_MS: int = 2000
-    
+
     # SME Per-LC Limits
     SME_PER_LC_LIMIT_LETTERS: int = 3
     SME_PER_LC_LIMIT_SUMMARIES: int = 3
     SME_PER_LC_LIMIT_TRANSLATIONS: int = 5
     SME_PER_LC_LIMIT_CHAT: int = 10
-    
+
     # Bank Per-LC Limits
     BANK_PER_LC_LIMIT_LETTERS: int = 5
     BANK_PER_LC_LIMIT_SUMMARIES: int = 5
     BANK_PER_LC_LIMIT_TRANSLATIONS: int = 10
     BANK_PER_LC_LIMIT_CHAT: int = 20
-    
+
     # Bank Tenant Monthly Pools
     BANK_TENANT_MONTHLY_LETTERS: int = 1000
     BANK_TENANT_MONTHLY_TRANSLATIONS: int = 2000
     BANK_TENANT_MONTHLY_SUMMARIES: int = 2000
     BANK_TENANT_MONTHLY_CHAT: int = 5000
     BANK_TENANT_RESERVE_PERCENT: float = 30.0  # Reserve 30% for system enrichment
-    
+
     # CORS Configuration
     CORS_ALLOW_ORIGINS: List[str] = ["http://localhost:5173"]  # Override per environment
-    
+
     model_config = SettingsConfigDict(
         # Load .env.production if ENVIRONMENT is production, otherwise .env
         env_file=".env.production" if os.getenv("ENVIRONMENT") == "production" else ".env",
@@ -178,7 +184,7 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
         extra="ignore",
     )
-    
+
     @model_validator(mode='before')
     @classmethod
     def preprocess_cors_origins(cls, data: Any) -> Any:
@@ -194,11 +200,11 @@ class Settings(BaseSettings):
                         del data['CORS_ALLOW_ORIGINS']
                     # Otherwise leave it for the field validator to handle
         return data
-    
+
     def is_production(self) -> bool:
         """Check if running in production environment."""
         return self.ENVIRONMENT.lower() == "production"
-    
+
     def is_development(self) -> bool:
         """Check if running in development environment."""
         return self.ENVIRONMENT.lower() == "development"
@@ -212,7 +218,7 @@ class Settings(BaseSettings):
     def auth0_configured(self) -> bool:
         """Check if Auth0 provider is configured."""
         return bool(self.AUTH0_ISSUER and self.AUTH0_JWKS_URL)
-    
+
     @field_validator('USE_STUBS', mode='before')
     @classmethod
     def parse_use_stubs(cls, v):
@@ -220,7 +226,7 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes', 'on')
         return bool(v)
-    
+
     @field_validator('STUB_FAIL_OCR', 'STUB_FAIL_STORAGE', mode='before')
     @classmethod
     def parse_stub_fails(cls, v):
@@ -228,7 +234,17 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes', 'on')
         return bool(v)
-    
+
+    @field_validator('VALIDATION_DECISION_MODE', mode='before')
+    @classmethod
+    def validate_validation_decision_mode(cls, v: Any) -> str:
+        if v is None:
+            return "hybrid_shadow"
+        mode = str(v).strip().lower()
+        if mode not in {"legacy", "hybrid_shadow", "hybrid_enforced"}:
+            return "hybrid_shadow"
+        return mode
+
     @field_validator('CORS_ALLOW_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v: Any) -> List[str]:
@@ -236,16 +252,16 @@ class Settings(BaseSettings):
         # Handle None or empty values
         if v is None or v == "" or (isinstance(v, str) and v.strip() == ""):
             return ["*"]
-        
+
         # If it's already a list, return it
         if isinstance(v, list):
             return v if v else ["*"]
-        
+
         # Handle string input - pydantic-settings may try to JSON decode first
         if isinstance(v, str):
             # Strip whitespace
             v = v.strip()
-            
+
             # Try to parse as JSON first (in case it's a JSON string like '["url1","url2"]')
             if v.startswith("[") and v.endswith("]"):
                 try:
@@ -255,15 +271,15 @@ class Settings(BaseSettings):
                 except (json.JSONDecodeError, ValueError, TypeError):
                     # If JSON parsing fails, fall through to comma-separated parsing
                     pass
-            
+
             # Handle "*" case
             if v == "*":
                 return ["*"]
-            
+
             # Treat as comma-separated string
             origins = [origin.strip() for origin in v.split(",") if origin.strip()]
             return origins if origins else ["*"]
-        
+
         # Fallback for any other type
         return ["*"]
 

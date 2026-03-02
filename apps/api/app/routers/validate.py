@@ -142,6 +142,7 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
+from app.services.validation.arbitration import compute_shadow_arbitration
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
@@ -2030,6 +2031,21 @@ async def validate_doc(
             structured_result["confidence_band"] = confidence_band
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
+
+            # Phase 2: arbitration in shadow mode only (trace-only, non-enforcing)
+            decision_mode = settings.VALIDATION_DECISION_MODE
+            if decision_mode in {"hybrid_shadow", "hybrid_enforced"}:
+                structured_result["decision_trace"] = compute_shadow_arbitration(
+                    ai_verdict=ai_verdict,
+                    ruleset_verdict=ruleset_verdict,
+                    blocking_rules=blocking_rules,
+                    extraction_confidence=(
+                        extraction_confidence_summary.get("average_confidence")
+                        if isinstance(extraction_confidence_summary, dict)
+                        else None
+                    ),
+                    mode=decision_mode,
+                )
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
@@ -4302,6 +4318,20 @@ def _build_blocked_structured_result(
         # Customs (empty)
         "customs_pack": None,
         "ai_enrichment": None,
+        "decision_trace": (
+            compute_shadow_arbitration(
+                ai_verdict=None,
+                ruleset_verdict="reject",
+                blocking_rules=[
+                    str((i.get("rule") or i.get("code") or "validation_gate")).strip()
+                    for i in blocking_issues if isinstance(i, dict)
+                ],
+                extraction_confidence=None,
+                mode=settings.VALIDATION_DECISION_MODE,
+            )
+            if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
+            else None
+        ),
     }
 
 
@@ -4817,6 +4847,17 @@ def _build_db_rules_blocked_structured_result(
         "blocking_rules": ["db.rules.execution"],
         "confidence_band": None,
         "confidence_band_reason": "rules_engine_failed_before_confidence_band",
+        "decision_trace": (
+            compute_shadow_arbitration(
+                ai_verdict=None,
+                ruleset_verdict="reject",
+                blocking_rules=["db.rules.execution"],
+                extraction_confidence=None,
+                mode=settings.VALIDATION_DECISION_MODE,
+            )
+            if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
+            else None
+        ),
         "issues": [
             {
                 "severity": "critical",
