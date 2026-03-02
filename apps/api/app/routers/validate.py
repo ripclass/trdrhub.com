@@ -2055,10 +2055,23 @@ async def validate_doc(
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
             structured_result["confidence_band"] = confidence_band
+            structured_result["confidence_score"] = ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None
+            structured_result["risk_score"] = ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None
+            structured_result["risk_level"] = (
+                "high" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float)) and float(ai_metadata.get("risk_score")) >= 70
+                else "medium" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float)) and float(ai_metadata.get("risk_score")) >= 40
+                else "low" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float))
+                else None
+            )
+            structured_result["applied_rules"] = ai_metadata.get("applied_rules", []) if isinstance(ai_metadata, dict) else []
+            structured_result["reasoning_summary"] = ai_metadata.get("reasoning_summary") if isinstance(ai_metadata, dict) else None
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
             if decision_trace is not None:
-                structured_result["decision_trace"] = _attach_router_evidence_to_decision_trace(decision_trace)
+                trace = _attach_router_evidence_to_decision_trace(decision_trace)
+                if isinstance(trace, dict) and isinstance(ai_metadata, dict):
+                    trace["provider_evidence"] = ai_metadata.get("llm_layer_payloads", {})
+                structured_result["decision_trace"] = trace
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
@@ -4081,6 +4094,10 @@ def _attach_router_evidence_to_decision_trace(decision_trace: Optional[Dict[str,
 
 def _derive_ai_verdict(ai_metadata: Optional[Dict[str, Any]]) -> str:
     metadata = ai_metadata or {}
+    llm_verdict = str(metadata.get("llm_verdict") or "").strip().lower()
+    if llm_verdict in {"pass", "review", "reject"}:
+        return llm_verdict
+
     critical = int(metadata.get("critical_issues", 0) or 0)
     major = int(metadata.get("major_issues", 0) or 0)
     total = int(metadata.get("total_issues", critical + major) or (critical + major))

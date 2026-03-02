@@ -15,6 +15,9 @@ from typing import Dict, Any, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
+from app.config import settings
+from app.services.ai.model_router import ModelRouter
+
 logger = logging.getLogger(__name__)
 
 
@@ -391,6 +394,39 @@ def validate_packing_list(
     return issues
 
 
+def _router_confidence(output_text: str, tokens_out: int) -> float:
+    text = (output_text or "").strip()
+    if not text:
+        return 0.0
+    base = 0.55
+    if "verdict" in text.lower():
+        base += 0.2
+    if "reason" in text.lower():
+        base += 0.15
+    if tokens_out > 30:
+        base += 0.1
+    return min(base, 0.98)
+
+
+def _extract_json_block(text: str) -> Dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
 # =============================================================================
 # MAIN AI VALIDATION ORCHESTRATOR
 # =============================================================================
@@ -500,15 +536,76 @@ async def run_ai_validation(
             logger.info(f"Removing duplicate issue: {issue.rule_id}")
     
     # =================================================================
-    # 6. SUMMARY
+    # 6. LLM LAYERED ARBITRATION (L1/L2/L3 via router transport)
+    # =================================================================
+    metadata["llm_layers_attempted"] = []
+    metadata["llm_layers_succeeded"] = []
+
+    try:
+        metadata["checks_performed"].append("llm_layered_arbitration")
+        router = ModelRouter()
+        docs_summary = ", ".join(sorted({(d.get("document_type") or d.get("type") or "unknown") for d in documents if isinstance(d, dict)}))
+        issues_summary = ", ".join(sorted({i.rule_id for i in unique_issues})) or "none"
+
+        l1_prompt = (
+            "Return strict JSON only. Assess this LC package for bank submission. "
+            "Fields: verdict(pass|review|reject), confidence_score(0-1), risk_score(0-100), "
+            "applied_rules(list), blocking_rules(list), reasoning_summary(string).\n"
+            f"LC excerpt: {lc_text[:2500]}\nUploaded document types: {docs_summary or 'none'}"
+        )
+        l2_prompt = (
+            "Return strict JSON only. Cross-check document adequacy and discrepancy severity. "
+            "Fields: verdict, confidence_score, risk_score, applied_rules, blocking_rules, reasoning_summary.\n"
+            f"Known validator issues: {issues_summary}\nB/L requirements: {bl_must_show}"
+        )
+        l3_prompt = (
+            "Return strict JSON only. Final arbitration for submission decision with conservative banking posture. "
+            "Fields: verdict, confidence_score, risk_score, applied_rules, blocking_rules, reasoning_summary.\n"
+            f"Detected issues: {issues_summary}\nMissing critical docs: {metadata.get('missing_critical_docs', 0)}"
+        )
+
+        llm_payloads: Dict[str, Dict[str, Any]] = {}
+        for layer, prompt in (("L1", l1_prompt), ("L2", l2_prompt), ("L3", l3_prompt)):
+            metadata["llm_layers_attempted"].append(layer)
+            routed = await router.call_layer(
+                layer=layer,
+                prompt=prompt,
+                system_prompt="You are a trade-compliance validation model. Output JSON only.",
+                max_tokens=220,
+                temperature=0.1,
+                confidence_fn=_router_confidence,
+                primary_provider="openai" if settings.OPENROUTER_API_KEY else settings.LLM_PROVIDER,
+            )
+            payload = _extract_json_block(routed.output_text)
+            payload["provider_used"] = routed.provider_used
+            payload["model_used"] = routed.model_used
+            payload["fallback_used"] = routed.fallback_used
+            payload["confidence_band"] = routed.confidence_band
+            llm_payloads[layer] = payload
+            metadata["llm_layers_succeeded"].append(layer)
+
+        final = llm_payloads.get("L3") or llm_payloads.get("L2") or llm_payloads.get("L1") or {}
+        metadata["llm_layer_payloads"] = llm_payloads
+        metadata["llm_verdict"] = str(final.get("verdict") or "").strip().lower() or None
+        metadata["confidence_score"] = final.get("confidence_score")
+        metadata["risk_score"] = final.get("risk_score")
+        metadata["applied_rules"] = final.get("applied_rules") if isinstance(final.get("applied_rules"), list) else []
+        metadata["blocking_rules_llm"] = final.get("blocking_rules") if isinstance(final.get("blocking_rules"), list) else []
+        metadata["reasoning_summary"] = final.get("reasoning_summary")
+    except Exception as exc:  # noqa: BLE001
+        metadata["llm_layer_error"] = str(exc)
+        logger.warning("LLM layered arbitration failed: %s", exc)
+
+    # =================================================================
+    # 7. SUMMARY
     # =================================================================
     metadata["total_issues"] = len(unique_issues)
     metadata["critical_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.CRITICAL)
     metadata["major_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.MAJOR)
-    
+
     logger.info(
         f"AI Validation complete: {len(unique_issues)} issues "
         f"(critical={metadata['critical_issues']}, major={metadata['major_issues']})"
     )
-    
+
     return unique_issues, metadata

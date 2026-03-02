@@ -183,13 +183,14 @@ class ModelRouter:
         started = time.perf_counter()
         try:
             use_openrouter = bool(settings.OPENROUTER_API_KEY)
+            provider_for_call = "openai" if use_openrouter else primary_provider
             output, tokens_in, tokens_out, provider_used = await asyncio.wait_for(
                 LLMProviderFactory.generate_with_fallback(
                     prompt=prompt,
                     system_prompt=system_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    primary_provider=primary_provider,
+                    primary_provider=provider_for_call,
                     model_override=model_override,
                     use_openrouter=use_openrouter,
                 ),
