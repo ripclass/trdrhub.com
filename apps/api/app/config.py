@@ -164,11 +164,13 @@ class Settings(BaseSettings):
     AI_ROUTER_L2_TIMEOUT_MS: int = 9000
     AI_ROUTER_L3_TIMEOUT_MS: int = 12000
 
-    # Validation decisioning mode (future hybrid enforcement switch)
+    # Validation decisioning mode
     # legacy: existing behavior only
     # hybrid_shadow: compute hybrid arbitration trace, do not enforce
-    # hybrid_enforced: reserved for future enforcement
+    # hybrid_enforced: arbitration verdict can override legacy final verdict
     VALIDATION_DECISION_MODE: str = "hybrid_shadow"
+    # Back-compat alias accepted from env and mapped to VALIDATION_DECISION_MODE.
+    VALIDATION_MODE: Optional[str] = None
 
     # AI Rate Limits
     AI_RATE_LIMIT_PER_USER_PER_MIN: int = 10
@@ -219,6 +221,16 @@ class Settings(BaseSettings):
                         # Remove empty value so default ["*"] is used
                         del data['CORS_ALLOW_ORIGINS']
                     # Otherwise leave it for the field validator to handle
+        return data
+
+    @model_validator(mode='before')
+    @classmethod
+    def apply_validation_mode_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            explicit = data.get('VALIDATION_DECISION_MODE')
+            alias = data.get('VALIDATION_MODE')
+            if (explicit is None or str(explicit).strip() == "") and alias is not None:
+                data['VALIDATION_DECISION_MODE'] = alias
         return data
 
     def is_production(self) -> bool:

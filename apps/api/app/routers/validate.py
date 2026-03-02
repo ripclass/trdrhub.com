@@ -143,7 +143,7 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
-from app.services.validation.arbitration import compute_shadow_arbitration
+from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
@@ -2008,10 +2008,10 @@ async def validate_doc(
             if structured_result.get("processing_summary"):
                 structured_result["processing_summary"]["bank_verdict"] = bank_verdict.get("verdict")
 
-            # Phase 1: dual-track decision fields (non-breaking, legacy final verdict preserved)
+            # Dual-track decision fields + hybrid arbitration
             ai_verdict = _derive_ai_verdict(ai_metadata)
             ruleset_verdict = _derive_ruleset_verdict(v2_score.critical_count, v2_score.major_count)
-            final_verdict = bank_verdict.get("verdict")
+            legacy_final_verdict = bank_verdict.get("verdict")
             blocking_rules = sorted({
                 str((issue.get("rule") or issue.get("code") or "")).strip()
                 for issue in all_issues
@@ -2020,23 +2020,13 @@ async def validate_doc(
             })
             confidence_band, confidence_band_reason = _derive_confidence_band(extraction_confidence_summary)
 
-            structured_result["ai_verdict"] = ai_verdict
-            structured_result["ruleset_verdict"] = ruleset_verdict
-            structured_result["final_verdict"] = final_verdict
-            structured_result["override_reason"] = (
-                "legacy_final_verdict_preserved"
-                if (ruleset_verdict == "pass" and ai_verdict == "reject")
-                else None
-            )
-            structured_result["blocking_rules"] = blocking_rules
-            structured_result["confidence_band"] = confidence_band
-            if confidence_band is None and confidence_band_reason:
-                structured_result["confidence_band_reason"] = confidence_band_reason
-
-            # Phase 2: arbitration in shadow mode only (trace-only, non-enforcing)
             decision_mode = settings.VALIDATION_DECISION_MODE
+            decision_trace = None
+            override_reason = None
+            final_verdict = legacy_final_verdict
+
             if decision_mode in {"hybrid_shadow", "hybrid_enforced"}:
-                structured_result["decision_trace"] = compute_shadow_arbitration(
+                decision_trace = compute_arbitration_decision(
                     ai_verdict=ai_verdict,
                     ruleset_verdict=ruleset_verdict,
                     blocking_rules=blocking_rules,
@@ -2047,6 +2037,27 @@ async def validate_doc(
                     ),
                     mode=decision_mode,
                 )
+                if decision_mode == "hybrid_enforced":
+                    final_verdict = _arbitration_to_final_verdict(
+                        decision_trace.get("arbitration_verdict"),
+                        legacy_final_verdict,
+                    )
+                    override_reason = decision_trace.get("arbitration_reason")
+                elif ruleset_verdict == "pass" and ai_verdict == "reject":
+                    override_reason = "legacy_final_verdict_preserved"
+            elif ruleset_verdict == "pass" and ai_verdict == "reject":
+                override_reason = "legacy_final_verdict_preserved"
+
+            structured_result["ai_verdict"] = ai_verdict
+            structured_result["ruleset_verdict"] = ruleset_verdict
+            structured_result["final_verdict"] = final_verdict
+            structured_result["override_reason"] = override_reason
+            structured_result["blocking_rules"] = blocking_rules
+            structured_result["confidence_band"] = confidence_band
+            if confidence_band is None and confidence_band_reason:
+                structured_result["confidence_band_reason"] = confidence_band_reason
+            if decision_trace is not None:
+                structured_result["decision_trace"] = decision_trace
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
@@ -4070,6 +4081,17 @@ def _derive_ruleset_verdict(critical_count: int, major_count: int) -> str:
     if major_count > 0:
         return "review"
     return "pass"
+
+
+def _arbitration_to_final_verdict(arbitration_verdict: Optional[str], fallback: Optional[str]) -> str:
+    token = str(arbitration_verdict or "").strip().lower()
+    if token == "pass":
+        return "SUBMIT"
+    if token == "reject":
+        return "REJECT"
+    if token == "review":
+        return "HOLD"
+    return str(fallback or "HOLD")
 
 
 def _derive_confidence_band(extraction_confidence_summary: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:

@@ -1,4 +1,4 @@
-"""Hybrid AI + rules arbitration (shadow mode)."""
+"""Hybrid AI + rules arbitration (shadow and enforced modes)."""
 
 from typing import Any, Dict, List, Optional
 
@@ -16,7 +16,7 @@ def normalize_verdict(verdict: Optional[str]) -> str:
     return "review"
 
 
-def compute_shadow_arbitration(
+def compute_arbitration_decision(
     *,
     ai_verdict: Optional[str],
     ruleset_verdict: Optional[str],
@@ -24,8 +24,10 @@ def compute_shadow_arbitration(
     extraction_confidence: Optional[float] = None,
     mode: str = "hybrid_shadow",
 ) -> Dict[str, Any]:
-    """Compute non-enforcing arbitration outcome and trace."""
+    """Compute arbitration outcome for shadow/enforced modes."""
     normalized_mode = str(mode or "hybrid_shadow").strip().lower()
+    enforced = normalized_mode == "hybrid_enforced"
+
     ai_norm = normalize_verdict(ai_verdict)
     rules_norm = normalize_verdict(ruleset_verdict)
     blocking = [str(x) for x in (blocking_rules or []) if x]
@@ -51,7 +53,7 @@ def compute_shadow_arbitration(
 
     return {
         "mode": normalized_mode,
-        "enforced": False,
+        "enforced": enforced,
         "ai_verdict": ai_norm,
         "ruleset_verdict": rules_norm,
         "arbitration_verdict": arbitration,
@@ -59,4 +61,23 @@ def compute_shadow_arbitration(
         "blocking_rules": blocking,
         "extraction_confidence": extraction_confidence,
         "thresholds": {"low_extraction_confidence": LOW_CONFIDENCE_THRESHOLD},
+        "enforcement_applied": enforced,
     }
+
+
+def compute_shadow_arbitration(
+    *,
+    ai_verdict: Optional[str],
+    ruleset_verdict: Optional[str],
+    blocking_rules: Optional[List[str]] = None,
+    extraction_confidence: Optional[float] = None,
+    mode: str = "hybrid_shadow",
+) -> Dict[str, Any]:
+    """Backward-compatible wrapper kept for existing callers/tests."""
+    return compute_arbitration_decision(
+        ai_verdict=ai_verdict,
+        ruleset_verdict=ruleset_verdict,
+        blocking_rules=blocking_rules,
+        extraction_confidence=extraction_confidence,
+        mode=mode,
+    )

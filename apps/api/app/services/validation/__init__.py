@@ -141,6 +141,7 @@ from .confidence_weighting import (
 )
 
 from .arbitration import (
+    compute_arbitration_decision,
     compute_shadow_arbitration,
     normalize_verdict,
 )
@@ -257,6 +258,7 @@ __all__ = [
     "batch_adjust_issues",
     "calculate_overall_extraction_confidence",
     # Arbitration
+    "compute_arbitration_decision",
     "compute_shadow_arbitration",
     "normalize_verdict",
     # Response Contract Validator
