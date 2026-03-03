@@ -34,6 +34,7 @@ class RulesService:
         domain: str,
         jurisdiction: str = "global",
         document_type: Optional[str] = None,
+        rulebook_version: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Returns active ruleset with rules array.
@@ -81,10 +82,17 @@ class DBRulesAdapter(RulesService):
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
     
-    def _get_cache_key(self, domain: str, jurisdiction: str, document_type: Optional[str]) -> str:
-        """Generate cache key for domain/jurisdiction/document_type combination."""
+    def _get_cache_key(
+        self,
+        domain: str,
+        jurisdiction: str,
+        document_type: Optional[str],
+        rulebook_version: Optional[str],
+    ) -> str:
+        """Generate cache key for domain/jurisdiction/rulebook/document_type combination."""
         doc_key = document_type or "*"
-        return f"{domain}:{jurisdiction}:{doc_key}"
+        rulebook_key = rulebook_version or "*"
+        return f"{domain}:{jurisdiction}:{rulebook_key}:{doc_key}"
     
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cached entry is still valid."""
@@ -100,18 +108,28 @@ class DBRulesAdapter(RulesService):
         domain: Optional[str] = None,
         jurisdiction: Optional[str] = None,
         document_type: Optional[str] = None,
+        rulebook_version: Optional[str] = None,
     ):
         """
         Clear cache entries.
         
-        If domain/jurisdiction provided, clears only that entry.
+        If domain/jurisdiction provided, clears matching entries (optionally scoped to rulebook).
         Otherwise clears all cache.
         """
         if domain and jurisdiction:
-            cache_key = self._get_cache_key(domain, jurisdiction, document_type)
-            self._cache.pop(cache_key, None)
-            self._cache_timestamps.pop(cache_key, None)
-            logger.info(f"Cleared cache for {cache_key}")
+            if rulebook_version:
+                cache_key = self._get_cache_key(domain, jurisdiction, document_type, rulebook_version)
+                self._cache.pop(cache_key, None)
+                self._cache_timestamps.pop(cache_key, None)
+                logger.info(f"Cleared cache for {cache_key}")
+            else:
+                prefix = f"{domain}:{jurisdiction}:"
+                keys = [key for key in self._cache.keys() if key.startswith(prefix)]
+                for key in keys:
+                    self._cache.pop(key, None)
+                    self._cache_timestamps.pop(key, None)
+                if keys:
+                    logger.info(f"Cleared cache for {prefix}*")
         else:
             self._cache.clear()
             self._cache_timestamps.clear()
@@ -122,13 +140,14 @@ class DBRulesAdapter(RulesService):
         domain: str,
         jurisdiction: str = "global",
         document_type: Optional[str] = None,
+        rulebook_version: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Fetch active ruleset from DB with caching.
         
         Returns None if no active ruleset found (allows validator to skip gracefully).
         """
-        cache_key = self._get_cache_key(domain, jurisdiction, document_type)
+        cache_key = self._get_cache_key(domain, jurisdiction, document_type, rulebook_version)
         
         # Check cache first
         if self._is_cache_valid(cache_key):
@@ -148,6 +167,8 @@ class DBRulesAdapter(RulesService):
                     Ruleset.status == RulesetStatus.ACTIVE.value,
                 )
             )
+            if rulebook_version:
+                base_query = base_query.filter(Ruleset.rulebook_version == rulebook_version)
 
             if is_icc_domain and requested_jurisdiction != "global":
                 # Prefer exact jurisdiction first, then fallback to global.
@@ -173,8 +194,9 @@ class DBRulesAdapter(RulesService):
                 )
             
             if not ruleset:
+                suffix = f", rulebook_version={rulebook_version}" if rulebook_version else ""
                 logger.warning(
-                    f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}"
+                    f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}{suffix}"
                 )
                 return None
             

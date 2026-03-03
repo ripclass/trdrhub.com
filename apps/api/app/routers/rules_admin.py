@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, desc, nullslast
 
 from ..database import get_db
 from ..models import User
@@ -107,15 +107,38 @@ def _set_rules_activation(db: Session, ruleset_id: Optional[UUID], *, is_active:
 rules_router = APIRouter(prefix="/admin/rules", tags=["admin-rules"])
 
 
-def _clear_rules_cache(domain: Optional[str], jurisdiction: Optional[str]) -> None:
+def _clear_rules_cache(
+    domain: Optional[str],
+    jurisdiction: Optional[str],
+    rulebook_version: Optional[str] = None,
+) -> None:
     try:
         rules_service = get_rules_service()
         if domain and jurisdiction:
-            rules_service.clear_cache(domain=domain, jurisdiction=jurisdiction)
+            rules_service.clear_cache(
+                domain=domain,
+                jurisdiction=jurisdiction,
+                rulebook_version=rulebook_version,
+            )
         else:
             rules_service.clear_cache()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to clear rules cache: %s", exc)
+
+
+def _active_ruleset_filters(
+    domain: str,
+    jurisdiction: str,
+    rulebook_version: Optional[str] = None,
+) -> List[Any]:
+    filters = [
+        Ruleset.domain == domain,
+        Ruleset.jurisdiction == jurisdiction,
+        Ruleset.status == RulesetStatus.ACTIVE.value,
+    ]
+    if rulebook_version:
+        filters.append(Ruleset.rulebook_version == rulebook_version)
+    return filters
 
 
 def _get_rule_or_404(db: Session, rule_id: str) -> RuleRecord:
@@ -527,7 +550,7 @@ async def publish_ruleset(
     """
     Publish a ruleset (set status to active).
     
-    Enforces single active ruleset per (domain, jurisdiction).
+    Enforces single active ruleset per (domain, jurisdiction, rulebook).
     Archives any previously active ruleset.
     """
     ruleset = db.query(Ruleset).filter(Ruleset.id == ruleset_id).first()
@@ -543,13 +566,15 @@ async def publish_ruleset(
             detail="Ruleset is already active"
         )
     
-    # Find and archive any existing active ruleset for same domain/jurisdiction
+    # Find and archive any existing active ruleset for same domain/jurisdiction/rulebook
     existing_active = db.query(Ruleset).filter(
         and_(
-            Ruleset.domain == ruleset.domain,
-            Ruleset.jurisdiction == ruleset.jurisdiction,
-            Ruleset.status == RulesetStatus.ACTIVE.value,
-            Ruleset.id != ruleset_id
+            *_active_ruleset_filters(
+                ruleset.domain,
+                ruleset.jurisdiction,
+                ruleset.rulebook_version,
+            ),
+            Ruleset.id != ruleset_id,
         )
     ).first()
     
@@ -566,7 +591,7 @@ async def publish_ruleset(
         db.add(archive_audit)
 
         # Important: flush archive first so partial unique index
-        # (domain, jurisdiction) WHERE status='active' is released
+        # (domain, jurisdiction, rulebook_version) WHERE status='active' is released
         # before we mark the new ruleset as active.
         db.flush()
     
@@ -626,11 +651,15 @@ async def publish_ruleset(
         logger.error(f"Failed to commit ruleset publish: {e}", exc_info=True)
 
         message = str(e)
-        if "ix_rulesets_active_unique" in message or "duplicate key value violates unique constraint" in message:
+        if (
+            "duplicate key value violates unique constraint" in message
+            or "ix_rulesets_active_unique_rulebook" in message
+            or "ix_rulesets_active_unique" in message
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "Another active ruleset already exists for this domain/jurisdiction. "
+                    "Another active ruleset already exists for this domain/jurisdiction/rulebook. "
                     "Please retry publish; if it persists, archive the existing active ruleset first."
                 ),
             )
@@ -640,8 +669,8 @@ async def publish_ruleset(
             detail=f"Failed to publish ruleset: {str(e)}"
         )
     
-    # Invalidate cache for this domain/jurisdiction
-    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+    # Invalidate cache for this domain/jurisdiction/rulebook
+    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction, ruleset.rulebook_version)
     
     return RulesetResponse.model_validate(ruleset)
 
@@ -662,12 +691,14 @@ async def rollback_ruleset(
             detail="Ruleset not found"
         )
     
-    # Find current active for same domain/jurisdiction
+    # Find current active for same domain/jurisdiction/rulebook
     current_active = db.query(Ruleset).filter(
         and_(
-            Ruleset.domain == target_ruleset.domain,
-            Ruleset.jurisdiction == target_ruleset.jurisdiction,
-            Ruleset.status == RulesetStatus.ACTIVE.value
+            *_active_ruleset_filters(
+                target_ruleset.domain,
+                target_ruleset.jurisdiction,
+                target_ruleset.rulebook_version,
+            )
         )
     ).first()
     
@@ -730,7 +761,7 @@ async def rollback_ruleset(
     db.commit()
     db.refresh(target_ruleset)
 
-    _clear_rules_cache(target_ruleset.domain, target_ruleset.jurisdiction)
+    _clear_rules_cache(target_ruleset.domain, target_ruleset.jurisdiction, target_ruleset.rulebook_version)
     
     return RulesetResponse.model_validate(target_ruleset)
 
@@ -773,7 +804,7 @@ async def archive_ruleset(
     db.commit()
     db.refresh(ruleset)
     
-    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+    _clear_rules_cache(ruleset.domain, ruleset.jurisdiction, ruleset.rulebook_version)
     logger.info(f"Archived ruleset {ruleset_id} by user {current_user.id}")
     
     return RulesetResponse.model_validate(ruleset)
@@ -818,7 +849,7 @@ async def delete_ruleset(
         db.delete(ruleset)
         db.commit()
         
-        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction, ruleset.rulebook_version)
         logger.info(f"Hard deleted ruleset {ruleset_id} ({deleted_rules} rules) by user {current_user.id}")
         
         return {"success": True, "message": f"Ruleset permanently deleted ({deleted_rules} rules removed)"}
@@ -843,7 +874,7 @@ async def delete_ruleset(
         
         db.commit()
         
-        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction)
+        _clear_rules_cache(ruleset.domain, ruleset.jurisdiction, ruleset.rulebook_version)
         logger.info(f"Soft deleted (archived) ruleset {ruleset_id} by user {current_user.id}")
         
         return {"success": True, "message": "Ruleset archived"}
@@ -973,6 +1004,7 @@ async def get_all_active_rulesets(
 async def get_active_ruleset(
     domain: str = Query(..., description="Rule domain"),
     jurisdiction: str = Query(default="global", description="Jurisdiction"),
+    rulebook_version: Optional[str] = Query(default=None, description="Rulebook version"),
     include_content: bool = Query(default=False, description="Include full JSON content"),
     current_user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -988,13 +1020,17 @@ async def get_active_ruleset(
     try:
         # Query for active ruleset (should be fast with index)
         # Use the partial unique index for optimal performance
-        ruleset = db.query(Ruleset).filter(
-            and_(
-                Ruleset.domain == domain,
-                Ruleset.jurisdiction == jurisdiction,
-                Ruleset.status == RulesetStatus.ACTIVE.value
+        filters = _active_ruleset_filters(domain, jurisdiction, rulebook_version)
+
+        ruleset = (
+            db.query(Ruleset)
+            .filter(and_(*filters))
+            .order_by(
+                nullslast(desc(Ruleset.published_at)),
+                desc(Ruleset.created_at),
             )
-        ).first()
+            .first()
+        )
         
         query_time = time.time() - start_time
         if query_time > 1.0:
@@ -1002,10 +1038,13 @@ async def get_active_ruleset(
         
         if not ruleset:
             # Return 404 immediately without any storage initialization
-            logger.debug(f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}")
+            suffix = f", rulebook_version={rulebook_version}" if rulebook_version else ""
+            logger.debug(
+                f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}{suffix}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}"
+                detail=f"No active ruleset found for domain={domain}, jurisdiction={jurisdiction}{suffix}"
             )
         
         signed_url = None
