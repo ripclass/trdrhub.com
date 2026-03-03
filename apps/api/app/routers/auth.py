@@ -175,7 +175,7 @@ async def get_csrf_token(
         value=cookie_settings["value"],
         httponly=False,  # Must be readable by JavaScript
         samesite="none",
-        secure=settings.is_production(),  # HTTPS only in production
+        secure=True,  # Cross-site cookie requires Secure when SameSite=None
         max_age=cookie_settings["max_age"],
     )
     

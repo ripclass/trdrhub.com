@@ -348,6 +348,7 @@ app.add_middleware(
         "/docs",
         "/openapi.json",
         "/warm",
+        "/auth/csrf-token",  # prevent CSRF bootstrap from hitting anonymous rate-limit
     ),
 )
 
