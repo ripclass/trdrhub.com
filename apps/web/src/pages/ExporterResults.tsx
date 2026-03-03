@@ -1014,6 +1014,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     };
   }, [canonicalGateState]);
 
+  const manifestGateBlocked = canonicalGateState === 'blocked';
+  const manifestSubmitAllowed = canonicalGateState === 'allowed' && isReadyToSubmit;
+
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
   const hasContractWarnings = contractWarnings.length > 0;
@@ -1344,7 +1347,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return;
     }
 
-    if (submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
+    if (manifestGateBlocked || submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
       toast({
         title: "Submission Blocked",
         description: "Cannot submit to bank while verdict is REJECT or critical issues remain.",
@@ -2269,13 +2272,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
               )}
             </div>
+            {manifestGateBlocked && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                Submission blocked until critical issues are resolved.
+              </div>
+            )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowManifestPreview(false)}>
                 Cancel
               </Button>
               <Button 
                 onClick={handleConfirmManifest} 
-                disabled={!manifestConfirmed || !manifestData || createSubmissionMutation.isPending}
+                disabled={!manifestConfirmed || !manifestData || createSubmissionMutation.isPending || !manifestSubmitAllowed}
                 className="bg-green-600 hover:bg-green-700"
               >
                 {createSubmissionMutation.isPending ? (

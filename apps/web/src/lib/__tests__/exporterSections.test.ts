@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sectionToResultsTab } from '@/lib/exporter/exporterSections';
+import { sectionToResultsTab, resultsTabToSection } from '@/lib/exporter/exporterSections';
 
 describe('sectionToResultsTab', () => {
   it('maps non-tab result sections to overview deterministically', () => {
@@ -13,5 +13,16 @@ describe('sectionToResultsTab', () => {
     expect(sectionToResultsTab('issues' as any)).toBe('discrepancies');
     expect(sectionToResultsTab('customs' as any)).toBe('customs');
     expect(sectionToResultsTab('reviews' as any)).toBe('overview');
+  });
+});
+
+describe('resultsTabToSection', () => {
+  it('keeps customs tab aligned with the customs section for deep links', () => {
+    expect(resultsTabToSection('customs')).toBe('customs');
+  });
+
+  it('maps known results tabs back to their sections', () => {
+    expect(resultsTabToSection('documents')).toBe('documents');
+    expect(resultsTabToSection('discrepancies')).toBe('issues');
   });
 });

@@ -428,4 +428,95 @@ describe('ExporterResults', () => {
 
     expect(screen.queryByRole('button', { name: /Submit to Bank/i })).not.toBeInTheDocument();
   });
+
+  it('disables manifest submit when validation gate is blocked even after confirmation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
+      can_submit: false,
+      blocking_issues: [],
+      warnings: [],
+      required_docs_present: true,
+      high_severity_discrepancies: 0,
+      policy_checks_passed: true,
+    } as any);
+
+    const structured = {
+      ...mockValidationResults.structured_result,
+      issues: [],
+      final_verdict: 'REJECT',
+      compliance_status: 'reject',
+      pipeline_verification_status: 'VERIFIED',
+    } as any;
+
+    activeResults = buildValidationResults({
+      issues: [],
+      structured_result: structured,
+    });
+
+    render(renderWithProviders(<ExporterResults />));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Export LC Validation Results/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Preview Manifest/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /Preview Manifest/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    const confirmCheckbox = within(dialog).getByLabelText(/manifest contents are accurate/i);
+    await user.click(confirmCheckbox);
+
+    const submitButton = within(dialog).getByRole('button', { name: /Submit to Bank/i });
+    expect(submitButton).toBeDisabled();
+    expect(within(dialog).getByText(/Submission blocked until critical issues are resolved/i)).toBeInTheDocument();
+  });
+
+  it('enables manifest submit only when gate allows and confirmation is checked', async () => {
+    const user = userEvent.setup();
+    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
+      can_submit: true,
+      blocking_issues: [],
+      warnings: [],
+      required_docs_present: true,
+      high_severity_discrepancies: 0,
+      policy_checks_passed: true,
+    } as any);
+
+    const structured = {
+      ...mockValidationResults.structured_result,
+      issues: [],
+      final_verdict: 'PASS',
+      compliance_status: 'pass',
+      pipeline_verification_status: 'VERIFIED',
+      analytics: {
+        ...(mockValidationResults.structured_result as any)?.analytics,
+        issue_counts: { critical: 0, major: 0, minor: 0 },
+      },
+    } as any;
+
+    activeResults = buildValidationResults({
+      issues: [],
+      structured_result: structured,
+    });
+
+    render(renderWithProviders(<ExporterResults />));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Export LC Validation Results/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Preview Manifest/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /Preview Manifest/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    const submitButton = within(dialog).getByRole('button', { name: /Submit to Bank/i });
+    expect(submitButton).toBeDisabled();
+
+    const confirmCheckbox = within(dialog).getByLabelText(/manifest contents are accurate/i);
+    await user.click(confirmCheckbox);
+
+    expect(submitButton).toBeEnabled();
+  });
 });
