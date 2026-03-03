@@ -14,11 +14,25 @@ type Props = {
   overallStatus?: 'success' | 'warning' | 'error';
   actualIssuesCount?: number;
   complianceScore?: number;
+  finalVerdict?: string | null;
+  criticalIssueCount?: number;
+  isReadyToSubmit?: boolean;
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
 
-export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
+export function SummaryStrip({
+  data,
+  lcTypeLabel,
+  lcTypeConfidence,
+  packGenerated,
+  overallStatus,
+  actualIssuesCount,
+  complianceScore,
+  finalVerdict,
+  criticalIssueCount,
+  isReadyToSubmit,
+}: Props) {
   const structured = data?.structured_result;
   const summary = data?.summary ?? structured?.processing_summary;
   const analytics = data?.analytics ?? structured?.analytics;
@@ -77,13 +91,40 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
   // Extraction is independent from compliance findings.
-  const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
+  const hasIssues = totalIssues > 0;
+  const hasCriticalIssues = (criticalIssueCount ?? 0) > 0;
+  const verdictReject = (finalVerdict ?? '').toUpperCase() === 'REJECT';
   const complianceOutcome: 'clean' | 'warning' | 'reject' =
     totalIssues === 0 && complianceRate >= 90
       ? 'clean'
-      : complianceRate < 50
+      : complianceRate < 50 || verdictReject || hasCriticalIssues
       ? 'reject'
       : 'warning';
+
+  const nextStep =
+    verdictReject || hasCriticalIssues
+      ? {
+          cta: 'Resolve Critical Issues',
+          to: '?tab=discrepancies',
+          helper: 'Critical compliance issues must be resolved before submission.',
+        }
+      : hasIssues
+      ? {
+          cta: 'Fix & Re-process',
+          to: '/lcopilot/exporter-dashboard?section=upload',
+          helper: 'Review and resolve issues before reprocessing.',
+        }
+      : isReadyToSubmit
+      ? {
+          cta: 'Proceed to Bank Submission',
+          to: '?tab=customs',
+          helper: 'Validation is clean; proceed with final submission checks.',
+        }
+      : {
+          cta: 'Review Before Submission',
+          to: '?tab=overview',
+          helper: 'Do a final review before initiating submission.',
+        };
 
   const progressValue = documentsProcessed > 0
     ? Math.round(((verified + warnings) / documentsProcessed) * 100)
@@ -107,10 +148,15 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
           <div className="flex flex-col items-center gap-3 md:min-w-[150px]">
             {statusIcon}
             {packGenerated && (
-              <Badge className="bg-emerald-600 text-white border-0 hover:bg-emerald-700">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Customs Pack Generated
-              </Badge>
+              <div className="space-y-1 text-center">
+                <Badge className="bg-emerald-600 text-white border-0 hover:bg-emerald-700">
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Customs Pack File Generated
+                </Badge>
+                <p className="text-[11px] text-muted-foreground max-w-[180px]">
+                  File generation does not confirm bank/customs submission readiness.
+                </p>
+              </div>
             )}
             {lcTypeLabel && (
               <div className="text-center">
@@ -131,48 +177,54 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
           {/* Processing Summary */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Processing Summary</h3>
-            {(pipelineIsVerified || pipelineIsUnverified) && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">Trust Status</span>
-                  <Badge
-                    className={pipelineIsVerified
-                      ? 'bg-emerald-600 text-white border-0 hover:bg-emerald-700'
-                      : 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700'}
-                    title={pipelineIsUnverified ? 'Backend verification failed — not bank-ready' : 'Backend verification passed'}
-                  >
-                    {pipelineIsVerified ? 'VERIFIED' : 'UNVERIFIED'}
-                  </Badge>
-                  {pipelineIsUnverified && (
-                    <span className="text-xs text-amber-700 dark:text-amber-300">not bank-ready</span>
-                  )}
-                </div>
-                {pipelineIsUnverified && shortFailReasons.length > 0 && (
-                  <div className="rounded-md border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/30 p-2">
-                    <ul className="text-xs text-amber-900 dark:text-amber-100 space-y-1">
-                      {shortFailReasons.map((reason, index) => (
-                        <li key={`${reason}-${index}`}>• {reason}</li>
-                      ))}
-                    </ul>
-                    {(pipelineFailReasons.length > shortFailReasons.length || pipelineChecks.length > 0) && (
-                      <details className="mt-1">
-                        <summary className="cursor-pointer text-[11px] text-amber-800 dark:text-amber-200">
-                          View verification details
-                        </summary>
-                        <div className="mt-1 space-y-1 text-[11px] text-amber-900/90 dark:text-amber-100/90">
-                          {pipelineFailReasons.slice(shortFailReasons.length).map((reason, index) => (
-                            <p key={`extra-${index}`}>• {reason}</p>
-                          ))}
-                          {pipelineChecks.length > 0 && (
-                            <p className="text-amber-700 dark:text-amber-300">Checks: {pipelineChecks.length}</p>
-                          )}
-                        </div>
-                      </details>
-                    )}
-                  </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">Trust Status</span>
+                <Badge
+                  className={pipelineIsVerified
+                    ? 'bg-emerald-600 text-white border-0 hover:bg-emerald-700'
+                    : pipelineIsUnverified
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700'
+                    : 'bg-muted text-muted-foreground border border-border'}
+                  title={
+                    pipelineIsVerified
+                      ? 'Backend verification passed'
+                      : pipelineIsUnverified
+                      ? 'Backend verification failed — not bank-ready'
+                      : 'Pipeline verification status not provided'
+                  }
+                >
+                  {pipelineIsVerified ? 'VERIFIED' : pipelineIsUnverified ? 'UNVERIFIED' : 'NOT PROVIDED'}
+                </Badge>
+                {pipelineIsUnverified && (
+                  <span className="text-xs text-amber-700 dark:text-amber-300">not bank-ready</span>
                 )}
               </div>
-            )}
+              {pipelineIsUnverified && shortFailReasons.length > 0 && (
+                <div className="rounded-md border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/30 p-2">
+                  <ul className="text-xs text-amber-900 dark:text-amber-100 space-y-1">
+                    {shortFailReasons.map((reason, index) => (
+                      <li key={`${reason}-${index}`}>• {reason}</li>
+                    ))}
+                  </ul>
+                  {(pipelineFailReasons.length > shortFailReasons.length || pipelineChecks.length > 0) && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-[11px] text-amber-800 dark:text-amber-200">
+                        View verification details
+                      </summary>
+                      <div className="mt-1 space-y-1 text-[11px] text-amber-900/90 dark:text-amber-100/90">
+                        {pipelineFailReasons.slice(shortFailReasons.length).map((reason, index) => (
+                          <p key={`extra-${index}`}>• {reason}</p>
+                        ))}
+                        {pipelineChecks.length > 0 && (
+                          <p className="text-amber-700 dark:text-amber-300">Checks: {pipelineChecks.length}</p>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Documents:</span>
@@ -217,7 +269,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
                 </div>
               )}
               <div className="pt-1 border-t border-border/30 space-y-1">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance Outcome</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance Outcome (Issue-Based)</p>
                 <div className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-full ${complianceOutcome === 'clean' ? 'bg-emerald-500' : complianceOutcome === 'warning' ? 'bg-amber-500' : 'bg-rose-500'}`} />
                   <span className="text-muted-foreground">
@@ -236,23 +288,17 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
           {/* Next Steps */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Next Steps</h3>
-            {hasIssues ? (
-              <>
-                <Link to="/lcopilot/exporter-dashboard?section=upload">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Fix & Re-process
-                  </Button>
-                </Link>
-                <p className="text-xs text-muted-foreground">
-                  Review warnings before bank submission
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                All documents verified successfully
+            <>
+              <Link to={nextStep.to}>
+                <Button variant="outline" size="sm" className="w-full">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  {nextStep.cta}
+                </Button>
+              </Link>
+              <p className="text-xs text-muted-foreground">
+                {nextStep.helper}
               </p>
-            )}
+            </>
           </div>
         </div>
       </CardContent>

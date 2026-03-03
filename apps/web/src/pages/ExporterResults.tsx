@@ -1347,6 +1347,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             overallStatus={overallStatus}
             actualIssuesCount={issueCards.length}
             complianceScore={complianceScore}
+            finalVerdict={finalVerdict}
+            criticalIssueCount={criticalIssueCount}
+            isReadyToSubmit={isReadyToSubmit}
           />
           
           {/* Bank Profile Badge */}
