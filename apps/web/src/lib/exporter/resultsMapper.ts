@@ -246,11 +246,25 @@ const ensureAnalytics = (
   documents: ReturnType<typeof mapDocuments>,
   issues: IssueCard[],
 ) => {
-  const issueCounts = payload?.issue_counts ?? summarizeSeverity(issues);
+  // P0 invariant: issue counts in analytics must always come from visible mapped issues.
+  // Never trust backend issue_counts directly, as stale values cause UI/API contradiction.
+  const canonicalIssueCounts = summarizeSeverity(issues);
+
+  const payloadCompliance =
+    typeof payload?.compliance_score === 'number' ? payload.compliance_score : null;
+  const derivedCompliance = Math.max(
+    0,
+    100 - canonicalIssueCounts.critical * 30 - canonicalIssueCounts.major * 20 - canonicalIssueCounts.minor * 5,
+  );
+
+  // P0 invariant: if critical issues exist, compliance cannot be emitted as a passing score.
   const compliance =
-    typeof payload?.compliance_score === 'number'
-      ? payload.compliance_score
-      : Math.max(0, 100 - issueCounts.critical * 30 - issueCounts.major * 20 - issueCounts.minor * 5);
+    canonicalIssueCounts.critical > 0
+      ? 0
+      : payloadCompliance !== null
+      ? payloadCompliance
+      : derivedCompliance;
+
   const documentRisk = Array.isArray(payload?.document_risk)
     ? payload.document_risk
     : documents.map((doc) => ({
@@ -270,7 +284,7 @@ const ensureAnalytics = (
 
   return {
     compliance_score: Math.max(0, Math.min(100, compliance)),
-    issue_counts: issueCounts,
+    issue_counts: canonicalIssueCounts,
     document_risk: documentRisk,
     // CANONICAL: document status distribution — same source as summary.canonical_document_status
     document_status_distribution: canonicalDocumentStatus,

@@ -913,14 +913,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
+  const criticalIssueCount = useMemo(
+    () => issueCards.filter((issue) => normalizeDiscrepancySeverity(issue.severity) === 'critical').length,
+    [issueCards],
+  );
+  const finalVerdict = ((structuredResult?.bank_verdict as any)?.verdict ?? '').toString().toUpperCase();
+  const submitBlockedByRejectVerdict = finalVerdict === 'REJECT';
+  const submitBlockedByCritical = criticalIssueCount > 0 || (guardrails?.high_severity_discrepancies ?? 0) > 0;
+
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
+    if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
       return totalDiscrepancies === 0;
     }
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
+  }, [
+    enableBankSubmission,
+    guardrails,
+    guardrailsLoading,
+    submitBlockedByRejectVerdict,
+    submitBlockedByCritical,
+    totalDiscrepancies,
+  ]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1208,7 +1224,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       return;
     }
-    
+
+    if (submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
+      toast({
+        title: "Submission Blocked",
+        description: "Cannot submit to bank while verdict is REJECT or critical issues remain.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Phase 3: Show bank selector first
     setShowBankSelector(true);
   };
@@ -1242,6 +1267,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       return;
     }
+
+    if (submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
+      toast({
+        title: "Submission Blocked",
+        description: "Cannot submit to bank while verdict is REJECT or critical issues remain.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setShowManifestPreview(false);
     // Phase 2: Create submission
     createSubmissionMutation.mutate({

@@ -163,5 +163,34 @@ describe('results mapper - option e payload', () => {
     expect(mapped.issues[0].expected).toBe('50000 USD');
     expect(mapped.issues[0].actual).toBe('49000 USD');
   });
+
+  it('enforces integrity invariants when backend analytics contradict issue list', () => {
+    const payload: any = {
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          { document_id: 'd1', filename: 'LC.pdf', document_type: 'letter_of_credit', extraction_status: 'success', extracted_fields: {} },
+        ],
+        issues: Array.from({ length: 9 }, (_, i) => ({
+          id: `i-${i + 1}`,
+          title: `Issue ${i + 1}`,
+          severity: i < 2 ? 'critical' : 'major',
+          expected: 'Expected',
+          found: 'Found',
+        })),
+        processing_summary: { total_documents: 1, total_issues: 0 },
+        analytics: {
+          compliance_score: 100,
+          issue_counts: { critical: 0, major: 0, medium: 0, minor: 0 },
+        },
+        lc_structured: null,
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.summary.total_issues).toBe(9);
+    expect(mapped.analytics.issue_counts).toEqual({ critical: 2, major: 7, medium: 0, minor: 0 });
+    expect(mapped.analytics.compliance_score).toBe(0);
+  });
 });
 

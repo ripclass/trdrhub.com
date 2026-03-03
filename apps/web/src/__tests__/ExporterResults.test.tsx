@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { exporterApi } from '@/api/exporter';
 import { renderWithProviders } from './testUtils';
 import { buildValidationResults, mockValidationResults } from './fixtures/lcopilot';
 
@@ -94,6 +95,14 @@ vi.mock('@/api/exporter', () => ({
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
+    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
+      can_submit: true,
+      blocking_issues: [],
+      warnings: [],
+      required_docs_present: true,
+      high_severity_discrepancies: 0,
+      policy_checks_passed: true,
+    } as any);
   });
 
   it('renders overview metrics from processing summary', async () => {
@@ -375,5 +384,48 @@ describe('ExporterResults', () => {
     expect(screen.getAllByText(/^Verified$/i)).toHaveLength(4);
     expect(screen.getAllByText(/Issues$/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Error|Errors/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('blocks submit-to-bank when verdict is REJECT even if guardrails can_submit=true', async () => {
+    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
+      can_submit: true,
+      blocking_issues: [],
+      warnings: [],
+      required_docs_present: true,
+      high_severity_discrepancies: 0,
+      policy_checks_passed: true,
+    } as any);
+
+    const rejectPayload: any = {
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          {
+            document_id: 'd1',
+            filename: 'LC.pdf',
+            document_type: 'letter_of_credit',
+            extraction_status: 'success',
+            discrepancyCount: 0,
+            extracted_fields: { field20: 'LC-1' },
+          },
+        ],
+        issues: [
+          { id: 'i-critical', title: 'Critical mismatch', severity: 'critical', expected: 'A', found: 'B' },
+        ],
+        processing_summary: { total_documents: 1 },
+        analytics: { compliance_score: 100, issue_counts: { critical: 0, major: 0, minor: 0 } },
+        bank_verdict: { verdict: 'REJECT', can_submit: true, issue_summary: { critical: 1, major: 0, minor: 0, total: 1 } },
+        lc_structured: { mt700: { blocks: { '20': 'LC-1' } } },
+      },
+    };
+
+    activeResults = buildValidationResponse(rejectPayload);
+    render(renderWithProviders(<ExporterResults />));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Export LC Validation Results/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('button', { name: /Submit to Bank/i })).not.toBeInTheDocument();
   });
 });
