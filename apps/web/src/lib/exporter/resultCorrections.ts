@@ -31,8 +31,20 @@ export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string |
 
   const explicitIssueDate = readDateString(lc?.issue_date);
   const timelineIssueDate = readDateString(lc?.dates?.issue);
-  const mt700FieldIssueDate = readDateString(lc?.mt700?.fields?.date_of_issue);
-  const swiftIssueDate = parseSwiftYyMmDd(lc?.mt700?.blocks?.['31C']);
+
+  const mt700FieldIssueDate =
+    readDateString(lc?.mt700?.fields?.date_of_issue)
+    ?? readDateString(lc?.mt700?.date_of_issue)
+    ?? readDateString(lc?.mt700_raw?.fields?.date_of_issue)
+    ?? readDateString(lc?.mt700_raw?.date_of_issue);
+
+  const swiftIssueDate =
+    parseSwiftYyMmDd(lc?.mt700?.blocks?.['31C'])
+    ?? parseSwiftYyMmDd(lc?.mt700?.['31C'])
+    ?? parseSwiftYyMmDd(lc?.mt700?.fields?.['31C'])
+    ?? parseSwiftYyMmDd(lc?.mt700_raw?.blocks?.['31C'])
+    ?? parseSwiftYyMmDd(lc?.mt700_raw?.['31C'])
+    ?? parseSwiftYyMmDd(lc?.mt700_raw?.fields?.['31C']);
 
   if (swiftIssueDate) {
     return swiftIssueDate;
