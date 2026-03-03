@@ -165,4 +165,48 @@ describe('resultsMapper', () => {
 
     expect(response.issues[0].documentName).toBe('Invoice 01.pdf');
   });
+
+  it('attributes unmatched issues to fallback LC document to keep doc totals aligned', () => {
+    const response = buildValidationResponse({
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          {
+            document_id: 'lc1',
+            filename: 'LC.pdf',
+            document_type: 'letter_of_credit',
+            extraction_status: 'success',
+            discrepancyCount: 0,
+            failed_reason: null,
+            extracted_fields: {},
+          },
+          {
+            document_id: 'inv1',
+            filename: 'Invoice.pdf',
+            document_type: 'commercial_invoice',
+            extraction_status: 'success',
+            discrepancyCount: 0,
+            failed_reason: null,
+            extracted_fields: {},
+          },
+        ],
+        issues: [
+          { id: 'i1', title: 'Global issue', severity: 'critical', expected: 'a', found: 'b' },
+          { id: 'i2', title: 'Global issue 2', severity: 'major', expected: 'c', found: 'd' },
+        ],
+        processing_summary: {
+          total_documents: 2,
+          successful_extractions: 2,
+          partial_extractions: 0,
+          failed_extractions: 0,
+          total_issues: 2,
+          severity_breakdown: { critical: 1, major: 1, medium: 0, minor: 0 },
+        },
+        analytics: { document_risk: [], compliance_score: 10 },
+      },
+    } as any);
+
+    expect(response.documents.find((d) => d.documentId === 'lc1')?.issuesCount).toBe(2);
+    expect(response.summary.total_issues).toBe(2);
+  });
 });

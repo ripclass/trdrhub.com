@@ -38,7 +38,8 @@ export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string |
     return swiftIssueDate;
   }
 
-  return explicitIssueDate ?? mt700FieldIssueDate ?? timelineIssueDate ?? undefined;
+  // Prefer MT700 field-level date over legacy explicit/timeline issue dates when present.
+  return mt700FieldIssueDate ?? explicitIssueDate ?? timelineIssueDate ?? undefined;
 };
 
 export const hydrateManifestFromCustomsPack = (

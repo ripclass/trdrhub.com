@@ -257,6 +257,11 @@ const reconcileDocumentIssueCounts = (
     });
   });
 
+  const fallbackDocId =
+    documents.find((doc) => String(doc.typeKey).toLowerCase() === 'letter_of_credit')?.id
+    ?? documents[0]?.id
+    ?? null;
+
   issues.forEach((issue) => {
     const rawCandidates: unknown[] = [
       ...(Array.isArray(issue.documents) ? issue.documents : []),
@@ -270,6 +275,10 @@ const reconcileDocumentIssueCounts = (
       const docId = key ? lookup.get(key) : undefined;
       if (docId) matched.add(docId);
     });
+
+    if (matched.size === 0 && fallbackDocId) {
+      matched.add(fallbackDocId);
+    }
 
     matched.forEach((docId) => {
       counts.set(docId, (counts.get(docId) ?? 0) + 1);
