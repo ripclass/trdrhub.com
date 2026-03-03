@@ -138,12 +138,14 @@ async def generate_csrf_token(secret_key: str, expiry_seconds: int = 3600) -> tu
 
     await _store_nonce(nonce, expiry_seconds)
 
+    # API is hosted on a separate domain (trdrhub-api.onrender.com), so CSRF cookie
+    # must be sent in cross-site XHR from https://trdrhub.com. Use SameSite=None + Secure.
     cookie_settings = {
         "key": "csrf_token",
         "value": token,
         "httponly": False,  # Must be readable by JavaScript for double-submit
-        "samesite": "lax",
-        "secure": True,  # HTTPS only in production
+        "samesite": "none",
+        "secure": True,  # Required when SameSite=None
         "max_age": expiry_seconds,
     }
     
