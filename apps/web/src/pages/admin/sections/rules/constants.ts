@@ -19,6 +19,7 @@ export const PRIMARY_DOMAIN_OPTIONS: { value: string; label: string }[] = [
   // Compliance & Screening
   { value: "sanctions", label: "Sanctions" },
   { value: "export_control", label: "Export Control" },
+  { value: "aml", label: "AML / TBML (Financial Crime)" },
   
   // Commodities
   { value: "commodity", label: "Commodity (Sector-Specific Rules)" },
@@ -203,6 +204,18 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
     { value: "export_control.us", label: "US EAR (Export Administration)", type: "base", domain: "export_control" },
     { value: "export_control.eu", label: "EU Dual-Use Regulation", type: "base", domain: "export_control" },
     { value: "export_control", label: "Export Control (General)", type: "general", domain: "export_control" },
+  ],
+
+  // ═══════════════════════════════════════════════════════════════════
+  // AML - Anti-Money Laundering / TBML
+  // ═══════════════════════════════════════════════════════════════════
+  aml: [
+    { value: "aml.tbml", label: "TBML (Trade-Based Money Laundering)", type: "base", domain: "aml" },
+    { value: "aml.tbml.mispricing", label: "TBML Mispricing Detection", type: "base", domain: "aml" },
+    { value: "aml.tbml.counterparty", label: "TBML Counterparty & Network Risk", type: "base", domain: "aml" },
+    { value: "aml.kyc", label: "KYC / Customer Due Diligence", type: "base", domain: "aml" },
+    { value: "aml.edd", label: "Enhanced Due Diligence (EDD)", type: "base", domain: "aml" },
+    { value: "aml", label: "AML / TBML (General)", type: "general", domain: "aml" },
   ],
 
   // ═══════════════════════════════════════════════════════════════════
