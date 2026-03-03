@@ -94,6 +94,7 @@ import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
+import { hydrateManifestFromCustomsPack, resolveIssueDateFromLc } from "@/lib/exporter/resultCorrections";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -666,6 +667,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
   // lcStructured is already defined above to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
+  const resolvedIssueDate = resolveIssueDateFromLc(lcData);
   const lcSummaryRows = lcData
     ? buildFieldRows(
         [
@@ -681,7 +683,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcDateRows = lcData
     ? buildFieldRows(
         [
-          { label: "Issue Date", value: lcData.dates?.issue },
+          { label: "Issue Date", value: resolvedIssueDate },
           { label: "Expiry Date", value: lcData.dates?.expiry },
           { label: "Latest Shipment", value: lcData.dates?.latest_shipment },
           { label: "Place of Expiry", value: lcData.dates?.place_of_expiry },
@@ -859,6 +861,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
   const customsPack = structuredResult?.customs_pack;
+
+  useEffect(() => {
+    if (manifestData) {
+      return;
+    }
+
+    const hydrated = hydrateManifestFromCustomsPack(customsPack, lcNumber, validationSessionId);
+    if (hydrated) {
+      setManifestData(hydrated);
+    }
+  }, [customsPack, lcNumber, manifestData, validationSessionId]);
+
   // Canonical manifest state: UI generation/availability derives from manifestData only.
   // This keeps status label, helper copy, and preview enablement in sync.
   const packGenerated = !!manifestData;

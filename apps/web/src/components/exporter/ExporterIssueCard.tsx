@@ -206,6 +206,16 @@ const safeString = (value: any): string => {
   return String(value);
 };
 
+const normalizeIsbpReference = (reference?: string): string => {
+  const raw = safeString(reference).trim();
+  if (!raw) return '';
+
+  let cleaned = raw.replace(/^ISBP745\s*/i, '').trim();
+  cleaned = cleaned.replace(/^¶\s*/u, '').trim();
+
+  return cleaned ? `ISBP745 para ${cleaned}` : 'ISBP745';
+};
+
 export function ExporterIssueCard({
   issue,
   normalizedSeverity,
@@ -290,7 +300,7 @@ export function ExporterIssueCard({
               Bank Examiner Message:
             </p>
             <p className="text-sm text-slate-900 dark:text-slate-100 mt-1 font-mono">
-              {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? `ISBP745 ${issue.isbpReference.replace('ISBP745 ', '¶')}` : ''}.
+              {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? normalizeIsbpReference(issue.isbpReference) : ''}.
             </p>
           </div>
         )}
@@ -329,7 +339,7 @@ export function ExporterIssueCard({
                         variant="secondary"
                         className="cursor-help bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-200"
                       >
-                        ISBP745 {issue.isbpReference.replace('ISBP745 ', '¶')}
+                        {normalizeIsbpReference(issue.isbpReference)}
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
