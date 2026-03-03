@@ -174,7 +174,7 @@ describe('SummaryStrip top block behavior', () => {
 
 
 
-  it('uses summary total_issues when issue array length diverges', () => {
+  it('uses visible issue taxonomy count when summary total_issues diverges', () => {
     const data = buildValidationResults();
     data.issues = data.issues.slice(0, 2);
     (data.structured_result as any).processing_summary = {
@@ -192,8 +192,8 @@ describe('SummaryStrip top block behavior', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/9 issues?/i)).toBeInTheDocument();
-    expect(screen.queryByText(/2 issues?/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/2 issues?/i)).toBeInTheDocument();
+    expect(screen.queryByText(/9 issues?/i)).not.toBeInTheDocument();
   });
 
   it('uses customs wording safety text', () => {

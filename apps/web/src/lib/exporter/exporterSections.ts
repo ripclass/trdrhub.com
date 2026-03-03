@@ -1,3 +1,5 @@
+import type { ResultsTab } from '@/components/lcopilot/dashboardTabs';
+
 // Exporter Dashboard Section Model
 // Mirrors importer architecture for consistency
 
@@ -54,7 +56,7 @@ export function toExporterSectionParam(section: ExporterSection): string {
  * Map ExporterSection to the ResultsTab value expected by ExporterResults.
  * For non-review sections that show ExporterResults, this determines the initial tab.
  */
-export function sectionToResultsTab(section: ExporterSection): string {
+export function sectionToResultsTab(section: ExporterSection): ResultsTab {
   switch (section) {
     case 'overview':
     case 'reviews':
@@ -62,13 +64,7 @@ export function sectionToResultsTab(section: ExporterSection): string {
     case 'documents':
       return 'documents';
     case 'issues':
-      return 'discrepancies'; // ExporterResults uses 'discrepancies' internally
-    case 'extracted-data':
-      return 'extracted-data';
-    case 'history':
-      return 'history';
-    case 'analytics':
-      return 'analytics';
+      return 'discrepancies';
     case 'customs':
       return 'customs';
     default:

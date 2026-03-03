@@ -450,7 +450,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       .catch((err) => resultsLogger.error('Terminal guard fetch error', err));
   }, [jobStatus?.status, validationSessionId, fetchResults]);
 
-  const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
+  const [activeTab, setActiveTab] = useState<ResultsTab>(() => {
+    if (tabParam) {
+      return tabParam;
+    }
+    if (!isResultsTab(initialTab)) {
+      return DEFAULT_TAB;
+    }
+    return initialTab;
+  });
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [showManifestPreview, setShowManifestPreview] = useState(false);
   const [selectedBankId, setSelectedBankId] = useState<string>("");
@@ -468,18 +476,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const resultData = liveResults ?? cachedResults;
 
   useEffect(() => {
-    if (!initialTab) {
-      return;
-    }
-    if (initialTab !== activeTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab, activeTab]);
+    const safeInitialTab = isResultsTab(initialTab) ? initialTab : DEFAULT_TAB;
+    const nextTab = !embedded && tabParam ? tabParam : safeInitialTab;
 
-  useEffect(() => {
-    if (embedded) return;
-    if (!initialTab && tabParam && tabParam !== activeTab) {
-      setActiveTab(tabParam);
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
     }
   }, [embedded, initialTab, tabParam, activeTab]);
 
@@ -659,14 +660,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   resultsLogger.debug('Documents loaded', { count: documents.length });
 
   const issueCards = resultData?.issues ?? [];
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = documents.length || summary?.total_documents || 0;
-  // Keep user-visible issue counters aligned to canonical processing_summary value when present.
-  const totalDiscrepancies =
+  const backendReportedIssueTotal =
     typeof summary?.total_issues === 'number'
       ? summary.total_issues
       : issueCards.length;
+  // Invariant: user-visible total issues must equal displayed severity bucket sum.
+  const totalDiscrepancies =
+    severityCounts.critical + severityCounts.major + severityCounts.minor;
 
   // lcStructured is already defined above to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
@@ -834,24 +849,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
     return map;
   }, [documents]);
-  const severityCounts = useMemo(
-    () =>
-      issueCards.reduce(
-        (acc, card) => {
-          const severity = normalizeDiscrepancySeverity(card.severity);
-          acc[severity] = (acc[severity] || 0) + 1;
-          return acc;
-        },
-        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
-      ),
-    [issueCards]
-  );
   const filteredIssueCards = useMemo(() => {
     if (issueFilter === "all") return issueCards;
     return issueCards.filter(
       (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
     );
   }, [issueCards, issueFilter]);
+  useEffect(() => {
+    if (backendReportedIssueTotal === totalDiscrepancies) {
+      return;
+    }
+    resultsLogger.warn("Issue totals reconciled to visible severity buckets", {
+      backendReportedIssueTotal,
+      totalDiscrepancies,
+      severityCounts,
+    });
+  }, [backendReportedIssueTotal, totalDiscrepancies, severityCounts]);
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
@@ -970,6 +983,36 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     submitBlockedByCritical,
     totalDiscrepancies,
   ]);
+  const canonicalGateState = useMemo<'blocked' | 'review_required' | 'allowed'>(() => {
+    if (validationState?.isBlocked || submissionBlocked) {
+      return 'blocked';
+    }
+    if (isReadyToSubmit) {
+      return 'allowed';
+    }
+    return 'review_required';
+  }, [validationState?.isBlocked, submissionBlocked, isReadyToSubmit]);
+  const gateDecision = useMemo(() => {
+    if (canonicalGateState === 'blocked') {
+      return {
+        label: 'Blocked',
+        textClass: 'text-destructive',
+        helper: 'Validation gate is blocked; resolve blocking issues before proceeding.',
+      };
+    }
+    if (canonicalGateState === 'allowed') {
+      return {
+        label: 'Allowed',
+        textClass: 'text-success',
+        helper: 'Validation gate passed; you can proceed to submission checks.',
+      };
+    }
+    return {
+      label: 'Review Required',
+      textClass: 'text-warning',
+      helper: 'Validation gate requires review before proceeding to submission.',
+    };
+  }, [canonicalGateState]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1594,8 +1637,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Customs Decision:</span>
-                      <span className={`font-medium ${submissionBlocked ? 'text-destructive' : customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {submissionBlocked ? 'Blocked' : customsReadyScore >= 90 ? 'Allowed' : 'Review Required'}
+                      <span className={`font-medium ${gateDecision.textClass}`}>
+                        {gateDecision.label}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -1769,10 +1812,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="space-y-1 text-sm text-muted-foreground">
                       <p>
                         Validation decision:{" "}
-                        <span className={cn("font-medium", validationState?.isBlocked ? "text-destructive" : "text-foreground")}>
-                          {validationState?.isBlocked ? "Blocked" : "Review / Proceed"}
+                        <span className={cn("font-medium", gateDecision.textClass)}>
+                          {gateDecision.label}
                         </span>
                       </p>
+                      <p>{gateDecision.helper}</p>
                       <p>
                         {customsReadyScore >= 80
                           ? "Clearance readiness is high."
@@ -1794,8 +1838,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         disabled={generateCustomsPackMutation.isPending}
                       >
                         <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
-                        {generateCustomsPackMutation.isPending 
-                          ? "Generating..." 
+                        {generateCustomsPackMutation.isPending
+                          ? manifestData
+                            ? "Regenerating..."
+                            : "Generating..."
+                          : manifestData
+                          ? "Regenerate Customs Pack"
                           : "Generate Customs Pack"}
                       </Button>
                       {/* Show Download only when manifest exists (pack was generated) */}

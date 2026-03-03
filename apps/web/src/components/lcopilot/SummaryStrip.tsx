@@ -27,6 +27,16 @@ type Props = {
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
+const normalizeIssueSeverity = (severity?: string | null): 'critical' | 'major' | 'minor' => {
+  const token = (severity ?? '').toLowerCase();
+  if (['critical', 'fail', 'error', 'high'].includes(token)) {
+    return 'critical';
+  }
+  if (['warning', 'warn', 'major', 'medium'].includes(token)) {
+    return 'major';
+  }
+  return 'minor';
+};
 
 export function SummaryStrip({
   data,
@@ -101,7 +111,19 @@ export function SummaryStrip({
   ) as Array<Record<string, unknown>>;
   const shortFailReasons = pipelineFailReasons.slice(0, 3);
   
-  const totalIssues = summary.total_issues ?? summary.discrepancies ?? 0;
+  const visibleSeverityCounts = (data?.issues ?? []).reduce(
+    (acc, issue) => {
+      const severity = normalizeIssueSeverity((issue as any)?.severity);
+      acc[severity] += 1;
+      return acc;
+    },
+    { critical: 0, major: 0, minor: 0 },
+  );
+  // Keep SummaryStrip issue counts aligned to visible issue-card taxonomy.
+  const totalIssues =
+    visibleSeverityCounts.critical +
+    visibleSeverityCounts.major +
+    visibleSeverityCounts.minor;
   // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   

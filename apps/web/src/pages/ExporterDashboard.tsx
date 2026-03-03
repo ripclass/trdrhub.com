@@ -45,6 +45,7 @@ import {
   sidebarToSection,
   EXPORTER_SECTION_OPTIONS,
 } from "@/lib/exporter/exporterSections";
+import { isResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { getParam } from "@/lib/exporter/url";
 import {
   FileText,
@@ -91,7 +92,8 @@ function DashboardContent() {
   const sectionParam = searchParams.get("section");
   const urlJobId = getParam(searchParams, "jobId");
   const urlLc = getParam(searchParams, "lc");
-  const urlTab = getParam(searchParams, "tab");
+  const urlTabRaw = getParam(searchParams, "tab");
+  const urlTab = isResultsTab(urlTabRaw) ? urlTabRaw : null;
 
   // Active section - can be either ExporterSection or SidebarSection
   const [activeSection, setActiveSection] = useState<AnySection>(() => {
@@ -304,9 +306,9 @@ function DashboardContent() {
   const initialResultsTab =
     activeSection === "reviews" && urlTab
       ? urlTab
-      : EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
+      : (EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
         ? sectionToResultsTab(activeSection as ExporterSection)
-        : "overview";
+        : "overview");
 
   // Check if current section should show ExporterResults
   const showResults = [
