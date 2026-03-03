@@ -242,6 +242,46 @@ const summarizeSeverity = (issues: IssueCard[]) =>
     { ...DEFAULT_SEVERITY },
   );
 
+const reconcileDocumentIssueCounts = (
+  documents: ReturnType<typeof mapDocuments>,
+  issues: IssueCard[],
+): ReturnType<typeof mapDocuments> => {
+  const lookup = new Map<string, string>();
+  const counts = new Map<string, number>();
+
+  documents.forEach((doc) => {
+    counts.set(doc.id, 0);
+    [doc.filename, doc.name, doc.type, doc.typeKey].forEach((candidate) => {
+      const key = normalizeLookupKey(candidate);
+      if (key) lookup.set(key, doc.id);
+    });
+  });
+
+  issues.forEach((issue) => {
+    const rawCandidates: unknown[] = [
+      ...(Array.isArray(issue.documents) ? issue.documents : []),
+      issue.documentName,
+      issue.documentType,
+    ];
+
+    const matched = new Set<string>();
+    rawCandidates.forEach((candidate) => {
+      const key = normalizeLookupKey(candidate);
+      const docId = key ? lookup.get(key) : undefined;
+      if (docId) matched.add(docId);
+    });
+
+    matched.forEach((docId) => {
+      counts.set(docId, (counts.get(docId) ?? 0) + 1);
+    });
+  });
+
+  return documents.map((doc) => ({
+    ...doc,
+    issuesCount: counts.get(doc.id) ?? 0,
+  }));
+};
+
 const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>, issues: IssueCard[]) => {
   const severity = summarizeSeverity(issues);
   const totalDocuments =
@@ -369,9 +409,9 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const rawIssues = structured.issues ?? [];
   const issues = mapIssues(ensureArray(rawIssues), documents);
 
-  // Canonical issue count source for document rows is from backend document summaries
-  // to avoid dual attribution logic in the UI.
-  const reconciledDocuments = documents;
+  // Canonical issue count source for document rows must align with visible issue cards.
+  // This prevents Documents-tab badge totals from drifting from Issues-tab totals.
+  const reconciledDocuments = reconcileDocumentIssueCounts(documents, issues);
 
   const summary = ensureSummary(structured.processing_summary, reconciledDocuments, issues);
   const analytics = ensureAnalytics(structured.analytics, reconciledDocuments, issues);

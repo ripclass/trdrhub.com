@@ -13,28 +13,32 @@ export const parseSwiftYyMmDd = (raw: unknown): string | null => {
   return `${year.toString().padStart(4, '0')}-${value.slice(2, 4)}-${value.slice(4, 6)}`;
 };
 
+const readDateString = (value: unknown): string | undefined => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (value && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+    const nested = (value as Record<string, unknown>).value;
+    if (typeof nested === 'string' && nested.trim().length > 0) {
+      return nested.trim();
+    }
+  }
+  return undefined;
+};
+
 export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string | undefined => {
   if (!lc) return undefined;
 
-  const explicitIssueDate =
-    typeof lc?.issue_date === 'string' && lc.issue_date.trim().length > 0
-      ? lc.issue_date.trim()
-      : undefined;
-  const timelineIssueDate =
-    typeof lc?.dates?.issue === 'string' && lc.dates.issue.trim().length > 0
-      ? lc.dates.issue.trim()
-      : undefined;
+  const explicitIssueDate = readDateString(lc?.issue_date);
+  const timelineIssueDate = readDateString(lc?.dates?.issue);
+  const mt700FieldIssueDate = readDateString(lc?.mt700?.fields?.date_of_issue);
   const swiftIssueDate = parseSwiftYyMmDd(lc?.mt700?.blocks?.['31C']);
 
   if (swiftIssueDate) {
     return swiftIssueDate;
   }
 
-  if (explicitIssueDate) {
-    return explicitIssueDate;
-  }
-
-  return timelineIssueDate ?? undefined;
+  return explicitIssueDate ?? mt700FieldIssueDate ?? timelineIssueDate ?? undefined;
 };
 
 export const hydrateManifestFromCustomsPack = (
