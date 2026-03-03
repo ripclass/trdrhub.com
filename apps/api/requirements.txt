@@ -1,7 +1,7 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-alembic==1.12.1
+sqlalchemy==2.0.38
+alembic==1.14.1
 psycopg2-binary==2.9.10
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
