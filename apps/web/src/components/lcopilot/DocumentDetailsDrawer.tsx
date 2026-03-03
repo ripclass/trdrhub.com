@@ -37,6 +37,8 @@ export interface DocumentForDrawer {
   typeKey?: string;
   status: "success" | "warning" | "error";
   extractionStatus?: string;
+  complianceStatus?: string;
+  failedReason?: string | null;
   issuesCount: number;
   extractedFields: Record<string, any>;
   ocrConfidence?: number;
@@ -429,6 +431,20 @@ export function DocumentDetailsDrawer({
             )}
           </div>
         </SheetHeader>
+
+        <div className="grid grid-cols-1 gap-2 text-xs">
+          <div className="rounded-md border p-2 bg-muted/20">
+            <p className="font-semibold mb-1">Extraction Quality</p>
+            <p>Status: <span className="font-medium">{document.extractionStatus ?? 'partial'}</span></p>
+            {document.ocrConfidence !== undefined && <p>Confidence: <span className="font-medium">{Math.round(document.ocrConfidence)}%</span></p>}
+            {document.failedReason && <p className="text-destructive">Reason: {document.failedReason}</p>}
+          </div>
+          <div className="rounded-md border p-2 bg-muted/20">
+            <p className="font-semibold mb-1">Compliance Findings</p>
+            <p>Status: <span className="font-medium">{document.complianceStatus ?? 'clean'}</span></p>
+            <p>{document.issuesCount} Compliance {document.issuesCount === 1 ? 'Issue' : 'Issues'}</p>
+          </div>
+        </div>
 
         <Separator className="my-4" />
 

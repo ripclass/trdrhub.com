@@ -1935,19 +1935,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         {document.status === "success" ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
                             <CheckCircle className="w-3.5 h-3.5" />
-                            Verified
+                            Extraction Success
                           </span>
                         ) : document.status === "error" ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">
                             <XCircle className="w-3.5 h-3.5" />
-                            {discrepancyCount > 0 ? `${discrepancyCount} Errors` : 'Error'}
+                            Extraction Failed
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            {discrepancyCount === 1 ? 'Minor Issues' : `${Math.max(discrepancyCount, 1)} Issues`}
+                            Extraction Partial
                           </span>
                         )}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {discrepancyCount} Compliance {discrepancyCount === 1 ? 'Issue' : 'Issues'}
+                        </span>
                         <Button 
                           variant="outline" 
                           size="sm"
@@ -1960,6 +1963,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               typeKey: document.typeKey,
                               status: document.status,
                               extractionStatus: document.extractionStatus,
+                              complianceStatus: (document as any).complianceStatus,
+                              failedReason: (document as any).failedReason,
                               issuesCount: document.issuesCount,
                               extractedFields: buildDrawerExtractedFields(document),
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
