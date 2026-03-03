@@ -32,6 +32,7 @@ def build_validation_results(
             "passed": outcome.get("passed", False),
             "severity": outcome.get("severity", rule_def.get("severity", "warning")),
             "message": outcome.get("message", rule_def.get("description") or ""),
+            "deterministic": rule_def.get("deterministic"),
             "ruleset_id": meta.get("ruleset_id"),
             "ruleset_version": meta.get("ruleset_version"),
             "rulebook_version": meta.get("rulebook_version"),

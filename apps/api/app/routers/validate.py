@@ -1034,8 +1034,13 @@ async def validate_doc(
                     if jur and jur != "global":
                         supplement_domains.append(f"regulations.{jur}")
                 
-                # Add sanctions screening
-                supplement_domains.append("sanctions.screening")
+                # Add sanctions screening + AML/TBML + shell-risk
+                supplement_domains.extend([
+                    "sanctions.screening",
+                    "aml.tbml",
+                    "aml.shell_risk",
+                    "aml.shell-risk",
+                ])
                 
                 # Primary jurisdiction (prefer exporter's country)
                 primary_jurisdiction = "global"
@@ -1439,6 +1444,8 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
+                    "source": "deterministic",
+                    "deterministic": True,
                 }
                 payload_issue.update(_build_issue_explanation(payload_issue, default_type="extraction"))
                 failed_results.append(payload_issue)
@@ -1453,6 +1460,8 @@ async def validate_doc(
                 # AIValidationIssue uses: "rule", "ucp_reference", "actual"
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
+                ruleset_domain = issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc"
+                is_ai_issue = bool(issue_dict.get("auto_generated")) or ruleset_domain == "icc.lcopilot.ai_validation"
                 payload_issue = {
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "CROSSDOC-ISSUE",
                     "title": issue_dict.get("title", "Cross-Document Issue"),
@@ -1468,8 +1477,10 @@ async def validate_doc(
                     "ucp_description": issue_dict.get("ucp_description") or _get_ucp_desc(ucp_ref),
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
-                    "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
+                    "ruleset_domain": ruleset_domain,
                     "auto_generated": issue_dict.get("auto_generated", False),
+                    "source": "ai" if is_ai_issue else "deterministic",
+                    "deterministic": not is_ai_issue,
                 }
                 payload_issue.update(_build_issue_explanation(payload_issue, default_type="compliance"))
                 failed_results.append(payload_issue)
@@ -1480,6 +1491,9 @@ async def validate_doc(
                 issue_dict = issue if isinstance(issue, dict) else issue.to_dict() if hasattr(issue, 'to_dict') else {}
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
+                deterministic_flag = issue_dict.get("deterministic")
+                if deterministic_flag is None:
+                    deterministic_flag = True
                 payload_issue = {
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "DB-RULE",
                     "title": issue_dict.get("title", "Validation Rule"),
@@ -1496,6 +1510,8 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.ucp600",
+                    "deterministic": deterministic_flag,
+                    "source": "deterministic" if deterministic_flag else "ai",
                 }
                 payload_issue.update(_build_issue_explanation(payload_issue, default_type="risk"))
                 failed_results.append(payload_issue)
@@ -1518,6 +1534,8 @@ async def validate_doc(
                     "display_card": True,
                     "ruleset_domain": "system.lc_type",
                     "not_applicable": False,
+                    "source": "system",
+                    "deterministic": False,
                 }
             )
         
@@ -1548,6 +1566,10 @@ async def validate_doc(
             len(db_rule_issues) if db_rule_issues else 0,
             len(deduplicated_results),
         )
+
+        issue_source_summary = _summarize_issue_sources(deduplicated_results)
+        deterministic_counts = issue_source_summary.get("deterministic", {}).get("counts", {})
+        ai_counts = issue_source_summary.get("ai", {}).get("counts", {})
         
         issue_cards, reference_issues = build_issue_cards(deduplicated_results)
         checkpoint("issue_cards_built")
@@ -1994,6 +2016,8 @@ async def validate_doc(
                     "major": v2_score.major_count,
                     "minor": v2_score.minor_count,
                 }
+                structured_result["analytics"]["deterministic_issue_counts"] = deterministic_counts
+                structured_result["analytics"]["ai_issue_counts"] = ai_counts
             
             if structured_result.get("processing_summary"):
                 structured_result["processing_summary"]["compliance_rate"] = int(round(v2_score.score))
@@ -2002,6 +2026,12 @@ async def validate_doc(
                     "major": v2_score.major_count,
                     "medium": 0,
                     "minor": v2_score.minor_count,
+                }
+                structured_result["processing_summary"]["deterministic_severity_breakdown"] = {
+                    "critical": int(deterministic_counts.get("critical", 0) or 0),
+                    "major": int(deterministic_counts.get("major", 0) or 0),
+                    "minor": int(deterministic_counts.get("minor", 0) or 0),
+                    "info": int(deterministic_counts.get("info", 0) or 0),
                 }
             
             logger.info(
@@ -2018,9 +2048,9 @@ async def validate_doc(
             # BANK SUBMISSION VERDICT
             # =====================================================================
             bank_verdict = _build_bank_submission_verdict(
-                critical_count=v2_score.critical_count,
-                major_count=v2_score.major_count,
-                minor_count=v2_score.minor_count,
+                critical_count=int(deterministic_counts.get("critical", 0) or 0),
+                major_count=int(deterministic_counts.get("major", 0) or 0),
+                minor_count=int(deterministic_counts.get("minor", 0) or 0),
                 compliance_score=v2_score.score,
                 all_issues=all_issues,
                 validation_status=v2_score.level.value,
@@ -2030,7 +2060,7 @@ async def validate_doc(
             if str(bank_verdict.get("verdict") or "").upper() == "REJECT":
                 structured_result["blocking_reasons"] = [
                     issue.get("why_flagged") or issue.get("message")
-                    for issue in all_issues
+                    for issue in issue_source_summary.get("deterministic", {}).get("issues", [])
                     if str(issue.get("severity") or "").lower() == "critical"
                 ]
             try:
@@ -2059,11 +2089,14 @@ async def validate_doc(
 
             # Dual-track decision fields + hybrid arbitration
             ai_verdict = _derive_ai_verdict(ai_metadata)
-            ruleset_verdict = _derive_ruleset_verdict(v2_score.critical_count, v2_score.major_count)
+            ruleset_verdict = issue_source_summary.get("deterministic", {}).get("verdict") or _derive_ruleset_verdict(
+                int(deterministic_counts.get("critical", 0) or 0),
+                int(deterministic_counts.get("major", 0) or 0),
+            )
             legacy_final_verdict = bank_verdict.get("verdict")
             blocking_rules = sorted({
                 str((issue.get("rule") or issue.get("code") or "")).strip()
-                for issue in all_issues
+                for issue in issue_source_summary.get("deterministic", {}).get("issues", [])
                 if isinstance(issue, dict) and str(issue.get("severity", "")).lower() == "critical"
                 and (issue.get("rule") or issue.get("code"))
             })
@@ -2102,6 +2135,15 @@ async def validate_doc(
             structured_result["final_verdict"] = final_verdict
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
+            structured_result["deterministic_summary"] = {
+                "counts": deterministic_counts,
+                "verdict": ruleset_verdict,
+                "rules_fired": issue_source_summary.get("deterministic", {}).get("rules_fired", []),
+            }
+            structured_result["ai_summary"] = {
+                "counts": ai_counts,
+                "rules_fired": issue_source_summary.get("ai", {}).get("rules_fired", []),
+            }
             structured_result["confidence_band"] = confidence_band
             structured_result["confidence_score"] = ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None
             structured_result["risk_score"] = ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None
@@ -4237,6 +4279,12 @@ def _derive_ruleset_verdict(critical_count: int, major_count: int) -> str:
     return "pass"
 
 
+def _summarize_issue_sources(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+    from app.services.validation.deterministic_gate import summarize_issue_sources
+
+    return summarize_issue_sources(issues)
+
+
 def _arbitration_to_final_verdict(arbitration_verdict: Optional[str], fallback: Optional[str]) -> str:
     token = str(arbitration_verdict or "").strip().lower()
     if token == "pass":
@@ -5286,16 +5334,16 @@ def _build_bank_submission_verdict(
         verdict_color = "red"
         verdict_message = "Documents will be REJECTED by bank"
         recommendation = "Do NOT submit to bank until critical issues are resolved."
-    elif major_count > 2:
+    elif major_count > 0:
         verdict = "HOLD"
         verdict_color = "orange"
-        verdict_message = "High risk of discrepancy notice"
-        recommendation = "Consider resolving major issues before submission to avoid discrepancy fees."
-    elif major_count > 0:
+        verdict_message = "Review required before submission"
+        recommendation = "Resolve major issues before submission to avoid discrepancy fees."
+    elif minor_count > 0:
         verdict = "CAUTION"
         verdict_color = "yellow"
-        verdict_message = "Minor corrections recommended"
-        recommendation = "Documents may be accepted with discrepancy notice. Consider corrections."
+        verdict_message = "Minor risk notes identified"
+        recommendation = "Documents can be submitted with minor risk notes."
     else:
         verdict = "SUBMIT"
         verdict_color = "green"
