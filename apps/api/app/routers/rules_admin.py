@@ -564,6 +564,11 @@ async def publish_ruleset(
             detail={"replaced_by": str(ruleset_id)}
         )
         db.add(archive_audit)
+
+        # Important: flush archive first so partial unique index
+        # (domain, jurisdiction) WHERE status='active' is released
+        # before we mark the new ruleset as active.
+        db.flush()
     
     # Update ruleset to active
     from datetime import datetime, timezone
@@ -619,6 +624,17 @@ async def publish_ruleset(
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to commit ruleset publish: {e}", exc_info=True)
+
+        message = str(e)
+        if "ix_rulesets_active_unique" in message or "duplicate key value violates unique constraint" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Another active ruleset already exists for this domain/jurisdiction. "
+                    "Please retry publish; if it persists, archive the existing active ruleset first."
+                ),
+            )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to publish ruleset: {str(e)}"
