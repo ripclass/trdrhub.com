@@ -1423,7 +1423,7 @@ async def validate_doc(
                 issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
                 ucp_ref = issue_dict.get("ucp_reference")
                 isbp_ref = issue_dict.get("isbp_reference")
-                failed_results.append({
+                payload_issue = {
                     "rule": issue_dict.get("rule", "V2-ISSUE"),
                     "title": issue_dict.get("title", "Validation Issue"),
                     "passed": False,
@@ -1439,7 +1439,9 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
-                })
+                }
+                payload_issue.update(_build_issue_explanation(payload_issue, default_type="extraction"))
+                failed_results.append(payload_issue)
         
         # Add cross-doc issues (including AI validator issues)
         if v2_crossdoc_issues:
@@ -1451,7 +1453,7 @@ async def validate_doc(
                 # AIValidationIssue uses: "rule", "ucp_reference", "actual"
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
-                failed_results.append({
+                payload_issue = {
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "CROSSDOC-ISSUE",
                     "title": issue_dict.get("title", "Cross-Document Issue"),
                     "passed": False,
@@ -1468,7 +1470,9 @@ async def validate_doc(
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                     "auto_generated": issue_dict.get("auto_generated", False),
-                })
+                }
+                payload_issue.update(_build_issue_explanation(payload_issue, default_type="compliance"))
+                failed_results.append(payload_issue)
         
         # Add DB rule issues (2500+ rules from database)
         if db_rule_issues:
@@ -1476,7 +1480,7 @@ async def validate_doc(
                 issue_dict = issue if isinstance(issue, dict) else issue.to_dict() if hasattr(issue, 'to_dict') else {}
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
-                failed_results.append({
+                payload_issue = {
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "DB-RULE",
                     "title": issue_dict.get("title", "Validation Rule"),
                     "passed": False,
@@ -1492,7 +1496,9 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.ucp600",
-                })
+                }
+                payload_issue.update(_build_issue_explanation(payload_issue, default_type="risk"))
+                failed_results.append(payload_issue)
             logger.info("Added %d DB rule issues to failed_results", len(db_rule_issues))
         
         # Add LC type unknown warning if applicable
@@ -2003,6 +2009,12 @@ async def validate_doc(
             )
             structured_result["bank_verdict"] = bank_verdict
             structured_result["verdict_signature"] = bank_verdict.get("verdict_signature")
+            if str(bank_verdict.get("verdict") or "").upper() == "REJECT":
+                structured_result["blocking_reasons"] = [
+                    issue.get("why_flagged") or issue.get("message")
+                    for issue in all_issues
+                    if str(issue.get("severity") or "").lower() == "critical"
+                ]
             try:
                 structured_result = _enforce_document_semantics(
                     structured_result,
@@ -3369,6 +3381,30 @@ def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             "user_type": payload.get("user_type") or payload.get("userType"),
             "workflow_type": payload.get("workflow_type") or payload.get("workflowType"),
         },
+    }
+
+
+def _build_issue_explanation(issue: Dict[str, Any], *, default_type: str) -> Dict[str, Any]:
+    severity = str(issue.get("severity") or "minor").lower()
+    issue_type = issue.get("issue_type") or default_type
+    expected = issue.get("expected")
+    found = issue.get("found") or issue.get("actual")
+    rule = issue.get("rule") or issue.get("rule_id") or "rule"
+
+    if severity == "critical":
+        required_action = "Fix before submission; this blocks bank/customs readiness"
+    elif severity in {"major", "warning"}:
+        required_action = "Review and correct before submission"
+    else:
+        required_action = "Optional cleanup; does not block by itself"
+
+    return {
+        "issue_type": issue_type,
+        "why_flagged": issue.get("message") or f"Rule {rule} failed validation",
+        "evidence_fields": [field for field in [issue.get("field"), "expected", "found"] if field],
+        "required_user_action": required_action,
+        "expected": expected,
+        "found": found,
     }
 
 
