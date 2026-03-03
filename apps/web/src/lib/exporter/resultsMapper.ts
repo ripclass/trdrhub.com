@@ -344,9 +344,22 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   // Safely extract issues - ensure it's always an array
   const rawIssues = structured.issues ?? [];
   const issues = mapIssues(ensureArray(rawIssues), documents);
+
+  const issueCountByDoc = new Map<string, number>();
+  issues.forEach((issue) => {
+    const keys = [issue.documentName, ...(issue.documents ?? [])].filter(Boolean) as string[];
+    keys.forEach((key) => {
+      const normalized = key.toLowerCase();
+      issueCountByDoc.set(normalized, (issueCountByDoc.get(normalized) ?? 0) + 1);
+    });
+  });
+  const reconciledDocuments = documents.map((doc) => {
+    const count = issueCountByDoc.get(doc.name.toLowerCase()) ?? issueCountByDoc.get(doc.type.toLowerCase()) ?? 0;
+    return { ...doc, issuesCount: count };
+  });
   
-  const summary = ensureSummary(structured.processing_summary, documents, issues);
-  const analytics = ensureAnalytics(structured.analytics, documents, issues);
+  const summary = ensureSummary(structured.processing_summary, reconciledDocuments, issues);
+  const analytics = ensureAnalytics(structured.analytics, reconciledDocuments, issues);
   
   // Safely extract timeline
   const rawTimeline = structured.lc_structured?.timeline ?? structured.timeline ?? [];
@@ -373,7 +386,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
     summary,
-    documents,
+    documents: reconciledDocuments,
     issues,
     analytics,
     timeline,

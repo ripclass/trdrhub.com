@@ -891,6 +891,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
+  const finalVerdict = String((structuredResult as any)?.final_verdict ?? '').toUpperCase();
+  const complianceStatus = String((structuredResult as any)?.compliance_status ?? '').toLowerCase();
+  const pipelineVerified = String((structuredResult as any)?.pipeline_verification_status ?? 'UNVERIFIED') === 'VERIFIED';
+  const submissionBlocked = finalVerdict === 'REJECT' || complianceStatus === 'reject' || !pipelineVerified;
   const customsPack = structuredResult?.customs_pack;
 
   useEffect(() => {
@@ -1560,15 +1564,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Customs Ready:</span>
-                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
+                      <span>Customs Decision:</span>
+                      <span className={`font-medium ${submissionBlocked ? 'text-destructive' : customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {submissionBlocked ? 'Blocked' : customsReadyScore >= 90 ? 'Allowed' : 'Review Required'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Bank Ready:</span>
-                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
-                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
+                      <span>Bank Submission:</span>
+                      <span className={`font-medium ${submissionBlocked ? 'text-destructive' : overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
+                        {submissionBlocked ? 'Blocked' : overallStatus === 'success' ? 'Allowed' : 'Review Required'}
                       </span>
                     </div>
                   </div>

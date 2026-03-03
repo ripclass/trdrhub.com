@@ -2003,12 +2003,16 @@ async def validate_doc(
             )
             structured_result["bank_verdict"] = bank_verdict
             structured_result["verdict_signature"] = bank_verdict.get("verdict_signature")
-            structured_result = _enforce_document_semantics(
-                structured_result,
-                validation_status=v2_score.level.value,
-                critical_count=v2_score.critical_count,
-                major_count=v2_score.major_count,
-            )
+            try:
+                structured_result = _enforce_document_semantics(
+                    structured_result,
+                    validation_status=v2_score.level.value,
+                    critical_count=v2_score.critical_count,
+                    major_count=v2_score.major_count,
+                )
+            except Exception as semantics_err:
+                logger.error("Semantics invariant failure: %s", semantics_err)
+                structured_result = mark_unverified(structured_result, f"semantics_invariant_failed: {semantics_err}")
             structured_result["authoritative_verdict"] = _build_authoritative_verdict(
                 verdict_class=bank_verdict.get("verdict_class") or bank_verdict.get("verdict"),
                 source=(bank_verdict.get("verdict_signature", {}).get("source") if isinstance(bank_verdict.get("verdict_signature"), dict) else "bank_verdict"),
