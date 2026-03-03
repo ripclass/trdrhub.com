@@ -22,6 +22,90 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _read_text(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        val = value.strip()
+        return val or None
+    if isinstance(value, dict):
+        nested = value.get("value")
+        if isinstance(nested, str):
+            val = nested.strip()
+            return val or None
+    return None
+
+
+def _parse_swift_yymmdd(raw: Any) -> Optional[str]:
+    value = _read_text(raw)
+    if not value or len(value) != 6 or not value.isdigit():
+        return None
+
+    yy = int(value[:2])
+    mm = int(value[2:4])
+    dd = int(value[4:6])
+    year = 2000 + yy if yy <= 69 else 1900 + yy
+    try:
+        return datetime(year, mm, dd).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _recover_swapped_issue_date(issue_date: Optional[str], expiry_date: Optional[str]) -> Optional[str]:
+    # Recover legacy inversion pattern like 2015-04-26 -> 2026-04-15 when expiry indicates 2026 horizon.
+    if not issue_date or not expiry_date:
+        return None
+    if len(issue_date) != 10 or len(expiry_date) != 10:
+        return None
+
+    try:
+        issue_dt = datetime.strptime(issue_date, "%Y-%m-%d")
+        expiry_dt = datetime.strptime(expiry_date, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    parts = issue_date.split("-")
+    if len(parts) != 3:
+        return None
+    yyyy, mm, dd = parts
+    if len(yyyy) != 4 or len(mm) != 2 or len(dd) != 2:
+        return None
+
+    candidate = f"20{dd}-{mm}-{yyyy[2:]}"
+    try:
+        candidate_dt = datetime.strptime(candidate, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    if issue_dt.year <= expiry_dt.year - 5 and candidate_dt <= expiry_dt and candidate_dt.year >= expiry_dt.year - 2:
+        return candidate
+    return None
+
+
+def _canonical_issue_date(extractor_outputs: Dict[str, Any], mt700_block: Dict[str, Any], timeline_dict: Dict[str, Any]) -> Optional[str]:
+    explicit = _read_text(extractor_outputs.get("issue_date"))
+    expiry = _read_text(extractor_outputs.get("expiry_date")) or _read_text(timeline_dict.get("expiry_date"))
+
+    mt700_fields = mt700_block.get("fields") if isinstance(mt700_block.get("fields"), dict) else {}
+    mt700_blocks = mt700_block.get("blocks") if isinstance(mt700_block.get("blocks"), dict) else {}
+
+    swift_31c = (
+        _parse_swift_yymmdd(mt700_blocks.get("31C"))
+        or _parse_swift_yymmdd(mt700_block.get("31C"))
+        or _parse_swift_yymmdd(mt700_fields.get("31C"))
+    )
+    if swift_31c:
+        return swift_31c
+
+    mt700_issue = _read_text(mt700_fields.get("date_of_issue")) or _read_text(mt700_block.get("date_of_issue"))
+    if mt700_issue:
+        return mt700_issue
+
+    recovered = _recover_swapped_issue_date(explicit, expiry)
+    if recovered:
+        return recovered
+
+    return explicit or _read_text(timeline_dict.get("issue_date"))
+
+
 def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     extractor_outputs = _as_dict(extractor_outputs)
     if not extractor_outputs:
@@ -195,9 +279,11 @@ def build_unified_structured_result(
         timeline = _default_timeline(len(docs_structured))
     issues = extractor_outputs.get("issues", [])
 
+    canonical_issue_date = _canonical_issue_date(extractor_outputs, mt700_block if isinstance(mt700_block, dict) else {}, timeline_dict)
+
     # Build dates object from extractor outputs
     dates = {
-        "issue": extractor_outputs.get("issue_date") or timeline_dict.get("issue_date"),
+        "issue": canonical_issue_date,
         "expiry": extractor_outputs.get("expiry_date") or timeline_dict.get("expiry_date"),
         "latest_shipment": extractor_outputs.get("latest_shipment") or timeline_dict.get("latest_shipment"),
         "place_of_expiry": extractor_outputs.get("place_of_expiry"),
@@ -223,6 +309,7 @@ def build_unified_structured_result(
         "incoterm": extractor_outputs.get("incoterm"),
         "ucp_reference": extractor_outputs.get("ucp_reference"),
         "goods_description": extractor_outputs.get("goods_description"),
+        "issue_date": canonical_issue_date,
         "applicant": extractor_outputs.get("applicant"),
         "beneficiary": extractor_outputs.get("beneficiary"),
         "ports": extractor_outputs.get("ports"),
