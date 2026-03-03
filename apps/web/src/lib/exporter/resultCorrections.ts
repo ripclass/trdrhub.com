@@ -13,6 +13,42 @@ const readDateString = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const parseIsoDate = (value: string | undefined): Date | null => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const dt = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const maybeRecoverSwappedIsoDate = (
+  explicitIssueDate: string | undefined,
+  expiryDate: string | undefined,
+): string | undefined => {
+  if (!explicitIssueDate) return undefined;
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(explicitIssueDate);
+  if (!match) return undefined;
+
+  const [, yyyy, mm, dd] = match;
+  const swapped = `20${dd}-${mm}-${yyyy.slice(2)}`;
+
+  const explicitDt = parseIsoDate(explicitIssueDate);
+  const swappedDt = parseIsoDate(swapped);
+  const expiryDt = parseIsoDate(expiryDate);
+  if (!explicitDt || !swappedDt || !expiryDt) return undefined;
+
+  const explicitYear = explicitDt.getUTCFullYear();
+  const swappedYear = swappedDt.getUTCFullYear();
+  const expiryYear = expiryDt.getUTCFullYear();
+
+  // Conservative guardrail: recover only when explicit year is unrealistically stale
+  // for this LC horizon and swapped candidate lands near expiry window.
+  if (explicitYear <= expiryYear - 5 && swappedYear >= expiryYear - 2 && swappedDt <= expiryDt) {
+    return swapped;
+  }
+
+  return undefined;
+};
+
 export const parseSwiftYyMmDd = (raw: unknown): string | null => {
   const value = readDateString(raw) ?? '';
   if (!/^\d{6}$/.test(value)) return null;
@@ -50,8 +86,16 @@ export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string |
     return swiftIssueDate;
   }
 
-  // Prefer MT700 field-level date over legacy explicit/timeline issue dates when present.
-  return mt700FieldIssueDate ?? explicitIssueDate ?? timelineIssueDate ?? undefined;
+  if (mt700FieldIssueDate) {
+    return mt700FieldIssueDate;
+  }
+
+  const recoveredIssueDate = maybeRecoverSwappedIsoDate(explicitIssueDate, readDateString(lc?.dates?.expiry));
+  if (recoveredIssueDate) {
+    return recoveredIssueDate;
+  }
+
+  return explicitIssueDate ?? timelineIssueDate ?? undefined;
 };
 
 export const hydrateManifestFromCustomsPack = (

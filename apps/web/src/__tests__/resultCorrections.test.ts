@@ -48,6 +48,15 @@ describe('resultCorrections', () => {
     expect(resolved).toBe('2026-04-15');
   });
 
+  it('recovers swapped legacy issue_date when expiry window indicates inversion', () => {
+    const resolved = resolveIssueDateFromLc({
+      issue_date: '2015-04-26',
+      dates: { issue: '2015-04-26', expiry: '2026-09-30' },
+    });
+
+    expect(resolved).toBe('2026-04-15');
+  });
+
   it('hydrates manifest payload from customs_pack manifest to keep state consistent', () => {
     const manifest = hydrateManifestFromCustomsPack(
       {
