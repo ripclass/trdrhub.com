@@ -4,7 +4,7 @@
  * Displays available amendments for LC discrepancies with download options.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileCheck, Download, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +46,20 @@ export function AmendmentCard({
   onDownloadISO20022,
 }: AmendmentCardProps) {
   const [expanded, setExpanded] = useState(false);
-  
+
+  const amendmentKeys = useMemo(
+    () => amendments.amendments.map((amendment, idx) => amendment.issue_id || `${amendment.field.tag}-${idx}`),
+    [amendments.amendments],
+  );
+
+  const [selectedFormats, setSelectedFormats] = useState<Record<string, "MT707" | "ISO20022">>({});
+
+  const getSelectedFormat = (key: string, hasIso: boolean): "MT707" | "ISO20022" => {
+    const selected = selectedFormats[key];
+    if (selected === "ISO20022" && !hasIso) return "MT707";
+    return selected ?? "MT707";
+  };
+
   if (amendments.count === 0) return null;
 
   return (
@@ -78,48 +91,64 @@ export function AmendmentCard({
         
         {expanded && (
           <div className="mt-4 pt-4 border-t border-blue-500/20 space-y-3">
-            {amendments.amendments.map((amendment, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-background/50">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    Field {amendment.field.tag}: {amendment.field.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {amendment.field.current} → {amendment.field.proposed}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {amendment.narrative} • ~{amendment.bank_processing_days} days • USD {amendment.estimated_fee_usd}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onDownloadMT707(amendment)}
-                    className="text-blue-400 hover:text-blue-300"
-                    title="Download legacy SWIFT MT707 format"
-                  >
-                    <Download className="w-4 h-4 mr-1" />
-                    MT707
-                  </Button>
-                  {amendment.iso20022_xml && (
+            {amendments.amendments.map((amendment, idx) => {
+              const key = amendmentKeys[idx] ?? `${amendment.field.tag}-${idx}`;
+              const hasIso = Boolean(amendment.iso20022_xml);
+              const selectedFormat = getSelectedFormat(key, hasIso);
+
+              return (
+                <div key={key} className="flex items-start justify-between p-3 rounded-lg bg-background/50 gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      Field {amendment.field.tag}: {amendment.field.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {amendment.field.current} → {amendment.field.proposed}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {amendment.narrative} • ~{amendment.bank_processing_days} days • USD {amendment.estimated_fee_usd}
+                    </p>
+                    <p className="text-[11px] mt-2 text-muted-foreground">
+                      Selected format for this amendment: <span className="font-semibold text-foreground">{selectedFormat}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
                     <Button
-                      variant="ghost"
+                      variant={selectedFormat === "MT707" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => onDownloadISO20022(amendment)}
-                      className="text-emerald-400 hover:text-emerald-300"
-                      title="Download ISO20022 XML format (modern standard)"
+                      onClick={() => {
+                        setSelectedFormats((prev) => ({ ...prev, [key]: "MT707" }));
+                        onDownloadMT707(amendment);
+                      }}
+                      className={selectedFormat === "MT707" ? "bg-blue-600 text-white hover:bg-blue-500" : "text-blue-400 border-blue-500/40 hover:bg-blue-500/10"}
+                      title="Download legacy SWIFT MT707 format"
                     >
                       <Download className="w-4 h-4 mr-1" />
-                      ISO20022
+                      MT707
                     </Button>
-                  )}
+                    {hasIso && (
+                      <Button
+                        variant={selectedFormat === "ISO20022" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setSelectedFormats((prev) => ({ ...prev, [key]: "ISO20022" }));
+                          onDownloadISO20022(amendment);
+                        }}
+                        className={selectedFormat === "ISO20022" ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/10"}
+                        title="Download ISO20022 XML format (modern standard)"
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        ISO20022
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <p className="text-xs text-muted-foreground pt-2 border-t border-blue-500/10">
-              <span className="font-medium">MT707:</span> Legacy SWIFT FIN format • 
-              <span className="font-medium ml-2">ISO20022:</span> Modern XML standard (trad.002)
+              <span className="font-medium">Format selection is per amendment card.</span>
+              <span className="ml-2"><span className="font-medium">MT707:</span> Legacy SWIFT FIN format</span>
+              <span className="ml-2"><span className="font-medium">ISO20022:</span> Modern XML standard (trad.002)</span>
             </p>
           </div>
         )}
