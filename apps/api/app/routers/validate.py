@@ -1617,7 +1617,13 @@ async def validate_doc(
         checkpoint("document_summaries_built")
         
         processing_duration = time.time() - start_time
-        processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
+        canonical_total_issues = _sum_ledger_discrepancies(document_summaries)
+        processing_summary = _build_processing_summary(
+            document_summaries,
+            processing_duration,
+            len(failed_results),
+            total_issues=canonical_total_issues,
+        )
 
         if validation_session and current_user.is_bank_user() and current_user.company_id:
             try:
@@ -1721,7 +1727,17 @@ async def validate_doc(
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
         # FIX: Merge ALL fields including status counts, verified, warnings, etc.
+        invariant_failure_reason: Optional[str] = None
         if structured_result.get("processing_summary") and processing_summary:
+            existing_processing_summary = structured_result.get("processing_summary") or {}
+            source_total_issues = existing_processing_summary.get("total_issues", existing_processing_summary.get("discrepancies"))
+            invariant_failure_reason = _build_issue_count_invariant_reason(
+                canonical_total_issues=_safe_int(processing_summary.get("total_issues")),
+                source_total_issues=_safe_int(source_total_issues) if source_total_issues is not None else None,
+                source_label="backend_processing_summary.total_issues",
+            )
+            if invariant_failure_reason:
+                structured_result["invariant_failure_reason"] = invariant_failure_reason
             structured_result["processing_summary"].update({
                 # Timing fields
                 "processing_time_seconds": processing_summary.get("processing_time_seconds"),
@@ -1741,6 +1757,8 @@ async def validate_doc(
                 # Compliance (will be overwritten by v2 scorer later, but set baseline)
                 "compliance_rate": processing_summary.get("compliance_rate", 0),
                 "discrepancies": processing_summary.get("discrepancies", 0),
+                "total_issues": processing_summary.get("total_issues", _safe_int(source_total_issues)),
+                "invariant_failure_reason": invariant_failure_reason,
             })
         # Also update analytics with processing time
         if structured_result.get("analytics"):
@@ -2105,6 +2123,7 @@ async def validate_doc(
             structured_result = _apply_pipeline_verification_gate(
                 structured_result,
                 mode=decision_mode,
+                issue_count_invariant_failure_reason=invariant_failure_reason,
             )
 
             logger.info(
@@ -4123,6 +4142,7 @@ def _apply_pipeline_verification_gate(
     structured_result: Dict[str, Any],
     *,
     mode: Optional[str] = None,
+    issue_count_invariant_failure_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     checks = _build_pipeline_verification_checks(
         decision_trace=structured_result.get("decision_trace"),
@@ -4131,6 +4151,15 @@ def _apply_pipeline_verification_gate(
         final_verdict=structured_result.get("final_verdict"),
         mode=mode,
     )
+    if issue_count_invariant_failure_reason:
+        checks.append(
+            {
+                "check_name": "issue_count_invariant",
+                "passed": False,
+                "observed_value": issue_count_invariant_failure_reason,
+                "required_value": "issue totals must align across processing_summary and per-document ledger",
+            }
+        )
 
     fail_reasons = [
         (
@@ -4145,6 +4174,8 @@ def _apply_pipeline_verification_gate(
     structured_result["pipeline_verification_status"] = status_token
     structured_result["pipeline_verification_checks"] = checks
     structured_result["pipeline_verification_fail_reasons"] = fail_reasons
+    if issue_count_invariant_failure_reason:
+        structured_result["invariant_failure_reason"] = issue_count_invariant_failure_reason
     if fail_reasons:
         structured_result["pipeline_verification_warnings"] = [
             "WARNING: backend pipeline verification gate failed; verdict fields are preserved but unverified.",
@@ -5126,10 +5157,47 @@ def _build_db_rules_blocked_structured_result(
     )
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _sum_ledger_discrepancies(document_summaries: List[Dict[str, Any]]) -> int:
+    total = 0
+    for document in document_summaries:
+        if not isinstance(document, dict):
+            continue
+        total += _safe_int(document.get("discrepancyCount") )
+    return total
+
+
+def _build_issue_count_invariant_reason(
+    *,
+    canonical_total_issues: int,
+    source_total_issues: Optional[int],
+    source_label: str = "backend_processing_summary.total_issues",
+) -> Optional[str]:
+    if source_total_issues is None:
+        return None
+    if canonical_total_issues == source_total_issues:
+        return None
+    return (
+        f"issue_count_invariant_failed: canonical_total_issues={canonical_total_issues} "
+        f"!= {source_label}={source_total_issues}. "
+        "Bank-ready path blocked."
+    )
+
+
 def _build_processing_summary(
     document_summaries: List[Dict[str, Any]],
     processing_seconds: float,
     total_discrepancies: int,
+    total_issues: Optional[int] = None,
 ) -> Dict[str, Any]:
     extraction_counts = {"success": 0, "partial": 0, "failed": 0}
     for doc in document_summaries:
@@ -5192,6 +5260,7 @@ def _build_processing_summary(
         "processing_time_ms": processing_time_ms,  # NEW — milliseconds version
         "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
+        "total_issues": total_issues if isinstance(total_issues, int) else total_discrepancies,
         "status_counts": status_counts,
         # FIX: Also send as document_status for frontend SummaryStrip compatibility
         "document_status": status_counts,

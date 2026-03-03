@@ -1,6 +1,6 @@
 from app.routers.validation.issue_resolver import collect_document_issue_stats, resolve_issue_stats
 from app.routers.validation.document_builder import build_document_summaries
-
+from app.routers.validate import _build_issue_count_invariant_reason, _apply_pipeline_verification_gate, _build_processing_summary
 
 def test_collect_document_issue_stats_matches_filename_without_extension():
     issues = [
@@ -59,3 +59,71 @@ def test_build_document_summaries_uses_normalized_issue_lookup():
 
     assert by_filename["Invoice.pdf"] == 2
     assert by_filename["LC.doc"] == 0
+
+
+def test_issue_count_invariant_reason_no_mismatch_when_totals_align():
+    reason = _build_issue_count_invariant_reason(
+        canonical_total_issues=5,
+        source_total_issues=5,
+    )
+    assert reason is None
+
+
+def test_issue_count_invariant_reason_flags_mismatch():
+    reason = _build_issue_count_invariant_reason(
+        canonical_total_issues=5,
+        source_total_issues=3,
+    )
+    assert reason is not None
+    assert "canonical_total_issues=5" in reason
+    assert "backend_processing_summary.total_issues=3" in reason
+
+
+def test_processing_summary_carries_ledger_total_as_canonical_total():
+    docs = [
+        {"extraction_status": "success", "discrepancyCount": 2},
+        {"extraction_status": "success", "discrepancyCount": 1},
+    ]
+    summary = _build_processing_summary(docs, 1.25, total_discrepancies=3, total_issues=3)
+
+    assert summary["total_issues"] == 3
+    assert summary["discrepancies"] == 3
+
+
+def test_pipeline_verification_gate_marks_invariant_fail_closed():
+    payload = {
+        "final_verdict": "PASS",
+        "ai_verdict": "PASS",
+        "ruleset_verdict": "PASS",
+        "decision_trace": {},
+    }
+    out = _apply_pipeline_verification_gate(
+        payload,
+        mode="hybrid_enforced",
+        issue_count_invariant_failure_reason="issue_count_invariant_failed",
+    )
+
+    assert out["pipeline_verification_status"] == "UNVERIFIED"
+    assert out["pipeline_verification_fail_reasons"]
+    assert any(
+        reason.startswith("issue_count_invariant")
+        for reason in out["pipeline_verification_fail_reasons"]
+    )
+    assert out["invariant_failure_reason"] == "issue_count_invariant_failed"
+
+
+def test_pipeline_verification_gate_keeps_verified_when_invariant_matches():
+    payload = {
+        "final_verdict": "PASS",
+        "ai_verdict": "PASS",
+        "ruleset_verdict": "PASS",
+        "decision_trace": {
+            "decision_layers": ["rules", "ai"],
+            "decision_mode": "hybrid_enforced",
+            "enforcement_applied": True,
+        },
+    }
+    out = _apply_pipeline_verification_gate(payload, mode="hybrid_enforced")
+
+    assert out["pipeline_verification_status"] == "VERIFIED"
+    assert out.get("invariant_failure_reason") is None

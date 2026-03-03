@@ -49,6 +49,29 @@ describe('SummaryStrip top block behavior', () => {
     expect(screen.getByText(/Rulepack version mismatch/i)).toBeInTheDocument();
   });
 
+  it('renders invariant failure reason as part of UNVERIFIED signal', () => {
+    const data = buildValidationResults();
+    (data.structured_result as any).pipeline_verification_status = 'UNVERIFIED';
+    (data.structured_result as any).invariant_failure_reason =
+      'issue_count_invariant_failed: canonical_total_issues=3 != backend_processing_summary.total_issues=12';
+    (data.structured_result as any).pipeline_verification_fail_reasons = [
+      'issue_count_invariant_failed: canonical_total_issues=3 != backend_processing_summary.total_issues=12',
+    ];
+    (data.structured_result as any).pipeline_verification_checks = [
+      { name: 'issue_count_invariant', passed: false },
+    ];
+
+    render(
+      <MemoryRouter>
+        <SummaryStrip data={data} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/^UNVERIFIED$/i)).toBeInTheDocument();
+    expect(screen.getByText(/issue_count_invariant_failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/canonical_total_issues=3/i)).toBeInTheDocument();
+  });
+
   it('renders NOT PROVIDED when trust status is missing', () => {
     const data = buildValidationResults();
     (data.structured_result as any).pipeline_verification_status = null;

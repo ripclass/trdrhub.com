@@ -76,6 +76,56 @@ describe('resultsMapper', () => {
     expect(response.summary.total_issues).toBe(9);
   });
 
+  it('uses canonical processing_summary total_issues as issue count even when issue list is longer', () => {
+    const response = buildValidationResponse({
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          {
+            document_id: 'd1',
+            filename: 'invoice.pdf',
+            document_type: 'Commercial Invoice',
+            extraction_status: 'success',
+            discrepancyCount: 2,
+            failed_reason: null,
+            extracted_fields: {},
+          },
+          {
+            document_id: 'd2',
+            filename: 'packing.pdf',
+            document_type: 'Packing List',
+            extraction_status: 'success',
+            discrepancyCount: 1,
+            failed_reason: null,
+            extracted_fields: {},
+          },
+        ],
+        issues: [
+          { id: 'i1', title: 'Issue', severity: 'critical', expected: 'a', found: 'b' },
+          { id: 'i2', title: 'Issue', severity: 'major', expected: 'c', found: 'd' },
+          { id: 'i3', title: 'Issue', severity: 'minor', expected: 'e', found: 'f' },
+        ],
+        processing_summary: {
+          total_documents: 2,
+          successful_extractions: 2,
+          partial_extractions: 0,
+          failed_extractions: 0,
+          total_issues: 3,
+          severity_breakdown: { critical: 1, major: 1, medium: 0, minor: 1 },
+        },
+        analytics: {
+          document_risk: [],
+          compliance_score: 40,
+        },
+      },
+    } as any);
+
+    expect(response.summary.total_issues).toBe(3);
+    expect(response.summary.total_issues).toBe(
+      response.documents.reduce((sum, doc) => sum + doc.issuesCount, 0),
+    );
+  });
+
   it('matches issue doc names flexibly using normalized filenames', () => {
     const response = buildValidationResponse({
       structured_result: {

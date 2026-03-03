@@ -952,6 +952,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
+    if (!pipelineVerified) return false;
     if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
       return totalDiscrepancies === 0;
@@ -959,6 +960,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
   }, [
     enableBankSubmission,
+    pipelineVerified,
     guardrails,
     guardrailsLoading,
     submitBlockedByRejectVerdict,
