@@ -6,6 +6,7 @@ from uuid import uuid4
 
 OPTION_E_VERSION = "structured_result_v1"
 VALIDATION_CONTRACT_VERSION = "2026-02-27.p0"
+EXTRACTION_CONFIDENCE_SUCCESS_THRESHOLD = 0.6
 
 
 def _now_iso() -> str:
@@ -44,12 +45,44 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
     }
 
 
+def _has_usable_extracted_fields(extracted_fields: Any) -> bool:
+    if not isinstance(extracted_fields, dict):
+        return False
+    for key, value in extracted_fields.items():
+        if str(key).startswith("_"):
+            continue
+        if value not in (None, "", [], {}):
+            return True
+    return False
+
+
+def _canonicalize_extraction_status(
+    extraction_status: str,
+    extracted_fields: Dict[str, Any],
+    failed_reason: Optional[str],
+    extraction_confidence: Optional[float],
+) -> str:
+    status = (extraction_status or "unknown").lower()
+    has_fields = _has_usable_extracted_fields(extracted_fields)
+
+    if status in {"failed", "error", "empty"}:
+        if has_fields and extraction_confidence is not None and extraction_confidence >= EXTRACTION_CONFIDENCE_SUCCESS_THRESHOLD:
+            return "success"
+        if has_fields:
+            return "partial"
+        return "failed" if failed_reason else "partial"
+
+    if status == "success":
+        return "success"
+    return "partial" if status in {"partial", "pending", "text_only", "unknown"} else "partial"
+
+
 def _derive_document_status(extraction_status: str, issues_count: int) -> str:
     """Canonical status derivation used by both summary and document rows."""
     status = (extraction_status or "unknown").lower()
-    if status in {"failed", "error", "empty"} or issues_count >= 3:
+    if status == "failed" or issues_count >= 3:
         return "error"
-    if issues_count > 0 or status in {"partial", "pending", "text_only"}:
+    if issues_count > 0 or status in {"partial", "pending", "text_only", "unknown"}:
         return "warning"
     return "success"
 
@@ -57,7 +90,24 @@ def _derive_document_status(extraction_status: str, issues_count: int) -> str:
 def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for idx, doc in enumerate(session_documents or []):
-        extraction_status = doc.get("extractionStatus") or doc.get("extraction_status") or "unknown"
+        raw_extraction_status = doc.get("extractionStatus") or doc.get("extraction_status") or "unknown"
+        extracted_fields = doc.get("extractedFields") or doc.get("extracted_fields") or {}
+        failed_reason = doc.get("failed_reason") or doc.get("extraction_error")
+        confidence = doc.get("extraction_confidence")
+        if confidence is None:
+            confidence = doc.get("ocrConfidence") or doc.get("ocr_confidence")
+        try:
+            confidence_value = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            confidence_value = None
+
+        extraction_status = _canonicalize_extraction_status(
+            str(raw_extraction_status),
+            extracted_fields,
+            failed_reason,
+            confidence_value,
+        )
+
         issues_count = int(doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0)
         derived_status = _derive_document_status(str(extraction_status), issues_count)
         normalized.append(
@@ -69,7 +119,8 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "status": derived_status,
                 "issues_count": issues_count,
                 "discrepancyCount": issues_count,
-                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+                "failed_reason": failed_reason,
+                "extracted_fields": extracted_fields,
             }
         )
     return normalized
@@ -182,8 +233,13 @@ def build_unified_structured_result(
 
     status_counts = {"success": 0, "warning": 0, "error": 0}
     for doc in docs_structured:
-        status = str(doc.get("status") or "success").lower()
-        status_counts[status if status in status_counts else "warning"] += 1
+        extraction_status = str(doc.get("extraction_status") or "unknown").lower()
+        if extraction_status == "success":
+            status_counts["success"] += 1
+        elif extraction_status == "failed":
+            status_counts["error"] += 1
+        else:
+            status_counts["warning"] += 1
 
     processing_summary = {
         "total_documents": len(docs_structured),

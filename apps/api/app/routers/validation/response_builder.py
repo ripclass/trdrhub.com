@@ -20,17 +20,27 @@ def compose_processing_summary(
     issues: List[Dict[str, Any]],
     severity_counts: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    """Compose a processing summary from documents and issues."""
+    """Compose a processing summary from canonical per-document extraction status."""
     total_docs = len(documents)
-    successful = sum(
-        1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
-    )
-    failed = total_docs - successful
+    successful = 0
+    partial = 0
+    failed = 0
+
+    for doc in documents:
+        status = str(doc.get("extraction_status") or doc.get("extractionStatus") or "unknown").lower()
+        if status == "success":
+            successful += 1
+        elif status in {"failed", "error", "empty"}:
+            failed += 1
+        else:
+            partial += 1
+
     severity_breakdown = severity_counts or count_issue_severity(issues)
 
     return {
         "total_documents": total_docs,
         "successful_extractions": successful,
+        "partial_extractions": partial,
         "failed_extractions": failed,
         "total_issues": len(issues),
         "severity_breakdown": severity_breakdown,

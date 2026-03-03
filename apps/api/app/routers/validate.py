@@ -1720,6 +1720,7 @@ async def validate_doc(
                 "warnings": processing_summary.get("warnings", 0),
                 "errors": processing_summary.get("errors", 0),
                 "successful_extractions": processing_summary.get("verified", 0),
+                "partial_extractions": processing_summary.get("warnings", 0),
                 "failed_extractions": processing_summary.get("errors", 0),
                 # Status distribution for SummaryStrip
                 "status_counts": processing_summary.get("status_counts", {}),
@@ -2861,6 +2862,7 @@ async def _build_document_context(
                         logger.warning(f"ISO20022 LC extraction failed for {filename}: {exc}", exc_info=True)
                         doc_info["extraction_status"] = "failed"
                         doc_info["extraction_error"] = str(exc)
+                        doc_info["failed_reason"] = str(exc)
                 else:
                     # Use AI-FIRST extraction for OCR/plaintext LC documents
                     # This runs AI as PRIMARY, then validates with regex
@@ -2938,6 +2940,7 @@ async def _build_document_context(
                             logger.error(f"Both LC extraction methods failed for {filename}: {fallback_error}", exc_info=True)
                             doc_info["extraction_status"] = "failed"
                             doc_info["extraction_error"] = str(fallback_error)
+                            doc_info["failed_reason"] = str(fallback_error)
             elif document_type in ("commercial_invoice", "proforma_invoice"):
                 # Use AI-FIRST extraction for invoices (including proforma invoices)
                 try:
@@ -5149,11 +5152,26 @@ def _build_processing_summary(
     processing_seconds: float,
     total_discrepancies: int,
 ) -> Dict[str, Any]:
-    status_counts = _summarize_document_statuses(document_summaries)
+    extraction_counts = {"success": 0, "partial": 0, "failed": 0}
+    for doc in document_summaries:
+        extraction_status = str(doc.get("extractionStatus") or doc.get("extraction_status") or "unknown").lower()
+        if extraction_status == "success":
+            extraction_counts["success"] += 1
+        elif extraction_status in {"failed", "error", "empty"}:
+            extraction_counts["failed"] += 1
+        else:
+            extraction_counts["partial"] += 1
+
+    status_counts = {
+        "success": extraction_counts["success"],
+        "warning": extraction_counts["partial"],
+        "error": extraction_counts["failed"],
+    }
+
     total_docs = len(document_summaries)
-    verified = status_counts.get("success", 0)
-    warnings = status_counts.get("warning", 0)
-    errors = status_counts.get("error", 0)
+    verified = extraction_counts["success"]
+    warnings = extraction_counts["partial"]
+    errors = extraction_counts["failed"]
     compliance_rate = 0
     if total_docs:
         compliance_rate = max(0, round((verified / total_docs) * 100))
@@ -5187,6 +5205,7 @@ def _build_processing_summary(
         "warnings": warnings,
         "errors": errors,
         "successful_extractions": verified,  # Frontend checks this field
+        "partial_extractions": warnings,
         "failed_extractions": errors,  # Frontend checks this field
         "compliance_rate": compliance_rate,
         "processing_time_seconds": round(processing_seconds, 2),
