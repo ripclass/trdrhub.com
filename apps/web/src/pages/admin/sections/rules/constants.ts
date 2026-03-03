@@ -210,6 +210,16 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
   // AML - Anti-Money Laundering / TBML
   // ═══════════════════════════════════════════════════════════════════
   aml: [
+    // Dedicated TBML upload lanes (one active per lane)
+    { value: "AML-TBML:pricing-anomaly", label: "AML-TBML:pricing-anomaly", type: "base", domain: "aml" },
+    { value: "AML-TBML:quantity-weight-mismatch", label: "AML-TBML:quantity-weight-mismatch", type: "base", domain: "aml" },
+    { value: "AML-TBML:route-logistics-anomaly", label: "AML-TBML:route-logistics-anomaly", type: "base", domain: "aml" },
+    { value: "AML-TBML:counterparty-network-risk", label: "AML-TBML:counterparty-network-risk", type: "base", domain: "aml" },
+    { value: "AML-TBML:document-behavioral-signals", label: "AML-TBML:document-behavioral-signals", type: "base", domain: "aml" },
+    { value: "AML-TBML:sanctions-pep-enhanced", label: "AML-TBML:sanctions-pep-enhanced", type: "base", domain: "aml" },
+    { value: "AML-TBML:real-case-high-signal", label: "AML-TBML:real-case-high-signal", type: "base", domain: "aml" },
+
+    // Legacy/general AML options
     { value: "aml.tbml", label: "TBML (Trade-Based Money Laundering)", type: "base", domain: "aml" },
     { value: "aml.tbml.mispricing", label: "TBML Mispricing Detection", type: "base", domain: "aml" },
     { value: "aml.tbml.counterparty", label: "TBML Counterparty & Network Risk", type: "base", domain: "aml" },
