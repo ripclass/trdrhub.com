@@ -78,12 +78,12 @@ from app.routers.validation import (
     count_issue_severity as _count_issue_severity,
     format_deterministic_issue as _format_deterministic_issue,
     # Document builder
-    build_document_summaries as _build_document_summaries,
-    build_document_lookup as _build_document_lookup,
-    match_issue_documents as _match_issue_documents,
-    build_documents_section as _build_documents_section,
+    build_document_summaries as _canonical_build_document_summaries,
+    build_document_lookup as _canonical_build_document_lookup,
+    match_issue_documents as _canonical_match_issue_documents,
+    build_documents_section as _canonical_build_documents_section,
     # Response builder
-    compose_processing_summary as _compose_processing_summary,
+    compose_processing_summary as _canonical_compose_processing_summary,
     build_analytics_section as _build_analytics_section,
     build_timeline_entries as _build_timeline_entries,
     build_document_processing_analytics as _build_document_processing_analytics,
@@ -2406,108 +2406,8 @@ def _build_document_summaries(
     results: List[Dict[str, Any]],
     document_details: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Create lightweight document summaries for downstream consumers."""
-    details = document_details or []
-    issue_by_name, issue_by_type, issue_by_id = _collect_document_issue_stats(results)
-
-    def _build_summary_from_detail(detail: Dict[str, Any], index: int) -> Dict[str, Any]:
-        filename = detail.get("filename") or detail.get("name")
-        doc_type = detail.get("document_type") or _infer_document_type_from_name(filename, index)
-        # FIX: Normalize doc_type to canonical form (e.g., "Bill of Lading" -> "bill_of_lading")
-        # This ensures it matches the keys in issue_by_type
-        normalized_type = _normalize_doc_type_key(doc_type) or doc_type or "supporting_document"
-        detail_id = detail.get("id") or str(uuid4())
-        stats = _resolve_issue_stats(
-            detail_id,
-            filename,
-            normalized_type,
-            issue_by_name,
-            issue_by_type,
-            issue_by_id,
-        )
-        status = _severity_to_status(stats.get("max_severity") if stats else None)
-        discrepancy_count = stats.get("count", 0) if stats else 0
-
-        return {
-            "id": detail_id,
-            "name": filename or f"Document {index + 1}",
-            "type": _humanize_doc_type(normalized_type),
-            "documentType": normalized_type,
-            "status": status,
-            "discrepancyCount": discrepancy_count,
-            "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
-            "ocrConfidence": detail.get("ocr_confidence"),
-            "extractionStatus": detail.get("extraction_status"),
-        }
-
-    if details:
-        logger.info(
-            "Building document summaries from details: %d documents found",
-            len(details),
-        )
-        return [_build_summary_from_detail(detail, index) for index, detail in enumerate(details)]
-
-    if not files_list:
-        # GUARANTEE: Never return empty - create a placeholder document if nothing available
-        logger.warning("No document details or files_list available - creating placeholder document")
-        return [
-            {
-                "id": str(uuid4()),
-                "name": "No documents uploaded",
-                "type": "Supporting Document",
-                "documentType": "supporting_document",
-                "status": "warning",
-                "discrepancyCount": 0,
-                "extractedFields": {},
-                "ocrConfidence": None,
-                "extractionStatus": "unknown",
-            }
-        ]
-
-    summaries: List[Dict[str, Any]] = []
-    for index, file_obj in enumerate(files_list):
-        filename = getattr(file_obj, "filename", None)
-        inferred_type = _infer_document_type_from_name(filename, index)
-        stats = _resolve_issue_stats(
-            None,
-            filename,
-            inferred_type,
-            issue_by_name,
-            issue_by_type,
-            issue_by_id,
-        )
-        doc_status = _severity_to_status(stats.get("max_severity") if stats else None)
-        discrepancy_count = stats.get("count", 0) if stats else 0
-        summaries.append(
-            {
-                "id": str(uuid4()),
-                "name": filename or f"Document {index + 1}",
-                "type": _humanize_doc_type(inferred_type),
-                "documentType": inferred_type,
-                "status": doc_status,
-                "discrepancyCount": discrepancy_count,
-                "extractedFields": {},
-                "ocrConfidence": None,
-                "extractionStatus": "unknown",
-            }
-        )
-
-    # GUARANTEE: Never return empty list
-    if not summaries:
-        logger.warning("Document summaries still empty after processing - adding placeholder")
-        summaries.append({
-            "id": str(uuid4()),
-            "name": "Document",
-            "type": "Supporting Document",
-            "documentType": "supporting_document",
-            "status": "warning",
-            "discrepancyCount": 0,
-            "extractedFields": {},
-            "ocrConfidence": None,
-            "extractionStatus": "unknown",
-        })
-
-    return summaries
+    """Delegate to canonical document builder to keep extraction semantics aligned."""
+    return _canonical_build_document_summaries(files_list, results, document_details)
 
 
 def _infer_document_type_from_name(filename: Optional[str], index: int) -> str:
@@ -5547,26 +5447,7 @@ def _build_documents_section(
     documents: List[Dict[str, Any]],
     issue_counts: Dict[str, int],
 ) -> List[Dict[str, Any]]:
-    section: List[Dict[str, Any]] = []
-    for doc in documents:
-        doc_id = doc.get("id") or str(uuid4())
-        extraction_status = (
-            doc.get("extractionStatus")
-            or doc.get("extraction_status")
-            or doc.get("status")
-            or "unknown"
-        )
-        section.append(
-            {
-                "document_id": doc_id,
-                "document_type": _humanize_doc_type(doc.get("documentType") or doc.get("type")),
-                "filename": doc.get("name"),
-                "extraction_status": extraction_status,
-                "extracted_fields": _filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
-                "issues_count": issue_counts.get(doc_id, 0),
-            }
-        )
-    return section
+    return _canonical_build_documents_section(documents, issue_counts)
 
 
 def _compose_processing_summary(
@@ -5574,20 +5455,7 @@ def _compose_processing_summary(
     issues: List[Dict[str, Any]],
     severity_counts: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    total_docs = len(documents)
-    successful = sum(
-        1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
-    )
-    failed = total_docs - successful
-    severity_breakdown = severity_counts or _count_issue_severity(issues)
-
-    return {
-        "total_documents": total_docs,
-        "successful_extractions": successful,
-        "failed_extractions": failed,
-        "total_issues": len(issues),
-        "severity_breakdown": severity_breakdown,
-    }
+    return _canonical_compose_processing_summary(documents, issues, severity_counts)
 
 
 def _count_issue_severity(issues: List[Dict[str, Any]]) -> Dict[str, int]:

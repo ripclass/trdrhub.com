@@ -1,11 +1,13 @@
+from importlib import util
 from pathlib import Path
-import sys
 
 API_ROOT = Path(__file__).resolve().parents[1]
-if str(API_ROOT) not in sys.path:
-    sys.path.insert(0, str(API_ROOT))
-
-from app.services.extraction.structured_lc_builder import build_unified_structured_result
+MODULE_PATH = API_ROOT / "app" / "services" / "extraction" / "structured_lc_builder.py"
+_spec = util.spec_from_file_location("structured_lc_builder_test_module", MODULE_PATH)
+_module = util.module_from_spec(_spec)
+assert _spec and _spec.loader
+_spec.loader.exec_module(_module)
+build_unified_structured_result = _module.build_unified_structured_result
 
 
 def _build_payload(session_documents):
@@ -90,10 +92,20 @@ def test_failed_without_reason_is_downgraded_and_confident_fields_not_failed():
                 "extractionStatus": "failed",
                 "extractedFields": {},
             },
+            {
+                "id": "d3",
+                "name": "COO.pdf",
+                "documentType": "certificate_of_origin",
+                "extractionStatus": "failed",
+                "failed_reason": "OCR timeout",
+                "extractedFields": {},
+            },
         ]
     )
 
     docs = structured["documents_structured"]
     assert docs[0]["extraction_status"] == "success"
     assert docs[1]["extraction_status"] == "partial"  # failed without explicit reason cannot remain hard failed
-    assert structured["processing_summary"]["failed_extractions"] == 0
+    assert docs[2]["extraction_status"] == "failed"
+    assert docs[2]["failed_reason"] == "OCR timeout"
+    assert structured["processing_summary"]["failed_extractions"] == 1
