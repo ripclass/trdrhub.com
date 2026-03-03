@@ -1,6 +1,11 @@
 from app.routers.validation.issue_resolver import collect_document_issue_stats, resolve_issue_stats
 from app.routers.validation.document_builder import build_document_summaries
-from app.routers.validate import _build_issue_count_invariant_reason, _apply_pipeline_verification_gate, _build_processing_summary
+from app.routers.validate import (
+    _build_issue_count_invariant_reason,
+    _apply_pipeline_verification_gate,
+    _build_processing_summary,
+    _sum_ledger_discrepancies,
+)
 
 def test_collect_document_issue_stats_matches_filename_without_extension():
     issues = [
@@ -76,7 +81,7 @@ def test_issue_count_invariant_reason_flags_mismatch():
     )
     assert reason is not None
     assert "canonical_total_issues=5" in reason
-    assert "backend_processing_summary.total_issues=3" in reason
+    assert "documents_structured.discrepancyCount_sum=3" in reason
 
 
 def test_processing_summary_carries_ledger_total_as_canonical_total():
@@ -84,10 +89,21 @@ def test_processing_summary_carries_ledger_total_as_canonical_total():
         {"extraction_status": "success", "discrepancyCount": 2},
         {"extraction_status": "success", "discrepancyCount": 1},
     ]
-    summary = _build_processing_summary(docs, 1.25, total_discrepancies=3, total_issues=3)
+    summary = _build_processing_summary(docs, 1.25, total_discrepancies=3)
 
     assert summary["total_issues"] == 3
     assert summary["discrepancies"] == 3
+
+
+def test_processing_summary_ignores_stale_legacy_total_inputs():
+    docs = [
+        {"extraction_status": "success", "discrepancyCount": 2},
+        {"extraction_status": "success", "discrepancyCount": 1},
+    ]
+    summary = _build_processing_summary(docs, 0.75, total_discrepancies=5)
+
+    assert summary["total_issues"] == 3
+    assert summary["discrepancies"] == 5
 
 
 def test_pipeline_verification_gate_marks_invariant_fail_closed():
@@ -127,3 +143,13 @@ def test_pipeline_verification_gate_keeps_verified_when_invariant_matches():
 
     assert out["pipeline_verification_status"] == "VERIFIED"
     assert out.get("invariant_failure_reason") is None
+
+
+def test_sum_ledger_discrepancies_uses_discrepancy_count_field():
+    docs = [
+        {"extraction_status": "success", "discrepancyCount": 2},
+        {"extraction_status": "success", "discrepancyCount": 5},
+        {"name": "ignore", "discrepancyCount": None},
+    ]
+
+    assert _sum_ledger_discrepancies(docs) == 7

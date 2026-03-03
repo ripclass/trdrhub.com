@@ -232,6 +232,7 @@ def build_unified_structured_result(
     }
 
     status_counts = {"success": 0, "warning": 0, "error": 0}
+    total_issues = 0
     for doc in docs_structured:
         extraction_status = str(doc.get("extraction_status") or "unknown").lower()
         if extraction_status == "success":
@@ -240,12 +241,13 @@ def build_unified_structured_result(
             status_counts["error"] += 1
         else:
             status_counts["warning"] += 1
+        total_issues += int(doc.get("discrepancyCount") or 0)
 
     processing_summary = {
         "total_documents": len(docs_structured),
         "successful_extractions": status_counts["success"],
         "failed_extractions": status_counts["error"],
-        "total_issues": len(issues),
+        "total_issues": total_issues,
         "severity_breakdown": {"critical": 0, "major": 0, "medium": 0, "minor": 0},
         "documents": len(docs_structured),
         "documents_found": len(docs_structured),
@@ -259,7 +261,7 @@ def build_unified_structured_result(
         "processing_time_display": None,
         "processing_time_ms": None,
         "extraction_quality": None,
-        "discrepancies": None,
+        "discrepancies": total_issues,
     }
 
     analytics = {

@@ -1617,12 +1617,10 @@ async def validate_doc(
         checkpoint("document_summaries_built")
         
         processing_duration = time.time() - start_time
-        canonical_total_issues = _sum_ledger_discrepancies(document_summaries)
         processing_summary = _build_processing_summary(
             document_summaries,
             processing_duration,
             len(failed_results),
-            total_issues=canonical_total_issues,
         )
 
         if validation_session and current_user.is_bank_user() and current_user.company_id:
@@ -1729,12 +1727,14 @@ async def validate_doc(
         # FIX: Merge ALL fields including status counts, verified, warnings, etc.
         invariant_failure_reason: Optional[str] = None
         if structured_result.get("processing_summary") and processing_summary:
-            existing_processing_summary = structured_result.get("processing_summary") or {}
-            source_total_issues = existing_processing_summary.get("total_issues", existing_processing_summary.get("discrepancies"))
+            processing_summary_total_issues = _safe_int(processing_summary.get("total_issues"))
+            doc_ledger_total_issues = _sum_ledger_discrepancies(
+                structured_result.get("documents_structured") or document_summaries
+            )
             invariant_failure_reason = _build_issue_count_invariant_reason(
-                canonical_total_issues=_safe_int(processing_summary.get("total_issues")),
-                source_total_issues=_safe_int(source_total_issues) if source_total_issues is not None else None,
-                source_label="backend_processing_summary.total_issues",
+                canonical_total_issues=processing_summary_total_issues,
+                source_total_issues=doc_ledger_total_issues,
+                source_label="documents_structured.discrepancyCount_sum",
             )
             if invariant_failure_reason:
                 structured_result["invariant_failure_reason"] = invariant_failure_reason
@@ -1757,7 +1757,7 @@ async def validate_doc(
                 # Compliance (will be overwritten by v2 scorer later, but set baseline)
                 "compliance_rate": processing_summary.get("compliance_rate", 0),
                 "discrepancies": processing_summary.get("discrepancies", 0),
-                "total_issues": processing_summary.get("total_issues", _safe_int(source_total_issues)),
+                "total_issues": processing_summary_total_issues,
                 "invariant_failure_reason": invariant_failure_reason,
             })
         # Also update analytics with processing time
@@ -5172,7 +5172,7 @@ def _sum_ledger_discrepancies(document_summaries: List[Dict[str, Any]]) -> int:
     for document in document_summaries:
         if not isinstance(document, dict):
             continue
-        total += _safe_int(document.get("discrepancyCount") )
+        total += _safe_int(document.get("discrepancyCount"))
     return total
 
 
@@ -5180,7 +5180,7 @@ def _build_issue_count_invariant_reason(
     *,
     canonical_total_issues: int,
     source_total_issues: Optional[int],
-    source_label: str = "backend_processing_summary.total_issues",
+    source_label: str = "documents_structured.discrepancyCount_sum",
 ) -> Optional[str]:
     if source_total_issues is None:
         return None
@@ -5197,7 +5197,6 @@ def _build_processing_summary(
     document_summaries: List[Dict[str, Any]],
     processing_seconds: float,
     total_discrepancies: int,
-    total_issues: Optional[int] = None,
 ) -> Dict[str, Any]:
     extraction_counts = {"success": 0, "partial": 0, "failed": 0}
     for doc in document_summaries:
@@ -5260,7 +5259,7 @@ def _build_processing_summary(
         "processing_time_ms": processing_time_ms,  # NEW — milliseconds version
         "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
-        "total_issues": total_issues if isinstance(total_issues, int) else total_discrepancies,
+        "total_issues": _sum_ledger_discrepancies(document_summaries),
         "status_counts": status_counts,
         # FIX: Also send as document_status for frontend SummaryStrip compatibility
         "document_status": status_counts,

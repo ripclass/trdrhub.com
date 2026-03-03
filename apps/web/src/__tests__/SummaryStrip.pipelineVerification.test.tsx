@@ -53,9 +53,9 @@ describe('SummaryStrip top block behavior', () => {
     const data = buildValidationResults();
     (data.structured_result as any).pipeline_verification_status = 'UNVERIFIED';
     (data.structured_result as any).invariant_failure_reason =
-      'issue_count_invariant_failed: canonical_total_issues=3 != backend_processing_summary.total_issues=12';
+      'issue_count_invariant_failed: canonical_total_issues=3 != documents_structured.discrepancyCount_sum=12';
     (data.structured_result as any).pipeline_verification_fail_reasons = [
-      'issue_count_invariant_failed: canonical_total_issues=3 != backend_processing_summary.total_issues=12',
+      'issue_count_invariant_failed: canonical_total_issues=3 != documents_structured.discrepancyCount_sum=12',
     ];
     (data.structured_result as any).pipeline_verification_checks = [
       { name: 'issue_count_invariant', passed: false },
@@ -132,7 +132,7 @@ describe('SummaryStrip top block behavior', () => {
 
     render(
       <MemoryRouter>
-        <SummaryStrip data={data} actualIssuesCount={25} complianceScore={10} />
+        <SummaryStrip data={data} complianceScore={10} />
       </MemoryRouter>,
     );
 
@@ -170,6 +170,30 @@ describe('SummaryStrip top block behavior', () => {
 
     await user.click(screen.getAllByRole('button', { name: /View details/i })[0]);
     expect(onOpenDocumentDetails).toHaveBeenCalled();
+  });
+
+
+
+  it('uses summary total_issues when issue array length diverges', () => {
+    const data = buildValidationResults();
+    data.issues = data.issues.slice(0, 2);
+    (data.structured_result as any).processing_summary = {
+      ...(data.structured_result?.processing_summary as any),
+      total_issues: 9,
+    };
+    data.summary = {
+      ...(data.summary as any),
+      total_issues: 9,
+    };
+
+    render(
+      <MemoryRouter>
+        <SummaryStrip data={data} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/9 issues?/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2 issues?/i)).not.toBeInTheDocument();
   });
 
   it('uses customs wording safety text', () => {

@@ -246,11 +246,7 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   const severity = summarizeSeverity(issues);
   const totalDocuments =
     typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
-  const canonicalTotalIssues = documents.reduce((acc, doc) => acc + (Number(doc?.issuesCount) || 0), 0);
-  const totalIssues =
-    typeof payload?.total_issues === 'number'
-      ? payload.total_issues
-      : canonicalTotalIssues;
+  const totalIssues = documents.reduce((acc, doc) => acc + (Number(doc?.issuesCount) || 0), 0);
 
   // CANONICAL SOURCE OF TRUTH: Document status counts always derived from the
   // mapped documents array. Never use backend status_counts/document_status

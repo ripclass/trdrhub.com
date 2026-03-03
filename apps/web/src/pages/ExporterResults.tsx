@@ -662,8 +662,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = documents.length || summary?.total_documents || 0;
-  // Keep user-visible counters aligned with visible issue cards.
-  const totalDiscrepancies = issueCards.length;
+  // Keep user-visible issue counters aligned to canonical processing_summary value when present.
+  const totalDiscrepancies =
+    typeof summary?.total_issues === 'number'
+      ? summary.total_issues
+      : issueCards.length;
 
   // lcStructured is already defined above to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
@@ -1375,7 +1378,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={packGenerated}
             overallStatus={overallStatus}
-            actualIssuesCount={issueCards.length}
             complianceScore={complianceScore}
             finalVerdict={finalVerdict}
             criticalIssueCount={criticalIssueCount}
@@ -2083,6 +2085,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <IssuesTab
               hasIssueCards={hasIssueCards}
               issueCards={issueCards}
+              totalIssueCount={totalDiscrepancies}
               filteredIssueCards={filteredIssueCards}
               severityCounts={severityCounts}
               issueFilter={issueFilter}

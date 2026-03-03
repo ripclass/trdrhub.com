@@ -73,10 +73,10 @@ describe('resultsMapper', () => {
     } as any);
 
     expect(response.documents[0].issuesCount).toBe(5);
-    expect(response.summary.total_issues).toBe(9);
+    expect(response.summary.total_issues).toBe(5);
   });
 
-  it('uses canonical processing_summary total_issues as issue count even when issue list is longer', () => {
+  it('uses canonical document-side discrepancy totals as issue count even when summary is stale', () => {
     const response = buildValidationResponse({
       structured_result: {
         version: 'structured_result_v1',
@@ -110,7 +110,7 @@ describe('resultsMapper', () => {
           successful_extractions: 2,
           partial_extractions: 0,
           failed_extractions: 0,
-          total_issues: 3,
+          total_issues: 9,
           severity_breakdown: { critical: 1, major: 1, medium: 0, minor: 1 },
         },
         analytics: {

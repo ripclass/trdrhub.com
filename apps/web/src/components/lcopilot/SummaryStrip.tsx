@@ -19,7 +19,6 @@ type Props = {
   lcTypeConfidence?: number | null;
   packGenerated?: boolean;
   overallStatus?: 'success' | 'warning' | 'error';
-  actualIssuesCount?: number;
   complianceScore?: number;
   finalVerdict?: string | null;
   criticalIssueCount?: number;
@@ -35,7 +34,6 @@ export function SummaryStrip({
   lcTypeConfidence,
   packGenerated,
   overallStatus,
-  actualIssuesCount,
   complianceScore,
   finalVerdict,
   criticalIssueCount,
@@ -103,8 +101,7 @@ export function SummaryStrip({
   ) as Array<Record<string, unknown>>;
   const shortFailReasons = pipelineFailReasons.slice(0, 3);
   
-  // Get issue counts - use actual count from parent if available
-  const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
+  const totalIssues = summary.total_issues ?? summary.discrepancies ?? 0;
   // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
