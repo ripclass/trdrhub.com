@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import SummaryStrip from '@/components/lcopilot/SummaryStrip';
 import { buildValidationResults } from './fixtures/lcopilot';
@@ -91,6 +92,12 @@ describe('SummaryStrip top block behavior', () => {
       total_issues: 25,
       canonical_document_status: { success: 4, warning: 1, error: 1 },
     } as any;
+    const errorDoc = data.documents.find((doc: any) => doc.status === 'error') as any;
+    if (errorDoc) {
+      errorDoc.failedReason = 'OCR timeout';
+      errorDoc.extractedFields = { ...(errorDoc.extractedFields ?? {}), _extraction_confidence: 0.2 };
+    }
+
     if (data.structured_result) {
       (data.structured_result as any).issues = data.issues as any;
       (data.structured_result as any).processing_summary = {
@@ -107,9 +114,39 @@ describe('SummaryStrip top block behavior', () => {
     );
 
     expect(screen.getByText(/4 extracted OK/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 partial extraction/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 extraction failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 partial extraction/i)).toBeInTheDocument();
+    expect(screen.queryByText(/extraction failed/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Compliance Outcome \(Issue-Based\)/i)).toBeInTheDocument();
+  });
+
+  it('renders affected documents with exact counts and supports drawer navigation trigger', async () => {
+    const user = userEvent.setup();
+    const data = buildValidationResults();
+    data.documents = [
+      { ...(data.documents[0] as any), id: 'd1', documentId: 'd1', name: 'LC.pdf', status: 'success' },
+      { ...(data.documents[1] as any), id: 'd2', documentId: 'd2', name: 'Insurance.pdf', status: 'warning', failedReason: 'missing required fields', extractedFields: { _extraction_confidence: 0.65 } },
+      { ...(data.documents[2] as any), id: 'd3', documentId: 'd3', name: 'Invoice.pdf', status: 'error', failedReason: 'ocr timed out', extractedFields: { _extraction_confidence: 0.2 } },
+    ] as any;
+    data.summary = {
+      ...(data.summary as any),
+      canonical_document_status: { success: 1, warning: 1, error: 1 },
+    } as any;
+
+    const onOpenDocumentDetails = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SummaryStrip data={data} onOpenDocumentDetails={onOpenDocumentDetails} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/Failed \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Partial \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/OCR timeout/i)).toBeInTheDocument();
+    expect(screen.getByText(/Missing required fields/i)).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: /View details/i })[0]);
+    expect(onOpenDocumentDetails).toHaveBeenCalled();
   });
 
   it('uses customs wording safety text', () => {

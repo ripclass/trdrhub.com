@@ -728,6 +728,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       dates: canonicalDates,
     };
   };
+
+  const openDocumentDetails = useCallback((documentId: string) => {
+    const target = documents.find((doc) => String(doc.documentId ?? doc.id) === String(documentId));
+    if (!target) {
+      return;
+    }
+    setSelectedDocumentForDrawer({
+      id: target.id,
+      name: target.name,
+      filename: target.filename,
+      type: target.type,
+      typeKey: target.typeKey,
+      status: target.status,
+      extractionStatus: target.extractionStatus,
+      complianceStatus: (target as any).complianceStatus,
+      failedReason: (target as any).failedReason,
+      issuesCount: target.issuesCount,
+      extractedFields: buildDrawerExtractedFields(target),
+      ocrConfidence: (target.extractedFields as any)?._extraction_confidence,
+      sourceFormat: (target.extractedFields as any)?._source_format,
+      isElectronicBL: (target.extractedFields as any)?._is_electronic_bl,
+    });
+    setIsDrawerOpen(true);
+  }, [buildDrawerExtractedFields, documents]);
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
@@ -921,8 +945,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () => issueCards.filter((issue) => normalizeDiscrepancySeverity(issue.severity) === 'critical').length,
     [issueCards],
   );
-  const finalVerdict = ((structuredResult?.bank_verdict as any)?.verdict ?? '').toString().toUpperCase();
-  const submitBlockedByRejectVerdict = finalVerdict === 'REJECT';
+  const bankFinalVerdict = ((structuredResult?.bank_verdict as any)?.verdict ?? '').toString().toUpperCase();
+  const submitBlockedByRejectVerdict = bankFinalVerdict === 'REJECT';
   const submitBlockedByCritical = criticalIssueCount > 0 || (guardrails?.high_severity_discrepancies ?? 0) > 0;
 
   const isReadyToSubmit = useMemo(() => {
@@ -1354,6 +1378,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             finalVerdict={finalVerdict}
             criticalIssueCount={criticalIssueCount}
             isReadyToSubmit={isReadyToSubmit}
+            onOpenDocumentDetails={openDocumentDetails}
           />
           
           {/* Bank Profile Badge */}
@@ -1958,25 +1983,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => {
-                            setSelectedDocumentForDrawer({
-                              id: document.id,
-                              name: document.name,
-                              filename: document.filename,
-                              type: document.type,
-                              typeKey: document.typeKey,
-                              status: document.status,
-                              extractionStatus: document.extractionStatus,
-                              complianceStatus: (document as any).complianceStatus,
-                              failedReason: (document as any).failedReason,
-                              issuesCount: document.issuesCount,
-                              extractedFields: buildDrawerExtractedFields(document),
-                              ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
-                              sourceFormat: (document.extractedFields as any)?._source_format,
-                              isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
-                            });
-                            setIsDrawerOpen(true);
-                          }}
+                          onClick={() => openDocumentDetails(document.documentId || document.id)}
                         >
                           <Eye className="w-4 h-4 mr-2" />
                           View Details

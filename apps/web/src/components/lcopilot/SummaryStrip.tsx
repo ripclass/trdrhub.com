@@ -5,6 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ValidationResults } from '@/types/lcopilot';
+import {
+  confidenceBand,
+  formatConfidence,
+  isFailedDocumentGuardrailCompliant,
+  normalizeExtractionReason,
+  toConfidenceScore,
+} from '@/lib/exporter/extractionStatus';
 
 type Props = {
   data: ValidationResults | null;
@@ -17,6 +24,7 @@ type Props = {
   finalVerdict?: string | null;
   criticalIssueCount?: number;
   isReadyToSubmit?: boolean;
+  onOpenDocumentDetails?: (documentId: string) => void;
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
@@ -32,6 +40,7 @@ export function SummaryStrip({
   finalVerdict,
   criticalIssueCount,
   isReadyToSubmit,
+  onOpenDocumentDetails,
 }: Props) {
   const structured = data?.structured_result;
   const summary = data?.summary ?? structured?.processing_summary;
@@ -55,13 +64,22 @@ export function SummaryStrip({
     analytics?.document_status_distribution ??
     null;
 
-  // If canonical status is available, use it directly (no estimation fallback)
-  const verified   = formatNumber(canonicalStatus?.success);
-  const warnings   = formatNumber(canonicalStatus?.warning);
-  const errors     = formatNumber(canonicalStatus?.error);
-
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
+
+  const extractionDocs = data?.documents ?? [];
+  const partialDocuments = extractionDocs.filter((doc) => (doc.status ?? '').toLowerCase() === 'warning');
+  const failedDocuments = extractionDocs.filter(
+    (doc) => (doc.status ?? '').toLowerCase() === 'error' && isFailedDocumentGuardrailCompliant(doc),
+  );
+  const verifiedCount = extractionDocs.filter((doc) => (doc.status ?? '').toLowerCase() === 'success').length;
+  const warningsCount = partialDocuments.length;
+  const errorsCount = failedDocuments.length;
+
+  // Header counts must align to list lengths computed from the same filtered sets.
+  const verified = verifiedCount || formatNumber(canonicalStatus?.success);
+  const warnings = warningsCount;
+  const errors = errorsCount;
 
   const pipelineVerificationStatusRaw =
     (structured as any)?.pipeline_verification_status ??
@@ -268,6 +286,83 @@ export function SummaryStrip({
                   <span>{errors} extraction failed</span>
                 </div>
               )}
+
+              {(failedDocuments.length > 0 || partialDocuments.length > 0) && (
+                <div className="pt-1 border-t border-border/30 space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Affected Documents</p>
+
+                  {failedDocuments.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium">Failed ({failedDocuments.length})</p>
+                      {failedDocuments.map((doc) => {
+                        const score = toConfidenceScore((doc.extractedFields as any)?._extraction_confidence);
+                        const reason = normalizeExtractionReason(doc.failedReason);
+                        return (
+                          <div
+                            key={`failed-${doc.id}`}
+                            className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-xs rounded border border-border/50 p-2 cursor-pointer hover:bg-muted/50"
+                            onClick={() => onOpenDocumentDetails?.(doc.documentId || doc.id)}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{doc.name}</p>
+                              <p className="text-muted-foreground truncate">{reason}</p>
+                            </div>
+                            <span className="text-muted-foreground">{formatConfidence(score)}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenDocumentDetails?.(doc.documentId || doc.id);
+                              }}
+                            >
+                              View details
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {partialDocuments.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium">Partial ({partialDocuments.length})</p>
+                      {partialDocuments.map((doc) => {
+                        const score = toConfidenceScore((doc.extractedFields as any)?._extraction_confidence);
+                        const reason = normalizeExtractionReason(doc.failedReason || (confidenceBand(score) === 'Low' ? 'Low extraction confidence' : 'Missing required fields'));
+                        return (
+                          <div
+                            key={`partial-${doc.id}`}
+                            className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-xs rounded border border-border/50 p-2 cursor-pointer hover:bg-muted/50"
+                            onClick={() => onOpenDocumentDetails?.(doc.documentId || doc.id)}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{doc.name}</p>
+                              <p className="text-muted-foreground truncate">{reason}</p>
+                            </div>
+                            <span className="text-muted-foreground">{formatConfidence(score)}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenDocumentDetails?.(doc.documentId || doc.id);
+                              }}
+                            >
+                              View details
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pt-1 border-t border-border/30 space-y-1">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance Outcome (Issue-Based)</p>
                 <div className="flex items-center gap-2">
