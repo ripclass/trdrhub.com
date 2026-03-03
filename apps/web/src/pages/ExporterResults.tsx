@@ -1283,7 +1283,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           
           {/* Bank Submission Verdict Card */}
           {structuredResult?.bank_verdict && (
-            <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
+            <BankVerdictCard
+              verdict={structuredResult.bank_verdict as BankVerdict}
+              issueSummaryOverride={{
+                critical: severityCounts.critical,
+                major: severityCounts.major,
+                minor: severityCounts.minor,
+                total: totalDiscrepancies,
+              }}
+              requiredActionsCountOverride={totalDiscrepancies}
+            />
           )}
           
           {/* OCR Confidence Warning */}

@@ -107,6 +107,39 @@ describe('BankVerdictCard', () => {
     expect(screen.getByText('+ 2 more action(s) in Issues tab')).toBeInTheDocument();
   });
 
+  it('prefers canonical overrides for issue summary and required actions count', () => {
+    const verdictWithStaleCounts: BankVerdict = {
+      ...baseVerdict,
+      verdict: 'CAUTION',
+      issue_summary: {
+        critical: 4,
+        major: 7,
+        minor: 3,
+        total: 14,
+      },
+      action_items: [
+        { priority: 'critical', issue: 'Issue 1', action: 'Action 1' },
+        { priority: 'high', issue: 'Issue 2', action: 'Action 2' },
+        { priority: 'medium', issue: 'Issue 3', action: 'Action 3' },
+      ],
+      action_items_count: 11,
+    };
+
+    render(
+      <BankVerdictCard
+        verdict={verdictWithStaleCounts}
+        issueSummaryOverride={{ critical: 4, major: 5, minor: 0, total: 9 }}
+        requiredActionsCountOverride={9}
+      />,
+    );
+
+    expect(screen.getByText('Required Actions (9)')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.queryByText('7')).not.toBeInTheDocument();
+    expect(screen.queryByText('+ 8 more action(s) in Issues tab')).not.toBeInTheDocument();
+    expect(screen.getByText('+ 6 more action(s) in Issues tab')).toBeInTheDocument();
+  });
+
   it('displays issue summary counts', () => {
     const verdictWithIssues: BankVerdict = {
       ...baseVerdict,

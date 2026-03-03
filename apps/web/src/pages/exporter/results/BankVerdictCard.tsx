@@ -58,12 +58,28 @@ const verdictBadgeColors = {
 
 interface BankVerdictCardProps {
   verdict: BankVerdict;
+  issueSummaryOverride?: {
+    critical: number;
+    major: number;
+    minor: number;
+    total: number;
+  };
+  requiredActionsCountOverride?: number;
 }
 
-export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
-  const issueSummary = verdict?.issue_summary ?? { critical: 0, major: 0, minor: 0, total: 0 };
+export function BankVerdictCard({
+  verdict,
+  issueSummaryOverride,
+  requiredActionsCountOverride,
+}: BankVerdictCardProps) {
+  const issueSummary = issueSummaryOverride ?? verdict?.issue_summary ?? { critical: 0, major: 0, minor: 0, total: 0 };
   const actionItems = verdict?.action_items ?? [];
-  const actionItemsCount = typeof verdict?.action_items_count === "number" ? verdict.action_items_count : actionItems.length;
+  const actionItemsCount =
+    typeof requiredActionsCountOverride === "number"
+      ? requiredActionsCountOverride
+      : typeof verdict?.action_items_count === "number"
+      ? verdict.action_items_count
+      : actionItems.length;
 
   return (
     <Card className={cn(
