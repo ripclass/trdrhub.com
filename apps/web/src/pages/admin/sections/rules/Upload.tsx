@@ -173,6 +173,16 @@ const handleDomainChange = (value: string) => {
   setRulebook("");
 };
 
+const handleRulebookChange = (value: string) => {
+  setRulebook(value);
+
+  // For AML/TBML uploads, keep rulebook_version aligned with selected rulebook
+  // to avoid accidental active-version collisions.
+  if (domain === "aml") {
+    setRulebookVersion(value);
+  }
+};
+
 const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -605,7 +615,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               <Label htmlFor="rulebook">Rulebook *</Label>
               <Select
                 value={rulebook}
-                onValueChange={setRulebook}
+                onValueChange={handleRulebookChange}
                 disabled={uploading || !domain}
               >
                 <SelectTrigger id="rulebook">
@@ -624,6 +634,12 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                   ))}
                 </SelectContent>
               </Select>
+              {domain === "aml" && (
+                <p className="text-xs text-muted-foreground">
+                  AML/TBML note: use a distinct rulebook lane per upload. Active uniqueness is enforced by
+                  <span className="font-medium"> (domain, jurisdiction, rulebook_version)</span>.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -646,7 +662,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               <Label htmlFor="rulebookVersion">Rulebook Version *</Label>
               <Input
                 id="rulebookVersion"
-                placeholder="e.g., UCP600:2007"
+                placeholder={domain === "aml" ? "e.g., AML-TBML:pricing-anomaly" : "e.g., UCP600:2007"}
                 value={rulebookVersion}
                 onChange={(e) => setRulebookVersion(e.target.value)}
                 disabled={uploading}
