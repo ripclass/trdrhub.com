@@ -20,6 +20,17 @@ const DEFAULT_SEVERITY = {
   minor: 0,
 };
 
+const normalizeLookupKey = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value)
+    .toLowerCase()
+    .trim()
+    .replace(/\.[^/.]+$/u, '') // drop file extension
+    .replace(/[^a-z0-9]/gu, '');
+};
+
 const normalizeDocType = (value?: string | null) => {
   if (!value) {
     return DOC_LABELS.supporting_document;
@@ -101,12 +112,14 @@ const mapDocuments = (docs: any[] = []) => {
     const extractionStatus = normalizeExtractionStatus(doc?.extraction_status ?? doc?.extractionStatus);
     const complianceStatus = deriveComplianceStatus(doc);
     const failedReason = doc?.failed_reason ?? doc?.failedReason ?? null;
-    CanonicalSemanticsSchema.parse({
-      extraction_status: extractionStatus,
-      compliance_status: complianceStatus,
-      pipeline_verification_status: 'VERIFIED',
-      failed_reason: failedReason,
-    });
+    if (CanonicalSemanticsSchema && typeof CanonicalSemanticsSchema.parse === 'function') {
+      CanonicalSemanticsSchema.parse({
+        extraction_status: extractionStatus,
+        compliance_status: complianceStatus,
+        pipeline_verification_status: 'VERIFIED',
+        failed_reason: failedReason,
+      });
+    }
 
     const status = deriveDocumentStatus(extractionStatus);
 
@@ -142,8 +155,9 @@ const mapIssues = (issues: any[] = [], documents: ReturnType<typeof mapDocuments
   documents.forEach((doc) => {
     const candidates = [doc.filename, doc.name, doc.type, doc.typeKey];
     candidates.forEach((candidate) => {
-      if (candidate) {
-        lookup.set(candidate.toLowerCase(), doc);
+      const key = normalizeLookupKey(candidate);
+      if (key) {
+        lookup.set(key, doc);
       }
     });
   });
@@ -154,8 +168,18 @@ const mapIssues = (issues: any[] = [], documents: ReturnType<typeof mapDocuments
       : issue?.documents
       ? [issue.documents]
       : [];
+    const normalizedDocumentNames = documentNames
+      .map((name: unknown) => normalizeLookupKey(name))
+      .filter(Boolean);
+
     const firstDoc = documentNames[0];
-    const docMeta = firstDoc ? lookup.get(firstDoc.toLowerCase()) : undefined;
+    const firstDocLookup = normalizedDocumentNames[0]
+      ? lookup.get(normalizedDocumentNames[0])
+      : undefined;
+    const docType = issue?.document_type ? String(issue.document_type) : undefined;
+    const docMeta =
+      firstDocLookup
+      ?? (docType ? lookup.get(normalizeLookupKey(docType)) : undefined);
 
     const expected = pickFirstMeaningful(
       issue?.expected,
@@ -187,7 +211,7 @@ const mapIssues = (issues: any[] = [], documents: ReturnType<typeof mapDocuments
       description: issue?.description ?? issue?.message ?? '',
       priority: issue?.severity,
       severity: normalizeSeverity(issue?.severity),
-      documentName: firstDoc ?? docMeta?.name,
+      documentName: docMeta?.name ?? firstDoc,
       documentType: docMeta?.type,
       documents: documentNames,
       expected,
@@ -222,7 +246,9 @@ const ensureSummary = (payload: any, documents: ReturnType<typeof mapDocuments>,
   const severity = summarizeSeverity(issues);
   const totalDocuments =
     typeof payload?.total_documents === 'number' ? payload.total_documents : documents.length;
-  const totalIssues = issues.length;
+  const totalIssues = typeof payload?.total_issues === 'number'
+    ? payload.total_issues
+    : issues.length;
 
   // CANONICAL SOURCE OF TRUTH: Document status counts always derived from the
   // mapped documents array. Never use backend status_counts/document_status
@@ -345,19 +371,10 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const rawIssues = structured.issues ?? [];
   const issues = mapIssues(ensureArray(rawIssues), documents);
 
-  const issueCountByDoc = new Map<string, number>();
-  issues.forEach((issue) => {
-    const keys = [issue.documentName, ...(issue.documents ?? [])].filter(Boolean) as string[];
-    keys.forEach((key) => {
-      const normalized = key.toLowerCase();
-      issueCountByDoc.set(normalized, (issueCountByDoc.get(normalized) ?? 0) + 1);
-    });
-  });
-  const reconciledDocuments = documents.map((doc) => {
-    const count = issueCountByDoc.get(doc.name.toLowerCase()) ?? issueCountByDoc.get(doc.type.toLowerCase()) ?? 0;
-    return { ...doc, issuesCount: count };
-  });
-  
+  // Canonical issue count source for document rows is from backend document summaries
+  // to avoid dual attribution logic in the UI.
+  const reconciledDocuments = documents;
+
   const summary = ensureSummary(structured.processing_summary, reconciledDocuments, issues);
   const analytics = ensureAnalytics(structured.analytics, reconciledDocuments, issues);
   

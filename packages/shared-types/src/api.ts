@@ -220,6 +220,10 @@ export const StructuredResultDocumentSchema = z.object({
   document_type: z.string().optional(),
   filename: z.string().optional(),
   extraction_status: z.string().optional(),
+  // Canonical compliance/extraction status fields (for UI semantic separation)
+  compliance_status: z.string().optional(),
+  pipeline_verification_status: z.string().optional(),
+  failed_reason: z.union([z.string(), z.null()]).optional(),
   extracted_fields: z.record(z.unknown()).optional(),
   issues_count: z.number().nonnegative().optional(),
   // Legacy camelCase fields for backward compatibility
