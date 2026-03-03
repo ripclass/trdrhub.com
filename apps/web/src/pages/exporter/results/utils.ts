@@ -160,32 +160,65 @@ export const formatAsBulletPoints = (text: any): string[] => {
  */
 export const formatConditions = (conditions: any): string[] => {
   if (!conditions) return [];
-  
-  // Handle single string (pipe or semicolon separated)
-  if (typeof conditions === "string") {
-    const delimiter = conditions.includes("|") ? "|" : 
-                      conditions.includes(";") ? ";" : "\n";
-    return conditions
+
+  const normalizeToken = (value: string): string =>
+    value
+      .trim()
+      .replace(/^[\[\]\s,;]+|[\[\]\s,;]+$/g, '')
+      .replace(/^['"`]+|['"`]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const splitText = (raw: string): string[] => {
+    const text = raw.trim();
+    if (!text) return [];
+
+    const cleaned = text
+      // Remove serialized array wrappers only when they wrap the whole payload.
+      .replace(/^\s*\[\s*/, '')
+      .replace(/\s*]\s*$/, '');
+
+    // Prefer explicit item boundaries first: ", 'next item'"
+    const quotedItems = cleaned.match(/['"`][^'"`]+['"`]/g);
+    if (quotedItems && quotedItems.length > 1) {
+      return quotedItems.map((item) => normalizeToken(item));
+    }
+
+    const delimiter = cleaned.includes('|')
+      ? '|'
+      : cleaned.includes(';')
+      ? ';'
+      : cleaned.includes('\n')
+      ? '\n'
+      : null;
+
+    if (!delimiter) {
+      const single = normalizeToken(cleaned);
+      return single ? [single] : [];
+    }
+
+    return cleaned
       .split(delimiter)
-      .map((s: string) => s.trim())
-      .filter((s: string) => s.length > 0);
+      .map((part) => normalizeToken(part))
+      .filter((part) => part.length > 0);
+  };
+
+  if (typeof conditions === 'string') {
+    return splitText(conditions);
   }
-  
-  if (!Array.isArray(conditions)) return [];
-  
-  return conditions
-    .map((c: any) => {
-      // Handle plain strings
-      if (typeof c === "string") return c.trim();
-      // Handle objects with text property
-      if (c && typeof c.text === "string") return c.text.trim();
-      // Handle objects with value property
-      if (c && typeof c.value === "string") return c.value.trim();
-      // Handle objects with condition property
-      if (c && typeof c.condition === "string") return c.condition.trim();
-      return null;
-    })
-    .filter((c: string | null): c is string => c !== null && c.length > 0);
+
+  if (Array.isArray(conditions)) {
+    const flattened = conditions.flatMap((c: any) => {
+      if (typeof c === 'string') return splitText(c);
+      if (c && typeof c.text === 'string') return splitText(c.text);
+      if (c && typeof c.value === 'string') return splitText(c.value);
+      if (c && typeof c.condition === 'string') return splitText(c.condition);
+      return [];
+    });
+    return Array.from(new Set(flattened));
+  }
+
+  return [];
 };
 
 /**

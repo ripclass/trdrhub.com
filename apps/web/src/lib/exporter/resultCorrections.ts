@@ -1,18 +1,5 @@
 import type { CustomsPackManifest } from '@/api/exporter';
 
-export const parseSwiftYyMmDd = (raw: unknown): string | null => {
-  const value = typeof raw === 'string' ? raw.trim() : '';
-  if (!/^\d{6}$/.test(value)) return null;
-
-  const yy = Number(value.slice(0, 2));
-  const mm = Number(value.slice(2, 4));
-  const dd = Number(value.slice(4, 6));
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-
-  const year = yy <= 69 ? 2000 + yy : 1900 + yy;
-  return `${year.toString().padStart(4, '0')}-${value.slice(2, 4)}-${value.slice(4, 6)}`;
-};
-
 const readDateString = (value: unknown): string | undefined => {
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
@@ -24,6 +11,19 @@ const readDateString = (value: unknown): string | undefined => {
     }
   }
   return undefined;
+};
+
+export const parseSwiftYyMmDd = (raw: unknown): string | null => {
+  const value = readDateString(raw) ?? '';
+  if (!/^\d{6}$/.test(value)) return null;
+
+  const yy = Number(value.slice(0, 2));
+  const mm = Number(value.slice(2, 4));
+  const dd = Number(value.slice(4, 6));
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+  const year = yy <= 69 ? 2000 + yy : 1900 + yy;
+  return `${year.toString().padStart(4, '0')}-${value.slice(2, 4)}-${value.slice(4, 6)}`;
 };
 
 export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string | undefined => {

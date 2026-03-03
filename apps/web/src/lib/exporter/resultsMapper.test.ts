@@ -10,7 +10,7 @@ vi.mock('@shared/types', () => ({
 }));
 
 describe('resultsMapper', () => {
-  it('uses backend document discrepancyCount as single source for document rows', () => {
+  it('reconciles document issue counts from mapped issues to match visible Issues tab totals', () => {
     const response = buildValidationResponse({
       structured_result: {
         version: 'structured_result_v1',
@@ -72,8 +72,8 @@ describe('resultsMapper', () => {
       },
     } as any);
 
-    expect(response.documents[0].issuesCount).toBe(5);
-    expect(response.summary.total_issues).toBe(5);
+    expect(response.documents[0].issuesCount).toBe(2);
+    expect(response.summary.total_issues).toBe(2);
   });
 
   it('uses canonical document-side discrepancy totals as issue count even when summary is stale', () => {
@@ -101,9 +101,9 @@ describe('resultsMapper', () => {
           },
         ],
         issues: [
-          { id: 'i1', title: 'Issue', severity: 'critical', expected: 'a', found: 'b' },
-          { id: 'i2', title: 'Issue', severity: 'major', expected: 'c', found: 'd' },
-          { id: 'i3', title: 'Issue', severity: 'minor', expected: 'e', found: 'f' },
+          { id: 'i1', title: 'Issue', severity: 'critical', documents: ['invoice.pdf'], expected: 'a', found: 'b' },
+          { id: 'i2', title: 'Issue', severity: 'major', documents: ['invoice.pdf'], expected: 'c', found: 'd' },
+          { id: 'i3', title: 'Issue', severity: 'minor', documents: ['packing.pdf'], expected: 'e', found: 'f' },
         ],
         processing_summary: {
           total_documents: 2,

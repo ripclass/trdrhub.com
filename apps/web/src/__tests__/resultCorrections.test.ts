@@ -11,6 +11,15 @@ describe('resultCorrections', () => {
     expect(resolved).toBe('2026-04-15');
   });
 
+  it('parses MT700 31C when provided as nested value object', () => {
+    const resolved = resolveIssueDateFromLc({
+      dates: { issue: '2015-04-26' },
+      mt700: { blocks: { '31C': { value: '260415' } } },
+    });
+
+    expect(resolved).toBe('2026-04-15');
+  });
+
   it('prefers explicit issue_date over legacy dates.issue when MT700 31C is absent', () => {
     const resolved = resolveIssueDateFromLc({
       issue_date: '2026-04-15',
