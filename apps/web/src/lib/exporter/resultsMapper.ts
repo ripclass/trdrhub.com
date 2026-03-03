@@ -1,4 +1,5 @@
-import type { StructuredResultPayload } from '@shared/types';
+import type { StructuredResultPayload, ExtractionStatus, ComplianceStatus } from '@shared/types';
+import { mapExtractionToUiStatus, CanonicalSemanticsSchema } from '@shared/types';
 import type { ValidationResults, IssueCard } from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
@@ -27,15 +28,21 @@ const normalizeDocType = (value?: string | null) => {
   return DOC_LABELS[normalized] ?? value.toString().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
-const deriveDocumentStatus = (extractionStatus: string): 'success' | 'warning' | 'error' => {
-  const status = extractionStatus?.toLowerCase();
-  if (status === 'error') {
-    return 'error';
-  }
-  if (status === 'partial' || status === 'pending') {
-    return 'warning';
-  }
-  return 'success';
+const normalizeExtractionStatus = (value: unknown): ExtractionStatus => {
+  const token = String(value ?? '').toLowerCase();
+  if (token === 'success') return 'success';
+  if (token === 'failed' || token === 'error' || token === 'empty') return 'failed';
+  return 'partial';
+};
+
+const deriveDocumentStatus = (extractionStatus: ExtractionStatus): 'success' | 'warning' | 'error' =>
+  mapExtractionToUiStatus(extractionStatus);
+
+const deriveComplianceStatus = (doc: any): ComplianceStatus => {
+  const token = String(doc?.compliance_status ?? '').toLowerCase();
+  if (token === 'reject') return 'reject';
+  if (token === 'warning') return 'warning';
+  return 'clean';
 };
 
 const PLACEHOLDER_TOKENS = new Set(['', '—', '-', '--', 'n/a', 'na', 'none', 'null', 'undefined', 'unknown']);
@@ -91,12 +98,17 @@ const mapDocuments = (docs: any[] = []) => {
     const typeKey = typeof rawType === 'string' ? rawType : 'supporting_document';
     // Check multiple possible keys for issue count (backend uses discrepancyCount)
     const issuesCount = Number(doc?.discrepancyCount ?? doc?.issues_count ?? doc?.issuesCount ?? 0);
-    const extractionStatus = (doc?.extraction_status ?? 'unknown').toString();
-    const canonicalStatus = (doc?.status ?? '').toString().toLowerCase();
-    const status =
-      canonicalStatus === 'success' || canonicalStatus === 'warning' || canonicalStatus === 'error'
-        ? canonicalStatus
-        : deriveDocumentStatus(extractionStatus);
+    const extractionStatus = normalizeExtractionStatus(doc?.extraction_status ?? doc?.extractionStatus);
+    const complianceStatus = deriveComplianceStatus(doc);
+    const failedReason = doc?.failed_reason ?? doc?.failedReason ?? null;
+    CanonicalSemanticsSchema.parse({
+      extraction_status: extractionStatus,
+      compliance_status: complianceStatus,
+      pipeline_verification_status: 'VERIFIED',
+      failed_reason: failedReason,
+    });
+
+    const status = deriveDocumentStatus(extractionStatus);
 
     return {
       id: documentId,
@@ -106,6 +118,8 @@ const mapDocuments = (docs: any[] = []) => {
       type: normalizeDocType(typeKey),
       typeKey,
       extractionStatus,
+      complianceStatus,
+      failedReason,
       status,
       issuesCount,
       extractedFields: doc?.extracted_fields ?? {},

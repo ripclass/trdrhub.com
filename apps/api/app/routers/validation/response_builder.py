@@ -13,6 +13,7 @@ from .utilities import (
     filter_user_facing_fields,
 )
 from .issue_resolver import count_issue_severity
+from .semantics import normalize_extraction_status
 
 
 def compose_processing_summary(
@@ -27,10 +28,12 @@ def compose_processing_summary(
     failed = 0
 
     for doc in documents:
-        status = str(doc.get("extraction_status") or doc.get("extractionStatus") or "unknown").lower()
+        status = normalize_extraction_status(
+            str(doc.get("extraction_status") or doc.get("extractionStatus") or "partial")
+        )
         if status == "success":
             successful += 1
-        elif status in {"failed", "error", "empty"}:
+        elif status == "failed":
             failed += 1
         else:
             partial += 1

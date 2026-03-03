@@ -148,6 +148,13 @@ from app.services.ai.model_router import get_router_evidence
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
+from app.routers.validation.semantics import (
+    normalize_extraction_status,
+    compliance_status_from_validation,
+    require_failed_reason,
+    assert_no_status_cross_mix,
+    mark_unverified,
+)
 from app.services.rules_service import get_ucp_description_sync, get_isbp_description_sync
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
@@ -1996,6 +2003,12 @@ async def validate_doc(
             )
             structured_result["bank_verdict"] = bank_verdict
             structured_result["verdict_signature"] = bank_verdict.get("verdict_signature")
+            structured_result = _enforce_document_semantics(
+                structured_result,
+                validation_status=v2_score.level.value,
+                critical_count=v2_score.critical_count,
+                major_count=v2_score.major_count,
+            )
             structured_result["authoritative_verdict"] = _build_authoritative_verdict(
                 verdict_class=bank_verdict.get("verdict_class") or bank_verdict.get("verdict"),
                 source=(bank_verdict.get("verdict_signature", {}).get("source") if isinstance(bank_verdict.get("verdict_signature"), dict) else "bank_verdict"),
@@ -4100,6 +4113,32 @@ def _apply_pipeline_verification_gate(
     else:
         structured_result["pipeline_verification_warnings"] = []
 
+    return structured_result
+
+
+def _enforce_document_semantics(
+    structured_result: Dict[str, Any],
+    *,
+    validation_status: Optional[str],
+    critical_count: int,
+    major_count: int,
+) -> Dict[str, Any]:
+    docs = structured_result.get("documents") or structured_result.get("documents_structured") or []
+    compliance_status = compliance_status_from_validation(validation_status, critical_count=critical_count, major_count=major_count)
+
+    for doc in docs:
+        extraction_status = normalize_extraction_status(doc.get("extraction_status") or doc.get("extractionStatus"))
+        failed_reason = doc.get("failed_reason") or doc.get("extraction_error") or doc.get("failedReason")
+        if extraction_status == "failed" and not failed_reason:
+            failed_reason = "Extraction failed: no readable fields found"
+        require_failed_reason(extraction_status, failed_reason)
+
+        doc["extraction_status"] = extraction_status
+        doc["failed_reason"] = failed_reason
+        doc["compliance_status"] = compliance_status
+        assert_no_status_cross_mix(doc)
+
+    structured_result["compliance_status"] = compliance_status
     return structured_result
 
 

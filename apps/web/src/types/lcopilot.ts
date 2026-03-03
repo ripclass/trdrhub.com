@@ -1,5 +1,7 @@
 import type {
   StructuredResult as SharedStructuredResultPayload,
+  ComplianceStatus,
+  ExtractionStatus,
   StructuredResultDocument as SharedStructuredResultDocument,
   StructuredResultIssue as SharedStructuredResultIssue,
   StructuredResultAnalytics as SharedStructuredResultAnalytics,
@@ -131,7 +133,9 @@ export interface ValidationDocument {
   filename: string;
   type: string;
   typeKey?: string;
-  extractionStatus: string;
+  extractionStatus: ExtractionStatus;
+  complianceStatus?: ComplianceStatus;
+  failedReason?: string | null;
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;
