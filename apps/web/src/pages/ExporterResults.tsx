@@ -697,6 +697,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
+  const buildDrawerExtractedFields = (document: (typeof documents)[number]): Record<string, any> => {
+    const fallbackFields =
+      document.extractedFields && typeof document.extractedFields === "object"
+        ? (document.extractedFields as Record<string, any>)
+        : {};
+
+    if (document.typeKey !== "letter_of_credit") {
+      return fallbackFields;
+    }
+
+    const lcSource =
+      lcData && typeof lcData === "object"
+        ? (lcData as Record<string, any>)
+        : fallbackFields;
+
+    const canonicalIssueDate = resolveIssueDateFromLc(lcSource);
+    if (!canonicalIssueDate) {
+      return lcSource;
+    }
+
+    const canonicalDates =
+      lcSource.dates && typeof lcSource.dates === "object"
+        ? { ...(lcSource.dates as Record<string, any>), issue: canonicalIssueDate }
+        : { issue: canonicalIssueDate };
+
+    return {
+      ...lcSource,
+      issue_date: canonicalIssueDate,
+      dates: canonicalDates,
+    };
+  };
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
@@ -1892,7 +1923,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               status: document.status,
                               extractionStatus: document.extractionStatus,
                               issuesCount: document.issuesCount,
-                              extractedFields: document.extractedFields,
+                              extractedFields: buildDrawerExtractedFields(document),
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,

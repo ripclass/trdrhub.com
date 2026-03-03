@@ -11,6 +11,15 @@ describe('resultCorrections', () => {
     expect(resolved).toBe('2026-04-15');
   });
 
+  it('prefers explicit issue_date over legacy dates.issue when MT700 31C is absent', () => {
+    const resolved = resolveIssueDateFromLc({
+      issue_date: '2026-04-15',
+      dates: { issue: '2015-04-26' },
+    });
+
+    expect(resolved).toBe('2026-04-15');
+  });
+
   it('hydrates manifest payload from customs_pack manifest to keep state consistent', () => {
     const manifest = hydrateManifestFromCustomsPack(
       {

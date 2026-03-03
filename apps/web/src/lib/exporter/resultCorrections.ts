@@ -16,14 +16,25 @@ export const parseSwiftYyMmDd = (raw: unknown): string | null => {
 export const resolveIssueDateFromLc = (lc: Record<string, any> | null): string | undefined => {
   if (!lc) return undefined;
 
-  const timelineIssueDate = lc?.dates?.issue;
+  const explicitIssueDate =
+    typeof lc?.issue_date === 'string' && lc.issue_date.trim().length > 0
+      ? lc.issue_date.trim()
+      : undefined;
+  const timelineIssueDate =
+    typeof lc?.dates?.issue === 'string' && lc.dates.issue.trim().length > 0
+      ? lc.dates.issue.trim()
+      : undefined;
   const swiftIssueDate = parseSwiftYyMmDd(lc?.mt700?.blocks?.['31C']);
 
-  if (swiftIssueDate && timelineIssueDate && swiftIssueDate !== timelineIssueDate) {
+  if (swiftIssueDate) {
     return swiftIssueDate;
   }
 
-  return timelineIssueDate ?? swiftIssueDate ?? undefined;
+  if (explicitIssueDate) {
+    return explicitIssueDate;
+  }
+
+  return timelineIssueDate ?? undefined;
 };
 
 export const hydrateManifestFromCustomsPack = (

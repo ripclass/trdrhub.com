@@ -139,6 +139,62 @@ describe('ExporterResults', () => {
     }
   });
 
+  it('uses canonical LC issue date in document snapshot and details drawer', async () => {
+    const user = userEvent.setup();
+    const issueDateConflictResults = buildValidationResults();
+
+    issueDateConflictResults.structured_result = {
+      ...issueDateConflictResults.structured_result,
+      lc_structured: {
+        ...(issueDateConflictResults.structured_result?.lc_structured ?? {}),
+        number: 'LC-EXP-2026-001',
+        issue_date: '2026-04-15',
+        dates: {
+          issue: '2015-04-26',
+          expiry: '2026-12-31',
+        },
+        mt700: {
+          blocks: {
+            '31C': '260415',
+          },
+        },
+      } as any,
+    };
+
+    const lcDocument = issueDateConflictResults.documents.find((doc) => doc.typeKey === 'letter_of_credit');
+    if (lcDocument) {
+      lcDocument.extractedFields = {
+        ...lcDocument.extractedFields,
+        issue_date: '2015-04-26',
+        dates: {
+          issue: '2015-04-26',
+          expiry: '2026-12-31',
+        },
+        mt700: {
+          blocks: {
+            '31C': '260415',
+          },
+        },
+      };
+    }
+
+    activeResults = issueDateConflictResults;
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    expect(screen.getByText('2026-04-15')).toBeInTheDocument();
+    expect(screen.queryByText(/2015-04-26/)).not.toBeInTheDocument();
+
+    const lcCard = findCardByTitle('LC.pdf');
+    await user.click(within(lcCard).getByRole('button', { name: /View Details/i }));
+    const drawer = await screen.findByRole('dialog');
+    expect(within(drawer).getByText('2026-04-15')).toBeInTheDocument();
+    expect(within(drawer).queryByText(/2015-04-26/)).not.toBeInTheDocument();
+  });
+
   it('renders issues tab with expected/found values', async () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
