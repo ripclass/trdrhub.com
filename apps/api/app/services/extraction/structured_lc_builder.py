@@ -118,8 +118,12 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
 
     # Keep confidence as float (0-1 range) - frontend multiplies by 100 for display
     raw_confidence = _safe(extractor_outputs.get("lc_type_confidence"), 0) or 0
+    try:
+        numeric_confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        numeric_confidence = 0.0
     # Ensure it's a float between 0-1 (some sources may pass percentage already)
-    confidence = float(raw_confidence) if raw_confidence <= 1 else float(raw_confidence) / 100
+    confidence = numeric_confidence if numeric_confidence <= 1 else numeric_confidence / 100
     
     return {
         "lc_type": extractor_outputs.get("lc_type", "unknown"),
@@ -164,6 +168,19 @@ def _canonicalize_extraction_status(
 def _safe_int(value: Any, default: int = 0) -> int:
     """Coerce values to int without raising (Option-E payloads can be stringly)."""
     try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            normalized = value.replace(",", "").strip()
+            if not normalized:
+                return default
+            return int(float(normalized))
         return int(value)
     except (TypeError, ValueError):
         return default
@@ -338,7 +355,7 @@ def build_unified_structured_result(
             status_counts["error"] += 1
         else:
             status_counts["warning"] += 1
-        total_issues += int(doc.get("discrepancyCount") or 0)
+        total_issues += _safe_int(doc.get("discrepancyCount") or 0)
 
     processing_summary = {
         "total_documents": len(docs_structured),
