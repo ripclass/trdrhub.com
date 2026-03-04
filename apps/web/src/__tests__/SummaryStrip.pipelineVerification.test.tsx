@@ -208,4 +208,31 @@ describe('SummaryStrip top block behavior', () => {
     expect(screen.getByText(/Customs Pack File Generated/i)).toBeInTheDocument();
     expect(screen.getByText(/File generation does not confirm bank\/customs submission readiness/i)).toBeInTheDocument();
   });
+
+  it('shows blocking reason panel when verdict rejects with no issues', () => {
+    const data = buildValidationResults();
+    data.issues = [];
+    data.summary = { ...(data.summary as any), total_issues: 0 } as any;
+    if (data.structured_result) {
+      (data.structured_result as any).processing_summary = {
+        ...(data.structured_result as any).processing_summary,
+        total_issues: 0,
+      };
+    }
+
+    render(
+      <MemoryRouter>
+        <SummaryStrip
+          data={data}
+          finalVerdict="REJECT"
+          totalIssues={0}
+          blockReason="Sanctions screening failed"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/Blocking Reason/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sanctions screening failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Reject/i)).toBeInTheDocument();
+  });
 });

@@ -23,6 +23,9 @@ type Props = {
   finalVerdict?: string | null;
   criticalIssueCount?: number;
   isReadyToSubmit?: boolean;
+  totalIssues?: number;
+  isBlocked?: boolean;
+  blockReason?: string | null;
   onOpenDocumentDetails?: (documentId: string) => void;
 };
 
@@ -48,6 +51,9 @@ export function SummaryStrip({
   finalVerdict,
   criticalIssueCount,
   isReadyToSubmit,
+  totalIssues: totalIssuesProp,
+  isBlocked: isBlockedProp,
+  blockReason,
   onOpenDocumentDetails,
 }: Props) {
   if (!data) {
@@ -58,9 +64,11 @@ export function SummaryStrip({
   const summary = (data.summary ?? structured?.processing_summary ?? {}) as Partial<ValidationResults['summary']>;
   const analytics = (data.analytics ?? structured?.analytics ?? {}) as Partial<ValidationResults['analytics']>;
 
+  const extractionDocs = data?.documents ?? [];
+
   // Get document counts from multiple sources for robustness
   const documentsProcessed =
-    analytics?.documents_processed ?? summary.total_documents ?? data?.documents?.length ?? 0;
+    extractionDocs.length || summary.total_documents || analytics?.documents_processed || 0;
 
   // CANONICAL SOURCE: document status counts must come from the mapper's
   // canonical_document_status field (always derived from documents array).
@@ -75,7 +83,6 @@ export function SummaryStrip({
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
 
-  const extractionDocs = data?.documents ?? [];
   const partialDocuments = extractionDocs.filter((doc) => (doc.status ?? '').toLowerCase() === 'warning');
   const failedDocuments = extractionDocs.filter(
     (doc) => (doc.status ?? '').toLowerCase() === 'error' && isFailedDocumentGuardrailCompliant(doc),
@@ -84,10 +91,11 @@ export function SummaryStrip({
   const warningsCount = partialDocuments.length;
   const errorsCount = failedDocuments.length;
 
+  const hasDocumentCounts = extractionDocs.length > 0;
   // Header counts must align to list lengths computed from the same filtered sets.
-  const verified = verifiedCount || formatNumber(canonicalStatus?.success);
-  const warnings = warningsCount;
-  const errors = errorsCount;
+  const verified = hasDocumentCounts ? verifiedCount : formatNumber(canonicalStatus?.success);
+  const warnings = hasDocumentCounts ? warningsCount : formatNumber(canonicalStatus?.warning);
+  const errors = hasDocumentCounts ? errorsCount : formatNumber(canonicalStatus?.error);
 
   const pipelineVerificationStatusRaw =
     (structured as any)?.pipeline_verification_status ??
@@ -120,10 +128,12 @@ export function SummaryStrip({
     { critical: 0, major: 0, minor: 0 },
   );
   // Keep SummaryStrip issue counts aligned to visible issue-card taxonomy.
-  const totalIssues =
+  const derivedTotalIssues =
     visibleSeverityCounts.critical +
     visibleSeverityCounts.major +
     visibleSeverityCounts.minor;
+  const totalIssues = typeof totalIssuesProp === 'number' ? totalIssuesProp : derivedTotalIssues;
+  const isBlocked = Boolean(isBlockedProp);
   // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
@@ -132,11 +142,17 @@ export function SummaryStrip({
   const hasCriticalIssues = (criticalIssueCount ?? 0) > 0;
   const verdictReject = (finalVerdict ?? '').toUpperCase() === 'REJECT';
   const complianceOutcome: 'clean' | 'warning' | 'reject' =
-    totalIssues === 0 && complianceRate >= 90
+    totalIssues === 0 && complianceRate >= 90 && !isBlocked && !verdictReject && !hasCriticalIssues
       ? 'clean'
-      : complianceRate < 50 || verdictReject || hasCriticalIssues
+      : complianceRate < 50 || verdictReject || hasCriticalIssues || isBlocked
       ? 'reject'
       : 'warning';
+  const showBlockingReasonPanel = (isBlocked || verdictReject) && totalIssues === 0;
+  const blockingReasonText =
+    blockReason ||
+    (verdictReject
+      ? 'Final verdict blocks submission. Resolve blocking issues before proceeding.'
+      : 'Validation gate is blocked; resolve blocking issues before proceeding.');
 
   const nextStep =
     verdictReject || hasCriticalIssues
@@ -168,7 +184,9 @@ export function SummaryStrip({
     : 0;
 
   // Status icon based on overall status prop or calculated
-  const effectiveStatus = overallStatus ?? (errors > 0 ? 'error' : hasIssues ? 'warning' : 'success');
+  const effectiveStatus = (isBlocked || verdictReject)
+    ? 'error'
+    : overallStatus ?? (errors > 0 ? 'error' : hasIssues ? 'warning' : 'success');
   const statusIcon = effectiveStatus === 'success' ? (
     <CheckCircle className="w-12 h-12 text-emerald-500" />
   ) : effectiveStatus === 'error' ? (
@@ -402,6 +420,12 @@ export function SummaryStrip({
           {/* Next Steps */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Next Steps</h3>
+            {showBlockingReasonPanel && (
+              <div className="rounded-md border border-rose-200 bg-rose-50/70 dark:bg-rose-950/30 p-3 text-xs text-rose-700 dark:text-rose-200">
+                <p className="uppercase tracking-wide text-[10px] font-semibold">Blocking Reason</p>
+                <p className="mt-1">{blockingReasonText}</p>
+              </div>
+            )}
             <>
               <Link to={nextStep.to}>
                 <Button variant="outline" size="sm" className="w-full">

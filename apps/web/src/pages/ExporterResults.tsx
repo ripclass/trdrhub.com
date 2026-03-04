@@ -1074,6 +1074,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
+    if (validationState?.isBlocked) return false;
     if (pipelineStatusKnown && !pipelineVerified) return false;
     if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
@@ -1089,6 +1090,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     submitBlockedByRejectVerdict,
     submitBlockedByCritical,
     totalDiscrepancies,
+    validationState?.isBlocked,
   ]);
   const canonicalGateState = useMemo<'blocked' | 'review_required' | 'allowed'>(() => {
     if (validationState?.isBlocked || submissionBlocked) {
@@ -1120,6 +1122,35 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       helper: 'Validation gate requires review before proceeding to submission.',
     };
   }, [canonicalGateState]);
+  const isGateBlocked = canonicalGateState === 'blocked';
+  const blockingReason = useMemo(() => {
+    if (validationState?.blockReason) {
+      return validationState.blockReason;
+    }
+    if (finalVerdict === 'REJECT') {
+      return (
+        resolvedBankVerdict?.verdict_message ||
+        (structuredResult as any)?.compliance_cap_reason ||
+        (resultData as any)?.sanctionsBlockReason ||
+        'Final verdict blocks submission. Resolve blocking issues before proceeding.'
+      );
+    }
+    if (submissionBlocked) {
+      return (
+        (structuredResult as any)?.compliance_cap_reason ||
+        (resultData as any)?.sanctionsBlockReason ||
+        'Validation gate is blocked; resolve blocking issues before proceeding.'
+      );
+    }
+    return null;
+  }, [
+    finalVerdict,
+    resolvedBankVerdict?.verdict_message,
+    resultData,
+    structuredResult,
+    submissionBlocked,
+    validationState?.blockReason,
+  ]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1532,6 +1563,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             finalVerdict={finalVerdict}
             criticalIssueCount={criticalIssueCount}
             isReadyToSubmit={isReadyToSubmit}
+            totalIssues={totalDiscrepancies}
+            isBlocked={isGateBlocked}
+            blockReason={blockingReason}
             onOpenDocumentDetails={openDocumentDetails}
           />
           
@@ -1558,6 +1592,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 total: totalDiscrepancies,
               }}
               requiredActionsCountOverride={totalDiscrepancies}
+              showReadyBadge={canonicalGateState === 'allowed'}
             />
           )}
           

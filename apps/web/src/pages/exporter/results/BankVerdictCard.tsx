@@ -65,12 +65,14 @@ interface BankVerdictCardProps {
     total: number;
   };
   requiredActionsCountOverride?: number;
+  showReadyBadge?: boolean;
 }
 
 export function BankVerdictCard({
   verdict,
   issueSummaryOverride,
   requiredActionsCountOverride,
+  showReadyBadge = true,
 }: BankVerdictCardProps) {
   const issueSummary = issueSummaryOverride ?? verdict?.issue_summary ?? { critical: 0, major: 0, minor: 0, total: 0 };
   const actionItems = verdict?.action_items ?? [];
@@ -98,7 +100,7 @@ export function BankVerdictCard({
             </div>
             <div>
               <Badge className={cn("text-sm font-bold px-3 py-1", verdictBadgeColors[verdict.verdict])}>
-                {verdict.verdict === "SUBMIT" ? "READY TO SUBMIT" : verdict.verdict}
+                {verdict.verdict === "SUBMIT" && showReadyBadge ? "READY TO SUBMIT" : verdict.verdict}
               </Badge>
               <p className="text-sm font-medium mt-1">{verdict.verdict_message}</p>
             </div>

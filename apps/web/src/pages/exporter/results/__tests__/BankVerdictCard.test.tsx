@@ -29,6 +29,13 @@ describe('BankVerdictCard', () => {
     expect(screen.getByText('Safe to submit to bank')).toBeInTheDocument();
   });
 
+  it('falls back to SUBMIT label when ready badge is suppressed', () => {
+    render(<BankVerdictCard verdict={baseVerdict} showReadyBadge={false} />);
+
+    expect(screen.getByText('SUBMIT')).toBeInTheDocument();
+    expect(screen.queryByText('READY TO SUBMIT')).not.toBeInTheDocument();
+  });
+
   it('renders REJECT verdict with correct styling', () => {
     const rejectVerdict: BankVerdict = {
       ...baseVerdict,
