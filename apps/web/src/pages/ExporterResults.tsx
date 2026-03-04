@@ -580,30 +580,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     null;
   const lcNumber = resolvedLcNumber ?? 'LC-UNKNOWN';
   
-  // Emergency production hotfix: hard-disable guardrails API checks on results page.
-  // Guardrails endpoint auth/CSRF failures are currently causing noisy retry storms.
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
-    queryKey: ['exporter-guardrails-disabled', validationSessionId, resolvedLcNumber],
-    queryFn: async () => ({
-      can_submit: true,
-      blocking_issues: [],
-      warnings: ['guardrails_temporarily_disabled'],
-      required_docs_present: true,
-      high_severity_discrepancies: 0,
-      policy_checks_passed: true,
-    }),
-    enabled: false,
+    queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
+    queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: resolvedLcNumber }),
+    enabled: !!validationSessionId && !!resolvedLcNumber && enableBankSubmission,
     retry: 0,
     refetchOnWindowFocus: false,
+    // One-shot fetch per result view; avoid guardrails polling storms.
     refetchInterval: false,
-    initialData: {
-      can_submit: true,
-      blocking_issues: [],
-      warnings: ['guardrails_temporarily_disabled'],
-      required_docs_present: true,
-      high_severity_discrepancies: 0,
-      policy_checks_passed: true,
-    },
   });
   
   // Submission history
