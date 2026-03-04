@@ -491,9 +491,25 @@ async def run_ai_validation(
     logger.info(f"AI Validation starting with {len(lc_text)} chars of LC text")
     
     if not lc_text:
-        logger.warning("No LC text available for AI validation")
-        metadata["error"] = "no_lc_text"
-        return [], metadata
+        # Fallback: synthesize a context text from uploaded documents so layered AI
+        # arbitration still runs and emits trace evidence.
+        doc_snippets = []
+        for doc in documents or []:
+            if not isinstance(doc, dict):
+                continue
+            snippet = str(doc.get("raw_text") or doc.get("raw_text_preview") or "").strip()
+            if snippet:
+                doc_snippets.append(snippet[:1200])
+        if doc_snippets:
+            lc_text = "\n\n".join(doc_snippets)
+            lc_data["raw_text"] = lc_text
+            metadata["lc_text_fallback"] = "documents"
+            logger.warning("LC raw_text missing; using document text fallback for AI validation")
+        else:
+            logger.warning("No LC text available for AI validation")
+            metadata["error"] = "no_lc_text"
+            # Continue with minimal context so router layers still emit telemetry.
+            lc_text = "LC text unavailable; run conservative validation on available signals."
     
     # =================================================================
     # 1. PARSE LC REQUIREMENTS
