@@ -2142,24 +2142,36 @@ async def validate_doc(
             structured_result["final_verdict"] = final_verdict
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
-            trace_sections = _build_trace_sections(
-                deterministic_counts=deterministic_counts,
-                ruleset_verdict=ruleset_verdict,
-                issue_source_summary=issue_source_summary,
-                ai_counts=ai_counts,
-                ai_metadata=ai_metadata,
-                job_id=str(job_id) if job_id else None,
-                validation_session=validation_session,
-                audit_context=audit_context,
-            )
-            structured_result["deterministic_summary"] = trace_sections["deterministic_summary"]
-            structured_result["ai_summary"] = trace_sections["ai_summary"]
-            if trace_sections.get("l3_findings") is not None:
-                structured_result["l3_findings"] = trace_sections.get("l3_findings")
-            if trace_sections.get("l3_summary") is not None:
-                structured_result["l3_summary"] = trace_sections.get("l3_summary")
-            if trace_sections.get("trace_ids"):
-                structured_result["trace_ids"] = trace_sections.get("trace_ids")
+            try:
+                trace_sections = _build_trace_sections(
+                    deterministic_counts=deterministic_counts,
+                    ruleset_verdict=ruleset_verdict,
+                    issue_source_summary=issue_source_summary,
+                    ai_counts=ai_counts,
+                    ai_metadata=ai_metadata,
+                    job_id=str(job_id) if job_id else None,
+                    validation_session=validation_session,
+                    audit_context=audit_context,
+                )
+                structured_result["deterministic_summary"] = trace_sections["deterministic_summary"]
+                structured_result["ai_summary"] = trace_sections["ai_summary"]
+                if trace_sections.get("l3_findings") is not None:
+                    structured_result["l3_findings"] = trace_sections.get("l3_findings")
+                if trace_sections.get("l3_summary") is not None:
+                    structured_result["l3_summary"] = trace_sections.get("l3_summary")
+                if trace_sections.get("trace_ids"):
+                    structured_result["trace_ids"] = trace_sections.get("trace_ids")
+            except Exception as trace_err:
+                logger.warning("Trace/L3 summary build failed; continuing with baseline summaries: %s", trace_err)
+                structured_result["deterministic_summary"] = {
+                    "counts": deterministic_counts,
+                    "verdict": ruleset_verdict,
+                    "rules_fired": issue_source_summary.get("deterministic", {}).get("rules_fired", []),
+                }
+                structured_result["ai_summary"] = {
+                    "counts": ai_counts,
+                    "rules_fired": issue_source_summary.get("ai", {}).get("rules_fired", []),
+                }
 
             structured_result["confidence_band"] = confidence_band
             structured_result["confidence_score"] = ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None
