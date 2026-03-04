@@ -62,9 +62,6 @@ const api = axios.create({
   withCredentials: true, // Include cookies for CSRF token
 })
 
-let lastCsrfFetchAttemptAt = 0
-const CSRF_FETCH_COOLDOWN_MS = 30_000
-
 api.interceptors.request.use(
   async (config) => {
     const urlPath = (config.url || '').toLowerCase()
@@ -149,28 +146,22 @@ api.interceptors.request.use(
     // Add CSRF token for state-changing methods
     if (config.method && requiresCsrfToken(config.method)) {
       let csrfToken = getCsrfToken()
-
-      // If no CSRF token found, try to fetch one before making the request,
-      // but throttle fetch attempts to avoid retry storms (429 loops).
+      
+      // If no CSRF token found, try to fetch one before making the request
       if (!csrfToken) {
-        const now = Date.now()
-        if (now - lastCsrfFetchAttemptAt > CSRF_FETCH_COOLDOWN_MS) {
-          lastCsrfFetchAttemptAt = now
-          try {
-            const { fetchCsrfToken } = await import('@/lib/csrf')
-            csrfToken = await fetchCsrfToken(API_BASE_URL_VALUE)
-          } catch (error) {
-            console.warn('Failed to fetch CSRF token:', error)
-          }
+        try {
+          const { fetchCsrfToken } = await import('@/lib/csrf')
+          csrfToken = await fetchCsrfToken(API_BASE_URL_VALUE)
+        } catch (error) {
+          console.warn('Failed to fetch CSRF token:', error)
         }
       }
-
+      
       if (csrfToken) {
         const headers = (config.headers ?? {}) as Record<string, string>
         headers['X-CSRF-Token'] = csrfToken
         config.headers = headers as any
-      } else if (!urlPath.includes('/api/exporter/guardrails/check')) {
-        // Reduce noisy logs for non-critical guardrails polling when CSRF is rate-limited.
+      } else {
         console.warn('CSRF token not available for', config.method, config.url)
       }
     }
@@ -223,25 +214,14 @@ api.interceptors.response.use(
       const errorDetail = error?.response?.data?.detail || ''
       
       if (errorCode.startsWith('csrf_') || errorDetail.includes('CSRF')) {
-        // CSRF token error - try to refresh token and retry once only.
-        const config = error.config || {}
-        if ((config as any).__csrfRetried) {
-          return Promise.reject(error)
-        }
-
-        const now = Date.now()
-        if (now - lastCsrfFetchAttemptAt <= CSRF_FETCH_COOLDOWN_MS) {
-          return Promise.reject(error)
-        }
-
+        // CSRF token error - try to refresh token and retry
         const { fetchCsrfToken } = await import('@/lib/csrf')
         try {
-          lastCsrfFetchAttemptAt = now
           const newToken = await fetchCsrfToken(API_BASE_URL_VALUE)
           // Retry the original request
+          const config = error.config
           if (config && newToken) {
             config.headers = config.headers || {}
-            ;(config as any).__csrfRetried = true
             if (config.method && requiresCsrfToken(config.method)) {
               config.headers['X-CSRF-Token'] = newToken
             }
