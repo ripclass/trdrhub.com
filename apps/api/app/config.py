@@ -169,6 +169,9 @@ class Settings(BaseSettings):
     # hybrid_shadow: compute hybrid arbitration trace, do not enforce
     # hybrid_enforced: arbitration verdict can override legacy final verdict
     VALIDATION_DECISION_MODE: str = "hybrid_shadow"
+    # Emergency rollback switch: restore pre-TBML/pre-L3 behavior in /api/validate.
+    # Keep True by default until post-TBML path is fully stabilized.
+    VALIDATION_CLASSIC_MODE: bool = True
     # Back-compat alias accepted from env and mapped to VALIDATION_DECISION_MODE.
     VALIDATION_MODE: Optional[str] = None
 

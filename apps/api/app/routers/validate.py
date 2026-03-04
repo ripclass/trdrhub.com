@@ -1160,6 +1160,15 @@ async def validate_doc(
                 # Preserve pass-through behavior for API-only pass fixtures while surfacing root cause.
 
             
+            # Emergency classic-mode rollback: suppress TBML/DB-rule overlay for stable pre-TBML behavior.
+            if bool(getattr(settings, "VALIDATION_CLASSIC_MODE", False)):
+                db_rule_issues = []
+                db_rule_warning_issue = None
+                db_rules_debug = {
+                    "enabled": False,
+                    "status": "disabled_classic_mode",
+                }
+            
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
             crossdoc_validator = CrossDocValidator()
@@ -2118,9 +2127,10 @@ async def validate_doc(
             })
             confidence_band, confidence_band_reason = _derive_confidence_band(extraction_confidence_summary)
 
-            decision_mode = settings.VALIDATION_DECISION_MODE
+            classic_mode = bool(getattr(settings, "VALIDATION_CLASSIC_MODE", False))
+            decision_mode = "legacy" if classic_mode else settings.VALIDATION_DECISION_MODE
             decision_trace = None
-            override_reason = None
+            override_reason = "classic_mode_forced" if classic_mode else None
             final_verdict = legacy_final_verdict
 
             if decision_mode in {"hybrid_shadow", "hybrid_enforced"}:
@@ -2164,9 +2174,9 @@ async def validate_doc(
                 )
                 structured_result["deterministic_summary"] = trace_sections["deterministic_summary"]
                 structured_result["ai_summary"] = trace_sections["ai_summary"]
-                if trace_sections.get("l3_findings") is not None:
+                if not classic_mode and trace_sections.get("l3_findings") is not None:
                     structured_result["l3_findings"] = trace_sections.get("l3_findings")
-                if trace_sections.get("l3_summary") is not None:
+                if not classic_mode and trace_sections.get("l3_summary") is not None:
                     structured_result["l3_summary"] = trace_sections.get("l3_summary")
                 if trace_sections.get("trace_ids"):
                     structured_result["trace_ids"] = trace_sections.get("trace_ids")
@@ -2200,11 +2210,16 @@ async def validate_doc(
                 if isinstance(trace, dict) and isinstance(ai_metadata, dict):
                     trace["provider_evidence"] = ai_metadata.get("llm_layer_payloads", {})
                 structured_result["decision_trace"] = trace
-            structured_result = _apply_pipeline_verification_gate(
-                structured_result,
-                mode=decision_mode,
-                issue_count_invariant_failure_reason=invariant_failure_reason,
-            )
+            if not classic_mode:
+                structured_result = _apply_pipeline_verification_gate(
+                    structured_result,
+                    mode=decision_mode,
+                    issue_count_invariant_failure_reason=invariant_failure_reason,
+                )
+            else:
+                # Keep response aligned with legacy UX expectations.
+                structured_result.pop("trust_verification", None)
+                structured_result.pop("decision_trace", None)
 
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
