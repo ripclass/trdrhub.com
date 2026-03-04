@@ -591,7 +591,11 @@ async def validate_doc(
             lc_context.get("form_of_doc_credit") or
             (lc_context.get("mt700") or {}).get("form_of_doc_credit")
         )
-        extracted_lc_type_confidence = lc_context.get("lc_type_confidence", 0)
+        extracted_lc_type_confidence_raw = lc_context.get("lc_type_confidence", 0)
+        try:
+            extracted_lc_type_confidence = float(extracted_lc_type_confidence_raw or 0)
+        except (TypeError, ValueError):
+            extracted_lc_type_confidence = 0.0
         extracted_lc_type_reason = lc_context.get("lc_type_reason", "")
         
         # If extracted, use it; otherwise fall back to import/export detection
@@ -620,10 +624,15 @@ async def validate_doc(
                     lc_text = extracted_context.get("lc_text") or lc_context.get("raw_text", "") if extracted_context else lc_context.get("raw_text", "")
                     if lc_text and len(lc_text) > 100:
                         ai_result = await detect_lc_type_ai(lc_text)
-                        if ai_result.get("confidence", 0) > lc_type_confidence:
+                        ai_conf_raw = ai_result.get("confidence", 0)
+                        try:
+                            ai_conf = float(ai_conf_raw or 0)
+                        except (TypeError, ValueError):
+                            ai_conf = 0.0
+                        if ai_conf > lc_type_confidence:
                             lc_type = ai_result.get("lc_type", lc_type)
                             lc_type_reason = ai_result.get("reason", lc_type_reason)
-                            lc_type_confidence = ai_result.get("confidence", lc_type_confidence)
+                            lc_type_confidence = ai_conf
                             lc_type_source = "ai"
                             lc_type_guess = {
                                 "lc_type": lc_type,
