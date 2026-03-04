@@ -118,6 +118,10 @@ def build_document_summaries(
         canonical_extraction_status = _normalize_extraction_status(detail)
         status = _derive_document_status(canonical_extraction_status, discrepancy_count)
 
+        ocr_confidence = detail.get("ocr_confidence")
+        if ocr_confidence is None:
+            ocr_confidence = detail.get("extraction_confidence")
+
         return {
             "id": detail_id,
             "name": filename or f"Document {index + 1}",
@@ -126,7 +130,7 @@ def build_document_summaries(
             "status": status,
             "discrepancyCount": discrepancy_count,
             "extractedFields": filter_user_facing_fields(detail.get("extracted_fields") or {}),
-            "ocrConfidence": detail.get("ocr_confidence") or detail.get("extraction_confidence"),
+            "ocrConfidence": ocr_confidence,
             "extractionStatus": canonical_extraction_status,
             "failed_reason": detail.get("failed_reason") or detail.get("extraction_error"),
         }

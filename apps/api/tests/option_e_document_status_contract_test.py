@@ -109,3 +109,25 @@ def test_failed_without_reason_is_downgraded_and_confident_fields_not_failed():
     assert docs[2]["extraction_status"] == "failed"
     assert docs[2]["failed_reason"] == "OCR timeout"
     assert structured["processing_summary"]["failed_extractions"] == 1
+
+
+def test_documents_structured_preserves_ocr_confidence_and_provider():
+    structured = _build_payload(
+        [
+            {
+                "id": "d1",
+                "name": "LC.pdf",
+                "documentType": "letter_of_credit",
+                "extractionStatus": "partial",
+                "discrepancyCount": 0,
+                "ocr_confidence": 0.0,
+                "ocr_provider": "google_documentai",
+                "ocr_source": "ocr",
+            }
+        ]
+    )
+
+    doc = structured["documents_structured"][0]
+    assert doc["ocr_confidence"] == 0.0
+    assert doc["ocr_provider"] == "google_documentai"
+    assert doc["ocr_source"] == "ocr"

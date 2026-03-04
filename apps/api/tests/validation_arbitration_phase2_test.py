@@ -1,4 +1,5 @@
 from pathlib import Path
+from importlib import util
 import sys
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -7,11 +8,17 @@ if str(API_ROOT) not in sys.path:
 
 import pytest
 
-from app.routers.validate import (
-    _apply_pipeline_verification_gate,
-    _arbitration_to_final_verdict,
-    _build_db_rules_blocked_structured_result,
-)
+VALIDATE_PATH = API_ROOT / "app" / "routers" / "validate.py"
+_spec = util.spec_from_file_location("validate_module", VALIDATE_PATH)
+_validate = util.module_from_spec(_spec)
+assert _spec and _spec.loader
+_spec.loader.exec_module(_validate)
+
+_apply_pipeline_verification_gate = _validate._apply_pipeline_verification_gate
+_arbitration_to_final_verdict = _validate._arbitration_to_final_verdict
+_build_db_rules_blocked_structured_result = _validate._build_db_rules_blocked_structured_result
+_merge_llm_layer_trace = _validate._merge_llm_layer_trace
+
 from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
 from app.services.ai.model_router import ModelRouter, reset_router_evidence
 from app.services import llm_provider
@@ -219,3 +226,16 @@ async def test_phase2_decision_trace_includes_runtime_router_evidence_when_routi
     assert isinstance(call.get("provider_used"), str)
     assert isinstance(call.get("latency_ms"), (int, float))
     assert call.get("confidence_band") in {"low", "medium", "high"}
+
+
+def test_phase2_decision_trace_includes_llm_provider_payloads_when_present():
+    trace = _merge_llm_layer_trace(
+        None,
+        {"llm_layer_payloads": {"L1": {"verdict": "pass", "provider_used": "openai"}}},
+        mode="hybrid_shadow",
+    )
+
+    assert isinstance(trace, dict)
+    assert trace.get("provider_evidence") == {"L1": {"verdict": "pass", "provider_used": "openai"}}
+    assert "router_transport" in trace
+    assert "layer_calls" in trace

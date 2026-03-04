@@ -4194,6 +4194,27 @@ def _attach_router_evidence_to_decision_trace(decision_trace: Optional[Dict[str,
     return enriched
 
 
+def _merge_llm_layer_trace(
+    decision_trace: Optional[Dict[str, Any]],
+    ai_metadata: Optional[Dict[str, Any]],
+    *,
+    mode: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    provider_evidence = None
+    if isinstance(ai_metadata, dict):
+        provider_evidence = ai_metadata.get("llm_layer_payloads")
+
+    trace = _attach_router_evidence_to_decision_trace(decision_trace) if decision_trace is not None else None
+
+    if trace is None and provider_evidence:
+        trace = _attach_router_evidence_to_decision_trace({"mode": mode})
+
+    if isinstance(trace, dict) and provider_evidence is not None:
+        trace["provider_evidence"] = provider_evidence
+
+    return trace
+
+
 def _has_non_empty_value(value: Any) -> bool:
     if value is None:
         return False

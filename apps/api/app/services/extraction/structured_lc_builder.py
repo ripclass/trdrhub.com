@@ -204,7 +204,10 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
         failed_reason = doc.get("failed_reason") or doc.get("extraction_error")
         confidence = doc.get("extraction_confidence")
         if confidence is None:
-            confidence = doc.get("ocrConfidence") or doc.get("ocr_confidence")
+            ocr_conf = doc.get("ocrConfidence")
+            if ocr_conf is None:
+                ocr_conf = doc.get("ocr_confidence")
+            confidence = ocr_conf
         try:
             confidence_value = float(confidence) if confidence is not None else None
         except (TypeError, ValueError):
@@ -221,6 +224,9 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
             doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0
         )
         derived_status = _derive_document_status(str(extraction_status), issues_count)
+        ocr_confidence = doc.get("ocr_confidence")
+        if ocr_confidence is None:
+            ocr_confidence = doc.get("ocrConfidence")
         normalized.append(
             {
                 "document_id": doc.get("document_id") or doc.get("id") or str(uuid4()),
@@ -232,6 +238,10 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "discrepancyCount": issues_count,
                 "failed_reason": failed_reason,
                 "extracted_fields": extracted_fields,
+                "extraction_confidence": confidence_value,
+                "ocr_confidence": ocr_confidence,
+                "ocr_provider": doc.get("ocr_provider"),
+                "ocr_source": doc.get("ocr_source"),
             }
         )
     return normalized
