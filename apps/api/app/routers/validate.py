@@ -2159,6 +2159,22 @@ async def validate_doc(
             structured_result["reasoning_summary"] = str(reasoning_summary) if reasoning_summary not in (None, "") else None
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
+
+            # Surface AI layer execution state explicitly for observability.
+            llm_payloads = ai_metadata.get("llm_layer_payloads") if isinstance(ai_metadata, dict) else None
+            llm_error = ai_metadata.get("llm_layer_error") if isinstance(ai_metadata, dict) else None
+            structured_result["ai_enrichment"] = {
+                "enabled": bool(llm_payloads),
+                "notes": ([str(llm_error)] if llm_error else []),
+                "layers_attempted": ai_metadata.get("llm_layers_attempted", []) if isinstance(ai_metadata, dict) else [],
+                "layers_succeeded": ai_metadata.get("llm_layers_succeeded", []) if isinstance(ai_metadata, dict) else [],
+            }
+            structured_result["ai_summary"] = {
+                "llm_layers_attempted": ai_metadata.get("llm_layers_attempted", []) if isinstance(ai_metadata, dict) else [],
+                "llm_layers_succeeded": ai_metadata.get("llm_layers_succeeded", []) if isinstance(ai_metadata, dict) else [],
+                "llm_layer_error": llm_error,
+                "provider_evidence_present": bool(llm_payloads),
+            }
             if decision_trace is not None:
                 trace = _merge_llm_layer_trace(
                     decision_trace,
