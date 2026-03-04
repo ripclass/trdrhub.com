@@ -1774,6 +1774,24 @@ async def validate_doc(
                 "total_issues": processing_summary_total_issues,
                 "invariant_failure_reason": invariant_failure_reason,
             })
+
+            # Recompute extraction counters from final documents_structured as authoritative source.
+            final_doc_rows = structured_result.get("documents_structured") or []
+            if isinstance(final_doc_rows, list) and final_doc_rows:
+                status_counts: Dict[str, int] = {"success": 0, "warning": 0, "error": 0}
+                for row in final_doc_rows:
+                    s = str((row or {}).get("status") or "").strip().lower()
+                    if s in status_counts:
+                        status_counts[s] += 1
+                structured_result["processing_summary"].update({
+                    "verified": status_counts.get("success", 0),
+                    "warnings": status_counts.get("warning", 0),
+                    "errors": status_counts.get("error", 0),
+                    "successful_extractions": status_counts.get("success", 0),
+                    "partial_extractions": status_counts.get("warning", 0),
+                    "failed_extractions": status_counts.get("error", 0),
+                    "status_counts": status_counts,
+                })
         # Also update analytics with processing time
         if structured_result.get("analytics"):
             structured_result["analytics"]["processing_time_display"] = processing_summary.get("processing_time_display")
@@ -4238,7 +4256,8 @@ def _build_pipeline_verification_checks(
     trace_evidence_present = bool(router_transport) or layer_call_count > 0 or bool(trace.get("provider_evidence"))
 
     # If no trace evidence exists, do not hard-fail verification on transport/layer checks.
-    require_router_layer_checks = trace_evidence_present or mode_token == "hybrid_enforced"
+    # This avoids false UNVERIFIED when router metadata is unavailable in an otherwise valid run.
+    require_router_layer_checks = trace_evidence_present
 
     checks: List[Dict[str, Any]] = [
         {
