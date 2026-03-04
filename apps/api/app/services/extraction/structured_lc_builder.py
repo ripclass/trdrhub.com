@@ -240,6 +240,7 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "extracted_fields": extracted_fields,
                 "extraction_confidence": confidence_value,
                 "ocr_confidence": ocr_confidence,
+                "ocrConfidence": ocr_confidence,
                 "ocr_provider": doc.get("ocr_provider"),
                 "ocr_source": doc.get("ocr_source"),
             }
