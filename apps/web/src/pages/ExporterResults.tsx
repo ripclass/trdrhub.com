@@ -106,6 +106,75 @@ type ExporterResultsProps = {
 
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
 
+type SubmissionVerdict = 'SUBMIT' | 'CAUTION' | 'HOLD' | 'REJECT';
+
+const normalizeVerdictToken = (value?: string | null): SubmissionVerdict | null => {
+  if (!value) return null;
+  const token = value.toString().trim().toUpperCase().replace(/\s+/g, '_');
+  if (
+    [
+      'REJECT',
+      'REJECTED',
+      'FAIL',
+      'FAILED',
+      'BLOCKED',
+      'NON_COMPLIANT',
+      'NON-COMPLIANT',
+      'NONCOMPLIANT',
+      'INVALID',
+      'ERROR',
+    ].includes(token)
+  ) {
+    return 'REJECT';
+  }
+  if (
+    [
+      'HOLD',
+      'REVIEW',
+      'REVIEW_REQUIRED',
+      'NEEDS_REVIEW',
+      'PARTIAL',
+      'PARTIAL_COMPLIANT',
+      'PARTIALLY_COMPLIANT',
+      'MOSTLY_COMPLIANT',
+      'INCOMPLETE',
+    ].includes(token)
+  ) {
+    return 'HOLD';
+  }
+  if (['CAUTION', 'WARNING', 'WARN', 'ATTENTION', 'RISK'].includes(token)) {
+    return 'CAUTION';
+  }
+  if (
+    [
+      'SUBMIT',
+      'READY',
+      'READY_TO_SUBMIT',
+      'APPROVE',
+      'APPROVED',
+      'PASS',
+      'PASSED',
+      'COMPLIANT',
+      'CLEAR',
+      'OK',
+      'SUCCESS',
+    ].includes(token)
+  ) {
+    return 'SUBMIT';
+  }
+  return null;
+};
+
+const resolveAuthoritativeVerdict = (values: Array<string | null | undefined>): SubmissionVerdict | null => {
+  for (const value of values) {
+    const normalized = normalizeVerdictToken(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
 export default function ExporterResults({
   embedded = false,
   jobId: jobIdProp,
@@ -931,10 +1000,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
-  const finalVerdict = String((structuredResult as any)?.final_verdict ?? '').toUpperCase();
-  const complianceStatus = String((structuredResult as any)?.compliance_status ?? '').toLowerCase();
-  const pipelineVerified = String((structuredResult as any)?.pipeline_verification_status ?? 'UNVERIFIED') === 'VERIFIED';
-  const submissionBlocked = finalVerdict === 'REJECT' || complianceStatus === 'reject' || !pipelineVerified;
+  const pipelineVerificationStatusRaw = (structuredResult as any)?.pipeline_verification_status;
+  const pipelineVerificationStatus = typeof pipelineVerificationStatusRaw === 'string'
+    ? pipelineVerificationStatusRaw.toUpperCase()
+    : null;
+  const pipelineStatusKnown = !!pipelineVerificationStatus;
+  const pipelineVerified = pipelineVerificationStatus === 'VERIFIED';
+  const authoritativeVerdict = useMemo(
+    () => resolveAuthoritativeVerdict([
+      (structuredResult as any)?.final_verdict,
+      (structuredResult?.bank_verdict as any)?.verdict,
+      (structuredResult as any)?.compliance_status,
+      (structuredResult as any)?.validation_status,
+      validationState?.status,
+    ]),
+    [structuredResult, validationState?.status],
+  );
+  const finalVerdict = authoritativeVerdict ?? String((structuredResult as any)?.final_verdict ?? '').toUpperCase();
+  const submissionBlocked = finalVerdict === 'REJECT' || (pipelineStatusKnown && !pipelineVerified);
   const customsPack = structuredResult?.customs_pack;
 
   useEffect(() => {
@@ -961,14 +1044,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () => issueCards.filter((issue) => normalizeDiscrepancySeverity(issue.severity) === 'critical').length,
     [issueCards],
   );
-  const bankFinalVerdict = ((structuredResult?.bank_verdict as any)?.verdict ?? '').toString().toUpperCase();
-  const submitBlockedByRejectVerdict = bankFinalVerdict === 'REJECT';
+  const bankVerdictRaw = structuredResult?.bank_verdict as BankVerdict | undefined;
+  const bankFinalVerdict = (bankVerdictRaw?.verdict ?? '').toString().toUpperCase();
+  const submitBlockedByRejectVerdict = finalVerdict === 'REJECT';
   const submitBlockedByCritical = criticalIssueCount > 0 || (guardrails?.high_severity_discrepancies ?? 0) > 0;
+  const resolvedBankVerdict = useMemo(() => {
+    if (!bankVerdictRaw) return null;
+    if (!finalVerdict || finalVerdict === bankFinalVerdict) {
+      return bankVerdictRaw;
+    }
+    const overrideMessage =
+      finalVerdict === 'REJECT'
+        ? 'Final verdict blocks submission. Resolve blocking issues before submitting.'
+        : bankVerdictRaw.verdict_message;
+    const overrideRecommendation =
+      finalVerdict === 'REJECT'
+        ? 'Resolve critical issues before re-submission.'
+        : bankVerdictRaw.recommendation;
+    return {
+      ...bankVerdictRaw,
+      verdict: finalVerdict as BankVerdict['verdict'],
+      verdict_message: overrideMessage,
+      recommendation: overrideRecommendation,
+      can_submit: finalVerdict === 'SUBMIT' && bankVerdictRaw.can_submit,
+      will_be_rejected: finalVerdict === 'REJECT' ? true : bankVerdictRaw.will_be_rejected,
+    } as BankVerdict;
+  }, [bankVerdictRaw, bankFinalVerdict, finalVerdict]);
 
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
-    if (!pipelineVerified) return false;
+    if (pipelineStatusKnown && !pipelineVerified) return false;
     if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
       return totalDiscrepancies === 0;
@@ -976,6 +1082,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
   }, [
     enableBankSubmission,
+    pipelineStatusKnown,
     pipelineVerified,
     guardrails,
     guardrailsLoading,
@@ -1441,9 +1548,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           )}
           
           {/* Bank Submission Verdict Card */}
-          {structuredResult?.bank_verdict && (
+          {resolvedBankVerdict && (
             <BankVerdictCard
-              verdict={structuredResult.bank_verdict as BankVerdict}
+              verdict={resolvedBankVerdict}
               issueSummaryOverride={{
                 critical: severityCounts.critical,
                 major: severityCounts.major,

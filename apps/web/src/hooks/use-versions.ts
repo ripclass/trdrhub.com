@@ -50,6 +50,11 @@ export interface VersionError {
 
 // Removed mock data - API calls should fail properly instead of using mock data
 
+const isTimeoutError = (err: any) => {
+  const message = err?.message?.toLowerCase?.() ?? '';
+  return err?.code === 'ECONNABORTED' || err?.name === 'AbortError' || message.includes('timeout');
+};
+
 // Hook for managing LC versions
 export const useVersions = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -83,6 +88,10 @@ export const useVersions = () => {
       const response = await api.get(`/api/lc/${lcNumber}/check`);
       return response.data;
     } catch (err: any) {
+      if (isTimeoutError(err)) {
+        console.warn('LC check timed out; continuing without version info.');
+        return { exists: false, nextVersion: 'V1', currentVersions: 0 };
+      }
       const versionError: VersionError = {
         type: 'unknown',
         message: err.message || 'Failed to check LC',
@@ -102,6 +111,10 @@ export const useVersions = () => {
       const response = await api.get('/api/lc/amended');
       return response.data;
     } catch (err: any) {
+      if (isTimeoutError(err)) {
+        console.warn('Amended LC list timed out; showing empty list.');
+        return [];
+      }
       const versionError: VersionError = {
         type: 'unknown',
         message: err.message || 'Failed to fetch amended LCs',

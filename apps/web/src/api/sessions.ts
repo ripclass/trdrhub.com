@@ -94,9 +94,22 @@ export const getValidationSession = async (sessionId: string): Promise<Validatio
   return response.data
 }
 
+const isTimeoutError = (err: any) => {
+  const message = err?.message?.toLowerCase?.() ?? '';
+  return err?.code === 'ECONNABORTED' || err?.name === 'AbortError' || message.includes('timeout');
+};
+
 export const getUserSessions = async (): Promise<ValidationSession[]> => {
-  const response = await api.get('/sessions')
-  return response.data
+  try {
+    const response = await api.get('/sessions')
+    return response.data
+  } catch (err: any) {
+    if (isTimeoutError(err)) {
+      console.warn('Session list timed out; returning empty set.');
+      return [];
+    }
+    throw err;
+  }
 }
 
 export const startSessionProcessing = async (sessionId: string): Promise<void> => {

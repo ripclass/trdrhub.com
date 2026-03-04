@@ -50,13 +50,13 @@ export function SummaryStrip({
   isReadyToSubmit,
   onOpenDocumentDetails,
 }: Props) {
-  const structured = data?.structured_result;
-  const summary = data?.summary ?? structured?.processing_summary;
-  const analytics = data?.analytics ?? structured?.analytics;
-
-  if (!summary) {
+  if (!data) {
     return null;
   }
+
+  const structured = data.structured_result;
+  const summary = (data.summary ?? structured?.processing_summary ?? {}) as Partial<ValidationResults['summary']>;
+  const analytics = (data.analytics ?? structured?.analytics ?? {}) as Partial<ValidationResults['analytics']>;
 
   // Get document counts from multiple sources for robustness
   const documentsProcessed =
