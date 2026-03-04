@@ -1239,6 +1239,48 @@ async def validate_doc(
                 payload.get("documents") or  # Fallback: from payload
                 []
             )
+
+            # Safety fallback: synthesize AI input documents from extracted context blocks
+            # when the documents list is unexpectedly empty.
+            if not documents_for_ai:
+                synthesized_docs = []
+                context_doc_map = {
+                    "letter_of_credit": extracted_context.get("lc") or {},
+                    "commercial_invoice": extracted_context.get("invoice") or {},
+                    "bill_of_lading": extracted_context.get("bill_of_lading") or {},
+                    "packing_list": extracted_context.get("packing_list") or {},
+                    "certificate_of_origin": extracted_context.get("certificate_of_origin") or {},
+                    "insurance_certificate": extracted_context.get("insurance_certificate") or {},
+                    "inspection_certificate": extracted_context.get("inspection_certificate") or {},
+                }
+                for doc_type_token, doc_ctx in context_doc_map.items():
+                    if not isinstance(doc_ctx, dict):
+                        continue
+                    raw_text = str(doc_ctx.get("raw_text") or "").strip()
+                    if raw_text:
+                        synthesized_docs.append({
+                            "document_type": doc_type_token,
+                            "raw_text": raw_text,
+                        })
+                if synthesized_docs:
+                    documents_for_ai = synthesized_docs
+                    logger.warning(
+                        "AI Validation: synthesized %d documents from extracted context fallback",
+                        len(synthesized_docs),
+                    )
+
+            # If LC raw text still empty, try from synthesized/available documents
+            if not lc_data_for_ai.get("raw_text"):
+                for doc in documents_for_ai:
+                    if not isinstance(doc, dict):
+                        continue
+                    dtype = str(doc.get("document_type") or doc.get("type") or "").strip().lower()
+                    if dtype in {"letter_of_credit", "swift_message", "lc_application"}:
+                        fallback_lc_text = str(doc.get("raw_text") or doc.get("raw_text_preview") or "").strip()
+                        if fallback_lc_text:
+                            lc_data_for_ai["raw_text"] = fallback_lc_text
+                            break
+
             logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
             
             ai_issues, ai_metadata = await run_ai_validation(
