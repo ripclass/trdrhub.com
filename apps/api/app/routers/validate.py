@@ -591,7 +591,7 @@ async def validate_doc(
             lc_context.get("form_of_doc_credit") or
             (lc_context.get("mt700") or {}).get("form_of_doc_credit")
         )
-        extracted_lc_type_confidence = lc_context.get("lc_type_confidence", 0)
+        extracted_lc_type_confidence = _safe_float(lc_context.get("lc_type_confidence", 0), default=0.0)
         extracted_lc_type_reason = lc_context.get("lc_type_reason", "")
         
         # If extracted, use it; otherwise fall back to import/export detection
@@ -611,7 +611,7 @@ async def validate_doc(
             lc_type_source = "auto"
             lc_type = lc_type_guess["lc_type"]
             lc_type_reason = lc_type_guess["reason"]
-            lc_type_confidence = lc_type_guess["confidence"]
+            lc_type_confidence = _safe_float(lc_type_guess.get("confidence"), default=0.0)
             
             # AI Enhancement: If rule-based confidence is low, use AI for better accuracy
             if lc_type_confidence < 0.70 or lc_type == LCType.UNKNOWN.value:
@@ -620,10 +620,11 @@ async def validate_doc(
                     lc_text = extracted_context.get("lc_text") or lc_context.get("raw_text", "") if extracted_context else lc_context.get("raw_text", "")
                     if lc_text and len(lc_text) > 100:
                         ai_result = await detect_lc_type_ai(lc_text)
-                        if ai_result.get("confidence", 0) > lc_type_confidence:
+                        ai_confidence = _safe_float(ai_result.get("confidence", 0), default=0.0) if isinstance(ai_result, dict) else 0.0
+                        if ai_confidence > lc_type_confidence:
                             lc_type = ai_result.get("lc_type", lc_type)
                             lc_type_reason = ai_result.get("reason", lc_type_reason)
-                            lc_type_confidence = ai_result.get("confidence", lc_type_confidence)
+                            lc_type_confidence = ai_confidence
                             lc_type_source = "ai"
                             lc_type_guess = {
                                 "lc_type": lc_type,
@@ -1290,8 +1291,12 @@ async def validate_doc(
             extraction_confidence_summary = None
             try:
                 extraction_confidence_summary = calculate_overall_extraction_confidence(extracted_context)
+                avg_confidence = _safe_float(
+                    extraction_confidence_summary.get("average_confidence", 0),
+                    default=0.0,
+                )
                 logger.info(
-                    f"Extraction confidence: avg={extraction_confidence_summary.get('average_confidence', 0):.2f}, "
+                    f"Extraction confidence: avg={avg_confidence:.2f}, "
                     f"lowest={extraction_confidence_summary.get('lowest_confidence_document', 'N/A')}"
                 )
             except Exception as e:
@@ -1549,7 +1554,12 @@ async def validate_doc(
             len(deduplicated_results),
         )
         
-        issue_cards, reference_issues = build_issue_cards(deduplicated_results)
+        try:
+            issue_cards, reference_issues = build_issue_cards(deduplicated_results)
+        except Exception as issue_cards_err:
+            logger.exception("Issue card build failed; continuing with safe fallback")
+            issue_cards = []
+            reference_issues = deduplicated_results or []
         checkpoint("issue_cards_built")
 
         # Record usage - link to session if created (skip for demo user)
@@ -1594,11 +1604,15 @@ async def validate_doc(
         )
         # FIX: Use deduplicated_results (actual issues) instead of empty results list
         # This ensures document issue counts are correctly linked to each document
-        document_summaries = _build_document_summaries(
-            files_list,
-            deduplicated_results,  # Was 'results' which was always empty!
-            document_details_for_summaries,
-        )
+        try:
+            document_summaries = _build_document_summaries(
+                files_list,
+                deduplicated_results,  # Was 'results' which was always empty!
+                document_details_for_summaries,
+            )
+        except Exception as doc_summary_err:
+            logger.exception("Document summaries build failed; continuing with safe fallback")
+            document_summaries = []
         if document_summaries:
             doc_status_counts: Dict[str, int] = {}
             for summary in document_summaries:
@@ -2080,7 +2094,10 @@ async def validate_doc(
                     ruleset_verdict=ruleset_verdict,
                     blocking_rules=blocking_rules,
                     extraction_confidence=(
-                        extraction_confidence_summary.get("average_confidence")
+                        _safe_float(
+                            extraction_confidence_summary.get("average_confidence"),
+                            default=None,
+                        )
                         if isinstance(extraction_confidence_summary, dict)
                         else None
                     ),
@@ -2103,16 +2120,25 @@ async def validate_doc(
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
             structured_result["confidence_band"] = confidence_band
-            structured_result["confidence_score"] = ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None
-            structured_result["risk_score"] = ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None
+            confidence_score = _safe_float(
+                ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None,
+                default=None,
+            )
+            risk_score = _safe_float(
+                ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None,
+                default=None,
+            )
+            structured_result["confidence_score"] = confidence_score
+            structured_result["risk_score"] = risk_score
             structured_result["risk_level"] = (
-                "high" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float)) and float(ai_metadata.get("risk_score")) >= 70
-                else "medium" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float)) and float(ai_metadata.get("risk_score")) >= 40
-                else "low" if isinstance(ai_metadata, dict) and isinstance(ai_metadata.get("risk_score"), (int, float))
+                "high" if risk_score is not None and risk_score >= 70
+                else "medium" if risk_score is not None and risk_score >= 40
+                else "low" if risk_score is not None
                 else None
             )
             structured_result["applied_rules"] = ai_metadata.get("applied_rules", []) if isinstance(ai_metadata, dict) else []
-            structured_result["reasoning_summary"] = ai_metadata.get("reasoning_summary") if isinstance(ai_metadata, dict) else None
+            reasoning_summary = ai_metadata.get("reasoning_summary") if isinstance(ai_metadata, dict) else None
+            structured_result["reasoning_summary"] = str(reasoning_summary) if reasoning_summary not in (None, "") else None
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
             if decision_trace is not None:
@@ -2173,7 +2199,10 @@ async def validate_doc(
                     structured_result["extraction_confidence"] = extraction_confidence_summary
                     
                     # Add recommendations if low confidence
-                    if extraction_confidence_summary.get("average_confidence", 1.0) < 0.6:
+                    if _safe_float(
+                        extraction_confidence_summary.get("average_confidence", 1.0),
+                        default=1.0,
+                    ) < 0.6:
                         existing_recommendations = bank_verdict.get("action_items", [])
                         for rec in extraction_confidence_summary.get("recommendations", []):
                             existing_recommendations.append({
@@ -2788,7 +2817,10 @@ async def _build_document_context(
                         )
                         
                         extraction_method = iso_context.get("_extraction_method", "iso20022")
-                        extraction_confidence = iso_context.get("_extraction_confidence", 0.0)
+                        extraction_confidence = _safe_float(
+                            iso_context.get("_extraction_confidence", 0.0),
+                            default=0.0,
+                        )
                         
                         logger.info(
                             f"ISO 20022 extraction from {filename}: method={extraction_method} "
@@ -2818,7 +2850,10 @@ async def _build_document_context(
                         # AI-first extraction (PRIMARY)
                         lc_struct = await extract_lc_ai_first(extracted_text)
                         extraction_method = lc_struct.get("_extraction_method", "unknown")
-                        extraction_confidence = lc_struct.get("_extraction_confidence", 0.0)
+                        extraction_confidence = _safe_float(
+                            lc_struct.get("_extraction_confidence", 0.0),
+                            default=0.0,
+                        )
                         extraction_status = lc_struct.get("_status", "unknown")
                         
                         logger.info(
@@ -2894,7 +2929,10 @@ async def _build_document_context(
                 try:
                     invoice_struct = await extract_invoice_ai_first(extracted_text)
                     extraction_method = invoice_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = invoice_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        invoice_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = invoice_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -2951,7 +2989,10 @@ async def _build_document_context(
                 try:
                     bl_struct = await extract_bl_ai_first(extracted_text)
                     extraction_method = bl_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = bl_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        bl_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = bl_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3008,7 +3049,10 @@ async def _build_document_context(
                 try:
                     packing_struct = await extract_packing_list_ai_first(extracted_text)
                     extraction_method = packing_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = packing_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        packing_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = packing_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3059,7 +3103,10 @@ async def _build_document_context(
                 try:
                     coo_struct = await extract_coo_ai_first(extracted_text)
                     extraction_method = coo_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = coo_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        coo_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = coo_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3110,7 +3157,10 @@ async def _build_document_context(
                 try:
                     insurance_struct = await extract_insurance_ai_first(extracted_text)
                     extraction_method = insurance_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = insurance_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        insurance_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = insurance_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3161,7 +3211,10 @@ async def _build_document_context(
                 try:
                     inspection_struct = await extract_inspection_ai_first(extracted_text)
                     extraction_method = inspection_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = inspection_struct.get("_extraction_confidence", 0.0)
+                    extraction_confidence = _safe_float(
+                        inspection_struct.get("_extraction_confidence", 0.0),
+                        default=0.0,
+                    )
                     extraction_status = inspection_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -5161,8 +5214,39 @@ def _safe_int(value: Any, default: int = 0) -> int:
     try:
         if value is None:
             return default
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value if value >= 0 else default
+        if isinstance(value, float):
+            return int(value) if value >= 0 else default
+        if isinstance(value, str):
+            normalized = value.replace(",", "").strip()
+            if not normalized:
+                return default
+            parsed_float = float(normalized)
+            parsed_int = int(parsed_float)
+            return parsed_int if parsed_int >= 0 else default
         parsed = int(value)
         return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: Optional[float] = 0.0) -> Optional[float]:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            normalized = value.replace(",", "").strip()
+            if not normalized:
+                return default
+            return float(normalized)
+        return float(value)
     except (TypeError, ValueError):
         return default
 
