@@ -154,17 +154,26 @@ export const exporterApi = {
   /**
    * Check guardrails before submission (for client-side pre-check).
    */
-  async checkGuardrails(_data: GuardrailCheckRequest): Promise<GuardrailCheckResponse> {
-    // Emergency production switch: hard-disable guardrails network call.
-    // Return neutral advisory response until guardrails auth/csrf path is stabilized.
-    return {
-      can_submit: true,
-      blocking_issues: [],
-      warnings: ['guardrails_temporarily_disabled'],
-      required_docs_present: true,
-      high_severity_discrepancies: 0,
-      policy_checks_passed: true,
-    };
+  async checkGuardrails(data: GuardrailCheckRequest): Promise<GuardrailCheckResponse> {
+    try {
+      const response = await api.post('/api/exporter/guardrails/check', data);
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      // Guardrails pre-check is advisory for UI. On auth/rate-limit failures,
+      // return a safe neutral payload instead of breaking the results flow.
+      if (status === 403 || status === 429) {
+        return {
+          can_submit: true,
+          blocking_issues: [],
+          warnings: ['guardrails_check_unavailable'],
+          required_docs_present: true,
+          high_severity_discrepancies: 0,
+          policy_checks_passed: true,
+        };
+      }
+      throw error;
+    }
   },
 };
 
