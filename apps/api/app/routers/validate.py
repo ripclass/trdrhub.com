@@ -1197,6 +1197,21 @@ async def validate_doc(
                 (payload.get("lc") or {}).get("raw_text") or  # Fallback: from payload
                 ""
             )
+            # Fallback: derive LC raw text from extracted documents if lc context missed assignment.
+            if not lc_raw_text:
+                docs_probe = extracted_context.get("documents") or []
+                for d in docs_probe:
+                    if not isinstance(d, dict):
+                        continue
+                    dtype = str(d.get("document_type") or "").strip().lower()
+                    if dtype in {"letter_of_credit", "swift_message", "lc_application"}:
+                        lc_raw_text = (
+                            str(d.get("raw_text") or "")
+                            or str(d.get("raw_text_preview") or "")
+                        )
+                        if lc_raw_text:
+                            break
+
             lc_data_for_ai["raw_text"] = lc_raw_text
             logger.info(f"AI Validation: LC raw_text length = {len(lc_raw_text)} chars")
             
