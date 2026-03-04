@@ -161,6 +161,14 @@ def _canonicalize_extraction_status(
     return "partial" if status in {"partial", "pending", "text_only", "unknown"} else "partial"
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Coerce values to int without raising (Option-E payloads can be stringly)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _derive_document_status(extraction_status: str, issues_count: int) -> str:
     """Canonical status derivation used by both summary and document rows."""
     status = (extraction_status or "unknown").lower()
@@ -192,7 +200,9 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
             confidence_value,
         )
 
-        issues_count = int(doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0)
+        issues_count = _safe_int(
+            doc.get("issues_count") or doc.get("issuesCount") or doc.get("discrepancyCount") or 0
+        )
         derived_status = _derive_document_status(str(extraction_status), issues_count)
         normalized.append(
             {
