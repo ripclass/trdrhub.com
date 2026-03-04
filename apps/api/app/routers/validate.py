@@ -2135,15 +2135,25 @@ async def validate_doc(
             structured_result["final_verdict"] = final_verdict
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
-            structured_result["deterministic_summary"] = {
-                "counts": deterministic_counts,
-                "verdict": ruleset_verdict,
-                "rules_fired": issue_source_summary.get("deterministic", {}).get("rules_fired", []),
-            }
-            structured_result["ai_summary"] = {
-                "counts": ai_counts,
-                "rules_fired": issue_source_summary.get("ai", {}).get("rules_fired", []),
-            }
+            trace_sections = _build_trace_sections(
+                deterministic_counts=deterministic_counts,
+                ruleset_verdict=ruleset_verdict,
+                issue_source_summary=issue_source_summary,
+                ai_counts=ai_counts,
+                ai_metadata=ai_metadata,
+                job_id=str(job_id) if job_id else None,
+                validation_session=validation_session,
+                audit_context=audit_context,
+            )
+            structured_result["deterministic_summary"] = trace_sections["deterministic_summary"]
+            structured_result["ai_summary"] = trace_sections["ai_summary"]
+            if trace_sections.get("l3_findings") is not None:
+                structured_result["l3_findings"] = trace_sections.get("l3_findings")
+            if trace_sections.get("l3_summary") is not None:
+                structured_result["l3_summary"] = trace_sections.get("l3_summary")
+            if trace_sections.get("trace_ids"):
+                structured_result["trace_ids"] = trace_sections.get("trace_ids")
+
             structured_result["confidence_band"] = confidence_band
             structured_result["confidence_score"] = ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None
             structured_result["risk_score"] = ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None
@@ -4277,6 +4287,112 @@ def _derive_ruleset_verdict(critical_count: int, major_count: int) -> str:
     if major_count > 0:
         return "review"
     return "pass"
+
+
+def _build_trace_ids(
+    *,
+    job_id: Optional[str],
+    validation_session: Optional[Any],
+    audit_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    trace_ids: Dict[str, Any] = {}
+    if job_id:
+        trace_ids["job_id"] = str(job_id)
+    if validation_session is not None and getattr(validation_session, "id", None):
+        trace_ids["validation_session_id"] = str(validation_session.id)
+    if isinstance(audit_context, dict) and audit_context.get("correlation_id"):
+        trace_ids["correlation_id"] = audit_context.get("correlation_id")
+    return trace_ids
+
+
+def _build_l3_findings(
+    ai_metadata: Optional[Dict[str, Any]],
+    trace_ids: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(ai_metadata, dict):
+        return None
+    layer_payloads = ai_metadata.get("llm_layer_payloads") or {}
+    if not isinstance(layer_payloads, dict):
+        return None
+    l3_payload = layer_payloads.get("L3") or {}
+    if not isinstance(l3_payload, dict) or not l3_payload:
+        return None
+
+    blocking_rules = l3_payload.get("blocking_rules") if isinstance(l3_payload.get("blocking_rules"), list) else []
+    applied_rules = l3_payload.get("applied_rules") if isinstance(l3_payload.get("applied_rules"), list) else []
+
+    findings: Dict[str, Any] = {
+        "layer": "L3",
+        "verdict": str(l3_payload.get("verdict") or "").strip().lower() or None,
+        "confidence_score": l3_payload.get("confidence_score"),
+        "risk_score": l3_payload.get("risk_score"),
+        "reasoning_summary": l3_payload.get("reasoning_summary"),
+        "blocking_rules": blocking_rules,
+        "applied_rules": applied_rules,
+        "provider_used": l3_payload.get("provider_used"),
+        "model_used": l3_payload.get("model_used"),
+        "fallback_used": l3_payload.get("fallback_used"),
+        "confidence_band": l3_payload.get("confidence_band"),
+        "evidence_refs": {
+            "blocking_rules": blocking_rules,
+            "applied_rules": applied_rules,
+        },
+    }
+
+    if trace_ids:
+        findings["trace_ids"] = trace_ids
+
+    return findings
+
+
+def _build_trace_sections(
+    *,
+    deterministic_counts: Dict[str, Any],
+    ruleset_verdict: str,
+    issue_source_summary: Dict[str, Any],
+    ai_counts: Dict[str, Any],
+    ai_metadata: Optional[Dict[str, Any]],
+    job_id: Optional[str],
+    validation_session: Optional[Any],
+    audit_context: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    trace_ids = _build_trace_ids(
+        job_id=str(job_id) if job_id else None,
+        validation_session=validation_session,
+        audit_context=audit_context,
+    )
+
+    deterministic_summary = {
+        "counts": deterministic_counts,
+        "verdict": ruleset_verdict,
+        "rules_fired": issue_source_summary.get("deterministic", {}).get("rules_fired", []),
+        "trace_ids": trace_ids,
+    }
+    ai_summary = {
+        "counts": ai_counts,
+        "rules_fired": issue_source_summary.get("ai", {}).get("rules_fired", []),
+        "trace_ids": trace_ids,
+    }
+
+    l3_findings = _build_l3_findings(ai_metadata, trace_ids=trace_ids)
+    l3_summary = None
+    if l3_findings is not None:
+        l3_summary = {
+            "verdict": l3_findings.get("verdict"),
+            "confidence_score": l3_findings.get("confidence_score"),
+            "risk_score": l3_findings.get("risk_score"),
+            "blocking_rules_count": len(l3_findings.get("blocking_rules") or []),
+            "applied_rules_count": len(l3_findings.get("applied_rules") or []),
+            "trace_ids": trace_ids,
+        }
+
+    return {
+        "trace_ids": trace_ids,
+        "deterministic_summary": deterministic_summary,
+        "ai_summary": ai_summary,
+        "l3_findings": l3_findings,
+        "l3_summary": l3_summary,
+    }
 
 
 def _summarize_issue_sources(issues: List[Dict[str, Any]]) -> Dict[str, Any]:

@@ -11,6 +11,8 @@ from app.routers.validate import (
     _apply_pipeline_verification_gate,
     _arbitration_to_final_verdict,
     _build_db_rules_blocked_structured_result,
+    _build_l3_findings,
+    _build_trace_sections,
 )
 from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
 from app.services.ai.model_router import ModelRouter, reset_router_evidence
@@ -219,3 +221,96 @@ async def test_phase2_decision_trace_includes_runtime_router_evidence_when_routi
     assert isinstance(call.get("provider_used"), str)
     assert isinstance(call.get("latency_ms"), (int, float))
     assert call.get("confidence_band") in {"low", "medium", "high"}
+
+
+def test_deterministic_reject_overrides_l3_pass_in_enforced_mode():
+    trace = compute_arbitration_decision(
+        ai_verdict="pass",
+        ruleset_verdict="reject",
+        blocking_rules=[],
+        extraction_confidence=0.91,
+        mode="hybrid_enforced",
+    )
+    assert trace["arbitration_verdict"] == "reject"
+    assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "SUBMIT") == "REJECT"
+
+
+def test_deterministic_major_holds_even_if_l3_downplays():
+    trace = compute_arbitration_decision(
+        ai_verdict="pass",
+        ruleset_verdict="review",
+        blocking_rules=[],
+        extraction_confidence=0.91,
+        mode="hybrid_enforced",
+    )
+    assert trace["arbitration_verdict"] == "review"
+    assert _arbitration_to_final_verdict(trace["arbitration_verdict"], "SUBMIT") == "HOLD"
+
+
+def test_l3_findings_include_evidence_refs_and_trace_ids():
+    ai_metadata = {
+        "llm_layer_payloads": {
+            "L3": {
+                "verdict": "pass",
+                "confidence_score": 0.87,
+                "risk_score": 12,
+                "applied_rules": ["L3.R1"],
+                "blocking_rules": ["L3.B1"],
+                "reasoning_summary": "OK",
+                "provider_used": "openai",
+                "model_used": "gpt-4o",
+                "fallback_used": False,
+                "confidence_band": "high",
+            }
+        }
+    }
+    trace_ids = {"job_id": "job-1", "correlation_id": "corr-1"}
+
+    findings = _build_l3_findings(ai_metadata, trace_ids=trace_ids)
+    assert findings is not None
+    assert findings["layer"] == "L3"
+    assert findings["verdict"] == "pass"
+    assert findings["trace_ids"] == trace_ids
+    assert findings["evidence_refs"]["blocking_rules"] == ["L3.B1"]
+    assert findings["evidence_refs"]["applied_rules"] == ["L3.R1"]
+
+
+def test_trace_sections_include_deterministic_ai_l3_summaries_and_trace_ids():
+    class _Session:
+        id = "session-1"
+
+    ai_metadata = {
+        "llm_layer_payloads": {
+            "L3": {
+                "verdict": "review",
+                "confidence_score": 0.72,
+                "risk_score": 44,
+                "applied_rules": ["L3.R2"],
+                "blocking_rules": [],
+                "reasoning_summary": "Mixed",
+                "provider_used": "openai",
+                "model_used": "gpt-4o",
+                "fallback_used": False,
+                "confidence_band": "medium",
+            }
+        }
+    }
+
+    trace_sections = _build_trace_sections(
+        deterministic_counts={"critical": 1, "major": 0},
+        ruleset_verdict="reject",
+        issue_source_summary={
+            "deterministic": {"rules_fired": ["UCP600.14"]},
+            "ai": {"rules_fired": ["AI.R1"]},
+        },
+        ai_counts={"critical": 0, "major": 1},
+        ai_metadata=ai_metadata,
+        job_id="job-2",
+        validation_session=_Session(),
+        audit_context={"correlation_id": "corr-2"},
+    )
+
+    assert trace_sections["deterministic_summary"]["trace_ids"]["job_id"] == "job-2"
+    assert trace_sections["ai_summary"]["trace_ids"]["validation_session_id"] == "session-1"
+    assert trace_sections["l3_summary"]["trace_ids"]["correlation_id"] == "corr-2"
+    assert trace_sections["l3_findings"]["verdict"] == "review"
