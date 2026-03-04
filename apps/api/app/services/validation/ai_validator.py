@@ -21,6 +21,41 @@ from app.services.ai.model_router import ModelRouter
 logger = logging.getLogger(__name__)
 
 
+def _coerce_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            normalized = value.replace(",", "").strip()
+            if not normalized:
+                return None
+            return float(normalized)
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    return []
+
+
+def _coerce_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
 class IssueSeverity(str, Enum):
     CRITICAL = "critical"
     MAJOR = "major"
@@ -577,6 +612,14 @@ async def run_ai_validation(
                 primary_provider="openai" if settings.OPENROUTER_API_KEY else settings.LLM_PROVIDER,
             )
             payload = _extract_json_block(routed.output_text)
+            if not isinstance(payload, dict):
+                payload = {}
+            payload["verdict"] = _coerce_str(payload.get("verdict"))
+            payload["confidence_score"] = _coerce_float(payload.get("confidence_score"))
+            payload["risk_score"] = _coerce_float(payload.get("risk_score"))
+            payload["applied_rules"] = _coerce_list(payload.get("applied_rules"))
+            payload["blocking_rules"] = _coerce_list(payload.get("blocking_rules"))
+            payload["reasoning_summary"] = _coerce_str(payload.get("reasoning_summary"))
             payload["provider_used"] = routed.provider_used
             payload["model_used"] = routed.model_used
             payload["fallback_used"] = routed.fallback_used
