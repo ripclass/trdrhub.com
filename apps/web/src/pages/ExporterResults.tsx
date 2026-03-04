@@ -584,7 +584,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
     queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: resolvedLcNumber }),
     enabled: !!validationSessionId && !!resolvedLcNumber && enableBankSubmission,
-    refetchInterval: 30000, // Check every 30 seconds
+    retry: 0,
+    refetchOnWindowFocus: false,
+    // One-shot fetch per result view; avoid guardrails polling storms.
+    refetchInterval: false,
   });
   
   // Submission history
