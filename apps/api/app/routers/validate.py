@@ -2257,6 +2257,33 @@ async def validate_doc(
             structured_result["validation_provenance"] = db_rules_debug.get("provenance")
 
         if validation_session:
+            # Persist OCR provider trace onto session + documents for post-run auditability.
+            try:
+                doc_traces = (extracted_context or {}).get("documents") or []
+                providers = [str(d.get("ocr_provider")) for d in doc_traces if d.get("ocr_provider")]
+                if providers:
+                    # keep the dominant provider used in this run for quick dashboard visibility
+                    validation_session.ocr_provider = max(set(providers), key=providers.count)
+
+                # best-effort document-level persistence
+                db_docs = db.query(Document).filter(Document.validation_session_id == validation_session.id).all()
+                by_name = {str(d.original_filename or "").strip().lower(): d for d in db_docs}
+                for trace in doc_traces:
+                    fn = str(trace.get("filename") or "").strip().lower()
+                    if not fn or fn not in by_name:
+                        continue
+                    rec = by_name[fn]
+                    conf = _safe_float(trace.get("ocr_confidence"), default=None)
+                    if conf is not None:
+                        rec.ocr_confidence = conf
+                    # fold provider/source into extracted_fields for durable trace
+                    fields = rec.extracted_fields if isinstance(rec.extracted_fields, dict) else {}
+                    fields["_ocr_provider"] = trace.get("ocr_provider")
+                    fields["_ocr_source"] = trace.get("ocr_source")
+                    rec.extracted_fields = fields
+            except Exception as trace_persist_err:
+                logger.warning("Failed to persist OCR trace details: %s", trace_persist_err)
+
             validation_session.validation_results = {
                 "structured_result": structured_result,
                 "validation_provenance": structured_result.get("validation_provenance"),
@@ -2725,15 +2752,16 @@ async def _build_document_context(
             logger.info(f"[OCR {idx+1}/{len(files_list)}] Starting extraction for {filename}")
             try:
                 text = await _extract_text_from_upload(upload_file)
+                ocr_meta = getattr(upload_file, "_ocr_meta", {}) or {}
                 if not text:
                     msg = "No readable text extracted. Try higher resolution scan, reduce stamp overlap, or upload cleaner PDF."
                     logger.warning(f"[OCR {idx+1}/{len(files_list)}] Empty OCR output for {filename}: {msg}")
-                    return (idx, None, msg)
+                    return (idx, None, msg, ocr_meta)
                 logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text)} chars")
-                return (idx, text, None)
+                return (idx, text, None, ocr_meta)
             except Exception as e:
                 logger.warning(f"[OCR {idx+1}/{len(files_list)}] Failed {filename}: {e}")
-                return (idx, None, str(e))
+                return (idx, None, str(e), {"source": "none", "provider": None, "confidence": 0.0, "status": "failed"})
     
     # Run all OCR extractions in parallel (bounded by semaphore)
     logger.info(f"Starting parallel OCR extraction for {len(files_list)} files (concurrency={ocr_concurrency})")
@@ -2741,15 +2769,17 @@ async def _build_document_context(
     ocr_tasks = [_extract_with_semaphore(i, f) for i, f in enumerate(files_list)]
     ocr_results = await asyncio.gather(*ocr_tasks, return_exceptions=True)
     
-    # Build a lookup dict: idx -> extracted_text
+    # Build lookup dicts from OCR stage
     extracted_texts: Dict[int, Optional[str]] = {}
     extraction_errors: Dict[int, str] = {}
+    extraction_meta: Dict[int, Dict[str, Any]] = {}
     for result in ocr_results:
         if isinstance(result, Exception):
             logger.error(f"OCR task failed with exception: {result}")
             continue
-        idx, text, error = result
+        idx, text, error, meta = result
         extracted_texts[idx] = text
+        extraction_meta[idx] = meta or {}
         if error:
             extraction_errors[idx] = error
     
@@ -2777,9 +2807,15 @@ async def _build_document_context(
         
         # Use pre-extracted text from parallel OCR phase
         extracted_text = extracted_texts.get(idx)
+        ocr_meta = extraction_meta.get(idx) or {}
         if idx in extraction_errors:
             logger.warning(f"⚠ OCR extraction error for {filename}: {extraction_errors[idx]}")
             doc_info["extraction_error"] = extraction_errors[idx]
+
+        if ocr_meta:
+            doc_info["ocr_provider"] = ocr_meta.get("provider")
+            doc_info["ocr_source"] = ocr_meta.get("source")
+            doc_info["ocr_confidence"] = _safe_float(ocr_meta.get("confidence"), default=None)
         if not extracted_text:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
@@ -3552,9 +3588,24 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     
     Tries pdfminer/PyPDF2 first, then falls back to OCR (Google Document AI/AWS Textract)
     if enabled and text extraction returns empty.
+
+    Side-effect: writes provider trace on upload_file._ocr_meta for downstream persistence.
     """
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
+
+    def _set_ocr_meta(source: str, provider: Optional[str] = None, confidence: Optional[float] = None, status: str = "success") -> None:
+        try:
+            setattr(upload_file, "_ocr_meta", {
+                "source": source,
+                "provider": provider,
+                "confidence": confidence,
+                "status": status,
+            })
+        except Exception:
+            pass
+
+    _set_ocr_meta(source="none", provider=None, confidence=None, status="empty")
     
     logger.log(TRACE_LOG_LEVEL, "Starting text extraction for %s (type=%s)", filename, content_type)
     
@@ -3563,10 +3614,12 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         await upload_file.seek(0)
         logger.info(f"✓ Read {len(file_bytes)} bytes from {filename}")
     except Exception as e:
+        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.error(f"✗ Failed to read file {filename}: {e}", exc_info=True)
         return ""
 
     if not file_bytes:
+        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.warning(f"⚠ Empty file content for {filename}")
         return ""
     
@@ -3588,6 +3641,12 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 cached_text = str(cached.get("extracted_text") or "")
                 if cached_text.strip():
                     logger.log(TRACE_LOG_LEVEL, "Extraction cache hit for %s", filename)
+                    _set_ocr_meta(
+                        source=str(cached.get("source") or "cache"),
+                        provider=cached.get("provider"),
+                        confidence=_safe_float(cached.get("confidence"), default=None),
+                        status="success",
+                    )
                     return cached_text
         except Exception as cache_err:
             logger.debug("Extraction cache lookup failed for %s: %s", filename, cache_err)
@@ -3602,7 +3661,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         ratio = (alnum / max(1, len(stripped)))
         return ratio >= float(os.getenv("OCR_NATIVE_MIN_ALNUM_RATIO", "0.35"))
 
-    async def _cache_extraction(text: str, source: str) -> None:
+    async def _cache_extraction(text: str, source: str, provider: Optional[str] = None, confidence: Optional[float] = None) -> None:
         if not extraction_cache_enabled:
             return
         if not text.strip():
@@ -3613,7 +3672,9 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 "success": True,
                 "extracted_text": text,
                 "source": source,
-                "cache_version": "extract-v1",
+                "provider": provider,
+                "confidence": confidence,
+                "cache_version": "extract-v2",
             })
         except Exception as cache_err:
             logger.debug("Extraction cache write failed for %s: %s", filename, cache_err)
@@ -3625,7 +3686,8 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         text_output = extract_text(BytesIO(file_bytes))
         if _native_text_sufficient(text_output):
             logger.log(TRACE_LOG_LEVEL, "pdfminer extracted %s characters from %s", len(text_output), filename)
-            await _cache_extraction(text_output, "pdfminer")
+            _set_ocr_meta(source="pdfminer", provider="native_pdfminer", confidence=1.0, status="success")
+            await _cache_extraction(text_output, "pdfminer", provider="native_pdfminer", confidence=1.0)
             return text_output
         else:
             logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty/low-confidence text for %s", filename)
@@ -3648,7 +3710,8 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         text_output = "\n".join(pieces)
         if _native_text_sufficient(text_output):
             logger.log(TRACE_LOG_LEVEL, "PyPDF2 extracted %s characters from %s (%s pages)", len(text_output), filename, len(reader.pages))
-            await _cache_extraction(text_output, "pypdf2")
+            _set_ocr_meta(source="pypdf2", provider="native_pypdf2", confidence=1.0, status="success")
+            await _cache_extraction(text_output, "pypdf2", provider="native_pypdf2", confidence=1.0)
             return text_output
         else:
             logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty/low-confidence text for %s (%s pages)", filename, len(reader.pages))
@@ -3685,10 +3748,11 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         else:
             # Try OCR providers in configured order
             logger.log(TRACE_LOG_LEVEL, "Attempting OCR with providers %s for %s", settings.OCR_PROVIDER_ORDER, filename)
-            text_output = await _try_ocr_providers(file_bytes, filename, content_type, page_count=page_count)
+            text_output, ocr_provider, ocr_confidence = await _try_ocr_providers(file_bytes, filename, content_type, page_count=page_count)
             if text_output.strip():
                 logger.log(TRACE_LOG_LEVEL, "OCR extraction successful for %s (%s characters)", filename, len(text_output))
-                await _cache_extraction(text_output, "ocr")
+                _set_ocr_meta(source="ocr", provider=ocr_provider, confidence=ocr_confidence, status="success")
+                await _cache_extraction(text_output, "ocr", provider=ocr_provider, confidence=ocr_confidence)
                 return text_output
             else:
                 logger.warning(f"  ✗ OCR extraction returned empty")
@@ -3696,6 +3760,7 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         logger.log(TRACE_LOG_LEVEL, "OCR disabled, bypassing fallback for %s", filename)
 
     if not text_output.strip():
+        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.error(f"❌ ALL extraction methods failed for {filename}")
         logger.error(f"   Summary: pdfminer=empty, PyPDF2=empty, OCR={'attempted' if settings.OCR_ENABLED else 'disabled'}")
         logger.error(f"   File details: content-type={content_type}, size={len(file_bytes)} bytes")
@@ -3710,11 +3775,11 @@ async def _try_ocr_providers(
     filename: str,
     content_type: str,
     page_count: Optional[int] = None,
-) -> str:
+) -> tuple[str, Optional[str], Optional[float]]:
     """
     Try OCR providers in configured order until one succeeds.
-    
-    Returns extracted text or empty string if all providers fail.
+
+    Returns (extracted_text, provider_name, confidence).
     """
     from uuid import uuid4
     from app.ocr.factory import get_ocr_factory
@@ -3737,6 +3802,7 @@ async def _try_ocr_providers(
         
         best_low_confidence_text = ""
         best_low_confidence_score = 0.0
+        best_low_confidence_provider: Optional[str] = None
 
         page_count_est = max(1, int(page_count or 1))
         per_page_timeout = float(os.getenv("OCR_TIMEOUT_PER_PAGE_SEC", "2.5"))
@@ -3787,7 +3853,7 @@ async def _try_ocr_providers(
                     )
 
                     if confidence >= settings.OCR_MIN_CONFIDENCE:
-                        return result.full_text
+                        return result.full_text, full_provider_name, confidence
 
                     logger.warning(
                         "Low OCR confidence from %s for %s (%.2f < %.2f). Trying fallback provider.",
@@ -3800,6 +3866,7 @@ async def _try_ocr_providers(
                     if confidence > best_low_confidence_score:
                         best_low_confidence_score = confidence
                         best_low_confidence_text = result.full_text
+                        best_low_confidence_provider = full_provider_name
                 elif result and result.error:
                     logger.warning(f"OCR provider {full_provider_name} returned error: {result.error}")
                 else:
@@ -3818,14 +3885,14 @@ async def _try_ocr_providers(
                 filename,
                 best_low_confidence_score,
             )
-            return best_low_confidence_text
+            return best_low_confidence_text, best_low_confidence_provider, best_low_confidence_score
 
         logger.warning(f"All OCR providers failed for {filename}")
-        return ""
+        return "", None, 0.0
         
     except Exception as e:
         logger.error(f"Failed to initialize OCR factory: {e}", exc_info=True)
-        return ""
+        return "", None, 0.0
 
 
 def _infer_document_type(filename: Optional[str], index: int) -> str:
