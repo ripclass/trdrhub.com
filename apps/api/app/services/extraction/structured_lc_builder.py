@@ -118,8 +118,12 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
 
     # Keep confidence as float (0-1 range) - frontend multiplies by 100 for display
     raw_confidence = _safe(extractor_outputs.get("lc_type_confidence"), 0) or 0
+    try:
+        numeric_confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        numeric_confidence = 0.0
     # Ensure it's a float between 0-1 (some sources may pass percentage already)
-    confidence = float(raw_confidence) if raw_confidence <= 1 else float(raw_confidence) / 100
+    confidence = numeric_confidence if numeric_confidence <= 1 else numeric_confidence / 100
     
     return {
         "lc_type": extractor_outputs.get("lc_type", "unknown"),
