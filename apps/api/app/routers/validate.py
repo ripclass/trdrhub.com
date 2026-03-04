@@ -2160,9 +2160,11 @@ async def validate_doc(
             if confidence_band is None and confidence_band_reason:
                 structured_result["confidence_band_reason"] = confidence_band_reason
             if decision_trace is not None:
-                trace = _attach_router_evidence_to_decision_trace(decision_trace)
-                if isinstance(trace, dict) and isinstance(ai_metadata, dict):
-                    trace["provider_evidence"] = ai_metadata.get("llm_layer_payloads", {})
+                trace = _merge_llm_layer_trace(
+                    decision_trace,
+                    ai_metadata,
+                    mode=decision_mode,
+                )
                 structured_result["decision_trace"] = trace
             structured_result = _apply_pipeline_verification_gate(
                 structured_result,
@@ -4253,7 +4255,8 @@ def _build_pipeline_verification_checks(
     layer_call_count = len(layer_calls) if isinstance(layer_calls, list) else 0
 
     mode_token = str(mode or trace.get("mode") or "").strip().lower()
-    trace_evidence_present = bool(router_transport) or layer_call_count > 0 or bool(trace.get("provider_evidence"))
+    router_transport_observed = router_transport not in {"", "unknown", "none", "null"}
+    trace_evidence_present = router_transport_observed or layer_call_count > 0 or bool(trace.get("provider_evidence"))
 
     # If no trace evidence exists, do not hard-fail verification on transport/layer checks.
     # This avoids false UNVERIFIED when router metadata is unavailable in an otherwise valid run.
