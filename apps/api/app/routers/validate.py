@@ -2450,6 +2450,10 @@ async def validate_doc(
             except Exception as audit_err:
                 logger.warning("Audit log failed during error handler: %s", audit_err)
 
+        # Ensure traceback is always emitted in plain log text (not only structured extras)
+        # so hosted log views can surface it reliably.
+        logger.error("Validation traceback (request failed):\n%s", error_traceback)
+
         # Map common error types to actionable HTTP responses instead of bare 500s.
         # This ensures the frontend receives a useful error message rather than
         # the generic production "unexpected error" from the global exception handler.
@@ -2502,12 +2506,24 @@ async def validate_doc(
                 "error_type": error_type,
             }
 
+        env_token = str(getattr(settings, "ENVIRONMENT", "") or "").strip().lower()
+        debug_enabled = env_token in {"development", "dev", "local", "staging"}
+        if debug_enabled:
+            traceback_lines = [line for line in (error_traceback or "").splitlines() if line.strip()]
+            actionable_detail["debug"] = {
+                "error_type": error_type,
+                "error_message": error_message,
+                "traceback_tail": traceback_lines[-12:],
+                "request_id": audit_context.get("correlation_id") if isinstance(audit_context, dict) else None,
+            }
+
         if is_database_unavailable_error(e):
             actionable_detail = {
                 "error_code": "database_unavailable",
                 "message": "Validation is temporarily unavailable due to database connectivity.",
                 "action": "Retry in 30-60 seconds. If persistent, verify DB networking on port 6543 and credentials.",
                 "error_type": error_type,
+                **({"debug": actionable_detail.get("debug")} if actionable_detail.get("debug") else {}),
             }
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
