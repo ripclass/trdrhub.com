@@ -925,6 +925,7 @@ async def validate_doc(
             db_rule_issues = []
             db_provenance = None
             db_rules_debug = {"enabled": False, "status": "not_started"}
+            db_rule_warning_issue: Optional[Dict[str, Any]] = None
             try:
                 # =============================================================
                 # DYNAMIC JURISDICTION & DOMAIN DETECTION
@@ -1138,11 +1139,15 @@ async def validate_doc(
                 }
 
                 # Keep request unblocked: DB rules are advisory in this run if backend tables unavailable.
-                structured_result["issues"].append({
+                # NOTE: structured_result is not built yet at this stage; stash warning and append later.
+                db_rule_warning_issue = {
                     "severity": "warning",
                     "code": "DB_RULES_UNAVAILABLE",
                     "message": "Database rules could not be executed; continuing in fail-open mode.",
-                })
+                    "source": "system",
+                    "deterministic": False,
+                    "ruleset_domain": "system.db_rules",
+                }
                 # Preserve pass-through behavior for API-only pass fixtures while surfacing root cause.
 
             
@@ -1361,6 +1366,8 @@ async def validate_doc(
         # Build unified issues list from v2 components
         results = []  # Legacy results - empty
         failed_results = []
+        if 'db_rule_warning_issue' in locals() and db_rule_warning_issue:
+            failed_results.append(db_rule_warning_issue)
         
         checkpoint("pre_issue_conversion")
         
