@@ -2862,7 +2862,7 @@ async def _build_document_context(
                             f"keys={list(lc_struct.keys())}"
                         )
                         
-                        if lc_struct and extraction_status != "failed":
+                        if lc_struct and extraction_status == "success":
                             # AI-first already includes validation, but apply two-stage for normalization
                             validated_lc, validation_summary = _apply_two_stage_validation(
                                 lc_struct, "lc", filename
@@ -2940,7 +2940,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if invoice_struct and extraction_status != "failed":
+                    if invoice_struct and extraction_status == "success":
                         # Apply two-stage validation for normalization
                         validated_invoice, validation_summary = _apply_two_stage_validation(
                             invoice_struct, "invoice", filename
@@ -3000,7 +3000,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if bl_struct and extraction_status != "failed":
+                    if bl_struct and extraction_status == "success":
                         # Apply two-stage validation for normalization
                         validated_bl, validation_summary = _apply_two_stage_validation(
                             bl_struct, "bl", filename
@@ -3060,7 +3060,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if packing_struct and extraction_status != "failed":
+                    if packing_struct and extraction_status == "success":
                         validated_packing, validation_summary = _apply_two_stage_validation(
                             packing_struct, "packing_list", filename
                         )
@@ -3114,7 +3114,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if coo_struct and extraction_status != "failed":
+                    if coo_struct and extraction_status == "success":
                         validated_coo, validation_summary = _apply_two_stage_validation(
                             coo_struct, "certificate_of_origin", filename
                         )
@@ -3168,7 +3168,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if insurance_struct and extraction_status != "failed":
+                    if insurance_struct and extraction_status == "success":
                         validated_insurance, validation_summary = _apply_two_stage_validation(
                             insurance_struct, "insurance", filename
                         )
@@ -3222,7 +3222,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if inspection_struct and extraction_status != "failed":
+                    if inspection_struct and extraction_status == "success":
                         validated_inspection, validation_summary = _apply_two_stage_validation(
                             inspection_struct, "inspection", filename
                         )
@@ -3287,14 +3287,17 @@ async def _build_document_context(
         entry["present"] = True
         entry["count"] += 1
 
-    # Set extraction status
-    if has_structured_data:
+    # Set extraction status from per-document outcomes (strict)
+    doc_statuses = [str(d.get("extraction_status") or "").lower() for d in document_details]
+    has_success = any(s == "success" for s in doc_statuses)
+    has_partial = any(s in {"partial", "text_only"} for s in doc_statuses)
+
+    if has_success and not has_partial and all(s in {"success", ""} for s in doc_statuses):
         context["extraction_status"] = "success"
         logger.info(f"Final extracted context structure: {list(context.keys())}")
-    elif any(key in context for key in ("lc", "invoice", "bill_of_lading")):
-        # We have raw_text but no structured fields
+    elif has_success or has_partial or any(key in context for key in ("lc", "invoice", "bill_of_lading")):
         context["extraction_status"] = "partial"
-        logger.warning("Extracted raw text but no structured fields could be parsed")
+        logger.warning("Extraction completed with partial/mixed document quality")
     else:
         context["extraction_status"] = "empty"
         logger.warning("No context extracted from any files")
@@ -4448,6 +4451,14 @@ def _build_blocked_structured_result(
         elif hasattr(issue, 'to_dict'):
             blocking_issues.append(issue.to_dict())
     
+    if not blocking_issues:
+        blocking_issues.append({
+            "severity": "critical",
+            "code": "LC-GATE-UNKNOWN",
+            "rule": "LC-GATE-UNKNOWN",
+            "message": "Validation gate blocked processing but no explicit blocking issue was emitted.",
+        })
+
     # Build document list - PRESERVE extraction data even when validation is blocked
     # The extraction succeeded, we're blocking validation due to missing LC fields
     # Don't throw away the extraction work!
