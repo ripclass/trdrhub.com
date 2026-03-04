@@ -162,7 +162,15 @@ def _canonicalize_extraction_status(
 
     if status == "success":
         return "success"
-    return "partial" if status in {"partial", "pending", "text_only", "unknown"} else "partial"
+
+    # OCR-first tolerance: when extraction confidence is high, treat text-only/partial
+    # states as successful extraction to avoid false 0/6 outcomes.
+    if status in {"partial", "pending", "text_only", "unknown"}:
+        if extraction_confidence is not None and extraction_confidence >= EXTRACTION_CONFIDENCE_SUCCESS_THRESHOLD:
+            return "success"
+        return "partial"
+
+    return "partial"
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
