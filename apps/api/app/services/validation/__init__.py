@@ -140,12 +140,6 @@ from .confidence_weighting import (
     calculate_overall_extraction_confidence,
 )
 
-from .arbitration import (
-    compute_arbitration_decision,
-    compute_shadow_arbitration,
-    normalize_verdict,
-)
-
 from .response_contract_validator import (
     ContractSeverity,
     ContractWarning,
@@ -257,10 +251,6 @@ __all__ = [
     "get_field_confidence",
     "batch_adjust_issues",
     "calculate_overall_extraction_confidence",
-    # Arbitration
-    "compute_arbitration_decision",
-    "compute_shadow_arbitration",
-    "normalize_verdict",
     # Response Contract Validator
     "ContractSeverity",
     "ContractWarning",

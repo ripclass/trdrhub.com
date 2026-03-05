@@ -45,7 +45,6 @@ import {
   sidebarToSection,
   EXPORTER_SECTION_OPTIONS,
 } from "@/lib/exporter/exporterSections";
-import { isResultsTab } from "@/components/lcopilot/dashboardTabs";
 import { getParam } from "@/lib/exporter/url";
 import {
   FileText,
@@ -83,17 +82,15 @@ function DashboardContent() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { jobId: contextJobId, setJobId } = useResultsContext();
-  const { user: currentUser, isLoading: coreAuthLoading } = useAuth();
+  const { user: currentUser } = useAuth();
   const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
-  const isSessionAuthenticated = isAuthenticated || !!currentUser;
   const { toast } = useToast();
 
   // Parse URL params
   const sectionParam = searchParams.get("section");
   const urlJobId = getParam(searchParams, "jobId");
   const urlLc = getParam(searchParams, "lc");
-  const urlTabRaw = getParam(searchParams, "tab");
-  const urlTab = isResultsTab(urlTabRaw) ? urlTabRaw : null;
+  const urlTab = getParam(searchParams, "tab");
 
   // Active section - can be either ExporterSection or SidebarSection
   const [activeSection, setActiveSection] = useState<AnySection>(() => {
@@ -125,20 +122,13 @@ function DashboardContent() {
     : (activeSection as SidebarSection);
 
   // Redirect to login if not authenticated
-  // Hardened auth guard: allow short stabilization window, then redirect if truly unauthenticated.
   useEffect(() => {
-    if (authLoading || coreAuthLoading) return;
-
-    const demoMode = typeof window !== 'undefined' && localStorage.getItem('demo_mode') === 'true';
-    if (isSessionAuthenticated || demoMode) return;
-
-    const timer = window.setTimeout(() => {
+    if (!authLoading && !isAuthenticated) {
+      // Redirect to main login with return URL
       const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
       navigate(`/login?returnUrl=${returnUrl}`);
-    }, 1500);
-
-    return () => window.clearTimeout(timer);
-  }, [isSessionAuthenticated, authLoading, coreAuthLoading, navigate]);
+    }
+  }, [isAuthenticated, authLoading, navigate]);
 
   // Sync jobId from URL to context
   useEffect(() => {
@@ -269,11 +259,8 @@ function DashboardContent() {
     [effectiveJobId, urlLc, handleSectionChange]
   );
 
-  // Show loading state while checking authentication.
-  // Also show spinner when auth has finished but session check is still resolving
-  // (coreAuthLoading false but no user yet) to avoid brief null renders that cause
-  // the parent ExporterAuthProvider to think the user is unauthenticated.
-  if (authLoading || coreAuthLoading) {
+  // Show loading state while checking authentication
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -284,31 +271,18 @@ function DashboardContent() {
     );
   }
 
-  // Private-beta guard: if session has settled and there is no authenticated user,
-  // show a minimal prompt instead of rendering null (which causes blank-screen loops).
-  if (!isSessionAuthenticated) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center space-y-4">
-          <p className="text-muted-foreground">Please log in to access the exporter dashboard.</p>
-          <a
-            href={`/login?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`}
-            className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
-          >
-            Go to Login
-          </a>
-        </div>
-      </div>
-    );
+  // Redirect if not authenticated (handled by useEffect)
+  if (!isAuthenticated) {
+    return null;
   }
 
   // Determine which ResultsTab to show for results sections
   const initialResultsTab =
     activeSection === "reviews" && urlTab
       ? urlTab
-      : (EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
+      : EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
         ? sectionToResultsTab(activeSection as ExporterSection)
-        : "overview");
+        : "overview";
 
   // Check if current section should show ExporterResults
   const showResults = [

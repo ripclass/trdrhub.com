@@ -1,7 +1,5 @@
 import type {
   StructuredResult as SharedStructuredResultPayload,
-  ComplianceStatus,
-  ExtractionStatus,
   StructuredResultDocument as SharedStructuredResultDocument,
   StructuredResultIssue as SharedStructuredResultIssue,
   StructuredResultAnalytics as SharedStructuredResultAnalytics,
@@ -45,9 +43,6 @@ export type OptionEDocument = {
   filename: string;
   extraction_status?: string | null;
   extracted_fields?: Record<string, unknown>;
-  structured_fields?: Record<string, unknown>;
-  raw_text_preview?: string | null;
-  raw_text?: string | null;
   issues_count?: number;
 };
 
@@ -136,9 +131,7 @@ export interface ValidationDocument {
   filename: string;
   type: string;
   typeKey?: string;
-  extractionStatus: ExtractionStatus;
-  complianceStatus?: ComplianceStatus;
-  failedReason?: string | null;
+  extractionStatus: string;
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;

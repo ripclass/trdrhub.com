@@ -71,11 +71,9 @@ class OCRFactory:
             import traceback
             traceback.print_exc()
         
-        # Try to initialize AWS Textract fallback.
-        # Keep fallback enabled by default even when Google DocAI is configured,
-        # so OCR quality does not hard-depend on a single provider.
-        allow_textract_fallback = os.getenv("OCR_ALLOW_TEXTRACT_FALLBACK", "true").strip().lower() in {"1", "true", "yes", "on"}
-        if allow_textract_fallback:
+        # Try to initialize AWS Textract (fallback)
+        # Only use Textract if DocumentAI is NOT configured (to avoid subscription errors)
+        if not (settings.GOOGLE_CLOUD_PROJECT and settings.GOOGLE_DOCUMENTAI_PROCESSOR_ID):
             try:
                 # AWS credentials are typically available via IAM roles or environment
                 aws_adapter = AWSTextractAdapter()
@@ -86,12 +84,10 @@ class OCRFactory:
                 elif not self._fallback_adapter:
                     self._fallback_adapter = aws_adapter
                     print("AWS Textract configured as fallback OCR provider")
-                else:
-                    print("AWS Textract configured as additional OCR provider")
             except Exception as e:
                 print(f"Failed to initialize AWS Textract: {e}")
         else:
-            print("Skipping AWS Textract fallback (OCR_ALLOW_TEXTRACT_FALLBACK=false)")
+            print("Skipping AWS Textract - Google DocumentAI is configured")
         
         if not self._adapters:
             print("ERROR: No OCR adapters initialized!")

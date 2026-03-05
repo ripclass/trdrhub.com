@@ -21,7 +21,6 @@ from ..core.validation_engine import ValidationEngine
 from ..core.prompt_library import PromptLibrary, PromptTemplate
 from ..config import settings
 from .llm_provider import LLMProviderFactory
-from .ai.model_router import ModelRouter
 from .text_guard import TextGuard
 from .ai_usage_tracker import AIUsageTracker, AIFeature
 
@@ -150,7 +149,6 @@ class LLMAssistService:
         self.prompt_library = PromptLibrary()
         self.model_version = settings.LLM_MODEL_VERSION
         self.confidence_threshold = 0.7  # Minimum confidence for AI responses
-        self.model_router = ModelRouter()
         
         # Initialize new services
         self.usage_tracker = AIUsageTracker(db)
@@ -719,33 +717,18 @@ class LLMAssistService:
         user_prompt = prompt_template.user_template.format(**input_data)
         
         try:
-            if settings.AI_LAYER_ROUTER_ENABLED:
-                layer = self._select_router_layer(output_type)
-                routed = await self.model_router.call_layer(
-                    layer=layer,
-                    prompt=user_prompt,
-                    system_prompt=prompt_template.system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                    confidence_fn=self._compute_output_confidence,
-                    primary_provider=settings.LLM_PROVIDER,
-                )
-                output_text = routed.output_text
-                tokens_in = routed.tokens_in
-                tokens_out = routed.tokens_out
-                provider_used = routed.provider_used
-                estimated_cost = routed.estimated_cost_usd
-            else:
-                # Existing path (default, backwards compatible)
-                output_text, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
-                    prompt=user_prompt,
-                    system_prompt=prompt_template.system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                    primary_provider=settings.LLM_PROVIDER
-                )
-                provider = LLMProviderFactory.create_provider(provider_used)
-                estimated_cost = provider.estimate_cost(tokens_in, tokens_out)
+            # Call provider with fallback
+            output_text, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+                prompt=user_prompt,
+                system_prompt=prompt_template.system_prompt,
+                max_tokens=max_tokens,
+                temperature=0.3,
+                primary_provider=settings.LLM_PROVIDER
+            )
+            
+            # Estimate cost
+            provider = LLMProviderFactory.create_provider(provider_used)
+            estimated_cost = provider.estimate_cost(tokens_in, tokens_out)
             
             # Validate output with text guard
             is_valid, validated_output, warning = self.text_guard.validate_output(output_text)
@@ -758,8 +741,8 @@ class LLMAssistService:
             # Extract rule references from output (simple regex-based extraction)
             rule_refs = self._extract_rule_references(output_text)
             
-            # Calculate confidence (simplified heuristic)
-            confidence = self._compute_output_confidence(output_text, tokens_out)
+            # Calculate confidence (simplified - in production could use model confidence scores)
+            confidence = 0.85 if len(output_text) > 50 and tokens_out > 20 else 0.65
             
             return output_text, confidence, rule_refs, tokens_in, tokens_out, estimated_cost
             
@@ -914,18 +897,6 @@ class LLMAssistService:
                 suggestions.append(suggestion)
 
         return suggestions
-
-    def _select_router_layer(self, output_type: AIOutputType) -> str:
-        if output_type == AIOutputType.CHAT_RESPONSE:
-            return "L1"
-        if output_type == AIOutputType.BANK_DRAFT:
-            return "L3"
-        if output_type == AIOutputType.AMENDMENT_DRAFT:
-            return "L2"
-        return "L2"
-
-    def _compute_output_confidence(self, output_text: str, tokens_out: int) -> float:
-        return 0.85 if len(output_text) > 50 and tokens_out > 20 else 0.65
 
     def _map_confidence_score(self, score: float) -> ConfidenceLevel:
         """Map numerical confidence to enum."""

@@ -17,17 +17,14 @@ export default defineConfig({
   },
   build: {
     sourcemap: true,
-    // Ensure clean build output directory on each build
+    // Force clean build - disable build cache
     emptyOutDir: true,
-    // Use content-hash only (no timestamp) so index.html and asset filenames
-    // stay consistent within a single build. The hash changes whenever the
-    // content changes, providing natural cache-busting without the risk of
-    // mismatched filenames between index.html and /assets/*.
+    // Force new bundle hash with timestamp
     rollupOptions: {
       output: {
-        entryFileNames: 'assets/[name]-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
+        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`,
       },
     },
   },

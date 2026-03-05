@@ -267,14 +267,12 @@ def _build_sanctions_issue(
     # Build expected vs actual
     if match_info:
         matched_name = match_info.matched_name
-        # match_score is already on a 0-100 scale from screening service
-        match_score = f"{match_info.match_score:.0f}%"
+        match_score = f"{match_info.match_score:.0%}"
         matched_list = match_info.list_name
         programs = ", ".join(match_info.programs) if match_info.programs else "N/A"
     else:
         matched_name = "Unknown"
-        # highest_score is already 0-100, avoid percent formatter double-scaling
-        match_score = f"{result.highest_score:.0f}%"
+        match_score = f"{result.highest_score:.0%}"
         matched_list = ", ".join(result.lists_screened)
         programs = "N/A"
     

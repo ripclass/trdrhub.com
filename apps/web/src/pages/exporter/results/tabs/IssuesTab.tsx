@@ -21,7 +21,6 @@ interface SeverityCounts {
 interface IssuesTabProps {
   hasIssueCards: boolean;
   issueCards: IssueCard[];
-  totalIssueCount: number;
   filteredIssueCards: IssueCard[];
   severityCounts: SeverityCounts;
   issueFilter: "all" | "critical" | "major" | "minor";
@@ -42,7 +41,6 @@ export function IssuesTab({
   issueFilter,
   setIssueFilter,
   documentStatusMap,
-  totalIssueCount,
   renderAIInsightsCard,
   renderReferenceIssuesCard,
   lcNumber,
@@ -88,12 +86,12 @@ export function IssuesTab({
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
-              <p className="text-2xl font-bold text-foreground">{totalIssueCount}</p>
+              <p className="text-2xl font-bold text-foreground">{issueCards.length}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {[
-              { value: "all" as const, label: `All (${totalIssueCount})` },
+              { value: "all" as const, label: `All (${issueCards.length})` },
               { value: "critical" as const, label: `Critical (${severityCounts.critical})` },
               { value: "major" as const, label: `Major (${severityCounts.major})` },
               { value: "minor" as const, label: `Minor (${severityCounts.minor})` },

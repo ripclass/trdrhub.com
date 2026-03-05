@@ -7,9 +7,6 @@ export * from './document-types';
 // Export SME validation contract (v2 - Output-First)
 export * from './sme-validation';
 
-// Canonical LCopilot semantics contract
-export * from './lcopilotSemantics';
-
 // V2 removed - using enhanced V1
 
 // Re-export zod for convenience

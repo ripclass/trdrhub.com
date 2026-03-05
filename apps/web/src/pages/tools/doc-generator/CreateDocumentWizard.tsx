@@ -988,6 +988,4 @@ export default function CreateDocumentWizard() {
         </Card>
       )}
     </div>
-  );
-}
 

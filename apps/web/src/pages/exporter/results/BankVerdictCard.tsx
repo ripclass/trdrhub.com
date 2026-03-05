@@ -58,31 +58,9 @@ const verdictBadgeColors = {
 
 interface BankVerdictCardProps {
   verdict: BankVerdict;
-  issueSummaryOverride?: {
-    critical: number;
-    major: number;
-    minor: number;
-    total: number;
-  };
-  requiredActionsCountOverride?: number;
-  showReadyBadge?: boolean;
 }
 
-export function BankVerdictCard({
-  verdict,
-  issueSummaryOverride,
-  requiredActionsCountOverride,
-  showReadyBadge = true,
-}: BankVerdictCardProps) {
-  const issueSummary = issueSummaryOverride ?? verdict?.issue_summary ?? { critical: 0, major: 0, minor: 0, total: 0 };
-  const actionItems = verdict?.action_items ?? [];
-  const actionItemsCount =
-    typeof requiredActionsCountOverride === "number"
-      ? requiredActionsCountOverride
-      : typeof verdict?.action_items_count === "number"
-      ? verdict.action_items_count
-      : actionItems.length;
-
+export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
   return (
     <Card className={cn(
       "mt-4 border-2 shadow-lg transition-all",
@@ -100,7 +78,7 @@ export function BankVerdictCard({
             </div>
             <div>
               <Badge className={cn("text-sm font-bold px-3 py-1", verdictBadgeColors[verdict.verdict])}>
-                {verdict.verdict === "SUBMIT" && showReadyBadge ? "READY TO SUBMIT" : verdict.verdict}
+                {verdict.verdict === "SUBMIT" ? "READY TO SUBMIT" : verdict.verdict}
               </Badge>
               <p className="text-sm font-medium mt-1">{verdict.verdict_message}</p>
             </div>
@@ -119,21 +97,21 @@ export function BankVerdictCard({
           
           {/* Issue Summary */}
           <div className="flex items-center gap-4 text-xs">
-            {issueSummary.critical > 0 && (
+            {verdict.issue_summary.critical > 0 && (
               <div className="flex items-center gap-1 text-red-400">
-                <span className="font-bold text-lg">{issueSummary.critical}</span>
+                <span className="font-bold text-lg">{verdict.issue_summary.critical}</span>
                 <span>Critical</span>
               </div>
             )}
-            {issueSummary.major > 0 && (
+            {verdict.issue_summary.major > 0 && (
               <div className="flex items-center gap-1 text-orange-400">
-                <span className="font-bold text-lg">{issueSummary.major}</span>
+                <span className="font-bold text-lg">{verdict.issue_summary.major}</span>
                 <span>Major</span>
               </div>
             )}
-            {issueSummary.minor > 0 && (
+            {verdict.issue_summary.minor > 0 && (
               <div className="flex items-center gap-1 text-yellow-400">
-                <span className="font-bold text-lg">{issueSummary.minor}</span>
+                <span className="font-bold text-lg">{verdict.issue_summary.minor}</span>
                 <span>Minor</span>
               </div>
             )}
@@ -141,13 +119,13 @@ export function BankVerdictCard({
         </div>
         
         {/* Action Items */}
-        {actionItems.length > 0 && (
+        {verdict.action_items.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/30">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Required Actions ({actionItemsCount})
+              Required Actions ({verdict.action_items_count})
             </p>
             <div className="space-y-2">
-              {actionItems.slice(0, 3).map((item, idx) => (
+              {verdict.action_items.slice(0, 3).map((item, idx) => (
                 <div key={idx} className="flex items-start gap-2 text-sm">
                   <span className={cn(
                     "mt-0.5 w-2 h-2 rounded-full flex-shrink-0",
@@ -159,9 +137,9 @@ export function BankVerdictCard({
                   </div>
                 </div>
               ))}
-              {actionItemsCount > 3 && (
+              {verdict.action_items_count > 3 && (
                 <p className="text-xs text-muted-foreground pl-4">
-                  + {actionItemsCount - 3} more action(s) in Issues tab
+                  + {verdict.action_items_count - 3} more action(s) in Issues tab
                 </p>
               )}
             </div>

@@ -94,7 +94,6 @@ import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
-import { hydrateManifestFromCustomsPack, resolveIssueDateFromLc } from "@/lib/exporter/resultCorrections";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -105,75 +104,6 @@ type ExporterResultsProps = {
 };
 
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
-
-type SubmissionVerdict = 'SUBMIT' | 'CAUTION' | 'HOLD' | 'REJECT';
-
-const normalizeVerdictToken = (value?: string | null): SubmissionVerdict | null => {
-  if (!value) return null;
-  const token = value.toString().trim().toUpperCase().replace(/\s+/g, '_');
-  if (
-    [
-      'REJECT',
-      'REJECTED',
-      'FAIL',
-      'FAILED',
-      'BLOCKED',
-      'NON_COMPLIANT',
-      'NON-COMPLIANT',
-      'NONCOMPLIANT',
-      'INVALID',
-      'ERROR',
-    ].includes(token)
-  ) {
-    return 'REJECT';
-  }
-  if (
-    [
-      'HOLD',
-      'REVIEW',
-      'REVIEW_REQUIRED',
-      'NEEDS_REVIEW',
-      'PARTIAL',
-      'PARTIAL_COMPLIANT',
-      'PARTIALLY_COMPLIANT',
-      'MOSTLY_COMPLIANT',
-      'INCOMPLETE',
-    ].includes(token)
-  ) {
-    return 'HOLD';
-  }
-  if (['CAUTION', 'WARNING', 'WARN', 'ATTENTION', 'RISK'].includes(token)) {
-    return 'CAUTION';
-  }
-  if (
-    [
-      'SUBMIT',
-      'READY',
-      'READY_TO_SUBMIT',
-      'APPROVE',
-      'APPROVED',
-      'PASS',
-      'PASSED',
-      'COMPLIANT',
-      'CLEAR',
-      'OK',
-      'SUCCESS',
-    ].includes(token)
-  ) {
-    return 'SUBMIT';
-  }
-  return null;
-};
-
-const resolveAuthoritativeVerdict = (values: Array<string | null | undefined>): SubmissionVerdict | null => {
-  for (const value of values) {
-    const normalized = normalizeVerdictToken(value);
-    if (normalized) {
-      return normalized;
-    }
-  }
-  return null;
-};
 
 export default function ExporterResults({
   embedded = false,
@@ -519,15 +449,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       .catch((err) => resultsLogger.error('Terminal guard fetch error', err));
   }, [jobStatus?.status, validationSessionId, fetchResults]);
 
-  const [activeTab, setActiveTab] = useState<ResultsTab>(() => {
-    if (tabParam) {
-      return tabParam;
-    }
-    if (!isResultsTab(initialTab)) {
-      return DEFAULT_TAB;
-    }
-    return initialTab;
-  });
+  const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [showManifestPreview, setShowManifestPreview] = useState(false);
   const [selectedBankId, setSelectedBankId] = useState<string>("");
@@ -545,11 +467,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const resultData = liveResults ?? cachedResults;
 
   useEffect(() => {
-    const safeInitialTab = isResultsTab(initialTab) ? initialTab : DEFAULT_TAB;
-    const nextTab = !embedded && tabParam ? tabParam : safeInitialTab;
+    if (!initialTab) {
+      return;
+    }
+    if (initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, activeTab]);
 
-    if (nextTab !== activeTab) {
-      setActiveTab(nextTab);
+  useEffect(() => {
+    if (embedded) return;
+    if (!initialTab && tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
     }
   }, [embedded, initialTab, tabParam, activeTab]);
 
@@ -720,41 +649,126 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   });
 
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
+  const structuredDocumentsPayload =
+    structuredResult?.documents_structured ??
+    structuredResult?.lc_structured?.documents_structured ??
+    [];
   const summary = structuredResult?.processing_summary;
   const lcStructured = structuredResult?.lc_structured ?? null;
-
-  // Single source of truth for all document rendering/counts on this page.
-  // Always consume mapper-normalized resultData.documents; never remap raw structured payload here.
-  const documents = useMemo(() => resultData?.documents ?? [], [resultData?.documents]);
+  const extractionStatus = useMemo(() => {
+    // Check document-level extraction statuses first
+    const docStatuses = structuredDocumentsPayload.map(
+      (doc) => (doc.extraction_status || "unknown").toLowerCase()
+    );
+    const hasSuccess = docStatuses.some((s) => s === "success");
+    const hasError = docStatuses.some((s) => s === "error" || s === "failed");
+    
+    // If we have document statuses, use them
+    if (docStatuses.length > 0 && (hasSuccess || hasError)) {
+      if (hasError && !hasSuccess) return "error";
+      if (hasSuccess && hasError) return "partial";
+      if (hasSuccess) return "success";
+    }
+    
+    // Fall back to summary counts if available
+    if (summary) {
+      const successExtractions = Number(summary.successful_extractions ?? summary.verified ?? 0);
+      const failedExtractions = Number(summary.failed_extractions ?? summary.errors ?? 0);
+      const totalDocs = Number(summary.total_documents ?? summary.documents ?? 0);
+      
+      // If we have documents processed, assume success
+      if (totalDocs > 0 && failedExtractions === 0) {
+        return "success";
+      }
+      if (successExtractions > 0 && failedExtractions === 0) {
+        return "success";
+      }
+      if (successExtractions > 0 && failedExtractions > 0) {
+        return "partial";
+      }
+      if (successExtractions === 0 && failedExtractions > 0) {
+        return "error";
+      }
+    }
+    
+    // If LC data exists, extraction worked
+    if (lcStructured && Object.keys(lcStructured).length > 0) {
+      return "success";
+    }
+    
+    return "unknown";
+  }, [summary, structuredDocumentsPayload, lcStructured]);
+  const documents = useMemo(() => {
+    return structuredDocumentsPayload.map((doc, index) => {
+      const docAny = doc as Record<string, any>;
+      const documentId = String(doc.document_id ?? docAny.id ?? index);
+      const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
+      const typeKeyRaw = doc.document_type ?? docAny.type ?? "supporting_document";
+      const typeKey = (typeKeyRaw || "supporting_document").toString();
+      // Check multiple keys - backend sends discrepancyCount (camelCase)
+      const issuesCount = Number(doc.discrepancyCount ?? doc.issues_count ?? docAny.discrepancyCount ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
+      const extractionStatus = (doc.extraction_status ?? docAny.extractionStatus ?? "unknown").toString().toLowerCase();
+      const status: "success" | "warning" | "error" = (() => {
+        if (extractionStatus === "error") return "error";
+        if (extractionStatus === "partial" || extractionStatus === "pending") return "warning";
+        const exempt = ["letter_of_credit", "insurance_certificate"];
+        if (issuesCount > 0 && !exempt.includes(typeKey)) return "warning";
+        return "success";
+      })();
+      // Ensure type is always a string to prevent React Error #31
+      const typeLabel = DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
+      return {
+        id: documentId,
+        documentId,
+        name: filename,
+        filename,
+        type: safeString(typeLabel),
+        typeKey,
+        extractionStatus,
+        status,
+        issuesCount,
+        extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
+      };
+    });
+  }, [structuredDocumentsPayload]);
   resultsLogger.debug('Documents loaded', { count: documents.length });
-
   const issueCards = resultData?.issues ?? [];
-  const severityCounts = useMemo(
-    () =>
-      issueCards.reduce(
-        (acc, card) => {
-          const severity = normalizeDiscrepancySeverity(card.severity);
-          acc[severity] = (acc[severity] || 0) + 1;
-          return acc;
-        },
-        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
-      ),
-    [issueCards]
-  );
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
-  const totalDocuments = documents.length || summary?.total_documents || 0;
-  const backendReportedIssueTotal =
-    typeof summary?.total_issues === 'number'
-      ? summary.total_issues
-      : issueCards.length;
-  // Invariant: user-visible total issues must equal displayed severity bucket sum.
-  const totalDiscrepancies =
-    severityCounts.critical + severityCounts.major + severityCounts.minor;
-
-  // lcStructured is already defined above to avoid temporal dead zone issues
+  const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
+  // Use the higher of summary.total_issues or actual issueCards.length
+  // This ensures we show the correct count even if backend summary is stale
+  const totalDiscrepancies = Math.max(summary?.total_issues ?? 0, issueCards.length);
+  const severityBreakdown = summary?.severity_breakdown ?? {
+    critical: 0,
+    major: 0,
+    medium: 0,
+    minor: 0,
+  };
+  const extractedDocumentsMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    structuredDocumentsPayload.forEach((doc, idx) => {
+      const docAny = doc as Record<string, any>;
+      const key = doc.document_type || doc.filename || `doc_${idx}`;
+      map[key] = doc.extracted_fields ?? docAny.extractedFields ?? {};
+    });
+    return map;
+  }, [structuredDocumentsPayload]);
+  const extractedDocuments = useMemo(
+    () =>
+      structuredDocumentsPayload.map((doc) => ({
+        filename: doc.filename,
+        name: doc.filename,
+        document_type: doc.document_type,
+        extraction_status: doc.extraction_status,
+        extractionStatus: doc.extraction_status,
+        extracted_fields: doc.extracted_fields ?? {},
+        extractedFields: doc.extracted_fields ?? {},
+      })),
+    [structuredDocumentsPayload],
+  );
+  // lcStructured is already defined above (line ~730) to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
-  const resolvedIssueDate = resolveIssueDateFromLc(lcData);
   const lcSummaryRows = lcData
     ? buildFieldRows(
         [
@@ -770,7 +784,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcDateRows = lcData
     ? buildFieldRows(
         [
-          { label: "Issue Date", value: resolvedIssueDate },
+          { label: "Issue Date", value: lcData.dates?.issue },
           { label: "Expiry Date", value: lcData.dates?.expiry },
           { label: "Latest Shipment", value: lcData.dates?.latest_shipment },
           { label: "Place of Expiry", value: lcData.dates?.place_of_expiry },
@@ -784,87 +798,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
-  const buildDrawerExtractedFields = (document: (typeof documents)[number]): Record<string, any> => {
-    const fallbackFields =
-      document.extractedFields && typeof document.extractedFields === "object"
-        ? (document.extractedFields as Record<string, any>)
-        : {};
-
-    if (document.typeKey !== "letter_of_credit") {
-      return fallbackFields;
-    }
-
-    const lcSource =
-      lcData && typeof lcData === "object"
-        ? (lcData as Record<string, any>)
-        : fallbackFields;
-
-    const canonicalIssueDate = resolveIssueDateFromLc(lcSource);
-    if (!canonicalIssueDate) {
-      return lcSource;
-    }
-
-    const canonicalDates =
-      lcSource.dates && typeof lcSource.dates === "object"
-        ? { ...(lcSource.dates as Record<string, any>), issue: canonicalIssueDate }
-        : { issue: canonicalIssueDate };
-
-    return {
-      ...lcSource,
-      issue_date: canonicalIssueDate,
-      dates: canonicalDates,
-    };
-  };
-
-  const openDocumentDetails = useCallback((documentId: string) => {
-    const target = documents.find((doc) => String(doc.documentId ?? doc.id) === String(documentId));
-    if (!target) {
-      return;
-    }
-    setSelectedDocumentForDrawer({
-      id: target.id,
-      name: target.name,
-      filename: target.filename,
-      type: target.type,
-      typeKey: target.typeKey,
-      status: target.status,
-      extractionStatus: target.extractionStatus,
-      complianceStatus: (target as any).complianceStatus,
-      failedReason: (target as any).failedReason,
-      issuesCount: target.issuesCount,
-      extractedFields: buildDrawerExtractedFields(target),
-      rawTextPreview: (target.extractedFields as any)?.raw_text_preview,
-      ocrConfidence: (target.extractedFields as any)?._extraction_confidence,
-      sourceFormat: (target.extractedFields as any)?._source_format,
-      isElectronicBL: (target.extractedFields as any)?._is_electronic_bl,
-    });
-    setIsDrawerOpen(true);
-  }, [buildDrawerExtractedFields, documents]);
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
-  const filteredReferenceIssues = useMemo(() => {
-    const isConcreteReference = (issue: ReferenceIssue) => {
-      const details = [issue.message, issue.article, issue.title].filter(Boolean).join(' ');
-      return /\d|invoice|lc|bill of lading|packing|insurance|certificate|amount|date/i.test(details);
-    };
-    const isGenericDiscretionReference = (issue: ReferenceIssue) => {
-      const text = [issue.title, issue.rule, issue.message].filter(Boolean).join(' ').toLowerCase();
-      return /bank\s+discretion|at\s+discretion|refer\s+to\s+bank|subject\s+to\s+bank/.test(text);
-    };
-
-    return referenceIssues.filter((issue) => {
-      const hasAnyContent = [issue.title, issue.rule, issue.message, issue.article].some((value) => {
-        const v = (value ?? '').toString().trim();
-        return v && v !== '—';
-      });
-      if (!hasAnyContent) return false;
-      if (isGenericDiscretionReference(issue) && !isConcreteReference(issue)) {
-        return false;
-      }
-      return true;
-    });
-  }, [referenceIssues]);
   const rawAiInsights = structuredResult?.ai_enrichment ?? null;
   const aiInsights = useMemo<AIEnrichmentPayload | null>(() => {
     if (!rawAiInsights) {
@@ -919,42 +855,97 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
     return map;
   }, [documents]);
+  const documentStatusCounts = useMemo(
+    () =>
+      documents.reduce(
+        (acc, doc) => {
+          const key = doc.status ?? 'warning';
+          if (!(key in acc)) {
+            acc[key as keyof typeof acc] = 0;
+          }
+          acc[key as keyof typeof acc] += 1;
+          return acc;
+        },
+        { success: 0, warning: 0, error: 0 } as Record<'success' | 'warning' | 'error', number>,
+      ),
+    [documents],
+  );
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const severity = normalizeDiscrepancySeverity(card.severity);
+          acc[severity] = (acc[severity] || 0) + 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
+      ),
+    [issueCards]
+  );
   const filteredIssueCards = useMemo(() => {
     if (issueFilter === "all") return issueCards;
     return issueCards.filter(
       (card) => normalizeDiscrepancySeverity(card.severity) === issueFilter
     );
   }, [issueCards, issueFilter]);
-  useEffect(() => {
-    if (backendReportedIssueTotal === totalDiscrepancies) {
-      return;
-    }
-    resultsLogger.warn("Issue totals reconciled to visible severity buckets", {
-      backendReportedIssueTotal,
-      totalDiscrepancies,
-      severityCounts,
-    });
-  }, [backendReportedIssueTotal, totalDiscrepancies, severityCounts]);
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
   const { successCount, errorCount, warningCount, successRate, extractionRate } = useMemo(() => {
-    // Keep overview counts aligned with Documents tab by deriving from the same mapped documents.
-    const resolvedSuccessCount = documents.filter((doc) => doc.status === "success").length;
-    const resolvedErrorCount = documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
-    const resolvedWarningCount = documents.filter((doc) => doc.status === "warning").length;
+    // Use authoritative document_status from backend (same source as SummaryStrip)
+    const statusDistribution = 
+      analyticsData?.document_status_distribution ?? 
+      summary?.document_status ?? 
+      summary?.status_counts ?? 
+      {};
+    
+    const fromDistSuccess = typeof statusDistribution.success === 'number' ? statusDistribution.success : 0;
+    const fromDistWarning = typeof statusDistribution.warning === 'number' ? statusDistribution.warning : 0;
+    const fromDistError = typeof statusDistribution.error === 'number' ? statusDistribution.error : 0;
+    
+    // Check if we have real distribution data
+    const hasDistribution = fromDistSuccess > 0 || fromDistWarning > 0 || fromDistError > 0;
+    
+    let resolvedSuccessCount: number;
+    let resolvedErrorCount: number;
+    let resolvedWarningCount: number;
+    
+    if (hasDistribution) {
+      // Use backend's authoritative counts
+      resolvedSuccessCount = fromDistSuccess;
+      resolvedErrorCount = fromDistError;
+      resolvedWarningCount = fromDistWarning;
+    } else {
+      // Fallback to document array or summary fields
+      const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
+      const summarySuccessCount =
+        typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
+      resolvedSuccessCount =
+        derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+
+      resolvedErrorCount =
+        typeof summary?.failed_extractions === "number"
+          ? summary.failed_extractions
+          : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
+
+      resolvedWarningCount =
+        typeof documentStatusCounts.warning === "number"
+          ? documentStatusCounts.warning
+          : documents.filter((doc) => doc.status === "warning").length;
+    }
 
     // Validation success rate (based on validation status)
     const resolvedSuccessRate =
       totalDocuments > 0 ? Math.round((resolvedSuccessCount / totalDocuments) * 100) : 0;
 
     // Extraction success rate (OCR extraction - separate from validation)
-    const extractionSuccessful =
-      typeof summary?.successful_extractions === "number"
-        ? summary.successful_extractions
-        : totalDocuments;
-    const extractionRate = totalDocuments > 0
-      ? Math.round((extractionSuccessful / totalDocuments) * 100)
+    // This measures how many docs were successfully extracted, regardless of validation status
+    const extractionSuccessful = 
+      typeof summary?.successful_extractions === "number" 
+        ? summary.successful_extractions 
+        : totalDocuments; // Default to all if not specified
+    const extractionRate = totalDocuments > 0 
+      ? Math.round((extractionSuccessful / totalDocuments) * 100) 
       : 100;
 
     return {
@@ -962,9 +953,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       errorCount: resolvedErrorCount,
       warningCount: resolvedWarningCount,
       successRate: resolvedSuccessRate,
-      extractionRate,
+      extractionRate, // New: for Document Extraction progress bar
     };
-  }, [documents, summary?.successful_extractions, totalDocuments]);
+  }, [
+    documents,
+    summary?.successful_extractions,
+    summary?.failed_extractions,
+    summary?.document_status,
+    summary?.status_counts,
+    analyticsData?.document_status_distribution,
+    documentStatusCounts.warning,
+    totalDocuments,
+  ]);
   const complianceScore = useMemo(
     () => analyticsData?.compliance_score ?? analyticsData?.lc_compliance_score ?? summary?.compliance_rate ?? successRate,
     [analyticsData?.compliance_score, analyticsData?.lc_compliance_score, summary?.compliance_rate, successRate],
@@ -1001,184 +1001,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
-  const pipelineVerificationStatusRaw = (structuredResult as any)?.pipeline_verification_status;
-  const pipelineVerificationStatus = typeof pipelineVerificationStatusRaw === 'string'
-    ? pipelineVerificationStatusRaw.toUpperCase()
-    : null;
-  const pipelineStatusKnown = !!pipelineVerificationStatus;
-  const pipelineVerified = pipelineVerificationStatus === 'VERIFIED';
-  const authoritativeVerdict = useMemo(
-    () => resolveAuthoritativeVerdict([
-      (structuredResult as any)?.final_verdict,
-      (structuredResult?.bank_verdict as any)?.verdict,
-      (structuredResult as any)?.compliance_status,
-      (structuredResult as any)?.validation_status,
-      validationState?.status,
-    ]),
-    [structuredResult, validationState?.status],
-  );
-  const finalVerdict = authoritativeVerdict ?? String((structuredResult as any)?.final_verdict ?? '').toUpperCase();
-  const submissionBlocked = finalVerdict === 'REJECT' || (pipelineStatusKnown && !pipelineVerified);
   const customsPack = structuredResult?.customs_pack;
-
-  useEffect(() => {
-    if (manifestData) {
-      return;
-    }
-
-    const hydrated = hydrateManifestFromCustomsPack(customsPack, lcNumber, validationSessionId);
-    if (hydrated) {
-      setManifestData(hydrated);
-    }
-  }, [customsPack, lcNumber, manifestData, validationSessionId]);
-
-  // Canonical manifest state: UI generation/availability derives from manifestData only.
-  // This keeps status label, helper copy, and preview enablement in sync.
-  const packGenerated = !!manifestData;
+  const packGenerated = customsPack?.ready ?? false;
   const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
   const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
-
-  const totalExtractionDocs =
-    processingSummaryExtras?.total_documents ??
-    processingSummaryExtras?.documents ??
-    documents.length;
-  const successfulExtractions =
-    processingSummaryExtras?.successful_extractions ??
-    processingSummaryExtras?.verified ??
-    0;
-  const partialExtractions =
-    processingSummaryExtras?.partial_extractions ??
-    processingSummaryExtras?.warnings ??
-    0;
-  const failedExtractions =
-    processingSummaryExtras?.failed_extractions ??
-    processingSummaryExtras?.errors ??
-    0;
-  const hasExtractionFailures =
-    failedExtractions > 0 || documents.some((doc) => doc.status === 'error');
-  const hasExtractionSuccess =
-    successfulExtractions > 0 ||
-    partialExtractions > 0 ||
-    documents.some((doc) => doc.status === 'success' || doc.status === 'warning');
-  const extractionEmpty = totalExtractionDocs > 0 && !hasExtractionSuccess;
-  const criticalIssueCount = useMemo(
-    () => issueCards.filter((issue) => normalizeDiscrepancySeverity(issue.severity) === 'critical').length,
-    [issueCards],
-  );
-  const bankVerdictRaw = structuredResult?.bank_verdict as BankVerdict | undefined;
-  const bankFinalVerdict = (bankVerdictRaw?.verdict ?? '').toString().toUpperCase();
-  const submitBlockedByRejectVerdict = finalVerdict === 'REJECT';
-  const submitBlockedByCritical = criticalIssueCount > 0 || (guardrails?.high_severity_discrepancies ?? 0) > 0;
-  const resolvedBankVerdict = useMemo(() => {
-    if (!bankVerdictRaw) return null;
-    if (!finalVerdict || finalVerdict === bankFinalVerdict) {
-      return bankVerdictRaw;
-    }
-    const overrideMessage =
-      finalVerdict === 'REJECT'
-        ? 'Final verdict blocks submission. Resolve blocking issues before submitting.'
-        : bankVerdictRaw.verdict_message;
-    const overrideRecommendation =
-      finalVerdict === 'REJECT'
-        ? 'Resolve critical issues before re-submission.'
-        : bankVerdictRaw.recommendation;
-    return {
-      ...bankVerdictRaw,
-      verdict: finalVerdict as BankVerdict['verdict'],
-      verdict_message: overrideMessage,
-      recommendation: overrideRecommendation,
-      can_submit: finalVerdict === 'SUBMIT' && bankVerdictRaw.can_submit,
-      will_be_rejected: finalVerdict === 'REJECT' ? true : bankVerdictRaw.will_be_rejected,
-    } as BankVerdict;
-  }, [bankVerdictRaw, bankFinalVerdict, finalVerdict]);
-
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
-    if (validationState?.isBlocked) return false;
-    if (pipelineStatusKnown && !pipelineVerified) return false;
-    if (hasExtractionFailures || extractionEmpty) return false;
-    if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
       return totalDiscrepancies === 0;
     }
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [
-    enableBankSubmission,
-    pipelineStatusKnown,
-    pipelineVerified,
-    guardrails,
-    guardrailsLoading,
-    hasExtractionFailures,
-    extractionEmpty,
-    submitBlockedByRejectVerdict,
-    submitBlockedByCritical,
-    totalDiscrepancies,
-    validationState?.isBlocked,
-  ]);
-  const canonicalGateState = useMemo<'blocked' | 'review_required' | 'allowed'>(() => {
-    if (validationState?.isBlocked || submissionBlocked) {
-      return 'blocked';
-    }
-    if (isReadyToSubmit) {
-      return 'allowed';
-    }
-    return 'review_required';
-  }, [validationState?.isBlocked, submissionBlocked, isReadyToSubmit]);
-  const gateDecision = useMemo(() => {
-    if (canonicalGateState === 'blocked') {
-      return {
-        label: 'Blocked',
-        textClass: 'text-destructive',
-        helper: 'Validation gate is blocked; resolve blocking issues before proceeding.',
-      };
-    }
-    if (canonicalGateState === 'allowed') {
-      return {
-        label: 'Allowed',
-        textClass: 'text-success',
-        helper: 'Validation gate passed; you can proceed to submission checks.',
-      };
-    }
-    return {
-      label: 'Review Required',
-      textClass: 'text-warning',
-      helper: 'Validation gate requires review before proceeding to submission.',
-    };
-  }, [canonicalGateState]);
-  const isGateBlocked = canonicalGateState === 'blocked';
-  const blockingReason = useMemo(() => {
-    if (validationState?.blockReason) {
-      return validationState.blockReason;
-    }
-    if (finalVerdict === 'REJECT') {
-      return (
-        resolvedBankVerdict?.verdict_message ||
-        (structuredResult as any)?.compliance_cap_reason ||
-        (resultData as any)?.sanctionsBlockReason ||
-        'Final verdict blocks submission. Resolve blocking issues before proceeding.'
-      );
-    }
-    if (submissionBlocked) {
-      return (
-        (structuredResult as any)?.compliance_cap_reason ||
-        (resultData as any)?.sanctionsBlockReason ||
-        'Validation gate is blocked; resolve blocking issues before proceeding.'
-      );
-    }
-    return null;
-  }, [
-    finalVerdict,
-    resolvedBankVerdict?.verdict_message,
-    resultData,
-    structuredResult,
-    submissionBlocked,
-    validationState?.blockReason,
-  ]);
+  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1375,7 +1213,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
 
   const renderReferenceIssuesCard = () => {
-    if (!filteredReferenceIssues.length) {
+    if (!referenceIssues.length) {
       return null;
     }
 
@@ -1388,7 +1226,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
-          {filteredReferenceIssues.map((issue, index) => (
+          {referenceIssues.map((issue, index) => (
             <div key={index} className="p-3 rounded-lg bg-secondary/20 border border-secondary/40">
               <p className="font-medium text-foreground">
                 {issue.title || issue.rule || `Rule ${index + 1}`}
@@ -1466,16 +1304,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       return;
     }
-
-    if (submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
-      toast({
-        title: "Submission Blocked",
-        description: "Cannot submit to bank while verdict is REJECT or critical issues remain.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    
     // Phase 3: Show bank selector first
     setShowBankSelector(true);
   };
@@ -1509,16 +1338,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       return;
     }
-
-    if (submitBlockedByRejectVerdict || submitBlockedByCritical || !isReadyToSubmit) {
-      toast({
-        title: "Submission Blocked",
-        description: "Cannot submit to bank while verdict is REJECT or critical issues remain.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setShowManifestPreview(false);
     // Phase 2: Create submission
     createSubmissionMutation.mutate({
@@ -1587,14 +1406,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={packGenerated}
             overallStatus={overallStatus}
+            actualIssuesCount={issueCards.length}
             complianceScore={complianceScore}
-            finalVerdict={finalVerdict}
-            criticalIssueCount={criticalIssueCount}
-            isReadyToSubmit={isReadyToSubmit}
-            totalIssues={totalDiscrepancies}
-            isBlocked={isGateBlocked}
-            blockReason={blockingReason}
-            onOpenDocumentDetails={openDocumentDetails}
           />
           
           {/* Bank Profile Badge */}
@@ -1610,18 +1423,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           )}
           
           {/* Bank Submission Verdict Card */}
-          {resolvedBankVerdict && (
-            <BankVerdictCard
-              verdict={resolvedBankVerdict}
-              issueSummaryOverride={{
-                critical: severityCounts.critical,
-                major: severityCounts.major,
-                minor: severityCounts.minor,
-                total: totalDiscrepancies,
-              }}
-              requiredActionsCountOverride={totalDiscrepancies}
-              showReadyBadge={canonicalGateState === 'allowed'}
-            />
+          {structuredResult?.bank_verdict && (
+            <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
           )}
           
           {/* OCR Confidence Warning */}
@@ -1778,26 +1581,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Document status grid — counts must match Documents tab and SummaryStrip.
-                      successCount / warningCount / errorCount are derived from the same
-                      mapped `documents` array (canonical source). totalDiscrepancies is
-                      the issue-card count and is shown separately with a distinct label. */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
                       <div className="text-2xl font-bold text-success">{successCount}</div>
-                      <div className="text-sm text-muted-foreground">Docs Verified</div>
+                      <div className="text-sm text-muted-foreground">Verified</div>
                     </div>
                     <div className="text-center p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                      <div className="text-2xl font-bold text-warning">{warningCount + errorCount}</div>
-                      <div className="text-sm text-muted-foreground">Docs Need Review</div>
+                      <div className="text-2xl font-bold text-warning">{totalDiscrepancies}</div>
+                      <div className="text-sm text-muted-foreground">Warnings</div>
                     </div>
                   </div>
-                  {totalDiscrepancies > 0 && (
-                    <div className="flex items-center justify-between text-sm px-1">
-                      <span className="text-muted-foreground">Issues found:</span>
-                      <span className="font-semibold text-warning">{totalDiscrepancies}</span>
-                    </div>
-                  )}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>LC Compliance:</span>
@@ -1806,22 +1599,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Customs Decision:</span>
-                      <span className={`font-medium ${gateDecision.textClass}`}>
-                        {gateDecision.label}
+                      <span>Customs Ready:</span>
+                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
+                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Bank Submission:</span>
-                      <span className={`font-medium ${submissionBlocked ? 'text-destructive' : overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
-                        {submissionBlocked ? 'Blocked' : overallStatus === 'success' ? 'Allowed' : 'Review Required'}
+                      <span>Bank Ready:</span>
+                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
+                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
                       </span>
                     </div>
                   </div>
                   {packGenerated && (
                     <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <p className="text-sm font-medium text-primary">Customs Pack Generated</p>
-                      <p className="text-xs text-muted-foreground mt-1">Documents bundled; clearance still depends on validation/compliance state</p>
+                      <p className="text-sm font-medium text-primary">Customs-Ready Pack Generated</p>
+                      <p className="text-xs text-muted-foreground mt-1">All documents bundled for smooth customs clearance</p>
                     </div>
                   )}
                 </CardContent>
@@ -1880,16 +1673,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <PieChart className="w-5 h-5" />
                     Document Status
                   </CardTitle>
-                  {/* Note: "Verified" here means OCR extraction succeeded for the document.
-                      It does NOT indicate LC compliance — see Compliance score for that.
-                      A document can be "Verified" (extracted) yet still have LC issues. */}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-success rounded-full"></div>
-                        <span className="text-sm">Extracted OK</span>
+                        <span className="text-sm">Verified</span>
                       </div>
                       <span className="text-sm font-medium">
                         {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
@@ -1899,7 +1689,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">Partial Extraction</span>
+                        <span className="text-sm">With Warnings</span>
                       </div>
                       <span className="text-sm font-medium">
                         {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
@@ -1910,23 +1700,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                        <span className="text-sm">Extraction Failed</span>
+                        <span className="text-sm">With Errors</span>
                       </div>
                       <span className="text-sm font-medium">
                         {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
                       </span>
                     </div>
                     )}
-                    {/* Compliance score is separate from extraction status */}
-                    <div className="border-t border-border/40 pt-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${lcComplianceScore >= 70 ? 'bg-success' : lcComplianceScore >= 30 ? 'bg-warning' : 'bg-destructive'}`}></div>
-                        <span className="text-sm">LC Compliance</span>
-                      </div>
-                      <span className={`text-sm font-medium ${lcComplianceScore >= 70 ? 'text-success' : lcComplianceScore >= 30 ? 'text-warning' : 'text-destructive'}`}>
-                        {lcComplianceScore}%
-                      </span>
-                    </div>
                   </div>
                   <div className="mt-4 p-3 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
@@ -1957,44 +1737,35 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Customs Pack State</p>
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={packGenerated ? "success" : "warning"}>
-                        {packGenerated ? "Generated" : "Not Generated"}
+                        {packGenerated ? "Ready" : "Pending"}
                       </StatusBadge>
                       <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {packGenerated
-                        ? "Pack files are generated and available for download."
-                        : "Generate the customs pack files from current extracted data."}
+                        ? "Customs pack generated and ready to download."
+                        : "Generate your customs pack after resolving issues."}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Validation & Clearance</p>
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Readiness</p>
                     <div className="flex items-center gap-3">
                       <div className={cn(
                         "text-2xl font-semibold",
                         customsReadyScore >= 80 ? "text-success" : customsReadyScore >= 50 ? "text-warning" : "text-destructive"
                       )}>{customsReadyScore}%</div>
-                      <Badge variant="outline">Customs Clearance Readiness</Badge>
+                      <Badge variant="outline">Customs Ready Score</Badge>
                     </div>
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      <p>
-                        Validation decision:{" "}
-                        <span className={cn("font-medium", gateDecision.textClass)}>
-                          {gateDecision.label}
-                        </span>
-                      </p>
-                      <p>{gateDecision.helper}</p>
-                      <p>
-                        {customsReadyScore >= 80
-                          ? "Clearance readiness is high."
-                          : customsReadyScore >= 50
-                          ? "Clearance readiness is medium; resolve remaining issues."
-                          : "Clearance readiness is low; resolve critical issues first."}
-                      </p>
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {customsReadyScore >= 80 
+                        ? "Documents are ready for customs clearance." 
+                        : customsReadyScore >= 50 
+                        ? "Some issues need review before customs clearance."
+                        : "Critical issues must be resolved before customs clearance."}
+                    </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
@@ -2008,12 +1779,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         disabled={generateCustomsPackMutation.isPending}
                       >
                         <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
-                        {generateCustomsPackMutation.isPending
-                          ? manifestData
-                            ? "Regenerating..."
-                            : "Generating..."
-                          : manifestData
-                          ? "Regenerate Customs Pack"
+                        {generateCustomsPackMutation.isPending 
+                          ? "Generating..." 
                           : "Generate Customs Pack"}
                       </Button>
                       {/* Show Download only when manifest exists (pack was generated) */}
@@ -2160,11 +1927,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
           <TabsContent value="documents" className="space-y-4">
             {documents.map((document) => {
-              const extractedEntries = Object.entries(document.extractedFields || {});
-              const fieldEntries = extractedEntries.filter(
-                ([key]) => !key.startsWith("_") && key !== "raw_text_preview" && key !== "raw_text",
-              );
-              const rawTextPreview = (document.extractedFields as any)?.raw_text_preview as string | undefined;
+              const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
               const discrepancyCount = document.issuesCount ?? 0;
               
@@ -2187,29 +1950,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {document.status === "success" ? (
+                        {discrepancyCount === 0 ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
                             <CheckCircle className="w-3.5 h-3.5" />
-                            Extraction Success
-                          </span>
-                        ) : document.status === "error" ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">
-                            <XCircle className="w-3.5 h-3.5" />
-                            Extraction Failed
+                            Verified
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            Extraction Partial
+                            {discrepancyCount === 1 ? 'Minor Issues' : `${discrepancyCount} Issues`}
                           </span>
                         )}
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                          {discrepancyCount} Compliance {discrepancyCount === 1 ? 'Issue' : 'Issues'}
-                        </span>
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => openDocumentDetails(document.documentId || document.id)}
+                          onClick={() => {
+                            setSelectedDocumentForDrawer({
+                              id: document.id,
+                              name: document.name,
+                              filename: document.filename,
+                              type: document.type,
+                              typeKey: document.typeKey,
+                              status: document.status,
+                              extractionStatus: document.extractionStatus,
+                              issuesCount: document.issuesCount,
+                              extractedFields: document.extractedFields,
+                              ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
+                              sourceFormat: (document.extractedFields as any)?._source_format,
+                              isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
+                            });
+                            setIsDrawerOpen(true);
+                          }}
                         >
                           <Eye className="w-4 h-4 mr-2" />
                           View Details
@@ -2293,16 +2064,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       )
                     ) : (
-                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground space-y-3">
-                        <p>This document could not be fully parsed. Preview text is available for manual review.</p>
-                        {rawTextPreview && (
-                          <details className="text-xs text-muted-foreground">
-                            <summary className="cursor-pointer">View preview text</summary>
-                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3">
-                              {rawTextPreview}
-                            </pre>
-                          </details>
-                        )}
+                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
+                        This document could not be fully parsed. Preview text is available for manual review.
                       </div>
                     )}
                   </CardContent>
@@ -2315,7 +2078,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <IssuesTab
               hasIssueCards={hasIssueCards}
               issueCards={issueCards}
-              totalIssueCount={totalDiscrepancies}
               filteredIssueCards={filteredIssueCards}
               severityCounts={severityCounts}
               issueFilter={issueFilter}
@@ -2489,4 +2251,3 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 }
 
 // SubmissionHistoryCard is now imported from ./exporter/results
-

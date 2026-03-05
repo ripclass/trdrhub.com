@@ -5,13 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ValidationResults } from '@/types/lcopilot';
-import {
-  confidenceBand,
-  formatConfidence,
-  isFailedDocumentGuardrailCompliant,
-  normalizeExtractionReason,
-  toConfidenceScore,
-} from '@/lib/exporter/extractionStatus';
 
 type Props = {
   data: ValidationResults | null;
@@ -19,183 +12,82 @@ type Props = {
   lcTypeConfidence?: number | null;
   packGenerated?: boolean;
   overallStatus?: 'success' | 'warning' | 'error';
+  actualIssuesCount?: number;
   complianceScore?: number;
-  finalVerdict?: string | null;
-  criticalIssueCount?: number;
-  isReadyToSubmit?: boolean;
-  totalIssues?: number;
-  isBlocked?: boolean;
-  blockReason?: string | null;
-  onOpenDocumentDetails?: (documentId: string) => void;
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
-const normalizeIssueSeverity = (severity?: string | null): 'critical' | 'major' | 'minor' => {
-  const token = (severity ?? '').toLowerCase();
-  if (['critical', 'fail', 'error', 'high'].includes(token)) {
-    return 'critical';
-  }
-  if (['warning', 'warn', 'major', 'medium'].includes(token)) {
-    return 'major';
-  }
-  return 'minor';
-};
 
-export function SummaryStrip({
-  data,
-  lcTypeLabel,
-  lcTypeConfidence,
-  packGenerated,
-  overallStatus,
-  complianceScore,
-  finalVerdict,
-  criticalIssueCount,
-  isReadyToSubmit,
-  totalIssues: totalIssuesProp,
-  isBlocked: isBlockedProp,
-  blockReason,
-  onOpenDocumentDetails,
-}: Props) {
-  if (!data) {
+export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
+  const structured = data?.structured_result;
+  const summary = structured?.processing_summary;
+  const analytics = structured?.analytics;
+
+  if (!structured || !summary) {
     return null;
   }
 
-  const structured = data.structured_result;
-  const summary = (data.summary ?? structured?.processing_summary ?? {}) as Partial<ValidationResults['summary']>;
-  const analytics = (data.analytics ?? structured?.analytics ?? {}) as Partial<ValidationResults['analytics']>;
-
-  const extractionDocs = data?.documents ?? [];
-
   // Get document counts from multiple sources for robustness
   const documentsProcessed =
-    extractionDocs.length || summary.total_documents || analytics?.documents_processed || 0;
-
-  // CANONICAL SOURCE: document status counts must come from the mapper's
-  // canonical_document_status field (always derived from documents array).
-  // Never estimate from issue counts or compliance rate — that causes drift
-  // between widgets showing different numbers for the same job.
-  const canonicalStatus =
-    summary?.canonical_document_status ??
-    summary?.document_status ??
-    analytics?.document_status_distribution ??
-    null;
-
+    analytics?.documents_processed ?? summary.total_documents ?? data?.documents?.length ?? 0;
+  // FIX: Backend sends both document_status and status_counts - check both
+  const statusDistribution = 
+    analytics?.document_status_distribution ?? 
+    summary?.document_status ?? 
+    summary?.status_counts ?? 
+    {};
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
-
-  const partialDocuments = extractionDocs.filter((doc) => (doc.status ?? '').toLowerCase() === 'warning');
-  const failedDocuments = extractionDocs.filter(
-    (doc) => (doc.status ?? '').toLowerCase() === 'error' && isFailedDocumentGuardrailCompliant(doc),
-  );
-  const verifiedCount = extractionDocs.filter((doc) => (doc.status ?? '').toLowerCase() === 'success').length;
-  const warningsCount = partialDocuments.length;
-  const errorsCount = failedDocuments.length;
-
-  const hasDocumentCounts = extractionDocs.length > 0;
-  // Header counts must align to list lengths computed from the same filtered sets.
-  const verified = hasDocumentCounts ? verifiedCount : formatNumber(canonicalStatus?.success);
-  const warnings = hasDocumentCounts ? warningsCount : formatNumber(canonicalStatus?.warning);
-  const errors = hasDocumentCounts ? errorsCount : formatNumber(canonicalStatus?.error);
-
-  const pipelineVerificationStatusRaw =
-    (structured as any)?.pipeline_verification_status ??
-    (summary as any)?.pipeline_verification_status;
-  const pipelineVerificationStatus =
-    typeof pipelineVerificationStatusRaw === 'string'
-      ? pipelineVerificationStatusRaw.toUpperCase()
-      : null;
-
-  const pipelineFailReasons = (
-    (structured as any)?.pipeline_verification_fail_reasons ??
-    (summary as any)?.pipeline_verification_fail_reasons ??
-    []
-  ) as string[];
-  const pipelineChecks = (
-    (structured as any)?.pipeline_verification_checks ??
-    (summary as any)?.pipeline_verification_checks ??
-    []
-  ) as Array<Record<string, unknown>>;
-  const shortFailReasons = pipelineFailReasons.slice(0, 3);
-
-  const pipelineSuppressedByExtraction = errors > 0;
-  const pipelineSuppressedByBlock = Boolean(isBlockedProp);
-  const pipelineIsVerified =
-    pipelineVerificationStatus === 'VERIFIED' &&
-    !pipelineSuppressedByExtraction &&
-    !pipelineSuppressedByBlock;
-  const pipelineIsUnverified =
-    pipelineVerificationStatus === 'UNVERIFIED' ||
-    (pipelineVerificationStatus === 'VERIFIED' &&
-      (pipelineSuppressedByExtraction || pipelineSuppressedByBlock));
-
-  const visibleSeverityCounts = (data?.issues ?? []).reduce(
-    (acc, issue) => {
-      const severity = normalizeIssueSeverity((issue as any)?.severity);
-      acc[severity] += 1;
-      return acc;
-    },
-    { critical: 0, major: 0, minor: 0 },
-  );
-  // Keep SummaryStrip issue counts aligned to visible issue-card taxonomy.
-  const derivedTotalIssues =
-    visibleSeverityCounts.critical +
-    visibleSeverityCounts.major +
-    visibleSeverityCounts.minor;
-  const totalIssues = typeof totalIssuesProp === 'number' ? totalIssuesProp : derivedTotalIssues;
-  const isBlocked = Boolean(isBlockedProp);
-  // Use passed compliance score (from analyticsData, which tracks v2 scorer output)
-  const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
   
-  // Extraction is independent from compliance findings.
-  const hasIssues = totalIssues > 0;
-  const hasCriticalIssues = (criticalIssueCount ?? 0) > 0;
-  const verdictReject = (finalVerdict ?? '').toUpperCase() === 'REJECT';
-  const complianceOutcome: 'clean' | 'warning' | 'reject' =
-    totalIssues === 0 && complianceRate >= 90 && !isBlocked && !verdictReject && !hasCriticalIssues
-      ? 'clean'
-      : complianceRate < 50 || verdictReject || hasCriticalIssues || isBlocked
-      ? 'reject'
-      : 'warning';
-  const showBlockingReasonPanel = (isBlocked || verdictReject) && totalIssues === 0;
-  const blockingReasonText =
-    blockReason ||
-    (verdictReject
-      ? 'Final verdict blocks submission. Resolve blocking issues before proceeding.'
-      : 'Validation gate is blocked; resolve blocking issues before proceeding.');
-
-  const nextStep =
-    verdictReject || hasCriticalIssues
-      ? {
-          cta: 'Resolve Critical Issues',
-          to: '?tab=discrepancies',
-          helper: 'Critical compliance issues must be resolved before submission.',
-        }
-      : hasIssues
-      ? {
-          cta: 'Fix & Re-process',
-          to: '/lcopilot/exporter-dashboard?section=upload',
-          helper: 'Review and resolve issues before reprocessing.',
-        }
-      : isReadyToSubmit
-      ? {
-          cta: 'Proceed to Bank Submission',
-          to: '?tab=customs',
-          helper: 'Validation is clean; proceed with final submission checks.',
-        }
-      : {
-          cta: 'Review Before Submission',
-          to: '?tab=overview',
-          helper: 'Do a final review before initiating submission.',
-        };
-
-  const progressValue = documentsProcessed > 0
-    ? Math.round(((verified + warnings) / documentsProcessed) * 100)
+  // Get issue counts - use actual count from parent if available
+  const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
+  // Use passed compliance score, or calculate fallback
+  const complianceRate = complianceScore ?? summary.compliance_rate ?? 
+    (totalIssues === 0 ? 100 : Math.max(0, 100 - (totalIssues * 15)));
+  
+  // Document status - fallback to calculated values if distribution is empty
+  const successFromDist = formatNumber(statusDistribution.success);
+  const warningsFromDist = formatNumber(statusDistribution.warning);
+  const errorsFromDist = formatNumber(statusDistribution.error);
+  
+  // If distribution is all zeros but we have documents, calculate from compliance
+  const hasDistribution = successFromDist > 0 || warningsFromDist > 0 || errorsFromDist > 0;
+  
+  let verified: number;
+  let warnings: number;
+  let errors: number;
+  
+  if (hasDistribution) {
+    verified = successFromDist;
+    warnings = warningsFromDist;
+    errors = errorsFromDist;
+  } else {
+    // Fallback: estimate from compliance rate and total issues
+    if (complianceRate >= 100 && totalIssues === 0) {
+      verified = documentsProcessed;
+      warnings = 0;
+      errors = 0;
+    } else if (totalIssues > 0) {
+      // If there are issues, at least 1 doc has warnings
+      warnings = Math.min(totalIssues, documentsProcessed);
+      verified = Math.max(0, documentsProcessed - warnings);
+      errors = 0;
+    } else {
+      verified = documentsProcessed;
+      warnings = 0;
+      errors = 0;
+    }
+  }
+  
+  // Has issues if compliance < 100 or there are warnings/errors
+  const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
+  
+  const progressValue = documentsProcessed > 0 
+    ? Math.round(((verified + warnings) / documentsProcessed) * 100) 
     : 0;
 
   // Status icon based on overall status prop or calculated
-  const effectiveStatus = (isBlocked || verdictReject)
-    ? 'error'
-    : overallStatus ?? (errors > 0 ? 'error' : hasIssues ? 'warning' : 'success');
+  const effectiveStatus = overallStatus ?? (errors > 0 ? 'error' : hasIssues ? 'warning' : 'success');
   const statusIcon = effectiveStatus === 'success' ? (
     <CheckCircle className="w-12 h-12 text-emerald-500" />
   ) : effectiveStatus === 'error' ? (
@@ -212,15 +104,10 @@ export function SummaryStrip({
           <div className="flex flex-col items-center gap-3 md:min-w-[150px]">
             {statusIcon}
             {packGenerated && (
-              <div className="space-y-1 text-center">
-                <Badge className="bg-emerald-600 text-white border-0 hover:bg-emerald-700">
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                  Customs Pack File Generated
-                </Badge>
-                <p className="text-[11px] text-muted-foreground max-w-[180px]">
-                  File generation does not confirm bank/customs submission readiness.
-                </p>
-              </div>
+              <Badge className="bg-emerald-600 text-white border-0 hover:bg-emerald-700">
+                <CheckCircle className="w-3 h-3 mr-1" />
+                Customs Pack Ready
+              </Badge>
             )}
             {lcTypeLabel && (
               <div className="text-center">
@@ -241,54 +128,6 @@ export function SummaryStrip({
           {/* Processing Summary */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Processing Summary</h3>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">Trust Status</span>
-                <Badge
-                  className={pipelineIsVerified
-                    ? 'bg-emerald-600 text-white border-0 hover:bg-emerald-700'
-                    : pipelineIsUnverified
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700'
-                    : 'bg-muted text-muted-foreground border border-border'}
-                  title={
-                    pipelineIsVerified
-                      ? 'Backend verification passed'
-                      : pipelineIsUnverified
-                      ? 'Backend verification failed — not bank-ready'
-                      : 'Pipeline verification status not provided'
-                  }
-                >
-                  {pipelineIsVerified ? 'VERIFIED' : pipelineIsUnverified ? 'UNVERIFIED' : 'NOT PROVIDED'}
-                </Badge>
-                {pipelineIsUnverified && (
-                  <span className="text-xs text-amber-700 dark:text-amber-300">not bank-ready</span>
-                )}
-              </div>
-              {pipelineIsUnverified && shortFailReasons.length > 0 && (
-                <div className="rounded-md border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/30 p-2">
-                  <ul className="text-xs text-amber-900 dark:text-amber-100 space-y-1">
-                    {shortFailReasons.map((reason, index) => (
-                      <li key={`${reason}-${index}`}>• {reason}</li>
-                    ))}
-                  </ul>
-                  {(pipelineFailReasons.length > shortFailReasons.length || pipelineChecks.length > 0) && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-[11px] text-amber-800 dark:text-amber-200">
-                        View verification details
-                      </summary>
-                      <div className="mt-1 space-y-1 text-[11px] text-amber-900/90 dark:text-amber-100/90">
-                        {pipelineFailReasons.slice(shortFailReasons.length).map((reason, index) => (
-                          <p key={`extra-${index}`}>• {reason}</p>
-                        ))}
-                        {pipelineChecks.length > 0 && (
-                          <p className="text-amber-700 dark:text-amber-300">Checks: {pipelineChecks.length}</p>
-                        )}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              )}
-            </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Documents:</span>
@@ -310,115 +149,26 @@ export function SummaryStrip({
           {/* Divider */}
           <div className="hidden md:block w-px bg-border self-stretch" />
 
-          {/* Document Status — extraction quality, not LC compliance.
-               These numbers match the Documents tab and Overview stats card.
-               LC compliance is shown separately as "Compliance Rate" above. */}
+          {/* Document Status */}
           <div className="flex-1 space-y-3">
-            <h3 className="font-semibold text-foreground text-sm">Extraction Status</h3>
+            <h3 className="font-semibold text-foreground text-sm">Document Status</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>{verified} extracted OK</span>
+                <span>{verified} documents verified</span>
               </div>
               {warnings > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span>{warnings} partial extraction</span>
+                  <span>{warnings} with warnings</span>
                 </div>
               )}
               {errors > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span>{errors} extraction failed</span>
+                  <span>{errors} with errors</span>
                 </div>
               )}
-
-              {(failedDocuments.length > 0 || partialDocuments.length > 0) && (
-                <div className="pt-1 border-t border-border/30 space-y-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Affected Documents</p>
-
-                  {failedDocuments.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium">Failed ({failedDocuments.length})</p>
-                      {failedDocuments.map((doc) => {
-                        const score = toConfidenceScore((doc.extractedFields as any)?._extraction_confidence);
-                        const reason = normalizeExtractionReason(doc.failedReason);
-                        return (
-                          <div
-                            key={`failed-${doc.id}`}
-                            className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-xs rounded border border-border/50 p-2 cursor-pointer hover:bg-muted/50"
-                            onClick={() => onOpenDocumentDetails?.(doc.documentId || doc.id)}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{doc.name}</p>
-                              <p className="text-muted-foreground truncate">{reason}</p>
-                            </div>
-                            <span className="text-muted-foreground">{formatConfidence(score)}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onOpenDocumentDetails?.(doc.documentId || doc.id);
-                              }}
-                            >
-                              View details
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {partialDocuments.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium">Partial ({partialDocuments.length})</p>
-                      {partialDocuments.map((doc) => {
-                        const score = toConfidenceScore((doc.extractedFields as any)?._extraction_confidence);
-                        const reason = normalizeExtractionReason(doc.failedReason || (confidenceBand(score) === 'Low' ? 'Low extraction confidence' : 'Missing required fields'));
-                        return (
-                          <div
-                            key={`partial-${doc.id}`}
-                            className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-xs rounded border border-border/50 p-2 cursor-pointer hover:bg-muted/50"
-                            onClick={() => onOpenDocumentDetails?.(doc.documentId || doc.id)}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{doc.name}</p>
-                              <p className="text-muted-foreground truncate">{reason}</p>
-                            </div>
-                            <span className="text-muted-foreground">{formatConfidence(score)}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onOpenDocumentDetails?.(doc.documentId || doc.id);
-                              }}
-                            >
-                              View details
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="pt-1 border-t border-border/30 space-y-1">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance Outcome (Issue-Based)</p>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${complianceOutcome === 'clean' ? 'bg-emerald-500' : complianceOutcome === 'warning' ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                  <span className="text-muted-foreground">
-                    {complianceOutcome === 'clean' ? 'Clean' : complianceOutcome === 'warning' ? 'Warning' : 'Reject'}
-                    {totalIssues > 0 ? ` · ${totalIssues} issue${totalIssues !== 1 ? 's' : ''}` : ''}
-                  </span>
-                </div>
-              </div>
             </div>
             <Progress value={progressValue} className="h-2" />
           </div>
@@ -429,23 +179,23 @@ export function SummaryStrip({
           {/* Next Steps */}
           <div className="flex-1 space-y-3">
             <h3 className="font-semibold text-foreground text-sm">Next Steps</h3>
-            {showBlockingReasonPanel && (
-              <div className="rounded-md border border-rose-200 bg-rose-50/70 dark:bg-rose-950/30 p-3 text-xs text-rose-700 dark:text-rose-200">
-                <p className="uppercase tracking-wide text-[10px] font-semibold">Blocking Reason</p>
-                <p className="mt-1">{blockingReasonText}</p>
-              </div>
-            )}
-            <>
-              <Link to={nextStep.to}>
-                <Button variant="outline" size="sm" className="w-full">
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  {nextStep.cta}
-                </Button>
-              </Link>
-              <p className="text-xs text-muted-foreground">
-                {nextStep.helper}
+            {hasIssues ? (
+              <>
+                <Link to="/lcopilot/exporter-dashboard?section=upload">
+                  <Button variant="outline" size="sm" className="w-full">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Fix & Re-process
+                  </Button>
+                </Link>
+                <p className="text-xs text-muted-foreground">
+                  Review warnings before bank submission
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                All documents verified successfully
               </p>
-            </>
+            )}
           </div>
         </div>
       </CardContent>

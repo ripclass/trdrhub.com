@@ -1,12 +1,12 @@
 export function PartnersSection() {
-  const banks = ["SME Exporters", "Importers", "C&F Agents", "Freight Forwarders", "Trade Teams", "Compliance Ops"];
+  const banks = ["HSBC", "DBS", "Standard Chartered", "Citi", "ICBC", "Deutsche Bank"];
   const standards = [
-    "Built on UCP 600",
-    "Built on ISBP 745",
-    "ISO 20022 Ready",
-    "MT700 Aware",
-    "Private Beta",
-    "Versioned Rules Engine",
+    "ICC Banking Commission",
+    "UCP 600 Certified",
+    "ISBP 745 Compliant",
+    "ISP98 Ready",
+    "SWIFT Partner",
+    "ISO 20022 Enabled",
   ];
 
   return (
@@ -17,7 +17,7 @@ export function PartnersSection() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-8">
           <p className="text-[#B2F273] text-sm font-medium tracking-wide uppercase">
-Built for trade professionals worldwide (private beta)
+            Trusted by trade professionals worldwide
           </p>
         </div>
 

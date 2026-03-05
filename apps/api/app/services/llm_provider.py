@@ -55,11 +55,9 @@ class OpenAIProvider(LLMProviderInterface):
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
-        self.openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         
-        if not self.api_key and not self.openrouter_api_key:
-            logger.warning("OpenAI/OpenRouter API key not configured")
+        if not self.api_key:
+            logger.warning("OpenAI API key not configured")
     
     async def generate(
         self,
@@ -73,37 +71,22 @@ class OpenAIProvider(LLMProviderInterface):
         try:
             import openai
             
+            if not self.api_key:
+                raise ValueError("OpenAI API key not configured")
+            
             # Configure timeout for OpenAI client (20s total, 60s read timeout)
             import httpx
             timeout = httpx.Timeout(20.0, read=60.0)
-            use_openrouter = bool(kwargs.pop("use_openrouter", False))
-            model_override = kwargs.pop("model_override", None)
-            model_name = model_override or self.model
-
-            if use_openrouter:
-                if not (self.openrouter_api_key or self.api_key):
-                    raise ValueError("OpenRouter API key not configured")
-            else:
-                if not self.api_key:
-                    raise ValueError("OpenAI API key not configured")
-
-            client_api_key = self.api_key
-            client_kwargs = {"timeout": timeout}
-            if use_openrouter:
-                client_api_key = self.openrouter_api_key or self.api_key
-                client_kwargs["base_url"] = self.openrouter_base_url
-                client_kwargs["default_headers"] = {
-                    "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://lcopilot.local"),
-                    "X-Title": os.getenv("OPENROUTER_TITLE", "LCopilot"),
-                }
-
-            client = openai.AsyncOpenAI(api_key=client_api_key, **client_kwargs)
+            client = openai.AsyncOpenAI(api_key=self.api_key, timeout=timeout)
             
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
             
+            model_override = kwargs.pop("model_override", None)
+            model_name = model_override or self.model
+
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=messages,
@@ -364,16 +347,6 @@ class LLMProviderFactory:
                 except Exception:
                     logger.warning("Anthropic not available, trying Gemini")
                     return GeminiProvider()
-
-    @staticmethod
-    def get_provider(provider_name: Optional[str] = None) -> LLMProviderInterface:
-        """Backward-compatible alias for create_provider."""
-        return LLMProviderFactory.create_provider(provider_name)
-
-    @staticmethod
-    def _use_openrouter_default() -> bool:
-        """Use OpenRouter when it's configured and no OpenAI key is present."""
-        return bool(os.getenv("OPENROUTER_API_KEY")) and not bool(os.getenv("OPENAI_API_KEY"))
     
     @staticmethod
     def _get_provider_name(provider: LLMProviderInterface) -> str:
@@ -399,7 +372,7 @@ class LLMProviderFactory:
         # Try OpenAI
         try:
             openai_provider = OpenAIProvider()
-            if openai_provider.api_key or openai_provider.openrouter_api_key:
+            if openai_provider.api_key:
                 providers.append(("openai", openai_provider))
         except Exception as e:
             logger.debug(f"OpenAI provider not available: {e}")
@@ -438,9 +411,6 @@ class LLMProviderFactory:
         Returns:
             (output_text, tokens_in, tokens_out, provider_used)
         """
-        if "use_openrouter" not in kwargs:
-            kwargs["use_openrouter"] = LLMProviderFactory._use_openrouter_default()
-
         provider = LLMProviderFactory.create_provider(primary_provider)
         provider_name = LLMProviderFactory._get_provider_name(provider)
         
@@ -543,20 +513,12 @@ class LLMProviderFactory:
         # Run all providers in parallel
         async def run_provider(name: str, provider: LLMProviderInterface) -> ProviderResult:
             try:
-                provider_kwargs = dict(kwargs)
-                if (
-                    "use_openrouter" not in provider_kwargs
-                    and isinstance(provider, OpenAIProvider)
-                    and LLMProviderFactory._use_openrouter_default()
-                ):
-                    provider_kwargs["use_openrouter"] = True
-
                 output, tokens_in, tokens_out = await provider.generate(
                     prompt=prompt,
                     system_prompt=system_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    **provider_kwargs,
+                    **kwargs,
                 )
                 cost = provider.estimate_cost(tokens_in, tokens_out)
                 return ProviderResult(

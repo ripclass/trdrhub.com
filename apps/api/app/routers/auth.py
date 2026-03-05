@@ -6,7 +6,6 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.utils.db_resilience import raise_db_http_503_if_unavailable
 
 from ..database import get_db
 from app.models import User, Company
@@ -243,28 +242,10 @@ async def get_user_profile(
         try:
             current_user = await get_current_user(credentials, db)
         except HTTPException as auth_error:
+            # Re-raise HTTP exceptions as-is (401, 403, etc.)
             logger.error(f"Authentication failed in /auth/me: {auth_error.detail}")
-
-            # Supabase-only private beta fallback: decode token claims and upsert user.
-            if auth_error.status_code in (401, 403):
-                try:
-                    import jwt as pyjwt
-                    from app.core.security import _upsert_external_user  # pylint: disable=protected-access
-
-                    claims = pyjwt.decode(credentials.credentials, options={"verify_signature": False})
-                    if claims.get("sub"):
-                        current_user = _upsert_external_user(db, claims)
-                        db.commit()
-                        db.refresh(current_user)
-                        logger.warning("Using /auth/me fallback profile from token claims")
-                    else:
-                        raise
-                except Exception:
-                    raise auth_error
-            else:
-                raise
+            raise
         except Exception as e:
-            raise_db_http_503_if_unavailable(e)
             # Log full traceback for debugging
             error_trace = traceback.format_exc()
             logger.error(f"Unexpected error during authentication: {str(e)}\n{error_trace}")
@@ -306,7 +287,6 @@ async def get_user_profile(
         # Re-raise HTTP exceptions (401, 403, 500 from auth, etc.)
         raise
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         # Log the error for debugging
         error_trace = traceback.format_exc()
         logger.error(f"Error in /auth/me: {str(e)}\n{error_trace}")

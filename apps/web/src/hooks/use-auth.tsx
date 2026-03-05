@@ -176,9 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const fetchUserProfile = React.useCallback(async (providedToken?: string) => {
-    let supabaseToken = providedToken
     try {
       authLogger.debug('fetchUserProfile starting', providedToken ? 'with token' : 'will get token')
+      
+      let supabaseToken = providedToken
       
       if (!supabaseToken) {
         // Fallback: get token from session if not provided (with timeout)
@@ -253,39 +254,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       return mapped
-    } catch (error: any) {
+    } catch (error) {
       authLogger.error('Failed to load user profile', error)
-
-      // Resilience fallback: if backend /auth/me returns 401 but Supabase login succeeded,
-      // derive a temporary profile from Supabase user so dashboards remain accessible.
-      if (supabaseToken) {
-        try {
-          // Network-free fallback: decode JWT locally to avoid auth endpoint instability.
-          const parts = supabaseToken.split('.')
-          if (parts.length >= 2) {
-            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
-            const rawRole = payload?.role || payload?.app_metadata?.role || payload?.user_metadata?.role || 'exporter'
-            const email = payload?.email || 'user@trdrhub.com'
-            const uid = payload?.sub || `sb-${Date.now()}`
-            const fullName = payload?.user_metadata?.full_name || payload?.name || email
-
-            const fallbackUser: User = {
-              id: uid,
-              email,
-              full_name: fullName,
-              username: fullName,
-              role: mapBackendRole(String(rawRole)),
-              isActive: true,
-            }
-            authLogger.warn('Using JWT-decoded fallback profile due to profile fetch failure')
-            setUser(fallbackUser)
-            return fallbackUser
-          }
-        } catch (fallbackErr) {
-          authLogger.warn('JWT decode fallback failed', fallbackErr)
-        }
-      }
-
       if (GUEST_MODE) {
         setGuest()
         return {
@@ -371,27 +341,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (mounted) setIsLoading(false)
           }
         } else {
-          // No session found - wait a bit for onAuthStateChange to fire.
-          // Use 3s to match the getSession timeout above; this gives Supabase
-          // enough time to restore a session from storage before we give up.
+          // No session found - wait a bit for onAuthStateChange to fire
+          // If it doesn't fire within 2 seconds, assume no session
           initTimeout = setTimeout(() => {
             if (mounted && !profileFetchedRef.current) {
               if (GUEST_MODE) setGuest()
               setIsLoading(false)
             }
-          }, 3000)
+          }, 2000)
         }
       } catch (error: any) {
         authLogger.warn('Auth init: Failed to get session:', error?.message)
         if (!mounted) return
-        // On timeout/error: give onAuthStateChange a chance to fire first
-        // before declaring no session. 3 seconds is generous enough.
         initTimeout = setTimeout(() => {
           if (mounted && !profileFetchedRef.current) {
             if (GUEST_MODE) setGuest()
             setIsLoading(false)
           }
-        }, 3000)
+        }, 2000)
       }
     }
 
@@ -449,12 +416,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       authLogger.debug('Supabase session obtained')
       
-      // Mark profile as being fetched BEFORE the async call so that the concurrent
-      // onAuthStateChange handler (which also fires on SIGNED_IN) skips its own
-      // fetchUserProfile call and avoids a double-fetch race that can end with
-      // user=null if one of the two concurrent calls fails.
-      profileFetchedRef.current = true
-      
       // For Supabase users: Skip /auth/login (it expects email/password, not Supabase tokens)
       // The /auth/login endpoint is for backend-managed users only
       // Supabase users authenticate directly via /auth/me with their Supabase token
@@ -465,37 +426,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return profile
     } catch (error: any) {
       authLogger.error('Login failed:', error?.message)
-
-      // Last-resort resilience: if Supabase session exists, allow login continuation.
-      try {
-        const { data } = await supabase.auth.getSession()
-        const token = data?.session?.access_token
-        if (token) {
-          const parts = token.split('.')
-          if (parts.length >= 2) {
-            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
-            const rawRole = payload?.role || payload?.app_metadata?.role || payload?.user_metadata?.role || 'exporter'
-            const fallbackEmail = payload?.email || (data?.session?.user?.email ?? '')
-            const uid = payload?.sub || `sb-${Date.now()}`
-            const fullName = payload?.user_metadata?.full_name || payload?.name || fallbackEmail
-
-            const fallbackUser: User = {
-              id: uid,
-              email: fallbackEmail,
-              full_name: fullName,
-              username: fullName,
-              role: mapBackendRole(String(rawRole)),
-              isActive: true,
-            }
-            authLogger.warn('Login fallback: continuing with existing Supabase session')
-            setUser(fallbackUser)
-            return fallbackUser
-          }
-        }
-      } catch (sessionErr) {
-        authLogger.warn('Login fallback session check failed', sessionErr)
-      }
-
       throw error
     } finally {
       setIsLoading(false)

@@ -20,10 +20,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.core.security import get_current_user
+from app.auth import get_current_user
 from app.models import User
 from app.services.usage_service import get_usage_service
-from app.utils.db_resilience import raise_db_http_503_if_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -64,18 +63,6 @@ class RecordUsageRequest(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
-def _resolve_company_id(current_user: User, db: Session) -> Optional[UUID]:
-    """Return company_id for the user, re-querying from DB if the object is stale."""
-    if current_user.company_id:
-        return current_user.company_id
-    # Re-query in case the in-memory object missed a commit from the auth path.
-    from app.models import User as UserModel
-    fresh = db.query(UserModel).filter(UserModel.id == current_user.id).first()
-    if fresh and fresh.company_id:
-        return fresh.company_id
-    return None
-
-
 @router.get("/current")
 async def get_current_usage(
     db: Session = Depends(get_db),
@@ -86,13 +73,12 @@ async def get_current_usage(
     
     Returns usage counts for all operations and any overage charges.
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
-        usage = await service.get_current_usage(company_id)
+        usage = await service.get_current_usage(current_user.company_id)
         
         if "error" in usage:
             raise HTTPException(status_code=500, detail=usage["error"])
@@ -102,7 +88,6 @@ async def get_current_usage(
     except HTTPException:
         raise
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get current usage: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -117,13 +102,12 @@ async def get_remaining_limits(
     
     Shows plan limits, current usage, and remaining quota for each tool.
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
-        limits = await service.get_remaining_limits(company_id)
+        limits = await service.get_remaining_limits(current_user.company_id)
         
         if "error" in limits:
             raise HTTPException(status_code=500, detail=limits["error"])
@@ -133,7 +117,6 @@ async def get_remaining_limits(
     except HTTPException:
         raise
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get remaining limits: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -149,17 +132,15 @@ async def get_usage_history(
     
     Returns monthly usage summaries and overage charges.
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
-        history = await service.get_usage_history(company_id, months)
+        history = await service.get_usage_history(current_user.company_id, months)
         return {"history": history, "months_requested": months}
         
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get usage history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -178,14 +159,13 @@ async def get_usage_logs(
     
     Shows individual operations with timestamps, costs, and metadata.
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
         logs = await service.get_usage_logs(
-            company_id,
+            current_user.company_id,
             limit=limit,
             offset=offset,
             tool=tool,
@@ -194,7 +174,6 @@ async def get_usage_logs(
         return {"logs": logs, "limit": limit, "offset": offset}
         
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get usage logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -213,14 +192,13 @@ async def check_usage_limit(
     2. Calculate potential overage charges
     3. Allow frontend to show confirmation for overages
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
         allowed, message, info = await service.check_limit(
-            company_id,
+            current_user.company_id,
             request.operation,
             request.quantity
         )
@@ -236,7 +214,6 @@ async def check_usage_limit(
         )
         
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to check usage limit: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -253,14 +230,13 @@ async def record_usage(
     This is typically called automatically by tool endpoints after
     completing billable operations. Not intended for direct use.
     """
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         service = get_usage_service(db)
         success, message, overage_cost = await service.record_usage(
-            company_id=company_id,
+            company_id=current_user.company_id,
             user_id=current_user.id,
             operation=request.operation,
             tool=request.tool,
@@ -281,7 +257,6 @@ async def record_usage(
     except HTTPException:
         raise
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to record usage: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -303,15 +278,14 @@ async def get_subscription_info(
     from app.models.hub import HubSubscription, HubPlan
     from sqlalchemy import select, and_
     
-    company_id = _resolve_company_id(current_user, db)
-    if not company_id:
-        raise HTTPException(status_code=400, detail="User not associated with a company. Complete onboarding first.")
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User not associated with a company")
     
     try:
         # Get active subscription
         query = select(HubSubscription).where(
             and_(
-                HubSubscription.company_id == company_id,
+                HubSubscription.company_id == current_user.company_id,
                 HubSubscription.status == "active"
             )
         )
@@ -353,7 +327,6 @@ async def get_subscription_info(
         }
         
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to get subscription info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -391,6 +364,6 @@ async def list_available_plans(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        raise_db_http_503_if_unavailable(e)
         logger.error(f"Failed to list plans: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+

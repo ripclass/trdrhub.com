@@ -6,7 +6,6 @@ import json
 import copy
 import os
 import time
-import hashlib
 
 import logging
 from io import BytesIO
@@ -43,7 +42,6 @@ from app.services.audit_service import AuditService
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
-from app.utils.db_resilience import is_database_unavailable_error
 from app.config import settings
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.lc_classifier import detect_lc_type
@@ -78,12 +76,12 @@ from app.routers.validation import (
     count_issue_severity as _count_issue_severity,
     format_deterministic_issue as _format_deterministic_issue,
     # Document builder
-    build_document_summaries as _canonical_build_document_summaries,
-    build_document_lookup as _canonical_build_document_lookup,
-    match_issue_documents as _canonical_match_issue_documents,
-    build_documents_section as _canonical_build_documents_section,
+    build_document_summaries as _build_document_summaries,
+    build_document_lookup as _build_document_lookup,
+    match_issue_documents as _match_issue_documents,
+    build_documents_section as _build_documents_section,
     # Response builder
-    compose_processing_summary as _canonical_compose_processing_summary,
+    compose_processing_summary as _compose_processing_summary,
     build_analytics_section as _build_analytics_section,
     build_timeline_entries as _build_timeline_entries,
     build_document_processing_analytics as _build_document_processing_analytics,
@@ -117,7 +115,7 @@ from app.services.validation.pipeline import (
     ValidationInput,
     ValidationOutput,
 )
-from app.services.validation.validation_gate import ValidationGate, GateStatus, GateResult
+from app.services.validation.validation_gate import ValidationGate, GateStatus
 from app.services.validation.compliance_scorer import ComplianceScorer
 from app.services.extraction.lc_baseline import LCBaseline, FieldResult, FieldPriority, ExtractionStatus
 
@@ -143,17 +141,8 @@ from app.services.validation.confidence_weighting import (
     batch_adjust_issues,
     calculate_overall_extraction_confidence,
 )
-from app.services.validation.arbitration import compute_arbitration_decision, compute_shadow_arbitration
-from app.services.ai.model_router import get_router_evidence
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
-)
-from app.routers.validation.semantics import (
-    normalize_extraction_status,
-    compliance_status_from_validation,
-    require_failed_reason,
-    assert_no_status_cross_mix,
-    mark_unverified,
 )
 from app.services.rules_service import get_ucp_description_sync, get_isbp_description_sync
 from app.services.extraction.two_stage_extractor import (
@@ -172,27 +161,6 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
     if _two_stage_extractor is None:
         _two_stage_extractor = TwoStageExtractor()
     return _two_stage_extractor
-
-
-def _ai_first_has_fields(structured: Optional[Dict[str, Any]]) -> bool:
-    if not structured or not isinstance(structured, dict):
-        return False
-    for key, value in structured.items():
-        if key.startswith("_"):
-            continue
-        if value is None:
-            continue
-        if value == "" or value == {} or value == []:
-            continue
-        return True
-    return False
-
-
-def _ai_first_success(status: Optional[str], structured: Optional[Dict[str, Any]]) -> bool:
-    normalized = str(status or "").strip().lower()
-    if normalized in {"failed", "error"}:
-        return False
-    return _ai_first_has_fields(structured)
 
 # _filter_user_facing_fields moved to app.routers.validation.utilities
 
@@ -290,7 +258,6 @@ def _apply_two_stage_validation(
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 logger = logging.getLogger(__name__)
 PROFILE_DB = os.getenv("ENABLE_QUERY_PROFILING", "false").lower() == "true"
-EXTRACTION_DEBUG = os.getenv("LCOPILOT_EXTRACTION_DEBUG", "false").lower() in {"1", "true", "yes"}
 
 
 @contextmanager
@@ -317,33 +284,17 @@ def get_or_create_demo_user(db: Session) -> User:
         if not demo_company_row:
             # Insert demo company using raw SQL (matching actual schema)
             company_id = uuid4()
-            try:
-                db.execute(
-                    text("""
-                        INSERT INTO companies (id, name, type, created_at, updated_at)
-                        VALUES (:id, :name, :type, NOW(), NOW())
-                    """),
-                    {
-                        "id": company_id,
-                        "name": "Demo Company",
-                        "type": "sme"
-                    }
-                )
-            except Exception as insert_err:
-                if "column \"type\" does not exist" in str(insert_err).lower():
-                    logger.warning("Demo company insert fallback: companies.type missing; inserting without type column")
-                    db.execute(
-                        text("""
-                            INSERT INTO companies (id, name, created_at, updated_at)
-                            VALUES (:id, :name, NOW(), NOW())
-                        """),
-                        {
-                            "id": company_id,
-                            "name": "Demo Company",
-                        }
-                    )
-                else:
-                    raise
+            db.execute(
+                text("""
+                    INSERT INTO companies (id, name, type, created_at, updated_at)
+                    VALUES (:id, :name, :type, NOW(), NOW())
+                """),
+                {
+                    "id": company_id,
+                    "name": "Demo Company",
+                    "type": "sme"
+                }
+            )
             db.flush()
             demo_company_id = company_id
         else:
@@ -552,16 +503,14 @@ async def validate_doc(
         detected_doc_types = [
             doc.get("documentType") or doc.get("document_type")
             for doc in (extracted_context.get("documents") if extracted_context else []) or []
-            if isinstance(doc, dict)
         ]
         
         # Check if any LC-like document was found
         lc_document_types = {"letter_of_credit", "swift_message", "lc_application"}
-        lc_payload = payload.get("lc") if isinstance(payload.get("lc"), dict) else {}
         has_lc_document = (
             any(documents_presence.get(dt, {}).get("present") for dt in lc_document_types) or
             any(dt in lc_document_types for dt in detected_doc_types) or
-            bool(lc_payload.get("raw_text"))  # Also check if LC data exists
+            bool(payload.get("lc", {}).get("raw_text"))  # Also check if LC data exists
         )
         
         # Block if no LC found on Exporter dashboard (LC is required for validation)
@@ -606,14 +555,14 @@ async def validate_doc(
 
         lc_context = payload.get("lc") or {}
         shipment_context = _resolve_shipment_context(payload)
-
+        
         # First, check if LC type was extracted from the document (from :40A: or AI extraction)
         extracted_lc_type = (
             lc_context.get("lc_type") or 
             lc_context.get("form_of_doc_credit") or
             (lc_context.get("mt700") or {}).get("form_of_doc_credit")
         )
-        extracted_lc_type_confidence = _safe_float(lc_context.get("lc_type_confidence", 0), default=0.0)
+        extracted_lc_type_confidence = lc_context.get("lc_type_confidence", 0)
         extracted_lc_type_reason = lc_context.get("lc_type_reason", "")
         
         # If extracted, use it; otherwise fall back to import/export detection
@@ -633,20 +582,19 @@ async def validate_doc(
             lc_type_source = "auto"
             lc_type = lc_type_guess["lc_type"]
             lc_type_reason = lc_type_guess["reason"]
-            lc_type_confidence = _safe_float(lc_type_guess.get("confidence"), default=0.0)
+            lc_type_confidence = lc_type_guess["confidence"]
             
             # AI Enhancement: If rule-based confidence is low, use AI for better accuracy
             if lc_type_confidence < 0.70 or lc_type == LCType.UNKNOWN.value:
                 try:
                     from app.services.document_intelligence import detect_lc_type_ai
-                    lc_text = extracted_context.get("lc_text") or lc_context.get("raw_text", "") if extracted_context else lc_context.get("raw_text", "")
+                    lc_text = context.get("lc_text") or lc_context.get("raw_text", "")
                     if lc_text and len(lc_text) > 100:
                         ai_result = await detect_lc_type_ai(lc_text)
-                        ai_confidence = _safe_float(ai_result.get("confidence", 0), default=0.0) if isinstance(ai_result, dict) else 0.0
-                        if ai_confidence > lc_type_confidence:
+                        if ai_result.get("confidence", 0) > lc_type_confidence:
                             lc_type = ai_result.get("lc_type", lc_type)
                             lc_type_reason = ai_result.get("reason", lc_type_reason)
-                            lc_type_confidence = ai_confidence
+                            lc_type_confidence = ai_result.get("confidence", lc_type_confidence)
                             lc_type_source = "ai"
                             lc_type_guess = {
                                 "lc_type": lc_type,
@@ -827,105 +775,24 @@ async def validate_doc(
         v2_baseline = None
         v2_issues = []
         v2_crossdoc_issues = []
-        ai_metadata: Dict[str, Any] = {}
-        extraction_confidence_summary: Optional[Dict[str, Any]] = None
         
         try:
             # Build LCBaseline from extracted context
             v2_baseline = _build_lc_baseline_from_context(lc_context)
             
             # Run validation gate
-            lc_is_likely = _is_likely_lc_document(
-                lc_context=lc_context,
-                extracted_context=extracted_context,
-                lc_type=lc_type,
-            )
-
-            v2_gate = ValidationGate(
-                # Gate should be strict only when document content is actually LC-like.
-                # Non-LC-only test fixtures (expected pass in API-only phase) currently
-                # send synthetic docs labeled as lc; we keep pass-through behavior there.
-                min_completeness=(ValidationGate.DEFAULT_MIN_COMPLETENESS if lc_is_likely else 0.0),
-                min_critical_completeness=(
-                    ValidationGate.DEFAULT_MIN_CRITICAL_COMPLETENESS if lc_is_likely else 0.0
-                ),
-                require_lc_number=lc_is_likely,
-                require_amount=lc_is_likely,
-                require_party=lc_is_likely,
-            )
+            v2_gate = ValidationGate()
             v2_gate_result = v2_gate.check_from_baseline(v2_baseline)
-
-            extraction_empty = False
-            extraction_empty_reason = None
-            documents_for_check = (
-                (extracted_context.get("documents") if extracted_context else None)
-                or payload.get("documents")
-                or []
-            )
-            is_empty, empty_reason = _is_extraction_empty_from_baseline(v2_baseline, documents_for_check)
-            if is_empty:
-                extraction_empty = True
-                extraction_empty_reason = empty_reason
-                v2_gate_result = GateResult(
-                    status=GateStatus.BLOCKED,
-                    can_proceed=False,
-                    block_reason="empty_extraction",
-                    warnings=[],
-                    baseline=v2_baseline,
-                    completeness=v2_baseline.extraction_completeness if v2_baseline else 0.0,
-                    critical_completeness=v2_baseline.critical_completeness if v2_baseline else 0.0,
-                    missing_critical=[
-                        f.field_name for f in v2_baseline.get_missing_critical()
-                    ] if v2_baseline else [],
-                    missing_required=[
-                        f.field_name for f in v2_baseline.get_missing_required()
-                    ] if v2_baseline else [],
-                    blocking_issues=[{
-                        "rule": "LC-GATE-EMPTY-EXTRACTION",
-                        "code": "LC-GATE-EMPTY-EXTRACTION",
-                        "title": "No Extractable Content",
-                        "passed": False,
-                        "severity": "critical",
-                        "message": "No extractable text or structured fields were found in the uploaded documents.",
-                        "expected": "Readable LC text and fields",
-                        "actual": "No extractable content detected",
-                        "suggestion": "Upload a readable document with visible text or re-run OCR.",
-                        "documents": ["Letter of Credit"],
-                        "document_names": ["Letter of Credit"],
-                        "display_card": True,
-                        "ruleset_domain": "icc.lcopilot.gate",
-                        "blocks_validation": True,
-                        "auto_generated": True,
-                    }],
-                    warning_issues=[],
-                )
-
-            # If strict gate blocked but payload is not LC-like, downgrade to warning path.
-            if not v2_gate_result.can_proceed and not lc_is_likely and not extraction_empty:
-                v2_gate_result = GateResult(
-                    status=GateStatus.WARNING,
-                    can_proceed=True,
-                    block_reason=None,
-                    warnings=["LC-like fields were not confidently detected; proceeding in soft mode"],
-                    baseline=v2_baseline,
-                    completeness=v2_gate_result.completeness,
-                    critical_completeness=v2_gate_result.critical_completeness,
-                    missing_critical=v2_gate_result.missing_critical,
-                    missing_required=v2_gate_result.missing_required,
-                    blocking_issues=[],
-                    warning_issues=v2_gate_result.warning_issues,
-                )
-
+            
             logger.info(
-                "V2 Validation Gate: status=%s can_proceed=%s completeness=%.1f%% critical=%.1f%% lc_likely=%s",
+                "V2 Validation Gate: status=%s can_proceed=%s completeness=%.1f%% critical=%.1f%%",
                 v2_gate_result.status.value,
                 v2_gate_result.can_proceed,
                 v2_gate_result.completeness * 100,
                 v2_gate_result.critical_completeness * 100,
-                lc_is_likely,
             )
             checkpoint("validation_gate_complete")
-
+            
             # =====================================================================
             # BLOCKED RESPONSE - Return immediately if gate blocks
             # This is the key fix: NO more "100% compliant with N/A fields"
@@ -936,7 +803,7 @@ async def validate_doc(
                     v2_gate_result.block_reason,
                     v2_gate_result.missing_critical,
                 )
-
+                
                 # Build blocked response
                 processing_duration = time.time() - start_time
                 blocked_result = _build_blocked_structured_result(
@@ -945,10 +812,8 @@ async def validate_doc(
                     lc_type=lc_type,
                     processing_duration=processing_duration,
                     documents=payload.get("documents") or [],
-                    extraction_empty=extraction_empty,
-                    extraction_empty_reason=extraction_empty_reason,
                 )
-
+                
                 # Store blocked result in validation session so it can be retrieved later
                 if validation_session:
                     validation_session.status = SessionStatus.COMPLETED.value
@@ -957,11 +822,9 @@ async def validate_doc(
                         "structured_result": blocked_result,
                         "validation_blocked": True,
                         "block_reason": v2_gate_result.block_reason,
-                        "extraction_empty": extraction_empty,
-                        "extraction_empty_reason": extraction_empty_reason,
                     }
                     db.commit()
-
+                
                 return {
                     "job_id": str(job_id),
                     "jobId": str(job_id),
@@ -969,27 +832,20 @@ async def validate_doc(
                     "telemetry": {
                         "validation_blocked": True,
                         "block_reason": v2_gate_result.block_reason,
-                        "extraction_empty": extraction_empty,
-                        "extraction_empty_reason": extraction_empty_reason,
                         "timings": timings,
                         "total_time_seconds": round(time.time() - start_time, 3),
                     },
                 }
             # =====================================================================
-
+            
             # Gate passed - run v2 IssueEngine (without full rule execution)
             from app.services.validation.issue_engine import IssueEngine
-
+            
             # Create IssueEngine without RuleExecutor to avoid running all 2,159 rules
             # Full rule execution is DISABLED due to false positives from country-specific rules
             issue_engine = IssueEngine()
-
-            # For non-LC-like inputs, extraction issues are too noisy and should
-            # be treated as advisory only to avoid deterministic over-blocking.
-            if lc_is_likely:
-                v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
-            else:
-                v2_issues = []
+            
+            v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
             logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
             
             # =================================================================
@@ -997,7 +853,6 @@ async def validate_doc(
             # Filters by jurisdiction, document_type, and domain
             # =================================================================
             db_rule_issues = []
-            db_provenance = None
             db_rules_debug = {"enabled": False, "status": "not_started"}
             try:
                 # =============================================================
@@ -1005,21 +860,7 @@ async def validate_doc(
                 # Detects relevant rulesets based on LC and document content
                 # =============================================================
                 lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
-                if isinstance(lc_ctx, str):
-                    try:
-                        import json as _json
-                        lc_ctx_obj = _json.loads(lc_ctx)
-                        if isinstance(lc_ctx_obj, dict):
-                            lc_ctx = lc_ctx_obj
-                        else:
-                            lc_ctx = {}
-                    except Exception:
-                        lc_ctx = {}
-                elif not isinstance(lc_ctx, dict):
-                    lc_ctx = {}
                 mt700 = lc_ctx.get("mt700") or {}
-                if not isinstance(mt700, dict):
-                    mt700 = {}
                 coo = payload.get("certificate_of_origin") or {}
                 invoice = payload.get("invoice") or {}
                 bl = payload.get("bill_of_lading") or {}
@@ -1156,64 +997,35 @@ async def validate_doc(
                     primary_jurisdiction, supplement_domains, primary_doc_type
                 )
                 
-                db_rule_issues_all = await asyncio.wait_for(
-                    validate_document_async(
-                        document_data=db_rule_payload,
-                        document_type=primary_doc_type,
-                    ),
-                    timeout=20.0,
+                db_rule_issues = await validate_document_async(
+                    document_data=db_rule_payload,
+                    document_type=primary_doc_type,
                 )
-
+                
                 # Filter out N/A and passed rules, keep only failures
                 db_rule_issues = [
-                    issue for issue in db_rule_issues_all
+                    issue for issue in db_rule_issues
                     if not issue.get("passed", False) and not issue.get("not_applicable", False)
                 ]
-
-                db_exec = db_rule_payload.get("_db_rules_execution") or {}
-                db_provenance = {
-                    "ruleset_id": db_exec.get("ruleset_id"),
-                    "ruleset_version": db_exec.get("ruleset_version"),
-                    "domain": db_exec.get("domain") or "icc.ucp600",
-                    "jurisdiction": db_exec.get("jurisdiction") or primary_jurisdiction,
-                    "rule_count_used": db_exec.get("rule_count_used") or len(db_rule_issues_all),
-                    "rulesets": db_exec.get("rulesets") or [],
-                }
-
+                
                 logger.info("DB rules executed: %d issues found (after filtering)", len(db_rule_issues))
-
+                
                 # Store debug info for response
                 db_rules_debug = {
                     "enabled": True,
-                    "status": "success",
                     "domain": "icc.ucp600",
                     "supplements": supplement_domains,
                     "primary_jurisdiction": primary_jurisdiction,
                     "detected_jurisdictions": list(detected_jurisdictions),
                     "issues_found": len(db_rule_issues),
-                    "provenance": db_provenance,
                 }
-
+                
             except Exception as db_rule_err:
-                logger.warning(
-                    "DB rule execution failed (fail-open): %s",
-                    str(db_rule_err),
-                    exc_info=True,
-                )
+                logger.warning("DB rule execution failed (continuing with other validators): %s", str(db_rule_err))
                 db_rules_debug = {
                     "enabled": False,
-                    "status": "failed",
                     "error": str(db_rule_err),
                 }
-
-                # Keep request unblocked: DB rules are advisory in this run if backend tables unavailable.
-                structured_result["issues"].append({
-                    "severity": "warning",
-                    "code": "DB_RULES_UNAVAILABLE",
-                    "message": "Database rules could not be executed; continuing in fail-open mode.",
-                })
-                # Preserve pass-through behavior for API-only pass fixtures while surfacing root cause.
-
             
             # Run v2 CrossDocValidator
             from app.services.validation.crossdoc_validator import CrossDocValidator
@@ -1270,21 +1082,6 @@ async def validate_doc(
                 (payload.get("lc") or {}).get("raw_text") or  # Fallback: from payload
                 ""
             )
-            # Fallback: derive LC raw text from extracted documents if lc context missed assignment.
-            if not lc_raw_text:
-                docs_probe = extracted_context.get("documents") or []
-                for d in docs_probe:
-                    if not isinstance(d, dict):
-                        continue
-                    dtype = str(d.get("document_type") or "").strip().lower()
-                    if dtype in {"letter_of_credit", "swift_message", "lc_application"}:
-                        lc_raw_text = (
-                            str(d.get("raw_text") or "")
-                            or str(d.get("raw_text_preview") or "")
-                        )
-                        if lc_raw_text:
-                            break
-
             lc_data_for_ai["raw_text"] = lc_raw_text
             logger.info(f"AI Validation: LC raw_text length = {len(lc_raw_text)} chars")
             
@@ -1312,48 +1109,6 @@ async def validate_doc(
                 payload.get("documents") or  # Fallback: from payload
                 []
             )
-
-            # Safety fallback: synthesize AI input documents from extracted context blocks
-            # when the documents list is unexpectedly empty.
-            if not documents_for_ai:
-                synthesized_docs = []
-                context_doc_map = {
-                    "letter_of_credit": extracted_context.get("lc") or {},
-                    "commercial_invoice": extracted_context.get("invoice") or {},
-                    "bill_of_lading": extracted_context.get("bill_of_lading") or {},
-                    "packing_list": extracted_context.get("packing_list") or {},
-                    "certificate_of_origin": extracted_context.get("certificate_of_origin") or {},
-                    "insurance_certificate": extracted_context.get("insurance_certificate") or {},
-                    "inspection_certificate": extracted_context.get("inspection_certificate") or {},
-                }
-                for doc_type_token, doc_ctx in context_doc_map.items():
-                    if not isinstance(doc_ctx, dict):
-                        continue
-                    raw_text = str(doc_ctx.get("raw_text") or "").strip()
-                    if raw_text:
-                        synthesized_docs.append({
-                            "document_type": doc_type_token,
-                            "raw_text": raw_text,
-                        })
-                if synthesized_docs:
-                    documents_for_ai = synthesized_docs
-                    logger.warning(
-                        "AI Validation: synthesized %d documents from extracted context fallback",
-                        len(synthesized_docs),
-                    )
-
-            # If LC raw text still empty, try from synthesized/available documents
-            if not lc_data_for_ai.get("raw_text"):
-                for doc in documents_for_ai:
-                    if not isinstance(doc, dict):
-                        continue
-                    dtype = str(doc.get("document_type") or doc.get("type") or "").strip().lower()
-                    if dtype in {"letter_of_credit", "swift_message", "lc_application"}:
-                        fallback_lc_text = str(doc.get("raw_text") or doc.get("raw_text_preview") or "").strip()
-                        if fallback_lc_text:
-                            lc_data_for_ai["raw_text"] = fallback_lc_text
-                            break
-
             logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
             
             ai_issues, ai_metadata = await run_ai_validation(
@@ -1421,12 +1176,8 @@ async def validate_doc(
             extraction_confidence_summary = None
             try:
                 extraction_confidence_summary = calculate_overall_extraction_confidence(extracted_context)
-                avg_confidence = _safe_float(
-                    extraction_confidence_summary.get("average_confidence", 0),
-                    default=0.0,
-                )
                 logger.info(
-                    f"Extraction confidence: avg={avg_confidence:.2f}, "
+                    f"Extraction confidence: avg={extraction_confidence_summary.get('average_confidence', 0):.2f}, "
                     f"lowest={extraction_confidence_summary.get('lowest_confidence_document', 'N/A')}"
                 )
             except Exception as e:
@@ -1458,29 +1209,18 @@ async def validate_doc(
         # Skip quota checks for demo user (allows validation to work without billing)
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
-            # Guard: company may not be loaded yet after first-login bootstrap
-            _quota_company = current_user.company
-            if _quota_company is None and current_user.company_id:
-                from app.models.company import Company as _Company
-                _quota_company = db.query(_Company).filter(_Company.id == current_user.company_id).first()
-            if _quota_company is not None:
-                try:
-                    entitlements.enforce_quota(_quota_company, UsageAction.VALIDATE)
-                except EntitlementError as exc:
-                    raise HTTPException(
-                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                        detail={
-                            "code": "quota_exceeded",
-                            "message": exc.message,
-                            "quota": exc.result.to_dict(),
-                            "next_action_url": exc.next_action_url,
-                        },
-                    ) from exc
-            else:
-                logger.warning(
-                    "Skipping quota enforcement for user %s: no company found (company_id=%s)",
-                    current_user.email, current_user.company_id
-                )
+            try:
+                entitlements.enforce_quota(current_user.company, UsageAction.VALIDATE)
+            except EntitlementError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "code": "quota_exceeded",
+                        "message": exc.message,
+                        "quota": exc.result.to_dict(),
+                        "next_action_url": exc.next_action_url,
+                    },
+                ) from exc
 
         # =====================================================================
         # V2 VALIDATION - PRIMARY PATH (Legacy disabled)
@@ -1489,12 +1229,6 @@ async def validate_doc(
         request_user_type = _extract_request_user_type(payload)
         
         # Build unified issues list from v2 components
-        # Keep safe defaults so downstream aggregation never crashes even if an earlier
-        # stage errors and falls through to legacy/result shaping blocks.
-        db_rule_issues = []
-        db_provenance = None
-        db_rules_debug = {"enabled": False, "status": "not_started"}
-
         results = []  # Legacy results - empty
         failed_results = []
         
@@ -1564,7 +1298,7 @@ async def validate_doc(
                 issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else issue
                 ucp_ref = issue_dict.get("ucp_reference")
                 isbp_ref = issue_dict.get("isbp_reference")
-                payload_issue = {
+                failed_results.append({
                     "rule": issue_dict.get("rule", "V2-ISSUE"),
                     "title": issue_dict.get("title", "Validation Issue"),
                     "passed": False,
@@ -1580,9 +1314,7 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": "icc.lcopilot.extraction",
-                }
-                payload_issue.update(_build_issue_explanation(payload_issue, default_type="extraction"))
-                failed_results.append(payload_issue)
+                })
         
         # Add cross-doc issues (including AI validator issues)
         if v2_crossdoc_issues:
@@ -1594,7 +1326,7 @@ async def validate_doc(
                 # AIValidationIssue uses: "rule", "ucp_reference", "actual"
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
-                payload_issue = {
+                failed_results.append({
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "CROSSDOC-ISSUE",
                     "title": issue_dict.get("title", "Cross-Document Issue"),
                     "passed": False,
@@ -1611,9 +1343,7 @@ async def validate_doc(
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                     "auto_generated": issue_dict.get("auto_generated", False),
-                }
-                payload_issue.update(_build_issue_explanation(payload_issue, default_type="compliance"))
-                failed_results.append(payload_issue)
+                })
         
         # Add DB rule issues (2500+ rules from database)
         if db_rule_issues:
@@ -1621,7 +1351,7 @@ async def validate_doc(
                 issue_dict = issue if isinstance(issue, dict) else issue.to_dict() if hasattr(issue, 'to_dict') else {}
                 ucp_ref = issue_dict.get("ucp_reference") or issue_dict.get("ucp_article") or ""
                 isbp_ref = issue_dict.get("isbp_reference") or issue_dict.get("isbp_paragraph") or ""
-                payload_issue = {
+                failed_results.append({
                     "rule": issue_dict.get("rule") or issue_dict.get("rule_id") or "DB-RULE",
                     "title": issue_dict.get("title", "Validation Rule"),
                     "passed": False,
@@ -1637,13 +1367,11 @@ async def validate_doc(
                     "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                     "display_card": True,
                     "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.ucp600",
-                }
-                payload_issue.update(_build_issue_explanation(payload_issue, default_type="risk"))
-                failed_results.append(payload_issue)
+                })
             logger.info("Added %d DB rule issues to failed_results", len(db_rule_issues))
         
         # Add LC type unknown warning if applicable
-        if lc_type_is_unknown and lc_is_likely:
+        if lc_type_is_unknown:
             failed_results.append(
                 {
                     "rule": "LC-TYPE-UNKNOWN",
@@ -1690,12 +1418,7 @@ async def validate_doc(
             len(deduplicated_results),
         )
         
-        try:
-            issue_cards, reference_issues = build_issue_cards(deduplicated_results)
-        except Exception as issue_cards_err:
-            logger.exception("Issue card build failed; continuing with safe fallback")
-            issue_cards = []
-            reference_issues = deduplicated_results or []
+        issue_cards, reference_issues = build_issue_cards(deduplicated_results)
         checkpoint("issue_cards_built")
 
         # Record usage - link to session if created (skip for demo user)
@@ -1713,23 +1436,14 @@ async def validate_doc(
         
         if current_user.email != "demo@trdrhub.com":
             entitlements = EntitlementService(db)
-            # Re-fetch company relationship in case it was not loaded after bootstrap
-            _user_company = current_user.company
-            if _user_company is None and current_user.company_id:
-                from app.models.company import Company as _Company
-                _user_company = db.query(_Company).filter(_Company.id == current_user.company_id).first()
-            try:
-                quota = entitlements.record_usage(
-                    _user_company,
-                    UsageAction.VALIDATE,
-                    user_id=current_user.id,
-                    cost=Decimal("0.00"),
-                    description=f"Validation request for document type {doc_type}",
-                    session_id=validation_session.id if validation_session else None,
-                ) if _user_company else None
-            except Exception as usage_record_err:
-                logger.warning("record_usage failed (non-blocking): %s", usage_record_err)
-                quota = None
+            quota = entitlements.record_usage(
+                current_user.company,
+                UsageAction.VALIDATE,
+                user_id=current_user.id,
+                cost=Decimal("0.00"),
+                description=f"Validation request for document type {doc_type}",
+                session_id=validation_session.id if validation_session else None,
+            )
 
         document_details_for_summaries = payload.get("documents")
         logger.info(
@@ -1740,15 +1454,11 @@ async def validate_doc(
         )
         # FIX: Use deduplicated_results (actual issues) instead of empty results list
         # This ensures document issue counts are correctly linked to each document
-        try:
-            document_summaries = _build_document_summaries(
-                files_list,
-                deduplicated_results,  # Was 'results' which was always empty!
-                document_details_for_summaries,
-            )
-        except Exception as doc_summary_err:
-            logger.exception("Document summaries build failed; continuing with safe fallback")
-            document_summaries = []
+        document_summaries = _build_document_summaries(
+            files_list,
+            deduplicated_results,  # Was 'results' which was always empty!
+            document_details_for_summaries,
+        )
         if document_summaries:
             doc_status_counts: Dict[str, int] = {}
             for summary in document_summaries:
@@ -1767,11 +1477,7 @@ async def validate_doc(
         checkpoint("document_summaries_built")
         
         processing_duration = time.time() - start_time
-        processing_summary = _build_processing_summary(
-            document_summaries,
-            processing_duration,
-            len(failed_results),
-        )
+        processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
 
         if validation_session and current_user.is_bank_user() and current_user.company_id:
             try:
@@ -1875,19 +1581,7 @@ async def validate_doc(
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
         # FIX: Merge ALL fields including status counts, verified, warnings, etc.
-        invariant_failure_reason: Optional[str] = None
         if structured_result.get("processing_summary") and processing_summary:
-            processing_summary_total_issues = _safe_int(processing_summary.get("total_issues"))
-            doc_ledger_total_issues = _sum_ledger_discrepancies(
-                structured_result.get("documents_structured") or document_summaries
-            )
-            invariant_failure_reason = _build_issue_count_invariant_reason(
-                canonical_total_issues=processing_summary_total_issues,
-                source_total_issues=doc_ledger_total_issues,
-                source_label="documents_structured.discrepancyCount_sum",
-            )
-            if invariant_failure_reason:
-                structured_result["invariant_failure_reason"] = invariant_failure_reason
             structured_result["processing_summary"].update({
                 # Timing fields
                 "processing_time_seconds": processing_summary.get("processing_time_seconds"),
@@ -1899,7 +1593,6 @@ async def validate_doc(
                 "warnings": processing_summary.get("warnings", 0),
                 "errors": processing_summary.get("errors", 0),
                 "successful_extractions": processing_summary.get("verified", 0),
-                "partial_extractions": processing_summary.get("warnings", 0),
                 "failed_extractions": processing_summary.get("errors", 0),
                 # Status distribution for SummaryStrip
                 "status_counts": processing_summary.get("status_counts", {}),
@@ -1907,27 +1600,7 @@ async def validate_doc(
                 # Compliance (will be overwritten by v2 scorer later, but set baseline)
                 "compliance_rate": processing_summary.get("compliance_rate", 0),
                 "discrepancies": processing_summary.get("discrepancies", 0),
-                "total_issues": processing_summary_total_issues,
-                "invariant_failure_reason": invariant_failure_reason,
             })
-
-            # Recompute extraction counters from final documents_structured as authoritative source.
-            final_doc_rows = structured_result.get("documents_structured") or []
-            if isinstance(final_doc_rows, list) and final_doc_rows:
-                status_counts: Dict[str, int] = {"success": 0, "warning": 0, "error": 0}
-                for row in final_doc_rows:
-                    s = str((row or {}).get("status") or "").strip().lower()
-                    if s in status_counts:
-                        status_counts[s] += 1
-                structured_result["processing_summary"].update({
-                    "verified": status_counts.get("success", 0),
-                    "warnings": status_counts.get("warning", 0),
-                    "errors": status_counts.get("error", 0),
-                    "successful_extractions": status_counts.get("success", 0),
-                    "partial_extractions": status_counts.get("warning", 0),
-                    "failed_extractions": status_counts.get("error", 0),
-                    "status_counts": status_counts,
-                })
         # Also update analytics with processing time
         if structured_result.get("analytics"):
             structured_result["analytics"]["processing_time_display"] = processing_summary.get("processing_time_display")
@@ -2191,154 +1864,12 @@ async def validate_doc(
                 minor_count=v2_score.minor_count,
                 compliance_score=v2_score.score,
                 all_issues=all_issues,
-                validation_status=v2_score.level.value,
             )
             structured_result["bank_verdict"] = bank_verdict
-            structured_result["verdict_signature"] = bank_verdict.get("verdict_signature")
-            if str(bank_verdict.get("verdict") or "").upper() == "REJECT":
-                structured_result["blocking_reasons"] = [
-                    issue.get("why_flagged") or issue.get("message")
-                    for issue in all_issues
-                    if str(issue.get("severity") or "").lower() == "critical"
-                ]
-            try:
-                structured_result = _enforce_document_semantics(
-                    structured_result,
-                    validation_status=v2_score.level.value,
-                    critical_count=v2_score.critical_count,
-                    major_count=v2_score.major_count,
-                )
-            except Exception as semantics_err:
-                logger.error("Semantics invariant failure: %s", semantics_err)
-                structured_result = mark_unverified(structured_result, f"semantics_invariant_failed: {semantics_err}")
-            structured_result["authoritative_verdict"] = _build_authoritative_verdict(
-                verdict_class=bank_verdict.get("verdict_class") or bank_verdict.get("verdict"),
-                source=(bank_verdict.get("verdict_signature", {}).get("source") if isinstance(bank_verdict.get("verdict_signature"), dict) else "bank_verdict"),
-                rationale=bank_verdict.get("verdict_signature", {}).get("reason") if isinstance(bank_verdict.get("verdict_signature"), dict) else "bank_submission_routing",
-                rationale_details={
-                    "source": (bank_verdict.get("verdict_signature", {}).get("source") if isinstance(bank_verdict.get("verdict_signature"), dict) else "bank_verdict"),
-                    "validation_status": bank_verdict.get("verdict_signature", {}).get("validation_status") if isinstance(bank_verdict.get("verdict_signature"), dict) else None,
-                    "critical_count": bank_verdict.get("issue_summary", {}).get("critical", 0),
-                    "major_count": bank_verdict.get("issue_summary", {}).get("major", 0),
-                },
-            )
+            
             if structured_result.get("processing_summary"):
                 structured_result["processing_summary"]["bank_verdict"] = bank_verdict.get("verdict")
-
-            # Dual-track decision fields + hybrid arbitration
-            ai_verdict = _derive_ai_verdict(ai_metadata)
-            ruleset_verdict = _derive_ruleset_verdict(v2_score.critical_count, v2_score.major_count)
-            legacy_final_verdict = bank_verdict.get("verdict")
-            blocking_rules = sorted({
-                str((issue.get("rule") or issue.get("code") or "")).strip()
-                for issue in all_issues
-                if isinstance(issue, dict) and str(issue.get("severity", "")).lower() == "critical"
-                and (issue.get("rule") or issue.get("code"))
-            })
-            confidence_band, confidence_band_reason = _derive_confidence_band(extraction_confidence_summary)
-
-            decision_mode = settings.VALIDATION_DECISION_MODE
-            decision_trace = None
-            override_reason = None
-            final_verdict = legacy_final_verdict
-
-            if decision_mode in {"hybrid_shadow", "hybrid_enforced"}:
-                decision_trace = compute_arbitration_decision(
-                    ai_verdict=ai_verdict,
-                    ruleset_verdict=ruleset_verdict,
-                    blocking_rules=blocking_rules,
-                    extraction_confidence=(
-                        _safe_float(
-                            extraction_confidence_summary.get("average_confidence"),
-                            default=None,
-                        )
-                        if isinstance(extraction_confidence_summary, dict)
-                        else None
-                    ),
-                    mode=decision_mode,
-                )
-                if decision_mode == "hybrid_enforced":
-                    final_verdict = _arbitration_to_final_verdict(
-                        decision_trace.get("arbitration_verdict"),
-                        legacy_final_verdict,
-                    )
-                    override_reason = decision_trace.get("arbitration_reason")
-                elif ruleset_verdict == "pass" and ai_verdict == "reject":
-                    override_reason = "legacy_final_verdict_preserved"
-            elif ruleset_verdict == "pass" and ai_verdict == "reject":
-                override_reason = "legacy_final_verdict_preserved"
-
-            structured_result["ai_verdict"] = ai_verdict
-            structured_result["ruleset_verdict"] = ruleset_verdict
-            final_verdict = _align_final_verdict(final_verdict, bank_verdict)
-            structured_result["final_verdict"] = final_verdict
-            structured_result["override_reason"] = override_reason
-            structured_result["blocking_rules"] = blocking_rules
-            structured_result["confidence_band"] = confidence_band
-            confidence_score = _safe_float(
-                ai_metadata.get("confidence_score") if isinstance(ai_metadata, dict) else None,
-                default=None,
-            )
-            risk_score = _safe_float(
-                ai_metadata.get("risk_score") if isinstance(ai_metadata, dict) else None,
-                default=None,
-            )
-            structured_result["confidence_score"] = confidence_score
-            structured_result["risk_score"] = risk_score
-            structured_result["risk_level"] = (
-                "high" if risk_score is not None and risk_score >= 70
-                else "medium" if risk_score is not None and risk_score >= 40
-                else "low" if risk_score is not None
-                else None
-            )
-            structured_result["applied_rules"] = ai_metadata.get("applied_rules", []) if isinstance(ai_metadata, dict) else []
-            reasoning_summary = ai_metadata.get("reasoning_summary") if isinstance(ai_metadata, dict) else None
-            structured_result["reasoning_summary"] = str(reasoning_summary) if reasoning_summary not in (None, "") else None
-            if confidence_band is None and confidence_band_reason:
-                structured_result["confidence_band_reason"] = confidence_band_reason
-
-            # Surface AI layer execution state explicitly for observability.
-            llm_payloads = ai_metadata.get("llm_layer_payloads") if isinstance(ai_metadata, dict) else None
-            llm_error = ai_metadata.get("llm_layer_error") if isinstance(ai_metadata, dict) else None
-            structured_result["ai_enrichment"] = {
-                "enabled": bool(llm_payloads),
-                "notes": ([str(llm_error)] if llm_error else []),
-                "layers_attempted": ai_metadata.get("llm_layers_attempted", []) if isinstance(ai_metadata, dict) else [],
-                "layers_succeeded": ai_metadata.get("llm_layers_succeeded", []) if isinstance(ai_metadata, dict) else [],
-            }
-            structured_result["ai_summary"] = {
-                "llm_layers_attempted": ai_metadata.get("llm_layers_attempted", []) if isinstance(ai_metadata, dict) else [],
-                "llm_layers_succeeded": ai_metadata.get("llm_layers_succeeded", []) if isinstance(ai_metadata, dict) else [],
-                "llm_layer_error": llm_error,
-                "provider_evidence_present": bool(llm_payloads),
-            }
-            if decision_trace is not None:
-                trace = _merge_llm_layer_trace(
-                    decision_trace,
-                    ai_metadata,
-                    mode=decision_mode,
-                )
-                structured_result["decision_trace"] = trace
-
-            structured_result = _apply_non_submit_guardrail(
-                structured_result,
-                bank_verdict=bank_verdict,
-                validation_status=v2_score.level.value,
-                compliance_status=structured_result.get("compliance_status"),
-                critical_count=v2_score.critical_count,
-                major_count=v2_score.major_count,
-                minor_count=v2_score.minor_count,
-                compliance_score=v2_score.score,
-            )
-            bank_verdict = structured_result.get("bank_verdict", bank_verdict)
-            final_verdict = structured_result.get("final_verdict", final_verdict)
-
-            structured_result = _apply_pipeline_verification_gate(
-                structured_result,
-                mode=decision_mode,
-                issue_count_invariant_failure_reason=invariant_failure_reason,
-            )
-
+            
             logger.info(
                 "Bank verdict: %s (action_required=%d)",
                 bank_verdict.get("verdict"),
@@ -2386,10 +1917,7 @@ async def validate_doc(
                     structured_result["extraction_confidence"] = extraction_confidence_summary
                     
                     # Add recommendations if low confidence
-                    if _safe_float(
-                        extraction_confidence_summary.get("average_confidence", 1.0),
-                        default=1.0,
-                    ) < 0.6:
+                    if extraction_confidence_summary.get("average_confidence", 1.0) < 0.6:
                         existing_recommendations = bank_verdict.get("action_items", [])
                         for rec in extraction_confidence_summary.get("recommendations", []):
                             existing_recommendations.append({
@@ -2438,44 +1966,8 @@ async def validate_doc(
             "total_time_seconds": round(time.time() - start_time, 3),
         }
 
-        # Add DB rules debug info + provenance to response/session payloads
-        structured_result["_db_rules_debug"] = db_rules_debug
-        if db_rules_debug.get("status") == "success" and db_rules_debug.get("provenance"):
-            structured_result["validation_provenance"] = db_rules_debug.get("provenance")
-
         if validation_session:
-            # Persist OCR provider trace onto session + documents for post-run auditability.
-            try:
-                doc_traces = (extracted_context or {}).get("documents") or []
-                providers = [str(d.get("ocr_provider")) for d in doc_traces if d.get("ocr_provider")]
-                if providers:
-                    # keep the dominant provider used in this run for quick dashboard visibility
-                    validation_session.ocr_provider = max(set(providers), key=providers.count)
-
-                # best-effort document-level persistence
-                db_docs = db.query(Document).filter(Document.validation_session_id == validation_session.id).all()
-                by_name = {str(d.original_filename or "").strip().lower(): d for d in db_docs}
-                for trace in doc_traces:
-                    fn = str(trace.get("filename") or "").strip().lower()
-                    if not fn or fn not in by_name:
-                        continue
-                    rec = by_name[fn]
-                    conf = _safe_float(trace.get("ocr_confidence"), default=None)
-                    if conf is not None:
-                        rec.ocr_confidence = conf
-                    # fold provider/source into extracted_fields for durable trace
-                    fields = rec.extracted_fields if isinstance(rec.extracted_fields, dict) else {}
-                    fields["_ocr_provider"] = trace.get("ocr_provider")
-                    fields["_ocr_source"] = trace.get("ocr_source")
-                    rec.extracted_fields = fields
-            except Exception as trace_persist_err:
-                logger.warning("Failed to persist OCR trace details: %s", trace_persist_err)
-
-            validation_session.validation_results = {
-                "structured_result": structured_result,
-                "validation_provenance": structured_result.get("validation_provenance"),
-                "db_rules_debug": db_rules_debug,
-            }
+            validation_session.validation_results = {"structured_result": structured_result}
             validation_session.status = SessionStatus.COMPLETED.value
             validation_session.processing_completed_at = func.now()
             db.commit()
@@ -2509,11 +2001,6 @@ async def validate_doc(
                     "date_received": metadata_dict.get("dateReceived") or metadata_dict.get("date_received"),
                     "discrepancy_count": len(failed_results),
                     "document_count": len(payload.get("files", [])) if isinstance(payload.get("files"), list) else 0,
-                    "ruleset_id": (structured_result.get("validation_provenance") or {}).get("ruleset_id"),
-                    "ruleset_version": (structured_result.get("validation_provenance") or {}).get("ruleset_version"),
-                    "domain": (structured_result.get("validation_provenance") or {}).get("domain"),
-                    "jurisdiction": (structured_result.get("validation_provenance") or {}).get("jurisdiction"),
-                    "rule_count_used": (structured_result.get("validation_provenance") or {}).get("rule_count_used"),
                 },
             )
 
@@ -2565,11 +2052,13 @@ async def validate_doc(
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
 
+        # Add DB rules debug info to response
+        structured_result["_db_rules_debug"] = db_rules_debug
+
         return {
             "job_id": str(job_id),
             "jobId": str(job_id),
             "structured_result": structured_result,
-            "authoritative_verdict": structured_result.get("authoritative_verdict"),
             "telemetry": telemetry_payload,
         }
     except HTTPException:
@@ -2586,13 +2075,11 @@ async def validate_doc(
         # Log the full error with stack trace
         import traceback
         error_traceback = traceback.format_exc()
-        error_type = type(e).__name__
-        error_message = str(e)
         logger.error(
-            f"Validation endpoint exception: {error_type}: {error_message}",
+            f"Validation endpoint exception: {type(e).__name__}: {str(e)}",
             extra={
-                "error_type": error_type,
-                "error_message": error_message,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
                 "user_id": current_user.id if current_user else None,
                 "endpoint": "/api/validate",
                 "traceback": error_traceback,
@@ -2604,92 +2091,21 @@ async def validate_doc(
         user_type = payload.get("userType") or payload.get("user_type") if 'payload' in locals() else None
         if user_type == "bank" and 'validation_session' in locals() and validation_session:
             duration_ms = int((time.time() - start_time) * 1000)
-            try:
-                audit_service.log_action(
-                    action=AuditAction.UPLOAD,
-                    user=current_user,
-                    correlation_id=audit_context['correlation_id'],
-                    resource_type="bank_validation",
-                    resource_id=str(validation_session.id) if validation_session else "unknown",
-                    ip_address=audit_context['ip_address'],
-                    user_agent=audit_context['user_agent'],
-                    endpoint=audit_context['endpoint'],
-                    http_method=audit_context['http_method'],
-                    result=AuditResult.ERROR,
-                    duration_ms=duration_ms,
-                    error_message=error_message,
-                )
-            except Exception as audit_err:
-                logger.warning("Audit log failed during error handler: %s", audit_err)
-
-        # Map common error types to actionable HTTP responses instead of bare 500s.
-        # This ensures the frontend receives a useful error message rather than
-        # the generic production "unexpected error" from the global exception handler.
-        actionable_detail: dict = {
-            "error_code": "validation_internal_error",
-            "message": "Validation processing failed. Please retry or contact support.",
-            "error_type": error_type,
-        }
-
-        if isinstance(e, AttributeError) and "NoneType" in error_message:
-            actionable_detail = {
-                "error_code": "company_not_configured",
-                "message": (
-                    "Your account is missing a company profile. "
-                    "Please complete onboarding before submitting documents."
-                ),
-                "error_type": error_type,
-            }
-        elif isinstance(e, (ImportError, ModuleNotFoundError)):
-            actionable_detail = {
-                "error_code": "service_unavailable",
-                "message": (
-                    "A required validation service is unavailable. "
-                    "Please retry in a few moments."
-                ),
-                "error_type": error_type,
-            }
-        elif "timeout" in error_message.lower() or "TimeoutError" in error_type:
-            actionable_detail = {
-                "error_code": "ocr_timeout",
-                "message": (
-                    "Document processing timed out. Try reducing file sizes "
-                    "or uploading fewer documents at once (max 6 recommended)."
-                ),
-                "error_type": error_type,
-            }
-        elif "encode" in error_message.lower() or "decode" in error_message.lower() or "unicode" in error_message.lower():
-            actionable_detail = {
-                "error_code": "file_encoding_error",
-                "message": (
-                    "One or more files could not be read. "
-                    "Please ensure all files are valid PDFs or images."
-                ),
-                "error_type": error_type,
-            }
-        elif "quota" in error_message.lower() or "limit" in error_message.lower():
-            actionable_detail = {
-                "error_code": "quota_error",
-                "message": "Validation quota issue. Please check your plan or contact support.",
-                "error_type": error_type,
-            }
-
-        if is_database_unavailable_error(e):
-            actionable_detail = {
-                "error_code": "database_unavailable",
-                "message": "Validation is temporarily unavailable due to database connectivity.",
-                "action": "Retry in 30-60 seconds. If persistent, verify DB networking on port 6543 and credentials.",
-                "error_type": error_type,
-            }
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=actionable_detail,
-            ) from e
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=actionable_detail,
-        ) from e
+            audit_service.log_action(
+                action=AuditAction.UPLOAD,
+                user=current_user,
+                correlation_id=audit_context['correlation_id'],
+                resource_type="bank_validation",
+                resource_id=str(validation_session.id) if validation_session else "unknown",
+                ip_address=audit_context['ip_address'],
+                user_agent=audit_context['user_agent'],
+                endpoint=audit_context['endpoint'],
+                http_method=audit_context['http_method'],
+                result=AuditResult.ERROR,
+                duration_ms=duration_ms,
+                error_message=str(e),
+            )
+        raise
 
 
 def _build_document_summaries(
@@ -2697,8 +2113,108 @@ def _build_document_summaries(
     results: List[Dict[str, Any]],
     document_details: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Delegate to canonical document builder to keep extraction semantics aligned."""
-    return _canonical_build_document_summaries(files_list, results, document_details)
+    """Create lightweight document summaries for downstream consumers."""
+    details = document_details or []
+    issue_by_name, issue_by_type, issue_by_id = _collect_document_issue_stats(results)
+
+    def _build_summary_from_detail(detail: Dict[str, Any], index: int) -> Dict[str, Any]:
+        filename = detail.get("filename") or detail.get("name")
+        doc_type = detail.get("document_type") or _infer_document_type_from_name(filename, index)
+        # FIX: Normalize doc_type to canonical form (e.g., "Bill of Lading" -> "bill_of_lading")
+        # This ensures it matches the keys in issue_by_type
+        normalized_type = _normalize_doc_type_key(doc_type) or doc_type or "supporting_document"
+        detail_id = detail.get("id") or str(uuid4())
+        stats = _resolve_issue_stats(
+            detail_id,
+            filename,
+            normalized_type,
+            issue_by_name,
+            issue_by_type,
+            issue_by_id,
+        )
+        status = _severity_to_status(stats.get("max_severity") if stats else None)
+        discrepancy_count = stats.get("count", 0) if stats else 0
+
+        return {
+            "id": detail_id,
+            "name": filename or f"Document {index + 1}",
+            "type": _humanize_doc_type(normalized_type),
+            "documentType": normalized_type,
+            "status": status,
+            "discrepancyCount": discrepancy_count,
+            "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
+            "ocrConfidence": detail.get("ocr_confidence"),
+            "extractionStatus": detail.get("extraction_status"),
+        }
+
+    if details:
+        logger.info(
+            "Building document summaries from details: %d documents found",
+            len(details),
+        )
+        return [_build_summary_from_detail(detail, index) for index, detail in enumerate(details)]
+
+    if not files_list:
+        # GUARANTEE: Never return empty - create a placeholder document if nothing available
+        logger.warning("No document details or files_list available - creating placeholder document")
+        return [
+            {
+                "id": str(uuid4()),
+                "name": "No documents uploaded",
+                "type": "Supporting Document",
+                "documentType": "supporting_document",
+                "status": "warning",
+                "discrepancyCount": 0,
+                "extractedFields": {},
+                "ocrConfidence": None,
+                "extractionStatus": "unknown",
+            }
+        ]
+
+    summaries: List[Dict[str, Any]] = []
+    for index, file_obj in enumerate(files_list):
+        filename = getattr(file_obj, "filename", None)
+        inferred_type = _infer_document_type_from_name(filename, index)
+        stats = _resolve_issue_stats(
+            None,
+            filename,
+            inferred_type,
+            issue_by_name,
+            issue_by_type,
+            issue_by_id,
+        )
+        doc_status = _severity_to_status(stats.get("max_severity") if stats else None)
+        discrepancy_count = stats.get("count", 0) if stats else 0
+        summaries.append(
+            {
+                "id": str(uuid4()),
+                "name": filename or f"Document {index + 1}",
+                "type": _humanize_doc_type(inferred_type),
+                "documentType": inferred_type,
+                "status": doc_status,
+                "discrepancyCount": discrepancy_count,
+                "extractedFields": {},
+                "ocrConfidence": None,
+                "extractionStatus": "unknown",
+            }
+        )
+
+    # GUARANTEE: Never return empty list
+    if not summaries:
+        logger.warning("Document summaries still empty after processing - adding placeholder")
+        summaries.append({
+            "id": str(uuid4()),
+            "name": "Document",
+            "type": "Supporting Document",
+            "documentType": "supporting_document",
+            "status": "warning",
+            "discrepancyCount": 0,
+            "extractedFields": {},
+            "ocrConfidence": None,
+            "extractionStatus": "unknown",
+        })
+
+    return summaries
 
 
 def _infer_document_type_from_name(filename: Optional[str], index: int) -> str:
@@ -2939,16 +2455,11 @@ async def _build_document_context(
             logger.info(f"[OCR {idx+1}/{len(files_list)}] Starting extraction for {filename}")
             try:
                 text = await _extract_text_from_upload(upload_file)
-                ocr_meta = getattr(upload_file, "_ocr_meta", {}) or {}
-                if not text:
-                    msg = "No readable text extracted. Try higher resolution scan, reduce stamp overlap, or upload cleaner PDF."
-                    logger.warning(f"[OCR {idx+1}/{len(files_list)}] Empty OCR output for {filename}: {msg}")
-                    return (idx, None, msg, ocr_meta)
-                logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text)} chars")
-                return (idx, text, None, ocr_meta)
+                logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text) if text else 0} chars")
+                return (idx, text, None)
             except Exception as e:
                 logger.warning(f"[OCR {idx+1}/{len(files_list)}] Failed {filename}: {e}")
-                return (idx, None, str(e), {"source": "none", "provider": None, "confidence": 0.0, "status": "failed"})
+                return (idx, None, str(e))
     
     # Run all OCR extractions in parallel (bounded by semaphore)
     logger.info(f"Starting parallel OCR extraction for {len(files_list)} files (concurrency={ocr_concurrency})")
@@ -2956,17 +2467,15 @@ async def _build_document_context(
     ocr_tasks = [_extract_with_semaphore(i, f) for i, f in enumerate(files_list)]
     ocr_results = await asyncio.gather(*ocr_tasks, return_exceptions=True)
     
-    # Build lookup dicts from OCR stage
+    # Build a lookup dict: idx -> extracted_text
     extracted_texts: Dict[int, Optional[str]] = {}
     extraction_errors: Dict[int, str] = {}
-    extraction_meta: Dict[int, Dict[str, Any]] = {}
     for result in ocr_results:
         if isinstance(result, Exception):
             logger.error(f"OCR task failed with exception: {result}")
             continue
-        idx, text, error, meta = result
+        idx, text, error = result
         extracted_texts[idx] = text
-        extraction_meta[idx] = meta or {}
         if error:
             extraction_errors[idx] = error
     
@@ -2994,37 +2503,11 @@ async def _build_document_context(
         
         # Use pre-extracted text from parallel OCR phase
         extracted_text = extracted_texts.get(idx)
-        ocr_meta = extraction_meta.get(idx) or {}
         if idx in extraction_errors:
             logger.warning(f"⚠ OCR extraction error for {filename}: {extraction_errors[idx]}")
-            doc_info["extraction_error"] = extraction_errors[idx]
-
-        if ocr_meta:
-            doc_info["ocr_provider"] = ocr_meta.get("provider")
-            doc_info["ocr_source"] = ocr_meta.get("source")
-            doc_info["ocr_confidence"] = _safe_float(ocr_meta.get("confidence"), default=None)
         if not extracted_text:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
-            if EXTRACTION_DEBUG:
-                doc_info["debug_extraction"] = {
-                    "ocr_text_length": 0,
-                    "ocr_provider": doc_info.get("ocr_provider"),
-                    "extraction_method": doc_info.get("extraction_method"),
-                    "extraction_confidence": doc_info.get("extraction_confidence"),
-                    "extracted_field_count": 0,
-                    "ai_first_status": doc_info.get("ai_first_status"),
-                    "extraction_status": doc_info.get("extraction_status"),
-                }
-                logger.info(
-                    "EXTRACTION_DEBUG doc=%s type=%s ocr_len=0 method=%s provider=%s fields=0 confidence=%s status=%s",
-                    filename,
-                    document_type,
-                    doc_info.get("extraction_method"),
-                    doc_info.get("ocr_provider"),
-                    doc_info.get("extraction_confidence"),
-                    doc_info.get("extraction_status"),
-                )
             document_details.append(doc_info)
             continue
         
@@ -3059,10 +2542,7 @@ async def _build_document_context(
                         )
                         
                         extraction_method = iso_context.get("_extraction_method", "iso20022")
-                        extraction_confidence = _safe_float(
-                            iso_context.get("_extraction_confidence", 0.0),
-                            default=0.0,
-                        )
+                        extraction_confidence = iso_context.get("_extraction_confidence", 0.0)
                         
                         logger.info(
                             f"ISO 20022 extraction from {filename}: method={extraction_method} "
@@ -3084,7 +2564,6 @@ async def _build_document_context(
                         logger.warning(f"ISO20022 LC extraction failed for {filename}: {exc}", exc_info=True)
                         doc_info["extraction_status"] = "failed"
                         doc_info["extraction_error"] = str(exc)
-                        doc_info["failed_reason"] = str(exc)
                 else:
                     # Use AI-FIRST extraction for OCR/plaintext LC documents
                     # This runs AI as PRIMARY, then validates with regex
@@ -3092,10 +2571,7 @@ async def _build_document_context(
                         # AI-first extraction (PRIMARY)
                         lc_struct = await extract_lc_ai_first(extracted_text)
                         extraction_method = lc_struct.get("_extraction_method", "unknown")
-                        extraction_confidence = _safe_float(
-                            lc_struct.get("_extraction_confidence", 0.0),
-                            default=0.0,
-                        )
+                        extraction_confidence = lc_struct.get("_extraction_confidence", 0.0)
                         extraction_status = lc_struct.get("_status", "unknown")
                         
                         logger.info(
@@ -3104,7 +2580,7 @@ async def _build_document_context(
                             f"keys={list(lc_struct.keys())}"
                         )
                         
-                        if _ai_first_success(extraction_status, lc_struct):
+                        if lc_struct and extraction_status != "failed":
                             # AI-first already includes validation, but apply two-stage for normalization
                             validated_lc, validation_summary = _apply_two_stage_validation(
                                 lc_struct, "lc", filename
@@ -3165,16 +2641,12 @@ async def _build_document_context(
                             logger.error(f"Both LC extraction methods failed for {filename}: {fallback_error}", exc_info=True)
                             doc_info["extraction_status"] = "failed"
                             doc_info["extraction_error"] = str(fallback_error)
-                            doc_info["failed_reason"] = str(fallback_error)
             elif document_type in ("commercial_invoice", "proforma_invoice"):
                 # Use AI-FIRST extraction for invoices (including proforma invoices)
                 try:
                     invoice_struct = await extract_invoice_ai_first(extracted_text)
                     extraction_method = invoice_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        invoice_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = invoice_struct.get("_extraction_confidence", 0.0)
                     extraction_status = invoice_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3182,7 +2654,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, invoice_struct):
+                    if invoice_struct and extraction_status != "failed":
                         # Apply two-stage validation for normalization
                         validated_invoice, validation_summary = _apply_two_stage_validation(
                             invoice_struct, "invoice", filename
@@ -3231,10 +2703,7 @@ async def _build_document_context(
                 try:
                     bl_struct = await extract_bl_ai_first(extracted_text)
                     extraction_method = bl_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        bl_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = bl_struct.get("_extraction_confidence", 0.0)
                     extraction_status = bl_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3242,7 +2711,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, bl_struct):
+                    if bl_struct and extraction_status != "failed":
                         # Apply two-stage validation for normalization
                         validated_bl, validation_summary = _apply_two_stage_validation(
                             bl_struct, "bl", filename
@@ -3291,10 +2760,7 @@ async def _build_document_context(
                 try:
                     packing_struct = await extract_packing_list_ai_first(extracted_text)
                     extraction_method = packing_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        packing_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = packing_struct.get("_extraction_confidence", 0.0)
                     extraction_status = packing_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3302,7 +2768,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, packing_struct):
+                    if packing_struct and extraction_status != "failed":
                         validated_packing, validation_summary = _apply_two_stage_validation(
                             packing_struct, "packing_list", filename
                         )
@@ -3345,10 +2811,7 @@ async def _build_document_context(
                 try:
                     coo_struct = await extract_coo_ai_first(extracted_text)
                     extraction_method = coo_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        coo_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = coo_struct.get("_extraction_confidence", 0.0)
                     extraction_status = coo_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3356,7 +2819,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, coo_struct):
+                    if coo_struct and extraction_status != "failed":
                         validated_coo, validation_summary = _apply_two_stage_validation(
                             coo_struct, "certificate_of_origin", filename
                         )
@@ -3399,10 +2862,7 @@ async def _build_document_context(
                 try:
                     insurance_struct = await extract_insurance_ai_first(extracted_text)
                     extraction_method = insurance_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        insurance_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = insurance_struct.get("_extraction_confidence", 0.0)
                     extraction_status = insurance_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3410,7 +2870,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, insurance_struct):
+                    if insurance_struct and extraction_status != "failed":
                         validated_insurance, validation_summary = _apply_two_stage_validation(
                             insurance_struct, "insurance", filename
                         )
@@ -3453,10 +2913,7 @@ async def _build_document_context(
                 try:
                     inspection_struct = await extract_inspection_ai_first(extracted_text)
                     extraction_method = inspection_struct.get("_extraction_method", "unknown")
-                    extraction_confidence = _safe_float(
-                        inspection_struct.get("_extraction_confidence", 0.0),
-                        default=0.0,
-                    )
+                    extraction_confidence = inspection_struct.get("_extraction_confidence", 0.0)
                     extraction_status = inspection_struct.get("_status", "unknown")
                     
                     logger.info(
@@ -3464,7 +2921,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if _ai_first_success(extraction_status, inspection_struct):
+                    if inspection_struct and extraction_status != "failed":
                         validated_inspection, validation_summary = _apply_two_stage_validation(
                             inspection_struct, "inspection", filename
                         )
@@ -3521,35 +2978,6 @@ async def _build_document_context(
             if doc_info.get("extraction_status") == "empty":
                 doc_info["extraction_status"] = "text_only"
 
-        if EXTRACTION_DEBUG:
-            extracted_fields = doc_info.get("extracted_fields") or {}
-            if isinstance(extracted_fields, dict):
-                extracted_field_count = len([k for k in extracted_fields.keys() if not str(k).startswith("_")])
-            elif isinstance(extracted_fields, list):
-                extracted_field_count = len(extracted_fields)
-            else:
-                extracted_field_count = 0
-            doc_info["debug_extraction"] = {
-                "ocr_text_length": len(extracted_text) if extracted_text else 0,
-                "ocr_provider": doc_info.get("ocr_provider"),
-                "extraction_method": doc_info.get("extraction_method"),
-                "extraction_confidence": doc_info.get("extraction_confidence"),
-                "extracted_field_count": extracted_field_count,
-                "ai_first_status": doc_info.get("ai_first_status"),
-                "extraction_status": doc_info.get("extraction_status"),
-            }
-            logger.info(
-                "EXTRACTION_DEBUG doc=%s type=%s ocr_len=%d method=%s provider=%s fields=%d confidence=%s status=%s",
-                filename,
-                document_type,
-                len(extracted_text) if extracted_text else 0,
-                doc_info.get("extraction_method"),
-                doc_info.get("ocr_provider"),
-                extracted_field_count,
-                doc_info.get("extraction_confidence"),
-                doc_info.get("extraction_status"),
-            )
-
         document_details.append(doc_info)
         entry = documents_presence.setdefault(
             document_type,
@@ -3558,17 +2986,14 @@ async def _build_document_context(
         entry["present"] = True
         entry["count"] += 1
 
-    # Set extraction status from per-document outcomes (strict)
-    doc_statuses = [str(d.get("extraction_status") or "").lower() for d in document_details]
-    has_success = any(s == "success" for s in doc_statuses)
-    has_partial = any(s in {"partial", "text_only"} for s in doc_statuses)
-
-    if has_success and not has_partial and all(s in {"success", ""} for s in doc_statuses):
+    # Set extraction status
+    if has_structured_data:
         context["extraction_status"] = "success"
         logger.info(f"Final extracted context structure: {list(context.keys())}")
-    elif has_success or has_partial or any(key in context for key in ("lc", "invoice", "bill_of_lading")):
+    elif any(key in context for key in ("lc", "invoice", "bill_of_lading")):
+        # We have raw_text but no structured fields
         context["extraction_status"] = "partial"
-        logger.warning("Extraction completed with partial/mixed document quality")
+        logger.warning("Extracted raw text but no structured fields could be parsed")
     else:
         context["extraction_status"] = "empty"
         logger.warning("No context extracted from any files")
@@ -3730,30 +3155,6 @@ def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_issue_explanation(issue: Dict[str, Any], *, default_type: str) -> Dict[str, Any]:
-    severity = str(issue.get("severity") or "minor").lower()
-    issue_type = issue.get("issue_type") or default_type
-    expected = issue.get("expected")
-    found = issue.get("found") or issue.get("actual")
-    rule = issue.get("rule") or issue.get("rule_id") or "rule"
-
-    if severity == "critical":
-        required_action = "Fix before submission; this blocks bank/customs readiness"
-    elif severity in {"major", "warning"}:
-        required_action = "Review and correct before submission"
-    else:
-        required_action = "Optional cleanup; does not block by itself"
-
-    return {
-        "issue_type": issue_type,
-        "why_flagged": issue.get("message") or f"Rule {rule} failed validation",
-        "evidence_fields": [field for field in [issue.get("field"), "expected", "found"] if field],
-        "required_user_action": required_action,
-        "expected": expected,
-        "found": found,
-    }
-
-
 def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tuple[str, Decimal]:
     """Infer company size from user/company metadata."""
     size = str(payload.get("company_size") or "").strip().lower()
@@ -3823,24 +3224,9 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     
     Tries pdfminer/PyPDF2 first, then falls back to OCR (Google Document AI/AWS Textract)
     if enabled and text extraction returns empty.
-
-    Side-effect: writes provider trace on upload_file._ocr_meta for downstream persistence.
     """
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
-
-    def _set_ocr_meta(source: str, provider: Optional[str] = None, confidence: Optional[float] = None, status: str = "success") -> None:
-        try:
-            setattr(upload_file, "_ocr_meta", {
-                "source": source,
-                "provider": provider,
-                "confidence": confidence,
-                "status": status,
-            })
-        except Exception:
-            pass
-
-    _set_ocr_meta(source="none", provider=None, confidence=None, status="empty")
     
     logger.log(TRACE_LOG_LEVEL, "Starting text extraction for %s (type=%s)", filename, content_type)
     
@@ -3849,12 +3235,10 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         await upload_file.seek(0)
         logger.info(f"✓ Read {len(file_bytes)} bytes from {filename}")
     except Exception as e:
-        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.error(f"✗ Failed to read file {filename}: {e}", exc_info=True)
         return ""
 
     if not file_bytes:
-        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.warning(f"⚠ Empty file content for {filename}")
         return ""
     
@@ -3866,66 +3250,17 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         )
 
     text_output = ""
-    extraction_cache_key = hashlib.sha256(file_bytes).hexdigest()
-    extraction_cache_enabled = os.getenv("OCR_EXTRACTION_CACHE_ENABLED", "1").lower() in ("1", "true", "yes", "on")
-    if extraction_cache_enabled:
-        try:
-            from app.cache import ocr_cache
-            cached = await ocr_cache.get(extraction_cache_key)
-            if cached and isinstance(cached, dict):
-                cached_text = str(cached.get("extracted_text") or "")
-                if cached_text.strip():
-                    logger.log(TRACE_LOG_LEVEL, "Extraction cache hit for %s", filename)
-                    _set_ocr_meta(
-                        source=str(cached.get("source") or "cache"),
-                        provider=cached.get("provider"),
-                        confidence=_safe_float(cached.get("confidence"), default=None),
-                        status="success",
-                    )
-                    return cached_text
-        except Exception as cache_err:
-            logger.debug("Extraction cache lookup failed for %s: %s", filename, cache_err)
-
-    min_native_chars = max(1, int(os.getenv("OCR_NATIVE_MIN_CHARS", "48")))
-
-    def _native_text_sufficient(text: str) -> bool:
-        stripped = (text or "").strip()
-        if len(stripped) < min_native_chars:
-            return False
-        alnum = sum(ch.isalnum() for ch in stripped)
-        ratio = (alnum / max(1, len(stripped)))
-        return ratio >= float(os.getenv("OCR_NATIVE_MIN_ALNUM_RATIO", "0.35"))
-
-    async def _cache_extraction(text: str, source: str, provider: Optional[str] = None, confidence: Optional[float] = None) -> None:
-        if not extraction_cache_enabled:
-            return
-        if not text.strip():
-            return
-        try:
-            from app.cache import ocr_cache
-            await ocr_cache.set(extraction_cache_key, {
-                "success": True,
-                "extracted_text": text,
-                "source": source,
-                "provider": provider,
-                "confidence": confidence,
-                "cache_version": "extract-v2",
-            })
-        except Exception as cache_err:
-            logger.debug("Extraction cache write failed for %s: %s", filename, cache_err)
 
     # Try pdfminer first (better for complex layouts)
     logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
-        if _native_text_sufficient(text_output):
+        if text_output.strip():
             logger.log(TRACE_LOG_LEVEL, "pdfminer extracted %s characters from %s", len(text_output), filename)
-            _set_ocr_meta(source="pdfminer", provider="native_pdfminer", confidence=1.0, status="success")
-            await _cache_extraction(text_output, "pdfminer", provider="native_pdfminer", confidence=1.0)
             return text_output
         else:
-            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty/low-confidence text for %s", filename)
+            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty text for %s", filename)
     except Exception as pdfminer_error:
         logger.log(TRACE_LOG_LEVEL, "pdfminer extraction failed for %s: %s", filename, pdfminer_error)
 
@@ -3943,13 +3278,11 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
                 logger.debug(f"Failed to extract text from page {page_num+1} of {filename}: {e}")
                 continue
         text_output = "\n".join(pieces)
-        if _native_text_sufficient(text_output):
+        if text_output.strip():
             logger.log(TRACE_LOG_LEVEL, "PyPDF2 extracted %s characters from %s (%s pages)", len(text_output), filename, len(reader.pages))
-            _set_ocr_meta(source="pypdf2", provider="native_pypdf2", confidence=1.0, status="success")
-            await _cache_extraction(text_output, "pypdf2", provider="native_pypdf2", confidence=1.0)
             return text_output
         else:
-            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty/low-confidence text for %s (%s pages)", filename, len(reader.pages))
+            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty text for %s (%s pages)", filename, len(reader.pages))
     except Exception as pypdf_error:
         logger.warning(f"  ✗ PyPDF2 extraction failed for {filename}: {pypdf_error}")
 
@@ -3983,11 +3316,9 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         else:
             # Try OCR providers in configured order
             logger.log(TRACE_LOG_LEVEL, "Attempting OCR with providers %s for %s", settings.OCR_PROVIDER_ORDER, filename)
-            text_output, ocr_provider, ocr_confidence = await _try_ocr_providers(file_bytes, filename, content_type, page_count=page_count)
+            text_output = await _try_ocr_providers(file_bytes, filename, content_type)
             if text_output.strip():
                 logger.log(TRACE_LOG_LEVEL, "OCR extraction successful for %s (%s characters)", filename, len(text_output))
-                _set_ocr_meta(source="ocr", provider=ocr_provider, confidence=ocr_confidence, status="success")
-                await _cache_extraction(text_output, "ocr", provider=ocr_provider, confidence=ocr_confidence)
                 return text_output
             else:
                 logger.warning(f"  ✗ OCR extraction returned empty")
@@ -3995,7 +3326,6 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
         logger.log(TRACE_LOG_LEVEL, "OCR disabled, bypassing fallback for %s", filename)
 
     if not text_output.strip():
-        _set_ocr_meta(source="none", provider=None, confidence=0.0, status="failed")
         logger.error(f"❌ ALL extraction methods failed for {filename}")
         logger.error(f"   Summary: pdfminer=empty, PyPDF2=empty, OCR={'attempted' if settings.OCR_ENABLED else 'disabled'}")
         logger.error(f"   File details: content-type={content_type}, size={len(file_bytes)} bytes")
@@ -4005,16 +3335,11 @@ async def _extract_text_from_upload(upload_file: Any) -> str:
     return text_output
 
 
-async def _try_ocr_providers(
-    file_bytes: bytes,
-    filename: str,
-    content_type: str,
-    page_count: Optional[int] = None,
-) -> tuple[str, Optional[str], Optional[float]]:
+async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> str:
     """
     Try OCR providers in configured order until one succeeds.
-
-    Returns (extracted_text, provider_name, confidence).
+    
+    Returns extracted text or empty string if all providers fail.
     """
     from uuid import uuid4
     from app.ocr.factory import get_ocr_factory
@@ -4035,25 +3360,8 @@ async def _try_ocr_providers(
         # Create a map of provider names to adapters
         adapter_map = {adapter.provider_name: adapter for adapter in all_adapters}
         
-        best_low_confidence_text = ""
-        best_low_confidence_score = 0.0
-        best_low_confidence_provider: Optional[str] = None
-
-        page_count_est = max(1, int(page_count or 1))
-        per_page_timeout = float(os.getenv("OCR_TIMEOUT_PER_PAGE_SEC", "2.5"))
-        min_timeout = float(os.getenv("OCR_TIMEOUT_MIN_SEC", "10"))
-        max_timeout = float(os.getenv("OCR_TIMEOUT_MAX_SEC", str(settings.OCR_TIMEOUT_SEC)))
-        provider_timeout = min(max_timeout, max(min_timeout, per_page_timeout * page_count_est))
-        total_budget = float(os.getenv("OCR_TOTAL_BUDGET_SEC", str(provider_timeout + 5.0)))
-        budget_start = time.perf_counter()
-
         # Try providers in configured order
         for provider_name in provider_order:
-            elapsed = time.perf_counter() - budget_start
-            remaining_budget = total_budget - elapsed
-            if remaining_budget <= 0:
-                logger.warning("OCR budget exceeded for %s after %.2fs; returning best-effort result", filename, elapsed)
-                break
             # Map short name to full provider name
             full_provider_name = provider_map.get(provider_name, provider_name)
             
@@ -4073,61 +3381,36 @@ async def _try_ocr_providers(
                 import asyncio
                 doc_id = uuid4()
                 
-                timeout_for_provider = min(provider_timeout, remaining_budget)
                 result = await asyncio.wait_for(
                     adapter.process_file_bytes(file_bytes, filename, content_type, doc_id),
-                    timeout=timeout_for_provider
+                    timeout=settings.OCR_TIMEOUT_SEC
                 )
                 
                 if result and result.full_text and not result.error:
-                    confidence = float(result.overall_confidence or 0.0)
                     logger.info(
                         f"OCR provider {full_provider_name} extracted {len(result.full_text)} characters "
-                        f"from {filename} (confidence: {confidence:.2f}, "
+                        f"from {filename} (confidence: {result.overall_confidence:.2f}, "
                         f"time: {result.processing_time_ms}ms)"
                     )
-
-                    if confidence >= settings.OCR_MIN_CONFIDENCE:
-                        return result.full_text, full_provider_name, confidence
-
-                    logger.warning(
-                        "Low OCR confidence from %s for %s (%.2f < %.2f). Trying fallback provider.",
-                        full_provider_name,
-                        filename,
-                        confidence,
-                        settings.OCR_MIN_CONFIDENCE,
-                    )
-
-                    if confidence > best_low_confidence_score:
-                        best_low_confidence_score = confidence
-                        best_low_confidence_text = result.full_text
-                        best_low_confidence_provider = full_provider_name
+                    return result.full_text
                 elif result and result.error:
                     logger.warning(f"OCR provider {full_provider_name} returned error: {result.error}")
                 else:
                     logger.debug(f"OCR provider {full_provider_name} returned empty result")
                     
             except asyncio.TimeoutError:
-                logger.warning(f"OCR provider {full_provider_name} timed out after {timeout_for_provider:.1f}s")
+                logger.warning(f"OCR provider {full_provider_name} timed out after {settings.OCR_TIMEOUT_SEC}s")
                 continue
             except Exception as e:
                 logger.warning(f"OCR provider {full_provider_name} failed: {e}", exc_info=True)
                 continue
         
-        if best_low_confidence_text:
-            logger.warning(
-                "Using low-confidence OCR output for %s (best confidence: %.2f).",
-                filename,
-                best_low_confidence_score,
-            )
-            return best_low_confidence_text, best_low_confidence_provider, best_low_confidence_score
-
         logger.warning(f"All OCR providers failed for {filename}")
-        return "", None, 0.0
+        return ""
         
     except Exception as e:
         logger.error(f"Failed to initialize OCR factory: {e}", exc_info=True)
-        return "", None, 0.0
+        return ""
 
 
 def _infer_document_type(filename: Optional[str], index: int) -> str:
@@ -4374,409 +3657,6 @@ def _severity_to_status(severity: Optional[str]) -> str:
     return "success"
 
 
-def _map_verdict_token_to_class(verdict: Optional[str]) -> str:
-    """Map internal verdict tokens to evaluator class buckets."""
-    if not verdict:
-        return "unknown"
-    token = str(verdict).strip().upper()
-    if token in {"SUBMIT", "PASS", "APPROVED", "GO"}:
-        return "pass"
-    if token in {"CAUTION", "HOLD", "WARNING", "WARN", "PARTIAL"}:
-        return "warn"
-    if token in {"REJECT", "FAIL", "FAILED", "BLOCK"}:
-        return "reject"
-    if token in {"BLOCKED", "BLOCKED_BY_GATE", "FAIL_CLOSED"}:
-        return "blocked"
-    return "unknown"
-
-
-def _resolve_bank_verdict_class(
-    verdict: Optional[str],
-    validation_status: Optional[str],
-    *,
-    critical_count: int = 0,
-    major_count: int = 0,
-) -> str:
-    """Deterministic class extraction that prefers explicit compliance status first."""
-    status = str(validation_status or "").strip().lower()
-    if status == "blocked":
-        return "blocked"
-    if status in {"non_compliant", "partial"}:
-        return "reject"
-
-    if critical_count > 0:
-        return "reject"
-    if major_count > 0:
-        return "warn"
-
-    return _map_verdict_token_to_class(verdict)
-
-
-
-
-def _attach_router_evidence_to_decision_trace(decision_trace: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if decision_trace is None:
-        return None
-
-    if not isinstance(decision_trace, dict):
-        return decision_trace
-
-    evidence = get_router_evidence()
-    enriched = dict(decision_trace)
-    enriched["router_transport"] = evidence.get("router_transport", "unknown")
-    layer_calls = evidence.get("layer_calls")
-    enriched["layer_calls"] = layer_calls if isinstance(layer_calls, list) else []
-    return enriched
-
-
-def _merge_llm_layer_trace(
-    decision_trace: Optional[Dict[str, Any]],
-    ai_metadata: Optional[Dict[str, Any]],
-    *,
-    mode: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    provider_evidence = None
-    if isinstance(ai_metadata, dict):
-        provider_evidence = ai_metadata.get("llm_layer_payloads")
-
-    trace = _attach_router_evidence_to_decision_trace(decision_trace) if decision_trace is not None else None
-
-    if trace is None and provider_evidence:
-        trace = _attach_router_evidence_to_decision_trace({"mode": mode})
-
-    if isinstance(trace, dict) and provider_evidence is not None:
-        trace["provider_evidence"] = provider_evidence
-
-    return trace
-
-
-def _has_non_empty_value(value: Any) -> bool:
-    if value is None:
-        return False
-    return bool(str(value).strip())
-
-
-def _is_extraction_empty(
-    documents: Optional[Any],
-    processing_summary: Optional[Any],
-) -> Tuple[bool, Dict[str, Any]]:
-    docs = documents if isinstance(documents, list) else []
-    summary = processing_summary if isinstance(processing_summary, dict) else {}
-
-    total_docs = _safe_int(summary.get("total_documents") or summary.get("documents") or len(docs))
-    successful = _safe_int(summary.get("successful_extractions") or summary.get("verified"))
-    partial = _safe_int(summary.get("partial_extractions") or summary.get("warnings"))
-    failed = _safe_int(summary.get("failed_extractions") or summary.get("errors"))
-
-    observed = {
-        "total_documents": total_docs,
-        "successful_extractions": successful,
-        "partial_extractions": partial,
-        "failed_extractions": failed,
-    }
-
-    if total_docs > 0 and successful == 0 and partial == 0:
-        return True, observed
-
-    if docs:
-        statuses = [
-            normalize_extraction_status(
-                doc.get("extraction_status")
-                or doc.get("extractionStatus")
-                or doc.get("status")
-            )
-            for doc in docs
-            if isinstance(doc, dict)
-        ]
-        observed["statuses"] = statuses
-        has_signal = any(status in {"success", "partial", "text_only"} for status in statuses)
-        return not has_signal, observed
-
-    if total_docs == 0:
-        return True, observed
-
-    return False, observed
-
-
-def _build_pipeline_verification_checks(
-    *,
-    decision_trace: Optional[Dict[str, Any]],
-    ai_verdict: Optional[Any],
-    ruleset_verdict: Optional[Any],
-    final_verdict: Optional[Any],
-    mode: Optional[str],
-    documents: Optional[Any],
-    processing_summary: Optional[Any],
-) -> List[Dict[str, Any]]:
-    trace = decision_trace if isinstance(decision_trace, dict) else {}
-    router_transport = str(trace.get("router_transport") or "").strip().lower()
-    layer_calls = trace.get("layer_calls")
-    layer_call_count = len(layer_calls) if isinstance(layer_calls, list) else 0
-
-    mode_token = str(mode or trace.get("mode") or "").strip().lower()
-    ai_expected = mode_token == "hybrid_enforced"
-    router_transport_observed = router_transport not in {"", "unknown", "none", "null"}
-    trace_evidence_present = router_transport_observed or layer_call_count > 0 or bool(trace.get("provider_evidence"))
-
-    # If no trace evidence exists, do not hard-fail verification on transport/layer checks.
-    # In enforced mode, we always require AI trace evidence.
-    require_router_layer_checks = trace_evidence_present or ai_expected
-
-    extraction_empty, extraction_observed = _is_extraction_empty(documents, processing_summary)
-
-    checks: List[Dict[str, Any]] = [
-        {
-            "check_name": "router_transport_openrouter",
-            "passed": (router_transport == "openrouter") if require_router_layer_checks else True,
-            "observed_value": trace.get("router_transport"),
-            "required_value": "openrouter" if require_router_layer_checks else "optional (no trace evidence)",
-        },
-        {
-            "check_name": "layer_calls_present",
-            "passed": (layer_call_count >= 1) if require_router_layer_checks else True,
-            "observed_value": layer_call_count,
-            "required_value": ">=1" if require_router_layer_checks else "optional (no trace evidence)",
-        },
-        {
-            "check_name": "documents_extraction_non_empty",
-            "passed": not extraction_empty,
-            "observed_value": extraction_observed,
-            "required_value": ">=1 extractable document",
-        },
-        {
-            "check_name": "ai_verdict_non_empty",
-            "passed": _has_non_empty_value(ai_verdict),
-            "observed_value": ai_verdict,
-            "required_value": "non-empty",
-        },
-        {
-            "check_name": "ruleset_verdict_non_empty",
-            "passed": _has_non_empty_value(ruleset_verdict),
-            "observed_value": ruleset_verdict,
-            "required_value": "non-empty",
-        },
-        {
-            "check_name": "final_verdict_non_empty",
-            "passed": _has_non_empty_value(final_verdict),
-            "observed_value": final_verdict,
-            "required_value": "non-empty",
-        },
-    ]
-
-    if mode_token == "hybrid_enforced":
-        enforcement_applied = trace.get("enforcement_applied")
-        checks.append(
-            {
-                "check_name": "enforcement_applied_for_hybrid_enforced",
-                "passed": enforcement_applied is True,
-                "observed_value": enforcement_applied,
-                "required_value": True,
-            }
-        )
-
-    return checks
-
-
-def _apply_pipeline_verification_gate(
-    structured_result: Dict[str, Any],
-    *,
-    mode: Optional[str] = None,
-    issue_count_invariant_failure_reason: Optional[str] = None,
-) -> Dict[str, Any]:
-    checks = _build_pipeline_verification_checks(
-        decision_trace=structured_result.get("decision_trace"),
-        ai_verdict=structured_result.get("ai_verdict"),
-        ruleset_verdict=structured_result.get("ruleset_verdict"),
-        final_verdict=structured_result.get("final_verdict"),
-        mode=mode,
-        documents=(
-            structured_result.get("documents_structured")
-            or structured_result.get("documents")
-            or []
-        ),
-        processing_summary=structured_result.get("processing_summary") or {},
-    )
-    if issue_count_invariant_failure_reason:
-        checks.append(
-            {
-                "check_name": "issue_count_invariant",
-                "passed": False,
-                "observed_value": issue_count_invariant_failure_reason,
-                "required_value": "issue totals must align across processing_summary and per-document ledger",
-            }
-        )
-
-    fail_reasons = [
-        (
-            f"{check['check_name']} failed "
-            f"(observed={check.get('observed_value')!r}, required={check.get('required_value')!r})"
-        )
-        for check in checks
-        if not check.get("passed")
-    ]
-    status_token = "VERIFIED" if not fail_reasons else "UNVERIFIED"
-
-    structured_result["pipeline_verification_status"] = status_token
-    structured_result["pipeline_verification_checks"] = checks
-    structured_result["pipeline_verification_fail_reasons"] = fail_reasons
-    if issue_count_invariant_failure_reason:
-        structured_result["invariant_failure_reason"] = issue_count_invariant_failure_reason
-    if fail_reasons:
-        structured_result["pipeline_verification_warnings"] = [
-            "WARNING: backend pipeline verification gate failed; verdict fields are preserved but unverified.",
-            *[f"WARNING: {reason}" for reason in fail_reasons],
-        ]
-    else:
-        structured_result["pipeline_verification_warnings"] = []
-
-    return structured_result
-
-
-def _enforce_document_semantics(
-    structured_result: Dict[str, Any],
-    *,
-    validation_status: Optional[str],
-    critical_count: int,
-    major_count: int,
-) -> Dict[str, Any]:
-    docs = structured_result.get("documents") or structured_result.get("documents_structured") or []
-    compliance_status = compliance_status_from_validation(validation_status, critical_count=critical_count, major_count=major_count)
-
-    for doc in docs:
-        extraction_status = normalize_extraction_status(doc.get("extraction_status") or doc.get("extractionStatus"))
-        failed_reason = doc.get("failed_reason") or doc.get("extraction_error") or doc.get("failedReason")
-        if extraction_status == "failed" and not failed_reason:
-            failed_reason = "Extraction failed: no readable fields found"
-        require_failed_reason(extraction_status, failed_reason)
-
-        doc["extraction_status"] = extraction_status
-        doc["failed_reason"] = failed_reason
-        doc["compliance_status"] = compliance_status
-        assert_no_status_cross_mix(doc)
-
-    structured_result["compliance_status"] = compliance_status
-    return structured_result
-
-
-def _derive_ai_verdict(ai_metadata: Optional[Dict[str, Any]]) -> str:
-    metadata = ai_metadata or {}
-    llm_verdict = str(metadata.get("llm_verdict") or "").strip().lower()
-    if llm_verdict in {"pass", "review", "reject"}:
-        return llm_verdict
-
-    critical = int(metadata.get("critical_issues", 0) or 0)
-    major = int(metadata.get("major_issues", 0) or 0)
-    total = int(metadata.get("total_issues", critical + major) or (critical + major))
-    if critical > 0:
-        return "reject"
-    if major > 0 or total > 0:
-        return "review"
-    return "pass"
-
-
-def _derive_ruleset_verdict(critical_count: int, major_count: int) -> str:
-    if critical_count > 0:
-        return "reject"
-    if major_count > 0:
-        return "review"
-    return "pass"
-
-
-def _arbitration_to_final_verdict(arbitration_verdict: Optional[str], fallback: Optional[str]) -> str:
-    token = str(arbitration_verdict or "").strip().lower()
-    if token == "pass":
-        return "SUBMIT"
-    if token == "reject":
-        return "REJECT"
-    if token == "review":
-        return "HOLD"
-    return str(fallback or "HOLD")
-
-
-def _align_final_verdict(final_verdict: Optional[str], bank_verdict: Optional[Dict[str, Any]]) -> str:
-    bank_payload = bank_verdict or {}
-    verdict_class = str(bank_payload.get("verdict_class") or "").strip().lower()
-    if verdict_class == "reject":
-        return "REJECT"
-
-    signature = bank_payload.get("verdict_signature")
-    if isinstance(signature, dict):
-        signature_status = str(signature.get("validation_status") or "").strip().lower()
-        if signature_status == "non_compliant":
-            return "REJECT"
-
-    bank_token = str(bank_payload.get("verdict") or "").strip().upper()
-    if bank_token in {"SUBMIT", "CAUTION", "HOLD", "REJECT", "BLOCKED"}:
-        return bank_token
-    token = str(final_verdict or "").strip().upper()
-    return token or "HOLD"
-
-
-def _derive_confidence_band(extraction_confidence_summary: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
-    if not extraction_confidence_summary:
-        return None, "extraction_confidence_unavailable"
-    confidence = extraction_confidence_summary.get("average_confidence")
-    if confidence is None:
-        return None, "average_confidence_missing"
-    try:
-        score = float(confidence)
-    except (TypeError, ValueError):
-        return None, "average_confidence_invalid"
-    if score < 0.6:
-        return "low", None
-    if score < 0.85:
-        return "medium", None
-    return "high", None
-
-
-def _build_verdict_signature(
-    *,
-    source: str,
-    verdict: Optional[str],
-    critical_count: int = 0,
-    major_count: int = 0,
-    minor_count: int = 0,
-    compliance_score: Optional[float] = None,
-    validation_status: Optional[str] = None,
-    reason: Optional[str] = None,
-    verdict_class: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create machine-readable class-separation marker for deterministic scoring."""
-    return {
-        "version": "1.0",
-        "source": source,
-        "verdict_class": verdict_class
-            if verdict_class in {"pass", "warn", "reject", "blocked", "unknown"}
-            else _map_verdict_token_to_class(verdict),
-        "verdict_token": str(verdict).upper() if verdict is not None else None,
-        "validation_status": validation_status,
-        "critical_count": int(critical_count or 0),
-        "major_count": int(major_count or 0),
-        "minor_count": int(minor_count or 0),
-        "compliance_score": None if compliance_score is None else round(float(compliance_score), 2),
-        "reason": reason,
-        "schema_version": "phase4-class-separation-v1",
-    }
-
-
-def _build_authoritative_verdict(
-    *,
-    verdict_class: Optional[str],
-    source: str,
-    rationale: Optional[str] = None,
-    rationale_details: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Build explicit, evaluator-safe verdict contract payload."""
-    return {
-        "schema_version": "phase4-authoritative-verdict-v1",
-        "label": _map_verdict_token_to_class(verdict_class) if verdict_class else "unknown",
-        "source": source,
-        "rationale": rationale or "class-level decision used for evaluation",
-        "details": rationale_details or {},
-    }
-
-
-
 def _label_to_doc_type(label: Optional[str]) -> Optional[str]:
     if not label:
         return None
@@ -4838,87 +3718,12 @@ def _humanize_doc_type(doc_type: Optional[str]) -> str:
     return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
 
 
-def _value_has_content(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, (list, tuple, set)):
-        return any(_value_has_content(v) for v in value)
-    if isinstance(value, dict):
-        return any(_value_has_content(v) for v in value.values())
-    return True
-
-
-def _document_has_extraction_content(doc: Dict[str, Any]) -> bool:
-    if not isinstance(doc, dict):
-        return False
-
-    structured_keys = [
-        "extracted_fields",
-        "extracted_data",
-        "structured_data",
-        "structured_fields",
-        "fields",
-        "data",
-    ]
-    for key in structured_keys:
-        if _value_has_content(doc.get(key)):
-            return True
-
-    text_keys = [
-        "raw_text_preview",
-        "raw_text",
-        "ocr_text",
-        "text",
-        "content",
-        "full_text",
-    ]
-    for key in text_keys:
-        if _value_has_content(doc.get(key)):
-            return True
-
-    return False
-
-
-def _all_documents_empty(documents: List[Dict[str, Any]]) -> bool:
-    if not documents:
-        return True
-    return not any(_document_has_extraction_content(doc) for doc in documents)
-
-
-def _is_extraction_empty_from_baseline(
-    v2_baseline: Optional[LCBaseline],
-    documents: List[Dict[str, Any]],
-) -> Tuple[bool, Optional[str]]:
-    completeness = v2_baseline.extraction_completeness if v2_baseline else 0.0
-    if completeness <= 0.0:
-        if EXTRACTION_DEBUG:
-            missing_critical = [f.field_name for f in v2_baseline.get_missing_critical()] if v2_baseline else []
-            missing_required = [f.field_name for f in v2_baseline.get_missing_required()] if v2_baseline else []
-            logger.warning(
-                "EXTRACTION_DEBUG completeness_zero: completeness=%.3f critical=%.3f missing_critical=%s missing_required=%s",
-                completeness,
-                v2_baseline.critical_completeness if v2_baseline else 0.0,
-                missing_critical,
-                missing_required,
-            )
-        return True, "extraction_completeness_zero"
-    if _all_documents_empty(documents):
-        if EXTRACTION_DEBUG:
-            logger.warning("EXTRACTION_DEBUG documents_empty: no document content detected")
-        return True, "documents_empty"
-    return False, None
-
-
 def _build_blocked_structured_result(
     v2_gate_result,
     v2_baseline: LCBaseline,
     lc_type: str,
     processing_duration: float,
     documents: List[Dict[str, Any]],
-    extraction_empty: bool = False,
-    extraction_empty_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build a structured_result for blocked validation.
@@ -4934,14 +3739,6 @@ def _build_blocked_structured_result(
         elif hasattr(issue, 'to_dict'):
             blocking_issues.append(issue.to_dict())
     
-    if not blocking_issues:
-        blocking_issues.append({
-            "severity": "critical",
-            "code": "LC-GATE-UNKNOWN",
-            "rule": "LC-GATE-UNKNOWN",
-            "message": "Validation gate blocked processing but no explicit blocking issue was emitted.",
-        })
-
     # Build document list - PRESERVE extraction data even when validation is blocked
     # The extraction succeeded, we're blocking validation due to missing LC fields
     # Don't throw away the extraction work!
@@ -4968,44 +3765,12 @@ def _build_blocked_structured_result(
     else:
         time_display = f"{processing_duration:.1f}s"
     
-    payload = {
+    return {
         "version": "structured_result_v1",
         
         # V2 blocked status
         "validation_blocked": True,
         "validation_status": "blocked",
-        "extraction_empty": extraction_empty,
-        "extraction_empty_reason": extraction_empty_reason,
-        "verdict_signature": _build_verdict_signature(
-            source="validation_gate",
-            verdict="BLOCKED",
-            critical_count=0,
-            major_count=0,
-            minor_count=0,
-            validation_status="blocked",
-            reason="blocking_gate_fields",
-        ),
-
-        "authoritative_verdict": {
-            "schema_version": "phase4-authoritative-verdict-v1",
-            "label": "blocked",
-            "source": "validation_gate",
-            "rationale": "validation_gate blocked the request before bank-risk scoring",
-            "details": {
-                "validation_status": "blocked",
-                "reason": "blocking_gate_fields",
-            },
-        },
-        "ai_verdict": None,
-        "ruleset_verdict": "reject",
-        "final_verdict": "BLOCKED",
-        "override_reason": "validation_blocked_before_ai",
-        "blocking_rules": [
-            str((i.get("rule") or i.get("code") or "validation_gate")).strip()
-            for i in blocking_issues if isinstance(i, dict)
-        ],
-        "confidence_band": None,
-        "confidence_band_reason": "validation_blocked_no_confidence_band",
         
         # Gate result
         "gate_result": v2_gate_result.to_dict(),
@@ -5016,8 +3781,6 @@ def _build_blocked_structured_result(
             "critical_completeness": round(v2_gate_result.critical_completeness * 100, 1),
             "missing_critical": v2_gate_result.missing_critical,
             "missing_required": v2_gate_result.missing_required,
-            "extraction_empty": extraction_empty,
-            "extraction_empty_reason": extraction_empty_reason,
         },
         
         # LC baseline (partial data)
@@ -5107,27 +3870,7 @@ def _build_blocked_structured_result(
         # Customs (empty)
         "customs_pack": None,
         "ai_enrichment": None,
-        "decision_trace": (
-            _attach_router_evidence_to_decision_trace(
-                compute_shadow_arbitration(
-                    ai_verdict=None,
-                    ruleset_verdict="reject",
-                    blocking_rules=[
-                        str((i.get("rule") or i.get("code") or "validation_gate")).strip()
-                        for i in blocking_issues if isinstance(i, dict)
-                    ],
-                    extraction_confidence=None,
-                    mode=settings.VALIDATION_DECISION_MODE,
-                )
-            )
-            if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
-            else None
-        ),
     }
-    return _apply_pipeline_verification_gate(
-        payload,
-        mode=settings.VALIDATION_DECISION_MODE,
-    )
 
 
 def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
@@ -5169,44 +3912,6 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
                 if val is not None and val != "":
                     return val
         return None
-
-    def normalize_lc_date(raw: Any) -> Any:
-        """Normalize LC date values to YYYY-MM-DD without ambiguous day/month flips."""
-        if raw is None:
-            return raw
-        if not isinstance(raw, str):
-            return raw
-
-        value = raw.strip()
-        if not value:
-            return value
-
-        # ISO-first (most explicit)
-        for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
-            try:
-                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-
-        # SWIFT MT700 field 31C/31D style: YYMMDD
-        if re.fullmatch(r"\d{6}", value):
-            yy = int(value[:2])
-            mm = int(value[2:4])
-            dd = int(value[4:6])
-            year = 2000 + yy if yy <= 69 else 1900 + yy
-            try:
-                return datetime(year, mm, dd).strftime("%Y-%m-%d")
-            except ValueError:
-                return value
-
-        # Unambiguous fallback formats (4-digit year only)
-        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%m-%d-%Y", "%m/%d/%Y", "%Y%m%d", "%d%m%Y", "%m%d%Y"):
-            try:
-                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-
-        return value
     
     # =====================================================================
     # LC Number (MT700 Field 20)
@@ -5321,19 +4026,25 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     # =====================================================================
     dates_nested = lc_context.get("dates") or {}
     
-    issue_date_primary = get_value("issue_date", "date_of_issue")
-    issue_date_fallback = blocks.get("31C") or dates_nested.get("issue")  # MT700 + legacy fallback
-    issue_date = normalize_lc_date(issue_date_primary if issue_date_primary else issue_date_fallback)
+    issue_date = get_value("issue_date", "date_of_issue")
+    if not issue_date:
+        issue_date = blocks.get("31C")  # MT700 field 31C - Date of Issue
+    if not issue_date:
+        issue_date = dates_nested.get("issue")  # Legacy fallback: dates.issue
     set_field(baseline.issue_date, issue_date)
     
-    expiry_date_primary = get_value("expiry_date", "expiry", "validity_date")
-    expiry_date_fallback = blocks.get("31D") or dates_nested.get("expiry")  # MT700 + legacy fallback
-    expiry_date = normalize_lc_date(expiry_date_primary if expiry_date_primary else expiry_date_fallback)
+    expiry_date = get_value("expiry_date", "expiry", "validity_date")
+    if not expiry_date:
+        expiry_date = blocks.get("31D")  # MT700 field 31D - Date and Place of Expiry
+    if not expiry_date:
+        expiry_date = dates_nested.get("expiry")  # Legacy fallback: dates.expiry
     set_field(baseline.expiry_date, expiry_date)
     
-    latest_shipment_primary = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
-    latest_shipment_fallback = blocks.get("44C") or dates_nested.get("latest_shipment")  # MT700 + legacy fallback
-    latest_shipment = normalize_lc_date(latest_shipment_primary if latest_shipment_primary else latest_shipment_fallback)
+    latest_shipment = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
+    if not latest_shipment:
+        latest_shipment = blocks.get("44C")  # MT700 field 44C - Latest Date of Shipment
+    if not latest_shipment:
+        latest_shipment = dates_nested.get("latest_shipment")  # Legacy fallback: dates.latest_shipment
     set_field(baseline.latest_shipment, latest_shipment)
     
     # =====================================================================
@@ -5472,102 +4183,6 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     return baseline
 
 
-def _looks_like_lc_text(text: str) -> bool:
-    """Heuristic check for LC-like document text."""
-    if not text:
-        return False
-
-    lc_markers = (
-        r"\bletter\s+of\s+credit\b",
-        r"\blc\s*(number|no\.?|#)\b",
-        r"\bmt\s*700\b",
-        r"\b:20:\b",
-        r"\b:31[dcp]?\b",
-        r"\bbeneficiary\b",
-        r"\bapplicant\b",
-        r"\badvising\s+bank\b",
-        r"\bnegotiating\s+bank\b",
-        r"\bissuing\s+bank\b",
-        r"\bfield\s*32B\b",
-        r"\bmt\s*\d+\b",
-        r"\birrevocable\b",
-        r"\bconfirmed\b",
-    )
-
-    normalized = text.lower()
-    return any(re.search(pattern, normalized) for pattern in lc_markers)
-
-
-def _is_likely_lc_document(
-    lc_context: Dict[str, Any],
-    extracted_context: Dict[str, Any],
-    lc_type: str,
-) -> bool:
-    """Conservative heuristic for detecting LC-first datasets.
-
-    Returns False for non-LC artifacts that were incorrectly pushed through the
-    LC workflow in API-only harnesses, preventing deterministic hard-blocks.
-    """
-    lc_context = lc_context or {}
-    extracted_context = extracted_context or {}
-
-    # Direct LC-type clues
-    normalized_lc_type = (lc_type or "").lower()
-
-    # If LC type could not be detected, treat as non-LC-like for API harness safety.
-    if normalized_lc_type == "unknown":
-        return False
-
-    # For explicit MT700/L/C-application flows, keep legacy strict behavior.
-    # For generic `letter_of_credit` input, require extraction evidence first.
-    if normalized_lc_type in {"swift_mt700", "lc_application", "swift_message"}:
-        return True
-    if normalized_lc_type in {"lc", "letter_of_credit", "letter_of_credit_file"} and not (
-        lc_context.get("lc_number")
-        or lc_context.get("amount")
-        or lc_context.get("applicant")
-        or lc_context.get("beneficiary")
-        or lc_context.get("expiry_date")
-        or lc_context.get("latest_shipment")
-    ):
-        # Fall through to structural/text heuristics for weakly-typed harness payloads.
-        pass
-
-    # Direct key clues from structured extraction
-    lc_payload_value_fields = [
-        lc_context.get("lc_number"),
-        lc_context.get("amount"),
-        lc_context.get("currency"),
-        lc_context.get("applicant"),
-        lc_context.get("beneficiary"),
-        lc_context.get("expiry_date"),
-        lc_context.get("latest_shipment"),
-    ]
-    for value in lc_payload_value_fields:
-        if isinstance(value, str) and value.strip():
-            return True
-
-    mt700 = lc_context.get("mt700") or {}
-    if isinstance(mt700, dict):
-        for key in ("20", "30", "31C", "31D", "32B", "40A", "50", "59", "46A", "47A"):
-            if mt700.get(key):
-                return True
-
-    # OCR text markers from raw LC payload / documents
-    raw_text = lc_context.get("raw_text") or lc_context.get("text") or ""
-    if _looks_like_lc_text(raw_text):
-        return True
-
-    for doc in extracted_context.get("documents") or []:
-        preview = doc.get("raw_text_preview") or doc.get("raw_text") or ""
-        if _looks_like_lc_text(preview):
-            return True
-
-    # Keep this heuristic conservative; document_type tags can be overridden by
-    # caller-provided metadata in harnesses. Do not hard-fail based on tags alone.
-    return False
-
-
 def _summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, int]:
     counts = {"success": 0, "warning": 0, "error": 0}
     for doc in documents:
@@ -5578,228 +4193,16 @@ def _summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, i
     return counts
 
 
-def _build_db_rules_blocked_structured_result(
-    reason: str,
-    processing_duration: float,
-    documents: List[Dict[str, Any]],
-    lc_baseline: Optional[LCBaseline] = None,
-    provenance: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    if processing_duration < 1:
-        time_display = f"{int(processing_duration * 1000)}ms"
-    else:
-        time_display = f"{processing_duration:.1f}s"
-
-    provenance = provenance or {}
-    normalized_provenance = {
-        "ruleset_id": provenance.get("ruleset_id"),
-        "ruleset_version": provenance.get("ruleset_version"),
-        "domain": provenance.get("domain"),
-        "jurisdiction": provenance.get("jurisdiction"),
-        "rule_count_used": provenance.get("rule_count_used", 0),
-    }
-
-    docs_structured = documents or []
-    status_counts = _summarize_document_statuses(docs_structured)
-    total_docs = len(docs_structured)
-    verified = status_counts.get("success", 0)
-    warnings = status_counts.get("warning", 0)
-    errors = status_counts.get("error", 0)
-
-    extraction_quality = 0
-    if total_docs > 0:
-        extraction_quality = int(round((verified / total_docs) * 100))
-
-    payload = {
-        "version": "structured_result_v1",
-        "validation_blocked": True,
-        "validation_status": "blocked",
-        "block_reason": "db_rules_execution_failed",
-        "verdict_signature": _build_verdict_signature(
-            source="db_rules_execution",
-            verdict="BLOCKED",
-            critical_count=0,
-            major_count=0,
-            minor_count=0,
-            validation_status="blocked",
-            reason=reason if isinstance(reason, str) else "rules_engine_unavailable",
-        ),
-
-        "authoritative_verdict": {
-            "schema_version": "phase4-authoritative-verdict-v1",
-            "label": "blocked",
-            "source": "db_rules_execution",
-            "rationale": "rules engine failed during execution",
-            "details": {
-                "validation_status": "blocked",
-                "reason": reason if isinstance(reason, str) else "rules_engine_unavailable",
-            },
-        },
-        "ai_verdict": None,
-        "ruleset_verdict": "reject",
-        "final_verdict": "BLOCKED",
-        "override_reason": "rules_engine_unavailable",
-        "blocking_rules": ["db.rules.execution"],
-        "confidence_band": None,
-        "confidence_band_reason": "rules_engine_failed_before_confidence_band",
-        "decision_trace": (
-            _attach_router_evidence_to_decision_trace(
-                compute_shadow_arbitration(
-                    ai_verdict=None,
-                    ruleset_verdict="reject",
-                    blocking_rules=["db.rules.execution"],
-                    extraction_confidence=None,
-                    mode=settings.VALIDATION_DECISION_MODE,
-                )
-            )
-            if settings.VALIDATION_DECISION_MODE in {"hybrid_shadow", "hybrid_enforced"}
-            else None
-        ),
-        "issues": [
-            {
-                "severity": "critical",
-                "rule": "db.rules.execution",
-                "title": "Validation blocked: rules engine unavailable",
-                "message": reason,
-            }
-        ],
-        "documents_structured": docs_structured,
-        "lc_baseline": {
-            "lc_number": lc_baseline.lc_number.value if lc_baseline else None,
-            "amount": lc_baseline.amount.value if lc_baseline else None,
-            "currency": lc_baseline.currency.value if lc_baseline else None,
-        },
-        "validation_provenance": normalized_provenance,
-        "processing_summary": {
-            "documents": total_docs,
-            "documents_found": total_docs,
-            "total_documents": total_docs,
-            "verified": verified,
-            "warnings": warnings,
-            "errors": errors,
-            "successful_extractions": verified,
-            "failed_extractions": errors,
-            "status_counts": dict(status_counts),
-            "document_status": dict(status_counts),
-            "total_issues": 1,
-            "discrepancies": 1,
-            "compliance_rate": extraction_quality,
-            "extraction_quality": extraction_quality,
-            "processing_time_seconds": round(processing_duration, 2),
-            "processing_time_display": time_display,
-            "bank_verdict": "BLOCKED",
-        },
-        "analytics": {
-            "document_status_distribution": dict(status_counts),
-            "processing_time_display": time_display,
-        },
-        "bank_verdict": {
-            "verdict": "BLOCKED",
-            "verdict_color": "red",
-            "verdict_message": "Validation blocked due to rule execution failure",
-            "recommendation": "Retry once platform rule services are healthy.",
-            "can_submit": False,
-            "will_be_rejected": True,
-        },
-    }
-    return _apply_pipeline_verification_gate(
-        payload,
-        mode=settings.VALIDATION_DECISION_MODE,
-    )
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return int(value)
-        if isinstance(value, int):
-            return value if value >= 0 else default
-        if isinstance(value, float):
-            return int(value) if value >= 0 else default
-        if isinstance(value, str):
-            normalized = value.replace(",", "").strip()
-            if not normalized:
-                return default
-            parsed_float = float(normalized)
-            parsed_int = int(parsed_float)
-            return parsed_int if parsed_int >= 0 else default
-        parsed = int(value)
-        return parsed if parsed >= 0 else default
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_float(value: Any, default: Optional[float] = 0.0) -> Optional[float]:
-    try:
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return float(value)
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            normalized = value.replace(",", "").strip()
-            if not normalized:
-                return default
-            return float(normalized)
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _sum_ledger_discrepancies(document_summaries: List[Dict[str, Any]]) -> int:
-    total = 0
-    for document in document_summaries:
-        if not isinstance(document, dict):
-            continue
-        total += _safe_int(document.get("discrepancyCount"))
-    return total
-
-
-def _build_issue_count_invariant_reason(
-    *,
-    canonical_total_issues: int,
-    source_total_issues: Optional[int],
-    source_label: str = "documents_structured.discrepancyCount_sum",
-) -> Optional[str]:
-    if source_total_issues is None:
-        return None
-    if canonical_total_issues == source_total_issues:
-        return None
-    return (
-        f"issue_count_invariant_failed: canonical_total_issues={canonical_total_issues} "
-        f"!= {source_label}={source_total_issues}. "
-        "Bank-ready path blocked."
-    )
-
-
 def _build_processing_summary(
     document_summaries: List[Dict[str, Any]],
     processing_seconds: float,
     total_discrepancies: int,
 ) -> Dict[str, Any]:
-    extraction_counts = {"success": 0, "partial": 0, "failed": 0}
-    for doc in document_summaries:
-        extraction_status = str(doc.get("extractionStatus") or doc.get("extraction_status") or "unknown").lower()
-        if extraction_status == "success":
-            extraction_counts["success"] += 1
-        elif extraction_status in {"failed", "error", "empty"}:
-            extraction_counts["failed"] += 1
-        else:
-            extraction_counts["partial"] += 1
-
-    status_counts = {
-        "success": extraction_counts["success"],
-        "warning": extraction_counts["partial"],
-        "error": extraction_counts["failed"],
-    }
-
+    status_counts = _summarize_document_statuses(document_summaries)
     total_docs = len(document_summaries)
-    verified = extraction_counts["success"]
-    warnings = extraction_counts["partial"]
-    errors = extraction_counts["failed"]
+    verified = status_counts.get("success", 0)
+    warnings = status_counts.get("warning", 0)
+    errors = status_counts.get("error", 0)
     compliance_rate = 0
     if total_docs:
         compliance_rate = max(0, round((verified / total_docs) * 100))
@@ -5833,7 +4236,6 @@ def _build_processing_summary(
         "warnings": warnings,
         "errors": errors,
         "successful_extractions": verified,  # Frontend checks this field
-        "partial_extractions": warnings,
         "failed_extractions": errors,  # Frontend checks this field
         "compliance_rate": compliance_rate,
         "processing_time_seconds": round(processing_seconds, 2),
@@ -5841,103 +4243,10 @@ def _build_processing_summary(
         "processing_time_ms": processing_time_ms,  # NEW — milliseconds version
         "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
         "discrepancies": total_discrepancies,
-        "total_issues": _sum_ledger_discrepancies(document_summaries),
         "status_counts": status_counts,
         # FIX: Also send as document_status for frontend SummaryStrip compatibility
         "document_status": status_counts,
     }
-
-
-def _requires_non_submit_guard(
-    validation_status: Optional[str],
-    compliance_status: Optional[str],
-) -> bool:
-    normalized_validation = str(validation_status or "").strip().lower()
-    normalized_compliance = str(compliance_status or "").strip().lower()
-    return normalized_validation == "non_compliant" or normalized_compliance == "reject"
-
-
-def _apply_non_submit_guardrail(
-    structured_result: Dict[str, Any],
-    *,
-    bank_verdict: Dict[str, Any],
-    validation_status: Optional[str],
-    compliance_status: Optional[str],
-    critical_count: int,
-    major_count: int,
-    minor_count: int,
-    compliance_score: Optional[float],
-) -> Dict[str, Any]:
-    if not _requires_non_submit_guard(validation_status, compliance_status):
-        return structured_result
-
-    updated_bank_verdict = dict(bank_verdict or {})
-    verdict_token = str(updated_bank_verdict.get("verdict") or "").strip().upper()
-    if verdict_token in {"SUBMIT", "CAUTION", "HOLD", "READY_TO_SUBMIT", "PASS", "GO"}:
-        updated_bank_verdict["verdict"] = "REJECT"
-        updated_bank_verdict["verdict_color"] = "red"
-        updated_bank_verdict["verdict_message"] = (
-            "Documents are non-compliant"
-            if str(validation_status or "").strip().lower() == "non_compliant"
-            else "Documents will be REJECTED by bank"
-        )
-        updated_bank_verdict["verdict_class"] = "reject"
-
-    updated_bank_verdict["can_submit"] = False
-    updated_bank_verdict["will_be_rejected"] = True
-
-    recommendation_text = str(updated_bank_verdict.get("recommendation") or "")
-    if "do not submit" not in recommendation_text.lower():
-        updated_bank_verdict["recommendation"] = (
-            "Do NOT submit to bank until compliance issues are resolved."
-        )
-
-    updated_bank_verdict.setdefault(
-        "issue_summary",
-        {
-            "critical": critical_count,
-            "major": major_count,
-            "minor": minor_count,
-            "total": critical_count + major_count + minor_count,
-        },
-    )
-    updated_bank_verdict["verdict_class"] = "reject"
-    updated_bank_verdict["compliance_status"] = compliance_status
-    updated_bank_verdict["verdict_signature"] = _build_verdict_signature(
-        source="bank_verdict",
-        verdict=updated_bank_verdict.get("verdict") or "REJECT",
-        critical_count=critical_count,
-        major_count=major_count,
-        minor_count=minor_count,
-        compliance_score=compliance_score,
-        validation_status=validation_status,
-        verdict_class="reject",
-        reason="non_submit_guardrail",
-    )
-
-    structured_result["bank_verdict"] = updated_bank_verdict
-    structured_result["verdict_signature"] = updated_bank_verdict.get("verdict_signature")
-    structured_result["final_verdict"] = "REJECT"
-    structured_result["authoritative_verdict"] = _build_authoritative_verdict(
-        verdict_class="reject",
-        source=(updated_bank_verdict.get("verdict_signature", {}).get("source")
-                if isinstance(updated_bank_verdict.get("verdict_signature"), dict)
-                else "bank_verdict"),
-        rationale="non_submit_guardrail",
-        rationale_details={
-            "validation_status": validation_status,
-            "compliance_status": compliance_status,
-            "critical_count": critical_count,
-            "major_count": major_count,
-        },
-    )
-    if structured_result.get("processing_summary"):
-        structured_result["processing_summary"]["bank_verdict"] = "REJECT"
-
-    if not structured_result.get("override_reason"):
-        structured_result["override_reason"] = "non_submit_guardrail"
-
-    return structured_result
 
 
 def _build_bank_submission_verdict(
@@ -5946,7 +4255,6 @@ def _build_bank_submission_verdict(
     minor_count: int,
     compliance_score: float,
     all_issues: List[Any],
-    validation_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build a bank submission verdict with GO/NO-GO recommendation.
@@ -5954,20 +4262,8 @@ def _build_bank_submission_verdict(
     This helps exporters understand if their documents are ready
     for bank submission or what actions are required first.
     """
-    compliance_status = compliance_status_from_validation(
-        validation_status,
-        critical_count=critical_count,
-        major_count=major_count,
-    )
-    normalized_status = str(validation_status or "").strip().lower()
-
     # Determine verdict
-    if compliance_status == "reject" or normalized_status == "non_compliant":
-        verdict = "REJECT"
-        verdict_color = "red"
-        verdict_message = "Documents are non-compliant"
-        recommendation = "Do NOT submit to bank until compliance issues are resolved."
-    elif critical_count > 0:
+    if critical_count > 0:
         verdict = "REJECT"
         verdict_color = "red"
         verdict_message = "Documents will be REJECTED by bank"
@@ -6021,20 +4317,13 @@ def _build_bank_submission_verdict(
     
     # Calculate estimated fee if discrepant
     discrepancy_fee = 75.00 if (critical_count + major_count) > 0 else 0.00
-
-    verdict_class = _resolve_bank_verdict_class(
-        verdict,
-        validation_status,
-        critical_count=critical_count,
-        major_count=major_count,
-    )
-
+    
     return {
         "verdict": verdict,
         "verdict_color": verdict_color,
         "verdict_message": verdict_message,
         "recommendation": recommendation,
-        "can_submit": verdict in ["SUBMIT", "CAUTION"] and compliance_status != "reject",
+        "can_submit": verdict in ["SUBMIT", "CAUTION"],
         "will_be_rejected": verdict == "REJECT",
         "estimated_discrepancy_fee": discrepancy_fee,
         "issue_summary": {
@@ -6045,18 +4334,6 @@ def _build_bank_submission_verdict(
         },
         "action_items": action_items[:5],  # Top 5 action items
         "action_items_count": len(action_items),
-        "verdict_class": verdict_class,
-        "verdict_signature": _build_verdict_signature(
-            source="bank_verdict",
-            verdict=verdict,
-            critical_count=critical_count,
-            major_count=major_count,
-            minor_count=minor_count,
-            compliance_score=compliance_score,
-            validation_status=validation_status,
-            verdict_class=verdict_class,
-            reason="bank_submission_routing",
-        ),
     }
 
 
@@ -6280,7 +4557,26 @@ def _build_documents_section(
     documents: List[Dict[str, Any]],
     issue_counts: Dict[str, int],
 ) -> List[Dict[str, Any]]:
-    return _canonical_build_documents_section(documents, issue_counts)
+    section: List[Dict[str, Any]] = []
+    for doc in documents:
+        doc_id = doc.get("id") or str(uuid4())
+        extraction_status = (
+            doc.get("extractionStatus")
+            or doc.get("extraction_status")
+            or doc.get("status")
+            or "unknown"
+        )
+        section.append(
+            {
+                "document_id": doc_id,
+                "document_type": _humanize_doc_type(doc.get("documentType") or doc.get("type")),
+                "filename": doc.get("name"),
+                "extraction_status": extraction_status,
+                "extracted_fields": _filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
+                "issues_count": issue_counts.get(doc_id, 0),
+            }
+        )
+    return section
 
 
 def _compose_processing_summary(
@@ -6288,7 +4584,20 @@ def _compose_processing_summary(
     issues: List[Dict[str, Any]],
     severity_counts: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    return _canonical_compose_processing_summary(documents, issues, severity_counts)
+    total_docs = len(documents)
+    successful = sum(
+        1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
+    )
+    failed = total_docs - successful
+    severity_breakdown = severity_counts or _count_issue_severity(issues)
+
+    return {
+        "total_documents": total_docs,
+        "successful_extractions": successful,
+        "failed_extractions": failed,
+        "total_issues": len(issues),
+        "severity_breakdown": severity_breakdown,
+    }
 
 
 def _count_issue_severity(issues: List[Dict[str, Any]]) -> Dict[str, int]:

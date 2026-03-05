@@ -24,62 +24,6 @@ from .issue_resolver import (
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_CONFIDENCE_SUCCESS_THRESHOLD = 0.6
-
-
-def _has_usable_extracted_fields(extracted_fields: Any) -> bool:
-    if not isinstance(extracted_fields, dict):
-        return False
-    for key, value in extracted_fields.items():
-        if str(key).startswith("_"):
-            continue
-        if value not in (None, "", [], {}):
-            return True
-    return False
-
-
-def _normalize_extraction_status(detail: Dict[str, Any]) -> str:
-    raw_status = (
-        detail.get("extraction_status")
-        or detail.get("extractionStatus")
-        or "unknown"
-    )
-    status = str(raw_status).lower()
-    failed_reason = detail.get("failed_reason") or detail.get("extraction_error")
-    extracted_fields = detail.get("extracted_fields") or detail.get("extractedFields") or {}
-    confidence = detail.get("extraction_confidence")
-    if confidence is None:
-        confidence = detail.get("ocr_confidence")
-    try:
-        confidence_value = float(confidence) if confidence is not None else None
-    except (TypeError, ValueError):
-        confidence_value = None
-
-    has_fields = _has_usable_extracted_fields(extracted_fields)
-
-    if status in {"failed", "error", "empty"}:
-        # A hard failure must provide explicit reason. If we still have usable data,
-        # downgrade to partial/success so summary and docs cannot contradict.
-        if has_fields and confidence_value is not None and confidence_value >= EXTRACTION_CONFIDENCE_SUCCESS_THRESHOLD:
-            return "success"
-        if has_fields:
-            return "partial"
-        return "failed" if failed_reason else "partial"
-
-    if status in {"success", "partial", "text_only", "pending", "unknown"}:
-        return "success" if has_fields else ("partial" if status != "success" else "success")
-
-    return "partial"
-
-
-def _derive_document_status(extraction_status: str, issues_count: int) -> str:
-    status = (extraction_status or "unknown").lower()
-    if status == "failed" or issues_count >= 3:
-        return "error"
-    if issues_count > 0 or status in {"partial", "text_only", "pending", "unknown"}:
-        return "warning"
-    return "success"
-
 
 def build_document_summaries(
     files_list: List[Any],
@@ -114,13 +58,8 @@ def build_document_summaries(
             issue_by_type,
             issue_by_id,
         )
+        status = severity_to_status(stats.get("max_severity") if stats else None)
         discrepancy_count = stats.get("count", 0) if stats else 0
-        canonical_extraction_status = _normalize_extraction_status(detail)
-        status = _derive_document_status(canonical_extraction_status, discrepancy_count)
-
-        ocr_confidence = detail.get("ocr_confidence")
-        if ocr_confidence is None:
-            ocr_confidence = detail.get("extraction_confidence")
 
         return {
             "id": detail_id,
@@ -130,9 +69,8 @@ def build_document_summaries(
             "status": status,
             "discrepancyCount": discrepancy_count,
             "extractedFields": filter_user_facing_fields(detail.get("extracted_fields") or {}),
-            "ocrConfidence": ocr_confidence,
-            "extractionStatus": canonical_extraction_status,
-            "failed_reason": detail.get("failed_reason") or detail.get("extraction_error"),
+            "ocrConfidence": detail.get("ocr_confidence"),
+            "extractionStatus": detail.get("extraction_status"),
         }
 
     if details:
@@ -295,7 +233,6 @@ def build_documents_section(
                 "document_type": humanize_doc_type(doc.get("documentType") or doc.get("type")),
                 "filename": doc.get("name"),
                 "extraction_status": extraction_status,
-                "failed_reason": doc.get("failed_reason"),
                 "extracted_fields": filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
                 "issues_count": issue_counts.get(doc_id, 0),
             }

@@ -4,6 +4,7 @@ Issue Resolver Module
 Functions for resolving, collecting, and formatting validation issues.
 """
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
@@ -13,9 +14,6 @@ from .utilities import (
     label_to_doc_type,
     normalize_doc_type_key,
     coerce_issue_value,
-    normalize_doc_match_key,
-    strip_extension,
-    infer_document_type_from_name,
 )
 
 
@@ -29,9 +27,7 @@ def resolve_issue_stats(
 ) -> Optional[Dict[str, Any]]:
     """
     Resolve issue statistics for a document by ID, filename, or type.
-    Uses normalized matching for filename/document aliases so naming drift
-    (`invoice.pdf` vs `Invoice`) does not break document-to-issue attribution.
-
+    
     Returns:
         Dict with 'count' and 'max_severity' if found, else None
     """
@@ -39,20 +35,10 @@ def resolve_issue_stats(
         return issue_by_id[detail_id]
 
     if filename:
-        lookup_keys = {
-            normalize_doc_match_key(filename),
-            normalize_doc_match_key(strip_extension(filename)),
-            filename.strip().lower(),
-        }
-        for key in lookup_keys:
-            if not key:
-                continue
-            if key in issue_by_name:
-                return issue_by_name[key]
-
-        inferred_type = label_to_doc_type(filename)
-        if not inferred_type:
-            inferred_type = infer_document_type_from_name(filename, 0)
+        name_key = filename.strip().lower()
+        if name_key in issue_by_name:
+            return issue_by_name[name_key]
+        inferred_type = label_to_doc_type(name_key)
         if inferred_type and inferred_type in issue_by_type:
             return issue_by_type[inferred_type]
 
@@ -91,16 +77,9 @@ def collect_document_issue_stats(
             bump_issue_entry(issue_by_id, doc_id, severity)
 
         for name in doc_names:
-            name_key = normalize_doc_match_key(name)
-            if name_key:
-                bump_issue_entry(issue_by_name, name_key, severity)
-                normalized_no_ext = normalize_doc_match_key(strip_extension(name))
-                if normalized_no_ext:
-                    bump_issue_entry(issue_by_name, normalized_no_ext, severity)
-
+            name_key = name.strip().lower()
+            bump_issue_entry(issue_by_name, name_key, severity)
             inferred_type = label_to_doc_type(name)
-            if not inferred_type:
-                inferred_type = infer_document_type_from_name(name, 0)
             if inferred_type:
                 bump_issue_entry(issue_by_type, inferred_type, severity)
 

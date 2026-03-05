@@ -21,27 +21,10 @@ export default function ExporterLogin() {
     setError('');
 
     try {
-      // If user entered demo credentials, allow direct demo access without auth backend dependency
-      const isDemoCredential = demoCredentials.some(
-        (cred) => cred.email.toLowerCase() === email.trim().toLowerCase() && cred.password === password
-      );
-
-      if (isDemoCredential) {
-        localStorage.setItem('demo_mode', 'true');
-        window.location.href = '/lcopilot/exporter-dashboard?demo=true';
-        return;
-      }
-
       await login(email, password);
-      // Ensure deterministic redirect after successful login
-      window.location.href = '/lcopilot/exporter-dashboard';
+      // Navigation will be handled by the login method
     } catch (err) {
-      const raw = err instanceof Error ? err.message : 'Login failed';
-      if (/invalid login credentials|invalid_credentials|email or password/i.test(raw)) {
-        setError('Login failed. If this is a demo attempt, use the demo credentials and click Sign in, or use Enter Demo Mode.');
-      } else {
-        setError(raw);
-      }
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setIsLoading(false);
     }

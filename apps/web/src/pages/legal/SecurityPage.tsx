@@ -11,9 +11,9 @@ const SecurityPage = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-12 not-prose">
         <div className="bg-[#00261C] border border-[#EDF5F2]/10 p-6 rounded-xl">
           <Shield className="w-8 h-8 text-[#B2F273] mb-4" />
-          <h4 className="text-white font-bold text-lg mb-2">Security Program</h4>
+          <h4 className="text-white font-bold text-lg mb-2">SOC 2 Type II</h4>
           <p className="text-[#EDF5F2]/60 text-sm">
-            Our security controls are actively hardened during private beta, with formal audit roadmap aligned to scale.
+            We undergo annual independent audits to verify our security controls, availability, and confidentiality.
           </p>
         </div>
         <div className="bg-[#00261C] border border-[#EDF5F2]/10 p-6 rounded-xl">
@@ -32,9 +32,9 @@ const SecurityPage = () => {
         </div>
         <div className="bg-[#00261C] border border-[#EDF5F2]/10 p-6 rounded-xl">
           <FileCheck className="w-8 h-8 text-[#B2F273] mb-4" />
-          <h4 className="text-white font-bold text-lg mb-2">Security Testing</h4>
+          <h4 className="text-white font-bold text-lg mb-2">Regular Pen Testing</h4>
           <p className="text-[#EDF5F2]/60 text-sm">
-            Infrastructure and API security testing are performed as part of our staged hardening process.
+            We engage top-tier security firms to perform quarterly penetration tests on our infrastructure and API.
           </p>
         </div>
       </div>

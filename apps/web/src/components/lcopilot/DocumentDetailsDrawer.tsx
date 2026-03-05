@@ -37,11 +37,8 @@ export interface DocumentForDrawer {
   typeKey?: string;
   status: "success" | "warning" | "error";
   extractionStatus?: string;
-  complianceStatus?: string;
-  failedReason?: string | null;
   issuesCount: number;
   extractedFields: Record<string, any>;
-  rawTextPreview?: string | null;
   ocrConfidence?: number;
   sourceFormat?: string;
   isElectronicBL?: boolean;
@@ -267,13 +264,8 @@ export function DocumentDetailsDrawer({
   if (!document) return null;
 
   const extractedFields = document.extractedFields || {};
-  const rawTextPreview =
-    document.rawTextPreview ??
-    (extractedFields as any)?.raw_text_preview ??
-    (extractedFields as any)?.rawTextPreview ??
-    null;
   const fieldEntries = Object.entries(extractedFields).filter(([key]) =>
-    shouldShowField(key) && key !== "raw_text_preview" && key !== "rawTextPreview"
+    shouldShowField(key)
   );
 
   // Group fields by category
@@ -438,43 +430,19 @@ export function DocumentDetailsDrawer({
           </div>
         </SheetHeader>
 
-        <div className="grid grid-cols-1 gap-2 text-xs">
-          <div className="rounded-md border p-2 bg-muted/20">
-            <p className="font-semibold mb-1">Extraction Quality</p>
-            <p>Status: <span className="font-medium">{document.extractionStatus ?? 'partial'}</span></p>
-            {document.ocrConfidence !== undefined && <p>Confidence: <span className="font-medium">{Math.round(document.ocrConfidence)}%</span></p>}
-            {document.failedReason && <p className="text-destructive">Reason: {document.failedReason}</p>}
-          </div>
-          <div className="rounded-md border p-2 bg-muted/20">
-            <p className="font-semibold mb-1">Compliance Findings</p>
-            <p>Status: <span className="font-medium">{document.complianceStatus ?? 'clean'}</span></p>
-            <p>{document.issuesCount} Compliance {document.issuesCount === 1 ? 'Issue' : 'Issues'}</p>
-          </div>
-        </div>
-
         <Separator className="my-4" />
 
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-6 pb-6">
             {fieldEntries.length === 0 ? (
-              <div className="text-center py-8 space-y-4">
-                <div>
-                  <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground mb-2">
-                    No structured fields extracted
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    This document may be a scanned image or unsupported format.
-                  </p>
-                </div>
-                {rawTextPreview && (
-                  <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-left">
-                    <p className="text-xs text-muted-foreground mb-2">Preview Text</p>
-                    <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-auto text-foreground">
-                      {rawTextPreview}
-                    </pre>
-                  </div>
-                )}
+              <div className="text-center py-8">
+                <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-2">
+                  No structured fields extracted
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  This document may be a scanned image or unsupported format.
+                </p>
               </div>
             ) : (
               <>

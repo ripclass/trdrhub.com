@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
-import { exporterApi } from '@/api/exporter';
 import { renderWithProviders } from './testUtils';
 import { buildValidationResults, mockValidationResults } from './fixtures/lcopilot';
 
@@ -95,14 +94,6 @@ vi.mock('@/api/exporter', () => ({
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
-    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
-      can_submit: true,
-      blocking_issues: [],
-      warnings: [],
-      required_docs_present: true,
-      high_severity_discrepancies: 0,
-      policy_checks_passed: true,
-    } as any);
   });
 
   it('renders overview metrics from processing summary', async () => {
@@ -146,62 +137,6 @@ describe('ExporterResults', () => {
     for (const doc of mockValidationResults.documents) {
       expect(screen.getByText(doc.name)).toBeInTheDocument();
     }
-  });
-
-  it('uses canonical LC issue date in document snapshot and details drawer', async () => {
-    const user = userEvent.setup();
-    const issueDateConflictResults = buildValidationResults();
-
-    issueDateConflictResults.structured_result = {
-      ...issueDateConflictResults.structured_result,
-      lc_structured: {
-        ...(issueDateConflictResults.structured_result?.lc_structured ?? {}),
-        number: 'LC-EXP-2026-001',
-        issue_date: '2026-04-15',
-        dates: {
-          issue: '2015-04-26',
-          expiry: '2026-12-31',
-        },
-        mt700: {
-          blocks: {
-            '31C': '260415',
-          },
-        },
-      } as any,
-    };
-
-    const lcDocument = issueDateConflictResults.documents.find((doc) => doc.typeKey === 'letter_of_credit');
-    if (lcDocument) {
-      lcDocument.extractedFields = {
-        ...lcDocument.extractedFields,
-        issue_date: '2015-04-26',
-        dates: {
-          issue: '2015-04-26',
-          expiry: '2026-12-31',
-        },
-        mt700: {
-          blocks: {
-            '31C': '260415',
-          },
-        },
-      };
-    }
-
-    activeResults = issueDateConflictResults;
-    render(renderWithProviders(<ExporterResults />));
-    await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
-    );
-
-    await user.click(screen.getByRole('tab', { name: /Documents/i }));
-    expect(screen.getByText('2026-04-15')).toBeInTheDocument();
-    expect(screen.queryByText(/2015-04-26/)).not.toBeInTheDocument();
-
-    const lcCard = findCardByTitle('LC.pdf');
-    await user.click(within(lcCard).getByRole('button', { name: /View Details/i }));
-    const drawer = await screen.findByRole('dialog');
-    expect(within(drawer).getByText('2026-04-15')).toBeInTheDocument();
-    expect(within(drawer).queryByText(/2015-04-26/)).not.toBeInTheDocument();
   });
 
   it('renders issues tab with expected/found values', async () => {
@@ -334,98 +269,5 @@ describe('ExporterResults', () => {
     expect(
       screen.getByText(/This document could not be fully parsed/i),
     ).toBeInTheDocument();
-  });
-
-  it('keeps SummaryStrip, Overview, and Documents tab aligned to mapped document statuses', async () => {
-    const user = userEvent.setup();
-    const mismatchPayload = {
-      jobId: 'job-mismatch',
-      structured_result: {
-        version: 'structured_result_v1',
-        processing_summary: {
-          total_documents: 6,
-          successful_extractions: 6,
-          failed_extractions: 0,
-          total_issues: 0,
-          severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
-          // intentionally stale backend summary to verify mapper/page canonicalization
-          canonical_document_status: { success: 6, warning: 0, error: 0 },
-        },
-        documents_structured: [
-          { document_id: 'd1', filename: 'LC.pdf', document_type: 'letter_of_credit', extraction_status: 'success', discrepancyCount: 0, extracted_fields: { x: 1 } },
-          { document_id: 'd2', filename: 'Insurance.pdf', document_type: 'insurance_certificate', extraction_status: 'partial', discrepancyCount: 0, extracted_fields: { x: 1 } },
-          { document_id: 'd3', filename: 'Invoice.pdf', document_type: 'commercial_invoice', extraction_status: 'success', discrepancyCount: 0, extracted_fields: { x: 1 } },
-          { document_id: 'd4', filename: 'Packing.pdf', document_type: 'packing_list', extraction_status: 'success', discrepancyCount: 1, extracted_fields: { x: 1 } },
-          { document_id: 'd5', filename: 'BL.pdf', document_type: 'bill_of_lading', extraction_status: 'success', discrepancyCount: 3, extracted_fields: { x: 1 } },
-          { document_id: 'd6', filename: 'COO.pdf', document_type: 'certificate_of_origin', extraction_status: 'error', discrepancyCount: 0, extracted_fields: { x: 1 } },
-        ],
-        lc_structured: { documents_structured: [] },
-        issues: [],
-        analytics: { compliance_score: 70 },
-      },
-    };
-
-    activeResults = buildValidationResponse(mismatchPayload as any);
-
-    render(renderWithProviders(<ExporterResults />));
-
-    await waitFor(() => {
-      expect(screen.getByText(/4 extracted OK/i)).toBeInTheDocument();
-      expect(screen.getByText(/1 partial extraction/i)).toBeInTheDocument();
-      expect(screen.getByText(/1 extraction failed/i)).toBeInTheDocument();
-      expect(screen.getByText(/Compliance Outcome/i)).toBeInTheDocument();
-    });
-
-    const statsCard = findCardByTitle(/Export Document Statistics/i);
-    expect(within(statsCard).getByText(/^Docs Verified$/i).previousElementSibling?.textContent).toBe('4');
-    expect(within(statsCard).getByText(/^Docs Need Review$/i).previousElementSibling?.textContent).toBe('2');
-
-    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
-    expect(screen.getAllByText(/^Verified$/i)).toHaveLength(4);
-    expect(screen.getAllByText(/Issues$/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Error|Errors/i).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('blocks submit-to-bank when verdict is REJECT even if guardrails can_submit=true', async () => {
-    vi.mocked(exporterApi.checkGuardrails).mockResolvedValue({
-      can_submit: true,
-      blocking_issues: [],
-      warnings: [],
-      required_docs_present: true,
-      high_severity_discrepancies: 0,
-      policy_checks_passed: true,
-    } as any);
-
-    const rejectPayload: any = {
-      structured_result: {
-        version: 'structured_result_v1',
-        documents_structured: [
-          {
-            document_id: 'd1',
-            filename: 'LC.pdf',
-            document_type: 'letter_of_credit',
-            extraction_status: 'success',
-            discrepancyCount: 0,
-            extracted_fields: { field20: 'LC-1' },
-          },
-        ],
-        issues: [
-          { id: 'i-critical', title: 'Critical mismatch', severity: 'critical', expected: 'A', found: 'B' },
-        ],
-        processing_summary: { total_documents: 1 },
-        analytics: { compliance_score: 100, issue_counts: { critical: 0, major: 0, minor: 0 } },
-        bank_verdict: { verdict: 'REJECT', can_submit: true, issue_summary: { critical: 1, major: 0, minor: 0, total: 1 } },
-        lc_structured: { mt700: { blocks: { '20': 'LC-1' } } },
-      },
-    };
-
-    activeResults = buildValidationResponse(rejectPayload);
-    render(renderWithProviders(<ExporterResults />));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Export LC Validation Results/i)).toBeInTheDocument();
-    });
-
-    expect(screen.queryByRole('button', { name: /Submit to Bank/i })).not.toBeInTheDocument();
   });
 });

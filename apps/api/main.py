@@ -54,8 +54,7 @@ except ImportError:
 
 # Import application modules
 from app.database import Base, engine
-from sqlalchemy.exc import UnsupportedCompilationError, CompileError, OperationalError, DisconnectionError, TimeoutError as SATimeoutError, NoReferencedTableError
-from app.utils.db_resilience import DB_OUTAGE_MESSAGE
+from sqlalchemy.exc import UnsupportedCompilationError, CompileError
 from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions
 
 # V2 Pipeline removed - using V1 with enhanced features
@@ -211,16 +210,6 @@ if _auto_create_flag:
         Base.metadata.create_all(bind=engine)
     except (UnsupportedCompilationError, CompileError) as exc:
         print(f"Skipping automatic schema creation due to unsupported dialect features: {exc}")
-    except NoReferencedTableError as exc:
-        # FK target table (e.g. 'organizations') is not defined as a SQLAlchemy
-        # model but exists in the DB via Alembic migrations.  create_all cannot
-        # resolve the reference from metadata alone so we skip it here and rely
-        # on Alembic to manage the schema.  This is safe in production because
-        # the real schema is managed exclusively by Alembic migrations.
-        print(
-            f"WARNING: Base.metadata.create_all() skipped — FK resolution error: {exc}. "
-            "Schema is managed by Alembic migrations. This is expected in production."
-        )
 else:
     print("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
 
@@ -236,12 +225,6 @@ app = FastAPI(
 @app.get("/healthz", tags=["health"], summary="Lightweight liveness probe")
 async def healthz() -> Dict[str, str]:
     """Simple health endpoint for load balancers and uptime checks."""
-    return {"status": "ok"}
-
-
-@app.get("/health", tags=["health"], summary="Docker-compatible health probe")
-async def health_check() -> Dict[str, str]:
-    """Compat endpoint for container health checks."""
     return {"status": "ok"}
 
 
@@ -446,48 +429,6 @@ app.add_middleware(
 
 
 # Error handling middleware with structured logging
-async def database_exception_handler(request: Request, exc: Exception):
-    """Return explicit 503 for database connectivity outages."""
-    from datetime import datetime, timezone
-
-    origin = request.headers.get("origin")
-    cors_headers = {}
-    if origin:
-        allowed_origins = settings.CORS_ALLOW_ORIGINS
-        if settings.is_production() and allowed_origins == ["*"]:
-            allowed_origins = [
-                "https://trdrhub.com",
-                "https://www.trdrhub.com",
-                "https://trdrhub.vercel.app",
-            ]
-        if "*" in allowed_origins or origin in allowed_origins:
-            cors_headers = {
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true",
-            }
-
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": "database_unavailable",
-            "message": DB_OUTAGE_MESSAGE,
-            "detail": "Database connectivity issue detected. Retry shortly.",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url.path),
-        },
-        headers={
-            "X-Request-ID": getattr(request.state, "request_id", "unknown"),
-            **cors_headers,
-        }
-    )
-
-
-# Register DB-related exception handlers explicitly (FastAPI requires one class per registration)
-app.add_exception_handler(OperationalError, database_exception_handler)
-app.add_exception_handler(DisconnectionError, database_exception_handler)
-app.add_exception_handler(SATimeoutError, database_exception_handler)
-
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler with structured error responses and logging."""
