@@ -28,13 +28,16 @@ from .doc_types import (
     fallback_doc_type,
 )
 
-from .issue_resolver import (
+from .issue_attribution import (
     resolve_issue_stats,
     collect_document_issue_stats,
     extract_document_names,
     extract_document_types,
     extract_document_ids,
     bump_issue_entry,
+)
+
+from .issue_resolver import (
     count_issue_severity,
     format_deterministic_issue,
 )

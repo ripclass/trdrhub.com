@@ -86,6 +86,10 @@ from app.routers.validation.response_shaping import (
     build_processing_timeline as _build_processing_timeline,
 )
 
+from app.routers.validation import issue_attribution as _issue_attribution
+from app.routers.validation import response_shaping as _response_shaping
+from app.routers.validation import response_builder as _response_builder
+
 from app.routers.validation.doc_types import (
     label_to_doc_type as _label_to_doc_type,
     normalize_doc_type_key as _normalize_doc_type_key,
@@ -3900,116 +3904,17 @@ def _build_analytics_section(
     documents: List[Dict[str, Any]],
     issues: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    severity = summary.get("severity_breakdown") or {}
-    compliance_score = max(
-        0,
-        100 - severity.get("critical", 0) * 30 - severity.get("major", 0) * 20 - severity.get("minor", 0) * 5,
-    )
-
-    document_risk = []
-    for doc in documents:
-        count = doc.get("issues_count", 0)
-        if count >= 3:
-            risk = "high"
-        elif count >= 1:
-            risk = "medium"
-        else:
-            risk = "low"
-        document_risk.append(
-            {
-                "document_id": doc.get("document_id"),
-                "filename": doc.get("filename"),
-                "risk": risk,
-            }
-        )
-
-    return {
-        "compliance_score": compliance_score,
-        "issue_counts": severity,
-        "document_risk": document_risk,
-    }
+    return _response_builder.build_analytics_section(summary, documents, issues)
 
 
 def _build_timeline_entries() -> List[Dict[str, str]]:
-    return [
-        {"label": "Upload Received", "status": "complete"},
-        {"label": "OCR Complete", "status": "complete"},
-        {"label": "Deterministic Rules", "status": "complete"},
-        {"label": "Issue Review Ready", "status": "complete"},
-    ]
+    return _response_builder.build_timeline_entries()
 
 def _build_document_processing_analytics(
     document_summaries: List[Dict[str, Any]],
     processing_summary: Dict[str, Any],
 ) -> Dict[str, Any]:
-    status_counts = processing_summary.get("status_counts", {})
-    confidences = [doc.get("ocrConfidence") for doc in document_summaries if isinstance(doc.get("ocrConfidence"), (int, float))]
-    if confidences:
-        avg_confidence = sum(confidences) / len(confidences)
-        extraction_accuracy = round(avg_confidence * 100)
-    else:
-        extraction_accuracy = max(80, 100 - status_counts.get("warning", 0) * 5 - status_counts.get("error", 0) * 10)
-
-    document_processing = []
-    for index, doc in enumerate(document_summaries):
-        extracted_fields = doc.get("extractedFields") or {}
-        processing_time = 0.2 + max(0, len(extracted_fields)) * 0.05 + index * 0.02
-        ocr_confidence = doc.get("ocrConfidence")
-        if isinstance(ocr_confidence, (int, float)):
-            accuracy_score = round(ocr_confidence * 100)
-        else:
-            accuracy_score = 98 if doc.get("status") == "success" else 90
-
-        # Get issue count from document summary (populated by _build_document_summaries)
-        issue_count = doc.get("discrepancyCount", 0) or 0
-        
-        # Derive risk label from issue count for better accuracy
-        if issue_count >= 3:
-            risk_label = "high"
-        elif issue_count >= 1:
-            risk_label = "medium"
-        else:
-            risk_label = "low"
-        
-        compliance_label = "High" if doc.get("status") == "success" else "Medium" if doc.get("status") == "warning" else "Low"
-
-        document_processing.append(
-            {
-                "name": doc.get("name"),
-                "type": doc.get("type"),
-                "status": doc.get("status"),
-                "processing_time_seconds": round(processing_time, 2),
-                "accuracy_score": accuracy_score,
-                "compliance_level": compliance_label,
-                "risk_level": risk_label,
-                "issues": issue_count,  # FIX: Include issue count for frontend
-            }
-        )
-
-    # Count total issues from documents and discrepancies
-    total_doc_issues = sum(doc.get("discrepancyCount", 0) or 0 for doc in document_summaries)
-    total_discrepancies = processing_summary.get("discrepancies", 0)
-    total_issues = max(total_doc_issues, total_discrepancies)
-    
-    performance_insights = [
-        f"{len(document_summaries)}/{processing_summary.get('documents', 0)} documents extracted successfully",
-        f"{total_issues} issues detected",
-        f"Compliance score {processing_summary.get('compliance_rate', 0)}%",
-    ]
-
-    return {
-        "extraction_accuracy": extraction_accuracy,
-        "lc_compliance_score": processing_summary.get("compliance_rate", 0),
-        "customs_ready_score": max(
-            0,
-            processing_summary.get("compliance_rate", 0) - status_counts.get("warning", 0) * 2 - status_counts.get("error", 0) * 5,
-        ),
-        "documents_processed": processing_summary.get("documents", 0),
-        "document_status_distribution": status_counts,
-        "document_processing": document_processing,
-        "performance_insights": performance_insights,
-        "processing_time_display": processing_summary.get("processing_time_display"),
-    }
+    return _response_builder.build_document_processing_analytics(document_summaries, processing_summary)
 
 
 def _format_duration(duration_seconds: float) -> str:
