@@ -43,7 +43,7 @@ from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
 from app.config import settings
-from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
+from app.core.lc_types import LCType, VALID_LC_TYPES
 from app.services.lc_classifier import detect_lc_type
 from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
@@ -56,11 +56,6 @@ from app.routers.validation import (
     severity_to_status as _severity_to_status,
     normalize_issue_severity as _normalize_issue_severity,
     priority_to_severity as _priority_to_severity,
-    label_to_doc_type as _label_to_doc_type,
-    normalize_doc_type_key as _normalize_doc_type_key,
-    humanize_doc_type as _humanize_doc_type,
-    infer_document_type_from_name as _infer_document_type_from_name,
-    fallback_doc_type as _fallback_doc_type,
     normalize_doc_match_key as _normalize_doc_match_key,
     strip_extension as _strip_extension,
     coerce_issue_value as _coerce_issue_value,
@@ -86,6 +81,25 @@ from app.routers.validation import (
     build_timeline_entries as _build_timeline_entries,
     build_document_processing_analytics as _build_document_processing_analytics,
     summarize_document_statuses as _summarize_document_statuses,
+)
+
+from app.routers.validation.doc_types import (
+    label_to_doc_type as _label_to_doc_type,
+    normalize_doc_type_key as _normalize_doc_type_key,
+    humanize_doc_type as _humanize_doc_type,
+    infer_document_type_from_name as _infer_document_type_from_name,
+    fallback_doc_type as _fallback_doc_type,
+    canonical_document_tag as _canonical_document_tag,
+    resolve_document_type as _resolve_document_type,
+    infer_document_type as _infer_document_type,
+    doc_type_to_display_name as _doc_type_to_display_name,
+)
+
+from app.routers.validation.request_parsing import (
+    extract_request_user_type as _extract_request_user_type,
+    should_force_json_rules as _should_force_json_rules,
+    resolve_shipment_context as _resolve_shipment_context,
+    extract_lc_type_override as _extract_lc_type_override,
 )
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -2217,175 +2231,6 @@ def _build_document_summaries(
     return summaries
 
 
-def _infer_document_type_from_name(filename: Optional[str], index: int) -> str:
-    """Infer the document type using filename patterns."""
-    if filename:
-        name = filename.lower()
-        if any(token in name for token in ("invoice", "inv")):
-            return "commercial_invoice"
-        if any(token in name for token in ("bill_of_lading", "bill-of-lading", "bill", "lading", "bl", "shipping", "bol")):
-            return "bill_of_lading"
-        if any(token in name for token in ("packing", "packlist")):
-            return "packing_list"
-        if any(token in name for token in ("insurance", "policy")):
-            return "insurance_certificate"
-        if any(token in name for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
-            return "certificate_of_origin"
-        if any(token in name for token in ("inspection", "quality", "analysis")):
-            return "inspection_certificate"
-        if any(token in name for token in ("lc_", "letter_of_credit", "mt700")) or name.endswith("_lc.pdf"):
-            return "letter_of_credit"
-        if " credit " in name:
-            return "letter_of_credit"
-
-    return _fallback_doc_type(index)
-
-
-def _fallback_doc_type(index: int) -> str:
-    """Fallback ordering for document types when hints are unavailable."""
-    mapping = {
-        0: "letter_of_credit",
-        1: "commercial_invoice",
-        2: "bill_of_lading",
-        3: "packing_list",
-        4: "certificate_of_origin",
-        5: "insurance_certificate",
-        6: "inspection_certificate",
-    }
-    return mapping.get(index, "supporting_document")
-
-
-def _extract_request_user_type(payload: Dict[str, Any]) -> str:
-    value = payload.get("user_type") or payload.get("userType")
-    if not value:
-        return ""
-    return str(value).strip().lower()
-
-
-def _should_force_json_rules(payload: Dict[str, Any]) -> bool:
-    user_type = _extract_request_user_type(payload)
-    if user_type in {"exporter", "importer"}:
-        return True
-    workflow = payload.get("workflow_type") or payload.get("workflowType")
-    if workflow:
-        normalized = str(workflow).strip().lower()
-        if normalized.startswith(("export", "import")):
-            return True
-    return False
-
-
-DOCUMENT_TYPE_ALIASES: Dict[str, List[str]] = {
-    "letter_of_credit": [
-        "letter of credit",
-        "lc",
-        "l/c",
-        "mt700",
-        "lc document",
-        "lc_document",
-        "draft lc",
-        "draft_lc",
-    ],
-    # Importer Draft LC document types
-    "swift_message": [
-        "swift",
-        "swift message",
-        "mt 700",
-        "mt700",
-        "mt 710",
-        "mt710",
-        "mt 760",
-        "mt760",
-        "swift mt",
-    ],
-    "lc_application": [
-        "application",
-        "lc application",
-        "lc application form",
-        "application form",
-    ],
-    "proforma_invoice": [
-        "proforma",
-        "proforma invoice",
-        "pi",
-        "pro forma",
-        "pro-forma",
-    ],
-    "commercial_invoice": [
-        "invoice",
-        "commercial invoice",
-        "ci",
-        "inv",
-    ],
-    "bill_of_lading": [
-        "bill of lading",
-        "bill_of_lading",
-        "bill-of-lading",
-        "bill",
-        "bol",
-        "bl",
-        "shipping document",
-        "awb",
-    ],
-    "packing_list": [
-        "packing list",
-        "packlist",
-        "packing",
-    ],
-    "insurance_certificate": [
-        "insurance",
-        "insurance certificate",
-        "policy",
-    ],
-    "certificate_of_origin": [
-        "certificate of origin",
-        "coo",
-        "gsp",
-    ],
-    "inspection_certificate": [
-        "inspection",
-        "analysis",
-        "quality certificate",
-    ],
-    "supporting_document": [
-        "supporting",
-        "misc",
-        "other",
-    ],
-}
-
-
-def _canonical_document_tag(raw_value: Any) -> Optional[str]:
-    if raw_value is None:
-        return None
-    normalized = str(raw_value).strip().lower()
-    if not normalized:
-        return None
-    normalized = normalized.replace("-", " ").replace("_", " ")
-    for canonical, aliases in DOCUMENT_TYPE_ALIASES.items():
-        if normalized == canonical.replace("_", " "):
-            return canonical
-        if normalized in aliases:
-            return canonical
-    for canonical, aliases in DOCUMENT_TYPE_ALIASES.items():
-        if any(alias in normalized for alias in aliases):
-            return canonical
-    return normalized.replace(" ", "_")
-
-
-def _resolve_document_type(
-    filename: Optional[str],
-    index: int,
-    document_tags: Optional[Dict[str, str]] = None,
-) -> str:
-    if filename and document_tags:
-        lower_name = filename.lower()
-        base_name = lower_name.rsplit(".", 1)[0]
-        tag_value = document_tags.get(lower_name) or document_tags.get(base_name)
-        if tag_value:
-            return tag_value
-    return _infer_document_type(filename, index)
-
-
 async def _build_document_context(
     files_list: List[Any],
     document_tags: Optional[Dict[str, Any]] = None
@@ -3043,55 +2888,6 @@ def detect_lc_format(raw_lc_text: Optional[str]) -> str:
     return "mt700"
 
 
-def _resolve_shipment_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    for key in (
-        "bill_of_lading",
-        "billOfLading",
-        "awb",
-        "air_waybill",
-        "airway_bill",
-        "shipment",
-    ):
-        ctx = payload.get(key)
-        if isinstance(ctx, dict):
-            return ctx
-    lc_ports = (payload.get("lc") or {}).get("ports")
-    if isinstance(lc_ports, dict):
-        shipment: Dict[str, Any] = {}
-        loading_value = lc_ports.get("port_of_loading") or lc_ports.get("loading")
-        discharge_value = lc_ports.get("port_of_discharge") or lc_ports.get("discharge")
-        if loading_value:
-            shipment["port_of_loading"] = loading_value
-        if discharge_value:
-            shipment["port_of_discharge"] = discharge_value
-        if shipment:
-            return shipment
-        return lc_ports
-    return {}
-
-
-def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
-    options = payload.get("options") or {}
-    candidates = [
-        payload.get("lc_type_override"),
-        payload.get("lcTypeOverride"),
-        options.get("lc_type_override"),
-        options.get("lc_type"),
-        payload.get("lcType"),
-        payload.get("lc_type_selection"),
-        payload.get("requested_lc_type"),
-    ]
-    for candidate in candidates:
-        normalized = normalize_lc_type(candidate)
-        if normalized in VALID_LC_TYPES:
-            if normalized == LCType.UNKNOWN.value:
-                return LCType.UNKNOWN.value
-            return normalized
-        if candidate and str(candidate).strip().lower() == "auto":
-            return None
-    return None
-
-
 def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build a context snapshot from the validation payload for AI issue rewriting.
@@ -3413,35 +3209,6 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         return ""
 
 
-def _infer_document_type(filename: Optional[str], index: int) -> str:
-    """Guess document type using filename hints or position."""
-    if filename:
-        lower = filename.lower()
-        if any(token in lower for token in ("invoice", "inv")):
-            return "commercial_invoice"
-        if any(token in lower for token in ("bill of lading", "bill_of_lading", "bill-of-lading", "bill", "lading", "bl", "shipping", "bol")):
-            return "bill_of_lading"
-        if any(token in lower for token in ("packing", "packlist")):
-            return "packing_list"
-        if any(token in lower for token in ("insurance", "policy")):
-            return "insurance_certificate"
-        if any(token in lower for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
-            return "certificate_of_origin"
-        if any(token in lower for token in ("inspection", "analysis", "quality")):
-            return "inspection_certificate"
-        if any(token in lower for token in ("lc_", "letter_of_credit", "mt700")) or lower.endswith("_lc.pdf"):
-            return "letter_of_credit"
-        if " credit " in lower:
-            return "letter_of_credit"
-
-    mapping = {
-        0: "letter_of_credit",
-        1: "commercial_invoice",
-        2: "bill_of_lading",
-    }
-    return mapping.get(index, "letter_of_credit")
-
-
 def _resolve_issue_stats(
     detail_id: Optional[str],
     filename: Optional[str],
@@ -3655,67 +3422,6 @@ def _severity_to_status(severity: Optional[str]) -> str:
     if normalized in {"major", "warning", "warn", "minor"}:
         return "warning"
     return "success"
-
-
-def _label_to_doc_type(label: Optional[str]) -> Optional[str]:
-    if not label:
-        return None
-    normalized = str(label).strip().lower()
-    for canonical, friendly in DEFAULT_LABELS.items():
-        if normalized == friendly.lower():
-            return canonical
-        if normalized.replace(" ", "_") == canonical:
-            return canonical
-    return None
-
-
-def _doc_type_to_display_name(doc_type: Optional[str]) -> Optional[str]:
-    """Convert document type (e.g., 'invoice') to display name (e.g., 'Commercial Invoice')."""
-    if not doc_type:
-        return None
-    normalized = str(doc_type).strip().lower().replace(" ", "_")
-    
-    # Common mappings from doc types to display names
-    type_to_display = {
-        "invoice": "Commercial Invoice",
-        "commercial_invoice": "Commercial Invoice",
-        "bill_of_lading": "Bill of Lading",
-        "bl": "Bill of Lading",
-        "certificate_of_origin": "Certificate of Origin",
-        "coo": "Certificate of Origin",
-        "packing_list": "Packing List",
-        "insurance": "Insurance Certificate",
-        "insurance_certificate": "Insurance Certificate",
-        "lc": "Letter of Credit",
-        "letter_of_credit": "Letter of Credit",
-    }
-    
-    if normalized in type_to_display:
-        return type_to_display[normalized]
-    
-    # Try DEFAULT_LABELS
-    if normalized in DEFAULT_LABELS:
-        return DEFAULT_LABELS[normalized]
-    
-    return None
-
-
-def _normalize_doc_type_key(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    normalized = str(value).strip().lower()
-    normalized_snake = normalized.replace(" ", "_")
-    if normalized_snake in DEFAULT_LABELS:
-        return normalized_snake
-    if normalized in DEFAULT_LABELS:
-        return normalized
-    return normalized_snake
-
-
-def _humanize_doc_type(doc_type: Optional[str]) -> str:
-    if not doc_type:
-        return "Supporting Document"
-    return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
 
 
 def _build_blocked_structured_result(
