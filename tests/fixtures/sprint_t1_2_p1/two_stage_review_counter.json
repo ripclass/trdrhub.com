@@ -1,0 +1,21 @@
+{
+  "input_fields": {
+    "number": "LC-2026-001",
+    "amount": {
+      "value": "10000",
+      "confidence": 0.82
+    },
+    "raw_text": "ORIGINAL OCR TEXT"
+  },
+  "summary": {
+    "total": 2,
+    "trusted": 1,
+    "review": 1,
+    "untrusted": 0,
+    "needs_review": true
+  },
+  "normalized_values": {
+    "number": "LC-2026-001",
+    "amount": "10000.00"
+  }
+}

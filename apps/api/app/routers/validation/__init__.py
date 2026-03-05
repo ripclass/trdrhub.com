@@ -11,12 +11,6 @@ from .utilities import (
     severity_to_status,
     normalize_issue_severity,
     priority_to_severity,
-    # Document type utilities
-    label_to_doc_type,
-    normalize_doc_type_key,
-    humanize_doc_type,
-    infer_document_type_from_name,
-    fallback_doc_type,
     # String utilities
     normalize_doc_match_key,
     strip_extension,
@@ -26,13 +20,24 @@ from .utilities import (
     filter_user_facing_fields,
 )
 
-from .issue_resolver import (
+from .doc_types import (
+    label_to_doc_type,
+    normalize_doc_type_key,
+    humanize_doc_type,
+    infer_document_type_from_name,
+    fallback_doc_type,
+)
+
+from .issue_attribution import (
     resolve_issue_stats,
     collect_document_issue_stats,
     extract_document_names,
     extract_document_types,
     extract_document_ids,
     bump_issue_entry,
+)
+
+from .issue_resolver import (
     count_issue_severity,
     format_deterministic_issue,
 )

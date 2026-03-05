@@ -1,0 +1,59 @@
+{
+  "override_cases": [
+    {
+      "payload": {
+        "lc_type_override": "export"
+      },
+      "expected": "export"
+    },
+    {
+      "payload": {
+        "lcTypeOverride": "IMPORT"
+      },
+      "expected": "import"
+    },
+    {
+      "payload": {
+        "options": {
+          "lc_type": "unknown"
+        }
+      },
+      "expected": "unknown"
+    },
+    {
+      "payload": {
+        "requested_lc_type": "auto"
+      },
+      "expected": null
+    },
+    {
+      "payload": {
+        "lc_type_selection": "invalid"
+      },
+      "expected": null
+    }
+  ],
+  "extractor_outputs": {
+    "lc_type": "import",
+    "lc_type_reason": "User override from dashboard",
+    "lc_type_confidence": 88,
+    "lc_type_source": "override",
+    "mt700": {
+      "blocks": {},
+      "raw_text": "RAW",
+      "version": "mt700_v1"
+    },
+    "issues": []
+  },
+  "session_documents": [
+    {
+      "id": "doc-lc-2",
+      "document_type": "letter_of_credit",
+      "original_filename": "LC_override.pdf",
+      "extraction_status": "success",
+      "extracted_fields": {
+        "number": "LC-900"
+      }
+    }
+  ]
+}
