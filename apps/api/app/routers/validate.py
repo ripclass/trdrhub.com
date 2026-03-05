@@ -840,7 +840,7 @@ async def validate_doc(
                 or payload.get("documents")
                 or []
             )
-            is_empty, empty_reason = _is_extraction_empty(v2_baseline, documents_for_check)
+            is_empty, empty_reason = _is_extraction_empty_from_baseline(v2_baseline, documents_for_check)
             if is_empty:
                 extraction_empty = True
                 extraction_empty_reason = empty_reason
@@ -4811,7 +4811,7 @@ def _all_documents_empty(documents: List[Dict[str, Any]]) -> bool:
     return not any(_document_has_extraction_content(doc) for doc in documents)
 
 
-def _is_extraction_empty(
+def _is_extraction_empty_from_baseline(
     v2_baseline: Optional[LCBaseline],
     documents: List[Dict[str, Any]],
 ) -> Tuple[bool, Optional[str]]:
