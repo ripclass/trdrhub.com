@@ -1040,6 +1040,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
+
+  const totalExtractionDocs =
+    processingSummaryExtras?.total_documents ??
+    processingSummaryExtras?.documents ??
+    documents.length;
+  const successfulExtractions =
+    processingSummaryExtras?.successful_extractions ??
+    processingSummaryExtras?.verified ??
+    0;
+  const partialExtractions =
+    processingSummaryExtras?.partial_extractions ??
+    processingSummaryExtras?.warnings ??
+    0;
+  const failedExtractions =
+    processingSummaryExtras?.failed_extractions ??
+    processingSummaryExtras?.errors ??
+    0;
+  const hasExtractionFailures =
+    failedExtractions > 0 || documents.some((doc) => doc.status === 'error');
+  const hasExtractionSuccess =
+    successfulExtractions > 0 ||
+    partialExtractions > 0 ||
+    documents.some((doc) => doc.status === 'success' || doc.status === 'warning');
+  const extractionEmpty = totalExtractionDocs > 0 && !hasExtractionSuccess;
   const criticalIssueCount = useMemo(
     () => issueCards.filter((issue) => normalizeDiscrepancySeverity(issue.severity) === 'critical').length,
     [issueCards],
@@ -1076,6 +1100,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (guardrailsLoading) return false;
     if (validationState?.isBlocked) return false;
     if (pipelineStatusKnown && !pipelineVerified) return false;
+    if (hasExtractionFailures || extractionEmpty) return false;
     if (submitBlockedByRejectVerdict || submitBlockedByCritical) return false;
     if (!guardrails) {
       return totalDiscrepancies === 0;
@@ -1087,6 +1112,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     pipelineVerified,
     guardrails,
     guardrailsLoading,
+    hasExtractionFailures,
+    extractionEmpty,
     submitBlockedByRejectVerdict,
     submitBlockedByCritical,
     totalDiscrepancies,

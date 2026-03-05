@@ -833,8 +833,53 @@ async def validate_doc(
             )
             v2_gate_result = v2_gate.check_from_baseline(v2_baseline)
 
+            extraction_empty = False
+            extraction_empty_reason = None
+            documents_for_check = (
+                (extracted_context.get("documents") if extracted_context else None)
+                or payload.get("documents")
+                or []
+            )
+            is_empty, empty_reason = _is_extraction_empty(v2_baseline, documents_for_check)
+            if is_empty:
+                extraction_empty = True
+                extraction_empty_reason = empty_reason
+                v2_gate_result = GateResult(
+                    status=GateStatus.BLOCKED,
+                    can_proceed=False,
+                    block_reason="empty_extraction",
+                    warnings=[],
+                    baseline=v2_baseline,
+                    completeness=v2_baseline.extraction_completeness if v2_baseline else 0.0,
+                    critical_completeness=v2_baseline.critical_completeness if v2_baseline else 0.0,
+                    missing_critical=[
+                        f.field_name for f in v2_baseline.get_missing_critical()
+                    ] if v2_baseline else [],
+                    missing_required=[
+                        f.field_name for f in v2_baseline.get_missing_required()
+                    ] if v2_baseline else [],
+                    blocking_issues=[{
+                        "rule": "LC-GATE-EMPTY-EXTRACTION",
+                        "code": "LC-GATE-EMPTY-EXTRACTION",
+                        "title": "No Extractable Content",
+                        "passed": False,
+                        "severity": "critical",
+                        "message": "No extractable text or structured fields were found in the uploaded documents.",
+                        "expected": "Readable LC text and fields",
+                        "actual": "No extractable content detected",
+                        "suggestion": "Upload a readable document with visible text or re-run OCR.",
+                        "documents": ["Letter of Credit"],
+                        "document_names": ["Letter of Credit"],
+                        "display_card": True,
+                        "ruleset_domain": "icc.lcopilot.gate",
+                        "blocks_validation": True,
+                        "auto_generated": True,
+                    }],
+                    warning_issues=[],
+                )
+
             # If strict gate blocked but payload is not LC-like, downgrade to warning path.
-            if not v2_gate_result.can_proceed and not lc_is_likely:
+            if not v2_gate_result.can_proceed and not lc_is_likely and not extraction_empty:
                 v2_gate_result = GateResult(
                     status=GateStatus.WARNING,
                     can_proceed=True,
@@ -878,6 +923,8 @@ async def validate_doc(
                     lc_type=lc_type,
                     processing_duration=processing_duration,
                     documents=payload.get("documents") or [],
+                    extraction_empty=extraction_empty,
+                    extraction_empty_reason=extraction_empty_reason,
                 )
 
                 # Store blocked result in validation session so it can be retrieved later
@@ -888,6 +935,8 @@ async def validate_doc(
                         "structured_result": blocked_result,
                         "validation_blocked": True,
                         "block_reason": v2_gate_result.block_reason,
+                        "extraction_empty": extraction_empty,
+                        "extraction_empty_reason": extraction_empty_reason,
                     }
                     db.commit()
 
@@ -898,6 +947,8 @@ async def validate_doc(
                     "telemetry": {
                         "validation_blocked": True,
                         "block_reason": v2_gate_result.block_reason,
+                        "extraction_empty": extraction_empty,
+                        "extraction_empty_reason": extraction_empty_reason,
                         "timings": timings,
                         "total_time_seconds": round(time.time() - start_time, 3),
                     },
@@ -2191,6 +2242,7 @@ async def validate_doc(
 
             structured_result["ai_verdict"] = ai_verdict
             structured_result["ruleset_verdict"] = ruleset_verdict
+            final_verdict = _align_final_verdict(final_verdict, bank_verdict)
             structured_result["final_verdict"] = final_verdict
             structured_result["override_reason"] = override_reason
             structured_result["blocking_rules"] = blocking_rules
@@ -2239,6 +2291,20 @@ async def validate_doc(
                     mode=decision_mode,
                 )
                 structured_result["decision_trace"] = trace
+
+            structured_result = _apply_non_submit_guardrail(
+                structured_result,
+                bank_verdict=bank_verdict,
+                validation_status=v2_score.level.value,
+                compliance_status=structured_result.get("compliance_status"),
+                critical_count=v2_score.critical_count,
+                major_count=v2_score.major_count,
+                minor_count=v2_score.minor_count,
+                compliance_score=v2_score.score,
+            )
+            bank_verdict = structured_result.get("bank_verdict", bank_verdict)
+            final_verdict = structured_result.get("final_verdict", final_verdict)
+
             structured_result = _apply_pipeline_verification_gate(
                 structured_result,
                 mode=decision_mode,
@@ -4257,9 +4323,9 @@ def _resolve_bank_verdict_class(
 ) -> str:
     """Deterministic class extraction that prefers explicit compliance status first."""
     status = str(validation_status or "").strip().lower()
-    if status == "non_compliant":
-        return "warn"
-    if status == "partial":
+    if status == "blocked":
+        return "blocked"
+    if status in {"non_compliant", "partial"}:
         return "reject"
 
     if critical_count > 0:
@@ -4314,6 +4380,48 @@ def _has_non_empty_value(value: Any) -> bool:
     return bool(str(value).strip())
 
 
+def _is_extraction_empty(
+    documents: Optional[Any],
+    processing_summary: Optional[Any],
+) -> Tuple[bool, Dict[str, Any]]:
+    docs = documents if isinstance(documents, list) else []
+    summary = processing_summary if isinstance(processing_summary, dict) else {}
+
+    total_docs = _safe_int(summary.get("total_documents") or summary.get("documents") or len(docs))
+    successful = _safe_int(summary.get("successful_extractions") or summary.get("verified"))
+    partial = _safe_int(summary.get("partial_extractions") or summary.get("warnings"))
+    failed = _safe_int(summary.get("failed_extractions") or summary.get("errors"))
+
+    observed = {
+        "total_documents": total_docs,
+        "successful_extractions": successful,
+        "partial_extractions": partial,
+        "failed_extractions": failed,
+    }
+
+    if total_docs > 0 and successful == 0 and partial == 0:
+        return True, observed
+
+    if docs:
+        statuses = [
+            normalize_extraction_status(
+                doc.get("extraction_status")
+                or doc.get("extractionStatus")
+                or doc.get("status")
+            )
+            for doc in docs
+            if isinstance(doc, dict)
+        ]
+        observed["statuses"] = statuses
+        has_signal = any(status in {"success", "partial", "text_only"} for status in statuses)
+        return not has_signal, observed
+
+    if total_docs == 0:
+        return True, observed
+
+    return False, observed
+
+
 def _build_pipeline_verification_checks(
     *,
     decision_trace: Optional[Dict[str, Any]],
@@ -4321,6 +4429,8 @@ def _build_pipeline_verification_checks(
     ruleset_verdict: Optional[Any],
     final_verdict: Optional[Any],
     mode: Optional[str],
+    documents: Optional[Any],
+    processing_summary: Optional[Any],
 ) -> List[Dict[str, Any]]:
     trace = decision_trace if isinstance(decision_trace, dict) else {}
     router_transport = str(trace.get("router_transport") or "").strip().lower()
@@ -4328,12 +4438,15 @@ def _build_pipeline_verification_checks(
     layer_call_count = len(layer_calls) if isinstance(layer_calls, list) else 0
 
     mode_token = str(mode or trace.get("mode") or "").strip().lower()
+    ai_expected = mode_token == "hybrid_enforced"
     router_transport_observed = router_transport not in {"", "unknown", "none", "null"}
     trace_evidence_present = router_transport_observed or layer_call_count > 0 or bool(trace.get("provider_evidence"))
 
     # If no trace evidence exists, do not hard-fail verification on transport/layer checks.
-    # This avoids false UNVERIFIED when router metadata is unavailable in an otherwise valid run.
-    require_router_layer_checks = trace_evidence_present
+    # In enforced mode, we always require AI trace evidence.
+    require_router_layer_checks = trace_evidence_present or ai_expected
+
+    extraction_empty, extraction_observed = _is_extraction_empty(documents, processing_summary)
 
     checks: List[Dict[str, Any]] = [
         {
@@ -4347,6 +4460,12 @@ def _build_pipeline_verification_checks(
             "passed": (layer_call_count >= 1) if require_router_layer_checks else True,
             "observed_value": layer_call_count,
             "required_value": ">=1" if require_router_layer_checks else "optional (no trace evidence)",
+        },
+        {
+            "check_name": "documents_extraction_non_empty",
+            "passed": not extraction_empty,
+            "observed_value": extraction_observed,
+            "required_value": ">=1 extractable document",
         },
         {
             "check_name": "ai_verdict_non_empty",
@@ -4394,6 +4513,12 @@ def _apply_pipeline_verification_gate(
         ruleset_verdict=structured_result.get("ruleset_verdict"),
         final_verdict=structured_result.get("final_verdict"),
         mode=mode,
+        documents=(
+            structured_result.get("documents_structured")
+            or structured_result.get("documents")
+            or []
+        ),
+        processing_summary=structured_result.get("processing_summary") or {},
     )
     if issue_count_invariant_failure_reason:
         checks.append(
@@ -4490,6 +4615,25 @@ def _arbitration_to_final_verdict(arbitration_verdict: Optional[str], fallback: 
     if token == "review":
         return "HOLD"
     return str(fallback or "HOLD")
+
+
+def _align_final_verdict(final_verdict: Optional[str], bank_verdict: Optional[Dict[str, Any]]) -> str:
+    bank_payload = bank_verdict or {}
+    verdict_class = str(bank_payload.get("verdict_class") or "").strip().lower()
+    if verdict_class == "reject":
+        return "REJECT"
+
+    signature = bank_payload.get("verdict_signature")
+    if isinstance(signature, dict):
+        signature_status = str(signature.get("validation_status") or "").strip().lower()
+        if signature_status == "non_compliant":
+            return "REJECT"
+
+    bank_token = str(bank_payload.get("verdict") or "").strip().upper()
+    if bank_token in {"SUBMIT", "CAUTION", "HOLD", "REJECT", "BLOCKED"}:
+        return bank_token
+    token = str(final_verdict or "").strip().upper()
+    return token or "HOLD"
 
 
 def _derive_confidence_band(extraction_confidence_summary: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
@@ -4618,12 +4762,75 @@ def _humanize_doc_type(doc_type: Optional[str]) -> str:
     return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
 
 
+def _value_has_content(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set)):
+        return any(_value_has_content(v) for v in value)
+    if isinstance(value, dict):
+        return any(_value_has_content(v) for v in value.values())
+    return True
+
+
+def _document_has_extraction_content(doc: Dict[str, Any]) -> bool:
+    if not isinstance(doc, dict):
+        return False
+
+    structured_keys = [
+        "extracted_fields",
+        "extracted_data",
+        "structured_data",
+        "structured_fields",
+        "fields",
+        "data",
+    ]
+    for key in structured_keys:
+        if _value_has_content(doc.get(key)):
+            return True
+
+    text_keys = [
+        "raw_text_preview",
+        "raw_text",
+        "ocr_text",
+        "text",
+        "content",
+        "full_text",
+    ]
+    for key in text_keys:
+        if _value_has_content(doc.get(key)):
+            return True
+
+    return False
+
+
+def _all_documents_empty(documents: List[Dict[str, Any]]) -> bool:
+    if not documents:
+        return True
+    return not any(_document_has_extraction_content(doc) for doc in documents)
+
+
+def _is_extraction_empty(
+    v2_baseline: Optional[LCBaseline],
+    documents: List[Dict[str, Any]],
+) -> Tuple[bool, Optional[str]]:
+    completeness = v2_baseline.extraction_completeness if v2_baseline else 0.0
+    if completeness <= 0.0:
+        return True, "extraction_completeness_zero"
+    if _all_documents_empty(documents):
+        return True, "documents_empty"
+    return False, None
+
+
 def _build_blocked_structured_result(
     v2_gate_result,
     v2_baseline: LCBaseline,
     lc_type: str,
     processing_duration: float,
     documents: List[Dict[str, Any]],
+    extraction_empty: bool = False,
+    extraction_empty_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build a structured_result for blocked validation.
@@ -4679,6 +4886,8 @@ def _build_blocked_structured_result(
         # V2 blocked status
         "validation_blocked": True,
         "validation_status": "blocked",
+        "extraction_empty": extraction_empty,
+        "extraction_empty_reason": extraction_empty_reason,
         "verdict_signature": _build_verdict_signature(
             source="validation_gate",
             verdict="BLOCKED",
@@ -4719,6 +4928,8 @@ def _build_blocked_structured_result(
             "critical_completeness": round(v2_gate_result.critical_completeness * 100, 1),
             "missing_critical": v2_gate_result.missing_critical,
             "missing_required": v2_gate_result.missing_required,
+            "extraction_empty": extraction_empty,
+            "extraction_empty_reason": extraction_empty_reason,
         },
         
         # LC baseline (partial data)
@@ -5549,6 +5760,98 @@ def _build_processing_summary(
     }
 
 
+def _requires_non_submit_guard(
+    validation_status: Optional[str],
+    compliance_status: Optional[str],
+) -> bool:
+    normalized_validation = str(validation_status or "").strip().lower()
+    normalized_compliance = str(compliance_status or "").strip().lower()
+    return normalized_validation == "non_compliant" or normalized_compliance == "reject"
+
+
+def _apply_non_submit_guardrail(
+    structured_result: Dict[str, Any],
+    *,
+    bank_verdict: Dict[str, Any],
+    validation_status: Optional[str],
+    compliance_status: Optional[str],
+    critical_count: int,
+    major_count: int,
+    minor_count: int,
+    compliance_score: Optional[float],
+) -> Dict[str, Any]:
+    if not _requires_non_submit_guard(validation_status, compliance_status):
+        return structured_result
+
+    updated_bank_verdict = dict(bank_verdict or {})
+    verdict_token = str(updated_bank_verdict.get("verdict") or "").strip().upper()
+    if verdict_token in {"SUBMIT", "CAUTION", "HOLD", "READY_TO_SUBMIT", "PASS", "GO"}:
+        updated_bank_verdict["verdict"] = "REJECT"
+        updated_bank_verdict["verdict_color"] = "red"
+        updated_bank_verdict["verdict_message"] = (
+            "Documents are non-compliant"
+            if str(validation_status or "").strip().lower() == "non_compliant"
+            else "Documents will be REJECTED by bank"
+        )
+        updated_bank_verdict["verdict_class"] = "reject"
+
+    updated_bank_verdict["can_submit"] = False
+    updated_bank_verdict["will_be_rejected"] = True
+
+    recommendation_text = str(updated_bank_verdict.get("recommendation") or "")
+    if "do not submit" not in recommendation_text.lower():
+        updated_bank_verdict["recommendation"] = (
+            "Do NOT submit to bank until compliance issues are resolved."
+        )
+
+    updated_bank_verdict.setdefault(
+        "issue_summary",
+        {
+            "critical": critical_count,
+            "major": major_count,
+            "minor": minor_count,
+            "total": critical_count + major_count + minor_count,
+        },
+    )
+    updated_bank_verdict["verdict_class"] = "reject"
+    updated_bank_verdict["compliance_status"] = compliance_status
+    updated_bank_verdict["verdict_signature"] = _build_verdict_signature(
+        source="bank_verdict",
+        verdict=updated_bank_verdict.get("verdict") or "REJECT",
+        critical_count=critical_count,
+        major_count=major_count,
+        minor_count=minor_count,
+        compliance_score=compliance_score,
+        validation_status=validation_status,
+        verdict_class="reject",
+        reason="non_submit_guardrail",
+    )
+
+    structured_result["bank_verdict"] = updated_bank_verdict
+    structured_result["verdict_signature"] = updated_bank_verdict.get("verdict_signature")
+    structured_result["final_verdict"] = "REJECT"
+    structured_result["authoritative_verdict"] = _build_authoritative_verdict(
+        verdict_class="reject",
+        source=(updated_bank_verdict.get("verdict_signature", {}).get("source")
+                if isinstance(updated_bank_verdict.get("verdict_signature"), dict)
+                else "bank_verdict"),
+        rationale="non_submit_guardrail",
+        rationale_details={
+            "validation_status": validation_status,
+            "compliance_status": compliance_status,
+            "critical_count": critical_count,
+            "major_count": major_count,
+        },
+    )
+    if structured_result.get("processing_summary"):
+        structured_result["processing_summary"]["bank_verdict"] = "REJECT"
+
+    if not structured_result.get("override_reason"):
+        structured_result["override_reason"] = "non_submit_guardrail"
+
+    return structured_result
+
+
 def _build_bank_submission_verdict(
     critical_count: int,
     major_count: int,
@@ -5563,8 +5866,20 @@ def _build_bank_submission_verdict(
     This helps exporters understand if their documents are ready
     for bank submission or what actions are required first.
     """
+    compliance_status = compliance_status_from_validation(
+        validation_status,
+        critical_count=critical_count,
+        major_count=major_count,
+    )
+    normalized_status = str(validation_status or "").strip().lower()
+
     # Determine verdict
-    if critical_count > 0:
+    if compliance_status == "reject" or normalized_status == "non_compliant":
+        verdict = "REJECT"
+        verdict_color = "red"
+        verdict_message = "Documents are non-compliant"
+        recommendation = "Do NOT submit to bank until compliance issues are resolved."
+    elif critical_count > 0:
         verdict = "REJECT"
         verdict_color = "red"
         verdict_message = "Documents will be REJECTED by bank"
@@ -5631,7 +5946,7 @@ def _build_bank_submission_verdict(
         "verdict_color": verdict_color,
         "verdict_message": verdict_message,
         "recommendation": recommendation,
-        "can_submit": verdict in ["SUBMIT", "CAUTION"],
+        "can_submit": verdict in ["SUBMIT", "CAUTION"] and compliance_status != "reject",
         "will_be_rejected": verdict == "REJECT",
         "estimated_discrepancy_fee": discrepancy_fee,
         "issue_summary": {

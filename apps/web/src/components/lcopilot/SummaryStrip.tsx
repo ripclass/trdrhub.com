@@ -104,8 +104,6 @@ export function SummaryStrip({
     typeof pipelineVerificationStatusRaw === 'string'
       ? pipelineVerificationStatusRaw.toUpperCase()
       : null;
-  const pipelineIsVerified = pipelineVerificationStatus === 'VERIFIED';
-  const pipelineIsUnverified = pipelineVerificationStatus === 'UNVERIFIED';
 
   const pipelineFailReasons = (
     (structured as any)?.pipeline_verification_fail_reasons ??
@@ -118,7 +116,18 @@ export function SummaryStrip({
     []
   ) as Array<Record<string, unknown>>;
   const shortFailReasons = pipelineFailReasons.slice(0, 3);
-  
+
+  const pipelineSuppressedByExtraction = errors > 0;
+  const pipelineSuppressedByBlock = Boolean(isBlockedProp);
+  const pipelineIsVerified =
+    pipelineVerificationStatus === 'VERIFIED' &&
+    !pipelineSuppressedByExtraction &&
+    !pipelineSuppressedByBlock;
+  const pipelineIsUnverified =
+    pipelineVerificationStatus === 'UNVERIFIED' ||
+    (pipelineVerificationStatus === 'VERIFIED' &&
+      (pipelineSuppressedByExtraction || pipelineSuppressedByBlock));
+
   const visibleSeverityCounts = (data?.issues ?? []).reduce(
     (acc, issue) => {
       const severity = normalizeIssueSeverity((issue as any)?.severity);
