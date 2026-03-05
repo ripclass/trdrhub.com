@@ -61,26 +61,29 @@ from app.routers.validation import (
     coerce_issue_value as _coerce_issue_value,
     format_duration as _format_duration,
     filter_user_facing_fields as _filter_user_facing_fields,
-    # Issue resolver
+    # Document builder
+    build_document_summaries as _build_document_summaries,
+    build_document_lookup as _build_document_lookup,
+    match_issue_documents as _match_issue_documents,
+    build_documents_section as _build_documents_section,
+)
+
+from app.routers.validation.issue_attribution import (
     resolve_issue_stats as _resolve_issue_stats,
     collect_document_issue_stats as _collect_document_issue_stats,
     extract_document_names as _extract_document_names,
     extract_document_types as _extract_document_types,
     extract_document_ids as _extract_document_ids,
     bump_issue_entry as _bump_issue_entry,
-    count_issue_severity as _count_issue_severity,
-    format_deterministic_issue as _format_deterministic_issue,
-    # Document builder
-    build_document_summaries as _build_document_summaries,
-    build_document_lookup as _build_document_lookup,
-    match_issue_documents as _match_issue_documents,
-    build_documents_section as _build_documents_section,
-    # Response builder
+)
+
+from app.routers.validation.response_shaping import (
     compose_processing_summary as _compose_processing_summary,
-    build_analytics_section as _build_analytics_section,
-    build_timeline_entries as _build_timeline_entries,
-    build_document_processing_analytics as _build_document_processing_analytics,
+    count_issue_severity as _count_issue_severity,
     summarize_document_statuses as _summarize_document_statuses,
+    build_processing_summary as _build_processing_summary,
+    build_bank_submission_verdict as _build_bank_submission_verdict,
+    build_processing_timeline as _build_processing_timeline,
 )
 
 from app.routers.validation.doc_types import (
@@ -3209,196 +3212,6 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         return ""
 
 
-def _resolve_issue_stats(
-    detail_id: Optional[str],
-    filename: Optional[str],
-    doc_type: Optional[str],
-    issue_by_name: Dict[str, Dict[str, Any]],
-    issue_by_type: Dict[str, Dict[str, Any]],
-    issue_by_id: Dict[str, Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    """
-    Resolve issue stats for a specific document.
-    
-    Matches by document ID, filename, or document type.
-    Uses fuzzy matching to connect issues to documents.
-    
-    NOTE: Cross-doc issues use 'affected_documents' field which contains
-    document types (e.g., 'invoice', 'bill_of_lading'). This function
-    matches these to actual filenames like "Invoice.pdf".
-    """
-    # Match by specific document ID
-    if detail_id and detail_id in issue_by_id:
-        return issue_by_id[detail_id]
-
-    # Match by specific filename
-    if filename:
-        name_key = filename.strip().lower()
-        if name_key in issue_by_name:
-            return issue_by_name[name_key]
-        
-        # Try filename without extension (e.g., "Invoice.pdf" -> "invoice")
-        name_no_ext = name_key.rsplit(".", 1)[0] if "." in name_key else name_key
-        if name_no_ext in issue_by_name:
-            return issue_by_name[name_no_ext]
-        
-        # Try matching display names (e.g., "invoice" matches "commercial invoice")
-        for key in issue_by_name:
-            if name_no_ext in key or key in name_no_ext:
-                return issue_by_name[key]
-        
-        # Try underscore variants (e.g., "bill_of_lading" -> "bill of lading")
-        name_spaced = name_no_ext.replace("_", " ")
-        if name_spaced in issue_by_name:
-            return issue_by_name[name_spaced]
-        
-        # Also check if filename (without extension) matches a type
-        inferred_type = _label_to_doc_type(name_key)
-        if inferred_type and inferred_type in issue_by_type:
-            return issue_by_type[inferred_type]
-        
-        # Try the name without extension for type matching
-        inferred_type_no_ext = _label_to_doc_type(name_no_ext)
-        if inferred_type_no_ext and inferred_type_no_ext in issue_by_type:
-            return issue_by_type[inferred_type_no_ext]
-
-    # Match by document type
-    if doc_type:
-        doc_type_lower = doc_type.lower()
-        if doc_type_lower in issue_by_type:
-            return issue_by_type[doc_type_lower]
-        # Try snake_case version
-        doc_type_snake = doc_type_lower.replace(" ", "_")
-        if doc_type_snake in issue_by_type:
-            return issue_by_type[doc_type_snake]
-
-    return None
-
-
-def _collect_document_issue_stats(
-    results: List[Dict[str, Any]]
-) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    """
-    Collect issue statistics by document.
-    
-    IMPORTANT: Uses 'affected_documents' field if present (from crossdoc issues)
-    to correctly attribute issues ONLY to the document with the problem,
-    not to all documents referenced in a cross-doc check.
-    
-    For example, "B/L Missing Voyage Number" should only count against B/L,
-    not against both B/L and LC (even though the rule references both).
-    """
-    issue_by_name: Dict[str, Dict[str, Any]] = {}
-    issue_by_type: Dict[str, Dict[str, Any]] = {}
-    issue_by_id: Dict[str, Dict[str, Any]] = {}
-
-    for result in results:
-        if result.get("passed", False) or result.get("not_applicable", False):
-            continue
-
-        severity = (result.get("severity") or "minor").lower()
-        
-        # Use affected_documents if present (crossdoc issues), else fall back to documents
-        # affected_documents contains ONLY the document with the actual issue
-        affected_docs = result.get("affected_documents")
-        if affected_docs is not None:
-            # Crossdoc issue with explicit affected documents
-            doc_names = affected_docs if isinstance(affected_docs, list) else [affected_docs]
-        else:
-            # Legacy issue format - use documents field
-            doc_names = _extract_document_names(result)
-        
-        doc_types = _extract_document_types(result)
-        doc_ids = _extract_document_ids(result)
-
-        for doc_id in doc_ids:
-            _bump_issue_entry(issue_by_id, doc_id, severity)
-
-        for name in doc_names:
-            name_key = name.strip().lower()
-            _bump_issue_entry(issue_by_name, name_key, severity)
-            
-            # Also add by display name variants for better matching
-            # e.g., 'invoice' -> also add 'commercial invoice', 'commercial_invoice'
-            display_name = _doc_type_to_display_name(name_key)
-            if display_name and display_name.lower() != name_key:
-                _bump_issue_entry(issue_by_name, display_name.lower(), severity)
-            
-            # Add snake_case and space variants
-            name_snake = name_key.replace(" ", "_")
-            if name_snake != name_key:
-                _bump_issue_entry(issue_by_name, name_snake, severity)
-            name_spaced = name_key.replace("_", " ")
-            if name_spaced != name_key:
-                _bump_issue_entry(issue_by_name, name_spaced, severity)
-            
-            inferred_type = _label_to_doc_type(name)
-            if inferred_type:
-                _bump_issue_entry(issue_by_type, inferred_type, severity)
-
-        # Only add to issue_by_type if no affected_documents was specified
-        # (affected_documents already handles type-based attribution correctly)
-        if affected_docs is None:
-            for doc_type in doc_types:
-                canonical = _normalize_doc_type_key(doc_type)
-                if canonical:
-                    _bump_issue_entry(issue_by_type, canonical, severity)
-
-    return issue_by_name, issue_by_type, issue_by_id
-
-
-def _extract_document_names(discrepancy: Dict[str, Any]) -> List[str]:
-    names: List[str] = []
-    for key in ("documents", "document_names"):
-        value = discrepancy.get(key)
-        if isinstance(value, str):
-            names.append(value)
-        elif isinstance(value, list):
-            names.extend([str(item) for item in value if isinstance(item, str)])
-    for key in ("document", "document_name"):
-        if discrepancy.get(key):
-            names.append(str(discrepancy[key]))
-    return names
-
-
-def _extract_document_types(discrepancy: Dict[str, Any]) -> List[str]:
-    types: List[str] = []
-    value = discrepancy.get("document_types")
-    if isinstance(value, str):
-        types.append(value)
-    elif isinstance(value, list):
-        types.extend([str(item) for item in value if item])
-    elif value:
-        types.append(str(value))
-    if discrepancy.get("document_type"):
-        types.append(str(discrepancy["document_type"]))
-    return types
-
-
-def _extract_document_ids(discrepancy: Dict[str, Any]) -> List[str]:
-    ids: List[str] = []
-    value = discrepancy.get("document_ids")
-    if isinstance(value, str):
-        ids.append(value)
-    elif isinstance(value, list):
-        ids.extend([str(item) for item in value if item])
-    elif value:
-        ids.append(str(value))
-    if discrepancy.get("document_id"):
-        ids.append(str(discrepancy["document_id"]))
-    return ids
-
-
-def _bump_issue_entry(bucket: Dict[str, Dict[str, Any]], key: str, severity: str) -> Dict[str, Any]:
-    if not key:
-        return {}
-    entry = bucket.setdefault(key, {"count": 0, "max_severity": "minor"})
-    entry["count"] += 1
-    if _severity_rank(severity) > _severity_rank(entry["max_severity"]):
-        entry["max_severity"] = severity
-    return entry
-
-
 def _severity_rank(severity: Optional[str]) -> int:
     order = {
         "critical": 3,
@@ -3889,209 +3702,6 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     return baseline
 
 
-def _summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts = {"success": 0, "warning": 0, "error": 0}
-    for doc in documents:
-        status = (doc.get("status") or "success").lower()
-        if status not in counts:
-            counts[status] = 0
-        counts[status] += 1
-    return counts
-
-
-def _build_processing_summary(
-    document_summaries: List[Dict[str, Any]],
-    processing_seconds: float,
-    total_discrepancies: int,
-) -> Dict[str, Any]:
-    status_counts = _summarize_document_statuses(document_summaries)
-    total_docs = len(document_summaries)
-    verified = status_counts.get("success", 0)
-    warnings = status_counts.get("warning", 0)
-    errors = status_counts.get("error", 0)
-    compliance_rate = 0
-    if total_docs:
-        compliance_rate = max(0, round((verified / total_docs) * 100))
-
-    # Calculate extraction quality from OCR confidence
-    confidences = [
-        doc.get("ocrConfidence") 
-        for doc in document_summaries 
-        if isinstance(doc.get("ocrConfidence"), (int, float))
-    ]
-    if confidences:
-        extraction_quality = round(sum(confidences) / len(confidences) * 100)
-    else:
-        # Fallback: estimate quality based on status distribution
-        extraction_quality = max(
-            80, 
-            100 - warnings * 5 - errors * 10
-        )
-
-    # Convert processing time to milliseconds
-    processing_time_ms = round(processing_seconds * 1000)
-
-    return {
-        # --- Document counts ---
-        "documents": total_docs,  # backward compatibility
-        "documents_found": total_docs,  # Frontend expects this field
-        "total_documents": total_docs,  # Explicit field for frontend
-        
-        # --- Validation/Extraction ---
-        "verified": verified,
-        "warnings": warnings,
-        "errors": errors,
-        "successful_extractions": verified,  # Frontend checks this field
-        "failed_extractions": errors,  # Frontend checks this field
-        "compliance_rate": compliance_rate,
-        "processing_time_seconds": round(processing_seconds, 2),
-        "processing_time_display": _format_duration(processing_seconds),
-        "processing_time_ms": processing_time_ms,  # NEW — milliseconds version
-        "extraction_quality": extraction_quality,  # NEW — OCR quality score (0-100)
-        "discrepancies": total_discrepancies,
-        "status_counts": status_counts,
-        # FIX: Also send as document_status for frontend SummaryStrip compatibility
-        "document_status": status_counts,
-    }
-
-
-def _build_bank_submission_verdict(
-    critical_count: int,
-    major_count: int,
-    minor_count: int,
-    compliance_score: float,
-    all_issues: List[Any],
-) -> Dict[str, Any]:
-    """
-    Build a bank submission verdict with GO/NO-GO recommendation.
-    
-    This helps exporters understand if their documents are ready
-    for bank submission or what actions are required first.
-    """
-    # Determine verdict
-    if critical_count > 0:
-        verdict = "REJECT"
-        verdict_color = "red"
-        verdict_message = "Documents will be REJECTED by bank"
-        recommendation = "Do NOT submit to bank until critical issues are resolved."
-    elif major_count > 2:
-        verdict = "HOLD"
-        verdict_color = "orange"
-        verdict_message = "High risk of discrepancy notice"
-        recommendation = "Consider resolving major issues before submission to avoid discrepancy fees."
-    elif major_count > 0:
-        verdict = "CAUTION"
-        verdict_color = "yellow"
-        verdict_message = "Minor corrections recommended"
-        recommendation = "Documents may be accepted with discrepancy notice. Consider corrections."
-    else:
-        verdict = "SUBMIT"
-        verdict_color = "green"
-        verdict_message = "Documents appear compliant"
-        recommendation = "Documents are ready for bank submission."
-    
-    # Build action items from critical and major issues
-    action_items = []
-    for issue in all_issues:
-        if hasattr(issue, 'severity'):
-            severity = issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity)
-        elif isinstance(issue, dict):
-            severity = issue.get("severity", "")
-        else:
-            continue
-        
-        if severity in ["critical", "major"]:
-            if hasattr(issue, 'title'):
-                title = issue.title
-            elif isinstance(issue, dict):
-                title = issue.get("title", issue.get("message", "Unknown issue"))
-            else:
-                continue
-            
-            if hasattr(issue, 'suggestion'):
-                action = issue.suggestion
-            elif isinstance(issue, dict):
-                action = issue.get("suggestion", issue.get("suggested_fix", "Review and correct"))
-            else:
-                action = "Review and correct"
-            
-            action_items.append({
-                "priority": "critical" if severity == "critical" else "high",
-                "issue": title,
-                "action": action,
-            })
-    
-    # Calculate estimated fee if discrepant
-    discrepancy_fee = 75.00 if (critical_count + major_count) > 0 else 0.00
-    
-    return {
-        "verdict": verdict,
-        "verdict_color": verdict_color,
-        "verdict_message": verdict_message,
-        "recommendation": recommendation,
-        "can_submit": verdict in ["SUBMIT", "CAUTION"],
-        "will_be_rejected": verdict == "REJECT",
-        "estimated_discrepancy_fee": discrepancy_fee,
-        "issue_summary": {
-            "critical": critical_count,
-            "major": major_count,
-            "minor": minor_count,
-            "total": critical_count + major_count + minor_count,
-        },
-        "action_items": action_items[:5],  # Top 5 action items
-        "action_items_count": len(action_items),
-    }
-
-
-def _build_processing_timeline(
-    document_summaries: List[Dict[str, Any]],
-    processing_summary: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
-    doc_count = len(document_summaries)
-    now = datetime.utcnow()
-    stages = [
-        ("Documents Uploaded", "success", f"{doc_count} document(s) received"),
-        ("LC Terms Extracted", "success", "Structured LC context generated"),
-        ("Document Cross-Check", "success", "Validated trade docs against LC terms"),
-        (
-            "Customs Pack Generated",
-            "warning" if processing_summary.get("warnings") else "success",
-            "Bundle prepared for customs clearance",
-        ),
-    ]
-
-    for index, (title, status, description) in enumerate(stages):
-        events.append(
-            {
-                "title": title,
-                "status": status,
-                "description": description,
-                "timestamp": (now - timedelta(seconds=max(5, (len(stages) - index) * 5))).isoformat() + "Z",
-            }
-        )
-    return events
-
-
-async def _rewrite_failed_results(
-    issues: List[Dict[str, Any]],
-    context_snapshot: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    if not issues:
-        return issues
-
-    rewritten: List[Dict[str, Any]] = []
-    for issue in issues:
-        try:
-            rewrite_payload = await rewrite_issue(issue, context_snapshot)
-            if rewrite_payload:
-                _apply_issue_rewrite(issue, rewrite_payload)
-        except Exception as exc:
-            logger.warning("Issue rewrite failed for %s: %s", issue.get("rule"), exc)
-        rewritten.append(issue)
-    return rewritten
-
-
 def _apply_issue_rewrite(issue: Dict[str, Any], rewrite_payload: Dict[str, Any]) -> None:
     title = rewrite_payload.get("title")
     if title:
@@ -4283,38 +3893,6 @@ def _build_documents_section(
             }
         )
     return section
-
-
-def _compose_processing_summary(
-    documents: List[Dict[str, Any]],
-    issues: List[Dict[str, Any]],
-    severity_counts: Optional[Dict[str, int]] = None,
-) -> Dict[str, Any]:
-    total_docs = len(documents)
-    successful = sum(
-        1 for doc in documents if (doc.get("extraction_status") or "").lower() == "success"
-    )
-    failed = total_docs - successful
-    severity_breakdown = severity_counts or _count_issue_severity(issues)
-
-    return {
-        "total_documents": total_docs,
-        "successful_extractions": successful,
-        "failed_extractions": failed,
-        "total_issues": len(issues),
-        "severity_breakdown": severity_breakdown,
-    }
-
-
-def _count_issue_severity(issues: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts = {"critical": 0, "major": 0, "medium": 0, "minor": 0}
-    for issue in issues:
-        severity = _normalize_issue_severity(issue.get("severity"))
-        if severity in counts:
-            counts[severity] += 1
-        else:
-            counts["minor"] += 1
-    return counts
 
 
 def _build_analytics_section(
