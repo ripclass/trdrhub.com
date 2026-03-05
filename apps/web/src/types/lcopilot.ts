@@ -45,6 +45,9 @@ export type OptionEDocument = {
   filename: string;
   extraction_status?: string | null;
   extracted_fields?: Record<string, unknown>;
+  structured_fields?: Record<string, unknown>;
+  raw_text_preview?: string | null;
+  raw_text?: string | null;
   issues_count?: number;
 };
 

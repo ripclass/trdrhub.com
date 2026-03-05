@@ -100,6 +100,52 @@ const normalizeSeverity = (value?: string | null): string => {
   return normalized || 'minor';
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const isNonEmptyRecord = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) && Object.keys(value).length > 0;
+
+const resolveExtractedFields = (doc: any): Record<string, unknown> => {
+  const candidates = [
+    doc?.extracted_fields,
+    doc?.extractedFields,
+    doc?.structured_fields,
+    doc?.structuredFields,
+    doc?.structured_result,
+    doc?.structuredResult,
+    doc?.fields,
+    doc?.field_values,
+    doc?.extracted_data,
+    doc?.extractedData,
+  ];
+
+  const nonEmpty = candidates.find(isNonEmptyRecord);
+  const baseRecord = nonEmpty ?? candidates.find(isRecord) ?? {};
+  const base = { ...(baseRecord as Record<string, unknown>) };
+
+  const previewText =
+    doc?.raw_text_preview
+    ?? doc?.rawTextPreview
+    ?? doc?.text_preview
+    ?? doc?.textPreview
+    ?? doc?.preview_text
+    ?? doc?.previewText
+    ?? doc?.raw_text
+    ?? doc?.rawText
+    ?? doc?.extracted_text
+    ?? doc?.extractedText
+    ?? doc?.text;
+
+  if (typeof previewText === 'string' && previewText.trim()) {
+    if (Object.keys(base).length === 0) {
+      return { raw_text_preview: previewText.trim() };
+    }
+  }
+
+  return base;
+};
+
 const mapDocuments = (docs: any[] = []) => {
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
@@ -135,7 +181,7 @@ const mapDocuments = (docs: any[] = []) => {
       failedReason,
       status,
       issuesCount,
-      extractedFields: doc?.extracted_fields ?? {},
+      extractedFields: resolveExtractedFields(doc),
     };
   });
 };
@@ -406,6 +452,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
 
   // Safely extract documents - ensure it's always an array
   const rawDocs = structured.documents_structured 
+    ?? (structured as any).documents
     ?? structured.lc_structured?.documents_structured 
     ?? [];
   const optionEDocuments = ensureArray(rawDocs);

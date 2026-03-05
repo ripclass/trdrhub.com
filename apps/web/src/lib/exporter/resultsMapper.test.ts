@@ -76,6 +76,53 @@ describe('resultsMapper', () => {
     expect(response.summary.total_issues).toBe(2);
   });
 
+  it('falls back to structured_fields or preview text when extracted_fields are empty', () => {
+    const response = buildValidationResponse({
+      structured_result: {
+        version: 'structured_result_v1',
+        documents_structured: [
+          {
+            document_id: 'd1',
+            filename: 'invoice.pdf',
+            document_type: 'Commercial Invoice',
+            extraction_status: 'success',
+            extracted_fields: {},
+            structured_fields: { invoice_number: 'INV-001' },
+          },
+          {
+            document_id: 'd2',
+            filename: 'packing.pdf',
+            document_type: 'Packing List',
+            extraction_status: 'success',
+            extracted_fields: {},
+            raw_text_preview: 'PACKING LIST PREVIEW',
+          },
+        ],
+        issues: [],
+        processing_summary: {
+          total_documents: 2,
+          successful_extractions: 2,
+          partial_extractions: 0,
+          failed_extractions: 0,
+          total_issues: 0,
+          severity_breakdown: {
+            critical: 0,
+            major: 0,
+            medium: 0,
+            minor: 0,
+          },
+        },
+        analytics: {
+          document_risk: [],
+          compliance_score: 100,
+        },
+      },
+    } as any);
+
+    expect(response.documents[0].extractedFields.invoice_number).toBe('INV-001');
+    expect(response.documents[1].extractedFields.raw_text_preview).toBe('PACKING LIST PREVIEW');
+  });
+
   it('uses canonical document-side discrepancy totals as issue count even when summary is stale', () => {
     const response = buildValidationResponse({
       structured_result: {
