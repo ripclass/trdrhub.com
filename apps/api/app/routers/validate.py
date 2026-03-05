@@ -173,6 +173,27 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
         _two_stage_extractor = TwoStageExtractor()
     return _two_stage_extractor
 
+
+def _ai_first_has_fields(structured: Optional[Dict[str, Any]]) -> bool:
+    if not structured or not isinstance(structured, dict):
+        return False
+    for key, value in structured.items():
+        if key.startswith("_"):
+            continue
+        if value is None:
+            continue
+        if value == "" or value == {} or value == []:
+            continue
+        return True
+    return False
+
+
+def _ai_first_success(status: Optional[str], structured: Optional[Dict[str, Any]]) -> bool:
+    normalized = str(status or "").strip().lower()
+    if normalized in {"failed", "error"}:
+        return False
+    return _ai_first_has_fields(structured)
+
 # _filter_user_facing_fields moved to app.routers.validation.utilities
 
 def _apply_two_stage_validation(
@@ -269,6 +290,7 @@ def _apply_two_stage_validation(
 router = APIRouter(prefix="/api/validate", tags=["validation"])
 logger = logging.getLogger(__name__)
 PROFILE_DB = os.getenv("ENABLE_QUERY_PROFILING", "false").lower() == "true"
+EXTRACTION_DEBUG = os.getenv("LCOPILOT_EXTRACTION_DEBUG", "false").lower() in {"1", "true", "yes"}
 
 
 @contextmanager
@@ -2984,6 +3006,25 @@ async def _build_document_context(
         if not extracted_text:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
+            if EXTRACTION_DEBUG:
+                doc_info["debug_extraction"] = {
+                    "ocr_text_length": 0,
+                    "ocr_provider": doc_info.get("ocr_provider"),
+                    "extraction_method": doc_info.get("extraction_method"),
+                    "extraction_confidence": doc_info.get("extraction_confidence"),
+                    "extracted_field_count": 0,
+                    "ai_first_status": doc_info.get("ai_first_status"),
+                    "extraction_status": doc_info.get("extraction_status"),
+                }
+                logger.info(
+                    "EXTRACTION_DEBUG doc=%s type=%s ocr_len=0 method=%s provider=%s fields=0 confidence=%s status=%s",
+                    filename,
+                    document_type,
+                    doc_info.get("extraction_method"),
+                    doc_info.get("ocr_provider"),
+                    doc_info.get("extraction_confidence"),
+                    doc_info.get("extraction_status"),
+                )
             document_details.append(doc_info)
             continue
         
@@ -3063,7 +3104,7 @@ async def _build_document_context(
                             f"keys={list(lc_struct.keys())}"
                         )
                         
-                        if lc_struct and extraction_status == "success":
+                        if _ai_first_success(extraction_status, lc_struct):
                             # AI-first already includes validation, but apply two-stage for normalization
                             validated_lc, validation_summary = _apply_two_stage_validation(
                                 lc_struct, "lc", filename
@@ -3141,7 +3182,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if invoice_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, invoice_struct):
                         # Apply two-stage validation for normalization
                         validated_invoice, validation_summary = _apply_two_stage_validation(
                             invoice_struct, "invoice", filename
@@ -3201,7 +3242,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if bl_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, bl_struct):
                         # Apply two-stage validation for normalization
                         validated_bl, validation_summary = _apply_two_stage_validation(
                             bl_struct, "bl", filename
@@ -3261,7 +3302,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if packing_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, packing_struct):
                         validated_packing, validation_summary = _apply_two_stage_validation(
                             packing_struct, "packing_list", filename
                         )
@@ -3315,7 +3356,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if coo_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, coo_struct):
                         validated_coo, validation_summary = _apply_two_stage_validation(
                             coo_struct, "certificate_of_origin", filename
                         )
@@ -3369,7 +3410,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if insurance_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, insurance_struct):
                         validated_insurance, validation_summary = _apply_two_stage_validation(
                             insurance_struct, "insurance", filename
                         )
@@ -3423,7 +3464,7 @@ async def _build_document_context(
                         f"confidence={extraction_confidence:.2f} status={extraction_status}"
                     )
                     
-                    if inspection_struct and extraction_status == "success":
+                    if _ai_first_success(extraction_status, inspection_struct):
                         validated_inspection, validation_summary = _apply_two_stage_validation(
                             inspection_struct, "inspection", filename
                         )
@@ -3479,6 +3520,35 @@ async def _build_document_context(
             doc_info["raw_text_preview"] = extracted_text[:500]
             if doc_info.get("extraction_status") == "empty":
                 doc_info["extraction_status"] = "text_only"
+
+        if EXTRACTION_DEBUG:
+            extracted_fields = doc_info.get("extracted_fields") or {}
+            if isinstance(extracted_fields, dict):
+                extracted_field_count = len([k for k in extracted_fields.keys() if not str(k).startswith("_")])
+            elif isinstance(extracted_fields, list):
+                extracted_field_count = len(extracted_fields)
+            else:
+                extracted_field_count = 0
+            doc_info["debug_extraction"] = {
+                "ocr_text_length": len(extracted_text) if extracted_text else 0,
+                "ocr_provider": doc_info.get("ocr_provider"),
+                "extraction_method": doc_info.get("extraction_method"),
+                "extraction_confidence": doc_info.get("extraction_confidence"),
+                "extracted_field_count": extracted_field_count,
+                "ai_first_status": doc_info.get("ai_first_status"),
+                "extraction_status": doc_info.get("extraction_status"),
+            }
+            logger.info(
+                "EXTRACTION_DEBUG doc=%s type=%s ocr_len=%d method=%s provider=%s fields=%d confidence=%s status=%s",
+                filename,
+                document_type,
+                len(extracted_text) if extracted_text else 0,
+                doc_info.get("extraction_method"),
+                doc_info.get("ocr_provider"),
+                extracted_field_count,
+                doc_info.get("extraction_confidence"),
+                doc_info.get("extraction_status"),
+            )
 
         document_details.append(doc_info)
         entry = documents_presence.setdefault(
@@ -4823,8 +4893,20 @@ def _is_extraction_empty_from_baseline(
 ) -> Tuple[bool, Optional[str]]:
     completeness = v2_baseline.extraction_completeness if v2_baseline else 0.0
     if completeness <= 0.0:
+        if EXTRACTION_DEBUG:
+            missing_critical = [f.field_name for f in v2_baseline.get_missing_critical()] if v2_baseline else []
+            missing_required = [f.field_name for f in v2_baseline.get_missing_required()] if v2_baseline else []
+            logger.warning(
+                "EXTRACTION_DEBUG completeness_zero: completeness=%.3f critical=%.3f missing_critical=%s missing_required=%s",
+                completeness,
+                v2_baseline.critical_completeness if v2_baseline else 0.0,
+                missing_critical,
+                missing_required,
+            )
         return True, "extraction_completeness_zero"
     if _all_documents_empty(documents):
+        if EXTRACTION_DEBUG:
+            logger.warning("EXTRACTION_DEBUG documents_empty: no document content detected")
         return True, "documents_empty"
     return False, None
 
