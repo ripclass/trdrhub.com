@@ -1,0 +1,43 @@
+{
+  "session_documents": [
+    {
+      "id": "doc-lc-main",
+      "document_type": "letter_of_credit",
+      "original_filename": "LC.pdf",
+      "extraction_status": "success",
+      "extracted_fields": {
+        "number": "LC-445"
+      }
+    }
+  ],
+  "extractor_outputs": {
+    "lc_type": "export",
+    "lc_type_confidence": 0.74,
+    "lc_type_source": "auto",
+    "mt700": {
+      "blocks": {},
+      "raw_text": "LC TEXT",
+      "version": "mt700_v1"
+    },
+    "issues": [
+      {
+        "id": "RULE-41A",
+        "rule": "UCP-41A",
+        "title": "Issuing bank code missing",
+        "severity": "major",
+        "documents": [
+          "LC.pdf"
+        ]
+      },
+      {
+        "id": "RULE-44C",
+        "rule": "UCP-44C",
+        "title": "Latest shipment date missing",
+        "severity": "critical",
+        "documents": [
+          "LC.pdf"
+        ]
+      }
+    ]
+  }
+}

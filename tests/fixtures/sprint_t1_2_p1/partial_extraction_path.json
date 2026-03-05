@@ -1,0 +1,32 @@
+{
+  "session_documents": [
+    {
+      "id": "doc-lc-1",
+      "document_type": "letter_of_credit",
+      "original_filename": "LC_scan.pdf",
+      "extraction_status": "partial",
+      "extracted_fields": {
+        "raw_text": "MT700 RAW BLOCK ONLY"
+      }
+    },
+    {
+      "id": "doc-supp-1",
+      "document_type": "supporting_document",
+      "filename": "Annexure.txt",
+      "extraction_status": "text_only",
+      "extracted_fields": {}
+    }
+  ],
+  "extractor_outputs": {
+    "lc_type": "unknown",
+    "lc_type_confidence": 0,
+    "lc_type_source": "auto",
+    "mt700": {
+      "blocks": {},
+      "raw_text": "MT700 RAW BLOCK ONLY",
+      "version": "mt700_v1"
+    },
+    "goods": [],
+    "issues": []
+  }
+}

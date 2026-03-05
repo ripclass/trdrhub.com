@@ -1,0 +1,11 @@
+{
+  "required_fragments": [
+    "validate_document_set_completeness(",
+    "structured_result[\"analytics\"][\"document_composition\"]",
+    "composition_result.get(\"composition\", {})",
+    "structured_result[\"analytics\"][\"lc_only_mode\"]",
+    "composition_result.get(\"composition\", {}).get(\"lc_only_mode\", False)",
+    "composition_issues = composition_result.get(\"issues\", [])",
+    "structured_result[\"issues\"] = existing_issues + composition_issues"
+  ]
+}
