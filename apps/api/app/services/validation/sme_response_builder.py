@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, date
 from typing import Dict, List, Any, Optional, Tuple
 
+from app.services.validation.verdict_policy import resolve_sme_verdict_status
+
 # Import the contract types
 # Note: In production, these would come from shared-types package
 # For now, we define them inline to avoid import path issues
@@ -267,6 +269,59 @@ def calculate_verdict(
     )
 
 
+def build_verdict_for_status(
+    status: VerdictStatus,
+    critical_count: int,
+    major_count: int,
+    minor_count: int,
+    missing_docs_count: int,
+) -> Verdict:
+    """Build a Verdict object for a forced status while keeping counts consistent."""
+    if status == VerdictStatus.MISSING_DOCS:
+        missing = max(missing_docs_count, 1)
+        headline = f"UPLOAD {missing} MISSING DOCUMENT{'S' if missing > 1 else ''}"
+        subtext = "Required documents are missing. Upload them before submitting to bank."
+        risk = RiskLevel.HIGH
+    elif status == VerdictStatus.LIKELY_REJECT:
+        critical_total = critical_count + major_count
+        if critical_total <= 0:
+            critical_total = max(critical_count, major_count, 1)
+        headline = f"FIX {critical_total} CRITICAL ISSUE{'S' if critical_total > 1 else ''}"
+        subtext = "Bank will likely REJECT your documents. Fix these issues to avoid discrepancy fees."
+        risk = RiskLevel.HIGH
+    elif status == VerdictStatus.FIX_REQUIRED:
+        if major_count > 0:
+            headline = f"FIX {major_count} ISSUE{'S' if major_count > 1 else ''} BEFORE SUBMITTING"
+            subtext = "These issues may cause rejection. Recommended to fix before bank submission."
+            risk = RiskLevel.MEDIUM
+        else:
+            minor_total = max(minor_count, 1)
+            headline = f"REVIEW {minor_total} MINOR ISSUE{'S' if minor_total > 1 else ''}"
+            subtext = "Minor issues found. Bank may overlook these, but consider fixing for safety."
+            risk = RiskLevel.LOW
+    else:
+        headline = "READY TO SUBMIT"
+        subtext = "Your documents appear compliant with LC terms. Good to go!"
+        risk = RiskLevel.LOW
+
+    estimated_fee = 0.0
+    if critical_count > 0 or major_count > 0:
+        estimated_fee = 75.0 + (critical_count * 25.0) + (major_count * 10.0)
+
+    return Verdict(
+        status=status,
+        headline=headline,
+        subtext=subtext,
+        estimated_risk=risk,
+        estimated_fee_if_rejected=estimated_fee,
+        total_issues=critical_count + major_count + minor_count,
+        critical_count=critical_count,
+        major_count=major_count,
+        minor_count=minor_count,
+        missing_docs_count=missing_docs_count,
+    )
+
+
 def group_issues(issues: List[SMEIssue]) -> IssuesGrouped:
     """Group issues by severity for display"""
     must_fix = [i for i in issues if i.severity in (Severity.CRITICAL, Severity.MAJOR)]
@@ -485,6 +540,7 @@ def build_sme_response(
     processing_time_seconds: float,
     session_id: str,
     rules_executed: int = 0,
+    bank_verdict: Optional[Dict[str, Any]] = None,
 ) -> SMEValidationResponse:
     """
     Build the SME validation response from raw validation data.
@@ -580,7 +636,35 @@ def build_sme_response(
     # 5. Calculate Verdict
     # =========================================
     
+    critical_count = sum(1 for i in sme_issues if i.severity == Severity.CRITICAL)
+    major_count = sum(1 for i in sme_issues if i.severity == Severity.MAJOR)
+    minor_count = sum(1 for i in sme_issues if i.severity == Severity.MINOR)
+    missing_count = len(sme_missing)
+
     verdict = calculate_verdict(sme_issues, sme_missing)
+
+    policy_status = resolve_sme_verdict_status(
+        critical_count=critical_count,
+        major_count=major_count,
+        minor_count=minor_count,
+        missing_docs_count=missing_count,
+        bank_verdict=bank_verdict,
+    )
+    if policy_status != verdict.status.value:
+        previous_status = verdict.status.value
+        verdict = build_verdict_for_status(
+            VerdictStatus(policy_status),
+            critical_count=critical_count,
+            major_count=major_count,
+            minor_count=minor_count,
+            missing_docs_count=missing_count,
+        )
+        logger.info(
+            "Verdict policy adjusted SME verdict from %s to %s (bank_verdict=%s)",
+            previous_status,
+            policy_status,
+            (bank_verdict or {}).get("verdict") if isinstance(bank_verdict, dict) else bank_verdict,
+        )
     
     # =========================================
     # 6. Group for Display
@@ -685,4 +769,5 @@ def adapt_from_structured_result(
         processing_time_seconds=processing_time,
         session_id=session_id,
         rules_executed=rules_executed,
+        bank_verdict=structured_result.get("bank_verdict"),
     )
