@@ -708,9 +708,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       // Check multiple keys - backend sends discrepancyCount (camelCase)
       const issuesCount = Number(doc.discrepancyCount ?? doc.issues_count ?? docAny.discrepancyCount ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
       const extractionStatus = (doc.extraction_status ?? docAny.extractionStatus ?? "unknown").toString().toLowerCase();
+      const rawStatus = docAny.status;
+      const normalizedStatus = typeof rawStatus === "string" ? rawStatus.toLowerCase() : null;
       const status: "success" | "warning" | "error" = (() => {
-        if (extractionStatus === "error") return "error";
-        if (extractionStatus === "partial" || extractionStatus === "pending") return "warning";
+        if (normalizedStatus === "success" || normalizedStatus === "warning" || normalizedStatus === "error") {
+          return normalizedStatus as "success" | "warning" | "error";
+        }
+        if (extractionStatus === "error" || extractionStatus === "failed" || extractionStatus === "empty") return "error";
+        if (extractionStatus === "partial" || extractionStatus === "pending" || extractionStatus === "text_only") return "warning";
         const exempt = ["letter_of_credit", "insurance_certificate"];
         if (issuesCount > 0 && !exempt.includes(typeKey)) return "warning";
         return "success";
@@ -1000,23 +1005,57 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
     [successCount, totalDocuments, totalDiscrepancies, complianceScore],
   );
-  const overallStatus = errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success";
+  const readinessStatus = useMemo(() => {
+    if (!validationState) return null;
+    if (validationState.status === "compliant") return "success";
+    if (validationState.status === "blocked" || validationState.status === "non_compliant") return "error";
+    return "warning";
+  }, [validationState]);
+  const overallStatus =
+    readinessStatus ??
+    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
   const customsPack = structuredResult?.customs_pack;
-  const packGenerated = customsPack?.ready ?? false;
+  const packGenerated = Boolean(manifestData?.documents?.length);
+  const bankReadyLabel = validationState
+    ? validationState.status === "compliant"
+      ? "Ready"
+      : validationState.status === "blocked"
+      ? "Blocked"
+      : "Review needed"
+    : overallStatus === "success"
+    ? "Ready"
+    : "Review needed";
+  const bankReadyClass = validationState
+    ? validationState.status === "compliant"
+      ? "text-success"
+      : validationState.status === "blocked"
+      ? "text-destructive"
+      : "text-warning"
+    : overallStatus === "success"
+    ? "text-success"
+    : "text-warning";
   const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
   const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
+  const submissionEligibility = (structuredResult as any)?.submission_eligibility as
+    | { can_submit?: boolean; reasons?: string[] }
+    | undefined;
+  const bankVerdict = (structuredResult as any)?.bank_verdict as { can_submit?: boolean } | undefined;
+  const canSubmitFromValidation =
+    submissionEligibility?.can_submit ??
+    (structuredResult?.validation_blocked ? false : bankVerdict?.can_submit ?? false);
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;
+    if (!canSubmitFromValidation) return false;
     if (!guardrails) {
-      return totalDiscrepancies === 0;
+      return canSubmitFromValidation;
     }
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [enableBankSubmission, guardrails, guardrailsLoading, totalDiscrepancies]);
+  }, [enableBankSubmission, guardrails, guardrailsLoading, canSubmitFromValidation]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1304,6 +1343,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       return;
     }
+    if (!isReadyToSubmit) {
+      toast({
+        title: "Submission Blocked",
+        description: "Resolve validation issues before submitting to the bank.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Phase 3: Show bank selector first
     setShowBankSelector(true);
@@ -1334,6 +1381,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       toast({
         title: "Confirmation Required",
         description: "Please confirm that the manifest contents are accurate.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isReadyToSubmit) {
+      toast({
+        title: "Submission Blocked",
+        description: "Resolve validation issues before submitting to the bank.",
         variant: "destructive",
       });
       return;
@@ -1606,8 +1661,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Bank Ready:</span>
-                      <span className={`font-medium ${overallStatus === 'success' ? 'text-success' : 'text-warning'}`}>
-                        {overallStatus === 'success' ? 'Ready' : 'Review needed'}
+                      <span className={`font-medium ${bankReadyClass}`}>
+                        {bankReadyLabel}
                       </span>
                     </div>
                   </div>
