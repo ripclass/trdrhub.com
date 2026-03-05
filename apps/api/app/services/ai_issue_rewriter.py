@@ -19,7 +19,8 @@ def _env_truthy(value: Optional[str], *, default: bool = True) -> bool:
 
 def _llm_credentials_present() -> bool:
     return bool(
-        os.getenv("OPENAI_API_KEY")
+        os.getenv("OPENROUTER_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
         or os.getenv("ANTHROPIC_API_KEY")
         or os.getenv("LLM_PROVIDER_API_KEY")
     )

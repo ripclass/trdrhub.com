@@ -73,10 +73,18 @@ Always provide:
     def __init__(self, db: Session):
         self.db = db
         self.client = None
+        self.openrouter_mode = False
+        self.model = os.getenv("HS_CLASSIFICATION_MODEL", "gpt-4o-mini")
         if OPENAI_AVAILABLE:
-            api_key = os.getenv("OPENAI_API_KEY")
+            api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
             if api_key:
-                self.client = OpenAI(api_key=api_key)
+                openrouter_key = os.getenv("OPENROUTER_API_KEY")
+                base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1") if openrouter_key else None
+                self.openrouter_mode = bool(openrouter_key)
+                if base_url:
+                    self.client = OpenAI(api_key=api_key, base_url=base_url)
+                else:
+                    self.client = OpenAI(api_key=api_key)
     
     async def classify_product(
         self,
@@ -125,11 +133,18 @@ Always provide:
         # Fallback to keyword matching
         return await self._classify_with_fallback(description, import_country)
     
+    def _normalize_model(self) -> str:
+        if not self.openrouter_mode:
+            return self.model
+        if "/" in self.model:
+            return self.model
+        return f"openai/{self.model}"
+
     async def _classify_with_openai(self, user_prompt: str) -> Optional[Dict[str, Any]]:
         """Call OpenAI for classification."""
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",  # Use mini for cost efficiency
+                model=self._normalize_model(),  # Use mini for cost efficiency
                 messages=[
                     {"role": "system", "content": self.SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
@@ -157,7 +172,7 @@ Always provide:
                 "alternatives": result.get("alternatives", []),
                 "reasoning": result.get("reasoning", ""),
                 "gri_applied": result.get("gri_applied", []),
-                "source": "openai"
+                "source": "openrouter" if self.openrouter_mode else "openai"
             }
             
         except Exception as e:

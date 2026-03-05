@@ -126,10 +126,13 @@ class Settings(BaseSettings):
     
     # AI/LLM Configuration
     AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
-    LLM_PROVIDER: str = "openai"  # openai|anthropic
+    LLM_PROVIDER: str = "openrouter"  # openrouter|openai|anthropic|gemini
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL_VERSION: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
-    LLM_MODEL_VERSION: str = "gpt-4o-mini"  # OpenAI model
+    LLM_MODEL_VERSION: str = "gpt-4o-mini"  # Default model (OpenRouter/OpenAI)
     ANTHROPIC_MODEL_VERSION: str = "claude-3-haiku-20240307"  # Anthropic model
     AI_MAX_OUTPUT_TOKENS_SYSTEM: int = 600  # System enrichment max tokens
     AI_MAX_OUTPUT_TOKENS_LETTER: int = 800  # Letter generation max tokens

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
+    OPENROUTER = "openrouter"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
@@ -47,6 +48,83 @@ class LLMProviderInterface(ABC):
     def estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
         """Estimate cost in USD."""
         pass
+
+
+class OpenRouterProvider(LLMProviderInterface):
+    """OpenRouter provider implementation (OpenAI-compatible API)."""
+
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        self.model = model or os.getenv("OPENROUTER_MODEL_VERSION") or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+
+        if not self.api_key:
+            raise ValueError("OPENROUTER_API_KEY not configured")
+
+    @staticmethod
+    def _normalize_model(model_name: str) -> str:
+        if not model_name:
+            return model_name
+        # OpenRouter expects provider-prefixed models (e.g., openai/gpt-4o-mini)
+        if "/" in model_name:
+            return model_name
+        return f"openai/{model_name}"
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 600,
+        temperature: float = 0.3,
+        **kwargs
+    ) -> Tuple[str, int, int]:
+        """Generate using OpenRouter API."""
+        try:
+            import openai
+
+            # Configure timeout (20s total, 60s read timeout)
+            import httpx
+            timeout = httpx.Timeout(20.0, read=60.0)
+            client = openai.AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=timeout,
+            )
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            model_override = kwargs.pop("model_override", None)
+            model_name = self._normalize_model(model_override or self.model)
+
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs,
+            )
+
+            output_text = response.choices[0].message.content or ""
+            tokens_in = response.usage.prompt_tokens
+            tokens_out = response.usage.completion_tokens
+
+            return output_text, tokens_in, tokens_out
+
+        except ImportError:
+            logger.error("openai package not installed")
+            raise
+        except Exception as e:
+            logger.error(f"OpenRouter API error: {e}")
+            raise
+
+    def estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
+        """Estimate cost (defaults to GPT-4o-mini pricing)."""
+        input_cost = (tokens_in / 1_000_000) * 0.15
+        output_cost = (tokens_out / 1_000_000) * 0.60
+        return input_cost + output_cost
 
 
 class OpenAIProvider(LLMProviderInterface):
@@ -305,7 +383,7 @@ class LLMProviderFactory:
     @staticmethod
     def create_provider(provider_name: Optional[str] = None) -> LLMProviderInterface:
         """
-        Create provider with fallback chain: OpenAI -> Anthropic -> Gemini.
+        Create provider with fallback chain: OpenRouter -> OpenAI -> Anthropic -> Gemini.
         
         Args:
             provider_name: Preferred provider (openai/anthropic/gemini), or None for auto
@@ -313,45 +391,61 @@ class LLMProviderFactory:
         Returns:
             Configured provider instance
         """
-        provider_name = provider_name or os.getenv("LLM_PROVIDER", "openai")
+        provider_name = provider_name or os.getenv("LLM_PROVIDER", "openrouter")
         
-        if provider_name == LLMProvider.OPENAI.value:
+        if provider_name == LLMProvider.OPENROUTER.value:
+            try:
+                return OpenRouterProvider()
+            except Exception as e:
+                if "OPENROUTER_API_KEY" in str(e):
+                    logger.error("OPENROUTER_API_KEY not configured")
+                    raise
+                logger.warning(f"Failed to create OpenRouter provider: {e}, falling back to OpenAI")
+                return OpenAIProvider()
+        
+        elif provider_name == LLMProvider.OPENAI.value:
             try:
                 return OpenAIProvider()
             except Exception as e:
-                logger.warning(f"Failed to create OpenAI provider: {e}, falling back to Anthropic")
-                return AnthropicProvider()
+                logger.warning(f"Failed to create OpenAI provider: {e}, falling back to OpenRouter")
+                return OpenRouterProvider()
         
         elif provider_name == LLMProvider.ANTHROPIC.value:
             try:
                 return AnthropicProvider()
             except Exception as e:
-                logger.warning(f"Failed to create Anthropic provider: {e}, falling back to OpenAI")
-                return OpenAIProvider()
+                logger.warning(f"Failed to create Anthropic provider: {e}, falling back to OpenRouter")
+                return OpenRouterProvider()
         
         elif provider_name == LLMProvider.GEMINI.value:
             try:
                 return GeminiProvider()
             except Exception as e:
-                logger.warning(f"Failed to create Gemini provider: {e}, falling back to OpenAI")
-                return OpenAIProvider()
+                logger.warning(f"Failed to create Gemini provider: {e}, falling back to OpenRouter")
+                return OpenRouterProvider()
         
         else:
-            # Auto-detect: try OpenAI first, then Anthropic, then Gemini
+            # Auto-detect: try OpenRouter first, then OpenAI, then Anthropic, then Gemini
             try:
-                return OpenAIProvider()
+                return OpenRouterProvider()
             except Exception:
-                logger.warning("OpenAI not available, trying Anthropic")
+                logger.warning("OpenRouter not available, trying OpenAI")
                 try:
-                    return AnthropicProvider()
+                    return OpenAIProvider()
                 except Exception:
-                    logger.warning("Anthropic not available, trying Gemini")
-                    return GeminiProvider()
+                    logger.warning("OpenAI not available, trying Anthropic")
+                    try:
+                        return AnthropicProvider()
+                    except Exception:
+                        logger.warning("Anthropic not available, trying Gemini")
+                        return GeminiProvider()
     
     @staticmethod
     def _get_provider_name(provider: LLMProviderInterface) -> str:
         """Get string name for a provider instance."""
-        if isinstance(provider, OpenAIProvider):
+        if isinstance(provider, OpenRouterProvider):
+            return "openrouter"
+        elif isinstance(provider, OpenAIProvider):
             return "openai"
         elif isinstance(provider, AnthropicProvider):
             return "anthropic"
@@ -369,6 +463,13 @@ class LLMProviderFactory:
         """
         providers = []
         
+        # Try OpenRouter
+        try:
+            openrouter_provider = OpenRouterProvider()
+            providers.append(("openrouter", openrouter_provider))
+        except Exception as e:
+            logger.debug(f"OpenRouter provider not available: {e}")
+
         # Try OpenAI
         try:
             openai_provider = OpenAIProvider()
@@ -428,7 +529,7 @@ class LLMProviderFactory:
             logger.error(f"Primary provider ({provider_name}) failed: {e}")
             
             # Try fallback chain
-            fallback_order = [AnthropicProvider, OpenAIProvider, GeminiProvider]
+            fallback_order = [OpenRouterProvider, OpenAIProvider, AnthropicProvider, GeminiProvider]
             for FallbackClass in fallback_order:
                 if isinstance(provider, FallbackClass):
                     continue  # Skip the one that already failed

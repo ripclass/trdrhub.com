@@ -137,6 +137,7 @@ async def get_ensemble_status() -> Dict:
         
         # Add configuration info
         status["configuration"] = {
+            "openrouter_configured": bool(os.getenv("OPENROUTER_API_KEY")),
             "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
             "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
             "gemini_configured": bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")),
@@ -183,6 +184,16 @@ async def get_ai_providers() -> Dict:
     from ..services.llm_provider import LLMProviderFactory
     
     providers_status = []
+
+    # Check OpenRouter
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    providers_status.append({
+        "name": "openrouter",
+        "model": os.getenv("OPENROUTER_MODEL_VERSION") or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini"),
+        "configured": bool(openrouter_key),
+        "key_prefix": openrouter_key[:8] + "..." if openrouter_key else None,
+        "cost_per_1m_tokens": {"input": 0.15, "output": 0.60},
+    })
     
     # Check OpenAI
     openai_key = os.getenv("OPENAI_API_KEY")
@@ -221,7 +232,7 @@ async def get_ai_providers() -> Dict:
         "configured_count": configured_count,
         "ensemble_ready": configured_count >= 2,
         "full_ensemble_ready": configured_count >= 3,
-        "primary_provider": os.getenv("LLM_PROVIDER", "openai"),
+        "primary_provider": os.getenv("LLM_PROVIDER", "openrouter"),
         "recommendation": (
             "Full ensemble available - maximum accuracy" if configured_count >= 3
             else "Partial ensemble - add more API keys for better accuracy" if configured_count == 2
