@@ -82,6 +82,9 @@ from app.routers.validation.response_shaping import (
     count_issue_severity as _count_issue_severity,
     summarize_document_statuses as _summarize_document_statuses,
     build_processing_summary as _build_processing_summary,
+    build_processing_summary_v2 as _build_processing_summary_v2,
+    build_document_extraction_v1 as _build_document_extraction_v1,
+    build_issue_provenance_v1 as _build_issue_provenance_v1,
     build_bank_submission_verdict as _build_bank_submission_verdict,
     build_processing_timeline as _build_processing_timeline,
 )
@@ -1997,6 +2000,93 @@ async def validate_doc(
         # =====================================================================
 
         checkpoint("response_building")
+
+        # =====================================================================
+        # Phase A Contracts: Canonical metrics + provenance payloads
+        # =====================================================================
+        try:
+            processing_summary_v2 = _build_processing_summary_v2(
+                structured_result.get("processing_summary"),
+                document_summaries,
+                structured_result.get("issues") or [],
+                compliance_rate=structured_result.get("analytics", {}).get("lc_compliance_score")
+                if isinstance(structured_result.get("analytics"), dict)
+                else None,
+            )
+            structured_result["processing_summary_v2"] = processing_summary_v2
+
+            structured_result["document_extraction_v1"] = _build_document_extraction_v1(
+                document_summaries
+            )
+            structured_result["issue_provenance_v1"] = _build_issue_provenance_v1(
+                structured_result.get("issues") or []
+            )
+
+            # Backfill legacy processing_summary with canonical metrics (backward compatible)
+            structured_result.setdefault("processing_summary", {})
+            structured_result["processing_summary"].update(
+                {
+                    "total_documents": processing_summary_v2.get("total_documents"),
+                    "successful_extractions": processing_summary_v2.get("successful_extractions"),
+                    "failed_extractions": processing_summary_v2.get("failed_extractions"),
+                    "total_issues": processing_summary_v2.get("total_issues"),
+                    "severity_breakdown": processing_summary_v2.get("severity_breakdown"),
+                    "documents": processing_summary_v2.get("documents"),
+                    "documents_found": processing_summary_v2.get("documents_found"),
+                    "verified": processing_summary_v2.get("verified"),
+                    "warnings": processing_summary_v2.get("warnings"),
+                    "errors": processing_summary_v2.get("errors"),
+                    "status_counts": processing_summary_v2.get("status_counts"),
+                    "document_status": processing_summary_v2.get("document_status"),
+                    "compliance_rate": processing_summary_v2.get("compliance_rate"),
+                    "processing_time_seconds": processing_summary_v2.get("processing_time_seconds"),
+                    "processing_time_display": processing_summary_v2.get("processing_time_display"),
+                    "processing_time_ms": processing_summary_v2.get("processing_time_ms"),
+                    "extraction_quality": processing_summary_v2.get("extraction_quality"),
+                    "discrepancies": processing_summary_v2.get("discrepancies"),
+                }
+            )
+
+            structured_result.setdefault("analytics", {})
+            structured_result["analytics"]["issue_counts"] = _count_issue_severity(
+                structured_result.get("issues") or []
+            )
+            structured_result["analytics"]["document_status_distribution"] = (
+                processing_summary_v2.get("status_counts")
+            )
+
+            customs_pack = structured_result.get("customs_pack")
+            if isinstance(customs_pack, dict):
+                manifest = customs_pack.get("manifest") or []
+                manifest_count = len(manifest) if isinstance(manifest, list) else 0
+                customs_pack["manifest_count"] = manifest_count
+                customs_pack["ready"] = bool(manifest_count)
+                if manifest_count == 0:
+                    structured_result["analytics"]["customs_ready_score"] = 0
+
+            bank_verdict = structured_result.get("bank_verdict") or {}
+            validation_blocked = structured_result.get("validation_blocked", False)
+            submission_reasons = []
+            can_submit = True
+            if validation_blocked:
+                can_submit = False
+                submission_reasons.append("validation_blocked")
+            if not bank_verdict:
+                can_submit = False
+                submission_reasons.append("bank_verdict_missing")
+            elif not bank_verdict.get("can_submit", False):
+                can_submit = False
+                submission_reasons.append(
+                    f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
+                )
+
+            structured_result["submission_eligibility"] = {
+                "can_submit": can_submit,
+                "reasons": submission_reasons,
+                "source": "validation",
+            }
+        except Exception as contract_err:
+            logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
         
         telemetry_payload = {
             "UnifiedStructuredResultBuilt": True,
@@ -3319,7 +3409,32 @@ def _build_blocked_structured_result(
     else:
         time_display = f"{processing_duration:.1f}s"
     
-    return {
+    processing_summary = {
+        "total_documents": len(documents),
+        "successful_extractions": sum(1 for d in documents if d.get("extraction_status") == "success"),
+        "failed_extractions": sum(1 for d in documents if d.get("extraction_status") in ("failed", "error", "empty")),
+        "partial_extractions": sum(1 for d in documents if d.get("extraction_status") in ("text_only", "partial")),
+        "total_issues": len(blocking_issues),
+        "compliance_rate": 0,  # 0 because validation is blocked
+        "processing_time_seconds": round(processing_duration, 2),
+        "processing_time_display": time_display,
+        "severity_breakdown": {
+            "critical": len(blocking_issues),
+            "major": 0,
+            "medium": 0,
+            "minor": 0,
+        },
+    }
+
+    document_extraction = _build_document_extraction_v1(docs_structured)
+    processing_summary_v2 = _build_processing_summary_v2(
+        processing_summary,
+        document_extraction.get("documents", []),
+        blocking_issues,
+        compliance_rate=0,
+    )
+
+    result = {
         "version": "structured_result_v1",
         
         # V2 blocked status
@@ -3360,22 +3475,10 @@ def _build_blocked_structured_result(
         "documents_structured": docs_structured,
         
         # Processing summary - count ACTUAL extraction results
-        "processing_summary": {
-            "total_documents": len(documents),
-            "successful_extractions": sum(1 for d in documents if d.get("extraction_status") == "success"),
-            "failed_extractions": sum(1 for d in documents if d.get("extraction_status") in ("failed", "error", "empty")),
-            "partial_extractions": sum(1 for d in documents if d.get("extraction_status") in ("text_only", "partial")),
-            "total_issues": len(blocking_issues),
-            "compliance_rate": 0,  # 0 because validation is blocked
-            "processing_time_seconds": round(processing_duration, 2),
-            "processing_time_display": time_display,
-            "severity_breakdown": {
-                "critical": len(blocking_issues),
-                "major": 0,
-                "medium": 0,
-                "minor": 0,
-            },
-        },
+        "processing_summary": processing_summary,
+        "processing_summary_v2": processing_summary_v2,
+        "document_extraction_v1": document_extraction,
+        "issue_provenance_v1": _build_issue_provenance_v1(blocking_issues),
         
         # Analytics
         "analytics": {
