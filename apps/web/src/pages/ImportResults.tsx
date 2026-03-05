@@ -212,14 +212,13 @@ type ImportResultsProps = {
 const transformApiToSupplierFormat = (apiResults: any) => {
   if (!apiResults) return null;
   
-  const summary = apiResults.summary || apiResults.structured_result?.processing_summary || {};
+  const summary = apiResults.summary || apiResults.structured_result?.processing_summary_v2 || apiResults.structured_result?.processing_summary || {};
   const docs = apiResults.documents || [];
   const issues = apiResults.issues || [];
   const analytics = apiResults.analytics || apiResults.structured_result?.analytics || {};
   
-  // Calculate compliance rate from summary or analytics
-  const complianceRate = summary.compliance_rate ?? analytics.compliance_score ?? 
-    (issues.length === 0 ? 100 : Math.max(0, 100 - issues.length * 15));
+  // Calculate compliance rate from canonical summary/analytics
+  const complianceRate = summary.compliance_rate ?? analytics.compliance_score ?? 0;
   
   // Transform documents to expected format
   const transformedDocs = docs.map((doc: any, idx: number) => ({
@@ -266,12 +265,12 @@ const transformApiToSupplierFormat = (apiResults: any) => {
 const transformApiToDraftFormat = (apiResults: any) => {
   if (!apiResults) return null;
   
-  const summary = apiResults.summary || apiResults.structured_result?.processing_summary || {};
+  const summary = apiResults.summary || apiResults.structured_result?.processing_summary_v2 || apiResults.structured_result?.processing_summary || {};
   const issues = apiResults.issues || [];
   const lcData = apiResults.lc_structured || apiResults.structured_result?.lc_structured || {};
   
   // Calculate risk score (inverse of compliance)
-  const complianceRate = summary.compliance_rate ?? 100;
+  const complianceRate = summary.compliance_rate ?? 0;
   const riskScore = Math.round(100 - complianceRate * 0.65); // Scale to risk perspective
   
   // Transform issues to risks

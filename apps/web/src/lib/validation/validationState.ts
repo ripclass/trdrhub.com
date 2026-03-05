@@ -84,6 +84,7 @@ export function deriveValidationState(
   // Get compliance data
   const complianceScore = normalizeScore(
     response.compliance_rate ??
+      response.processing_summary_v2?.compliance_rate ??
       response.processing_summary?.compliance_rate ??
       response.analytics?.lc_compliance_score ??
       0

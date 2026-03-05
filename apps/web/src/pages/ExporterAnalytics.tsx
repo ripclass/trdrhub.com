@@ -297,7 +297,7 @@ export default function ExporterAnalytics({ embedded = false }: ExporterAnalytic
                   
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span>Document extraction</span>
+                      <span>Structured extraction</span>
                       <span className="font-medium">0.8 min</span>
                     </div>
                     <div className="flex justify-between text-sm">

@@ -215,6 +215,84 @@ export const ProcessingSummarySchema = z.object({
 });
 export type ProcessingSummary = z.infer<typeof ProcessingSummarySchema>;
 
+export const ProcessingSummaryV2Schema = z.object({
+  version: z.literal('processing_summary_v2'),
+  total_documents: z.number().nonnegative(),
+  documents: z.number().nonnegative().optional(),
+  documents_found: z.number().nonnegative().optional(),
+  verified: z.number().nonnegative(),
+  warnings: z.number().nonnegative(),
+  errors: z.number().nonnegative(),
+  successful_extractions: z.number().nonnegative(),
+  failed_extractions: z.number().nonnegative(),
+  total_issues: z.number().nonnegative(),
+  discrepancies: z.number().nonnegative().optional(),
+  severity_breakdown: SeverityBreakdownSchema,
+  status_counts: z.object({
+    success: z.number().nonnegative(),
+    warning: z.number().nonnegative(),
+    error: z.number().nonnegative(),
+  }),
+  document_status: z.object({
+    success: z.number().nonnegative(),
+    warning: z.number().nonnegative(),
+    error: z.number().nonnegative(),
+  }).optional(),
+  compliance_rate: z.number().min(0).max(100),
+  processing_time_seconds: z.number().nullable().optional(),
+  processing_time_display: z.string().nullable().optional(),
+  processing_time_ms: z.number().nullable().optional(),
+  extraction_quality: z.number().nullable().optional(),
+}).passthrough();
+export type ProcessingSummaryV2 = z.infer<typeof ProcessingSummaryV2Schema>;
+
+export const DocumentExtractionDocumentSchema = z.object({
+  document_id: z.string().optional(),
+  document_type: z.string().optional(),
+  filename: z.string().optional(),
+  status: z.enum(['success', 'warning', 'error']).optional(),
+  extraction_status: z.string().optional(),
+  extracted_fields: z.record(z.unknown()).optional(),
+  issues_count: z.number().nonnegative().optional(),
+  ocr_confidence: z.number().optional(),
+}).passthrough();
+export type DocumentExtractionDocument = z.infer<typeof DocumentExtractionDocumentSchema>;
+
+export const DocumentExtractionSummarySchema = z.object({
+  total_documents: z.number().nonnegative(),
+  status_counts: z.object({
+    success: z.number().nonnegative(),
+    warning: z.number().nonnegative(),
+    error: z.number().nonnegative(),
+  }),
+}).passthrough();
+export type DocumentExtractionSummary = z.infer<typeof DocumentExtractionSummarySchema>;
+
+export const DocumentExtractionV1Schema = z.object({
+  version: z.literal('document_extraction_v1'),
+  documents: z.array(DocumentExtractionDocumentSchema),
+  summary: DocumentExtractionSummarySchema,
+}).passthrough();
+export type DocumentExtractionV1 = z.infer<typeof DocumentExtractionV1Schema>;
+
+export const IssueProvenanceEntrySchema = z.object({
+  issue_id: z.string(),
+  source: z.string(),
+  ruleset_domain: z.string().optional(),
+  rule: z.string().optional(),
+  severity: z.string().optional(),
+  document_ids: z.union([z.array(z.string()), z.string()]).optional(),
+  document_types: z.union([z.array(z.string()), z.string()]).optional(),
+  document_names: z.union([z.array(z.string()), z.string()]).optional(),
+}).passthrough();
+export type IssueProvenanceEntry = z.infer<typeof IssueProvenanceEntrySchema>;
+
+export const IssueProvenanceV1Schema = z.object({
+  version: z.literal('issue_provenance_v1'),
+  issues: z.array(IssueProvenanceEntrySchema),
+}).passthrough();
+export type IssueProvenanceV1 = z.infer<typeof IssueProvenanceV1Schema>;
+
 export const StructuredResultDocumentSchema = z.object({
   document_id: z.string().optional(),
   document_type: z.string().optional(),
@@ -276,6 +354,9 @@ export type TimelineEntry = StructuredTimelineEntry;
 
 export const StructuredResultSchema = z.object({
   processing_summary: ProcessingSummarySchema,
+  processing_summary_v2: ProcessingSummaryV2Schema.optional(),
+  document_extraction_v1: DocumentExtractionV1Schema.optional(),
+  issue_provenance_v1: IssueProvenanceV1Schema.optional(),
   documents: z.array(StructuredResultDocumentSchema),
   issues: z.array(StructuredResultIssueSchema),
   analytics: StructuredResultAnalyticsSchema,
@@ -606,6 +687,9 @@ export const schemas = {
 
   // Structured validation payload
   StructuredProcessingSummary: StructuredProcessingSummarySchema,
+  ProcessingSummaryV2: ProcessingSummaryV2Schema,
+  DocumentExtractionV1: DocumentExtractionV1Schema,
+  IssueProvenanceV1: IssueProvenanceV1Schema,
   StructuredResultDocument: StructuredResultDocumentSchema,
   StructuredResultIssue: StructuredResultIssueSchema,
   StructuredResultDocumentRiskEntry: DocumentRiskEntrySchema,

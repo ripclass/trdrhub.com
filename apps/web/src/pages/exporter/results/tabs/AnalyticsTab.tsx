@@ -92,7 +92,7 @@ export function AnalyticsTab({
           <CardContent className="space-y-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm">Document Extraction Accuracy</span>
+                <span className="text-sm">Structured Extraction Accuracy</span>
                 <span className="text-sm font-medium">{extractionAccuracy}%</span>
               </div>
               <Progress value={extractionAccuracy} className="h-2" />

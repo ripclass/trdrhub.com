@@ -4,6 +4,9 @@ import type {
   StructuredResultIssue as SharedStructuredResultIssue,
   StructuredResultAnalytics as SharedStructuredResultAnalytics,
   StructuredProcessingSummary as SharedProcessingSummary,
+  ProcessingSummaryV2 as SharedProcessingSummaryV2,
+  DocumentExtractionV1 as SharedDocumentExtractionV1,
+  IssueProvenanceV1 as SharedIssueProvenanceV1,
   SeverityBreakdown as SharedSeverityBreakdown,
   TimelineEntry as SharedTimelineEntry,
   DocumentRiskEntry as SharedDocumentRiskEntry,
@@ -75,6 +78,11 @@ export type LCBaseline = SharedLCBaseline;
 
 export type OptionEStructuredResult = StructuredResultPayload & {
   version: 'structured_result_v1';
+
+  // Phase A contracts (canonical metrics)
+  processing_summary_v2?: ProcessingSummaryV2 | null;
+  document_extraction_v1?: DocumentExtractionV1 | null;
+  issue_provenance_v1?: IssueProvenanceV1 | null;
   
   // V2 Validation Pipeline fields
   validation_blocked?: boolean;
@@ -123,6 +131,9 @@ export type AIEnrichmentPayload = SharedAIEnrichmentPayload;
 export type SeverityBreakdown = SharedSeverityBreakdown;
 
 export type ProcessingSummaryPayload = SharedProcessingSummary;
+export type ProcessingSummaryV2 = SharedProcessingSummaryV2;
+export type DocumentExtractionV1 = SharedDocumentExtractionV1;
+export type IssueProvenanceV1 = SharedIssueProvenanceV1;
 
 export interface ValidationDocument {
   id: string;

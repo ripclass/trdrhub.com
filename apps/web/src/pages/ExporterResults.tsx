@@ -663,11 +663,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     structuredResult?.documents_structured ??
     structuredResult?.lc_structured?.documents_structured ??
     [];
-  const summary = structuredResult?.processing_summary;
+  const summary =
+    resultData?.summary ??
+    (structuredResult as any)?.processing_summary_v2 ??
+    structuredResult?.processing_summary;
   const lcStructured = structuredResult?.lc_structured ?? null;
+  const extractionDocumentsPayload =
+    (structuredResult as any)?.document_extraction_v1?.documents ?? structuredDocumentsPayload;
   const extractionStatus = useMemo(() => {
     // Check document-level extraction statuses first
-    const docStatuses = structuredDocumentsPayload.map(
+    const docStatuses = extractionDocumentsPayload.map(
       (doc) => (doc.extraction_status || "unknown").toLowerCase()
     );
     const hasSuccess = docStatuses.some((s) => s === "success");
@@ -707,9 +712,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }
     
     return "unknown";
-  }, [summary, structuredDocumentsPayload, lcStructured]);
-  const documents = useMemo(() => {
-    return structuredDocumentsPayload.map((doc, index) => {
+  }, [summary, extractionDocumentsPayload, lcStructured]);
+  const fallbackDocuments = useMemo(() => {
+    return extractionDocumentsPayload.map((doc, index) => {
       const docAny = doc as Record<string, any>;
       const documentId = String(doc.document_id ?? docAny.id ?? index);
       const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
@@ -745,7 +750,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
-  }, [structuredDocumentsPayload]);
+  }, [extractionDocumentsPayload]);
+  const documents = resultData?.documents?.length ? resultData.documents : fallbackDocuments;
   resultsLogger.debug('Documents loaded', { count: documents.length });
   const issueCards = resultData?.issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
@@ -762,25 +768,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   };
   const extractedDocumentsMap = useMemo(() => {
     const map: Record<string, any> = {};
-    structuredDocumentsPayload.forEach((doc, idx) => {
-      const docAny = doc as Record<string, any>;
-      const key = doc.document_type || doc.filename || `doc_${idx}`;
-      map[key] = doc.extracted_fields ?? docAny.extractedFields ?? {};
+    documents.forEach((doc, idx) => {
+      const key = doc.typeKey || doc.filename || `doc_${idx}`;
+      map[key] = doc.extractedFields ?? {};
     });
     return map;
-  }, [structuredDocumentsPayload]);
+  }, [documents]);
   const extractedDocuments = useMemo(
     () =>
-      structuredDocumentsPayload.map((doc) => ({
+      documents.map((doc) => ({
         filename: doc.filename,
         name: doc.filename,
-        document_type: doc.document_type,
-        extraction_status: doc.extraction_status,
-        extractionStatus: doc.extraction_status,
-        extracted_fields: doc.extracted_fields ?? {},
-        extractedFields: doc.extracted_fields ?? {},
+        document_type: doc.typeKey,
+        extraction_status: doc.extractionStatus,
+        extractionStatus: doc.extractionStatus,
+        extracted_fields: doc.extractedFields ?? {},
+        extractedFields: doc.extractedFields ?? {},
       })),
-    [structuredDocumentsPayload],
+    [documents],
   );
   // lcStructured is already defined above (line ~730) to avoid temporal dead zone issues
   const lcData = lcStructured as Record<string, any> | null;
@@ -931,22 +936,23 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       resolvedErrorCount = fromDistError;
       resolvedWarningCount = fromDistWarning;
     } else {
-      // Fallback to document array or summary fields
-      const derivedSuccessCount = documents.filter((doc) => doc.status === "success").length;
-      const summarySuccessCount =
-        typeof summary?.successful_extractions === "number" ? summary.successful_extractions : undefined;
+      // Fall back to canonical summary metrics (no client-side recomputation)
       resolvedSuccessCount =
-        derivedSuccessCount > 0 ? derivedSuccessCount : summarySuccessCount ?? derivedSuccessCount;
+        typeof summary?.successful_extractions === "number"
+          ? summary.successful_extractions
+          : typeof summary?.verified === "number"
+          ? summary.verified
+          : 0;
 
       resolvedErrorCount =
         typeof summary?.failed_extractions === "number"
           ? summary.failed_extractions
-          : documents.filter((doc) => (doc.status ?? "").toLowerCase() === "error").length;
+          : typeof summary?.errors === "number"
+          ? summary.errors
+          : 0;
 
       resolvedWarningCount =
-        typeof documentStatusCounts.warning === "number"
-          ? documentStatusCounts.warning
-          : documents.filter((doc) => doc.status === "warning").length;
+        typeof summary?.warnings === "number" ? summary.warnings : 0;
     }
 
     // Validation success rate (based on validation status)
@@ -1048,7 +1054,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     : overallStatus === "success"
     ? "text-success"
     : "text-warning";
-  const processingSummaryExtras = structuredResult?.processing_summary as Record<string, any> | undefined;
+  const processingSummaryExtras =
+    (structuredResult as any)?.processing_summary_v2 ??
+    (structuredResult?.processing_summary as Record<string, any> | undefined);
   const analyticsExtras = structuredResult?.analytics as Record<string, any> | undefined;
   const processingTime =
     processingSummaryExtras?.processing_time_display ||
@@ -1708,7 +1716,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="space-y-3">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm">Document Extraction</span>
+                        <span className="text-sm">Structured Extraction</span>
                         <span className="text-sm font-medium">{extractionAccuracy}%</span>
                       </div>
                       <Progress value={extractionAccuracy} className="h-2" />

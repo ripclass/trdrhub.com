@@ -239,6 +239,66 @@ class StructuredProcessingSummary(BaseModel):
     severity_breakdown: SeverityBreakdown
 
 
+class ProcessingSummaryV2(BaseModel):
+    version: str = Field(default="processing_summary_v2")
+    total_documents: int = Field(ge=0)
+    documents: Optional[int] = Field(default=None, ge=0)
+    documents_found: Optional[int] = Field(default=None, ge=0)
+    verified: int = Field(ge=0)
+    warnings: int = Field(ge=0)
+    errors: int = Field(ge=0)
+    successful_extractions: int = Field(ge=0)
+    failed_extractions: int = Field(ge=0)
+    total_issues: int = Field(ge=0)
+    discrepancies: Optional[int] = Field(default=None, ge=0)
+    severity_breakdown: SeverityBreakdown
+    status_counts: Dict[str, int]
+    document_status: Optional[Dict[str, int]] = None
+    compliance_rate: float = Field(ge=0, le=100)
+    processing_time_seconds: Optional[float] = None
+    processing_time_display: Optional[str] = None
+    processing_time_ms: Optional[float] = None
+    extraction_quality: Optional[float] = None
+
+
+class DocumentExtractionDocument(BaseModel):
+    document_id: Optional[str] = None
+    document_type: Optional[str] = None
+    filename: Optional[str] = None
+    status: Optional[str] = None
+    extraction_status: Optional[str] = None
+    extracted_fields: Optional[Dict[str, Any]] = None
+    issues_count: Optional[int] = Field(default=None, ge=0)
+    ocr_confidence: Optional[float] = None
+
+
+class DocumentExtractionSummary(BaseModel):
+    total_documents: int = Field(ge=0)
+    status_counts: Dict[str, int]
+
+
+class DocumentExtractionV1(BaseModel):
+    version: str = Field(default="document_extraction_v1")
+    documents: List[DocumentExtractionDocument]
+    summary: DocumentExtractionSummary
+
+
+class IssueProvenanceEntry(BaseModel):
+    issue_id: str
+    source: str
+    ruleset_domain: Optional[str] = None
+    rule: Optional[str] = None
+    severity: Optional[str] = None
+    document_ids: Optional[Any] = None
+    document_types: Optional[Any] = None
+    document_names: Optional[Any] = None
+
+
+class IssueProvenanceV1(BaseModel):
+    version: str = Field(default="issue_provenance_v1")
+    issues: List[IssueProvenanceEntry]
+
+
 class StructuredResultDocument(BaseModel):
     document_id: str
     document_type: str
@@ -284,6 +344,9 @@ class TimelineEntry(BaseModel):
 
 class StructuredResultPayload(BaseModel):
     processing_summary: StructuredProcessingSummary
+    processing_summary_v2: Optional[ProcessingSummaryV2] = None
+    document_extraction_v1: Optional[DocumentExtractionV1] = None
+    issue_provenance_v1: Optional[IssueProvenanceV1] = None
     documents: List[StructuredResultDocument]
     issues: List[StructuredResultIssue]
     analytics: StructuredResultAnalytics
@@ -535,6 +598,9 @@ SCHEMAS = {
     
     # Structured validation payload
     'StructuredProcessingSummary': StructuredProcessingSummary,
+    'ProcessingSummaryV2': ProcessingSummaryV2,
+    'DocumentExtractionV1': DocumentExtractionV1,
+    'IssueProvenanceV1': IssueProvenanceV1,
     'StructuredResultDocument': StructuredResultDocument,
     'StructuredResultIssue': StructuredResultIssue,
     'StructuredResultDocumentRiskEntry': DocumentRiskEntry,

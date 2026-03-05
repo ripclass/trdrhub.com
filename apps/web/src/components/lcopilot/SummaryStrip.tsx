@@ -20,70 +20,38 @@ const formatNumber = (value?: number | null) => (typeof value === 'number' && !N
 
 export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
   const structured = data?.structured_result;
-  const summary = structured?.processing_summary;
-  const analytics = structured?.analytics;
+  const summary =
+    data?.summary ??
+    (structured as any)?.processing_summary_v2 ??
+    structured?.processing_summary;
+  const analytics = data?.analytics ?? structured?.analytics;
 
-  if (!structured || !summary) {
+  if (!summary) {
     return null;
   }
 
-  // Get document counts from multiple sources for robustness
-  const documentsProcessed =
-    analytics?.documents_processed ?? summary.total_documents ?? data?.documents?.length ?? 0;
-  // FIX: Backend sends both document_status and status_counts - check both
-  const statusDistribution = 
-    analytics?.document_status_distribution ?? 
-    summary?.document_status ?? 
-    summary?.status_counts ?? 
-    {};
+  // Canonical metrics from backend
+  const documentsProcessed = summary.total_documents ?? 0;
+  const statusDistribution =
+    summary?.document_status ?? summary?.status_counts ?? {
+      success: 0,
+      warning: 0,
+      error: 0,
+    };
   const processingTime =
     summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
-  
-  // Get issue counts - use actual count from parent if available
+
   const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
-  // Use passed compliance score, or calculate fallback
-  const complianceRate = complianceScore ?? summary.compliance_rate ?? 
-    (totalIssues === 0 ? 100 : Math.max(0, 100 - (totalIssues * 15)));
-  
-  // Document status - fallback to calculated values if distribution is empty
-  const successFromDist = formatNumber(statusDistribution.success);
-  const warningsFromDist = formatNumber(statusDistribution.warning);
-  const errorsFromDist = formatNumber(statusDistribution.error);
-  
-  // If distribution is all zeros but we have documents, calculate from compliance
-  const hasDistribution = successFromDist > 0 || warningsFromDist > 0 || errorsFromDist > 0;
-  
-  let verified: number;
-  let warnings: number;
-  let errors: number;
-  
-  if (hasDistribution) {
-    verified = successFromDist;
-    warnings = warningsFromDist;
-    errors = errorsFromDist;
-  } else {
-    // Fallback: estimate from compliance rate and total issues
-    if (complianceRate >= 100 && totalIssues === 0) {
-      verified = documentsProcessed;
-      warnings = 0;
-      errors = 0;
-    } else if (totalIssues > 0) {
-      // If there are issues, at least 1 doc has warnings
-      warnings = Math.min(totalIssues, documentsProcessed);
-      verified = Math.max(0, documentsProcessed - warnings);
-      errors = 0;
-    } else {
-      verified = documentsProcessed;
-      warnings = 0;
-      errors = 0;
-    }
-  }
-  
-  // Has issues if compliance < 100 or there are warnings/errors
+  const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
+
+  const verified = formatNumber(summary.verified ?? statusDistribution.success);
+  const warnings = formatNumber(summary.warnings ?? statusDistribution.warning);
+  const errors = formatNumber(summary.errors ?? statusDistribution.error);
+
   const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
-  
-  const progressValue = documentsProcessed > 0 
-    ? Math.round(((verified + warnings) / documentsProcessed) * 100) 
+
+  const progressValue = documentsProcessed > 0
+    ? Math.round(((verified + warnings) / documentsProcessed) * 100)
     : 0;
 
   // Status icon based on overall status prop or calculated

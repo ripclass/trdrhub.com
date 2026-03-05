@@ -268,6 +268,20 @@ export function DocumentDetailsDrawer({
     shouldShowField(key)
   );
 
+  const extractionStatus = (document.extractionStatus ?? '').toLowerCase();
+  const extractionModeLabel = (() => {
+    if (extractionStatus === 'text_only') return 'Text extraction';
+    if (['success', 'partial', 'structured'].includes(extractionStatus)) return 'Structured extraction';
+    if (['error', 'failed', 'empty'].includes(extractionStatus)) return 'Extraction failed';
+    return null;
+  })();
+  const extractionModeClass =
+    extractionStatus === 'text_only'
+      ? 'bg-amber-500/10 text-amber-600 border-amber-500/30'
+      : ['error', 'failed', 'empty'].includes(extractionStatus)
+      ? 'bg-destructive/10 text-destructive border-destructive/30'
+      : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+
   // Group fields by category
   const identificationFields = fieldEntries.filter(([key]) =>
     ["lc_number", "bl_number", "invoice_number", "reference", "number"].some(k =>
@@ -404,6 +418,11 @@ export function DocumentDetailsDrawer({
                 {document.issuesCount} issue{document.issuesCount > 1 ? "s" : ""}
               </Badge>
             )}
+            {extractionModeLabel && (
+              <Badge variant="outline" className={cn("text-xs", extractionModeClass)}>
+                {extractionModeLabel}
+              </Badge>
+            )}
             {document.sourceFormat && (
               <Badge
                 variant="outline"
@@ -441,7 +460,9 @@ export function DocumentDetailsDrawer({
                   No structured fields extracted
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  This document may be a scanned image or unsupported format.
+                  {extractionStatus === 'text_only'
+                    ? "Text-only extraction is available. Review the raw document for details."
+                    : "This document may be a scanned image or unsupported format."}
                 </p>
               </div>
             ) : (

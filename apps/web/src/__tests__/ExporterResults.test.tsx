@@ -188,6 +188,111 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/Document Status Distribution/i)).toBeInTheDocument();
   });
 
+  it('keeps document status counts aligned between overview and documents tab', async () => {
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+    );
+
+    const statusCard = findCardByTitle(/Document Status/i);
+    expect(within(statusCard).getByText('4 (67%)')).toBeInTheDocument();
+    expect(within(statusCard).getByText('2 (33%)')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
+    const documentsPanel = screen.getByRole('tabpanel', { name: /documents/i });
+    expect(within(documentsPanel).getAllByText('Verified')).toHaveLength(4);
+    expect(within(documentsPanel).getAllByText('With Warnings')).toHaveLength(2);
+  });
+
+  it('keeps issue counts aligned when summary totals are stale', async () => {
+    const staleSummary = buildValidationResults();
+    staleSummary.structured_result!.processing_summary = {
+      ...staleSummary.structured_result!.processing_summary,
+      total_issues: 1,
+    };
+    activeResults = staleSummary;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('tab', { name: /Issues \(3\)/i })).toBeInTheDocument();
+
+    const statsCard = findCardByTitle(/Export Document Statistics/i);
+    const warningsLabel = within(statsCard).getByText(/^Warnings$/i);
+    const warningsValue = warningsLabel.previousElementSibling;
+    expect(warningsValue?.textContent).toBe('3');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
+    expect(screen.getAllByTestId(/issue-card-/)).toHaveLength(3);
+  });
+
+  it('keeps customs readiness aligned between overview and customs tab', async () => {
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+
+    const statsCard = findCardByTitle(/Export Document Statistics/i);
+    const readinessRow = within(statsCard).getByText(/Compliance Readiness/i).parentElement as HTMLElement;
+    const readinessValue = readinessRow.querySelector('span.font-medium')?.textContent;
+    expect(readinessValue).toBeTruthy();
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getByText(readinessValue as string)).toBeInTheDocument();
+  });
+
+  it('gates submit eligibility when validation blocks submission', async () => {
+    const gatedResults = buildValidationResults();
+    gatedResults.structured_result = {
+      ...gatedResults.structured_result,
+      submission_eligibility: { can_submit: false, reasons: ['issues'] },
+    } as typeof gatedResults.structured_result;
+    activeResults = gatedResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
+  });
+
+  it('shows submit to bank when eligibility and guardrails allow', async () => {
+    const eligibleResults = buildValidationResults();
+    eligibleResults.structured_result = {
+      ...eligibleResults.structured_result,
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Safe to submit',
+        recommendation: 'Ready for bank submission',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 0, minor: 0, total: 0 },
+        action_items: [],
+        action_items_count: 0,
+      },
+    } as typeof eligibleResults.structured_result;
+    activeResults = eligibleResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument();
+  });
+
   it('renders UI when only structured_result payload is provided', async () => {
     const user = userEvent.setup();
     const structuredOnly = buildValidationResponse({
