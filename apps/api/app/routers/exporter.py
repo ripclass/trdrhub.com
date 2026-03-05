@@ -76,6 +76,27 @@ def check_guardrails(db: Session, validation_session_id: UUID, company_id: UUID)
             policy_checks_passed=False
         )
     
+    # Validate submission eligibility from structured results (if present)
+    structured_result = None
+    if isinstance(session.validation_results, dict):
+        structured_result = session.validation_results.get("structured_result")
+    if isinstance(structured_result, dict):
+        if structured_result.get("validation_blocked"):
+            blocking_issues.append("Validation blocked")
+        submission_eligibility = structured_result.get("submission_eligibility")
+        if isinstance(submission_eligibility, dict) and submission_eligibility.get("can_submit") is False:
+            reasons = submission_eligibility.get("reasons") or []
+            if reasons:
+                blocking_issues.append(
+                    f"Submission not eligible: {', '.join(map(str, reasons))}"
+                )
+            else:
+                blocking_issues.append("Submission not eligible")
+        bank_verdict = structured_result.get("bank_verdict")
+        if isinstance(bank_verdict, dict) and bank_verdict.get("can_submit") is False:
+            verdict_label = bank_verdict.get("verdict") or "HOLD"
+            blocking_issues.append(f"Bank verdict: {verdict_label}")
+
     # Get all discrepancies
     discrepancies = db.query(Discrepancy).filter(
         Discrepancy.validation_session_id == validation_session_id

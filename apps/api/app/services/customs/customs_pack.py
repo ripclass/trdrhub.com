@@ -17,10 +17,11 @@ def build_customs_manifest_from_option_e(structured_result: Dict[str, Any]) -> D
 
     manifest = [
         {
-            "name": doc.get("filename"),
-            "tag": doc.get("document_type"),
+            "name": doc.get("filename") or doc.get("name"),
+            "tag": doc.get("document_type") or doc.get("documentType"),
         }
         for doc in docs
+        if (doc.get("filename") or doc.get("name"))
     ]
 
     return {

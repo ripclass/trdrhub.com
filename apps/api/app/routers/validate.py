@@ -1896,6 +1896,26 @@ async def validate_doc(
                 bank_verdict.get("verdict"),
                 len(bank_verdict.get("action_items", [])),
             )
+
+            submission_reasons = []
+            submission_can_submit = True
+            if structured_result.get("validation_blocked"):
+                submission_can_submit = False
+                submission_reasons.append("validation_blocked")
+            if not bank_verdict:
+                submission_can_submit = False
+                submission_reasons.append("bank_verdict_missing")
+            elif not bank_verdict.get("can_submit", False):
+                submission_can_submit = False
+                submission_reasons.append(
+                    f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
+                )
+
+            structured_result["submission_eligibility"] = {
+                "can_submit": submission_can_submit,
+                "reasons": submission_reasons,
+                "source": "validation",
+            }
             
             # =====================================================================
             # AMENDMENT GENERATION (for fixable discrepancies)
@@ -2138,6 +2158,17 @@ def _build_document_summaries(
     details = document_details or []
     issue_by_name, issue_by_type, issue_by_id = _collect_document_issue_stats(results)
 
+    def _derive_document_status(extraction_status: Optional[str], max_severity: Optional[str]) -> str:
+        extraction = (extraction_status or "").lower()
+        if extraction in {"error", "failed", "empty"}:
+            return "error"
+        severity_status = _severity_to_status(max_severity)
+        if severity_status in {"error", "warning"}:
+            return severity_status
+        if extraction in {"partial", "pending", "text_only"}:
+            return "warning"
+        return "success"
+
     def _build_summary_from_detail(detail: Dict[str, Any], index: int) -> Dict[str, Any]:
         filename = detail.get("filename") or detail.get("name")
         doc_type = detail.get("document_type") or _infer_document_type_from_name(filename, index)
@@ -2153,7 +2184,7 @@ def _build_document_summaries(
             issue_by_type,
             issue_by_id,
         )
-        status = _severity_to_status(stats.get("max_severity") if stats else None)
+        status = _derive_document_status(detail.get("extraction_status"), stats.get("max_severity") if stats else None)
         discrepancy_count = stats.get("count", 0) if stats else 0
 
         return {
@@ -2204,7 +2235,7 @@ def _build_document_summaries(
             issue_by_type,
             issue_by_id,
         )
-        doc_status = _severity_to_status(stats.get("max_severity") if stats else None)
+        doc_status = _derive_document_status(None, stats.get("max_severity") if stats else None)
         discrepancy_count = stats.get("count", 0) if stats else 0
         summaries.append(
             {
@@ -3294,6 +3325,11 @@ def _build_blocked_structured_result(
         # V2 blocked status
         "validation_blocked": True,
         "validation_status": "blocked",
+        "submission_eligibility": {
+            "can_submit": False,
+            "reasons": ["validation_blocked"],
+            "source": "validation",
+        },
         
         # Gate result
         "gate_result": v2_gate_result.to_dict(),
