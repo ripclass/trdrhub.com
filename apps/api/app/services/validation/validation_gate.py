@@ -162,18 +162,6 @@ class ValidationGate:
         warnings: List[str] = []
         blocking_issues: List[Dict[str, Any]] = []
         warning_issues: List[Dict[str, Any]] = []
-
-        # Check 0: Empty extraction (fail-closed)
-        if completeness <= 0.0:
-            block_reasons.append("Extraction completeness is 0% (no extractable LC content)")
-            blocking_issues.append(self._create_blocking_issue(
-                "LC-GATE-EMPTY-EXTRACTION",
-                "No Extractable LC Content",
-                "No extractable LC fields were found in the uploaded documents.",
-                "Visible LC text and fields",
-                "No extractable content detected",
-                "Verify the document is readable and contains LC fields (not a blank/unsupported file).",
-            ))
         
         # Check 1: LC Number
         if self.require_lc_number and not baseline.lc_number.is_present:

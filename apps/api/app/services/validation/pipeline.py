@@ -107,8 +107,6 @@ class ValidationOutput:
     # Gate result (if blocked)
     gate_result: Optional[Dict[str, Any]] = None
     block_reason: Optional[str] = None
-    extraction_empty: bool = False
-    extraction_empty_reason: Optional[str] = None
     
     # Baseline data
     lc_baseline: Optional[Dict[str, Any]] = None
@@ -133,8 +131,6 @@ class ValidationOutput:
             # Validation status
             "validation_blocked": self.validation_blocked,
             "validation_status": self.status,
-            "extraction_empty": self.extraction_empty,
-            "extraction_empty_reason": self.extraction_empty_reason,
             
             # Gate result (always include for frontend state machine)
             "gate_result": self.gate_result or {
@@ -216,52 +212,6 @@ class ValidationPipeline:
         self.issue_engine = issue_engine or IssueEngine()
         self.crossdoc_validator = crossdoc_validator or CrossDocValidator()
         self.compliance_scorer = compliance_scorer or ComplianceScorer()
-
-    @staticmethod
-    def _value_has_content(value: Any) -> bool:
-        if value is None:
-            return False
-        if isinstance(value, str):
-            return bool(value.strip())
-        if isinstance(value, (list, tuple, set)):
-            return any(ValidationPipeline._value_has_content(v) for v in value)
-        if isinstance(value, dict):
-            return any(ValidationPipeline._value_has_content(v) for v in value.values())
-        return True
-
-    @staticmethod
-    def _document_has_extraction_content(doc: Dict[str, Any]) -> bool:
-        if not isinstance(doc, dict):
-            return False
-        structured_keys = [
-            "extracted_fields",
-            "extracted_data",
-            "structured_data",
-            "structured_fields",
-            "fields",
-            "data",
-        ]
-        for key in structured_keys:
-            if ValidationPipeline._value_has_content(doc.get(key)):
-                return True
-        text_keys = [
-            "raw_text_preview",
-            "raw_text",
-            "ocr_text",
-            "text",
-            "content",
-            "full_text",
-        ]
-        for key in text_keys:
-            if ValidationPipeline._value_has_content(doc.get(key)):
-                return True
-        return False
-
-    @staticmethod
-    def _all_documents_empty(documents: List[Dict[str, Any]]) -> bool:
-        if not documents:
-            return True
-        return not any(ValidationPipeline._document_has_extraction_content(doc) for doc in documents)
     
     def validate(
         self,
@@ -298,46 +248,9 @@ class ValidationPipeline:
         try:
             # Step 1: Extract LC to baseline
             baseline, extraction_result = self._extract_lc(input_data, audit_logger)
-
-            # Step 2: Check validation gate (fail-closed for empty extraction)
-            extraction_empty = False
-            extraction_empty_reason = None
-            if self._all_documents_empty(input_data.documents):
-                extraction_empty = True
-                extraction_empty_reason = "documents_empty"
-                gate_result = GateResult(
-                    status=GateStatus.BLOCKED,
-                    can_proceed=False,
-                    block_reason="empty_extraction",
-                    warnings=[],
-                    baseline=baseline,
-                    completeness=baseline.extraction_completeness,
-                    critical_completeness=baseline.critical_completeness,
-                    missing_critical=[f.field_name for f in baseline.get_missing_critical()],
-                    missing_required=[f.field_name for f in baseline.get_missing_required()],
-                    blocking_issues=[{
-                        "rule": "LC-GATE-EMPTY-EXTRACTION",
-                        "title": "No Extractable Content",
-                        "passed": False,
-                        "severity": "critical",
-                        "message": "No extractable text or structured fields were found in the uploaded documents.",
-                        "expected": "Readable LC text and fields",
-                        "actual": "No extractable content detected",
-                        "suggestion": "Upload a readable document with visible text or re-run OCR.",
-                        "documents": ["Letter of Credit"],
-                        "document_names": ["Letter of Credit"],
-                        "display_card": True,
-                        "ruleset_domain": "icc.lcopilot.gate",
-                        "blocks_validation": True,
-                        "auto_generated": True,
-                    }],
-                    warning_issues=[],
-                )
-            else:
-                gate_result = self._check_gate(baseline, extraction_result, audit_logger)
-                if gate_result.completeness <= 0.0:
-                    extraction_empty = True
-                    extraction_empty_reason = "extraction_completeness_zero"
+            
+            # Step 2: Check validation gate
+            gate_result = self._check_gate(baseline, extraction_result, audit_logger)
             
             # Step 3: If blocked, return early
             if not gate_result.can_proceed:
@@ -347,8 +260,6 @@ class ValidationPipeline:
                     baseline,
                     audit_logger,
                     start_time,
-                    extraction_empty=extraction_empty,
-                    extraction_empty_reason=extraction_empty_reason,
                 )
             
             # Step 4: Generate extraction issues
@@ -628,8 +539,6 @@ class ValidationPipeline:
         baseline: LCBaseline,
         audit_logger: ValidationAuditLogger,
         start_time: float,
-        extraction_empty: bool = False,
-        extraction_empty_reason: Optional[str] = None,
     ) -> ValidationOutput:
         """Build output for blocked validation."""
         
@@ -656,8 +565,6 @@ class ValidationPipeline:
             minor_count=len(gate_result.warning_issues),
             gate_result=gate_result.to_dict(),
             block_reason=gate_result.block_reason,
-            extraction_empty=extraction_empty,
-            extraction_empty_reason=extraction_empty_reason,
             lc_baseline=self._baseline_to_dict(baseline),
             missing_critical_fields=gate_result.missing_critical,
             processing_time_seconds=processing_time,
