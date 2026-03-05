@@ -102,7 +102,7 @@ export function AnalyticsTab({
               </div>
               <Progress value={lcComplianceScore} className="h-2" />
               <div className="flex items-center justify-between">
-                <span className="text-sm">Customs Readiness</span>
+                <span className="text-sm">Compliance Readiness</span>
                 <span className="text-sm font-medium">{customsReadyScore}%</span>
               </div>
               <Progress value={customsReadyScore} className="h-2" />

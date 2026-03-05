@@ -134,7 +134,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
                 <span className="font-medium">{documentsProcessed}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Compliance Rate:</span>
+                <span className="text-muted-foreground">Compliance Readiness:</span>
                 <span className={`font-medium ${complianceRate >= 80 ? 'text-emerald-600' : complianceRate >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
                   {complianceRate}%
                 </span>

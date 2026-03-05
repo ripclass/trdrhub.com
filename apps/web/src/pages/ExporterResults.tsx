@@ -906,7 +906,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
   );
-  const { successCount, errorCount, warningCount, successRate, extractionRate } = useMemo(() => {
+  const { successCount, errorCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
     // Use authoritative document_status from backend (same source as SummaryStrip)
     const statusDistribution = 
       analyticsData?.document_status_distribution ?? 
@@ -955,13 +955,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
     // Extraction success rate (OCR extraction - separate from validation)
     // This measures how many docs were successfully extracted, regardless of validation status
+    const derivedExtractionSuccess = documents.filter((doc) => (doc.extractionStatus ?? "").toLowerCase() === "success").length;
     const extractionSuccessful = 
       typeof summary?.successful_extractions === "number" 
         ? summary.successful_extractions 
-        : totalDocuments; // Default to all if not specified
+        : typeof summary?.failed_extractions === "number"
+        ? Math.max(0, totalDocuments - summary.failed_extractions)
+        : derivedExtractionSuccess;
     const extractionRate = totalDocuments > 0 
       ? Math.round((extractionSuccessful / totalDocuments) * 100) 
-      : 100;
+      : 0;
 
     return {
       successCount: resolvedSuccessCount,
@@ -969,6 +972,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       warningCount: resolvedWarningCount,
       successRate: resolvedSuccessRate,
       extractionRate, // New: for Document Extraction progress bar
+      extractionSuccessful,
     };
   }, [
     documents,
@@ -1009,11 +1013,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const performanceInsights = useMemo(
     () => [
-      successCount + "/" + (totalDocuments || 0) + " documents extracted successfully",
+      extractionSuccessful + "/" + (totalDocuments || 0) + " documents extracted successfully",
       totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
       "Compliance score " + complianceScore + "%",
     ],
-    [successCount, totalDocuments, totalDiscrepancies, complianceScore],
+    [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const readinessStatus = useMemo(() => {
     if (!validationState) return null;
@@ -1669,9 +1673,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Customs Ready:</span>
-                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : 'text-warning'}`}>
-                        {customsReadyScore >= 90 ? 'Yes' : 'Review'}
+                      <span>Compliance Readiness:</span>
+                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : customsReadyScore >= 50 ? 'text-warning' : 'text-destructive'}`}>
+                        {customsReadyScore}%
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -1683,8 +1687,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                   {packGenerated && (
                     <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <p className="text-sm font-medium text-primary">Customs-Ready Pack Generated</p>
-                      <p className="text-xs text-muted-foreground mt-1">All documents bundled for smooth customs clearance</p>
+                      <p className="text-sm font-medium text-primary">Customs Pack Generated</p>
+                      <p className="text-xs text-muted-foreground mt-1">Manifest and bundle are ready to download. Compliance readiness is shown separately.</p>
                     </div>
                   )}
                 </CardContent>
@@ -1718,7 +1722,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm">Customs Readiness</span>
+                        <span className="text-sm">Compliance Readiness</span>
                         <span className="text-sm font-medium">{customsReadyScore}%</span>
                       </div>
                       <Progress value={customsReadyScore} className="h-2" />
@@ -1817,24 +1821,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <p className="text-sm text-muted-foreground">
                       {packGenerated
                         ? "Customs pack generated and ready to download."
-                        : "Generate your customs pack after resolving issues."}
+                        : "Generate your customs pack to create the manifest and bundle documents."}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Readiness</p>
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Compliance Readiness</p>
                     <div className="flex items-center gap-3">
                       <div className={cn(
                         "text-2xl font-semibold",
                         customsReadyScore >= 80 ? "text-success" : customsReadyScore >= 50 ? "text-warning" : "text-destructive"
                       )}>{customsReadyScore}%</div>
-                      <Badge variant="outline">Customs Ready Score</Badge>
+                      <Badge variant="outline">Compliance Readiness</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {customsReadyScore >= 80 
-                        ? "Documents are ready for customs clearance." 
+                        ? "Compliance posture is strong for customs clearance." 
                         : customsReadyScore >= 50 
-                        ? "Some issues need review before customs clearance."
-                        : "Critical issues must be resolved before customs clearance."}
+                        ? "Some compliance issues need review before clearance."
+                        : "Critical compliance issues must be resolved before clearance."}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
