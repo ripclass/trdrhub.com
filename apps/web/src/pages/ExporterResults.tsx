@@ -833,6 +833,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       failedReason: (target as any).failedReason,
       issuesCount: target.issuesCount,
       extractedFields: buildDrawerExtractedFields(target),
+      rawTextPreview: (target.extractedFields as any)?.raw_text_preview,
       ocrConfidence: (target.extractedFields as any)?._extraction_confidence,
       sourceFormat: (target.extractedFields as any)?._source_format,
       isElectronicBL: (target.extractedFields as any)?._is_electronic_bl,
@@ -2159,7 +2160,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
           <TabsContent value="documents" className="space-y-4">
             {documents.map((document) => {
-              const fieldEntries = Object.entries(document.extractedFields || {});
+              const extractedEntries = Object.entries(document.extractedFields || {});
+              const fieldEntries = extractedEntries.filter(
+                ([key]) => !key.startsWith("_") && key !== "raw_text_preview" && key !== "raw_text",
+              );
+              const rawTextPreview = (document.extractedFields as any)?.raw_text_preview as string | undefined;
               const hasFieldEntries = fieldEntries.length > 0;
               const discrepancyCount = document.issuesCount ?? 0;
               
@@ -2288,8 +2293,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       )
                     ) : (
-                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
-                        This document could not be fully parsed. Preview text is available for manual review.
+                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground space-y-3">
+                        <p>This document could not be fully parsed. Preview text is available for manual review.</p>
+                        {rawTextPreview && (
+                          <details className="text-xs text-muted-foreground">
+                            <summary className="cursor-pointer">View preview text</summary>
+                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3">
+                              {rawTextPreview}
+                            </pre>
+                          </details>
+                        )}
                       </div>
                     )}
                   </CardContent>

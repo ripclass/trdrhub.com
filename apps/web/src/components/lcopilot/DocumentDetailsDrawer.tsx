@@ -41,6 +41,7 @@ export interface DocumentForDrawer {
   failedReason?: string | null;
   issuesCount: number;
   extractedFields: Record<string, any>;
+  rawTextPreview?: string | null;
   ocrConfidence?: number;
   sourceFormat?: string;
   isElectronicBL?: boolean;
@@ -266,8 +267,13 @@ export function DocumentDetailsDrawer({
   if (!document) return null;
 
   const extractedFields = document.extractedFields || {};
+  const rawTextPreview =
+    document.rawTextPreview ??
+    (extractedFields as any)?.raw_text_preview ??
+    (extractedFields as any)?.rawTextPreview ??
+    null;
   const fieldEntries = Object.entries(extractedFields).filter(([key]) =>
-    shouldShowField(key)
+    shouldShowField(key) && key !== "raw_text_preview" && key !== "rawTextPreview"
   );
 
   // Group fields by category
@@ -451,14 +457,24 @@ export function DocumentDetailsDrawer({
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-6 pb-6">
             {fieldEntries.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-2">
-                  No structured fields extracted
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  This document may be a scanned image or unsupported format.
-                </p>
+              <div className="text-center py-8 space-y-4">
+                <div>
+                  <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-2">
+                    No structured fields extracted
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    This document may be a scanned image or unsupported format.
+                  </p>
+                </div>
+                {rawTextPreview && (
+                  <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-left">
+                    <p className="text-xs text-muted-foreground mb-2">Preview Text</p>
+                    <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-auto text-foreground">
+                      {rawTextPreview}
+                    </pre>
+                  </div>
+                )}
               </div>
             ) : (
               <>
