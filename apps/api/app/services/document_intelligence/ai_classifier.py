@@ -238,16 +238,17 @@ class AIDocumentClassifier:
         try:
             from app.services.llm_provider import LLMProviderFactory
             
+            provider = LLMProviderFactory.get_provider()
             truncated_text = text[:4000]
             prompt = AI_CLASSIFICATION_PROMPT.format(text=truncated_text)
-
-            output, _, _, _ = await LLMProviderFactory.generate_with_fallback(
+            
+            response = await provider.complete(
                 prompt=prompt,
                 max_tokens=500,
                 temperature=0.1,
             )
-
-            response_text = output or ""
+            
+            response_text = response.get("content", "") if isinstance(response, dict) else str(response)
             
             # Extract JSON
             json_start = response_text.find("{")
@@ -307,15 +308,16 @@ class AIDocumentClassifier:
         try:
             from app.services.llm_provider import LLMProviderFactory
             
+            provider = LLMProviderFactory.get_provider()
             prompt = LC_FLOW_PROMPT.format(text=text[:3000])
-
-            output, _, _, _ = await LLMProviderFactory.generate_with_fallback(
+            
+            response = await provider.complete(
                 prompt=prompt,
                 max_tokens=300,
                 temperature=0.1,
             )
-
-            response_text = output or ""
+            
+            response_text = response.get("content", "") if isinstance(response, dict) else str(response)
             
             json_start = response_text.find("{")
             json_end = response_text.rfind("}") + 1
