@@ -566,6 +566,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       lc_number: lcNumber,
     }),
     onSuccess: (data) => {
+      const hasManifest = Boolean(data?.manifest?.documents?.length);
+      if (!hasManifest) {
+        setManifestData(null);
+        toast({
+          title: "Generation Failed",
+          description: "Customs pack manifest was empty. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
       setManifestData(data.manifest);
       toast({
         title: "Customs Pack Generated",
@@ -1317,9 +1327,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   
   const handleDownloadCustomsPack = async () => {
     try {
+      let hasManifest = Boolean(manifestData?.documents?.length);
       // First generate if not already generated
-      if (!manifestData) {
-        await generateCustomsPackMutation.mutateAsync();
+      if (!hasManifest) {
+        const response = await generateCustomsPackMutation.mutateAsync();
+        hasManifest = Boolean(response?.manifest?.documents?.length);
+      }
+      if (!hasManifest) {
+        return;
       }
       // Then download
       await downloadCustomsPackMutation.mutateAsync();
