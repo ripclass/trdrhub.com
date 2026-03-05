@@ -1467,6 +1467,12 @@ async def validate_doc(
         request_user_type = _extract_request_user_type(payload)
         
         # Build unified issues list from v2 components
+        # Keep safe defaults so downstream aggregation never crashes even if an earlier
+        # stage errors and falls through to legacy/result shaping blocks.
+        db_rule_issues = []
+        db_provenance = None
+        db_rules_debug = {"enabled": False, "status": "not_started"}
+
         results = []  # Legacy results - empty
         failed_results = []
         
