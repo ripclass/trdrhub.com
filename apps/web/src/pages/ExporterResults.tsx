@@ -2005,17 +2005,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {discrepancyCount === 0 ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            Verified
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            {discrepancyCount === 1 ? 'Minor Issues' : `${discrepancyCount} Issues`}
-                          </span>
-                        )}
+                        <StatusBadge status={document.status}>
+                          {document.status === "success"
+                            ? "Verified"
+                            : document.status === "error"
+                            ? "With Errors"
+                            : "With Warnings"}
+                        </StatusBadge>
                         <Button 
                           variant="outline" 
                           size="sm"
