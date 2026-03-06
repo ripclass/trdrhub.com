@@ -215,10 +215,108 @@ def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
 
 # _filter_user_facing_fields moved to app.routers.validation.utilities
 
+
+def _count_populated_canonical_fields(fields: Optional[Dict[str, Any]]) -> int:
+    if not isinstance(fields, dict):
+        return 0
+    count = 0
+    for key, value in fields.items():
+        if not isinstance(key, str) or key.startswith("_"):
+            continue
+        if value in (None, "", [], {}):
+            continue
+        count += 1
+    return count
+
+
+def _resolve_doc_llm_trace(fields: Optional[Dict[str, Any]], extraction_method: Optional[str], has_two_stage: bool = False) -> Dict[str, Any]:
+    fields = fields or {}
+    provider = fields.get("_llm_provider") or fields.get("_ai_provider")
+    model = fields.get("_llm_model")
+    router_layer = fields.get("_llm_router_layer")
+    extractor_path = "ai_first" if extraction_method == "ai_first" else "fallback"
+    if has_two_stage and extraction_method == "ai_first":
+        extractor_path = "hybrid"
+    return {
+        "provider": provider,
+        "model": model,
+        "router_layer": router_layer,
+        "extractor_path": extractor_path,
+    }
+
+
+def _log_document_extraction_telemetry(
+    *,
+    doc_type: str,
+    file_name: str,
+    job_id: Optional[str],
+    ocr_text_len: int,
+    extractor_path: str,
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    router_layer: Optional[str],
+    ai_response_present: bool,
+    ai_parse_success: bool,
+    canonical_before_two_stage: int,
+    canonical_after_two_stage: int,
+    extraction_status: str,
+    downgrade_reason: Optional[str] = None,
+) -> None:
+    payload = {
+        "event": "validation_document_extraction",
+        "doc_type": doc_type,
+        "file_name": file_name,
+        "job_id": job_id,
+        "ocr_text_len": ocr_text_len,
+        "extractor_path": extractor_path,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "router_layer": router_layer,
+        "ai_response_present": ai_response_present,
+        "ai_parse_success": ai_parse_success,
+        "canonical_field_count_before_two_stage": canonical_before_two_stage,
+        "canonical_field_count_after_two_stage": canonical_after_two_stage,
+        "extraction_status": extraction_status,
+        "downgrade_reason": downgrade_reason,
+    }
+    logger.info("validate.extraction.telemetry %s", json.dumps(payload, default=str))
+
+
+def _apply_extraction_guard(doc_info: Dict[str, Any], extracted_text: str) -> None:
+    status_now = str(doc_info.get("extraction_status") or "unknown")
+    if status_now not in {"success", "partial"}:
+        return
+    ocr_len = len(extracted_text or "")
+    extracted_fields = doc_info.get("extracted_fields") or {}
+    populated = _count_populated_canonical_fields(extracted_fields)
+    if ocr_len >= 500 and populated == 0:
+        doc_info["extraction_status"] = "partial"
+        doc_info["downgrade_reason"] = "rich_ocr_text_but_no_parsed_fields"
+
+
+def _context_payload_for_doc_type(context: Dict[str, Any], document_type: str) -> Dict[str, Any]:
+    if document_type in ("letter_of_credit", "swift_message", "lc_application"):
+        return context.get("lc") or {}
+    if document_type in ("commercial_invoice", "proforma_invoice"):
+        return context.get("invoice") or {}
+    if document_type == "bill_of_lading":
+        return context.get("bill_of_lading") or {}
+    if document_type == "packing_list":
+        return context.get("packing_list") or {}
+    if document_type == "certificate_of_origin":
+        return context.get("certificate_of_origin") or {}
+    if document_type == "insurance_certificate":
+        return context.get("insurance_certificate") or {}
+    if document_type == "inspection_certificate":
+        return context.get("inspection_certificate") or {}
+    return {}
+
+
 def _apply_two_stage_validation(
     extracted_fields: Dict[str, Any],
     document_type: str,
     filename: str = "",
+    job_id: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Apply two-stage validation to extracted fields.
@@ -248,6 +346,20 @@ def _apply_two_stage_validation(
         if isinstance(contract_fields, dict):
             source_fields = contract_fields
 
+        canonical_before = _count_populated_canonical_fields(source_fields)
+        logger.info(
+            "validate.two_stage.entry %s",
+            json.dumps(
+                {
+                    "doc_type": document_type,
+                    "file_name": filename,
+                    "job_id": job_id,
+                    "canonical_field_count_before": canonical_before,
+                },
+                default=str,
+            ),
+        )
+
         # Convert to format expected by two-stage extractor.
         ai_extraction: Dict[str, Any] = {}
         for field_name, value in source_fields.items():
@@ -275,7 +387,28 @@ def _apply_two_stage_validation(
                 ai_extraction[field_name] = {"value": value, "confidence": 0.7}
         
         if not ai_extraction:
-            return extracted_fields, {"total": 0, "trusted": 0, "review": 0, "untrusted": 0}
+            summary = {
+                "total": 0,
+                "trusted": 0,
+                "review": 0,
+                "untrusted": 0,
+                "canonical_field_count_before": canonical_before,
+                "canonical_field_count_after": canonical_before,
+                "diagnostic_reason": "two_stage_skipped_no_fields",
+            }
+            logger.info(
+                "validate.two_stage.exit %s",
+                json.dumps(
+                    {
+                        "doc_type": document_type,
+                        "file_name": filename,
+                        "job_id": job_id,
+                        **summary,
+                    },
+                    default=str,
+                ),
+            )
+            return extracted_fields, summary
         
         # Run two-stage validation
         validated = extractor.process(ai_extraction, document_type)
@@ -308,6 +441,10 @@ def _apply_two_stage_validation(
         # Preserve canonical contract map when present (AI-first path).
         if isinstance(contract_fields, dict):
             validated_fields["extracted_fields"] = canonical_fields
+
+        canonical_after = _count_populated_canonical_fields(canonical_fields)
+        summary["canonical_field_count_before"] = canonical_before
+        summary["canonical_field_count_after"] = canonical_after
         
         # Add validation metadata to the fields dict
         validated_fields["_two_stage_validation"] = {
@@ -322,6 +459,18 @@ def _apply_two_stage_validation(
             summary.get("trusted", 0),
             summary.get("review", 0),
             summary.get("untrusted", 0),
+        )
+        logger.info(
+            "validate.two_stage.exit %s",
+            json.dumps(
+                {
+                    "doc_type": document_type,
+                    "file_name": filename,
+                    "job_id": job_id,
+                    **summary,
+                },
+                default=str,
+            ),
         )
         
         return validated_fields, summary
@@ -544,7 +693,11 @@ async def validate_doc(
         
         # Extract structured data from uploaded files (respecting any document tags)
         document_tags = payload.get("document_tags")
-        extracted_context = await _build_document_context(files_list, document_tags)
+        extracted_context = await _build_document_context(
+            files_list,
+            document_tags,
+            job_id=str(payload.get("job_id")) if payload.get("job_id") else None,
+        )
         checkpoint("ocr_extraction_complete")
         if extracted_context:
             logger.info(
@@ -2548,7 +2701,8 @@ def _build_document_summaries(
 
 async def _build_document_context(
     files_list: List[Any],
-    document_tags: Optional[Dict[str, Any]] = None
+    document_tags: Optional[Dict[str, Any]] = None,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Attempt to extract basic structured fields from uploaded documents.
@@ -2754,7 +2908,7 @@ async def _build_document_context(
                         if lc_struct and extraction_status != "failed":
                             # AI-first already includes validation, but apply two-stage for normalization
                             validated_lc, validation_summary = _apply_two_stage_validation(
-                                lc_struct, "lc", filename
+                                lc_struct, "lc", filename, job_id=job_id
                             )
                             
                             lc_payload.update(validated_lc)
@@ -2799,7 +2953,7 @@ async def _build_document_context(
                             if lc_context:
                                 # Apply two-stage validation to fallback extraction
                                 validated_lc, validation_summary = _apply_two_stage_validation(
-                                    lc_context, "lc", filename
+                                    lc_context, "lc", filename, job_id=job_id
                                 )
                                 
                                 lc_payload.update(validated_lc)
@@ -2836,7 +2990,7 @@ async def _build_document_context(
                     if invoice_struct and extraction_status != "failed":
                         # Apply two-stage validation for normalization
                         validated_invoice, validation_summary = _apply_two_stage_validation(
-                            invoice_struct, "invoice", filename
+                            invoice_struct, "invoice", filename, job_id=job_id
                         )
                         
                         if "invoice" not in context:
@@ -2870,7 +3024,7 @@ async def _build_document_context(
                     invoice_context = _fields_to_flat_context(invoice_fields)
                     if invoice_context:
                         validated_invoice, validation_summary = _apply_two_stage_validation(
-                            invoice_context, "invoice", filename
+                            invoice_context, "invoice", filename, job_id=job_id
                         )
                         if "invoice" not in context:
                             context["invoice"] = {}
@@ -2904,7 +3058,7 @@ async def _build_document_context(
                     if bl_struct and extraction_status != "failed":
                         # Apply two-stage validation for normalization
                         validated_bl, validation_summary = _apply_two_stage_validation(
-                            bl_struct, "bl", filename
+                            bl_struct, "bl", filename, job_id=job_id
                         )
                         
                         if "bill_of_lading" not in context:
@@ -2938,7 +3092,7 @@ async def _build_document_context(
                     bl_context = _fields_to_flat_context(bl_fields)
                     if bl_context:
                         validated_bl, validation_summary = _apply_two_stage_validation(
-                            bl_context, "bl", filename
+                            bl_context, "bl", filename, job_id=job_id
                         )
                         if "bill_of_lading" not in context:
                             context["bill_of_lading"] = {}
@@ -2971,7 +3125,7 @@ async def _build_document_context(
                     
                     if packing_struct and extraction_status != "failed":
                         validated_packing, validation_summary = _apply_two_stage_validation(
-                            packing_struct, "packing_list", filename
+                            packing_struct, "packing_list", filename, job_id=job_id
                         )
                         
                         pkg_ctx = context.setdefault("packing_list", {})
@@ -3001,7 +3155,7 @@ async def _build_document_context(
                     packing_context = _fields_to_flat_context(packing_fields)
                     if packing_context:
                         validated_packing, validation_summary = _apply_two_stage_validation(
-                            packing_context, "packing_list", filename
+                            packing_context, "packing_list", filename, job_id=job_id
                         )
                         pkg_ctx = context.setdefault("packing_list", {})
                         pkg_ctx["raw_text"] = extracted_text
@@ -3033,7 +3187,7 @@ async def _build_document_context(
                     
                     if coo_struct and extraction_status != "failed":
                         validated_coo, validation_summary = _apply_two_stage_validation(
-                            coo_struct, "certificate_of_origin", filename
+                            coo_struct, "certificate_of_origin", filename, job_id=job_id
                         )
 
                         coo_completeness = _assess_coo_parse_completeness(validated_coo)
@@ -3079,7 +3233,7 @@ async def _build_document_context(
                     coo_context = _fields_to_flat_context(coo_fields)
                     if coo_context:
                         validated_coo, validation_summary = _apply_two_stage_validation(
-                            coo_context, "certificate_of_origin", filename
+                            coo_context, "certificate_of_origin", filename, job_id=job_id
                         )
                         coo_completeness = _assess_coo_parse_completeness(validated_coo)
                         parse_complete = bool(coo_completeness.get("parse_complete"))
@@ -3120,7 +3274,7 @@ async def _build_document_context(
                     
                     if insurance_struct and extraction_status != "failed":
                         validated_insurance, validation_summary = _apply_two_stage_validation(
-                            insurance_struct, "insurance", filename
+                            insurance_struct, "insurance", filename, job_id=job_id
                         )
                         
                         insurance_ctx = context.setdefault("insurance_certificate", {})
@@ -3150,7 +3304,7 @@ async def _build_document_context(
                     insurance_context = _fields_to_flat_context(insurance_fields)
                     if insurance_context:
                         validated_insurance, validation_summary = _apply_two_stage_validation(
-                            insurance_context, "insurance", filename
+                            insurance_context, "insurance", filename, job_id=job_id
                         )
                         insurance_ctx = context.setdefault("insurance_certificate", {})
                         insurance_ctx["raw_text"] = extracted_text
@@ -3182,7 +3336,7 @@ async def _build_document_context(
                     
                     if inspection_struct and extraction_status != "failed":
                         validated_inspection, validation_summary = _apply_two_stage_validation(
-                            inspection_struct, "inspection", filename
+                            inspection_struct, "inspection", filename, job_id=job_id
                         )
                         
                         inspection_ctx = context.setdefault("inspection_certificate", {})
@@ -3212,7 +3366,7 @@ async def _build_document_context(
                     inspection_context = _fields_to_flat_context(inspection_fields)
                     if inspection_context:
                         validated_inspection, validation_summary = _apply_two_stage_validation(
-                            inspection_context, "inspection", filename
+                            inspection_context, "inspection", filename, job_id=job_id
                         )
                         inspection_ctx = context.setdefault("inspection_certificate", {})
                         inspection_ctx["raw_text"] = extracted_text
@@ -3247,6 +3401,38 @@ async def _build_document_context(
             doc_info["raw_text_preview"] = extracted_text[:500]
             if doc_info.get("extraction_status") == "empty":
                 doc_info["extraction_status"] = "text_only"
+
+        _apply_extraction_guard(doc_info, extracted_text)
+        context_payload = _context_payload_for_doc_type(context, document_type)
+        summary = doc_info.get("validation_summary") or {}
+        llm_trace = _resolve_doc_llm_trace(
+            context_payload if isinstance(context_payload, dict) else {},
+            doc_info.get("extraction_method"),
+            has_two_stage=bool(summary),
+        )
+        canonical_before = int(summary.get("canonical_field_count_before") or _count_populated_canonical_fields(doc_info.get("extracted_fields") or {}))
+        canonical_after = int(summary.get("canonical_field_count_after") or _count_populated_canonical_fields(doc_info.get("extracted_fields") or {}))
+        extraction_status_now = str(doc_info.get("extraction_status") or "unknown")
+        downgrade_reason = doc_info.get("downgrade_reason")
+        if not downgrade_reason and extraction_status_now in {"partial", "error", "failed"}:
+            downgrade_reason = doc_info.get("extraction_error") or doc_info.get("ai_first_status") or "downgraded"
+
+        _log_document_extraction_telemetry(
+            doc_type=document_type,
+            file_name=filename,
+            job_id=job_id,
+            ocr_text_len=len(extracted_text or ""),
+            extractor_path=llm_trace.get("extractor_path") or "fallback",
+            llm_provider=llm_trace.get("provider"),
+            llm_model=llm_trace.get("model"),
+            router_layer=llm_trace.get("router_layer"),
+            ai_response_present=canonical_before > 0 or bool(doc_info.get("ai_first_status")),
+            ai_parse_success=canonical_before > 0,
+            canonical_before_two_stage=canonical_before,
+            canonical_after_two_stage=canonical_after,
+            extraction_status=extraction_status_now,
+            downgrade_reason=downgrade_reason,
+        )
 
         document_details.append(doc_info)
         entry = documents_presence.setdefault(
@@ -4944,3 +5130,4 @@ async def get_validation_result_v2(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to transform results: {str(e)}"
         )
+

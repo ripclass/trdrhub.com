@@ -30,12 +30,36 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_llm_trace(provider: Any, provider_used: str, router_layer: str = "L1") -> Dict[str, Any]:
+    model = None
+    if provider is not None:
+        model = getattr(provider, "model", None)
+    if not model:
+        model = (
+            os.getenv(f"AI_ROUTER_{router_layer}_PRIMARY_MODEL")
+            or os.getenv("OPENROUTER_MODEL_VERSION")
+            or os.getenv("LLM_PRIMARY_MODEL")
+            or os.getenv("LLM_MODEL_VERSION")
+        )
+    return {
+        "provider": provider_used or "unknown",
+        "model": model or "unknown",
+        "router_layer": router_layer,
+    }
+
+
+def _log_ai_first_event(event: str, **payload: Any) -> None:
+    safe_payload = {k: v for k, v in payload.items() if v is not None}
+    logger.info("ai_first.telemetry %s", json.dumps({"event": event, **safe_payload}, default=str))
 
 
 class FieldStatus(str, Enum):
@@ -280,6 +304,14 @@ class AIFirstExtractor:
                 raw_text,
                 temperature=0.1,  # More deterministic
             )
+            llm_trace = _resolve_llm_trace(None, provider, router_layer="L1")
+            _log_ai_first_event(
+                "lc_model_call",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_response_present=bool(ai_result),
+            )
             
             if not ai_result:
                 return None, "none"
@@ -295,6 +327,19 @@ class AIFirstExtractor:
                         "confidence": confidence,
                     }
             
+            ai_result["_llm_provider"] = llm_trace["provider"]
+            ai_result["_llm_model"] = llm_trace["model"]
+            ai_result["_llm_router_layer"] = llm_trace["router_layer"]
+
+            _log_ai_first_event(
+                "lc_parse_output",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_parse_success=True,
+                parsed_field_count=sum(1 for k, v in ai_result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
+            )
+
             logger.info(
                 "AI extraction complete: provider=%s confidence=%.2f fields=%d",
                 provider, confidence, len(ai_result)
@@ -806,12 +851,21 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
 
+            router_layer = "L1"
             response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
                 prompt=prompt,
                 system_prompt=INVOICE_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
-                router_layer="L1",
+                router_layer=router_layer,
+            )
+            llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
+            _log_ai_first_event(
+                "invoice_model_call",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_response_present=bool(response),
             )
             
             if not response:
@@ -822,10 +876,28 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
             # Parse JSON response with single repair retry
             result = await _parse_llm_json_with_repair(provider, response)
             if not result:
+                _log_ai_first_event(
+                    "invoice_parse_output",
+                    provider=llm_trace["provider"],
+                    model=llm_trace["model"],
+                    router_layer=llm_trace["router_layer"],
+                    ai_parse_success=False,
+                )
                 logger.warning("Failed to parse/repair AI invoice response")
                 return None, "parse_error"
 
             result = _wrap_ai_result_with_default_confidence(result)
+            result["_llm_provider"] = llm_trace["provider"]
+            result["_llm_model"] = llm_trace["model"]
+            result["_llm_router_layer"] = llm_trace["router_layer"]
+            _log_ai_first_event(
+                "invoice_parse_output",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_parse_success=True,
+                parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
+            )
 
             return result, provider_used
 
@@ -1010,12 +1082,21 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
 
+            router_layer = "L1"
             response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
                 prompt=prompt,
                 system_prompt=BL_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
-                router_layer="L1",
+                router_layer=router_layer,
+            )
+            llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
+            _log_ai_first_event(
+                "bl_model_call",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_response_present=bool(response),
             )
             
             if not response:
@@ -1026,10 +1107,28 @@ class BLAIFirstExtractor(AIFirstExtractor):
             # Parse JSON response with single repair retry
             result = await _parse_llm_json_with_repair(provider, response)
             if not result:
+                _log_ai_first_event(
+                    "bl_parse_output",
+                    provider=llm_trace["provider"],
+                    model=llm_trace["model"],
+                    router_layer=llm_trace["router_layer"],
+                    ai_parse_success=False,
+                )
                 logger.warning("Failed to parse/repair AI B/L response")
                 return None, "parse_error"
 
             result = _wrap_ai_result_with_default_confidence(result)
+            result["_llm_provider"] = llm_trace["provider"]
+            result["_llm_model"] = llm_trace["model"]
+            result["_llm_router_layer"] = llm_trace["router_layer"]
+            _log_ai_first_event(
+                "bl_parse_output",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_parse_success=True,
+                parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
+            )
 
             return result, provider_used
 
@@ -1813,12 +1912,21 @@ async def _run_ai_extraction_generic(
 
         prompt = prompt_template.format(document_text=raw_text[:12000])
 
+        router_layer = "L1"
         response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.1,
             max_tokens=2000,
-            router_layer="L1",
+            router_layer=router_layer,
+        )
+        llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
+        _log_ai_first_event(
+            "generic_model_call",
+            provider=llm_trace["provider"],
+            model=llm_trace["model"],
+            router_layer=llm_trace["router_layer"],
+            ai_response_present=bool(response),
         )
         
         if not response:
@@ -1828,10 +1936,28 @@ async def _run_ai_extraction_generic(
         
         result = await _parse_llm_json_with_repair(provider, response)
         if not result:
+            _log_ai_first_event(
+                "generic_parse_output",
+                provider=llm_trace["provider"],
+                model=llm_trace["model"],
+                router_layer=llm_trace["router_layer"],
+                ai_parse_success=False,
+            )
             logger.warning("Failed to parse/repair AI response")
             return None, "parse_error"
 
         result = _wrap_ai_result_with_default_confidence(result)
+        result["_llm_provider"] = llm_trace["provider"]
+        result["_llm_model"] = llm_trace["model"]
+        result["_llm_router_layer"] = llm_trace["router_layer"]
+        _log_ai_first_event(
+            "generic_parse_output",
+            provider=llm_trace["provider"],
+            model=llm_trace["model"],
+            router_layer=llm_trace["router_layer"],
+            ai_parse_success=True,
+            parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
+        )
 
         return result, provider_used
 
