@@ -1665,7 +1665,7 @@ class CrossDocValidator:
         # Extract BIN (Business Identification Number)
         # Patterns: "BIN: 000334455-0103", "EXPORTER BIN NO. 000334455-0103", "B.I.N. # 000334455-0103"
         bin_patterns = [
-            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
             r"(?:BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         ]
         for pattern in bin_patterns:
@@ -1677,9 +1677,8 @@ class CrossDocValidator:
         # Extract TIN (Tax Identification Number)
         # Patterns: "TIN: 545342112233", "EXPORTER TIN NO. 545342112233", "TAX ID# 545342112233"
         tin_patterns = [
-            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*REG(?:ISTRATION)?|TAX\s*REG\.?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
             r"(?:TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
-            r"E-?TIN\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
         ]
         for pattern in tin_patterns:
             match = re.search(pattern, conditions_text)
@@ -1690,7 +1689,10 @@ class CrossDocValidator:
         # Check if requirements apply to ALL documents
         all_docs_patterns = [
             r"ALL\s+DOCUMENTS\s+MUST\s+SHOW",
+            r"ALL\s+DOCUMENTS\s+SHOULD\s+SHOW",
             r"MUST\s+APPEAR\s+ON\s+ALL\s+DOCUMENTS",
+            r"MUST\s+BE\s+SHOWN\s+ON\s+ALL\s+DOCUMENTS",
+            r"SHOULD\s+APPEAR\s+ON\s+ALL\s+DOCUMENTS",
             r"ON\s+ALL\s+DOCUMENTS",
         ]
         all_docs_required = any(re.search(p, conditions_text) for p in all_docs_patterns)

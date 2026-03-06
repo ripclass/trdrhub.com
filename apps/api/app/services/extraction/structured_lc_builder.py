@@ -40,13 +40,33 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
 def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for idx, doc in enumerate(session_documents or []):
+        extracted_fields = doc.get("extracted_fields") or doc.get("extractedFields") or {}
+        extracted_fields_alt = doc.get("extractedFields") or doc.get("extracted_fields") or extracted_fields
+        discrepancy_count = (
+            doc.get("discrepancyCount")
+            or doc.get("issues_count")
+            or doc.get("issuesCount")
+            or doc.get("discrepancy_count")
+        )
+        issues_count = (
+            doc.get("issues_count")
+            or doc.get("issuesCount")
+            or doc.get("discrepancyCount")
+            or doc.get("discrepancy_count")
+        )
+        ocr_confidence = doc.get("ocrConfidence") or doc.get("ocr_confidence")
+
         normalized.append(
             {
                 "document_id": doc.get("document_id") or doc.get("id") or str(uuid4()),
                 "document_type": doc.get("documentType") or doc.get("type") or "supporting_document",
                 "filename": doc.get("name") or doc.get("filename") or doc.get("original_filename") or f"Document {idx + 1}",
                 "extraction_status": doc.get("extractionStatus") or doc.get("extraction_status") or "unknown",
-                "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+                "extracted_fields": extracted_fields if extracted_fields is not None else {},
+                "extractedFields": extracted_fields_alt if extracted_fields_alt is not None else {},
+                "discrepancyCount": discrepancy_count,
+                "issues_count": issues_count,
+                "ocrConfidence": ocr_confidence,
             }
         )
     return normalized

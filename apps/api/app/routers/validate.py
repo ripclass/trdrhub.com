@@ -2050,8 +2050,29 @@ async def validate_doc(
             structured_result["document_extraction_v1"] = _build_document_extraction_v1(
                 document_summaries
             )
+            issue_provenance_input: List[Dict[str, Any]] = []
+            if isinstance(deduplicated_results, list) and deduplicated_results:
+                issue_provenance_input.extend(deduplicated_results)
+
+            existing_keys = {
+                str(item.get("id") or item.get("rule") or item.get("rule_id"))
+                for item in issue_provenance_input
+                if isinstance(item, dict)
+            }
+
+            for issue in structured_result.get("issues") or []:
+                if not isinstance(issue, dict):
+                    continue
+                key = str(issue.get("id") or issue.get("rule") or issue.get("rule_id"))
+                if key and key in existing_keys:
+                    continue
+                issue_provenance_input.append(issue)
+
+            if not issue_provenance_input:
+                issue_provenance_input = structured_result.get("issues") or []
+
             structured_result["issue_provenance_v1"] = _build_issue_provenance_v1(
-                structured_result.get("issues") or []
+                issue_provenance_input
             )
 
             # Backfill legacy processing_summary with canonical metrics (backward compatible)
@@ -2708,6 +2729,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_invoice.get("_field_details") or invoice_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             elif document_type == "bill_of_lading":
                 # Use AI-FIRST extraction for Bill of Lading
                 try:
@@ -2765,6 +2789,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_bl.get("_field_details") or bl_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             elif document_type == "packing_list":
                 # Use AI-FIRST extraction for packing list
                 try:
@@ -2816,6 +2843,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_packing.get("_field_details") or packing_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             elif document_type == "certificate_of_origin":
                 # Use AI-FIRST extraction for certificate of origin
                 try:
@@ -2867,6 +2897,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_coo.get("_field_details") or coo_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             elif document_type == "insurance_certificate":
                 # Use AI-FIRST extraction for insurance certificate
                 try:
@@ -2918,6 +2951,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_insurance.get("_field_details") or insurance_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             elif document_type == "inspection_certificate":
                 # Use AI-FIRST extraction for inspection certificate
                 try:
@@ -2969,6 +3005,9 @@ async def _build_document_context(
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
+                        field_details = validated_inspection.get("_field_details") or inspection_context.get("_field_details")
+                        if field_details:
+                            doc_info["field_details"] = field_details
             else:
                 # For other document types, retain raw text for downstream use
                 doc_info["raw_text_preview"] = extracted_text[:500]
@@ -4249,11 +4288,25 @@ def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
 def _fields_to_flat_context(fields: List[Any]) -> Dict[str, Any]:
     """Convert generic extracted fields to a flat dictionary."""
     context: Dict[str, Any] = {}
+    field_details: Dict[str, Dict[str, Any]] = {}
     for field in fields:
         value = (field.value or "").strip()
-        if not value:
-            continue
-        context[field.field_name] = value
+        if value:
+            context[field.field_name] = value
+        details: Dict[str, Any] = {}
+        reason = getattr(field, "reason", None)
+        if reason:
+            details["reason"] = reason
+        confidence = getattr(field, "confidence", None)
+        if confidence is not None:
+            details["confidence"] = confidence
+        raw_text = getattr(field, "raw_text", None)
+        if raw_text:
+            details["raw_text"] = raw_text
+        if details:
+            field_details[field.field_name] = details
+    if field_details:
+        context["_field_details"] = field_details
     return context
 
 

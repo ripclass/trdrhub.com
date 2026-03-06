@@ -296,13 +296,33 @@ def build_issue_provenance_v1(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not source:
             source = "unknown"
 
-        document_ids = issue.get("document_ids") or issue.get("document_id") or []
+        document_ids = (
+            issue.get("document_ids")
+            or issue.get("documentIds")
+            or issue.get("document_id")
+            or issue.get("documentId")
+            or []
+        )
         if not isinstance(document_ids, list):
             document_ids = [document_ids]
-        document_types = issue.get("document_types") or issue.get("document_type") or []
+        document_types = (
+            issue.get("document_types")
+            or issue.get("documentTypes")
+            or issue.get("document_type")
+            or issue.get("documentType")
+            or []
+        )
         if not isinstance(document_types, list):
             document_types = [document_types]
-        document_names = issue.get("documents") or issue.get("document_names") or []
+        document_names = (
+            issue.get("documents")
+            or issue.get("document_names")
+            or issue.get("documentNames")
+            or issue.get("document")
+            or issue.get("document_name")
+            or issue.get("documentName")
+            or []
+        )
         if not isinstance(document_names, list):
             document_names = [document_names]
 

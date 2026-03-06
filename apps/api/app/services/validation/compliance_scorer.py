@@ -121,9 +121,7 @@ class ComplianceScorer:
     """
     
     # Severity caps: Maximum compliance score with each issue type
-    # Changed: Critical now caps at 25% instead of 0% for better UX
-    # This shows "seriously non-compliant but some docs are valid"
-    CAP_CRITICAL = 25.0      # Any critical issue → max 25%
+    CAP_CRITICAL = 0.0       # Any critical issue → 0% compliance
     CAP_MAJOR = 55.0         # Any major issue → max 55%
     CAP_MINOR = 85.0         # Any minor issue → max 85%
     CAP_INFO = 100.0         # Info doesn't cap

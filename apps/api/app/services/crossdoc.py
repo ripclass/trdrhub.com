@@ -282,6 +282,8 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
         "severity": severity,
         "documentName": document_label,
         "documentType": discrepancy.get("document_type"),
+        "documentIds": discrepancy.get("document_ids") or discrepancy.get("documentIds"),
+        "documentTypes": discrepancy.get("document_types") or discrepancy.get("documentTypes"),
         "expected": expected_text,
         "actual": actual_text,
         "suggestion": suggestion,

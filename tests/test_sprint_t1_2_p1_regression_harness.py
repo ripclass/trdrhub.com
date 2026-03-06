@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.validation.ai_validator import validate_bl_fields, validate_packing_list
 from app.services.validation.crossdoc_validator import CrossDocValidator
+from app.routers.validation.response_shaping import build_issue_provenance_v1
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -174,6 +175,56 @@ def test_issue_cards_present_in_structured_result_when_failures_exist():
     assert all(issue.get("documents") for issue in issues)
 
 
+def test_documents_structured_preserves_discrepancy_and_ocr_fields():
+    fixture = {
+        "session_documents": [
+            {
+                "id": "doc-1",
+                "document_type": "commercial_invoice",
+                "filename": "Invoice.pdf",
+                "extraction_status": "success",
+                "extracted_fields": {"amount": "1000"},
+                "extractedFields": {"amount": "1000", "currency": "USD"},
+                "discrepancyCount": 2,
+                "issues_count": 2,
+                "ocrConfidence": 0.91,
+            },
+            {
+                "id": "doc-2",
+                "documentType": "bill_of_lading",
+                "name": "BL.pdf",
+                "extractionStatus": "partial",
+                "extractedFields": {"bl_no": "BL123"},
+                "issuesCount": 1,
+                "ocr_confidence": 0.75,
+            },
+        ],
+        "extractor_outputs": {
+            "mt700": {"blocks": {}, "raw_text": None, "version": "mt700_v1"},
+            "issues": [],
+        },
+    }
+    builder = _load_module_from_path("structured_builder_docs", STRUCTURED_BUILDER_PATH)
+
+    structured = builder.build_unified_structured_result(
+        session_documents=fixture["session_documents"],
+        extractor_outputs=fixture["extractor_outputs"],
+        legacy_payload=None,
+    )["structured_result"]
+
+    docs = structured["documents_structured"]
+    assert docs[0]["discrepancyCount"] == 2
+    assert docs[0]["issues_count"] == 2
+    assert docs[0]["ocrConfidence"] == 0.91
+    assert docs[0]["extracted_fields"]["amount"] == "1000"
+    assert docs[0]["extractedFields"]["currency"] == "USD"
+
+    assert docs[1]["issues_count"] == 1
+    assert docs[1]["ocrConfidence"] == 0.75
+    assert docs[1]["extracted_fields"]["bl_no"] == "BL123"
+    assert docs[1]["extractedFields"]["bl_no"] == "BL123"
+
+
 def test_lc_type_override_handling_and_source_markers():
     fixture = _load_fixture("lc_override_source_markers.json")
 
@@ -219,6 +270,33 @@ def test_document_composition_analytics_presence_and_consistency_markers():
     )
 
 
+def test_issue_provenance_uses_raw_issue_source_and_keeps_doc_refs():
+    source = VALIDATE_PATH.read_text(encoding="utf-8")
+    assert "issue_provenance_input" in source
+    assert "deduplicated_results" in source
+
+    provenance = build_issue_provenance_v1(
+        [
+            {
+                "rule": "CROSSDOC-1",
+                "severity": "major",
+                "document_ids": ["doc-1"],
+                "document_types": ["commercial_invoice"],
+                "documents": ["Invoice.pdf"],
+            },
+            {
+                "id": "card-1",
+                "severity": "minor",
+                "documentName": "Bill of Lading",
+            },
+        ]
+    )
+
+    assert provenance["total_issues"] == 2
+    assert provenance["issues"][0]["document_ids"] == ["doc-1"]
+    assert provenance["issues"][1]["document_names"] == ["Bill of Lading"]
+
+
 def test_bl_alias_fields_match_required_must_show():
     fixture = _load_fixture("phase_b1_alias_extraction.json")
 
@@ -230,12 +308,27 @@ def test_bl_alias_fields_match_required_must_show():
     assert issues == []
 
 
-def test_packing_list_table_text_counts_as_size_breakdown():
-    fixture = _load_fixture("phase_b1_alias_extraction.json")
+def test_bl_raw_text_fallback_recovers_required_fields():
+    bl_data = {
+        "raw_text": "BILL OF LADING\nVSL/VOY: EVER GLORY 123E\nGROSS WEIGHT: 20,400 KGS\nNET WT 18,950 KGS",
+    }
 
-    issues = validate_packing_list(
-        lc_text=fixture["lc_text"],
-        packing_list_data=fixture["packing_list"],
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data=bl_data,
+    )
+
+    assert issues == []
+
+
+def test_bl_raw_text_fallback_recovers_gross_net_combined_line():
+    bl_data = {
+        "raw_text": "BILL OF LADING\nVESSEL/VOY: OCEAN STAR / 119E\nGROSS/NET WEIGHT: 20,400 / 18,950 KGS",
+    }
+
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data=bl_data,
     )
 
     assert issues == []
@@ -254,12 +347,76 @@ def test_bl_alias_variants_cover_vessel_voy_and_weight_shortcuts():
     assert issues == []
 
 
+def test_bl_alias_variants_cover_vessel_voyage_and_gross_net_combo():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "vessel/voyage": "CALISTA/991E",
+            "gross/net_weight": "1200/1100 KGS",
+        },
+    )
+
+    assert issues == []
+
+
+def test_fields_to_flat_context_preserves_reason_metadata():
+    funcs = _load_validate_functions(["_fields_to_flat_context"])
+    to_context = funcs["_fields_to_flat_context"]
+
+    fields = [
+        SimpleNamespace(
+            field_name="voyage_number",
+            value=None,
+            reason="missing_in_source",
+            confidence=0.4,
+            raw_text=None,
+        ),
+        SimpleNamespace(
+            field_name="gross_weight",
+            value="20,400 KGS",
+            reason="parser_failed",
+            confidence=0.6,
+            raw_text="GROSS WEIGHT: 20,400 KGS",
+        ),
+    ]
+
+    context = to_context(fields)
+
+    assert context["gross_weight"] == "20,400 KGS"
+    assert context["_field_details"]["voyage_number"]["reason"] == "missing_in_source"
+    assert context["_field_details"]["gross_weight"]["reason"] == "parser_failed"
+    assert "confidence" in context["_field_details"]["gross_weight"]
+
+
+def test_packing_list_table_text_counts_as_size_breakdown():
+    fixture = _load_fixture("phase_b1_alias_extraction.json")
+
+    issues = validate_packing_list(
+        lc_text=fixture["lc_text"],
+        packing_list_data=fixture["packing_list"],
+    )
+
+    assert issues == []
+
+
 def test_packing_list_carton_size_counts_as_size_info():
     lc_text = "PACKING LIST MUST SHOW SIZE BREAKDOWN PER LC CLAUSE 46A."
     issues = validate_packing_list(
         lc_text=lc_text,
         packing_list_data={
             "raw_text": "PACKING LIST\nCARTON SIZE: 50 X 40 X 30 CM",
+        },
+    )
+
+    assert issues == []
+
+
+def test_packing_list_prepack_ratio_pack_counts_as_size_info():
+    lc_text = "PACKING LIST MUST SHOW SIZE BREAKDOWN PER LC CLAUSE 46A."
+    issues = validate_packing_list(
+        lc_text=lc_text,
+        packing_list_data={
+            "raw_text": "PACKING LIST\nPRE-PACK: S-10 M-20 L-30\nRATIO PACK 1:2:3",
         },
     )
 
@@ -292,6 +449,40 @@ def test_47a_bin_tin_accepts_dot_variants_and_tax_id_labels():
     )
 
     assert requirements["bin_number"] == "998877-0101"
+    assert requirements["tin_number"] == "556677889900"
+    assert requirements["all_docs_require_bin"] is True
+    assert requirements["all_docs_require_tin"] is True
+
+
+def test_47a_bin_tin_accepts_vat_tax_reg_taxpayer_etin_labels():
+    validator = CrossDocValidator()
+    requirements = validator._parse_47a_requirements(
+        {
+            "additional_conditions": (
+                "VAT REG NO. 445566-0102 MUST APPEAR ON ALL DOCUMENTS. "
+                "TAX REG NO. 9988776655 MUST APPEAR ON ALL DOCUMENTS."
+            )
+        }
+    )
+
+    assert requirements["bin_number"] == "445566-0102"
+    assert requirements["tin_number"] == "9988776655"
+    assert requirements["all_docs_require_bin"] is True
+    assert requirements["all_docs_require_tin"] is True
+
+
+def test_47a_bin_tin_accepts_vat_no_taxpayer_id_and_etin_labels():
+    validator = CrossDocValidator()
+    requirements = validator._parse_47a_requirements(
+        {
+            "additional_conditions": (
+                "VAT NO. 112233-0099 MUST APPEAR ON ALL DOCUMENTS. "
+                "TAXPAYER ID NO. 556677889900 / ETIN 556677889900 MUST APPEAR ON ALL DOCUMENTS."
+            )
+        }
+    )
+
+    assert requirements["bin_number"] == "112233-0099"
     assert requirements["tin_number"] == "556677889900"
     assert requirements["all_docs_require_bin"] is True
     assert requirements["all_docs_require_tin"] is True

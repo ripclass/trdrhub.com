@@ -236,6 +236,17 @@ def validate_bl_fields(
         return []
     
     issues = []
+
+    def _find_raw_text_value(raw_text: str, patterns: List[str]) -> Optional[str]:
+        if not raw_text:
+            return None
+        for pattern in patterns:
+            match = re.search(pattern, raw_text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                if match.lastindex:
+                    return match.group(match.lastindex).strip()
+                return match.group(0).strip()
+        return None
     
     # Normalize B/L data keys to lowercase
     bl_lower = {}
@@ -244,6 +255,7 @@ def validate_bl_fields(
             bl_lower[k.lower()] = v
     
     logger.info(f"B/L extracted fields: {list(bl_lower.keys())}")
+    raw_text = str(bl_data.get("raw_text") or "")
     
     # Field mappings - what keys to check for each requirement
     field_info = {
@@ -257,12 +269,23 @@ def validate_bl_fields(
                 "vessel_voy",
                 "vessel_voyage",
                 "vessel_voyage_no",
+                "vessel_voyage_number",
+                "vessel_voyage_ref",
                 "vessel_voy_no",
                 "vsl_voy",
                 "vsl_voyage",
                 "vsl_voy_no",
+                "vsl_voyage_no",
+                "vsl_voyage_number",
                 "vessel/voy",
                 "vsl/voy",
+                "vessel/voyage",
+                "vsl/voyage",
+                "vessel&voyage",
+                "vessel_and_voyage",
+            ],
+            "raw_patterns": [
+                r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#)?|VOY\.?|VSL/VOY|VSL\s*VOY|VESSEL\s*/\s*VOY)\s*[:\-]?\s*([A-Z0-9\-/]+)",
             ],
             "display": "Voyage Number",
         },
@@ -271,14 +294,25 @@ def validate_bl_fields(
                 "gross_weight",
                 "gross_wt",
                 "gross_wgt",
+                "grosswt",
+                "grosswgt",
                 "gw",
                 "g.w.",
                 "g.w",
                 "g_w",
                 "g_wt",
                 "g_wgt",
+                "gross_weight_total",
                 "total_gross_weight",
+                "gross_net_weight",
+                "gross/net_weight",
+                "gross/net",
+                "gross_net",
                 "gross",
+            ],
+            "raw_patterns": [
+                r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?",
+                r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G/W|GW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
             ],
             "display": "Gross Weight",
         },
@@ -287,14 +321,25 @@ def validate_bl_fields(
                 "net_weight",
                 "net_wt",
                 "net_wgt",
+                "netwt",
+                "netwgt",
                 "nw",
                 "n.w.",
                 "n.w",
                 "n_w",
                 "n_wt",
                 "n_wgt",
+                "net_weight_total",
                 "total_net_weight",
+                "gross_net_weight",
+                "gross/net_weight",
+                "gross/net",
+                "gross_net",
                 "net",
+            ],
+            "raw_patterns": [
+                r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?\s*/\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
+                r"(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N/W|NW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
             ],
             "display": "Net Weight",
         },
@@ -308,7 +353,7 @@ def validate_bl_fields(
             continue
         checked_fields.add(req_field)
         
-        info = field_info.get(req_field, {"keys": [req_field], "display": req_field.replace("_", " ").title()})
+        info = field_info.get(req_field, {"keys": [req_field], "display": req_field.replace("_", " ").title(), "raw_patterns": []})
         
         # Look for the field in B/L data
         found_value = None
@@ -316,6 +361,13 @@ def validate_bl_fields(
             if key in bl_lower:
                 found_value = bl_lower[key]
                 break
+
+        # Fallback to raw text if structured extraction missed it
+        if not found_value and raw_text:
+            raw_value = _find_raw_text_value(raw_text, info.get("raw_patterns", []))
+            if raw_value:
+                found_value = raw_value
+                logger.info(f"✓ B/L has {info['display']} (raw text): {raw_value}")
         
         if found_value:
             logger.info(f"✓ B/L has {info['display']}: {found_value}")
@@ -408,7 +460,17 @@ def validate_packing_list(
         "SIZE RATIO",
         "SIZE RUN",
         "SIZE MATRIX",
+        "SIZE ASSORTMENT",
         "ASSORTMENT",
+        "PRE-PACK",
+        "PREPACK",
+        "RATIO PACK",
+        "QTY PER SIZE",
+        "QTY/SIZE",
+        "SIZE-COLOR",
+        "SIZE COLOR",
+        "SIZE/COLOUR",
+        "SIZE/ COLOR",
         "CARTON SIZE",
         "CTN SIZE",
         "CARTON DIMENSION",

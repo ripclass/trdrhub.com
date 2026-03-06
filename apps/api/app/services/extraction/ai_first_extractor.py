@@ -680,11 +680,19 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
         if match:
             result["lc_reference"] = match.group(1).strip()
         
-        # Exporter BIN/TIN
-        match = re.search(r"(?:EXPORTER\s+)?BIN\s*[:\-]?\s*([0-9\-]+)", raw_text, re.I)
+        # Exporter BIN/TIN variants
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
         if match:
             result["exporter_bin"] = match.group(1).strip()
-        match = re.search(r"(?:EXPORTER\s+)?TIN\s*[:\-]?\s*([0-9\-]+)", raw_text, re.I)
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAX\s*REG\.?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
         if match:
             result["exporter_tin"] = match.group(1).strip()
         
@@ -898,43 +906,70 @@ class BLAIFirstExtractor(AIFirstExtractor):
         if match:
             result["shipped_on_board_date"] = match.group(1).strip()
         
+        # Vessel/Voyage combined line (e.g., "VSL/VOY: EVER GLORY / 123E")
+        combo_match = re.search(
+            r"(?:VSL|VESSEL)\s*/\s*VOY(?:AGE)?\s*[:\-]?\s*([^\n\r\-/]{2,60}?)\s*(?:/|\s{2,}|\s+-\s+)\s*([A-Z0-9\-\/\.]{2,30})\b",
+            raw_text,
+            re.I,
+        )
+        if combo_match:
+            vessel_candidate = combo_match.group(1).strip(" .:-")
+            voy_candidate = combo_match.group(2).strip()
+            if vessel_candidate and "vessel_name" not in result:
+                result["vessel_name"] = vessel_candidate
+            if voy_candidate:
+                result["voyage_number"] = voy_candidate
+
         # Voyage number
-        match = re.search(
-            r"(?:VOY(?:AGE)?(?:\s*(?:NO\.?|NUMBER|#))?|VSL\s*/\s*VOY(?:AGE)?|VESSEL\s*/\s*VOY(?:AGE)?|VESSEL\s+VOY(?:AGE)?)\s*[:\-]?\s*([A-Z0-9\-\/\.]+)",
-            raw_text,
-            re.I,
-        )
-        if match:
-            result["voyage_number"] = match.group(1).strip()
+        if "voyage_number" not in result:
+            match = re.search(
+                r"(?:VOY(?:AGE)?(?:\s*(?:NO\.?|NUMBER|#))?|VSL\s*/\s*VOY(?:AGE)?|VESSEL\s*/\s*VOY(?:AGE)?|VESSEL\s+VOY(?:AGE)?)\s*[:\-]?\s*([A-Z0-9\-\/\.]+)",
+                raw_text,
+                re.I,
+            )
+            if match:
+                result["voyage_number"] = match.group(1).strip()
         
-        # Gross weight
-        match = re.search(
-            r"(?:TOTAL\s+)?(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G\.?\s*WT\.?|G\.?\s*WGT\.?|G/\s*W|G\s*W)\s*[:\-]?\s*([^\n]+)",
+        # Combined Gross/Net line variants (e.g., "GROSS/NET WEIGHT: 1200/1100 KGS")
+        combo_match = re.search(
+            r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)",
             raw_text,
             re.I,
         )
-        if match:
-            result["gross_weight"] = match.group(1).strip()
+        if combo_match:
+            result["gross_weight"] = combo_match.group(1).strip()
+            result["net_weight"] = combo_match.group(2).strip()
+
+        # Gross weight
+        if "gross_weight" not in result:
+            match = re.search(
+                r"(?:TOTAL\s+)?(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G\.?\s*WT\.?|G\.?\s*WGT\.?|G/\s*W|G\s*W)\s*[:\-]?\s*([^\n]+)",
+                raw_text,
+                re.I,
+            )
+            if match:
+                result["gross_weight"] = match.group(1).strip()
         
         # Net weight
-        match = re.search(
-            r"(?:TOTAL\s+)?(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N\.?\s*WT\.?|N\.?\s*WGT\.?|N/\s*W|N\s*W)\s*[:\-]?\s*([^\n]+)",
-            raw_text,
-            re.I,
-        )
-        if match:
-            result["net_weight"] = match.group(1).strip()
+        if "net_weight" not in result:
+            match = re.search(
+                r"(?:TOTAL\s+)?(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N\.?\s*WT\.?|N\.?\s*WGT\.?|N/\s*W|N\s*W)\s*[:\-]?\s*([^\n]+)",
+                raw_text,
+                re.I,
+            )
+            if match:
+                result["net_weight"] = match.group(1).strip()
         
         # Exporter BIN/TIN
         match = re.search(
-            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
             raw_text,
             re.I,
         )
         if match:
             result["exporter_bin"] = match.group(1).strip()
         match = re.search(
-            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|E-?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAX\s*REG\.?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
             raw_text,
             re.I,
         )
@@ -1084,7 +1119,7 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
             result["dimensions"] = match.group(1).strip()
         
         match = re.search(
-            r"(?:SIZE\s*BREAKDOWN|SIZE\s*DETAILS|SIZE\s*/\s*QTY|SIZE\s*QTY|SIZE\s*&\s*QTY|SIZE\s*WISE|SIZE\s*-\s*WISE|SIZE\s*DISTRIBUTION|SIZE\s*RATIO|SIZE\s*RUN|SIZE\s*MATRIX|ASSORTMENT)\s*[:\-]?\s*([^\n]+)",
+            r"(?:SIZE\s*BREAKDOWN|SIZE\s*DETAILS|SIZE\s*/\s*QTY|SIZE\s*QTY|SIZE\s*&\s*QTY|SIZE\s*WISE|SIZE\s*-\s*WISE|SIZE\s*DISTRIBUTION|SIZE\s*RATIO|SIZE\s*RUN|SIZE\s*MATRIX|SIZE\s*ASSORTMENT|ASSORTMENT|PRE-?\s*PACK|PREPACK|RATIO\s*PACK|QTY\s*PER\s*SIZE|QTY\s*/\s*SIZE|SIZE\s*PER\s*SIZE|SIZE\s*-\s*COLOR|SIZE\s*&\s*COLOR|SIZE\s*/\s*COLOR|SIZE\s*COLOR)\s*[:\-]?\s*([^\n]+)",
             raw_text,
             re.I,
         )
@@ -1105,14 +1140,14 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
                 result["packing_size_breakdown"] = fallback_size
         
         match = re.search(
-            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
             raw_text,
             re.I,
         )
         if match:
             result["exporter_bin"] = match.group(1).strip()
         match = re.search(
-            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|E-?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAX\s*REG\.?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
             raw_text,
             re.I,
         )
