@@ -12,7 +12,7 @@ CANONICAL_KEY_ALIASES: Dict[str, Set[str]] = {
         "vessel_voyage_ref", "vessel_voy_no", "vsl_voy", "vsl_voyage",
         "vsl_voy_no", "vsl_voyage_no", "vsl_voyage_number",
         "vessel/voy", "vsl/voy", "vessel/voyage", "vsl/voyage", "vessel&voyage",
-        "vessel_and_voyage",
+        "vessel_and_voyage", "vvd", "vvd_no", "vvd_number", "vessel_voyage_details",
     },
     "gross_weight": {
         "gross_weight", "gross_wt", "gross_wgt", "grosswt", "grosswgt",
@@ -48,7 +48,7 @@ CANONICAL_KEY_ALIASES: Dict[str, Set[str]] = {
 
 BL_RAW_PATTERNS: Dict[str, Iterable[str]] = {
     "voyage_number": [
-        r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#|\s*REF(?:ERENCE)?)?|VOY\.?|VSL\s*(?:/|&|AND)\s*VOY|VESSEL\s*(?:/|&|AND)\s*VOY(?:AGE)?)\s*[:\-]?\s*([A-Z0-9\-/\.]+)",
+        r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#|\s*REF(?:ERENCE)?)?|VOY\.?|VSL\s*(?:/|&|AND)\s*VOY|VESSEL\s*(?:/|&|AND)\s*VOY(?:AGE)?|VVD(?:\s*(?:NO\.?|NUMBER|#))?)\s*[:\-]?\s*([A-Z0-9\-/\.]+)",
     ],
     "gross_weight": [
         r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GROSS\s*WGT\s*/\s*NET\s*WGT|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?",

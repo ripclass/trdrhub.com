@@ -652,6 +652,36 @@ class AIFirstExtractor:
                 if key.startswith("_"):
                     continue
                 normalized_key = canonical_field_key(key)
+                source_key_normalized = re.sub(r"_+", "_", re.sub(r"\s+", "_", str(key).strip().lower().replace("&", "_and_").replace("/", "_"))).strip("_")
+
+                # Handle combined key/value variants before generic canonical mapping.
+                if doc_type == "bill_of_lading":
+                    if (normalized_key in {"gross_net_weight", "gross_net"} or ("gross" in source_key_normalized and "net" in source_key_normalized)) and isinstance(value, str) and "/" in value:
+                        gross_part, net_part = [p.strip() for p in value.split("/", 1)]
+                        if gross_part and "gross_weight" in allowed:
+                            existing = filtered.get("gross_weight")
+                            if "gross_weight" not in filtered or existing in (None, "", [], {}):
+                                filtered["gross_weight"] = gross_part
+                        if net_part and "net_weight" in allowed:
+                            existing = filtered.get("net_weight")
+                            if "net_weight" not in filtered or existing in (None, "", [], {}):
+                                filtered["net_weight"] = net_part
+                        continue
+
+                    if (normalized_key in {"vessel_and_voyage", "vessel_voyage", "vessel_voy", "vsl_voyage", "vsl_voy", "vvd"} or ("vessel" in source_key_normalized and "voy" in source_key_normalized)) and isinstance(value, str):
+                        parts = [p.strip() for p in re.split(r"\s*/\s*", value, maxsplit=1)]
+                        if len(parts) == 2:
+                            vessel_part, voyage_part = parts
+                            if vessel_part and "vessel_name" in allowed:
+                                existing = filtered.get("vessel_name")
+                                if "vessel_name" not in filtered or existing in (None, "", [], {}):
+                                    filtered["vessel_name"] = vessel_part
+                            if voyage_part and "voyage_number" in allowed:
+                                existing = filtered.get("voyage_number")
+                                if "voyage_number" not in filtered or existing in (None, "", [], {}):
+                                    filtered["voyage_number"] = voyage_part
+                            continue
+
                 canonical = key if key in allowed else alias_map.get(normalized_key, normalized_key)
                 if canonical not in allowed:
                     continue

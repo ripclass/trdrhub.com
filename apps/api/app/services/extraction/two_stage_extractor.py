@@ -568,6 +568,16 @@ class TwoStageExtractor:
             "exporter_bin": FieldType.TAX_ID,
             "exporter_tin": FieldType.TAX_ID,
         }
+
+        coo_fields = {
+            "certificate_number": FieldType.DOCUMENT_NUMBER,
+            "country_of_origin": FieldType.COUNTRY,
+            "origin_country": FieldType.COUNTRY,
+            "issue_date": FieldType.DATE,
+            "issuing_authority": FieldType.PARTY_NAME,
+            "exporter_bin": FieldType.TAX_ID,
+            "exporter_tin": FieldType.TAX_ID,
+        }
         
         document_map = {
             "lc": lc_fields,
@@ -578,6 +588,8 @@ class TwoStageExtractor:
             "bill_of_lading": bl_fields,
             "packing_list": packing_fields,
             "packing": packing_fields,
+            "certificate_of_origin": coo_fields,
+            "coo": coo_fields,
         }
         
         return document_map.get(document_type.lower(), {})

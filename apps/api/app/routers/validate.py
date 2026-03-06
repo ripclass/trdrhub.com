@@ -49,6 +49,8 @@ from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
 
+from app.services.validation.alias_normalization import canonical_field_key
+
 # Import refactored validation utilities (from split modules)
 from app.routers.validation import (
     # Utilities
@@ -361,6 +363,7 @@ def _apply_two_stage_validation(
         )
 
         # Convert to format expected by two-stage extractor.
+        canonical_fields = dict(source_fields) if isinstance(source_fields, dict) else {}
         ai_extraction: Dict[str, Any] = {}
         for field_name, value in source_fields.items():
             if not isinstance(field_name, str):
@@ -376,15 +379,27 @@ def _apply_two_stage_validation(
             if isinstance(value, (list, tuple, set, dict)) and len(value) == 0:
                 continue
 
+            canonical_name = canonical_field_key(field_name)
+            candidate_names = [field_name]
+            if canonical_name != field_name:
+                candidate_names.append(canonical_name)
+
             if isinstance(value, dict):
                 # Accept only structured field payloads, skip nested contract containers.
                 if "value" in value or "text" in value or "confidence" in value:
-                    ai_extraction[field_name] = value
+                    for candidate_name in candidate_names:
+                        ai_extraction[candidate_name] = value
+                    if canonical_name in {"exporter_bin", "exporter_tin"} and canonical_name not in canonical_fields:
+                        canonical_fields[canonical_name] = value.get("value") or value.get("text")
                 else:
                     continue
             else:
                 # Wrap raw scalar/list values with a default confidence.
-                ai_extraction[field_name] = {"value": value, "confidence": 0.7}
+                wrapped = {"value": value, "confidence": 0.7}
+                for candidate_name in candidate_names:
+                    ai_extraction[candidate_name] = wrapped
+                if canonical_name in {"exporter_bin", "exporter_tin"} and canonical_name not in canonical_fields:
+                    canonical_fields[canonical_name] = value
         
         if not ai_extraction:
             summary = {
@@ -417,7 +432,6 @@ def _apply_two_stage_validation(
         # Build output with normalized values and validation metadata.
         # Keep original shape, but also update canonical field map for downstream consumers.
         validated_fields = dict(extracted_fields)
-        canonical_fields = dict(source_fields) if isinstance(source_fields, dict) else {}
         validation_details: Dict[str, Dict[str, Any]] = {}
         
         for field_name, field_result in validated.items():
@@ -3508,6 +3522,7 @@ def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     lc = payload.get("lc") or payload.get("lc_data") or {}
     invoice = payload.get("invoice") or {}
     bill_of_lading = payload.get("bill_of_lading") or payload.get("billOfLading") or {}
+    bl_fields = bill_of_lading.get("extracted_fields") if isinstance(bill_of_lading.get("extracted_fields"), dict) else {}
     certificate_of_origin = payload.get("certificate_of_origin") or payload.get("certificateOfOrigin") or {}
     insurance = payload.get("insurance") or payload.get("insurance_certificate") or {}
     packing_list = payload.get("packing_list") or payload.get("packingList") or {}
@@ -3533,13 +3548,16 @@ def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             "shipper": invoice.get("shipper"),
         },
         "bill_of_lading": {
-            "goods_description": bill_of_lading.get("goods_description"),
-            "port_of_loading": bill_of_lading.get("port_of_loading"),
-            "port_of_discharge": bill_of_lading.get("port_of_discharge"),
-            "vessel": bill_of_lading.get("vessel"),
-            "on_board_date": bill_of_lading.get("on_board_date"),
-            "consignee": bill_of_lading.get("consignee"),
-            "shipper": bill_of_lading.get("shipper"),
+            "goods_description": bill_of_lading.get("goods_description") or bl_fields.get("goods_description"),
+            "port_of_loading": bill_of_lading.get("port_of_loading") or bl_fields.get("port_of_loading"),
+            "port_of_discharge": bill_of_lading.get("port_of_discharge") or bl_fields.get("port_of_discharge"),
+            "vessel": bill_of_lading.get("vessel") or bill_of_lading.get("vessel_name") or bl_fields.get("vessel_name"),
+            "voyage_number": bill_of_lading.get("voyage_number") or bl_fields.get("voyage_number"),
+            "gross_weight": bill_of_lading.get("gross_weight") or bl_fields.get("gross_weight"),
+            "net_weight": bill_of_lading.get("net_weight") or bl_fields.get("net_weight"),
+            "on_board_date": bill_of_lading.get("on_board_date") or bill_of_lading.get("shipped_on_board_date") or bl_fields.get("shipped_on_board_date"),
+            "consignee": bill_of_lading.get("consignee") or bl_fields.get("consignee"),
+            "shipper": bill_of_lading.get("shipper") or bl_fields.get("shipper"),
         },
         "certificate_of_origin": {
             "origin_country": certificate_of_origin.get("origin_country") or certificate_of_origin.get("country_of_origin"),

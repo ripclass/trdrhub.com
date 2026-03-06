@@ -1121,6 +1121,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["bin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*NUMBER|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if bin_number:
             bin_number = bin_number.strip()
@@ -1139,6 +1140,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["tin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if tin_number:
             tin_number = tin_number.strip()
@@ -1281,6 +1283,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["bin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*NUMBER|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if bin_number:
             bin_number = bin_number.strip()
@@ -1299,6 +1302,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["tin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if tin_number:
             tin_number = tin_number.strip()
@@ -1363,6 +1367,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["bin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*NUMBER|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if bin_number:
             bin_number = bin_number.strip()
@@ -1381,6 +1386,7 @@ class DocumentFieldExtractor:
             text,
             lines,
             self.FIELD_LABEL_ALIASES["tin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if tin_number:
             tin_number = tin_number.strip()

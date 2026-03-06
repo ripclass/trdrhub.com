@@ -1776,6 +1776,55 @@ class CrossDocValidator:
         
         return search_in_dict(doc)
 
+    def _doc_has_parser_failure_for_fields(
+        self,
+        doc: Dict[str, Any],
+        field_names: Optional[List[str]] = None,
+    ) -> bool:
+        """Return True when extraction metadata indicates parser failure for target fields."""
+        if not isinstance(doc, dict):
+            return False
+
+        targets = set(field_names or [])
+        targets.update(canonicalize_fields({name: True for name in (field_names or [])}).keys())
+
+        detail_sources: List[Dict[str, Any]] = []
+        for key in ("_field_details", "field_details"):
+            details = doc.get(key)
+            if isinstance(details, dict):
+                detail_sources.append(details)
+
+        nested = doc.get("extracted_fields")
+        if isinstance(nested, dict):
+            for key in ("_field_details", "field_details"):
+                details = nested.get(key)
+                if isinstance(details, dict):
+                    detail_sources.append(details)
+
+        for details in detail_sources:
+            canonical_details = canonicalize_fields(details)
+            for candidate_key, info in canonical_details.items():
+                if targets and candidate_key not in targets:
+                    continue
+                if isinstance(info, dict):
+                    reason = str(info.get("reason") or "").strip().lower()
+                    if reason == "parser_failed":
+                        return True
+        return False
+
+    def _presence_state_for_document(
+        self,
+        doc: Dict[str, Any],
+        value_to_find: str,
+        field_names: Optional[List[str]] = None,
+    ) -> str:
+        """Classify document-level requirement check as found / parse_failed / missing."""
+        if self._check_value_in_document(doc, value_to_find, field_names=field_names):
+            return "found"
+        if self._doc_has_parser_failure_for_fields(doc, field_names=field_names):
+            return "parse_failed"
+        return "missing"
+
     # =========================================================================
     # 47A VALIDATION RULES
     # =========================================================================
@@ -1869,33 +1918,46 @@ class CrossDocValidator:
         }
         
         missing_on = []
+        parse_failed_on = []
         
         for doc_key, doc_data in docs.items():
             if doc_data is None:
                 continue
             
             executed += 1
-            found = self._check_value_in_document(
+            status = self._presence_state_for_document(
                 doc_data,
                 bin_number,
                 field_names=["exporter_bin"],
             )
             
-            if found:
+            if status == "found":
                 passed += 1
             else:
                 doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
-                missing_on.append(doc_name)
+                if status == "parse_failed":
+                    parse_failed_on.append(doc_name)
+                else:
+                    missing_on.append(doc_name)
         
-        if missing_on:
+        if missing_on or parse_failed_on:
+            found_parts: List[str] = []
+            suggestion_parts: List[str] = []
+            if missing_on:
+                found_parts.append(f"Missing on: {', '.join(missing_on)}")
+                suggestion_parts.append(f"Add Exporter BIN '{bin_number}' to {', '.join(missing_on)}")
+            if parse_failed_on:
+                found_parts.append(f"Parse failed on: {', '.join(parse_failed_on)}")
+                suggestion_parts.append(f"re-extract/review {', '.join(parse_failed_on)}")
+
             issues.append(CrossDocIssue(
                 rule_id="CROSSDOC-BIN",
                 title="Exporter BIN Missing from Documents",
                 severity=IssueSeverity.CRITICAL,
-                message=f"LC requires Exporter BIN '{bin_number}' on ALL documents per clause 47A, but it is missing from: {', '.join(missing_on)}.",
+                message=f"LC requires Exporter BIN '{bin_number}' on ALL documents per clause 47A. {'; '.join(found_parts)}.",
                 expected=f"BIN '{bin_number}' on all documents",
-                found=f"Missing on: {', '.join(missing_on)}",
-                suggestion=f"Add Exporter BIN '{bin_number}' to {', '.join(missing_on)}. This is a mandatory Bangladesh export requirement.",
+                found="; ".join(found_parts),
+                suggestion=f"{' and '.join(suggestion_parts)}. This is a mandatory Bangladesh export requirement.",
                 source_doc=DocumentType.LC,
                 target_doc=DocumentType.INVOICE,
                 source_field="47A(6)",
@@ -1932,33 +1994,46 @@ class CrossDocValidator:
         }
         
         missing_on = []
+        parse_failed_on = []
         
         for doc_key, doc_data in docs.items():
             if doc_data is None:
                 continue
             
             executed += 1
-            found = self._check_value_in_document(
+            status = self._presence_state_for_document(
                 doc_data,
                 tin_number,
                 field_names=["exporter_tin"],
             )
             
-            if found:
+            if status == "found":
                 passed += 1
             else:
                 doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
-                missing_on.append(doc_name)
+                if status == "parse_failed":
+                    parse_failed_on.append(doc_name)
+                else:
+                    missing_on.append(doc_name)
         
-        if missing_on:
+        if missing_on or parse_failed_on:
+            found_parts: List[str] = []
+            suggestion_parts: List[str] = []
+            if missing_on:
+                found_parts.append(f"Missing on: {', '.join(missing_on)}")
+                suggestion_parts.append(f"Add Exporter TIN '{tin_number}' to {', '.join(missing_on)}")
+            if parse_failed_on:
+                found_parts.append(f"Parse failed on: {', '.join(parse_failed_on)}")
+                suggestion_parts.append(f"re-extract/review {', '.join(parse_failed_on)}")
+
             issues.append(CrossDocIssue(
                 rule_id="CROSSDOC-TIN",
                 title="Exporter TIN Missing from Documents",
                 severity=IssueSeverity.CRITICAL,
-                message=f"LC requires Exporter TIN '{tin_number}' on ALL documents per clause 47A, but it is missing from: {', '.join(missing_on)}.",
+                message=f"LC requires Exporter TIN '{tin_number}' on ALL documents per clause 47A. {'; '.join(found_parts)}.",
                 expected=f"TIN '{tin_number}' on all documents",
-                found=f"Missing on: {', '.join(missing_on)}",
-                suggestion=f"Add Exporter TIN '{tin_number}' to {', '.join(missing_on)}. This is a mandatory Bangladesh export requirement.",
+                found="; ".join(found_parts),
+                suggestion=f"{' and '.join(suggestion_parts)}. This is a mandatory Bangladesh export requirement.",
                 source_doc=DocumentType.LC,
                 target_doc=DocumentType.INVOICE,
                 source_field="47A(6)",

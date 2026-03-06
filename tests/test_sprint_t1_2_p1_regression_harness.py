@@ -61,6 +61,7 @@ def _load_validate_functions(
         "List": List,
         "Optional": Optional,
         "Tuple": Tuple,
+        "canonical_field_key": lambda key: key,
     }
     if extra_globals:
         namespace.update(extra_globals)
@@ -389,6 +390,56 @@ def test_bl_alias_variants_cover_vessel_voyage_and_gross_net_combo():
     assert issues == []
 
 
+def test_bl_raw_text_fallback_accepts_vvd_label_variant():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "raw_text": "BILL OF LADING\nVVD NO: 778W\nGROSS WEIGHT: 20,400 KGS\nNET WEIGHT: 18,950 KGS",
+        },
+    )
+
+    assert issues == []
+
+
+def test_ai_first_bl_canonical_filter_splits_combined_alias_values():
+    from app.services.extraction.ai_first_extractor import BLAIFirstExtractor
+
+    extractor = BLAIFirstExtractor()
+    filtered = extractor._filter_canonical_ai_result(
+        {
+            "vessel&voyage": "MSC MAEVA/778W",
+            "gross/net_weight": "20,400/18,950 KGS",
+        },
+        "bill_of_lading",
+    )
+
+    assert filtered["vessel_name"] == "MSC MAEVA"
+    assert filtered["voyage_number"] == "778W"
+    assert filtered["gross_weight"] == "20,400"
+    assert filtered["net_weight"] == "18,950 KGS"
+
+
+def test_build_issue_context_projects_bl_fields_from_extracted_fields_map():
+    funcs = _load_validate_functions(["_build_issue_context"])
+    build_issue_context = funcs["_build_issue_context"]
+
+    context = build_issue_context(
+        {
+            "bill_of_lading": {
+                "extracted_fields": {
+                    "voyage_number": "778W",
+                    "gross_weight": "20,400 KGS",
+                    "net_weight": "18,950 KGS",
+                }
+            }
+        }
+    )
+
+    assert context["bill_of_lading"]["voyage_number"] == "778W"
+    assert context["bill_of_lading"]["gross_weight"] == "20,400 KGS"
+    assert context["bill_of_lading"]["net_weight"] == "18,950 KGS"
+
+
 def test_fields_to_flat_context_preserves_reason_metadata():
     funcs = _load_validate_functions(["_fields_to_flat_context"])
     to_context = funcs["_fields_to_flat_context"]
@@ -585,6 +636,63 @@ def test_bin_tin_doc_level_missing_reports_target_docs():
     assert "Certificate of Origin" in bin_issues[0].message
     assert len(tin_issues) == 1
     assert "Bill of Lading" in tin_issues[0].message
+
+
+def test_bin_tin_doc_level_presence_distinguishes_missing_vs_parse_failed():
+    validator = CrossDocValidator()
+    docs = {
+        "invoice": {"exporter_bin": "112233-0099", "exporter_tin": "556677889900"},
+        "packing_list": {
+            "_field_details": {
+                "exporter_bin": {"reason": "parser_failed"},
+                "exporter_tin": {"reason": "parser_failed"},
+            }
+        },
+        "bill_of_lading": {"exporter_bin": "112233-0099"},
+        "certificate_of_origin": {"exporter_tin": "556677889900"},
+    }
+
+    bin_issues, _, _ = validator._validate_bin_all_docs("112233-0099", docs, {})
+    tin_issues, _, _ = validator._validate_tin_all_docs("556677889900", docs, {})
+
+    assert len(bin_issues) == 1
+    assert "Parse failed on: Packing List" in bin_issues[0].message
+    assert "Missing on: Certificate of Origin" in bin_issues[0].message
+
+    assert len(tin_issues) == 1
+    assert "Parse failed on: Packing List" in tin_issues[0].message
+    assert "Missing on: Bill of Lading" in tin_issues[0].message
+
+
+def test_two_stage_validation_promotes_vat_tax_aliases_to_exporter_bin_tin_for_doc_level_output():
+    funcs = _load_validate_functions(
+        ["_apply_two_stage_validation"],
+        extra_globals={
+            "json": json,
+            "logger": SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None),
+            "_get_two_stage_extractor": lambda: _FakeTwoStageExtractor(validated_fields={}, summary={"total": 0, "trusted": 0, "review": 0, "untrusted": 0}),
+            "_count_populated_canonical_fields": lambda fields: len([k for k, v in (fields or {}).items() if not str(k).startswith("_") and v not in (None, "")]),
+            "canonical_field_key": lambda key: {
+                "vat_no": "exporter_bin",
+                "tax_reg_no": "exporter_tin",
+            }.get(str(key), str(key)),
+        },
+    )
+
+    apply_two_stage = funcs["_apply_two_stage_validation"]
+    validated, _ = apply_two_stage(
+        {
+            "extracted_fields": {
+                "vat_no": "112233-0099",
+                "tax_reg_no": "556677889900",
+            }
+        },
+        "certificate_of_origin",
+        "coo.pdf",
+    )
+
+    assert validated["extracted_fields"]["exporter_bin"] == "112233-0099"
+    assert validated["extracted_fields"]["exporter_tin"] == "556677889900"
 
 
 def test_blocked_submission_reason_codes_include_validation_blocked():
