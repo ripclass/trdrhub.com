@@ -43,7 +43,7 @@ from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditAction, AuditResult
 from app.utils.file_validation import validate_upload_file
 from app.config import settings
-from app.core.lc_types import LCType, VALID_LC_TYPES
+from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.lc_classifier import detect_lc_type
 from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
