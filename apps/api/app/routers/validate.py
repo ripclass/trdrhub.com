@@ -247,6 +247,42 @@ def _resolve_doc_llm_trace(fields: Optional[Dict[str, Any]], extraction_method: 
     }
 
 
+def _build_document_extraction_payload(
+    *,
+    doc_type: str,
+    file_name: str,
+    job_id: Optional[str],
+    ocr_text_len: int,
+    extractor_path: str,
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    router_layer: Optional[str],
+    ai_response_present: bool,
+    ai_parse_success: bool,
+    canonical_before_two_stage: int,
+    canonical_after_two_stage: int,
+    extraction_status: str,
+    downgrade_reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "event": "validation_document_extraction",
+        "doc_type": doc_type,
+        "file_name": file_name,
+        "job_id": job_id,
+        "ocr_text_len": ocr_text_len,
+        "extractor_path": extractor_path,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "router_layer": router_layer,
+        "ai_response_present": ai_response_present,
+        "ai_parse_success": ai_parse_success,
+        "canonical_field_count_before_two_stage": canonical_before_two_stage,
+        "canonical_field_count_after_two_stage": canonical_after_two_stage,
+        "extraction_status": extraction_status,
+        "downgrade_reason": downgrade_reason,
+    }
+
+
 def _log_document_extraction_telemetry(
     *,
     doc_type: str,
@@ -264,23 +300,22 @@ def _log_document_extraction_telemetry(
     extraction_status: str,
     downgrade_reason: Optional[str] = None,
 ) -> None:
-    payload = {
-        "event": "validation_document_extraction",
-        "doc_type": doc_type,
-        "file_name": file_name,
-        "job_id": job_id,
-        "ocr_text_len": ocr_text_len,
-        "extractor_path": extractor_path,
-        "llm_provider": llm_provider,
-        "llm_model": llm_model,
-        "router_layer": router_layer,
-        "ai_response_present": ai_response_present,
-        "ai_parse_success": ai_parse_success,
-        "canonical_field_count_before_two_stage": canonical_before_two_stage,
-        "canonical_field_count_after_two_stage": canonical_after_two_stage,
-        "extraction_status": extraction_status,
-        "downgrade_reason": downgrade_reason,
-    }
+    payload = _build_document_extraction_payload(
+        doc_type=doc_type,
+        file_name=file_name,
+        job_id=job_id,
+        ocr_text_len=ocr_text_len,
+        extractor_path=extractor_path,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        router_layer=router_layer,
+        ai_response_present=ai_response_present,
+        ai_parse_success=ai_parse_success,
+        canonical_before_two_stage=canonical_before_two_stage,
+        canonical_after_two_stage=canonical_after_two_stage,
+        extraction_status=extraction_status,
+        downgrade_reason=downgrade_reason,
+    )
     logger.info("validate.extraction.telemetry %s", json.dumps(payload, default=str))
 
 
@@ -704,13 +739,32 @@ async def validate_doc(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
         checkpoint("form_parsed")
-        
+
+        # Build job context early so async extraction/two-stage telemetry always
+        # emits a stable job_id sourced from server context (not request payload).
+        metadata = payload.get("metadata")
+        user_type = payload.get("userType") or payload.get("user_type")
+        validation_session = None
+        job_id = None
+        if user_type in ["bank", "exporter", "importer"] or metadata:
+            session_service = ValidationSessionService(db)
+            validation_session = session_service.create_session(current_user)
+            if current_user.company_id:
+                validation_session.company_id = current_user.company_id
+            validation_session.status = SessionStatus.PROCESSING.value
+            validation_session.processing_started_at = func.now()
+            db.commit()
+            job_id = str(validation_session.id)
+            checkpoint("session_created")
+        else:
+            job_id = str(uuid4())
+
         # Extract structured data from uploaded files (respecting any document tags)
         document_tags = payload.get("document_tags")
         extracted_context = await _build_document_context(
             files_list,
             document_tags,
-            job_id=str(payload.get("job_id")) if payload.get("job_id") else None,
+            job_id=job_id,
         )
         checkpoint("ocr_extraction_complete")
         if extracted_context:
@@ -934,21 +988,10 @@ async def validate_doc(
             }
 
         # =====================================================================
-        # CREATE VALIDATION SESSION EARLY
-        # We need a database record BEFORE gating so blocked validations can be retrieved
+        # ATTACH CONTEXT METADATA + PERSIST DOCUMENTS
+        # Session was created before extraction so telemetry carries correct job_id.
         # =====================================================================
-        metadata = payload.get("metadata")
-        validation_session = None
-        job_id = None
-        
-        if user_type in ["bank", "exporter", "importer"] or metadata:
-            session_service = ValidationSessionService(db)
-            validation_session = session_service.create_session(current_user)
-            
-            # Set company_id if available
-            if current_user.company_id:
-                validation_session.company_id = current_user.company_id
-            
+        if validation_session is not None:
             # Store metadata based on user type
             if metadata:
                 try:
@@ -976,13 +1019,9 @@ async def validate_doc(
                         "user_type": user_type,
                         "workflow_type": workflow_type,
                     }
-            
-            validation_session.status = SessionStatus.PROCESSING.value
-            validation_session.processing_started_at = func.now()
+
             db.commit()
-            job_id = str(validation_session.id)
-            checkpoint("session_created")
-            
+
             # =====================================================================
             # PERSIST DOCUMENTS TO DATABASE
             # This enables customs pack generation and document retrieval
@@ -1013,8 +1052,6 @@ async def validate_doc(
             except Exception as doc_persist_error:
                 logger.warning("Failed to persist documents to DB: %s", doc_persist_error)
                 # Don't fail validation if document persistence fails
-        else:
-            job_id = payload.get("job_id") or str(uuid4())
 
         # =====================================================================
         # V2 VALIDATION PIPELINE - PRIMARY FLOW
