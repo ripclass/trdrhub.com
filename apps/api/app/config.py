@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     # Application Environment
     ENVIRONMENT: str = "development"  # development, staging, production
     DEBUG: bool = False
+    DEBUG_EXTRACTION_TRACE: bool = False
 
     # URLs
     FRONTEND_URL: str = "http://localhost:5173"

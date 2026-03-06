@@ -992,6 +992,8 @@ async def validate_doc(
         # Session was created before extraction so telemetry carries correct job_id.
         # =====================================================================
         if validation_session is not None:
+            extracted_payload = dict(validation_session.extracted_data or {})
+
             # Store metadata based on user type
             if metadata:
                 try:
@@ -1000,13 +1002,11 @@ async def validate_doc(
                     org_id = None
                     if hasattr(request, 'state') and hasattr(request.state, 'org_id'):
                         org_id = request.state.org_id
-                    validation_session.extracted_data = {
-                        "bank_metadata": {
-                            "client_name": metadata.get("clientName"),
-                            "lc_number": metadata.get("lcNumber"),
-                            "date_received": metadata.get("dateReceived"),
-                            "org_id": org_id,
-                        }
+                    extracted_payload["bank_metadata"] = {
+                        "client_name": metadata.get("clientName"),
+                        "lc_number": metadata.get("lcNumber"),
+                        "date_received": metadata.get("dateReceived"),
+                        "org_id": org_id,
                     }
                 except (json.JSONDecodeError, TypeError):
                     pass
@@ -1014,11 +1014,19 @@ async def validate_doc(
                 lc_number = payload.get("lc_number") or payload.get("lcNumber")
                 workflow_type = payload.get("workflow_type") or payload.get("workflowType")
                 if lc_number or workflow_type:
-                    validation_session.extracted_data = {
-                        "lc_number": lc_number,
-                        "user_type": user_type,
-                        "workflow_type": workflow_type,
-                    }
+                    extracted_payload.update(
+                        {
+                            "lc_number": lc_number,
+                            "user_type": user_type,
+                            "workflow_type": workflow_type,
+                        }
+                    )
+
+            debug_trace = extracted_context.get("_debug_extraction_trace") if isinstance(extracted_context, dict) else None
+            if isinstance(debug_trace, list):
+                extracted_payload["_debug_extraction_trace"] = debug_trace
+
+            validation_session.extracted_data = extracted_payload or None
 
             db.commit()
 
@@ -2788,6 +2796,7 @@ async def _build_document_context(
 
     context: Dict[str, Any] = {}
     document_details: List[Dict[str, Any]] = []
+    debug_extraction_trace: List[Dict[str, Any]] = []
     has_structured_data = False
     known_doc_types = {
         "letter_of_credit",
@@ -3468,6 +3477,22 @@ async def _build_document_context(
         if not downgrade_reason and extraction_status_now in {"partial", "error", "failed"}:
             downgrade_reason = doc_info.get("extraction_error") or doc_info.get("ai_first_status") or "downgraded"
 
+        trace_payload = _build_document_extraction_payload(
+            doc_type=document_type,
+            file_name=filename,
+            job_id=job_id,
+            ocr_text_len=len(extracted_text or ""),
+            extractor_path=llm_trace.get("extractor_path") or "fallback",
+            llm_provider=llm_trace.get("provider"),
+            llm_model=llm_trace.get("model"),
+            router_layer=llm_trace.get("router_layer"),
+            ai_response_present=canonical_before > 0 or bool(doc_info.get("ai_first_status")),
+            ai_parse_success=canonical_before > 0,
+            canonical_before_two_stage=canonical_before,
+            canonical_after_two_stage=canonical_after,
+            extraction_status=extraction_status_now,
+            downgrade_reason=downgrade_reason,
+        )
         _log_document_extraction_telemetry(
             doc_type=document_type,
             file_name=filename,
@@ -3484,6 +3509,7 @@ async def _build_document_context(
             extraction_status=extraction_status_now,
             downgrade_reason=downgrade_reason,
         )
+        debug_extraction_trace.append(trace_payload)
 
         document_details.append(doc_info)
         entry = documents_presence.setdefault(
@@ -3511,6 +3537,7 @@ async def _build_document_context(
 
     context["documents_presence"] = documents_presence
     context["documents_summary"] = documents_presence
+    context["_debug_extraction_trace"] = debug_extraction_trace
     if context.get("lc"):
         context["lc"] = _normalize_lc_payload_structures(context["lc"])
 

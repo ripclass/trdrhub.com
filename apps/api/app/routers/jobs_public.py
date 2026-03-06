@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models import User, ValidationSession, SessionStatus
 from app.core.security import get_current_user
 from app.core.rbac import RBACPolicyEngine, Permission
+from app.config import settings
 
 
 router = APIRouter(tags=["validation-jobs"])
@@ -225,6 +226,17 @@ def _normalize_job_id(job_id_str: str) -> UUID:
     return UUID(job_id_str)
 
 
+def _debug_trace_for_response(extracted_data: Any) -> Optional[List[Dict[str, Any]]]:
+    if not settings.DEBUG_EXTRACTION_TRACE:
+        return None
+    if not isinstance(extracted_data, dict):
+        return None
+    trace = extracted_data.get("_debug_extraction_trace")
+    if isinstance(trace, list):
+        return trace
+    return None
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
     job_id: str,  # Accept string to handle 'job_' prefix
@@ -260,7 +272,7 @@ def get_job_status(
         db.commit()
         db.refresh(session)
 
-    return {
+    response_payload = {
         "jobId": str(session.id),
         "status": session.status,
         "progress": _status_to_progress(session.status),
@@ -271,6 +283,11 @@ def get_job_status(
         "documentCount": len(session.documents) or _count_option_e_documents(session.validation_results or {}),
         "discrepancyCount": len(session.discrepancies) or len((session.validation_results or {}).get("discrepancies") or []),
     }
+    debug_trace = _debug_trace_for_response(session.extracted_data)
+    if debug_trace is not None:
+        response_payload["debug_extraction_trace"] = debug_trace
+
+    return response_payload
 
 
 @router.get("/api/results/{job_id}")
