@@ -102,6 +102,9 @@ class OpenRouterProvider(LLMProviderInterface):
             messages.append({"role": "user", "content": prompt})
 
             model_override = kwargs.pop("model_override", None)
+            # Control-plane hints should never be forwarded to OpenAI/OpenRouter SDK
+            kwargs.pop("router_layer", None)
+            kwargs.pop("layer", None)
             model_name = self._normalize_model(model_override or self.model)
 
             response = await client.chat.completions.create(
@@ -543,7 +546,12 @@ class LLMProviderFactory:
         Returns:
             (output_text, tokens_in, tokens_out, provider_used)
         """
-        layer = LLMProviderFactory._layer_from_kwargs(**kwargs)
+        call_kwargs = dict(kwargs)
+        layer = LLMProviderFactory._layer_from_kwargs(**call_kwargs)
+        # router_layer/layer are control-plane hints and must not be sent to model providers
+        call_kwargs.pop("router_layer", None)
+        call_kwargs.pop("layer", None)
+
         routing_enabled = os.getenv("AI_LAYER_ROUTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
         resolved_primary_model = model_override
@@ -560,7 +568,7 @@ class LLMProviderFactory:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 model_override=resolved_primary_model,
-                **kwargs
+                **call_kwargs
             )
             return output, tokens_in, tokens_out, provider_name
         except Exception as e:
@@ -580,7 +588,7 @@ class LLMProviderFactory:
                         max_tokens=max_tokens,
                         temperature=temperature,
                         model_override=fallback_model,
-                        **kwargs,
+                        **call_kwargs,
                     )
                     logger.info(
                         "Same-provider model fallback succeeded (%s %s -> %s)",
@@ -612,7 +620,7 @@ class LLMProviderFactory:
                         max_tokens=max_tokens,
                         temperature=temperature,
                         model_override=resolved_primary_model,
-                        **kwargs
+                        **call_kwargs
                     )
                     logger.info(f"Fallback to {fallback_name} succeeded")
                     return output, tokens_in, tokens_out, fallback_name
