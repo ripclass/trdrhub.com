@@ -47,6 +47,8 @@ class FieldType(str, Enum):
     GOODS_DESCRIPTION = "goods"
     QUANTITY = "quantity"
     DOCUMENT_NUMBER = "document_number"
+    WEIGHT = "weight"
+    TAX_ID = "tax_id"
     TEXT = "text"
 
 
@@ -113,6 +115,9 @@ class FieldValidator:
             FieldType.SWIFT_CODE: self._validate_swift,
             FieldType.PARTY_NAME: self._validate_party_name,
             FieldType.GOODS_DESCRIPTION: self._validate_goods,
+            FieldType.QUANTITY: self._validate_quantity,
+            FieldType.WEIGHT: self._validate_weight,
+            FieldType.TAX_ID: self._validate_tax_id,
         }
         
         validator = validator_map.get(field.field_type, self._validate_text)
@@ -315,6 +320,76 @@ class FieldValidator:
         field.normalized_value = value
         return 0.8, []  # Can't fully validate descriptions
     
+    def _validate_quantity(self, field: ExtractedField) -> Tuple[float, List[str]]:
+        """Validate quantity/number of packages."""
+        value = field.raw_value
+        issues: List[str] = []
+        
+        try:
+            qty = int(re.sub(r"[^0-9]", "", str(value)))
+        except ValueError:
+            issues.append("Cannot parse quantity")
+            return 0.0, issues
+        
+        if qty <= 0:
+            issues.append("Quantity must be positive")
+            return 0.2, issues
+        
+        field.normalized_value = qty
+        return 1.0, []
+    
+    def _validate_weight(self, field: ExtractedField) -> Tuple[float, List[str]]:
+        """Validate weight with optional unit."""
+        value = str(field.raw_value).strip()
+        issues: List[str] = []
+        
+        if not value:
+            return 0.0, ["Empty weight"]
+        
+        match = re.search(r"([0-9][0-9,\.]*)\s*(KG|KGS|LB|LBS|MT|TON|TONS|TONNE|TONNES)?", value, re.I)
+        if not match:
+            issues.append("Cannot parse weight")
+            return 0.0, issues
+        
+        number_raw = match.group(1)
+        unit = (match.group(2) or "").upper()
+        try:
+            numeric = float(number_raw.replace(",", ""))
+        except ValueError:
+            issues.append("Cannot parse weight number")
+            return 0.0, issues
+        
+        if numeric <= 0:
+            issues.append("Weight must be positive")
+            return 0.2, issues
+        
+        if unit and unit in {"KGS", "LBS", "TONS", "TONNES"}:
+            unit = {"KGS": "KG", "LBS": "LB", "TONS": "TON", "TONNES": "TONNE"}[unit]
+        
+        field.normalized_value = f"{numeric:g} {unit}".strip()
+        return 0.9 if unit else 0.8, []
+    
+    def _validate_tax_id(self, field: ExtractedField) -> Tuple[float, List[str]]:
+        """Validate BIN/TIN style identifiers."""
+        value = str(field.raw_value).strip()
+        issues: List[str] = []
+        
+        if not value:
+            return 0.0, ["Empty tax ID"]
+        
+        # Allow digits with optional hyphens/spaces
+        if not re.match(r"^[0-9\-\s]{6,20}$", value):
+            issues.append("Tax ID contains invalid characters")
+            return 0.3, issues
+        
+        digits = re.sub(r"[^0-9]", "", value)
+        if len(digits) < 9:
+            issues.append("Tax ID too short")
+            return 0.4, issues
+        
+        field.normalized_value = value
+        return 0.9, []
+    
     def _validate_text(self, field: ExtractedField) -> Tuple[float, List[str]]:
         """Generic text validation."""
         value = str(field.raw_value).strip()
@@ -456,6 +531,8 @@ class TwoStageExtractor:
             "buyer": FieldType.PARTY_NAME,
             "goods_description": FieldType.GOODS_DESCRIPTION,
             "country_of_origin": FieldType.COUNTRY,
+            "exporter_bin": FieldType.TAX_ID,
+            "exporter_tin": FieldType.TAX_ID,
         }
         
         bl_fields = {
@@ -467,8 +544,29 @@ class TwoStageExtractor:
             "port_of_loading": FieldType.PORT,
             "port_of_discharge": FieldType.PORT,
             "vessel_name": FieldType.TEXT,
+            "voyage_number": FieldType.TEXT,
             "shipped_on_board_date": FieldType.DATE,
             "goods_description": FieldType.GOODS_DESCRIPTION,
+            "gross_weight": FieldType.WEIGHT,
+            "net_weight": FieldType.WEIGHT,
+            "number_of_packages": FieldType.QUANTITY,
+            "exporter_bin": FieldType.TAX_ID,
+            "exporter_tin": FieldType.TAX_ID,
+        }
+        
+        packing_fields = {
+            "packing_list_number": FieldType.DOCUMENT_NUMBER,
+            "date": FieldType.DATE,
+            "shipper": FieldType.PARTY_NAME,
+            "consignee": FieldType.PARTY_NAME,
+            "total_packages": FieldType.QUANTITY,
+            "gross_weight": FieldType.WEIGHT,
+            "net_weight": FieldType.WEIGHT,
+            "dimensions": FieldType.TEXT,
+            "packing_size_breakdown": FieldType.TEXT,
+            "marks_and_numbers": FieldType.TEXT,
+            "exporter_bin": FieldType.TAX_ID,
+            "exporter_tin": FieldType.TAX_ID,
         }
         
         document_map = {
@@ -478,6 +576,8 @@ class TwoStageExtractor:
             "commercial_invoice": invoice_fields,
             "bl": bl_fields,
             "bill_of_lading": bl_fields,
+            "packing_list": packing_fields,
+            "packing": packing_fields,
         }
         
         return document_map.get(document_type.lower(), {})

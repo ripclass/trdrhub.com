@@ -93,6 +93,59 @@ def _parse_parties(text: str) -> Tuple[Optional[str], Optional[str]]:
     b = _first(BENEFICIARY_RE, text)
     return a, b
 
+
+def _normalize_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    return re.sub(r"\s+", " ", str(value).strip().upper())
+
+
+def _normalize_amount(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = re.sub(r"[^0-9.]", "", str(value))
+    if not cleaned:
+        return None
+    try:
+        return f"{float(cleaned):.2f}"
+    except ValueError:
+        return None
+
+
+def _diagnose_candidates(
+    candidates: List[Any],
+    validator: Optional[Any] = None,
+    normalizer: Optional[Any] = None,
+) -> Dict[str, Any]:
+    valid = []
+    invalid = []
+    normalized_values = []
+
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        if validator and not validator(candidate):
+            invalid.append(candidate)
+            continue
+        if normalizer:
+            normalized = normalizer(candidate)
+            if normalized is None:
+                invalid.append(candidate)
+                continue
+            normalized_values.append(normalized)
+        else:
+            normalized_values.append(candidate)
+        valid.append(candidate)
+
+    conflict = len(set(normalized_values)) > 1 if normalized_values else False
+
+    return {
+        "candidates": [c for c in candidates if c not in (None, "")],
+        "valid_candidates": valid,
+        "invalid_candidates": invalid,
+        "conflict": conflict,
+    }
+
 def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     """
     Top-level extraction orchestrator. Works with LC PDFs converted to text or OCR text.
@@ -101,6 +154,13 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     """
 
     text = raw_text or ""
+
+    def _party_name(candidate: Any) -> Optional[str]:
+        if candidate is None:
+            return None
+        if isinstance(candidate, dict):
+            return candidate.get("name") or candidate.get("party") or candidate.get("value")
+        return candidate
 
     # 1) Try SWIFT MT700 full parser first (if present)
     mt_full = None
@@ -121,22 +181,48 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     mt_fields = mt_full.get("fields", {}) if mt_full else {}
     
     # LC number - with validation to reject garbage
-    lc_number_candidate = (
-        mt_fields.get("reference") or 
-        (mt_core.get("number") if mt_core else None) or 
-        _first(LC_NO_RE, text)
+    lc_number_candidates = [
+        mt_fields.get("reference"),
+        (mt_core.get("number") if mt_core else None),
+        _first(LC_NO_RE, text),
+    ]
+    lc_number_diag = _diagnose_candidates(
+        lc_number_candidates,
+        validator=_is_valid_lc_number,
+        normalizer=_normalize_text,
     )
-    lc_number = lc_number_candidate if _is_valid_lc_number(lc_number_candidate) else None
+    lc_number = None
+    if not lc_number_diag.get("conflict") and lc_number_diag.get("valid_candidates"):
+        lc_number = lc_number_diag["valid_candidates"][0]
     
     # Amount and Currency
     credit_amount = mt_fields.get("credit_amount")
     currency = None
+    amount_candidates = []
+    currency_candidates = []
+
     if credit_amount and isinstance(credit_amount, dict):
-        amount_raw = str(credit_amount.get("amount", ""))
-        currency = credit_amount.get("currency")
-    else:
-        amount_raw = (mt_core.get("amount") if mt_core else None) or _amount(text)
-        currency = mt_core.get("currency") if mt_core else None
+        amount_candidates.append(credit_amount.get("amount"))
+        currency_candidates.append(credit_amount.get("currency"))
+    amount_candidates.append(mt_core.get("amount") if mt_core else None)
+    amount_candidates.append(_amount(text))
+    currency_candidates.append(mt_core.get("currency") if mt_core else None)
+
+    amount_diag = _diagnose_candidates(
+        amount_candidates,
+        normalizer=_normalize_amount,
+    )
+    currency_diag = _diagnose_candidates(
+        currency_candidates,
+        normalizer=_normalize_text,
+    )
+
+    amount_raw = None
+    if not amount_diag.get("conflict") and amount_diag.get("valid_candidates"):
+        amount_raw = str(amount_diag["valid_candidates"][0])
+
+    if not currency_diag.get("conflict") and currency_diag.get("valid_candidates"):
+        currency = currency_diag["valid_candidates"][0]
     
     # Incoterm
     incoterm_line = _first(INCOTERM_RE, text)
@@ -165,9 +251,21 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     # Applicant / Beneficiary - with validation to reject document text as names
     applicant_raw = mt_fields.get("applicant") or (mt_core.get("applicant") if mt_core else None)
     beneficiary_raw = mt_fields.get("beneficiary") or (mt_core.get("beneficiary") if mt_core else None)
-    
+
+    applicant_line, beneficiary_line = _parse_parties(text)
+
+    applicant_candidates = [
+        _party_name(mt_fields.get("applicant")),
+        _party_name(mt_core.get("applicant") if mt_core else None),
+        _party_name(applicant_line),
+    ]
+    beneficiary_candidates = [
+        _party_name(mt_fields.get("beneficiary")),
+        _party_name(mt_core.get("beneficiary") if mt_core else None),
+        _party_name(beneficiary_line),
+    ]
+
     if not applicant_raw or not beneficiary_raw:
-        applicant_line, beneficiary_line = _parse_parties(text)
         # Validate regex-extracted names to avoid garbage
         if applicant_line and not _is_valid_party_name(applicant_line):
             applicant_line = None
@@ -189,6 +287,22 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             beneficiary = None
         else:
             beneficiary = {"name": beneficiary_name} if isinstance(beneficiary_name, str) else beneficiary_name
+
+    applicant_diag = _diagnose_candidates(
+        applicant_candidates,
+        validator=_is_valid_party_name,
+        normalizer=_normalize_text,
+    )
+    beneficiary_diag = _diagnose_candidates(
+        beneficiary_candidates,
+        validator=_is_valid_party_name,
+        normalizer=_normalize_text,
+    )
+
+    if applicant_diag.get("conflict"):
+        applicant = None
+    if beneficiary_diag.get("conflict"):
+        beneficiary = None
 
     # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
     docs46a = parse_46a_block(text)
@@ -233,6 +347,14 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             total_qty += float(qty)
 
     # 4) Compose structured result (NO large narrative blobs here)
+    field_diagnostics = {
+        "lc_number": lc_number_diag,
+        "amount": amount_diag,
+        "currency": currency_diag,
+        "applicant": applicant_diag,
+        "beneficiary": beneficiary_diag,
+    }
+
     lc_structured: Dict[str, Any] = {
         "number": lc_number,
         "amount": {"value": amount_raw, "currency": currency} if amount_raw else None,
@@ -269,6 +391,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
                 (mt_core.get("expiry_date") if mt_core else None)
             ),
         },
+        "_field_diagnostics": field_diagnostics,
         "source": {
             "parsers": (
                 ["mt700_full", "mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"]

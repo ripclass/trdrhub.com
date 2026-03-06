@@ -39,6 +39,7 @@ class ExtractedField:
     document_type: DocumentType
     raw_text: Optional[str] = None
     normalized_value: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @dataclass

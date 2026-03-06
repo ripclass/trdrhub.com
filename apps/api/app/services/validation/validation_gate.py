@@ -63,6 +63,7 @@ class GateResult:
     # Missing fields
     missing_critical: List[str] = field(default_factory=list)
     missing_required: List[str] = field(default_factory=list)
+    missing_reason_codes: List[str] = field(default_factory=list)
     
     # Generated issues for missing fields
     blocking_issues: List[Dict[str, Any]] = field(default_factory=list)
@@ -78,6 +79,7 @@ class GateResult:
             "critical_completeness": round(self.critical_completeness * 100, 1),
             "missing_critical": self.missing_critical,
             "missing_required": self.missing_required,
+            "missing_reason_codes": self.missing_reason_codes,
             "blocking_issue_count": len(self.blocking_issues),
             "warning_issue_count": len(self.warning_issues),
         }
@@ -106,12 +108,14 @@ class ValidationGate:
         require_lc_number: bool = True,
         require_amount: bool = True,
         require_party: bool = True,
+        require_critical_evidence: bool = False,
     ):
         self.min_completeness = min_completeness
         self.min_critical_completeness = min_critical_completeness
         self.require_lc_number = require_lc_number
         self.require_amount = require_amount
         self.require_party = require_party
+        self.require_critical_evidence = require_critical_evidence
     
     def check_from_text(
         self,
@@ -162,6 +166,15 @@ class ValidationGate:
         warnings: List[str] = []
         blocking_issues: List[Dict[str, Any]] = []
         warning_issues: List[Dict[str, Any]] = []
+
+        def _resolve_missing_reason(reasons: List[Optional[str]]) -> Optional[str]:
+            present = [r for r in reasons if r]
+            if not present:
+                return None
+            unique = set(present)
+            if len(unique) == 1:
+                return present[0]
+            return "conflict_detected"
         
         # Check 1: LC Number
         if self.require_lc_number and not baseline.lc_number.is_present:
@@ -174,6 +187,7 @@ class ValidationGate:
                 "LC reference number (tag :20: or equivalent)",
                 "Not found",
                 "Ensure the document is a valid LC with a visible reference number.",
+                missing_reason=baseline.lc_number.missing_reason,
             ))
         
         # Check 2: Amount
@@ -187,6 +201,7 @@ class ValidationGate:
                 "Credit amount with currency (tag :32B: or equivalent)",
                 "Not found",
                 "Check that the LC document contains a clearly visible amount field.",
+                missing_reason=baseline.amount.missing_reason,
             ))
         
         # Check 3: At least one party
@@ -204,6 +219,10 @@ class ValidationGate:
                     "Applicant (tag :50:) and/or Beneficiary (tag :59:)",
                     "Neither found",
                     "Verify the LC contains party information and is properly scanned.",
+                    missing_reason=_resolve_missing_reason([
+                        baseline.applicant.missing_reason,
+                        baseline.beneficiary.missing_reason,
+                    ]),
                 ))
             elif not has_applicant:
                 warnings.append("Applicant not extracted (beneficiary found)")
@@ -213,6 +232,7 @@ class ValidationGate:
                     "The applicant name could not be extracted, but beneficiary was found.",
                     "Applicant name and address (tag :50:)",
                     "Not found",
+                    missing_reason=baseline.applicant.missing_reason,
                 ))
             elif not has_beneficiary:
                 warnings.append("Beneficiary not extracted (applicant found)")
@@ -222,9 +242,30 @@ class ValidationGate:
                     "The beneficiary name could not be extracted, but applicant was found.",
                     "Beneficiary name and address (tag :59:)",
                     "Not found",
+                    missing_reason=baseline.beneficiary.missing_reason,
                 ))
         
-        # Check 4: Critical completeness
+        # Check 4: Critical evidence (optional)
+        if self.require_critical_evidence:
+            missing_evidence = [
+                f.field_name for f in baseline.get_critical_fields()
+                if f.is_present and not f.has_evidence
+            ]
+            if missing_evidence:
+                block_reasons.append(
+                    f"Critical fields missing evidence spans: {missing_evidence}"
+                )
+                blocking_issues.append(self._create_blocking_issue(
+                    "LC-GATE-EVIDENCE",
+                    "Missing Evidence for Critical Fields",
+                    "One or more critical fields were extracted without evidence spans. "
+                    "Evidence is required to proceed with validation.",
+                    "Evidence span for each critical field",
+                    f"Missing: {', '.join(missing_evidence)}",
+                    "Re-process the LC with OCR evidence capture enabled.",
+                ))
+
+        # Check 5: Critical completeness
         if critical_completeness < self.min_critical_completeness:
             block_reasons.append(
                 f"Critical field completeness ({critical_completeness*100:.1f}%) "
@@ -240,7 +281,7 @@ class ValidationGate:
                 "Re-scan the LC with better quality or verify document format.",
             ))
         
-        # Check 5: Overall completeness
+        # Check 6: Overall completeness
         if completeness < self.min_completeness:
             block_reasons.append(
                 f"Overall extraction completeness ({completeness*100:.1f}%) "
@@ -265,6 +306,7 @@ class ValidationGate:
                     f"The {field_result.field_name.replace('_', ' ')} field could not be extracted.",
                     f"{field_result.field_name.replace('_', ' ').title()} value",
                     "Not found",
+                    missing_reason=field_result.missing_reason,
                 ))
         
         # Determine gate status
@@ -286,6 +328,10 @@ class ValidationGate:
             status.value, can_proceed, completeness * 100, critical_completeness * 100
         )
         
+        missing_reason_codes = sorted({
+            f.missing_reason for f in baseline.get_missing_required() if f.missing_reason
+        })
+
         return GateResult(
             status=status,
             can_proceed=can_proceed,
@@ -296,6 +342,7 @@ class ValidationGate:
             critical_completeness=critical_completeness,
             missing_critical=[f.field_name for f in baseline.get_missing_critical()],
             missing_required=[f.field_name for f in baseline.get_missing_required()],
+            missing_reason_codes=missing_reason_codes,
             blocking_issues=blocking_issues,
             warning_issues=warning_issues,
         )
@@ -343,6 +390,7 @@ class ValidationGate:
         expected: str,
         actual: str,
         suggestion: str,
+        missing_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a blocking issue."""
         return {
@@ -354,6 +402,7 @@ class ValidationGate:
             "expected": expected,
             "actual": actual,
             "suggestion": suggestion,
+            "missing_reason": missing_reason,
             "documents": ["Letter of Credit"],
             "document_names": ["Letter of Credit"],
             "display_card": True,
@@ -369,6 +418,7 @@ class ValidationGate:
         message: str,
         expected: str,
         actual: str,
+        missing_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a warning issue."""
         return {
@@ -380,6 +430,7 @@ class ValidationGate:
             "expected": expected,
             "actual": actual,
             "suggestion": "Review the LC document and verify field visibility.",
+            "missing_reason": missing_reason,
             "documents": ["Letter of Credit"],
             "document_names": ["Letter of Credit"],
             "display_card": True,

@@ -25,6 +25,8 @@ from app.services.extraction.lc_baseline import (
     FieldResult,
     FieldPriority,
     ExtractionStatus,
+    MissingReason,
+    create_lc_baseline_from_extraction,
 )
 from app.services.validation.validation_gate import (
     ValidationGate,
@@ -47,6 +49,7 @@ from app.services.validation.crossdoc_validator import (
     CrossDocResult,
     CrossDocIssue,
 )
+from app.routers.validate import _build_lc_baseline_from_context
 
 
 # ============================================================================
@@ -233,6 +236,59 @@ class TestValidationGate:
         
         assert result.status == GateStatus.BLOCKED
         assert "completeness" in result.block_reason.lower()
+
+    def test_missing_critical_evidence_blocks_when_required(self):
+        """Gate should block when critical evidence is required but missing."""
+        gate = ValidationGate(require_critical_evidence=True)
+        baseline = TestScenarios.valid_lc_baseline()
+        
+        result = gate.check_from_baseline(baseline)
+        
+        assert result.status == GateStatus.BLOCKED
+        assert "evidence" in (result.block_reason or "").lower()
+        assert any("Missing Evidence" in issue.get("title", "") for issue in result.blocking_issues)
+
+    def test_critical_evidence_allows_gate_when_present(self):
+        """Gate should pass when critical fields include evidence."""
+        gate = ValidationGate(require_critical_evidence=True)
+        baseline = TestScenarios.valid_lc_baseline()
+        
+        # Add evidence to all critical fields
+        for field in baseline.get_critical_fields():
+            field.evidence_text = field.value or "evidence"
+        
+        result = gate.check_from_baseline(baseline)
+        
+        assert result.status == GateStatus.PASSED
+        assert result.can_proceed is True
+
+
+class TestEvidencePropagation:
+    """Tests for evidence-span propagation into LCBaseline."""
+
+    def test_build_lc_baseline_from_context_applies_evidence(self):
+        lc_context = {
+            "number": "LC12345",
+            "amount": {"value": "10000", "currency": "USD"},
+            "currency": "USD",
+            "applicant": {"name": "ABC TRADING"},
+            "beneficiary": {"name": "XYZ EXPORTS"},
+            "field_evidence": {
+                "lc_number": {"text": "LC12345", "page": 1},
+                "amount": {"text": "USD 10000", "page": 1},
+                "applicant": {"text": "ABC TRADING", "page": 2},
+                "beneficiary": {"text": "XYZ EXPORTS", "page": 2},
+                "currency": {"text": "USD", "page": 1},
+            },
+        }
+
+        baseline = _build_lc_baseline_from_context(lc_context)
+
+        assert baseline.lc_number.evidence_text == "LC12345"
+        assert baseline.amount.evidence_text == "USD 10000"
+        assert baseline.applicant.evidence_text == "ABC TRADING"
+        assert baseline.beneficiary.evidence_text == "XYZ EXPORTS"
+        assert baseline.currency.evidence_text == "USD"
 
 
 class TestIssueEngine:
@@ -638,6 +694,38 @@ class TestCertification:
         
         assert lc_issue is not None, "CERT-006 FAILED: Missing LC number issue not generated"
         assert lc_issue.severity == IssueSeverity.CRITICAL, "CERT-006 FAILED: Critical field should have critical severity"
+
+
+class TestMissingReasonCodes:
+    def test_missing_reason_missing_in_source(self):
+        baseline = create_lc_baseline_from_extraction({})
+        assert baseline.lc_number.missing_reason == MissingReason.MISSING_IN_SOURCE.value
+
+    def test_missing_reason_parser_failed(self):
+        baseline = create_lc_baseline_from_extraction({
+            "amount": {"value": "ABC", "currency": "USD"}
+        })
+        assert baseline.amount.status == ExtractionStatus.INVALID
+        assert baseline.amount.missing_reason == MissingReason.PARSER_FAILED.value
+
+    def test_missing_reason_conflict_detected(self):
+        baseline = create_lc_baseline_from_extraction({
+            "_field_diagnostics": {
+                "lc_number": {
+                    "candidates": ["LC1", "LC2"],
+                    "valid_candidates": ["LC1", "LC2"],
+                    "invalid_candidates": [],
+                    "conflict": True,
+                }
+            }
+        })
+        assert baseline.lc_number.status == ExtractionStatus.INVALID
+        assert baseline.lc_number.missing_reason == MissingReason.CONFLICT_DETECTED.value
+
+        issues = IssueEngine().generate_extraction_issues(baseline)
+        lc_issue = next((i for i in issues if i.field_name == "lc_number"), None)
+        assert lc_issue is not None
+        assert lc_issue.missing_reason == MissingReason.CONFLICT_DETECTED.value
 
 
 # ============================================================================

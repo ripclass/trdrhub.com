@@ -525,6 +525,8 @@ OPTIONAL FIELDS:
 - country_of_origin: Where goods originate
 - port_of_loading: Shipment origin
 - port_of_discharge: Destination port
+- exporter_bin: Exporter BIN (if shown)
+- exporter_tin: Exporter TIN (if shown)
 
 Return a JSON object with these fields. Use null for any field not found.
 
@@ -678,6 +680,14 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
         if match:
             result["lc_reference"] = match.group(1).strip()
         
+        # Exporter BIN/TIN
+        match = re.search(r"(?:EXPORTER\s+)?BIN\s*[:\-]?\s*([0-9\-]+)", raw_text, re.I)
+        if match:
+            result["exporter_bin"] = match.group(1).strip()
+        match = re.search(r"(?:EXPORTER\s+)?TIN\s*[:\-]?\s*([0-9\-]+)", raw_text, re.I)
+        if match:
+            result["exporter_tin"] = match.group(1).strip()
+        
         result["_extraction_method"] = "regex_fallback"
         result["_status"] = "ai_failed_regex_used"
         return result
@@ -729,12 +739,15 @@ OPTIONAL FIELDS:
 - voyage_number: Voyage reference
 - goods_description: Description of goods
 - gross_weight: Total weight
+- net_weight: Net weight (if stated)
 - number_of_packages: Package count
 - container_number: Container ID
 - seal_number: Seal ID
 - freight_terms: "PREPAID" or "COLLECT"
 - place_of_receipt: Where carrier received goods
 - place_of_delivery: Final delivery location
+- exporter_bin: Exporter BIN (if shown)
+- exporter_tin: Exporter TIN (if shown)
 
 Return a JSON object with these fields. Use null for any field not found.
 
@@ -885,6 +898,49 @@ class BLAIFirstExtractor(AIFirstExtractor):
         if match:
             result["shipped_on_board_date"] = match.group(1).strip()
         
+        # Voyage number
+        match = re.search(
+            r"(?:VOY(?:AGE)?(?:\s*(?:NO\.?|NUMBER|#))?|VSL\s*/\s*VOY(?:AGE)?|VESSEL\s*/\s*VOY(?:AGE)?|VESSEL\s+VOY(?:AGE)?)\s*[:\-]?\s*([A-Z0-9\-\/\.]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["voyage_number"] = match.group(1).strip()
+        
+        # Gross weight
+        match = re.search(
+            r"(?:TOTAL\s+)?(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G\.?\s*WT\.?|G\.?\s*WGT\.?|G/\s*W|G\s*W)\s*[:\-]?\s*([^\n]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["gross_weight"] = match.group(1).strip()
+        
+        # Net weight
+        match = re.search(
+            r"(?:TOTAL\s+)?(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N\.?\s*WT\.?|N\.?\s*WGT\.?|N/\s*W|N\s*W)\s*[:\-]?\s*([^\n]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["net_weight"] = match.group(1).strip()
+        
+        # Exporter BIN/TIN
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["exporter_bin"] = match.group(1).strip()
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|E-?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["exporter_tin"] = match.group(1).strip()
+        
         result["_extraction_method"] = "regex_fallback"
         result["_status"] = "ai_failed_regex_used"
         return result
@@ -936,9 +992,12 @@ OPTIONAL FIELDS:
 - goods_description: Description of goods
 - marks_and_numbers: Shipping marks
 - dimensions: Package dimensions
+- packing_size_breakdown: Size breakdown by package/carton (if listed)
 - container_number: Container ID
 - port_of_loading: Origin port
 - port_of_discharge: Destination port
+- exporter_bin: Exporter BIN (if shown)
+- exporter_tin: Exporter TIN (if shown)
 
 Return a JSON object with these fields. Use null for any field not found.
 
@@ -1012,9 +1071,53 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
         if match:
             result["total_packages"] = match.group(1)
         
-        match = re.search(r"Gross\s*Weight\s*[:\-]?\s*([\d,\.]+\s*(?:KG|KGS|LBS)?)", raw_text, re.I)
+        match = re.search(r"(?:GROSS\s*WEIGHT|G\.?\s*W\.?|G/\s*W)\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
         if match:
             result["gross_weight"] = match.group(1).strip()
+        
+        match = re.search(r"(?:NET\s*WEIGHT|N\.?\s*W\.?|N/\s*W)\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["net_weight"] = match.group(1).strip()
+        
+        match = re.search(r"(?:Dimensions|Dimension|Measurements|Measurement|Size)\s*[:\-]?\s*([^\n]+)", raw_text, re.I)
+        if match:
+            result["dimensions"] = match.group(1).strip()
+        
+        match = re.search(
+            r"(?:SIZE\s*BREAKDOWN|SIZE\s*DETAILS|SIZE\s*/\s*QTY|SIZE\s*QTY|SIZE\s*&\s*QTY|SIZE\s*WISE|SIZE\s*-\s*WISE|SIZE\s*DISTRIBUTION|SIZE\s*RATIO|SIZE\s*RUN|SIZE\s*MATRIX|ASSORTMENT)\s*[:\-]?\s*([^\n]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["size_breakdown"] = match.group(1).strip()
+        
+        match = re.search(
+            r"(?:CARTON\s*SIZE|CTN\s*SIZE|CARTON\s*DIMENSIONS?|CASE\s*SIZE|CTN\s*DIMENSIONS?|PACKING\s*SIZE|PACKAGE\s*SIZE)\s*[:\-]?\s*([^\n]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["carton_size"] = match.group(1).strip()
+
+        if "packing_size_breakdown" not in result:
+            fallback_size = result.get("size_breakdown") or result.get("carton_size") or result.get("dimensions")
+            if fallback_size:
+                result["packing_size_breakdown"] = fallback_size
+        
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["exporter_bin"] = match.group(1).strip()
+        match = re.search(
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?|E-?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            raw_text,
+            re.I,
+        )
+        if match:
+            result["exporter_tin"] = match.group(1).strip()
         
         result["_extraction_method"] = "regex_fallback"
         result["_status"] = "ai_failed_regex_used"

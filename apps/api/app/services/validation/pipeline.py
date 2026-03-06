@@ -140,6 +140,7 @@ class ValidationOutput:
                 "completeness": self.extraction_completeness,
                 "critical_completeness": self.critical_completeness,
                 "missing_critical": self.missing_critical_fields,
+                "missing_reason_codes": [],
             },
             
             # Processing summary

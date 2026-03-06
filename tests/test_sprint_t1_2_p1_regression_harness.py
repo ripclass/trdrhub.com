@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
+from app.services.validation.ai_validator import validate_bl_fields, validate_packing_list
+from app.services.validation.crossdoc_validator import CrossDocValidator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,3 +217,156 @@ def test_document_composition_analytics_presence_and_consistency_markers():
         r'structured_result\["analytics"\]\["lc_only_mode"\]\s*=\s*composition_result\.get\("composition",\s*\{\}\)\.get\("lc_only_mode",\s*False\)',
         source,
     )
+
+
+def test_bl_alias_fields_match_required_must_show():
+    fixture = _load_fixture("phase_b1_alias_extraction.json")
+
+    issues = validate_bl_fields(
+        required_fields=fixture["bl_required_fields"],
+        bl_data=fixture["bl_data"],
+    )
+
+    assert issues == []
+
+
+def test_packing_list_table_text_counts_as_size_breakdown():
+    fixture = _load_fixture("phase_b1_alias_extraction.json")
+
+    issues = validate_packing_list(
+        lc_text=fixture["lc_text"],
+        packing_list_data=fixture["packing_list"],
+    )
+
+    assert issues == []
+
+
+def test_bl_alias_variants_cover_vessel_voy_and_weight_shortcuts():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "vessel_voy": "VSL-77A",
+            "g.w.": "1,200 KGS",
+            "n.w.": "1,150 KGS",
+        },
+    )
+
+    assert issues == []
+
+
+def test_packing_list_carton_size_counts_as_size_info():
+    lc_text = "PACKING LIST MUST SHOW SIZE BREAKDOWN PER LC CLAUSE 46A."
+    issues = validate_packing_list(
+        lc_text=lc_text,
+        packing_list_data={
+            "raw_text": "PACKING LIST\nCARTON SIZE: 50 X 40 X 30 CM",
+        },
+    )
+
+    assert issues == []
+
+
+def test_47a_bin_tin_variants_extract_and_require_all_docs():
+    fixture = _load_fixture("phase_b1_alias_extraction.json")
+    validator = CrossDocValidator()
+
+    requirements = validator._parse_47a_requirements(
+        {"additional_conditions": fixture["conditions_text"]}
+    )
+
+    assert requirements["bin_number"] == fixture["expected_bin"]
+    assert requirements["tin_number"] == fixture["expected_tin"]
+    assert requirements["all_docs_require_bin"] is True
+    assert requirements["all_docs_require_tin"] is True
+
+
+def test_47a_bin_tin_accepts_dot_variants_and_tax_id_labels():
+    validator = CrossDocValidator()
+    requirements = validator._parse_47a_requirements(
+        {
+            "additional_conditions": (
+                "EXPORTER B.I.N. NO. 998877-0101 MUST APPEAR ON ALL DOCUMENTS. "
+                "TAX ID# 556677889900 MUST APPEAR ON ALL DOCUMENTS."
+            )
+        }
+    )
+
+    assert requirements["bin_number"] == "998877-0101"
+    assert requirements["tin_number"] == "556677889900"
+    assert requirements["all_docs_require_bin"] is True
+    assert requirements["all_docs_require_tin"] is True
+
+
+def test_blocked_submission_reason_codes_include_validation_blocked():
+    @dataclass
+    class _FakeValue:
+        value: Any
+
+    @dataclass
+    class _FakeBaseline:
+        lc_number: _FakeValue
+        amount: _FakeValue
+        currency: _FakeValue
+        applicant: _FakeValue
+        beneficiary: _FakeValue
+        extraction_completeness: float
+        critical_completeness: float
+
+    @dataclass
+    class _FakeGateResult:
+        blocking_issues: List[Dict[str, Any]]
+        completeness: float
+        critical_completeness: float
+        missing_critical: List[str]
+        missing_required: List[str]
+        block_reason: str
+
+        def to_dict(self):
+            return {
+                "status": "blocked",
+                "missing_critical": self.missing_critical,
+            }
+
+    funcs = _load_validate_functions(
+        ["_build_blocked_structured_result"],
+        extra_globals={
+            "uuid4": lambda: "doc-123",
+            "_build_document_extraction_v1": lambda docs: {"documents": docs},
+            "_build_processing_summary_v2": lambda summary, documents, issues, compliance_rate: {
+                "documents": documents,
+                "severity_breakdown": summary.get("severity_breakdown", {}),
+            },
+            "_build_issue_provenance_v1": lambda issues: {"issues": issues},
+            "LCBaseline": _FakeBaseline,
+        },
+    )
+
+    build_blocked = funcs["_build_blocked_structured_result"]
+    gate = _FakeGateResult(
+        blocking_issues=[{"rule": "LC-MISSING-NUMBER"}],
+        completeness=0.45,
+        critical_completeness=0.2,
+        missing_critical=["lc_number"],
+        missing_required=[],
+        block_reason="Missing LC number",
+    )
+    baseline = _FakeBaseline(
+        lc_number=_FakeValue("LC-001"),
+        amount=_FakeValue(100000),
+        currency=_FakeValue("USD"),
+        applicant=_FakeValue("Applicant"),
+        beneficiary=_FakeValue("Beneficiary"),
+        extraction_completeness=0.5,
+        critical_completeness=0.25,
+    )
+
+    result = build_blocked(
+        v2_gate_result=gate,
+        v2_baseline=baseline,
+        lc_type="import",
+        processing_duration=0.5,
+        documents=[{"document_type": "letter_of_credit", "extraction_status": "partial"}],
+    )
+
+    assert result["submission_eligibility"]["reasons"] == ["validation_blocked"]
+    assert result["submission_eligibility"]["source"] == "validation"

@@ -1663,10 +1663,10 @@ class CrossDocValidator:
                 break
         
         # Extract BIN (Business Identification Number)
-        # Pattern: "BIN: 000334455-0103", "EXPORTER BIN: 000334455-0103"
+        # Patterns: "BIN: 000334455-0103", "EXPORTER BIN NO. 000334455-0103", "B.I.N. # 000334455-0103"
         bin_patterns = [
-            r"(?:EXPORTER\s+)?BIN[:\s]+([0-9\-]+)",
-            r"BUSINESS\s+IDENTIFICATION\s+(?:NO\.?|NUMBER)[:\s]*([0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         ]
         for pattern in bin_patterns:
             match = re.search(pattern, conditions_text)
@@ -1675,10 +1675,11 @@ class CrossDocValidator:
                 break
         
         # Extract TIN (Tax Identification Number)
-        # Pattern: "TIN: 545342112233", "EXPORTER TIN: 545342112233"
+        # Patterns: "TIN: 545342112233", "EXPORTER TIN NO. 545342112233", "TAX ID# 545342112233"
         tin_patterns = [
-            r"(?:EXPORTER\s+)?TIN[:\s]+([0-9\-]+)",
-            r"TAX\s+IDENTIFICATION\s+(?:NO\.?|NUMBER)[:\s]*([0-9\-]+)",
+            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
+            r"(?:TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
+            r"E-?TIN\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
         ]
         for pattern in tin_patterns:
             match = re.search(pattern, conditions_text)

@@ -40,6 +40,13 @@ class ExtractionStatus(str, Enum):
     NOT_APPLICABLE = "n/a"       # Not expected in this LC type
 
 
+class MissingReason(str, Enum):
+    """Deterministic reason codes for missing/invalid fields."""
+    MISSING_IN_SOURCE = "missing_in_source"
+    PARSER_FAILED = "parser_failed"
+    CONFLICT_DETECTED = "conflict_detected"
+
+
 @dataclass
 class FieldResult:
     """Result of extracting a single field."""
@@ -51,6 +58,11 @@ class FieldResult:
     confidence: float = 0.0  # 0.0 to 1.0
     source: Optional[str] = None  # Which parser extracted this
     error: Optional[str] = None  # Error message if invalid/missing
+    missing_reason: Optional[str] = None  # Deterministic missing reason code
+    # Evidence span (when available)
+    evidence_text: Optional[str] = None
+    evidence_page: Optional[int] = None
+    evidence_location: Optional[Any] = None  # bbox/span info when available
     
     @property
     def is_present(self) -> bool:
@@ -59,6 +71,10 @@ class FieldResult:
     @property
     def is_critical_missing(self) -> bool:
         return self.priority == FieldPriority.CRITICAL and not self.is_present
+    
+    @property
+    def has_evidence(self) -> bool:
+        return bool(self.evidence_text) or self.evidence_page is not None or self.evidence_location is not None
 
 
 @dataclass
@@ -418,6 +434,10 @@ class LCBaseline:
                 "confidence": f.confidence,
                 "source": f.source,
                 "error": f.error,
+                "missing_reason": f.missing_reason,
+                "evidence_text": f.evidence_text,
+                "evidence_page": f.evidence_page,
+                "evidence_location": f.evidence_location,
             }
             for f in self.get_all_fields()
         }
@@ -463,6 +483,7 @@ class LCBaseline:
                 "field_priority": field_result.priority.value,
                 "extraction_status": field_result.status.value,
                 "extraction_error": field_result.error,
+                "missing_reason": field_result.missing_reason,
                 "documents": ["Letter of Credit"],
                 "document_names": ["Letter of Credit"],
                 "display_card": True,
@@ -492,11 +513,83 @@ def create_lc_baseline_from_extraction(
     baseline._source_parsers = source_parsers or ["unknown"]
     baseline._raw_text_length = len(raw_text) if raw_text else 0
     
+    evidence_map = (
+        extraction_result.get("field_evidence")
+        or extraction_result.get("_field_evidence")
+        or extraction_result.get("evidence")
+        or {}
+    )
+
+    field_diagnostics = extraction_result.get("_field_diagnostics") or {}
+
+    def _apply_evidence(field_result: FieldResult, evidence: Any) -> None:
+        if not evidence:
+            return
+        if isinstance(evidence, str):
+            field_result.evidence_text = evidence
+            return
+        if isinstance(evidence, dict):
+            field_result.evidence_text = (
+                evidence.get("text")
+                or evidence.get("snippet")
+                or evidence.get("raw")
+                or evidence.get("value")
+            )
+            field_result.evidence_page = evidence.get("page")
+            field_result.evidence_location = (
+                evidence.get("location")
+                or evidence.get("bbox")
+                or evidence.get("span")
+            )
+
+    def _extract_snippet(value: Any) -> Optional[str]:
+        if not raw_text:
+            return None
+        if value is None:
+            return None
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+        lowered = raw_text.lower()
+        idx = lowered.find(value_str.lower())
+        if idx == -1:
+            return None
+        window = 60
+        start = max(0, idx - window)
+        end = min(len(raw_text), idx + len(value_str) + window)
+        return raw_text[start:end].strip()
+
+    def _get_evidence(field_key: str, *fallback_keys: str) -> Any:
+        for key in (field_key, *fallback_keys):
+            if key in evidence_map:
+                return evidence_map.get(key)
+        return None
+
+    def _get_missing_reason(field_key: str) -> MissingReason:
+        diag = field_diagnostics.get(field_key) or {}
+        if diag.get("conflict"):
+            return MissingReason.CONFLICT_DETECTED
+        if diag.get("invalid_candidates"):
+            return MissingReason.PARSER_FAILED
+        return MissingReason.MISSING_IN_SOURCE
+
+    def _get_missing_status(field_key: str) -> Tuple[ExtractionStatus, Optional[str], MissingReason]:
+        diag = field_diagnostics.get(field_key) or {}
+        if diag.get("conflict"):
+            return ExtractionStatus.INVALID, "Conflicting values detected", MissingReason.CONFLICT_DETECTED
+        if diag.get("invalid_candidates"):
+            return ExtractionStatus.INVALID, "Parser failed to extract a valid value", MissingReason.PARSER_FAILED
+        return ExtractionStatus.MISSING, None, MissingReason.MISSING_IN_SOURCE
+
     def set_field(
         field_result: FieldResult,
         value: Any,
         source: str = "extraction",
         confidence: float = 0.8,
+        evidence: Any = None,
+        status_override: Optional[ExtractionStatus] = None,
+        error: Optional[str] = None,
+        missing_reason: Optional[MissingReason] = None,
     ):
         """Helper to set a field result."""
         if value is not None and value != "" and value != {}:
@@ -504,12 +597,31 @@ def create_lc_baseline_from_extraction(
             field_result.value = value
             field_result.confidence = confidence
             field_result.source = source
+            field_result.error = None
+            field_result.missing_reason = None
+            _apply_evidence(field_result, evidence)
+            if field_result.priority == FieldPriority.CRITICAL and not field_result.evidence_text:
+                snippet = _extract_snippet(value)
+                if snippet:
+                    field_result.evidence_text = snippet
         else:
-            field_result.status = ExtractionStatus.MISSING
+            field_result.status = status_override or ExtractionStatus.MISSING
             field_result.confidence = 0.0
+            field_result.error = error
+            field_result.missing_reason = (
+                missing_reason.value if isinstance(missing_reason, MissingReason) else missing_reason
+            ) or MissingReason.MISSING_IN_SOURCE.value
     
     # LC Number
-    set_field(baseline.lc_number, extraction_result.get("number"))
+    lc_number_status, lc_number_error, lc_number_reason = _get_missing_status("lc_number")
+    set_field(
+        baseline.lc_number,
+        extraction_result.get("number"),
+        evidence=_get_evidence("lc_number", "number", "20"),
+        status_override=lc_number_status,
+        error=lc_number_error,
+        missing_reason=lc_number_reason,
+    )
     
     # LC Type
     lc_type = extraction_result.get("lc_type")
@@ -517,7 +629,14 @@ def create_lc_baseline_from_extraction(
         # Try to infer from form_of_doc_credit in mt700
         mt700 = extraction_result.get("mt700", {})
         lc_type = mt700.get("form_of_doc_credit")
-    set_field(baseline.lc_type, lc_type)
+    lc_type_status, lc_type_error, lc_type_reason = _get_missing_status("lc_type")
+    set_field(
+        baseline.lc_type,
+        lc_type,
+        status_override=lc_type_status,
+        error=lc_type_error,
+        missing_reason=lc_type_reason,
+    )
     
     # Applicant
     applicant_data = extraction_result.get("applicant")
@@ -530,7 +649,24 @@ def create_lc_baseline_from_extraction(
                 address=applicant_data.get("address"),
                 country=applicant_data.get("country"),
             )
-        set_field(baseline.applicant, baseline._applicant_info.name if baseline._applicant_info else None)
+        applicant_status, applicant_error, applicant_reason = _get_missing_status("applicant")
+        set_field(
+            baseline.applicant,
+            baseline._applicant_info.name if baseline._applicant_info else None,
+            evidence=_get_evidence("applicant", "applicant_name", "50"),
+            status_override=applicant_status,
+            error=applicant_error,
+            missing_reason=applicant_reason,
+        )
+    else:
+        applicant_status, applicant_error, applicant_reason = _get_missing_status("applicant")
+        set_field(
+            baseline.applicant,
+            None,
+            status_override=applicant_status,
+            error=applicant_error,
+            missing_reason=applicant_reason,
+        )
     
     # Beneficiary
     beneficiary_data = extraction_result.get("beneficiary")
@@ -543,10 +679,29 @@ def create_lc_baseline_from_extraction(
                 address=beneficiary_data.get("address"),
                 country=beneficiary_data.get("country"),
             )
-        set_field(baseline.beneficiary, baseline._beneficiary_info.name if baseline._beneficiary_info else None)
+        beneficiary_status, beneficiary_error, beneficiary_reason = _get_missing_status("beneficiary")
+        set_field(
+            baseline.beneficiary,
+            baseline._beneficiary_info.name if baseline._beneficiary_info else None,
+            evidence=_get_evidence("beneficiary", "beneficiary_name", "59"),
+            status_override=beneficiary_status,
+            error=beneficiary_error,
+            missing_reason=beneficiary_reason,
+        )
+    else:
+        beneficiary_status, beneficiary_error, beneficiary_reason = _get_missing_status("beneficiary")
+        set_field(
+            baseline.beneficiary,
+            None,
+            status_override=beneficiary_status,
+            error=beneficiary_error,
+            missing_reason=beneficiary_reason,
+        )
     
     # Amount
     amount_data = extraction_result.get("amount")
+    amount_parse_failed = False
+    raw_value = None
     if amount_data:
         if isinstance(amount_data, dict):
             raw_value = amount_data.get("value") or amount_data.get("raw")
@@ -554,6 +709,8 @@ def create_lc_baseline_from_extraction(
                 value = float(str(raw_value).replace(",", "")) if raw_value else None
             except (ValueError, TypeError):
                 value = None
+                if raw_value:
+                    amount_parse_failed = True
             baseline._amount_info = AmountInfo(
                 value=value,
                 currency=amount_data.get("currency"),
@@ -566,11 +723,45 @@ def create_lc_baseline_from_extraction(
                 baseline._amount_info = AmountInfo(value=float(amount_data.replace(",", "")), raw=amount_data)
             except ValueError:
                 baseline._amount_info = AmountInfo(raw=amount_data)
+                amount_parse_failed = True
         
+        amount_status, amount_error, amount_reason = _get_missing_status("amount")
+        if amount_parse_failed:
+            amount_status = ExtractionStatus.INVALID
+            amount_error = "Invalid amount format"
+            amount_reason = MissingReason.PARSER_FAILED
         set_field(
             baseline.amount,
-            baseline._amount_info.value if baseline._amount_info and baseline._amount_info.is_valid else None
+            baseline._amount_info.value if baseline._amount_info and baseline._amount_info.is_valid else None,
+            evidence=_get_evidence("amount", "lc_amount", "32B_amount"),
+            status_override=amount_status,
+            error=amount_error,
+            missing_reason=amount_reason,
         )
+    else:
+        amount_status, amount_error, amount_reason = _get_missing_status("amount")
+        set_field(
+            baseline.amount,
+            None,
+            status_override=amount_status,
+            error=amount_error,
+            missing_reason=amount_reason,
+        )
+
+    # Currency
+    currency_value = None
+    if baseline._amount_info and baseline._amount_info.currency:
+        currency_value = baseline._amount_info.currency
+    if not currency_value:
+        currency_value = extraction_result.get("currency")
+    currency_status, currency_error, currency_reason = _get_missing_status("currency")
+    set_field(
+        baseline.currency,
+        currency_value,
+        status_override=currency_status,
+        error=currency_error,
+        missing_reason=currency_reason,
+    )
     
     # Timeline
     timeline_data = extraction_result.get("timeline", {})
@@ -579,9 +770,30 @@ def create_lc_baseline_from_extraction(
         expiry_date=timeline_data.get("expiry_date"),
         latest_shipment=timeline_data.get("latest_shipment"),
     )
-    set_field(baseline.expiry_date, baseline._timeline_info.expiry_date)
-    set_field(baseline.issue_date, baseline._timeline_info.issue_date)
-    set_field(baseline.latest_shipment, baseline._timeline_info.latest_shipment)
+    expiry_status, expiry_error, expiry_reason = _get_missing_status("expiry_date")
+    set_field(
+        baseline.expiry_date,
+        baseline._timeline_info.expiry_date,
+        status_override=expiry_status,
+        error=expiry_error,
+        missing_reason=expiry_reason,
+    )
+    issue_status, issue_error, issue_reason = _get_missing_status("issue_date")
+    set_field(
+        baseline.issue_date,
+        baseline._timeline_info.issue_date,
+        status_override=issue_status,
+        error=issue_error,
+        missing_reason=issue_reason,
+    )
+    shipment_status, shipment_error, shipment_reason = _get_missing_status("latest_shipment")
+    set_field(
+        baseline.latest_shipment,
+        baseline._timeline_info.latest_shipment,
+        status_override=shipment_status,
+        error=shipment_error,
+        missing_reason=shipment_reason,
+    )
     
     # Ports
     ports_data = extraction_result.get("ports", {})
@@ -596,7 +808,23 @@ def create_lc_baseline_from_extraction(
                 name=pol.get("name") or pol.get("port"),
                 country=pol.get("country"),
             )
-        set_field(baseline.port_of_loading, baseline._port_of_loading_info.name if baseline._port_of_loading_info else None)
+        pol_status, pol_error, pol_reason = _get_missing_status("port_of_loading")
+        set_field(
+            baseline.port_of_loading,
+            baseline._port_of_loading_info.name if baseline._port_of_loading_info else None,
+            status_override=pol_status,
+            error=pol_error,
+            missing_reason=pol_reason,
+        )
+    else:
+        pol_status, pol_error, pol_reason = _get_missing_status("port_of_loading")
+        set_field(
+            baseline.port_of_loading,
+            None,
+            status_override=pol_status,
+            error=pol_error,
+            missing_reason=pol_reason,
+        )
     
     if pod:
         if isinstance(pod, str):
@@ -606,10 +834,33 @@ def create_lc_baseline_from_extraction(
                 name=pod.get("name") or pod.get("port"),
                 country=pod.get("country"),
             )
-        set_field(baseline.port_of_discharge, baseline._port_of_discharge_info.name if baseline._port_of_discharge_info else None)
+        pod_status, pod_error, pod_reason = _get_missing_status("port_of_discharge")
+        set_field(
+            baseline.port_of_discharge,
+            baseline._port_of_discharge_info.name if baseline._port_of_discharge_info else None,
+            status_override=pod_status,
+            error=pod_error,
+            missing_reason=pod_reason,
+        )
+    else:
+        pod_status, pod_error, pod_reason = _get_missing_status("port_of_discharge")
+        set_field(
+            baseline.port_of_discharge,
+            None,
+            status_override=pod_status,
+            error=pod_error,
+            missing_reason=pod_reason,
+        )
     
     # Incoterm
-    set_field(baseline.incoterm, extraction_result.get("incoterm"))
+    incoterm_status, incoterm_error, incoterm_reason = _get_missing_status("incoterm")
+    set_field(
+        baseline.incoterm,
+        extraction_result.get("incoterm"),
+        status_override=incoterm_status,
+        error=incoterm_error,
+        missing_reason=incoterm_reason,
+    )
     
     # Goods
     goods_items = extraction_result.get("goods", [])
@@ -630,7 +881,14 @@ def create_lc_baseline_from_extraction(
             baseline._goods_items.append(GoodsItem(description=item))
     
     goods_desc = "\n".join(goods_desc_parts) if goods_desc_parts else None
-    set_field(baseline.goods_description, goods_desc)
+    goods_status, goods_error, goods_reason = _get_missing_status("goods_description")
+    set_field(
+        baseline.goods_description,
+        goods_desc,
+        status_override=goods_status,
+        error=goods_error,
+        missing_reason=goods_reason,
+    )
     
     # HS Codes
     baseline._hs_codes = extraction_result.get("hs_codes", [])
@@ -638,15 +896,36 @@ def create_lc_baseline_from_extraction(
     # Documents required
     docs_required = extraction_result.get("documents_required", [])
     baseline._documents_list = docs_required if isinstance(docs_required, list) else []
-    set_field(baseline.documents_required, docs_required if docs_required else None)
+    docs_status, docs_error, docs_reason = _get_missing_status("documents_required")
+    set_field(
+        baseline.documents_required,
+        docs_required if docs_required else None,
+        status_override=docs_status,
+        error=docs_error,
+        missing_reason=docs_reason,
+    )
     
     # UCP Reference
-    set_field(baseline.ucp_reference, extraction_result.get("ucp_reference"))
+    ucp_status, ucp_error, ucp_reason = _get_missing_status("ucp_reference")
+    set_field(
+        baseline.ucp_reference,
+        extraction_result.get("ucp_reference"),
+        status_override=ucp_status,
+        error=ucp_error,
+        missing_reason=ucp_reason,
+    )
     
     # Additional conditions (47A clauses) - canonical name is "additional_conditions"
     conditions = extraction_result.get("additional_conditions", []) or extraction_result.get("clauses_47a", [])
     baseline._conditions_list = conditions if isinstance(conditions, list) else []
-    set_field(baseline.additional_conditions, conditions if conditions else None)
+    conditions_status, conditions_error, conditions_reason = _get_missing_status("additional_conditions")
+    set_field(
+        baseline.additional_conditions,
+        conditions if conditions else None,
+        status_override=conditions_status,
+        error=conditions_error,
+        missing_reason=conditions_reason,
+    )
     
     logger.info(
         "Created LCBaseline: completeness=%.1f%%, critical_missing=%s, valid=%s",

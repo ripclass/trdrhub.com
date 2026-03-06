@@ -159,7 +159,8 @@ class RulesEngine:
                         "field_name": f.field_name,
                         "field_type": f.field_type.value,
                         "value": f.value,
-                        "confidence": f.confidence
+                        "confidence": f.confidence,
+                        "reason": f.reason
                     }
                     for f in lc_fields
                 ],
@@ -174,7 +175,8 @@ class RulesEngine:
                         "field_name": f.field_name,
                         "field_type": f.field_type.value,
                         "value": f.value,
-                        "confidence": f.confidence
+                        "confidence": f.confidence,
+                        "reason": f.reason
                     }
                     for f in invoice_fields
                 ],
@@ -189,7 +191,8 @@ class RulesEngine:
                         "field_name": f.field_name,
                         "field_type": f.field_type.value,
                         "value": f.value,
-                        "confidence": f.confidence
+                        "confidence": f.confidence,
+                        "reason": f.reason
                     }
                     for f in bl_fields
                 ],

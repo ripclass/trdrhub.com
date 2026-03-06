@@ -352,6 +352,48 @@ class DocumentFieldExtractor:
         r'(?:PORT OF DISCHARGE|POD)[:\s]*([A-Z][A-Za-z\s,]+)',
         r'(?:DESTINATION|DEST\.?)[:\s]*([A-Z][A-Za-z\s,]+)',
     ]
+
+    FIELD_LABEL_ALIASES = {
+        "voyage_number": [
+            r"VOYAGE\s*(?:NO\.?|NUMBER)?",
+            r"VOY\.?\s*NO\.?",
+            r"VOY\s*(?:NO\.?|NUMBER)?",
+        ],
+        "gross_weight": [
+            r"GROSS\s*WEIGHT",
+            r"GROSS\s*WT",
+            r"G\.?\s*W\.?",
+            r"G/\s*W",
+        ],
+        "net_weight": [
+            r"NET\s*WEIGHT",
+            r"NET\s*WT",
+            r"N\.?\s*W\.?",
+            r"N/\s*W",
+        ],
+        "carton_size": [
+            r"CARTON\s*SIZE",
+            r"CTN\s*SIZE",
+            r"CARTON\s*DIMENSIONS?",
+            r"CASE\s*SIZE",
+        ],
+        "size_breakdown": [
+            r"SIZE\s*BREAKDOWN",
+            r"SIZE\s*DETAILS",
+            r"SIZE\s*/\s*QTY",
+            r"SIZE\s*QTY",
+        ],
+        "bin_number": [
+            r"\bBIN\b",
+            r"B\.\s*I\.\s*N\.?(?:\s*NO\.?|\s*NUMBER)?",
+            r"BUSINESS\s*IDENTIFICATION\s*NO\.?",
+        ],
+        "tin_number": [
+            r"\bTIN\b",
+            r"T\.\s*I\.\s*N\.?(?:\s*NO\.?|\s*NUMBER)?",
+            r"TAX\s*IDENTIFICATION\s*NO\.?",
+        ],
+    }
     
     LABEL_BREAK_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9\s/()\-]{2,}[:：]")
 
@@ -869,6 +911,36 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.COMMERCIAL_INVOICE
             ))
         
+        bin_number = self._extract_label_alias_value(
+            text,
+            lines,
+            "bin_number",
+            inline_capture=r"(?:EXPORTER\s+)?BIN\s*[:\-]?\s*([0-9\-]+)"
+        )
+        if bin_number:
+            fields.append(ExtractedField(
+                field_name="exporter_bin",
+                field_type=FieldType.TEXT,
+                value=bin_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+        
+        tin_number = self._extract_label_alias_value(
+            text,
+            lines,
+            "tin_number",
+            inline_capture=r"(?:EXPORTER\s+)?TIN\s*[:\-]?\s*([0-9\-]+)"
+        )
+        if tin_number:
+            fields.append(ExtractedField(
+                field_name="exporter_tin",
+                field_type=FieldType.TEXT,
+                value=tin_number.strip(),
+                confidence=confidence,
+                document_type=DocumentType.COMMERCIAL_INVOICE
+            ))
+        
         product_description = self._extract_label_block(
             text,
             [
@@ -890,6 +962,7 @@ class DocumentFieldExtractor:
     def _extract_bl_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         """Extract fields specific to Bill of Lading."""
         fields = []
+        lines = [line.strip() for line in text.splitlines()]
         
         # B/L Number
         bl_number = self._extract_pattern(text, r'(?:B/L|BILL OF LADING)\s*(?:NO\.?|NUMBER)[:\s]*([A-Z0-9-]+)', 1)
@@ -956,50 +1029,254 @@ class DocumentFieldExtractor:
                 confidence=confidence,
                 document_type=DocumentType.BILL_OF_LADING
             ))
+
+        voyage_number, voyage_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["voyage_number"],
+        )
+        if voyage_number:
+            voyage_number = voyage_number.strip()
+        self._append_field(
+            fields,
+            "voyage_number",
+            FieldType.TEXT,
+            voyage_number,
+            confidence,
+            DocumentType.BILL_OF_LADING,
+            raw_text=voyage_number,
+            reason=voyage_reason,
+        )
+
+        gross_weight, gross_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["gross_weight"],
+        )
+        gross_weight = self._normalize_weight_text(gross_weight)
+        self._append_field(
+            fields,
+            "gross_weight",
+            FieldType.TEXT,
+            gross_weight,
+            confidence,
+            DocumentType.BILL_OF_LADING,
+            raw_text=gross_weight,
+            reason=gross_reason,
+        )
+
+        net_weight, net_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["net_weight"],
+        )
+        net_weight = self._normalize_weight_text(net_weight)
+        self._append_field(
+            fields,
+            "net_weight",
+            FieldType.TEXT,
+            net_weight,
+            confidence,
+            DocumentType.BILL_OF_LADING,
+            raw_text=net_weight,
+            reason=net_reason,
+        )
+
+        bin_number, bin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["bin_number"],
+        )
+        if bin_number:
+            bin_number = bin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_bin",
+            FieldType.TEXT,
+            bin_number,
+            confidence,
+            DocumentType.BILL_OF_LADING,
+            raw_text=bin_number,
+            reason=bin_reason,
+        )
+
+        tin_number, tin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["tin_number"],
+        )
+        if tin_number:
+            tin_number = tin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_tin",
+            FieldType.TEXT,
+            tin_number,
+            confidence,
+            DocumentType.BILL_OF_LADING,
+            raw_text=tin_number,
+            reason=tin_reason,
+        )
         
         return fields
 
     def _extract_packing_list_fields(self, text: str, confidence: float) -> List[ExtractedField]:
         fields = []
-        total_packages = self._extract_pattern(text, r'(?:TOTAL\s+PACKAGES|NO\.?\s+OF\s+PACKAGES|PACKAGES)[:\s]*([^\n]+)', 1)
+        lines = [line.strip() for line in text.splitlines()]
+
+        total_packages, packages_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            [r"TOTAL\s+PACKAGES", r"NO\.?\s+OF\s+PACKAGES", r"PACKAGES"],
+        )
         if total_packages:
-            fields.append(ExtractedField(
-                field_name="total_packages",
-                field_type=FieldType.TEXT,
-                value=total_packages.strip(),
-                confidence=confidence,
-                document_type=DocumentType.PACKING_LIST,
-            ))
+            total_packages = total_packages.strip()
+        self._append_field(
+            fields,
+            "total_packages",
+            FieldType.TEXT,
+            total_packages,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=total_packages,
+            reason=packages_reason,
+        )
 
-        gross_weight = self._extract_pattern(text, r'(?:GROSS\s+WEIGHT|G\.W\.)[:\s]*([^\n]+)', 1)
-        if gross_weight:
-            fields.append(ExtractedField(
-                field_name="gross_weight",
-                field_type=FieldType.TEXT,
-                value=gross_weight.strip(),
-                confidence=confidence,
-                document_type=DocumentType.PACKING_LIST,
-            ))
+        gross_weight, gross_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["gross_weight"],
+        )
+        gross_weight = self._normalize_weight_text(gross_weight)
+        self._append_field(
+            fields,
+            "gross_weight",
+            FieldType.TEXT,
+            gross_weight,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=gross_weight,
+            reason=gross_reason,
+        )
 
-        net_weight = self._extract_pattern(text, r'(?:NET\s+WEIGHT|N\.W\.)[:\s]*([^\n]+)', 1)
-        if net_weight:
-            fields.append(ExtractedField(
-                field_name="net_weight",
-                field_type=FieldType.TEXT,
-                value=net_weight.strip(),
-                confidence=confidence,
-                document_type=DocumentType.PACKING_LIST,
-            ))
+        net_weight, net_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["net_weight"],
+        )
+        net_weight = self._normalize_weight_text(net_weight)
+        self._append_field(
+            fields,
+            "net_weight",
+            FieldType.TEXT,
+            net_weight,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=net_weight,
+            reason=net_reason,
+        )
 
-        dimensions = self._extract_pattern(text, r'(?:DIMENSIONS|MEASUREMENTS)[:\s]*([^\n]+)', 1)
-        if dimensions:
-            fields.append(ExtractedField(
-                field_name="dimensions",
-                field_type=FieldType.TEXT,
-                value=dimensions.strip(),
-                confidence=confidence,
-                document_type=DocumentType.PACKING_LIST,
-            ))
+        dimensions, dimensions_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            [r"DIMENSIONS", r"MEASUREMENTS", r"MEASUREMENT"],
+        )
+        dimensions = self._normalize_dimension_text(dimensions)
+        self._append_field(
+            fields,
+            "dimensions",
+            FieldType.TEXT,
+            dimensions,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=dimensions,
+            reason=dimensions_reason,
+        )
+
+        size_breakdown, size_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["size_breakdown"],
+        )
+        size_breakdown = self._normalize_dimension_text(size_breakdown)
+        self._append_field(
+            fields,
+            "size_breakdown",
+            FieldType.TEXT,
+            size_breakdown,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=size_breakdown,
+            reason=size_reason,
+        )
+
+        carton_size, carton_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["carton_size"],
+        )
+        carton_size = self._normalize_dimension_text(carton_size)
+        self._append_field(
+            fields,
+            "carton_size",
+            FieldType.TEXT,
+            carton_size,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=carton_size,
+            reason=carton_reason,
+        )
+
+        packing_breakdown = size_breakdown or carton_size
+        packing_reason = None
+        if not packing_breakdown:
+            packing_reason = size_reason if size_reason == "parser_failed" else carton_reason
+        self._append_field(
+            fields,
+            "packing_size_breakdown",
+            FieldType.TEXT,
+            packing_breakdown,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=packing_breakdown,
+            reason=packing_reason,
+        )
+
+        bin_number, bin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["bin_number"],
+        )
+        if bin_number:
+            bin_number = bin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_bin",
+            FieldType.TEXT,
+            bin_number,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=bin_number,
+            reason=bin_reason,
+        )
+
+        tin_number, tin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["tin_number"],
+        )
+        if tin_number:
+            tin_number = tin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_tin",
+            FieldType.TEXT,
+            tin_number,
+            confidence,
+            DocumentType.PACKING_LIST,
+            raw_text=tin_number,
+            reason=tin_reason,
+        )
 
         return fields
 
@@ -1196,6 +1473,78 @@ class DocumentFieldExtractor:
                         if candidate:
                             return candidate
         return None
+
+    def _label_present(self, lines: List[str], label_patterns: List[str]) -> bool:
+        for line in lines:
+            for pattern in label_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    return True
+        return False
+
+    def _extract_label_value_with_reason(
+        self,
+        text: str,
+        lines: List[str],
+        label_patterns: List[str],
+        inline_capture: Optional[str] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        value = self._extract_label_value(text, lines, label_patterns, inline_capture)
+        if value:
+            return value, None
+        if self._label_present(lines, label_patterns):
+            return None, "parser_failed"
+        return None, "missing_in_source"
+
+    def _normalize_weight_text(self, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        cleaned = re.sub(r"\s+", " ", value.strip())
+        cleaned = re.sub(r"(\d)([A-Za-z])", r"\1 \2", cleaned)
+        return cleaned
+
+    def _normalize_dimension_text(self, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        cleaned = re.sub(r"\s+", " ", value.strip())
+        return cleaned
+
+    def _append_field(
+        self,
+        fields: List[ExtractedField],
+        field_name: str,
+        field_type: FieldType,
+        value: Optional[str],
+        confidence: float,
+        document_type: DocumentType,
+        raw_text: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        if value is None and reason is None:
+            return
+        fields.append(
+            ExtractedField(
+                field_name=field_name,
+                field_type=field_type,
+                value=value,
+                confidence=confidence,
+                document_type=document_type,
+                raw_text=raw_text,
+                reason=reason,
+            )
+        )
+
+    def _extract_label_alias_value(
+        self,
+        text: str,
+        lines: List[str],
+        alias_key: str,
+        inline_capture: Optional[str] = None,
+    ) -> Optional[str]:
+        """Extract value using label alias patterns (supports alt spellings)."""
+        patterns = self.FIELD_LABEL_ALIASES.get(alias_key, [])
+        if not patterns:
+            return None
+        return self._extract_label_value(text, lines, patterns, inline_capture=inline_capture)
 
     def _normalize_amount_string(self, raw_value: str) -> str:
         """Normalize amount strings like '167,176.20 USD' -> '167176.20'."""

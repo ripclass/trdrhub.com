@@ -109,7 +109,7 @@ from app.routers.validation.request_parsing import (
     extract_request_user_type as _extract_request_user_type,
     should_force_json_rules as _should_force_json_rules,
     resolve_shipment_context as _resolve_shipment_context,
-    extract_lc_type_override as _extract_lc_type_override,
+    extract_lc_type_override as _extract_lc_type_override_helper,
 )
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -185,6 +185,33 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
     if _two_stage_extractor is None:
         _two_stage_extractor = TwoStageExtractor()
     return _two_stage_extractor
+
+
+def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
+    """Extract LC type overrides from request payload.
+
+    Mirrors app.routers.validation.request_parsing.extract_lc_type_override
+    but kept here so tests can compile it directly.
+    """
+    options = payload.get("options") or {}
+    candidates = [
+        payload.get("lc_type_override"),
+        payload.get("lcTypeOverride"),
+        options.get("lc_type_override"),
+        options.get("lc_type"),
+        payload.get("lcType"),
+        payload.get("lc_type_selection"),
+        payload.get("requested_lc_type"),
+    ]
+    for candidate in candidates:
+        normalized = normalize_lc_type(candidate)
+        if normalized in VALID_LC_TYPES:
+            if normalized == LCType.UNKNOWN.value:
+                return LCType.UNKNOWN.value
+            return normalized
+        if candidate and str(candidate).strip().lower() == "auto":
+            return None
+    return None
 
 # _filter_user_facing_fields moved to app.routers.validation.utilities
 
@@ -1914,9 +1941,14 @@ async def validate_doc(
                     f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
                 )
 
+            missing_reason_codes = (
+                (structured_result.get("gate_result") or {}).get("missing_reason_codes") or []
+            )
+
             structured_result["submission_eligibility"] = {
                 "can_submit": submission_can_submit,
                 "reasons": submission_reasons,
+                "missing_reason_codes": missing_reason_codes,
                 "source": "validation",
             }
             
@@ -2080,9 +2112,14 @@ async def validate_doc(
                     f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
                 )
 
+            missing_reason_codes = (
+                (structured_result.get("gate_result") or {}).get("missing_reason_codes") or []
+            )
+
             structured_result["submission_eligibility"] = {
                 "can_submit": can_submit,
                 "reasons": submission_reasons,
+                "missing_reason_codes": missing_reason_codes,
                 "source": "validation",
             }
         except Exception as contract_err:
@@ -3534,6 +3571,9 @@ def _build_blocked_structured_result(
         "ai_enrichment": None,
     }
 
+    return result
+
+
 
 def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     """
@@ -3552,14 +3592,80 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     # Extract MT700 blocks if present
     mt700 = lc_context.get("mt700", {})
     blocks = mt700.get("blocks", {}) if isinstance(mt700, dict) else {}
+
+    raw_text = lc_context.get("raw_text") or (lc_context.get("lc_structured") or {}).get("raw_text") or ""
+    evidence_map = (
+        lc_context.get("field_evidence")
+        or lc_context.get("_field_evidence")
+        or lc_context.get("evidence")
+        or (lc_context.get("lc_structured") or {}).get("field_evidence")
+        or (lc_context.get("lc_structured") or {}).get("_field_evidence")
+        or (lc_context.get("lc_structured") or {}).get("evidence")
+        or {}
+    )
+    
+    # Helper to apply evidence map
+    def _apply_evidence(field_result: FieldResult, evidence: Any) -> None:
+        if not evidence:
+            return
+        if isinstance(evidence, str):
+            field_result.evidence_text = evidence
+            return
+        if isinstance(evidence, dict):
+            field_result.evidence_text = (
+                evidence.get("text")
+                or evidence.get("snippet")
+                or evidence.get("raw")
+                or evidence.get("value")
+            )
+            field_result.evidence_page = evidence.get("page")
+            field_result.evidence_location = (
+                evidence.get("location")
+                or evidence.get("bbox")
+                or evidence.get("span")
+            )
+
+    def _extract_snippet(value: Any) -> Optional[str]:
+        if not raw_text:
+            return None
+        if value is None:
+            return None
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+        lowered = raw_text.lower()
+        idx = lowered.find(value_str.lower())
+        if idx == -1:
+            return None
+        window = 60
+        start = max(0, idx - window)
+        end = min(len(raw_text), idx + len(value_str) + window)
+        return raw_text[start:end].strip()
+
+    def _get_evidence(field_key: str, *fallback_keys: str) -> Any:
+        for key in (field_key, *fallback_keys):
+            if key in evidence_map:
+                return evidence_map.get(key)
+        return None
     
     # Helper to set field with proper status
-    def set_field(field_result: FieldResult, value: Any, confidence: float = 0.8, source: str = "context"):
+    def set_field(
+        field_result: FieldResult,
+        value: Any,
+        confidence: float = 0.8,
+        source: str = "context",
+        evidence: Any = None,
+    ):
         if value is not None and value != "" and value != {}:
             field_result.value = value
             field_result.status = ExtractionStatus.EXTRACTED
             field_result.confidence = confidence
             field_result.source = source
+            _apply_evidence(field_result, evidence)
+            if field_result.priority == FieldPriority.CRITICAL and not field_result.evidence_text:
+                snippet = _extract_snippet(value)
+                if snippet:
+                    field_result.evidence_text = snippet
         else:
             field_result.status = ExtractionStatus.MISSING
             field_result.confidence = 0.0
@@ -3581,7 +3687,11 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     lc_number = get_value("number", "lc_number", "documentaryCredit", "doc_credit_number")
     if not lc_number:
         lc_number = blocks.get("20")  # MT700 field 20
-    set_field(baseline.lc_number, lc_number)
+    set_field(
+        baseline.lc_number,
+        lc_number,
+        evidence=_get_evidence("lc_number", "number", "20")
+    )
     
     # =====================================================================
     # LC Type
@@ -3622,10 +3732,18 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             except ValueError:
                 pass
     
-    set_field(baseline.amount, amount_value)
+    set_field(
+        baseline.amount,
+        amount_value,
+        evidence=_get_evidence("amount", "lc_amount", "32B_amount", "32B")
+    )
     
     # Currency field
-    set_field(baseline.currency, currency)
+    set_field(
+        baseline.currency,
+        currency,
+        evidence=_get_evidence("currency", "32B_currency", "ccy")
+    )
     
     # Store structured amount info
     if amount_value is not None or currency:
@@ -3648,7 +3766,11 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             applicant = applicant.get("name")
         elif isinstance(applicant, str):
             baseline._applicant_info = PartyInfo(name=applicant)
-    set_field(baseline.applicant, applicant)
+    set_field(
+        baseline.applicant,
+        applicant,
+        evidence=_get_evidence("applicant", "applicant_name", "50")
+    )
     
     # =====================================================================
     # Beneficiary (MT700 Field 59)
@@ -3667,7 +3789,11 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             beneficiary = beneficiary.get("name")
         elif isinstance(beneficiary, str):
             baseline._beneficiary_info = PartyInfo(name=beneficiary)
-    set_field(baseline.beneficiary, beneficiary)
+    set_field(
+        baseline.beneficiary,
+        beneficiary,
+        evidence=_get_evidence("beneficiary", "beneficiary_name", "59")
+    )
     
     # =====================================================================
     # Banks

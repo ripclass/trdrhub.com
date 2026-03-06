@@ -72,6 +72,7 @@ class Issue:
     # Metadata
     source: IssueSource = IssueSource.EXTRACTION
     field_name: Optional[str] = None
+    missing_reason: Optional[str] = None
     ruleset_domain: str = "icc.lcopilot"
     
     # Display options
@@ -111,6 +112,7 @@ class Issue:
             "document_ids": self.document_ids,
             "source": self.source.value,
             "field_name": self.field_name,
+            "missing_reason": self.missing_reason,
             "ruleset_domain": self.ruleset_domain,
             "display_card": self.display_card,
             "blocks_validation": self.blocks_validation,
@@ -427,6 +429,7 @@ class IssueEngine:
             document_names=["Letter of Credit"],
             source=IssueSource.EXTRACTION,
             field_name=field_name,
+            missing_reason=field_result.missing_reason,
             ruleset_domain="icc.lcopilot.extraction",
             display_card=True,
             blocks_validation=blocks,
@@ -470,6 +473,7 @@ class IssueEngine:
             document_names=rule_issue.get("document_names", []),
             document_ids=rule_issue.get("document_ids", []),
             source=source,
+            missing_reason=rule_issue.get("missing_reason"),
             ruleset_domain=domain,
             display_card=rule_issue.get("display_card", True),
             blocks_validation=rule_issue.get("blocks_validation", False),

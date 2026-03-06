@@ -248,15 +248,54 @@ def validate_bl_fields(
     # Field mappings - what keys to check for each requirement
     field_info = {
         "voyage_number": {
-            "keys": ["voyage_number", "voyage", "voyage_no", "voy_no"],
+            "keys": [
+                "voyage_number",
+                "voyage",
+                "voyage_no",
+                "voy_no",
+                "voy",
+                "vessel_voy",
+                "vessel_voyage",
+                "vessel_voyage_no",
+                "vessel_voy_no",
+                "vsl_voy",
+                "vsl_voyage",
+                "vsl_voy_no",
+                "vessel/voy",
+                "vsl/voy",
+            ],
             "display": "Voyage Number",
         },
         "gross_weight": {
-            "keys": ["gross_weight", "gw", "gross_wt", "total_gross_weight"],
+            "keys": [
+                "gross_weight",
+                "gross_wt",
+                "gross_wgt",
+                "gw",
+                "g.w.",
+                "g.w",
+                "g_w",
+                "g_wt",
+                "g_wgt",
+                "total_gross_weight",
+                "gross",
+            ],
             "display": "Gross Weight",
         },
         "net_weight": {
-            "keys": ["net_weight", "nw", "net_wt", "total_net_weight"],
+            "keys": [
+                "net_weight",
+                "net_wt",
+                "net_wgt",
+                "nw",
+                "n.w.",
+                "n.w",
+                "n_w",
+                "n_wt",
+                "n_wgt",
+                "total_net_weight",
+                "net",
+            ],
             "display": "Net Weight",
         },
     }
@@ -351,8 +390,32 @@ def validate_packing_list(
     
     # Check raw text
     pl_raw = (packing_list_data.get("raw_text") or "").upper()
-    size_indicators = ["SIZE", "S/M/L", "SMALL", "MEDIUM", "LARGE", "XL", "XXL", 
-                       "SIZE BREAKDOWN", "SIZE DISTRIBUTION", "SIZES PER CARTON"]
+    size_indicators = [
+        "SIZE",
+        "S/M/L",
+        "SMALL",
+        "MEDIUM",
+        "LARGE",
+        "XL",
+        "XXL",
+        "SIZE BREAKDOWN",
+        "SIZE DISTRIBUTION",
+        "SIZES PER CARTON",
+        "SIZE WISE",
+        "SIZE-WISE",
+        "SIZE/QTY",
+        "SIZE & QTY",
+        "SIZE RATIO",
+        "SIZE RUN",
+        "SIZE MATRIX",
+        "ASSORTMENT",
+        "CARTON SIZE",
+        "CTN SIZE",
+        "CARTON DIMENSION",
+        "CARTON DIMENSIONS",
+        "PACKAGE SIZE",
+        "PACKING SIZE",
+    ]
     
     for indicator in size_indicators:
         if indicator in pl_raw:

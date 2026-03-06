@@ -20,6 +20,7 @@ class GateResultSchema:
     critical_completeness: float = 0.0  # 0-1 scale
     missing_critical: List[str] = field(default_factory=list)
     missing_required: List[str] = field(default_factory=list)
+    missing_reason_codes: List[str] = field(default_factory=list)
     blocking_issues: List[Dict[str, Any]] = field(default_factory=list)
     warning_issues: List[Dict[str, Any]] = field(default_factory=list)
     
@@ -32,6 +33,7 @@ class GateResultSchema:
             "critical_completeness": round(self.critical_completeness * 100, 1),
             "missing_critical": self.missing_critical,
             "missing_required": self.missing_required,
+            "missing_reason_codes": self.missing_reason_codes,
             "blocking_issues": self.blocking_issues,
             "warning_issues": self.warning_issues,
         }
@@ -116,6 +118,7 @@ class IssueSchema:
     ucp_reference: Optional[str] = None
     isbp_reference: Optional[str] = None
     field: Optional[str] = None
+    missing_reason: Optional[str] = None
     blocks_validation: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
@@ -134,6 +137,7 @@ class IssueSchema:
             "ucp_reference": self.ucp_reference,
             "isbp_reference": self.isbp_reference,
             "field": self.field,
+            "missing_reason": self.missing_reason,
             "blocks_validation": self.blocks_validation,
         }
 
@@ -436,6 +440,7 @@ class ValidationResponseSchema:
             completeness=output.extraction_completeness / 100,  # Convert to 0-1
             critical_completeness=output.critical_completeness / 100,
             missing_critical=output.missing_critical_fields,
+            missing_reason_codes=(output.gate_result or {}).get("missing_reason_codes", []),
         )
         
         extraction = ExtractionSummarySchema(

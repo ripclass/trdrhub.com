@@ -89,6 +89,10 @@ class LCExtractionResult:
         
         Returns a dict that can be used to decide whether to proceed with validation.
         """
+        missing_reason_codes = sorted({
+            f.missing_reason for f in self.baseline.get_missing_required() if f.missing_reason
+        })
+
         return {
             "can_proceed": not self.validation_blocked,
             "is_valid": self.is_valid,
@@ -97,6 +101,7 @@ class LCExtractionResult:
             "critical_completeness": self.critical_completeness,
             "missing_critical": [f.field_name for f in self.baseline.get_missing_critical()],
             "missing_required": [f.field_name for f in self.baseline.get_missing_required()],
+            "missing_reason_codes": missing_reason_codes,
             "issue_count": len(self.missing_field_issues),
             "critical_issue_count": sum(
                 1 for issue in self.missing_field_issues
@@ -283,12 +288,17 @@ def check_lc_extraction_gate(
     # Combine with missing field issues
     all_issues = [blocking_issue] + extraction_result.missing_field_issues
     
+    missing_reason_codes = sorted({
+        f.missing_reason for f in extraction_result.baseline.get_missing_required() if f.missing_reason
+    })
+
     return {
         "passed": False,
         "issues": all_issues,
         "reason": extraction_result.block_reason,
         "completeness": extraction_result.completeness,
         "missing_critical": [f.field_name for f in extraction_result.baseline.get_missing_critical()],
+        "missing_reason_codes": missing_reason_codes,
     }
 
 
