@@ -25,8 +25,12 @@ _SCHEMA_EXAMPLE = """
 ]
 """.strip()
 
-_LOW_COST_MODEL = os.getenv("LLM_LOW_COST_MODEL", "gpt-4o-mini")
-PRIMARY_MODEL = os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+_LOW_COST_MODEL = os.getenv("LLM_LOW_COST_MODEL") or "openai/gpt-4o-mini"
+PRIMARY_MODEL = (
+    os.getenv("OPENROUTER_MODEL_VERSION")
+    or os.getenv("LLM_PRIMARY_MODEL")
+    or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+)
 AI_TIMEOUT_SECONDS = 15  # Increased from 6 to handle slower API responses
 RETRY_ATTEMPTS = 2
 RELEVANT_KEYWORDS = (

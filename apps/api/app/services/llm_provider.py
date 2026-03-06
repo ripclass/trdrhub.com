@@ -56,7 +56,12 @@ class OpenRouterProvider(LLMProviderInterface):
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        self.model = model or os.getenv("OPENROUTER_MODEL_VERSION") or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+        self.model = (
+            model
+            or os.getenv("OPENROUTER_MODEL_VERSION")
+            or os.getenv("LLM_PRIMARY_MODEL")
+            or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+        )
 
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not configured")
@@ -132,7 +137,7 @@ class OpenAIProvider(LLMProviderInterface):
     
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+        self.model = model or os.getenv("LLM_PRIMARY_MODEL") or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
         
         if not self.api_key:
             logger.warning("OpenAI API key not configured")
@@ -497,6 +502,30 @@ class LLMProviderFactory:
         return providers
     
     @staticmethod
+    def _layer_from_kwargs(**kwargs) -> str:
+        layer = kwargs.get("router_layer") or kwargs.get("layer") or "L1"
+        layer = str(layer).upper().strip()
+        return layer if layer in {"L1", "L2", "L3"} else "L1"
+
+    @staticmethod
+    def _layer_primary_model(layer: str) -> Optional[str]:
+        return (
+            os.getenv(f"AI_ROUTER_{layer}_PRIMARY_MODEL")
+            or os.getenv("OPENROUTER_MODEL_VERSION")
+            or os.getenv("LLM_PRIMARY_MODEL")
+            or os.getenv("LLM_MODEL_VERSION")
+        )
+
+    @staticmethod
+    def _layer_fallback_model(layer: str) -> str:
+        return (
+            os.getenv(f"AI_ROUTER_{layer}_FALLBACK_MODEL")
+            or os.getenv("LLM_FALLBACK_MODEL")
+            or os.getenv("LLM_LOW_COST_MODEL")
+            or "openai/gpt-4o-mini"
+        )
+
+    @staticmethod
     async def generate_with_fallback(
         prompt: str,
         system_prompt: Optional[str] = None,
@@ -508,42 +537,81 @@ class LLMProviderFactory:
     ) -> Tuple[str, int, int, str]:
         """
         Generate with automatic fallback between providers.
-        
+
+        Supports layered model routing via kwargs.router_layer (L1/L2/L3).
+
         Returns:
             (output_text, tokens_in, tokens_out, provider_used)
         """
+        layer = LLMProviderFactory._layer_from_kwargs(**kwargs)
+        routing_enabled = os.getenv("AI_LAYER_ROUTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+        resolved_primary_model = model_override
+        if not resolved_primary_model and routing_enabled:
+            resolved_primary_model = LLMProviderFactory._layer_primary_model(layer)
+
         provider = LLMProviderFactory.create_provider(primary_provider)
         provider_name = LLMProviderFactory._get_provider_name(provider)
-        
+
         try:
             output, tokens_in, tokens_out = await provider.generate(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                model_override=model_override,
+                model_override=resolved_primary_model,
                 **kwargs
             )
             return output, tokens_in, tokens_out, provider_name
         except Exception as e:
             logger.error(f"Primary provider ({provider_name}) failed: {e}")
-            
-            # Try fallback chain
+
+            # First fallback: same-provider model fallback (OpenRouter/OpenAI)
+            fallback_model = LLMProviderFactory._layer_fallback_model(layer) if routing_enabled else (
+                os.getenv("LLM_FALLBACK_MODEL")
+                or os.getenv("LLM_LOW_COST_MODEL")
+                or "openai/gpt-4o-mini"
+            )
+            if not model_override and isinstance(provider, (OpenRouterProvider, OpenAIProvider)):
+                try:
+                    output, tokens_in, tokens_out = await provider.generate(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        model_override=fallback_model,
+                        **kwargs,
+                    )
+                    logger.info(
+                        "Same-provider model fallback succeeded (%s %s -> %s)",
+                        provider_name,
+                        layer,
+                        fallback_model,
+                    )
+                    return output, tokens_in, tokens_out, provider_name
+                except Exception as same_provider_error:
+                    logger.warning(
+                        "Same-provider model fallback failed (%s): %s",
+                        fallback_model,
+                        same_provider_error,
+                    )
+
+            # Second fallback: provider chain
             fallback_order = [OpenRouterProvider, OpenAIProvider, AnthropicProvider, GeminiProvider]
             for FallbackClass in fallback_order:
                 if isinstance(provider, FallbackClass):
                     continue  # Skip the one that already failed
-                
+
                 try:
                     fallback_provider = FallbackClass()
                     fallback_name = LLMProviderFactory._get_provider_name(fallback_provider)
-                    
+
                     output, tokens_in, tokens_out = await fallback_provider.generate(
                         prompt=prompt,
                         system_prompt=system_prompt,
                         max_tokens=max_tokens,
                         temperature=temperature,
-                        model_override=model_override,
+                        model_override=resolved_primary_model,
                         **kwargs
                     )
                     logger.info(f"Fallback to {fallback_name} succeeded")
@@ -551,7 +619,7 @@ class LLMProviderFactory:
                 except Exception as fallback_error:
                     logger.warning(f"Fallback provider also failed: {fallback_error}")
                     continue
-            
+
             raise RuntimeError("All LLM providers failed")
     
     @staticmethod

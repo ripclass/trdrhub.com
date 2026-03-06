@@ -28,7 +28,12 @@ def _llm_credentials_present() -> bool:
 
 # Enabled by default; explicit opt-out (env=false) or missing credentials disables rewriting.
 REWRITER_ENABLED = _env_truthy(os.getenv("AI_ISSUE_REWRITER_ENABLED"), default=True) and _llm_credentials_present()
-MODEL_OVERRIDE = os.getenv("AI_ISSUE_REWRITER_MODEL", "gpt-4o-mini")
+MODEL_OVERRIDE = (
+    os.getenv("AI_ISSUE_REWRITER_MODEL")
+    or os.getenv("OPENROUTER_MODEL_VERSION")
+    or os.getenv("LLM_PRIMARY_MODEL")
+    or os.getenv("LLM_MODEL_VERSION", "gpt-4o-mini")
+)
 SYSTEM_PROMPT = (
     "You rewrite deterministic LC discrepancy findings into concise SME-friendly cards. "
     "Respond ONLY with JSON containing the keys: "
