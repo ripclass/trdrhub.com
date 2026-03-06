@@ -747,6 +747,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         extractionStatus,
         status,
         issuesCount,
+        parseComplete: typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete,
+        parseCompleteness: docAny.parse_completeness ?? docAny.parseCompleteness,
+        missingRequiredFields: docAny.missing_required_fields ?? [],
+        requiredFieldsFound: docAny.required_fields_found,
+        requiredFieldsTotal: docAny.required_fields_total,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
@@ -2011,6 +2016,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             {documents.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
+              const parseComplete = (document as any).parseComplete;
+              const parseCompleteness = (document as any).parseCompleteness;
+              const requiredFieldsFound = (document as any).requiredFieldsFound;
+              const requiredFieldsTotal = (document as any).requiredFieldsTotal;
               const discrepancyCount = document.issuesCount ?? 0;
               
               return (
@@ -2067,6 +2076,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardHeader>
                   <CardContent>
+                    {typeof parseComplete === "boolean" && (
+                      <div className="mb-3 text-xs text-muted-foreground">
+                        Parse completeness: {parseComplete ? "Complete" : "Partial"}
+                        {typeof requiredFieldsFound === "number" && typeof requiredFieldsTotal === "number"
+                          ? ` (${requiredFieldsFound}/${requiredFieldsTotal} required fields)`
+                          : typeof parseCompleteness === "number"
+                          ? ` (${Math.round(parseCompleteness * 100)}%)`
+                          : ""}
+                      </div>
+                    )}
                     {hasFieldEntries ? (
                       document.typeKey === "letter_of_credit" && lcData ? (
                         <div className="space-y-4">
@@ -2143,7 +2162,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       )
                     ) : (
                       <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
-                        This document could not be fully parsed. Preview text is available for manual review.
+                        {['partial', 'text_only', 'pending', 'unknown', 'error', 'failed', 'empty'].includes((document.extractionStatus ?? '').toLowerCase())
+                          ? 'This document could not be fully parsed. Preview text is available for manual review.'
+                          : 'No structured fields were extracted for this document.'}
                       </div>
                     )}
                   </CardContent>

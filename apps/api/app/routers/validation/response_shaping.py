@@ -231,13 +231,19 @@ def count_issue_severity(issues: List[Dict[str, Any]]) -> Dict[str, int]:
 # Contract Builders (Phase A)
 # =============================================================================
 
-def _normalize_doc_status(value: Optional[str], extraction_status: Optional[str]) -> str:
+def _normalize_doc_status(
+    value: Optional[str],
+    extraction_status: Optional[str],
+    parse_complete: Optional[bool] = None,
+) -> str:
     status = (value or "").lower().strip()
     if status in {"success", "warning", "error"}:
+        if status == "success" and parse_complete is False:
+            return "warning"
         return status
     extraction = (extraction_status or "").lower().strip()
     if extraction in {"success", "completed"}:
-        return "success"
+        return "success" if parse_complete is not False else "warning"
     if extraction in {"failed", "error", "empty"}:
         return "error"
     if extraction in {"partial", "text_only", "pending", "unknown"}:
@@ -254,7 +260,13 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
             or doc.get("status")
             or "unknown"
         )
-        status = _normalize_doc_status(doc.get("status"), extraction_status)
+        parse_complete = doc.get("parse_complete")
+        if parse_complete is None:
+            parse_complete = doc.get("parseComplete")
+        if parse_complete is not None:
+            parse_complete = bool(parse_complete)
+
+        status = _normalize_doc_status(doc.get("status"), extraction_status, parse_complete)
         normalized_docs.append(
             {
                 "document_id": doc.get("id") or doc.get("document_id") or doc.get("documentId"),
@@ -268,6 +280,11 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 or doc.get("issuesCount")
                 or 0,
                 "ocr_confidence": doc.get("ocrConfidence") or doc.get("ocr_confidence"),
+                "parse_complete": parse_complete,
+                "parse_completeness": doc.get("parse_completeness") or doc.get("parseCompleteness"),
+                "missing_required_fields": doc.get("missing_required_fields") or [],
+                "required_fields_found": doc.get("required_fields_found"),
+                "required_fields_total": doc.get("required_fields_total"),
             }
         )
 

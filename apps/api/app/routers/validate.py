@@ -2313,6 +2313,63 @@ async def validate_doc(
         raise
 
 
+def _is_populated_field_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _assess_required_field_completeness(
+    extracted_fields: Optional[Dict[str, Any]],
+    required_fields: List[str],
+) -> Dict[str, Any]:
+    fields = extracted_fields or {}
+    found_required = [field for field in required_fields if _is_populated_field_value(fields.get(field))]
+    required_total = len(required_fields)
+    required_found = len(found_required)
+    ratio = (required_found / required_total) if required_total else 0.0
+    return {
+        "required_fields": list(required_fields),
+        "required_total": required_total,
+        "required_found": required_found,
+        "missing_required_fields": [field for field in required_fields if field not in found_required],
+        "required_ratio": round(ratio, 4),
+    }
+
+
+def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compute parse completeness signal for COO extraction quality gating."""
+    required_fields = [
+        "certificate_number",
+        "country_of_origin",
+        "exporter_name",
+        "importer_name",
+        "goods_description",
+        "certifying_authority",
+    ]
+    metrics = _assess_required_field_completeness(extracted_fields, required_fields)
+
+    # COO must at least include country + certificate and a minimally useful set of required fields.
+    has_country = _is_populated_field_value((extracted_fields or {}).get("country_of_origin"))
+    has_certificate = _is_populated_field_value((extracted_fields or {}).get("certificate_number"))
+    min_required_found = 3
+    parse_complete = bool(has_country and has_certificate and metrics["required_found"] >= min_required_found)
+
+    metrics.update(
+        {
+            "min_required_for_verified": min_required_found,
+            "has_country_of_origin": has_country,
+            "has_certificate_number": has_certificate,
+            "parse_complete": parse_complete,
+        }
+    )
+    return metrics
+
+
 def _build_document_summaries(
     files_list: List[Any],
     results: List[Dict[str, Any]],
@@ -2322,7 +2379,11 @@ def _build_document_summaries(
     details = document_details or []
     issue_by_name, issue_by_type, issue_by_id = _collect_document_issue_stats(results)
 
-    def _derive_document_status(extraction_status: Optional[str], max_severity: Optional[str]) -> str:
+    def _derive_document_status(
+        extraction_status: Optional[str],
+        max_severity: Optional[str],
+        parse_complete: Optional[bool] = None,
+    ) -> str:
         extraction = (extraction_status or "").lower()
         if extraction in {"error", "failed", "empty"}:
             return "error"
@@ -2330,6 +2391,8 @@ def _build_document_summaries(
         if severity_status in {"error", "warning"}:
             return severity_status
         if extraction in {"partial", "pending", "text_only"}:
+            return "warning"
+        if parse_complete is False:
             return "warning"
         return "success"
 
@@ -2348,7 +2411,17 @@ def _build_document_summaries(
             issue_by_type,
             issue_by_id,
         )
-        status = _derive_document_status(detail.get("extraction_status"), stats.get("max_severity") if stats else None)
+        parse_complete_flag = detail.get("parse_complete")
+        if parse_complete_flag is None:
+            parse_complete_flag = detail.get("parseComplete")
+        if parse_complete_flag is not None:
+            parse_complete_flag = bool(parse_complete_flag)
+
+        status = _derive_document_status(
+            detail.get("extraction_status"),
+            stats.get("max_severity") if stats else None,
+            parse_complete=parse_complete_flag,
+        )
         discrepancy_count = stats.get("count", 0) if stats else 0
 
         return {
@@ -2361,6 +2434,13 @@ def _build_document_summaries(
             "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
+            "parse_complete": parse_complete_flag,
+            "parseComplete": parse_complete_flag,
+            "parse_completeness": detail.get("parse_completeness"),
+            "parseCompleteness": detail.get("parse_completeness"),
+            "missing_required_fields": detail.get("missing_required_fields") or [],
+            "required_fields_found": detail.get("required_fields_found"),
+            "required_fields_total": detail.get("required_fields_total"),
             "extraction_artifacts_v1": detail.get("extraction_artifacts_v1") or _empty_extraction_artifacts_v1(
                 raw_text=detail.get("raw_text") or detail.get("raw_text_preview") or "",
                 ocr_confidence=detail.get("ocr_confidence"),
@@ -2897,21 +2977,37 @@ async def _build_document_context(
                         validated_coo, validation_summary = _apply_two_stage_validation(
                             coo_struct, "certificate_of_origin", filename
                         )
-                        
+
+                        coo_completeness = _assess_coo_parse_completeness(validated_coo)
+                        parse_complete = bool(coo_completeness.get("parse_complete"))
+                        effective_extraction_status = "success" if parse_complete else "partial"
+
                         coo_ctx = context.setdefault("certificate_of_origin", {})
                         coo_ctx["raw_text"] = extracted_text
                         coo_ctx.update(validated_coo)
                         has_structured_data = True
                         doc_info["extracted_fields"] = validated_coo
-                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_status"] = effective_extraction_status
+                        doc_info["parse_complete"] = parse_complete
+                        doc_info["parse_completeness"] = coo_completeness.get("required_ratio")
+                        doc_info["missing_required_fields"] = coo_completeness.get("missing_required_fields", [])
+                        doc_info["required_fields_found"] = coo_completeness.get("required_found")
+                        doc_info["required_fields_total"] = coo_completeness.get("required_total")
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
                         doc_info["validation_summary"] = validation_summary
                         doc_info["ai_first_status"] = extraction_status
-                        
+
                         if "_field_details" in coo_struct:
                             doc_info["field_details"] = coo_struct["_field_details"]
-                        
+
+                        logger.info(
+                            "Certificate of origin parse completeness for %s: parse_complete=%s required=%s/%s",
+                            filename,
+                            parse_complete,
+                            coo_completeness.get("required_found"),
+                            coo_completeness.get("required_total"),
+                        )
                         logger.info(f"Certificate of origin context keys: {list(coo_ctx.keys())}")
                     else:
                         logger.warning(f"AI-first CoO extraction failed for {filename}")
@@ -2923,12 +3019,21 @@ async def _build_document_context(
                         validated_coo, validation_summary = _apply_two_stage_validation(
                             coo_context, "certificate_of_origin", filename
                         )
+                        coo_completeness = _assess_coo_parse_completeness(validated_coo)
+                        parse_complete = bool(coo_completeness.get("parse_complete"))
+                        effective_extraction_status = "success" if parse_complete else "partial"
+
                         coo_ctx = context.setdefault("certificate_of_origin", {})
                         coo_ctx["raw_text"] = extracted_text
                         coo_ctx.update(validated_coo)
                         has_structured_data = True
                         doc_info["extracted_fields"] = validated_coo
-                        doc_info["extraction_status"] = "success"
+                        doc_info["extraction_status"] = effective_extraction_status
+                        doc_info["parse_complete"] = parse_complete
+                        doc_info["parse_completeness"] = coo_completeness.get("required_ratio")
+                        doc_info["missing_required_fields"] = coo_completeness.get("missing_required_fields", [])
+                        doc_info["required_fields_found"] = coo_completeness.get("required_found")
+                        doc_info["required_fields_total"] = coo_completeness.get("required_total")
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
                         field_details = validated_coo.get("_field_details") or coo_context.get("_field_details")

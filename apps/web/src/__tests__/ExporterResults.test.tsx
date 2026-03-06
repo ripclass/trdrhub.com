@@ -363,8 +363,10 @@ describe('ExporterResults', () => {
   it('shows document parsing warning when extracted fields are empty', async () => {
     const docWithNoFields = buildValidationResults();
     docWithNoFields.documents[0].extractedFields = {};
+    docWithNoFields.documents[0].extractionStatus = 'partial';
     if (docWithNoFields.structured_result) {
       docWithNoFields.structured_result.documents[0].extracted_fields = {};
+      docWithNoFields.structured_result.documents[0].extraction_status = 'partial';
     }
     activeResults = docWithNoFields;
 
@@ -374,5 +376,25 @@ describe('ExporterResults', () => {
     expect(
       screen.getByText(/This document could not be fully parsed/i),
     ).toBeInTheDocument();
+  });
+
+  it('does not show parse-failed messaging for verified documents with no extracted fields', async () => {
+    const docNoFieldsButVerified = buildValidationResults();
+    docNoFieldsButVerified.documents[0].status = 'success';
+    docNoFieldsButVerified.documents[0].extractionStatus = 'success';
+    docNoFieldsButVerified.documents[0].extractedFields = {};
+    if (docNoFieldsButVerified.structured_result) {
+      docNoFieldsButVerified.structured_result.documents[0].extracted_fields = {};
+      docNoFieldsButVerified.structured_result.documents[0].extraction_status = 'success';
+    }
+    activeResults = docNoFieldsButVerified;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    expect(
+      screen.getByText(/No structured fields were extracted for this document/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/could not be fully parsed/i)).not.toBeInTheDocument();
   });
 });

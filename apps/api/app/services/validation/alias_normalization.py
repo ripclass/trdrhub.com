@@ -48,14 +48,14 @@ CANONICAL_KEY_ALIASES: Dict[str, Set[str]] = {
 
 BL_RAW_PATTERNS: Dict[str, Iterable[str]] = {
     "voyage_number": [
-        r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#)?|VOY\.?|VSL/VOY|VSL\s*VOY|VESSEL\s*/\s*VOY)\s*[:\-]?\s*([A-Z0-9\-/]+)",
+        r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#|\s*REF(?:ERENCE)?)?|VOY\.?|VSL\s*(?:/|&|AND)\s*VOY|VESSEL\s*(?:/|&|AND)\s*VOY(?:AGE)?)\s*[:\-]?\s*([A-Z0-9\-/\.]+)",
     ],
     "gross_weight": [
-        r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?",
+        r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GROSS\s*WGT\s*/\s*NET\s*WGT|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?",
         r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G/W|GW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
     ],
     "net_weight": [
-        r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?\s*/\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
+        r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GROSS\s*WGT\s*/\s*NET\s*WGT|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?\s*/\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
         r"(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N/W|NW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
     ],
 }

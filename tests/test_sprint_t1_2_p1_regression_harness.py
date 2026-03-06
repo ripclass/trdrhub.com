@@ -353,6 +353,17 @@ def test_bl_raw_text_fallback_recovers_gross_net_combined_line():
     assert issues == []
 
 
+def test_bl_raw_text_fallback_recovers_vessel_and_voyage_ampersand_plus_gross_wt_net_wt():
+    fixture = _load_fixture("phase_b1_bl_variant_exp2026bd001.json")
+
+    issues = validate_bl_fields(
+        required_fields=fixture["bl_required_fields"],
+        bl_data=fixture["bl_data"],
+    )
+
+    assert issues == []
+
+
 def test_bl_alias_variants_cover_vessel_voy_and_weight_shortcuts():
     issues = validate_bl_fields(
         required_fields=["voyage_number", "gross_weight", "net_weight"],
@@ -505,6 +516,75 @@ def test_47a_bin_tin_accepts_vat_no_taxpayer_id_and_etin_labels():
     assert requirements["tin_number"] == "556677889900"
     assert requirements["all_docs_require_bin"] is True
     assert requirements["all_docs_require_tin"] is True
+
+
+def test_47a_bin_tin_accepts_vat_registration_number_and_e_tin_no_labels():
+    validator = CrossDocValidator()
+    requirements = validator._parse_47a_requirements(
+        {
+            "additional_conditions": (
+                "EXPORTER VAT REGISTRATION NUMBER 443322-1100 MUST APPEAR ON ALL DOCUMENTS. "
+                "E-TIN NO. 889900112233 MUST APPEAR ON ALL DOCUMENTS."
+            )
+        }
+    )
+
+    assert requirements["bin_number"] == "443322-1100"
+    assert requirements["tin_number"] == "889900112233"
+    assert requirements["all_docs_require_bin"] is True
+    assert requirements["all_docs_require_tin"] is True
+
+
+def test_bin_tin_doc_level_detection_across_invoice_packing_bl_coo():
+    validator = CrossDocValidator()
+    docs = {
+        "invoice": {
+            "raw_text": "COMMERCIAL INVOICE\nVAT REG NO. 112233-0099\nTAXPAYER ID NO. 556677889900",
+            "exporter_bin": "112233-0099",
+            "exporter_tin": "556677889900",
+        },
+        "packing_list": {
+            "raw_text": "PACKING LIST\nVAT NO. 112233-0099\nE-TIN NO. 556677889900",
+            "vat_no": "112233-0099",
+            "etin": "556677889900",
+        },
+        "bill_of_lading": {
+            "raw_text": "BILL OF LADING\nBUSINESS IDENTIFICATION NO. 112233-0099\nTAX REG NO. 556677889900",
+            "business_identification_no": "112233-0099",
+            "tax_reg_no": "556677889900",
+        },
+        "certificate_of_origin": {
+            "raw_text": "CERTIFICATE OF ORIGIN\nVAT REGISTRATION NUMBER: 112233-0099\nETIN: 556677889900",
+            "vat_registration_number": "112233-0099",
+            "etin": "556677889900",
+        },
+    }
+
+    bin_issues, bin_executed, bin_passed = validator._validate_bin_all_docs("112233-0099", docs, {})
+    tin_issues, tin_executed, tin_passed = validator._validate_tin_all_docs("556677889900", docs, {})
+
+    assert bin_issues == []
+    assert tin_issues == []
+    assert (bin_executed, bin_passed) == (4, 4)
+    assert (tin_executed, tin_passed) == (4, 4)
+
+
+def test_bin_tin_doc_level_missing_reports_target_docs():
+    validator = CrossDocValidator()
+    docs = {
+        "invoice": {"exporter_bin": "112233-0099", "exporter_tin": "556677889900"},
+        "packing_list": {"exporter_bin": "112233-0099", "exporter_tin": "556677889900"},
+        "bill_of_lading": {"exporter_bin": "112233-0099"},
+        "certificate_of_origin": {"exporter_tin": "556677889900"},
+    }
+
+    bin_issues, _, _ = validator._validate_bin_all_docs("112233-0099", docs, {})
+    tin_issues, _, _ = validator._validate_tin_all_docs("556677889900", docs, {})
+
+    assert len(bin_issues) == 1
+    assert "Certificate of Origin" in bin_issues[0].message
+    assert len(tin_issues) == 1
+    assert "Bill of Lading" in tin_issues[0].message
 
 
 def test_blocked_submission_reason_codes_include_validation_blocked():

@@ -107,6 +107,11 @@ const mapDocuments = (docs: any[] = []) => {
       extractionStatus,
       status,
       issuesCount,
+      parseComplete: typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
+      parseCompleteness: doc?.parse_completeness ?? doc?.parseCompleteness,
+      missingRequiredFields: doc?.missing_required_fields ?? [],
+      requiredFieldsFound: doc?.required_fields_found,
+      requiredFieldsTotal: doc?.required_fields_total,
       extractedFields: doc?.extracted_fields ?? {},
     };
   });
@@ -208,25 +213,28 @@ const mapIssues = (
 
 const ensureSummary = (payload: any) => {
   const severity = payload?.severity_breakdown ?? { ...DEFAULT_SEVERITY };
-  const documentStatus = payload?.document_status ?? payload?.status_counts ?? {
-    success: 0,
-    warning: 0,
-    error: 0,
+  const rawStatus = payload?.document_status ?? payload?.status_counts ?? {};
+  const documentStatus = {
+    success: Number(rawStatus?.success ?? 0),
+    warning: Number(rawStatus?.warning ?? 0),
+    error: Number(rawStatus?.error ?? 0),
   };
+  const statusTotal = documentStatus.success + documentStatus.warning + documentStatus.error;
 
   return {
     ...payload,
-    total_documents: Number(payload?.total_documents ?? payload?.documents ?? 0),
-    successful_extractions: Number(payload?.successful_extractions ?? documentStatus.success ?? 0),
-    failed_extractions: Number(payload?.failed_extractions ?? documentStatus.error ?? 0),
+    total_documents: Number(payload?.total_documents ?? payload?.documents ?? statusTotal ?? 0),
+    // Canonical extraction counters come from document_status/status_counts for parity across sections
+    successful_extractions: Number(documentStatus.success ?? 0),
+    failed_extractions: Number(documentStatus.error ?? 0),
     total_issues: Number(payload?.total_issues ?? payload?.discrepancies ?? 0),
     severity_breakdown: severity,
     // Pass through document status for SummaryStrip
     document_status: documentStatus,
-    status_counts: payload?.status_counts ?? payload?.document_status ?? documentStatus,
-    verified: Number(payload?.verified ?? documentStatus.success ?? 0),
-    warnings: Number(payload?.warnings ?? documentStatus.warning ?? 0),
-    errors: Number(payload?.errors ?? documentStatus.error ?? 0),
+    status_counts: documentStatus,
+    verified: Number(documentStatus.success ?? 0),
+    warnings: Number(documentStatus.warning ?? 0),
+    errors: Number(documentStatus.error ?? 0),
     // Pass through other useful fields from backend
     compliance_rate: Number(payload?.compliance_rate ?? 0),
     processing_time_display: payload?.processing_time_display ?? 'N/A',

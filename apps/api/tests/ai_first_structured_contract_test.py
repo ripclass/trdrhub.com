@@ -1,5 +1,7 @@
+import ast
 import importlib.util
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -94,3 +96,73 @@ def test_non_canonical_keys_are_filtered():
     assert "invoice_number" in filtered
     assert "random_extra" not in filtered
     assert "_meta" in filtered
+
+
+def test_response_shaping_downgrades_success_when_parse_incomplete():
+    module_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "validation" / "response_shaping.py"
+    source = module_path.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+
+    target_names = {"_normalize_doc_status", "build_document_extraction_v1", "summarize_document_statuses"}
+    selected = [node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in target_names]
+    module_ast = ast.Module(body=selected, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+
+    namespace = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
+    exec(compile(module_ast, str(module_path), "exec"), namespace)
+    build_document_extraction_v1 = namespace["build_document_extraction_v1"]
+
+    payload = build_document_extraction_v1(
+        [
+            {
+                "document_id": "doc-1",
+                "document_type": "certificate_of_origin",
+                "filename": "COO.pdf",
+                "status": "success",
+                "extraction_status": "success",
+                "parse_complete": False,
+                "required_fields_found": 2,
+                "required_fields_total": 6,
+                "missing_required_fields": ["goods_description"],
+            }
+        ]
+    )
+
+    doc = payload["documents"][0]
+    assert doc["status"] == "warning"
+    assert doc["parse_complete"] is False
+    assert payload["summary"]["status_counts"]["warning"] == 1
+    assert payload["summary"]["status_counts"]["success"] == 0
+
+
+def test_coo_parse_completeness_requires_minimum_fields_for_verified():
+    module_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "validate.py"
+    source = module_path.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+
+    target_names = {
+        "_is_populated_field_value",
+        "_assess_required_field_completeness",
+        "_assess_coo_parse_completeness",
+    }
+    selected = [node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in target_names]
+    module_ast = ast.Module(body=selected, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+
+    namespace = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
+    exec(compile(module_ast, str(module_path), "exec"), namespace)
+    assess = namespace["_assess_coo_parse_completeness"]
+
+    shallow = assess({"country_of_origin": "Bangladesh", "certificate_number": "COO-1"})
+    assert shallow["parse_complete"] is False
+    assert shallow["required_found"] == 2
+
+    complete = assess(
+        {
+            "country_of_origin": "Bangladesh",
+            "certificate_number": "COO-1",
+            "goods_description": "Cotton shirts",
+        }
+    )
+    assert complete["parse_complete"] is True
+    assert complete["required_found"] >= complete["min_required_for_verified"]

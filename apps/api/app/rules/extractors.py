@@ -355,21 +355,27 @@ class DocumentFieldExtractor:
 
     FIELD_LABEL_ALIASES = {
         "voyage_number": [
-            r"VOYAGE\s*(?:NO\.?|NUMBER)?",
+            r"VOYAGE\s*(?:NO\.?|NUMBER|REF(?:ERENCE)?)?",
             r"VOY\.?\s*NO\.?",
             r"VOY\s*(?:NO\.?|NUMBER)?",
+            r"VESSEL\s*(?:/|&|AND)\s*VOY(?:AGE)?",
+            r"VSL\s*(?:/|&|AND)\s*VOY(?:AGE)?",
         ],
         "gross_weight": [
             r"GROSS\s*WEIGHT",
             r"GROSS\s*WT",
+            r"GROSS\s*WGT",
             r"G\.?\s*W\.?",
             r"G/\s*W",
+            r"GW",
         ],
         "net_weight": [
             r"NET\s*WEIGHT",
             r"NET\s*WT",
+            r"NET\s*WGT",
             r"N\.?\s*W\.?",
             r"N/\s*W",
+            r"NW",
         ],
         "carton_size": [
             r"CARTON\s*SIZE",
@@ -386,12 +392,21 @@ class DocumentFieldExtractor:
         "bin_number": [
             r"\bBIN\b",
             r"B\.\s*I\.\s*N\.?(?:\s*NO\.?|\s*NUMBER)?",
-            r"BUSINESS\s*IDENTIFICATION\s*NO\.?",
+            r"BUSINESS\s*IDENTIFICATION(?:\s*NUMBER|\s*NO\.?)?",
+            r"BUSINESS\s*ID(?:ENTIFICATION)?(?:\s*NUMBER|\s*NO\.?)?",
+            r"VAT\s*REG(?:ISTRATION)?(?:\s*NO\.?|\s*NUMBER)?",
+            r"VAT\s*NO\.?",
+            r"VAT\s*NUMBER",
         ],
         "tin_number": [
             r"\bTIN\b",
             r"T\.\s*I\.\s*N\.?(?:\s*NO\.?|\s*NUMBER)?",
-            r"TAX\s*IDENTIFICATION\s*NO\.?",
+            r"TAX\s*IDENTIFICATION(?:\s*NUMBER|\s*NO\.?)?",
+            r"TAX\s*ID(?:ENTIFICATION)?(?:\s*NO\.?|\s*NUMBER)?",
+            r"TAX\s*REG(?:ISTRATION)?(?:\s*NO\.?|\s*NUMBER)?",
+            r"TAXPAYER\s*ID(?:ENTIFICATION)?(?:\s*NO\.?|\s*NUMBER)?",
+            r"E\s*[- ]?\s*TIN(?:\s*NO\.?|\s*NUMBER)?",
+            r"\bETIN\b(?:\s*NO\.?|\s*NUMBER)?",
         ],
     }
     
@@ -911,35 +926,43 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.COMMERCIAL_INVOICE
             ))
         
-        bin_number = self._extract_label_alias_value(
+        bin_number, bin_reason = self._extract_label_value_with_reason(
             text,
             lines,
-            "bin_number",
-            inline_capture=r"(?:EXPORTER\s+)?BIN\s*[:\-]?\s*([0-9\-]+)"
+            self.FIELD_LABEL_ALIASES["bin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*NUMBER|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if bin_number:
-            fields.append(ExtractedField(
-                field_name="exporter_bin",
-                field_type=FieldType.TEXT,
-                value=bin_number.strip(),
-                confidence=confidence,
-                document_type=DocumentType.COMMERCIAL_INVOICE
-            ))
-        
-        tin_number = self._extract_label_alias_value(
+            bin_number = bin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_bin",
+            FieldType.TEXT,
+            bin_number,
+            confidence,
+            DocumentType.COMMERCIAL_INVOICE,
+            raw_text=bin_number,
+            reason=bin_reason,
+        )
+
+        tin_number, tin_reason = self._extract_label_value_with_reason(
             text,
             lines,
-            "tin_number",
-            inline_capture=r"(?:EXPORTER\s+)?TIN\s*[:\-]?\s*([0-9\-]+)"
+            self.FIELD_LABEL_ALIASES["tin_number"],
+            inline_capture=r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAX\s*REG(?:ISTRATION)?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
         )
         if tin_number:
-            fields.append(ExtractedField(
-                field_name="exporter_tin",
-                field_type=FieldType.TEXT,
-                value=tin_number.strip(),
-                confidence=confidence,
-                document_type=DocumentType.COMMERCIAL_INVOICE
-            ))
+            tin_number = tin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_tin",
+            FieldType.TEXT,
+            tin_number,
+            confidence,
+            DocumentType.COMMERCIAL_INVOICE,
+            raw_text=tin_number,
+            reason=tin_reason,
+        )
         
         product_description = self._extract_label_block(
             text,
@@ -1048,11 +1071,18 @@ class DocumentFieldExtractor:
             reason=voyage_reason,
         )
 
-        gross_weight, gross_reason = self._extract_label_value_with_reason(
-            text,
-            lines,
-            self.FIELD_LABEL_ALIASES["gross_weight"],
-        )
+        combo_gross, combo_net, combo_reason = self._extract_combined_weight_with_reason(text, lines)
+
+        if combo_gross:
+            gross_weight, gross_reason = combo_gross, None
+        else:
+            gross_weight, gross_reason = self._extract_label_value_with_reason(
+                text,
+                lines,
+                self.FIELD_LABEL_ALIASES["gross_weight"],
+            )
+            if not gross_weight and combo_reason:
+                gross_reason = combo_reason
         gross_weight = self._normalize_weight_text(gross_weight)
         self._append_field(
             fields,
@@ -1065,11 +1095,16 @@ class DocumentFieldExtractor:
             reason=gross_reason,
         )
 
-        net_weight, net_reason = self._extract_label_value_with_reason(
-            text,
-            lines,
-            self.FIELD_LABEL_ALIASES["net_weight"],
-        )
+        if combo_net:
+            net_weight, net_reason = combo_net, None
+        else:
+            net_weight, net_reason = self._extract_label_value_with_reason(
+                text,
+                lines,
+                self.FIELD_LABEL_ALIASES["net_weight"],
+            )
+            if not net_weight and combo_reason:
+                net_reason = combo_reason
         net_weight = self._normalize_weight_text(net_weight)
         self._append_field(
             fields,
@@ -1322,6 +1357,44 @@ class DocumentFieldExtractor:
                 document_type=DocumentType.CERTIFICATE_OF_ORIGIN,
             ))
 
+        lines = [line.strip() for line in text.splitlines()]
+
+        bin_number, bin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["bin_number"],
+        )
+        if bin_number:
+            bin_number = bin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_bin",
+            FieldType.TEXT,
+            bin_number,
+            confidence,
+            DocumentType.CERTIFICATE_OF_ORIGIN,
+            raw_text=bin_number,
+            reason=bin_reason,
+        )
+
+        tin_number, tin_reason = self._extract_label_value_with_reason(
+            text,
+            lines,
+            self.FIELD_LABEL_ALIASES["tin_number"],
+        )
+        if tin_number:
+            tin_number = tin_number.strip()
+        self._append_field(
+            fields,
+            "exporter_tin",
+            FieldType.TEXT,
+            tin_number,
+            confidence,
+            DocumentType.CERTIFICATE_OF_ORIGIN,
+            raw_text=tin_number,
+            reason=tin_reason,
+        )
+
         return fields
 
     def _extract_insurance_certificate_fields(self, text: str, confidence: float) -> List[ExtractedField]:
@@ -1494,6 +1567,32 @@ class DocumentFieldExtractor:
         if self._label_present(lines, label_patterns):
             return None, "parser_failed"
         return None, "missing_in_source"
+
+    def _extract_combined_weight_with_reason(
+        self,
+        text: str,
+        lines: List[str],
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Extract combined gross/net weight lines and provide parser status reason."""
+        patterns = [
+            r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GROSS\s*WGT\s*/\s*NET\s*WGT|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)",
+            r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|GW)\s*[:\-]?\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|NW)\s*[:\-]?\s*([0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                return match.group(1).strip(), match.group(2).strip(), None
+
+        combined_label_patterns = [
+            r"GROSS\s*/\s*NET",
+            r"GROSS\s*WT\s*/\s*NET\s*WT",
+            r"GROSS\s*WGT\s*/\s*NET\s*WGT",
+            r"G\.?\s*W\.?\s*/\s*N\.?\s*W\.?",
+            r"GW\s*/\s*NW",
+        ]
+        if self._label_present(lines, combined_label_patterns):
+            return None, None, "parser_failed"
+        return None, None, None
 
     def _normalize_weight_text(self, value: Optional[str]) -> Optional[str]:
         if not value:
