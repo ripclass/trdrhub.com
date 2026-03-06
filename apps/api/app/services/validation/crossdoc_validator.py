@@ -1716,50 +1716,59 @@ class CrossDocValidator:
         
         return requirements
     
+    def _normalize_identifier_token(self, value: Any) -> str:
+        """Normalize identifier token text for deterministic matching."""
+        if value is None:
+            return ""
+        return re.sub(r"[^A-Z0-9]", "", str(value).upper())
+
+    def _token_present_in_text(self, token: str, text: Any) -> bool:
+        """Deterministic exact/near-exact token match (case/space/hyphen tolerant)."""
+        normalized_token = self._normalize_identifier_token(token)
+        normalized_text = self._normalize_identifier_token(text)
+        if not normalized_token or not normalized_text:
+            return False
+        return normalized_token in normalized_text
+
     def _check_value_in_document(
-        self, 
-        doc: Dict[str, Any], 
+        self,
+        doc: Dict[str, Any],
         value_to_find: str,
         field_names: List[str] = None,
     ) -> bool:
         """
-        Check if a specific value appears in a document.
-        
-        Searches in:
-        1. Specific field names if provided
-        2. raw_text field
-        3. All string values in the document
+        Check whether an exact LC-required token appears in a document.
+
+        Match strategy is deterministic and tolerant only to presentation noise
+        (case, spaces, punctuation, and hyphenation).
         """
         if not value_to_find:
             return True  # Nothing to check
-        
-        value_normalized = value_to_find.upper().replace("-", "").replace(" ", "")
+
         doc_canonical = canonicalize_fields(doc)
+
+        def token_in_value(value: Any) -> bool:
+            if isinstance(value, str):
+                return self._token_present_in_text(value_to_find, value)
+            if isinstance(value, list):
+                return any(isinstance(item, str) and self._token_present_in_text(value_to_find, item) for item in value)
+            return False
 
         # Check specific canonical fields first
         if field_names:
             for fname in field_names:
-                field_val = doc_canonical.get(fname)
-                if field_val:
-                    if isinstance(field_val, str):
-                        if value_normalized in field_val.upper().replace("-", "").replace(" ", ""):
-                            return True
-                    elif isinstance(field_val, list):
-                        for item in field_val:
-                            if isinstance(item, str):
-                                if value_normalized in item.upper().replace("-", "").replace(" ", ""):
-                                    return True
-        
+                if token_in_value(doc_canonical.get(fname)):
+                    return True
+
         # Check raw_text
-        raw_text = doc.get("raw_text", "")
-        if raw_text and value_normalized in raw_text.upper().replace("-", "").replace(" ", ""):
+        if self._token_present_in_text(value_to_find, doc.get("raw_text", "")):
             return True
-        
+
         # Check all string values recursively
         def search_in_dict(d: Dict) -> bool:
-            for k, v in d.items():
+            for _, v in d.items():
                 if isinstance(v, str):
-                    if value_normalized in v.upper().replace("-", "").replace(" ", ""):
+                    if self._token_present_in_text(value_to_find, v):
                         return True
                 elif isinstance(v, dict):
                     if search_in_dict(v):
@@ -1767,13 +1776,13 @@ class CrossDocValidator:
                 elif isinstance(v, list):
                     for item in v:
                         if isinstance(item, str):
-                            if value_normalized in item.upper().replace("-", "").replace(" ", ""):
+                            if self._token_present_in_text(value_to_find, item):
                                 return True
                         elif isinstance(item, dict):
                             if search_in_dict(item):
                                 return True
             return False
-        
+
         return search_in_dict(doc)
 
     def _doc_has_parser_failure_for_fields(
@@ -1825,6 +1834,23 @@ class CrossDocValidator:
             return "parse_failed"
         return "missing"
 
+    def _format_presence_matrix(self, status_by_doc: Dict[str, str], doc_names: Dict[str, Tuple[str, DocumentType]]) -> str:
+        """Create deterministic per-document presence matrix text."""
+        ordered_keys = [
+            "invoice",
+            "bill_of_lading",
+            "packing_list",
+            "certificate_of_origin",
+            "insurance",
+        ]
+        parts: List[str] = []
+        for key in ordered_keys:
+            if key not in status_by_doc:
+                continue
+            doc_label = doc_names.get(key, (key, DocumentType.LC))[0]
+            parts.append(f"{doc_label}={status_by_doc[key]}")
+        return "; ".join(parts)
+
     # =========================================================================
     # 47A VALIDATION RULES
     # =========================================================================
@@ -1854,33 +1880,39 @@ class CrossDocValidator:
         }
         
         missing_on = []
-        
+        status_by_doc: Dict[str, str] = {}
+
         for doc_key, doc_data in docs.items():
             if doc_data is None:
                 continue
-            
+
             executed += 1
-            found = self._check_value_in_document(
-                doc_data, 
+            status = self._presence_state_for_document(
+                doc_data,
                 po_number,
-                field_names=["po_number", "purchase_order", "buyer_reference", "reference"]
+                field_names=["po_number", "purchase_order", "buyer_reference", "reference"],
             )
-            
-            if found:
+            status_by_doc[doc_key] = status
+
+            if status == "found":
                 passed += 1
             else:
                 doc_name, _ = doc_names.get(doc_key, (doc_key, DocumentType.LC))
                 missing_on.append(doc_name)
-        
+
         # Create a single issue listing all documents missing the PO number
         if missing_on:
+            matrix_text = self._format_presence_matrix(status_by_doc, doc_names)
             issues.append(CrossDocIssue(
                 rule_id="CROSSDOC-PO-NUMBER",
                 title="Purchase Order Number Missing from Documents",
                 severity=IssueSeverity.CRITICAL,
-                message=f"LC requires PO Number '{po_number}' on ALL documents per clause 46A(8)/47A, but it is missing from: {', '.join(missing_on)}.",
+                message=(
+                    f"LC 47A requires PO Number '{po_number}' on ALL documents; deterministic token check shows "
+                    f"missing from: {', '.join(missing_on)}. Evidence matrix: {matrix_text}."
+                ),
                 expected=f"PO Number '{po_number}' on all documents",
-                found=f"Missing on: {', '.join(missing_on)}",
+                found=f"Missing on: {', '.join(missing_on)}; Presence matrix: {matrix_text}",
                 suggestion=f"Add Purchase Order Number '{po_number}' to {', '.join(missing_on)}. Bank will reject documents without this reference.",
                 source_doc=DocumentType.LC,
                 target_doc=DocumentType.INVOICE,  # Primary target
@@ -1919,18 +1951,20 @@ class CrossDocValidator:
         
         missing_on = []
         parse_failed_on = []
-        
+        status_by_doc: Dict[str, str] = {}
+
         for doc_key, doc_data in docs.items():
             if doc_data is None:
                 continue
-            
+
             executed += 1
             status = self._presence_state_for_document(
                 doc_data,
                 bin_number,
                 field_names=["exporter_bin"],
             )
-            
+            status_by_doc[doc_key] = status
+
             if status == "found":
                 passed += 1
             else:
@@ -1939,7 +1973,7 @@ class CrossDocValidator:
                     parse_failed_on.append(doc_name)
                 else:
                     missing_on.append(doc_name)
-        
+
         if missing_on or parse_failed_on:
             found_parts: List[str] = []
             suggestion_parts: List[str] = []
@@ -1950,13 +1984,17 @@ class CrossDocValidator:
                 found_parts.append(f"Parse failed on: {', '.join(parse_failed_on)}")
                 suggestion_parts.append(f"re-extract/review {', '.join(parse_failed_on)}")
 
+            matrix_text = self._format_presence_matrix(status_by_doc, doc_names)
             issues.append(CrossDocIssue(
                 rule_id="CROSSDOC-BIN",
                 title="Exporter BIN Missing from Documents",
                 severity=IssueSeverity.CRITICAL,
-                message=f"LC requires Exporter BIN '{bin_number}' on ALL documents per clause 47A. {'; '.join(found_parts)}.",
+                message=(
+                    f"LC 47A requires Exporter BIN '{bin_number}' on ALL documents; deterministic token check result: "
+                    f"{'; '.join(found_parts)}. Evidence matrix: {matrix_text}."
+                ),
                 expected=f"BIN '{bin_number}' on all documents",
-                found="; ".join(found_parts),
+                found=f"{'; '.join(found_parts)}; Presence matrix: {matrix_text}",
                 suggestion=f"{' and '.join(suggestion_parts)}. This is a mandatory Bangladesh export requirement.",
                 source_doc=DocumentType.LC,
                 target_doc=DocumentType.INVOICE,
@@ -1995,18 +2033,20 @@ class CrossDocValidator:
         
         missing_on = []
         parse_failed_on = []
-        
+        status_by_doc: Dict[str, str] = {}
+
         for doc_key, doc_data in docs.items():
             if doc_data is None:
                 continue
-            
+
             executed += 1
             status = self._presence_state_for_document(
                 doc_data,
                 tin_number,
                 field_names=["exporter_tin"],
             )
-            
+            status_by_doc[doc_key] = status
+
             if status == "found":
                 passed += 1
             else:
@@ -2015,7 +2055,7 @@ class CrossDocValidator:
                     parse_failed_on.append(doc_name)
                 else:
                     missing_on.append(doc_name)
-        
+
         if missing_on or parse_failed_on:
             found_parts: List[str] = []
             suggestion_parts: List[str] = []
@@ -2026,13 +2066,17 @@ class CrossDocValidator:
                 found_parts.append(f"Parse failed on: {', '.join(parse_failed_on)}")
                 suggestion_parts.append(f"re-extract/review {', '.join(parse_failed_on)}")
 
+            matrix_text = self._format_presence_matrix(status_by_doc, doc_names)
             issues.append(CrossDocIssue(
                 rule_id="CROSSDOC-TIN",
                 title="Exporter TIN Missing from Documents",
                 severity=IssueSeverity.CRITICAL,
-                message=f"LC requires Exporter TIN '{tin_number}' on ALL documents per clause 47A. {'; '.join(found_parts)}.",
+                message=(
+                    f"LC 47A requires Exporter TIN '{tin_number}' on ALL documents; deterministic token check result: "
+                    f"{'; '.join(found_parts)}. Evidence matrix: {matrix_text}."
+                ),
                 expected=f"TIN '{tin_number}' on all documents",
-                found="; ".join(found_parts),
+                found=f"{'; '.join(found_parts)}; Presence matrix: {matrix_text}",
                 suggestion=f"{' and '.join(suggestion_parts)}. This is a mandatory Bangladesh export requirement.",
                 source_doc=DocumentType.LC,
                 target_doc=DocumentType.INVOICE,

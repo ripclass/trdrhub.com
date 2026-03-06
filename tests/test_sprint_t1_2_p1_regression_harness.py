@@ -401,6 +401,60 @@ def test_bl_raw_text_fallback_accepts_vvd_label_variant():
     assert issues == []
 
 
+def test_bl_targeted_candidates_from_ocr_spans_recover_header_zone_combined_lines():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "raw_text": "BILL OF LADING\n...",
+            "extraction_artifacts_v1": {
+                "spans": [
+                    {"text": "VESSEL/VOY: MSC MAEVA / 778W", "bbox": {"page": 1, "x1": 80, "y1": 95}},
+                    {"text": "GROSS/NET WEIGHT: 20,400 / 18,950 KGS", "bbox": {"page": 1, "x1": 82, "y1": 120}},
+                ]
+            },
+        },
+    )
+
+    assert issues == []
+
+
+def test_bl_targeted_candidates_handle_label_value_split_across_neighbor_spans():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "raw_text": "BILL OF LADING",
+            "extraction_artifacts_v1": {
+                "spans": [
+                    {"text": "VSL/VOY", "bbox": {"page": 1, "x1": 70, "y1": 88}},
+                    {"text": "EVER GLORY / 123E", "bbox": {"page": 1, "x1": 125, "y1": 88}},
+                    {"text": "GROSS/NET WT", "bbox": {"page": 1, "x1": 70, "y1": 108}},
+                    {"text": "20,400/18,950 KGS", "bbox": {"page": 1, "x1": 124, "y1": 108}},
+                ]
+            },
+        },
+    )
+
+    assert issues == []
+
+
+def test_bl_targeted_candidates_reject_non_numeric_gross_net_pair():
+    issues = validate_bl_fields(
+        required_fields=["voyage_number", "gross_weight", "net_weight"],
+        bl_data={
+            "raw_text": "BILL OF LADING\nVSL/VOY: MSC MAEVA / 778W",
+            "extraction_artifacts_v1": {
+                "spans": [
+                    {"text": "GROSS/NET WEIGHT: HEAVY / LIGHT", "bbox": {"page": 1, "x1": 80, "y1": 120}},
+                ]
+            },
+        },
+    )
+
+    issue_ids = {issue.rule_id for issue in issues}
+    assert "AI-BL-MISSING-GROSS_WEIGHT" in issue_ids
+    assert "AI-BL-MISSING-NET_WEIGHT" in issue_ids
+
+
 def test_ai_first_bl_canonical_filter_splits_combined_alias_values():
     from app.services.extraction.ai_first_extractor import BLAIFirstExtractor
 
@@ -438,6 +492,26 @@ def test_build_issue_context_projects_bl_fields_from_extracted_fields_map():
     assert context["bill_of_lading"]["voyage_number"] == "778W"
     assert context["bill_of_lading"]["gross_weight"] == "20,400 KGS"
     assert context["bill_of_lading"]["net_weight"] == "18,950 KGS"
+
+
+def test_build_issue_context_prefers_top_level_bl_fields_after_projection():
+    funcs = _load_validate_functions(["_build_issue_context"])
+    build_issue_context = funcs["_build_issue_context"]
+
+    context = build_issue_context(
+        {
+            "bill_of_lading": {
+                "voyage_number": "991E",
+                "gross_weight": "1,200 KGS",
+                "net_weight": "1,100 KGS",
+                "extracted_fields": {},
+            }
+        }
+    )
+
+    assert context["bill_of_lading"]["voyage_number"] == "991E"
+    assert context["bill_of_lading"]["gross_weight"] == "1,200 KGS"
+    assert context["bill_of_lading"]["net_weight"] == "1,100 KGS"
 
 
 def test_fields_to_flat_context_preserves_reason_metadata():
@@ -662,6 +736,89 @@ def test_bin_tin_doc_level_presence_distinguishes_missing_vs_parse_failed():
     assert len(tin_issues) == 1
     assert "Parse failed on: Packing List" in tin_issues[0].message
     assert "Missing on: Bill of Lading" in tin_issues[0].message
+
+
+def test_47a_po_bin_tin_detection_handles_formatting_variants_case_hyphen_space():
+    validator = CrossDocValidator()
+    requirements = validator._parse_47a_requirements(
+        {
+            "additional_conditions": (
+                "Buyer Purchase Order No. PO-AB-7788 must appear on all documents. "
+                "Exporter B.I.N. No. 112233-0099 must appear on all documents. "
+                "E-TIN No. 5566 7788 9900 must appear on all documents."
+            )
+        }
+    )
+
+    docs = {
+        "invoice": {
+            "raw_text": "COMMERCIAL INVOICE\nPO AB 7788\nBIN 1122330099\nTIN 556677889900",
+            "po_number": "PO AB 7788",
+            "exporter_bin": "1122330099",
+            "exporter_tin": "556677889900",
+        },
+        "packing_list": {
+            "raw_text": "PACKING LIST\nP.O.-AB-7788\nB.I.N 112233-0099\nE TIN: 5566-7788-9900",
+        },
+        "bill_of_lading": {
+            "raw_text": "BILL OF LADING\nPO: POAB7788\nVAT REG NO 112233 0099\nTAX ID 556677889900",
+        },
+        "certificate_of_origin": {
+            "raw_text": "CERTIFICATE OF ORIGIN\nPO NO PO-AB-7788\nBUSINESS IDENTIFICATION NO 112233-0099\nETIN 556677889900",
+        },
+    }
+
+    po_issues, _, _ = validator._validate_po_number_all_docs(requirements["po_number"], docs, {})
+    bin_issues, _, _ = validator._validate_bin_all_docs(requirements["bin_number"], docs, {})
+    tin_issues, _, _ = validator._validate_tin_all_docs(requirements["tin_number"], docs, {})
+
+    assert po_issues == []
+    assert bin_issues == []
+    assert tin_issues == []
+
+
+def test_47a_bin_tin_detection_finds_token_in_noisy_ocr_text():
+    validator = CrossDocValidator()
+    docs = {
+        "invoice": {
+            "raw_text": "COMMERCIAL INVOICE\nEXPORTER B1N N0: 112233-0099\nE-T1N N0: 556677889900",
+            "exporter_bin": "112233-0099",
+            "exporter_tin": "556677889900",
+        },
+        "packing_list": {
+            "raw_text": "PACKING LIST\n1122 33-00 99\n5566 7788 9900",
+            "exporter_bin": "1122 33-00 99",
+            "exporter_tin": "5566 7788 9900",
+        },
+    }
+
+    bin_issues, _, _ = validator._validate_bin_all_docs("112233-0099", docs, {})
+    tin_issues, _, _ = validator._validate_tin_all_docs("556677889900", docs, {})
+
+    assert bin_issues == []
+    assert tin_issues == []
+
+
+def test_47a_token_detection_reports_true_missing_with_presence_matrix():
+    validator = CrossDocValidator()
+    docs = {
+        "invoice": {"raw_text": "INVOICE PO-AB-7788 BIN 112233-0099 TIN 556677889900"},
+        "packing_list": {"raw_text": "PACKING LIST PO-AB-7788 BIN 112233-0099"},
+        "bill_of_lading": {"raw_text": "B/L PO-AB-7788 BIN 112233-0099"},
+        "certificate_of_origin": {"raw_text": "COO PO-AB-7788 TIN 556677889900"},
+    }
+
+    po_issues, _, _ = validator._validate_po_number_all_docs("PO-AB-7788", docs, {})
+    bin_issues, _, _ = validator._validate_bin_all_docs("112233-0099", docs, {})
+    tin_issues, _, _ = validator._validate_tin_all_docs("556677889900", docs, {})
+
+    assert po_issues == []
+    assert len(bin_issues) == 1
+    assert "Missing on: Certificate of Origin" in bin_issues[0].found
+    assert "Presence matrix:" in bin_issues[0].found
+    assert len(tin_issues) == 1
+    assert "Missing on: Packing List, Bill of Lading" in tin_issues[0].found
+    assert "Presence matrix:" in tin_issues[0].found
 
 
 def test_two_stage_validation_promotes_vat_tax_aliases_to_exporter_bin_tin_for_doc_level_output():

@@ -133,6 +133,158 @@ def find_first_pattern_value(text: str, patterns: Iterable[str]) -> Optional[str
     return None
 
 
+def _is_valid_voyage(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    if len(v) < 2 or len(v) > 30:
+        return False
+    if not re.search(r"\d", v):
+        return False
+    return bool(re.match(r"^[A-Z0-9][A-Z0-9\-\./]*$", v, re.IGNORECASE))
+
+
+def _is_valid_weight_value(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    return bool(re.match(r"^[0-9][0-9,\.]*\s*(?:KGS?|KG|LBS?|LB)?$", v, re.IGNORECASE))
+
+
+def _parse_vessel_voyage_from_line(text: str) -> Dict[str, str]:
+    line = (text or "").strip()
+    if not line:
+        return {}
+
+    match = re.search(
+        r"(?:VSL|VESSEL)(?:\s*(?:/|&|AND)\s*VOY(?:AGE)?)?\s*[:\-]?\s*([A-Z0-9 .\-]{2,80}?)\s*(?:/|\s{2,}|\s+-\s+)\s*([A-Z0-9\-\./]{2,30})\b",
+        line,
+        re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r"(?:V(?:ESSEL)?\s*/\s*VOY(?:AGE)?|VVD(?:\s*(?:NO\.?|NUMBER|#))?)\s*[:\-]?\s*([A-Z0-9 .\-]{2,80}?)\s*(?:/|\s{2,}|\s+-\s+)\s*([A-Z0-9\-\./]{2,30})\b",
+            line,
+            re.IGNORECASE,
+        )
+
+    if not match:
+        return {}
+
+    vessel = match.group(1).strip(" .:-")
+    voyage = match.group(2).strip(" .:-")
+    if not vessel or not _is_valid_voyage(voyage):
+        return {}
+    return {"vessel_name": vessel, "voyage_number": voyage}
+
+
+def _parse_gross_net_from_line(text: str) -> Dict[str, str]:
+    line = (text or "").strip()
+    if not line:
+        return {}
+
+    match = re.search(
+        r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GROSS\s*WGT\s*/\s*NET\s*WGT|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9][0-9,\.]*(?:\s*(?:KGS?|KG|LBS?|LB))?)\s*/\s*([0-9][0-9,\.]*(?:\s*(?:KGS?|KG|LBS?|LB))?)",
+        line,
+        re.IGNORECASE,
+    )
+    if not match:
+        return {}
+
+    gross = match.group(1).strip()
+    net = match.group(2).strip()
+    if not (_is_valid_weight_value(gross) and _is_valid_weight_value(net)):
+        return {}
+    return {"gross_weight": gross, "net_weight": net}
+
+
+def _iter_artifact_lines(extraction_artifacts: Dict[str, Any]) -> Iterable[str]:
+    if not isinstance(extraction_artifacts, dict):
+        return []
+
+    spans = extraction_artifacts.get("spans")
+    if not isinstance(spans, list):
+        return []
+
+    collected = []
+    for span in spans:
+        if not isinstance(span, dict):
+            continue
+        text = str(span.get("text") or "").strip()
+        if not text:
+            continue
+        bbox = span.get("bbox") or {}
+        page = bbox.get("page") if isinstance(bbox, dict) else None
+        y1 = bbox.get("y1") if isinstance(bbox, dict) else None
+        x1 = bbox.get("x1") if isinstance(bbox, dict) else None
+        try:
+            page_val = float(page) if page is not None else 0.0
+        except Exception:
+            page_val = 0.0
+        try:
+            y_val = float(y1) if y1 is not None else 0.0
+        except Exception:
+            y_val = 0.0
+        try:
+            x_val = float(x1) if x1 is not None else 0.0
+        except Exception:
+            x_val = 0.0
+        collected.append((page_val, y_val, x_val, text))
+
+    if not collected:
+        return []
+
+    collected.sort(key=lambda row: (row[0], row[1], row[2]))
+    return [row[3] for row in collected]
+
+
+def extract_bl_required_field_candidates(
+    raw_text: str,
+    extraction_artifacts: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    """Best-effort, conservative recovery for BL voyage/gross/net from text + OCR spans."""
+    candidates: Dict[str, str] = {}
+
+    text_lines = [ln.strip() for ln in (raw_text or "").splitlines() if ln and ln.strip()]
+    artifact_lines = [ln.strip() for ln in _iter_artifact_lines(extraction_artifacts) if ln and ln.strip()]
+
+    # Scan raw lines first, then artifact lines (artifact lines may preserve layout/header zones).
+    all_lines = text_lines + artifact_lines
+
+    for idx, line in enumerate(all_lines):
+        if "voyage_number" not in candidates:
+            vv = _parse_vessel_voyage_from_line(line)
+            if vv.get("voyage_number"):
+                candidates.setdefault("voyage_number", vv["voyage_number"])
+
+        if "gross_weight" not in candidates or "net_weight" not in candidates:
+            wn = _parse_gross_net_from_line(line)
+            if wn.get("gross_weight"):
+                candidates.setdefault("gross_weight", wn["gross_weight"])
+            if wn.get("net_weight"):
+                candidates.setdefault("net_weight", wn["net_weight"])
+
+        # Label+value split across consecutive lines in OCR/layout blocks.
+        if idx + 1 < len(all_lines):
+            nxt = all_lines[idx + 1]
+            lowered = line.lower()
+            if "voyage_number" not in candidates and (("vessel" in lowered and "voy" in lowered) or ("vsl" in lowered and "voy" in lowered)):
+                vv = _parse_vessel_voyage_from_line(f"{line}: {nxt}") or _parse_vessel_voyage_from_line(nxt)
+                if vv.get("voyage_number"):
+                    candidates.setdefault("voyage_number", vv["voyage_number"])
+            if ("gross_weight" not in candidates or "net_weight" not in candidates) and ("gross" in lowered and "net" in lowered):
+                wn = _parse_gross_net_from_line(f"{line}: {nxt}") or _parse_gross_net_from_line(nxt)
+                if wn.get("gross_weight"):
+                    candidates.setdefault("gross_weight", wn["gross_weight"])
+                if wn.get("net_weight"):
+                    candidates.setdefault("net_weight", wn["net_weight"])
+
+        if {"voyage_number", "gross_weight", "net_weight"}.issubset(set(candidates.keys())):
+            break
+
+    return candidates
+
+
 def text_has_size_breakdown(text: str) -> bool:
     if not text:
         return False

@@ -18,6 +18,7 @@ from enum import Enum
 from app.services.validation.alias_normalization import (
     BL_RAW_PATTERNS,
     canonicalize_fields,
+    extract_bl_required_field_candidates,
     find_first_pattern_value,
     text_has_size_breakdown,
 )
@@ -248,6 +249,8 @@ def validate_bl_fields(
     
     logger.info(f"B/L canonical fields: {list(bl_canonical.keys())}")
     raw_text = str(bl_data.get("raw_text") or "")
+    extraction_artifacts = bl_data.get("extraction_artifacts_v1") if isinstance(bl_data.get("extraction_artifacts_v1"), dict) else {}
+    targeted_candidates = extract_bl_required_field_candidates(raw_text=raw_text, extraction_artifacts=extraction_artifacts)
 
     field_info = {
         "voyage_number": {"display": "Voyage Number"},
@@ -268,7 +271,14 @@ def validate_bl_fields(
         # Look for canonical field value only (aliases already normalized upstream)
         found_value = bl_canonical.get(req_field)
 
-        # Fallback to raw text if structured extraction missed it
+        # Targeted recovery from OCR text/layout blocks before declaring missing.
+        if not found_value:
+            candidate = targeted_candidates.get(req_field)
+            if candidate:
+                found_value = candidate
+                logger.info(f"✓ B/L has {info['display']} (targeted candidate): {candidate}")
+
+        # Generic raw-text regex fallback
         if not found_value and raw_text:
             raw_value = find_first_pattern_value(raw_text, BL_RAW_PATTERNS.get(req_field, []))
             if raw_value:
