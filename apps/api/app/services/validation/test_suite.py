@@ -727,6 +727,49 @@ class TestMissingReasonCodes:
         assert lc_issue is not None
         assert lc_issue.missing_reason == MissingReason.CONFLICT_DETECTED.value
 
+    def test_critical_present_without_evidence_is_rejected(self):
+        baseline = create_lc_baseline_from_extraction({
+            "number": "LC-HALLUCINATED-1",
+            "raw_text": "No LC number is visible in this OCR output.",
+        })
+        assert baseline.lc_number.status == ExtractionStatus.INVALID
+        assert baseline.lc_number.value is None
+        assert baseline.lc_number.missing_reason == MissingReason.PARSER_FAILED.value
+
+    def test_critical_retry_candidate_accepted_with_evidence(self):
+        baseline = create_lc_baseline_from_extraction({
+            "number": None,
+            "raw_text": "... documentary credit no LC-RETRY-7788 issued ...",
+            "_field_diagnostics": {
+                "lc_number": {
+                    "valid_candidates": ["LC-RETRY-7788"],
+                    "conflict": False,
+                    "invalid_candidates": [],
+                }
+            },
+        })
+        assert baseline.lc_number.status == ExtractionStatus.EXTRACTED
+        assert baseline.lc_number.value == "LC-RETRY-7788"
+        assert baseline.lc_number.source == "ocr_retry_candidate"
+        assert baseline.lc_number.has_evidence is True
+        assert baseline.lc_number.missing_reason is None
+
+    def test_critical_retry_candidate_without_evidence_is_rejected(self):
+        baseline = create_lc_baseline_from_extraction({
+            "number": None,
+            "raw_text": "OCR text does not contain the candidate value.",
+            "_field_diagnostics": {
+                "lc_number": {
+                    "valid_candidates": ["LC-RETRY-9999"],
+                    "conflict": False,
+                    "invalid_candidates": [],
+                }
+            },
+        })
+        assert baseline.lc_number.status == ExtractionStatus.INVALID
+        assert baseline.lc_number.value is None
+        assert baseline.lc_number.missing_reason == MissingReason.PARSER_FAILED.value
+
 
 # ============================================================================
 # RUN TESTS

@@ -71,7 +71,7 @@ OPTIONAL FIELDS:
 - payment_terms: Payment conditions (e.g., "AT SIGHT", "60 DAYS AFTER B/L DATE")
 - available_with: How the LC is available (e.g., "BY NEGOTIATION", "BY PAYMENT", "BY ACCEPTANCE")
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -180,9 +180,12 @@ async def extract_lc_with_ai(
             provider, tokens_in, tokens_out
         )
         
-        # Parse JSON response
+        # Parse JSON response (+ one repair retry if invalid)
         extracted = _parse_ai_response(output)
-        
+        if not extracted:
+            repaired = await _repair_ai_json_once(output)
+            extracted = _parse_ai_response(repaired) if repaired else {}
+
         # Calculate confidence based on how many fields were extracted
         confidence = _calculate_extraction_confidence(extracted)
         
@@ -235,6 +238,29 @@ def _parse_ai_response(response: str) -> Dict[str, Any]:
         logger.warning(f"Failed to parse AI response as JSON: {e}")
         logger.debug(f"Raw response: {response[:500]}...")
         return {}
+
+
+async def _repair_ai_json_once(raw_response: str) -> Optional[str]:
+    """Single retry path to repair malformed JSON from model output."""
+    try:
+        provider = LLMProviderFactory.create_provider()
+        if not provider:
+            return None
+        prompt = (
+            "Repair the following payload into a valid JSON object only. "
+            "Do not add commentary. Preserve original keys and values where possible.\n\n"
+            f"PAYLOAD:\n{raw_response[:8000]}"
+        )
+        repaired, _, _ = await provider.generate(
+            prompt=prompt,
+            system_prompt="You are a JSON repair tool. Return ONLY valid JSON object.",
+            temperature=0.0,
+            max_tokens=1800,
+        )
+        return repaired
+    except Exception as exc:
+        logger.warning("LC JSON repair attempt failed: %s", exc)
+        return None
 
 
 def _calculate_extraction_confidence(extracted: Dict[str, Any]) -> float:

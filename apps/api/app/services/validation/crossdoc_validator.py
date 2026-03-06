@@ -22,6 +22,11 @@ from enum import Enum
 
 from app.services.extraction.lc_baseline import LCBaseline
 from app.services.validation.issue_engine import Issue, IssueSeverity, IssueSource
+from app.services.validation.alias_normalization import (
+    BIN_REGEX_PATTERNS,
+    TIN_REGEX_PATTERNS,
+    canonicalize_fields,
+)
 from app.reference_data.ports import get_port_registry, PortRegistry
 from app.constants.thresholds import VALIDATION, CONFIDENCE
 
@@ -1663,24 +1668,14 @@ class CrossDocValidator:
                 break
         
         # Extract BIN (Business Identification Number)
-        # Patterns: "BIN: 000334455-0103", "EXPORTER BIN NO. 000334455-0103", "B.I.N. # 000334455-0103"
-        bin_patterns = [
-            r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
-            r"(?:BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
-        ]
-        for pattern in bin_patterns:
+        for pattern in BIN_REGEX_PATTERNS:
             match = re.search(pattern, conditions_text)
             if match:
                 requirements["bin_number"] = match.group(1).strip()
                 break
-        
+
         # Extract TIN (Tax Identification Number)
-        # Patterns: "TIN: 545342112233", "EXPORTER TIN NO. 545342112233", "TAX ID# 545342112233"
-        tin_patterns = [
-            r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*REG(?:ISTRATION)?|TAX\s*REG\.?|TAXPAYER\s+ID(?:ENTIFICATION)?|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
-            r"(?:TAX\s+IDENTIFICATION|TAX\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER)?\s*(?:#|:)?\s*([0-9][0-9\-]+)",
-        ]
-        for pattern in tin_patterns:
+        for pattern in TIN_REGEX_PATTERNS:
             match = re.search(pattern, conditions_text)
             if match:
                 requirements["tin_number"] = match.group(1).strip()
@@ -1739,11 +1734,12 @@ class CrossDocValidator:
             return True  # Nothing to check
         
         value_normalized = value_to_find.upper().replace("-", "").replace(" ", "")
-        
-        # Check specific fields first
+        doc_canonical = canonicalize_fields(doc)
+
+        # Check specific canonical fields first
         if field_names:
             for fname in field_names:
-                field_val = doc.get(fname)
+                field_val = doc_canonical.get(fname)
                 if field_val:
                     if isinstance(field_val, str):
                         if value_normalized in field_val.upper().replace("-", "").replace(" ", ""):
@@ -1880,9 +1876,9 @@ class CrossDocValidator:
             
             executed += 1
             found = self._check_value_in_document(
-                doc_data, 
+                doc_data,
                 bin_number,
-                field_names=["bin", "bin_number", "business_identification", "exporter_bin"]
+                field_names=["exporter_bin"],
             )
             
             if found:
@@ -1943,9 +1939,9 @@ class CrossDocValidator:
             
             executed += 1
             found = self._check_value_in_document(
-                doc_data, 
+                doc_data,
                 tin_number,
-                field_names=["tin", "tin_number", "tax_identification", "exporter_tin"]
+                field_names=["exporter_tin"],
             )
             
             if found:

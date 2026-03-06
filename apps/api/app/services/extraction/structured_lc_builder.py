@@ -55,6 +55,15 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
             or doc.get("discrepancy_count")
         )
         ocr_confidence = doc.get("ocrConfidence") or doc.get("ocr_confidence")
+        extraction_artifacts_v1 = doc.get("extraction_artifacts_v1") or {
+            "version": "extraction_artifacts_v1",
+            "raw_text": doc.get("raw_text") or doc.get("raw_text_preview") or "",
+            "tables": [],
+            "key_value_candidates": [],
+            "spans": [],
+            "bbox": [],
+            "ocr_confidence": ocr_confidence,
+        }
 
         normalized.append(
             {
@@ -67,6 +76,7 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "discrepancyCount": discrepancy_count,
                 "issues_count": issues_count,
                 "ocrConfidence": ocr_confidence,
+                "extraction_artifacts_v1": extraction_artifacts_v1,
             }
         )
     return normalized

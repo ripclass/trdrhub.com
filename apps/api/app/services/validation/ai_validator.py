@@ -15,6 +15,13 @@ from typing import Dict, Any, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
+from app.services.validation.alias_normalization import (
+    BL_RAW_PATTERNS,
+    canonicalize_fields,
+    find_first_pattern_value,
+    text_has_size_breakdown,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -237,112 +244,15 @@ def validate_bl_fields(
     
     issues = []
 
-    def _find_raw_text_value(raw_text: str, patterns: List[str]) -> Optional[str]:
-        if not raw_text:
-            return None
-        for pattern in patterns:
-            match = re.search(pattern, raw_text, re.IGNORECASE | re.MULTILINE)
-            if match:
-                if match.lastindex:
-                    return match.group(match.lastindex).strip()
-                return match.group(0).strip()
-        return None
+    bl_canonical = canonicalize_fields(bl_data)
     
-    # Normalize B/L data keys to lowercase
-    bl_lower = {}
-    for k, v in bl_data.items():
-        if v and not k.startswith("_"):  # Skip metadata fields
-            bl_lower[k.lower()] = v
-    
-    logger.info(f"B/L extracted fields: {list(bl_lower.keys())}")
+    logger.info(f"B/L canonical fields: {list(bl_canonical.keys())}")
     raw_text = str(bl_data.get("raw_text") or "")
-    
-    # Field mappings - what keys to check for each requirement
+
     field_info = {
-        "voyage_number": {
-            "keys": [
-                "voyage_number",
-                "voyage",
-                "voyage_no",
-                "voy_no",
-                "voy",
-                "vessel_voy",
-                "vessel_voyage",
-                "vessel_voyage_no",
-                "vessel_voyage_number",
-                "vessel_voyage_ref",
-                "vessel_voy_no",
-                "vsl_voy",
-                "vsl_voyage",
-                "vsl_voy_no",
-                "vsl_voyage_no",
-                "vsl_voyage_number",
-                "vessel/voy",
-                "vsl/voy",
-                "vessel/voyage",
-                "vsl/voyage",
-                "vessel&voyage",
-                "vessel_and_voyage",
-            ],
-            "raw_patterns": [
-                r"(?:VOYAGE(?:\s*NO\.?|\s*NUMBER|\s*#)?|VOY\.?|VSL/VOY|VSL\s*VOY|VESSEL\s*/\s*VOY)\s*[:\-]?\s*([A-Z0-9\-/]+)",
-            ],
-            "display": "Voyage Number",
-        },
-        "gross_weight": {
-            "keys": [
-                "gross_weight",
-                "gross_wt",
-                "gross_wgt",
-                "grosswt",
-                "grosswgt",
-                "gw",
-                "g.w.",
-                "g.w",
-                "g_w",
-                "g_wt",
-                "g_wgt",
-                "gross_weight_total",
-                "total_gross_weight",
-                "gross_net_weight",
-                "gross/net_weight",
-                "gross/net",
-                "gross_net",
-                "gross",
-            ],
-            "raw_patterns": [
-                r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?",
-                r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|G/W|GW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
-            ],
-            "display": "Gross Weight",
-        },
-        "net_weight": {
-            "keys": [
-                "net_weight",
-                "net_wt",
-                "net_wgt",
-                "netwt",
-                "netwgt",
-                "nw",
-                "n.w.",
-                "n.w",
-                "n_w",
-                "n_wt",
-                "n_wgt",
-                "net_weight_total",
-                "total_net_weight",
-                "gross_net_weight",
-                "gross/net_weight",
-                "gross/net",
-                "gross_net",
-                "net",
-            ],
-            "raw_patterns": [
-                r"(?:GROSS\s*/\s*NET|G\.?\s*W\.?\s*/\s*N\.?\s*W\.?|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:\-]?\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?\s*/\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
-                r"(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|N/W|NW)\s*[:\-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB)?)",
-            ],
-            "display": "Net Weight",
-        },
+        "voyage_number": {"display": "Voyage Number"},
+        "gross_weight": {"display": "Gross Weight"},
+        "net_weight": {"display": "Net Weight"},
     }
     
     checked_fields: Set[str] = set()  # Track to avoid duplicates
@@ -355,16 +265,12 @@ def validate_bl_fields(
         
         info = field_info.get(req_field, {"keys": [req_field], "display": req_field.replace("_", " ").title(), "raw_patterns": []})
         
-        # Look for the field in B/L data
-        found_value = None
-        for key in info["keys"]:
-            if key in bl_lower:
-                found_value = bl_lower[key]
-                break
+        # Look for canonical field value only (aliases already normalized upstream)
+        found_value = bl_canonical.get(req_field)
 
         # Fallback to raw text if structured extraction missed it
         if not found_value and raw_text:
-            raw_value = _find_raw_text_value(raw_text, info.get("raw_patterns", []))
+            raw_value = find_first_pattern_value(raw_text, BL_RAW_PATTERNS.get(req_field, []))
             if raw_value:
                 found_value = raw_value
                 logger.info(f"✓ B/L has {info['display']} (raw text): {raw_value}")
@@ -439,64 +345,19 @@ def validate_packing_list(
     
     # Check if packing list has size information
     has_sizes = False
-    
-    # Check raw text
-    pl_raw = (packing_list_data.get("raw_text") or "").upper()
-    size_indicators = [
-        "SIZE",
-        "S/M/L",
-        "SMALL",
-        "MEDIUM",
-        "LARGE",
-        "XL",
-        "XXL",
-        "SIZE BREAKDOWN",
-        "SIZE DISTRIBUTION",
-        "SIZES PER CARTON",
-        "SIZE WISE",
-        "SIZE-WISE",
-        "SIZE/QTY",
-        "SIZE & QTY",
-        "SIZE RATIO",
-        "SIZE RUN",
-        "SIZE MATRIX",
-        "SIZE ASSORTMENT",
-        "ASSORTMENT",
-        "PRE-PACK",
-        "PREPACK",
-        "RATIO PACK",
-        "QTY PER SIZE",
-        "QTY/SIZE",
-        "SIZE-COLOR",
-        "SIZE COLOR",
-        "SIZE/COLOUR",
-        "SIZE/ COLOR",
-        "CARTON SIZE",
-        "CTN SIZE",
-        "CARTON DIMENSION",
-        "CARTON DIMENSIONS",
-        "PACKAGE SIZE",
-        "PACKING SIZE",
-    ]
-    
-    for indicator in size_indicators:
-        if indicator in pl_raw:
-            has_sizes = True
-            logger.info(f"✓ Packing list has size info: found '{indicator}'")
-            break
-    
-    # Also check extracted fields
+
+    # Raw text path
+    pl_raw = packing_list_data.get("raw_text") or ""
+    if text_has_size_breakdown(pl_raw):
+        has_sizes = True
+        logger.info("✓ Packing list has size info in raw text")
+
+    # Structured field path (canonical keys only)
     if not has_sizes:
-        for key, value in packing_list_data.items():
-            if key.startswith("_"):
-                continue
-            key_lower = key.lower()
-            value_str = str(value).upper() if value else ""
-            
-            if "size" in key_lower or any(ind in value_str for ind in size_indicators):
-                has_sizes = True
-                logger.info(f"✓ Packing list has size field: {key}")
-                break
+        pl_canonical = canonicalize_fields(packing_list_data)
+        if "size_breakdown" in pl_canonical:
+            has_sizes = True
+            logger.info("✓ Packing list has canonical size_breakdown field")
     
     if not has_sizes:
         issues.append(AIValidationIssue(

@@ -188,6 +188,15 @@ def test_documents_structured_preserves_discrepancy_and_ocr_fields():
                 "discrepancyCount": 2,
                 "issues_count": 2,
                 "ocrConfidence": 0.91,
+                "extraction_artifacts_v1": {
+                    "version": "extraction_artifacts_v1",
+                    "raw_text": "Invoice content",
+                    "tables": [[{"text": "Amount", "row": 1, "col": 1}, {"text": "1000", "row": 1, "col": 2}]],
+                    "key_value_candidates": [{"key": "Invoice No", "value": "INV-123"}],
+                    "spans": [{"text": "INV-123", "confidence": 0.93, "element_type": "word"}],
+                    "bbox": [{"x1": 10, "y1": 20, "x2": 40, "y2": 30, "page": 1}],
+                    "ocr_confidence": 0.91,
+                },
             },
             {
                 "id": "doc-2",
@@ -218,11 +227,21 @@ def test_documents_structured_preserves_discrepancy_and_ocr_fields():
     assert docs[0]["ocrConfidence"] == 0.91
     assert docs[0]["extracted_fields"]["amount"] == "1000"
     assert docs[0]["extractedFields"]["currency"] == "USD"
+    assert docs[0]["extraction_artifacts_v1"]["raw_text"] == "Invoice content"
+    assert isinstance(docs[0]["extraction_artifacts_v1"]["tables"], list)
+    assert isinstance(docs[0]["extraction_artifacts_v1"]["key_value_candidates"], list)
+    assert isinstance(docs[0]["extraction_artifacts_v1"]["spans"], list)
+    assert isinstance(docs[0]["extraction_artifacts_v1"]["bbox"], list)
+    assert docs[0]["extraction_artifacts_v1"]["ocr_confidence"] == 0.91
 
     assert docs[1]["issues_count"] == 1
     assert docs[1]["ocrConfidence"] == 0.75
     assert docs[1]["extracted_fields"]["bl_no"] == "BL123"
     assert docs[1]["extractedFields"]["bl_no"] == "BL123"
+    # fallback/default artifact shape remains present for backward-compatible callers
+    assert docs[1]["extraction_artifacts_v1"]["version"] == "extraction_artifacts_v1"
+    assert docs[1]["extraction_artifacts_v1"]["raw_text"] == ""
+    assert docs[1]["extraction_artifacts_v1"]["ocr_confidence"] == 0.75
 
 
 def test_lc_type_override_handling_and_source_markers():

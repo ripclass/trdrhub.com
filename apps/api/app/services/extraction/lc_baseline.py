@@ -511,6 +511,7 @@ def create_lc_baseline_from_extraction(
     """
     baseline = LCBaseline()
     baseline._source_parsers = source_parsers or ["unknown"]
+    raw_text = raw_text or extraction_result.get("raw_text") or ""
     baseline._raw_text_length = len(raw_text) if raw_text else 0
     
     evidence_map = (
@@ -592,6 +593,24 @@ def create_lc_baseline_from_extraction(
         missing_reason: Optional[MissingReason] = None,
     ):
         """Helper to set a field result."""
+
+        def _first_valid_candidate(field_key: str) -> Any:
+            diag = field_diagnostics.get(field_key) or {}
+            if diag.get("conflict"):
+                return None
+            candidates = diag.get("valid_candidates") or []
+            for candidate in candidates:
+                if candidate not in (None, "", {}):
+                    return candidate
+            return None
+
+        def _downgrade_critical_no_evidence(reason: str) -> None:
+            field_result.status = ExtractionStatus.INVALID
+            field_result.value = None
+            field_result.confidence = 0.0
+            field_result.error = reason
+            field_result.missing_reason = MissingReason.PARSER_FAILED.value
+
         if value is not None and value != "" and value != {}:
             field_result.status = ExtractionStatus.EXTRACTED
             field_result.value = value
@@ -600,17 +619,38 @@ def create_lc_baseline_from_extraction(
             field_result.error = None
             field_result.missing_reason = None
             _apply_evidence(field_result, evidence)
-            if field_result.priority == FieldPriority.CRITICAL and not field_result.evidence_text:
+            if field_result.priority == FieldPriority.CRITICAL and not field_result.has_evidence:
                 snippet = _extract_snippet(value)
                 if snippet:
                     field_result.evidence_text = snippet
+            if field_result.priority == FieldPriority.CRITICAL and not field_result.has_evidence:
+                _downgrade_critical_no_evidence("Critical field extracted without evidence span")
         else:
-            field_result.status = status_override or ExtractionStatus.MISSING
-            field_result.confidence = 0.0
-            field_result.error = error
-            field_result.missing_reason = (
-                missing_reason.value if isinstance(missing_reason, MissingReason) else missing_reason
-            ) or MissingReason.MISSING_IN_SOURCE.value
+            retry_candidate = None
+            if field_result.priority == FieldPriority.CRITICAL:
+                retry_candidate = _first_valid_candidate(field_result.field_name)
+
+            if retry_candidate not in (None, "", {}):
+                field_result.status = ExtractionStatus.EXTRACTED
+                field_result.value = retry_candidate
+                field_result.confidence = min(confidence, 0.7)
+                field_result.source = "ocr_retry_candidate"
+                field_result.error = None
+                field_result.missing_reason = None
+                _apply_evidence(field_result, evidence)
+                if not field_result.has_evidence:
+                    snippet = _extract_snippet(retry_candidate)
+                    if snippet:
+                        field_result.evidence_text = snippet
+                if not field_result.has_evidence:
+                    _downgrade_critical_no_evidence("Critical field retry candidate found but no evidence span")
+            else:
+                field_result.status = status_override or ExtractionStatus.MISSING
+                field_result.confidence = 0.0
+                field_result.error = error
+                field_result.missing_reason = (
+                    missing_reason.value if isinstance(missing_reason, MissingReason) else missing_reason
+                ) or MissingReason.MISSING_IN_SOURCE.value
     
     # LC Number
     lc_number_status, lc_number_error, lc_number_reason = _get_missing_status("lc_number")

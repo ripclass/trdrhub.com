@@ -806,7 +806,13 @@ async def validate_doc(
                         content_type=doc_info.get("content_type") or "application/pdf",
                         ocr_text=doc_info.get("raw_text_preview") or doc_info.get("raw_text") or "",
                         ocr_confidence=doc_info.get("ocr_confidence"),
-                        extracted_fields=doc_info.get("extracted_fields") or {},
+                        extracted_fields={
+                            **(doc_info.get("extracted_fields") or {}),
+                            "_extraction_artifacts_v1": doc_info.get("extraction_artifacts_v1") or _empty_extraction_artifacts_v1(
+                                raw_text=doc_info.get("raw_text") or doc_info.get("raw_text_preview") or "",
+                                ocr_confidence=doc_info.get("ocr_confidence"),
+                            ),
+                        },
                     )
                     db.add(doc_record)
                 db.commit()
@@ -2345,6 +2351,10 @@ def _build_document_summaries(
             "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
+            "extraction_artifacts_v1": detail.get("extraction_artifacts_v1") or _empty_extraction_artifacts_v1(
+                raw_text=detail.get("raw_text") or detail.get("raw_text_preview") or "",
+                ocr_confidence=detail.get("ocr_confidence"),
+            ),
         }
 
     if details:
@@ -2368,6 +2378,7 @@ def _build_document_summaries(
                 "extractedFields": {},
                 "ocrConfidence": None,
                 "extractionStatus": "unknown",
+                "extraction_artifacts_v1": _empty_extraction_artifacts_v1(),
             }
         ]
 
@@ -2396,6 +2407,7 @@ def _build_document_summaries(
                 "extractedFields": {},
                 "ocrConfidence": None,
                 "extractionStatus": "unknown",
+                "extraction_artifacts_v1": _empty_extraction_artifacts_v1(),
             }
         )
 
@@ -2412,6 +2424,7 @@ def _build_document_summaries(
             "extractedFields": {},
             "ocrConfidence": None,
             "extractionStatus": "unknown",
+            "extraction_artifacts_v1": _empty_extraction_artifacts_v1(),
         })
 
     return summaries
@@ -2485,12 +2498,14 @@ async def _build_document_context(
             filename = getattr(upload_file, "filename", f"document_{idx+1}")
             logger.info(f"[OCR {idx+1}/{len(files_list)}] Starting extraction for {filename}")
             try:
-                text = await _extract_text_from_upload(upload_file)
+                extraction_result = await _extract_text_from_upload(upload_file)
+                text = extraction_result.get("text") or ""
+                artifacts = extraction_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=text)
                 logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text) if text else 0} chars")
-                return (idx, text, None)
+                return (idx, text, artifacts, None)
             except Exception as e:
                 logger.warning(f"[OCR {idx+1}/{len(files_list)}] Failed {filename}: {e}")
-                return (idx, None, str(e))
+                return (idx, None, _empty_extraction_artifacts_v1(), str(e))
     
     # Run all OCR extractions in parallel (bounded by semaphore)
     logger.info(f"Starting parallel OCR extraction for {len(files_list)} files (concurrency={ocr_concurrency})")
@@ -2498,15 +2513,17 @@ async def _build_document_context(
     ocr_tasks = [_extract_with_semaphore(i, f) for i, f in enumerate(files_list)]
     ocr_results = await asyncio.gather(*ocr_tasks, return_exceptions=True)
     
-    # Build a lookup dict: idx -> extracted_text
+    # Build lookup dicts from OCR stage results
     extracted_texts: Dict[int, Optional[str]] = {}
+    extraction_artifacts_by_idx: Dict[int, Dict[str, Any]] = {}
     extraction_errors: Dict[int, str] = {}
     for result in ocr_results:
         if isinstance(result, Exception):
             logger.error(f"OCR task failed with exception: {result}")
             continue
-        idx, text, error = result
+        idx, text, artifacts, error = result
         extracted_texts[idx] = text
+        extraction_artifacts_by_idx[idx] = artifacts or _empty_extraction_artifacts_v1(raw_text=text or "")
         if error:
             extraction_errors[idx] = error
     
@@ -2532,8 +2549,15 @@ async def _build_document_context(
         
         logger.info(f"Processing file {idx+1}/{len(files_list)}: {filename} (type: {document_type}, content-type: {content_type})")
         
-        # Use pre-extracted text from parallel OCR phase
+        # Use pre-extracted text + artifacts from parallel OCR phase
         extracted_text = extracted_texts.get(idx)
+        extraction_artifacts_v1 = extraction_artifacts_by_idx.get(idx) or _empty_extraction_artifacts_v1(raw_text=extracted_text or "")
+        doc_info["extraction_artifacts_v1"] = extraction_artifacts_v1
+        doc_info["ocr_confidence"] = extraction_artifacts_v1.get("ocr_confidence")
+
+        artifacts_index = context.setdefault("document_artifacts_v1", {})
+        artifacts_index[document_id] = extraction_artifacts_v1
+
         if idx in extraction_errors:
             logger.warning(f"⚠ OCR extraction error for {filename}: {extraction_errors[idx]}")
         if not extracted_text:
@@ -3218,199 +3242,191 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
     return None
 
 
-async def _extract_text_from_upload(upload_file: Any) -> str:
-    """
-    Extract textual content from an uploaded PDF/image.
-    
-    Tries pdfminer/PyPDF2 first, then falls back to OCR (Google Document AI/AWS Textract)
-    if enabled and text extraction returns empty.
-    """
+def _empty_extraction_artifacts_v1(
+    raw_text: str = "",
+    ocr_confidence: Optional[float] = None,
+) -> Dict[str, Any]:
+    return {
+        "version": "extraction_artifacts_v1",
+        "raw_text": raw_text or "",
+        "tables": [],
+        "key_value_candidates": [],
+        "spans": [],
+        "bbox": [],
+        "ocr_confidence": ocr_confidence,
+    }
+
+
+def _build_extraction_artifacts_from_ocr(
+    raw_text: str,
+    provider_result: Optional[Any] = None,
+    ocr_confidence: Optional[float] = None,
+) -> Dict[str, Any]:
+    artifacts = _empty_extraction_artifacts_v1(raw_text=raw_text, ocr_confidence=ocr_confidence)
+
+    if not provider_result:
+        return artifacts
+
+    confidence = provider_result.overall_confidence
+    if isinstance(confidence, (int, float)):
+        artifacts["ocr_confidence"] = float(confidence)
+
+    metadata = provider_result.metadata if isinstance(provider_result.metadata, dict) else {}
+    artifacts["tables"] = metadata.get("tables") or []
+    artifacts["key_value_candidates"] = (
+        metadata.get("key_value_candidates")
+        or metadata.get("key_value_pairs")
+        or metadata.get("entities")
+        or []
+    )
+
+    spans: List[Dict[str, Any]] = []
+    bboxes: List[Dict[str, Any]] = []
+    for element in provider_result.elements or []:
+        span_entry: Dict[str, Any] = {
+            "text": element.text,
+            "confidence": element.confidence,
+            "element_type": element.element_type,
+        }
+        bbox_entry: Optional[Dict[str, Any]] = None
+        if element.bounding_box:
+            bbox_entry = {
+                "x1": element.bounding_box.x1,
+                "y1": element.bounding_box.y1,
+                "x2": element.bounding_box.x2,
+                "y2": element.bounding_box.y2,
+                "page": element.bounding_box.page,
+            }
+            span_entry["bbox"] = bbox_entry
+
+        spans.append(span_entry)
+        if bbox_entry:
+            bboxes.append(bbox_entry)
+
+    artifacts["spans"] = spans
+    artifacts["bbox"] = bboxes
+    return artifacts
+
+
+async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
+    """Extract text + normalized OCR artifacts from an uploaded file."""
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
-    
+
     logger.log(TRACE_LOG_LEVEL, "Starting text extraction for %s (type=%s)", filename, content_type)
-    
+
     try:
         file_bytes = await upload_file.read()
         await upload_file.seek(0)
         logger.info(f"✓ Read {len(file_bytes)} bytes from {filename}")
     except Exception as e:
         logger.error(f"✗ Failed to read file {filename}: {e}", exc_info=True)
-        return ""
+        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
 
     if not file_bytes:
         logger.warning(f"⚠ Empty file content for {filename}")
-        return ""
-    
-    # Check file size limit for OCR
-    if len(file_bytes) > settings.OCR_MAX_BYTES:
-        logger.warning(
-            f"File {filename} exceeds OCR size limit ({len(file_bytes)} > {settings.OCR_MAX_BYTES} bytes). "
-            f"Skipping OCR fallback."
-        )
+        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
 
     text_output = ""
 
-    # Try pdfminer first (better for complex layouts)
-    logger.log(TRACE_LOG_LEVEL, "Trying pdfminer extraction for %s", filename)
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
         if text_output.strip():
-            logger.log(TRACE_LOG_LEVEL, "pdfminer extracted %s characters from %s", len(text_output), filename)
-            return text_output
-        else:
-            logger.log(TRACE_LOG_LEVEL, "pdfminer returned empty text for %s", filename)
-    except Exception as pdfminer_error:
-        logger.log(TRACE_LOG_LEVEL, "pdfminer extraction failed for %s: %s", filename, pdfminer_error)
+            return {
+                "text": text_output,
+                "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
+            }
+    except Exception:
+        pass
 
-    # Fallback to PyPDF2
-    logger.log(TRACE_LOG_LEVEL, "Trying PyPDF2 extraction for %s", filename)
     try:
         from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
         reader = PdfReader(BytesIO(file_bytes))
         pieces = []
-        for page_num, page in enumerate(reader.pages):
+        for page in reader.pages:
             try:
-                page_text = page.extract_text() or ""
-                pieces.append(page_text)
-            except Exception as e:
-                logger.debug(f"Failed to extract text from page {page_num+1} of {filename}: {e}")
+                pieces.append(page.extract_text() or "")
+            except Exception:
                 continue
         text_output = "\n".join(pieces)
         if text_output.strip():
-            logger.log(TRACE_LOG_LEVEL, "PyPDF2 extracted %s characters from %s (%s pages)", len(text_output), filename, len(reader.pages))
-            return text_output
-        else:
-            logger.log(TRACE_LOG_LEVEL, "PyPDF2 returned empty text for %s (%s pages)", filename, len(reader.pages))
-    except Exception as pypdf_error:
-        logger.warning(f"  ✗ PyPDF2 extraction failed for {filename}: {pypdf_error}")
+            return {
+                "text": text_output,
+                "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
+            }
+    except Exception:
+        pass
 
-    # If pdfminer/PyPDF2 returned empty and OCR is enabled, try OCR providers
-    if not text_output.strip() and settings.OCR_ENABLED:
-        logger.log(TRACE_LOG_LEVEL, "Text extraction empty for %s, attempting OCR fallback (enabled=%s)", filename, settings.OCR_ENABLED)
-        logger.log(TRACE_LOG_LEVEL, "OCR provider order: %s", settings.OCR_PROVIDER_ORDER)
-        
-        # Check file size and page count before attempting OCR
-        page_count = 0
-        try:
-            from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
-            reader = PdfReader(BytesIO(file_bytes))
-            page_count = len(reader.pages)
-            logger.log(TRACE_LOG_LEVEL, "Page count for %s: %s", filename, page_count)
-        except:
-            # If we can't count pages, assume it's a single-page image
-            page_count = 1 if content_type.startswith('image/') else 0
-            logger.log(TRACE_LOG_LEVEL, "Could not determine page count for %s, assuming %s", filename, page_count)
-        
-        if page_count > settings.OCR_MAX_PAGES:
-            logger.warning(
-                f"  ⚠ File {filename} exceeds OCR page limit ({page_count} > {settings.OCR_MAX_PAGES} pages). "
-                f"Skipping OCR."
-            )
-        elif len(file_bytes) > settings.OCR_MAX_BYTES:
-            logger.warning(
-                f"File {filename} exceeds OCR size limit ({len(file_bytes)} > {settings.OCR_MAX_BYTES} bytes). "
-                f"Skipping OCR."
-            )
-        else:
-            # Try OCR providers in configured order
-            logger.log(TRACE_LOG_LEVEL, "Attempting OCR with providers %s for %s", settings.OCR_PROVIDER_ORDER, filename)
-            text_output = await _try_ocr_providers(file_bytes, filename, content_type)
-            if text_output.strip():
-                logger.log(TRACE_LOG_LEVEL, "OCR extraction successful for %s (%s characters)", filename, len(text_output))
-                return text_output
-            else:
-                logger.warning(f"  ✗ OCR extraction returned empty")
-    elif not settings.OCR_ENABLED:
-        logger.log(TRACE_LOG_LEVEL, "OCR disabled, bypassing fallback for %s", filename)
+    if not settings.OCR_ENABLED:
+        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
 
-    if not text_output.strip():
-        logger.error(f"❌ ALL extraction methods failed for {filename}")
-        logger.error(f"   Summary: pdfminer=empty, PyPDF2=empty, OCR={'attempted' if settings.OCR_ENABLED else 'disabled'}")
-        logger.error(f"   File details: content-type={content_type}, size={len(file_bytes)} bytes")
-    else:
-        logger.log(TRACE_LOG_LEVEL, "Extraction complete for %s (%s characters)", filename, len(text_output))
-    
-    return text_output
+    page_count = 0
+    try:
+        from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
+        page_count = len(PdfReader(BytesIO(file_bytes)).pages)
+    except Exception:
+        page_count = 1 if content_type.startswith("image/") else 0
+
+    if page_count > settings.OCR_MAX_PAGES or len(file_bytes) > settings.OCR_MAX_BYTES:
+        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+
+    ocr_result = await _try_ocr_providers(file_bytes, filename, content_type)
+    ocr_text = ocr_result.get("text") or ""
+    artifacts = ocr_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=ocr_text)
+
+    if ocr_text.strip():
+        return {"text": ocr_text, "artifacts": artifacts}
+
+    return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
 
 
-async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> str:
-    """
-    Try OCR providers in configured order until one succeeds.
-    
-    Returns extracted text or empty string if all providers fail.
-    """
+async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
+    """Try OCR providers in configured order; return text + normalized artifacts."""
     from uuid import uuid4
     from app.ocr.factory import get_ocr_factory
-    
-    # Map provider order names to adapter classes
+
     provider_map = {
         "gdocai": "google_documentai",
         "textract": "aws_textract",
     }
-    
-    # Get configured provider order
     provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
-    
+
     try:
         factory = get_ocr_factory()
         all_adapters = factory.get_all_adapters()
-        
-        # Create a map of provider names to adapters
         adapter_map = {adapter.provider_name: adapter for adapter in all_adapters}
-        
-        # Try providers in configured order
+
         for provider_name in provider_order:
-            # Map short name to full provider name
             full_provider_name = provider_map.get(provider_name, provider_name)
-            
-            if full_provider_name not in adapter_map:
-                logger.debug(f"OCR provider {provider_name} ({full_provider_name}) not available")
+            adapter = adapter_map.get(full_provider_name)
+            if not adapter:
                 continue
-            
-            adapter = adapter_map[full_provider_name]
-            
+
             try:
-                # Check health before attempting
                 if not await adapter.health_check():
-                    logger.debug(f"OCR provider {full_provider_name} health check failed")
                     continue
-                
-                # Try OCR with timeout
-                import asyncio
-                doc_id = uuid4()
-                
+
                 result = await asyncio.wait_for(
-                    adapter.process_file_bytes(file_bytes, filename, content_type, doc_id),
-                    timeout=settings.OCR_TIMEOUT_SEC
+                    adapter.process_file_bytes(file_bytes, filename, content_type, uuid4()),
+                    timeout=settings.OCR_TIMEOUT_SEC,
                 )
-                
+
                 if result and result.full_text and not result.error:
-                    logger.info(
-                        f"OCR provider {full_provider_name} extracted {len(result.full_text)} characters "
-                        f"from {filename} (confidence: {result.overall_confidence:.2f}, "
-                        f"time: {result.processing_time_ms}ms)"
+                    artifacts = _build_extraction_artifacts_from_ocr(
+                        raw_text=result.full_text,
+                        provider_result=result,
+                        ocr_confidence=result.overall_confidence,
                     )
-                    return result.full_text
-                elif result and result.error:
-                    logger.warning(f"OCR provider {full_provider_name} returned error: {result.error}")
-                else:
-                    logger.debug(f"OCR provider {full_provider_name} returned empty result")
-                    
+                    return {"text": result.full_text, "artifacts": artifacts}
             except asyncio.TimeoutError:
-                logger.warning(f"OCR provider {full_provider_name} timed out after {settings.OCR_TIMEOUT_SEC}s")
                 continue
-            except Exception as e:
-                logger.warning(f"OCR provider {full_provider_name} failed: {e}", exc_info=True)
+            except Exception:
                 continue
-        
-        logger.warning(f"All OCR providers failed for {filename}")
-        return ""
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize OCR factory: {e}", exc_info=True)
-        return ""
+
+        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
+    except Exception:
+        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
 
 
 def _severity_rank(severity: Optional[str]) -> int:
@@ -3468,6 +3484,22 @@ def _build_blocked_structured_result(
         actual_extraction_status = doc.get("extraction_status") or "unknown"
         actual_extracted_fields = doc.get("extracted_fields") or {}
         
+        empty_artifacts_builder = globals().get("_empty_extraction_artifacts_v1")
+        fallback_artifacts = (
+            empty_artifacts_builder(
+                raw_text=doc.get("raw_text") or doc.get("raw_text_preview") or "",
+                ocr_confidence=doc.get("ocr_confidence"),
+            )
+            if callable(empty_artifacts_builder)
+            else {
+                "ocr": {},
+                "parsing": {},
+                "normalization": {},
+                "raw_text": doc.get("raw_text") or doc.get("raw_text_preview") or "",
+                "ocr_confidence": doc.get("ocr_confidence"),
+            }
+        )
+
         docs_structured.append({
             "document_id": doc.get("id") or str(uuid4()),
             "filename": doc.get("filename") or doc.get("name") or f"Document {i+1}",
@@ -3477,6 +3509,7 @@ def _build_blocked_structured_result(
             "issues_count": 0,
             "raw_text_preview": doc.get("raw_text_preview"),  # Keep preview text
             "ocr_confidence": doc.get("ocr_confidence"),
+            "extraction_artifacts_v1": doc.get("extraction_artifacts_v1") or fallback_artifacts,
         })
     
     # Processing time display

@@ -28,6 +28,7 @@ Flow:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -83,6 +84,74 @@ class AIFirstExtractor:
     # Confidence thresholds
     TRUSTED_THRESHOLD = 0.8
     REVIEW_THRESHOLD = 0.5
+
+    DOC_TYPE_FIELDS: Dict[str, Dict[str, List[str]]] = {
+        "letter_of_credit": {
+            "required": [
+                "lc_number", "lc_type", "amount", "currency", "applicant", "beneficiary",
+                "issuing_bank", "advising_bank", "port_of_loading", "port_of_discharge",
+                "expiry_date", "latest_shipment_date", "issue_date", "incoterm",
+            ],
+            "optional": [
+                "confirming_bank", "ucp_reference", "partial_shipments", "transshipment",
+                "goods_description", "documents_required", "additional_conditions",
+                "payment_terms", "available_with",
+            ],
+        },
+        "commercial_invoice": {
+            "required": [
+                "invoice_number", "invoice_date", "amount", "currency",
+                "seller_name", "buyer_name", "lc_reference",
+            ],
+            "optional": [
+                "seller_address", "buyer_address", "goods_description", "quantity", "unit_price",
+                "incoterm", "country_of_origin", "port_of_loading", "port_of_discharge",
+                "exporter_bin", "exporter_tin",
+            ],
+        },
+        "bill_of_lading": {
+            "required": [
+                "bl_number", "shipper", "consignee", "notify_party", "port_of_loading",
+                "port_of_discharge", "shipped_on_board_date", "vessel_name",
+            ],
+            "optional": [
+                "voyage_number", "goods_description", "gross_weight", "net_weight",
+                "number_of_packages", "container_number", "seal_number", "freight_terms",
+                "place_of_receipt", "place_of_delivery", "exporter_bin", "exporter_tin",
+            ],
+        },
+        "packing_list": {
+            "required": [
+                "packing_list_number", "date", "shipper", "consignee",
+                "total_packages", "gross_weight", "net_weight",
+            ],
+            "optional": [
+                "invoice_reference", "lc_reference", "goods_description", "marks_and_numbers",
+                "dimensions", "packing_size_breakdown", "container_number", "port_of_loading",
+                "port_of_discharge", "exporter_bin", "exporter_tin",
+            ],
+        },
+        "certificate_of_origin": {
+            "required": [
+                "certificate_number", "country_of_origin", "exporter_name", "importer_name",
+                "goods_description", "certifying_authority",
+            ],
+            "optional": [
+                "issue_date", "invoice_reference", "lc_reference", "hs_code",
+                "destination_country", "transport_details", "marks_and_numbers",
+            ],
+        },
+        "insurance_certificate": {
+            "required": [
+                "certificate_number", "insured_amount", "currency", "insured_party",
+                "insurance_company", "coverage_type",
+            ],
+            "optional": [
+                "issue_date", "invoice_reference", "lc_reference", "goods_description",
+                "voyage_details", "vessel_name", "claims_payable_at", "survey_agent",
+            ],
+        },
+    }
     
     # Field validators (regex patterns to validate AI output)
     VALIDATORS = {
@@ -180,6 +249,8 @@ class AIFirstExtractor:
         if not ai_result:
             return self._empty_result("ai_failed")
         
+        ai_result = self._filter_canonical_ai_result(ai_result, "letter_of_credit")
+
         # Step 2: Process each field through validation + normalization
         fields: Dict[str, ExtractedFieldResult] = {}
         
@@ -393,56 +464,94 @@ class AIFirstExtractor:
         self,
         fields: Dict[str, ExtractedFieldResult],
         ai_provider: str,
+        doc_type: str = "letter_of_credit",
     ) -> Dict[str, Any]:
-        """Build final output structure."""
-        # Main output with normalized values
+        """Build final output structure with strict extraction contract."""
+        # Backward-compatible flat output
         output: Dict[str, Any] = {}
-        
         for name, field in fields.items():
             output[name] = field.normalized_value or field.value
-        
-        # Calculate aggregate confidence
+
         confidences = [f.ai_confidence for f in fields.values() if f.status != FieldStatus.NOT_FOUND]
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        
-        # Count statuses
+
         status_counts = {
             "trusted": sum(1 for f in fields.values() if f.status == FieldStatus.TRUSTED),
             "review": sum(1 for f in fields.values() if f.status == FieldStatus.REVIEW),
             "untrusted": sum(1 for f in fields.values() if f.status == FieldStatus.UNTRUSTED),
             "not_found": sum(1 for f in fields.values() if f.status == FieldStatus.NOT_FOUND),
         }
-        
-        # Determine overall status
+
         if status_counts["untrusted"] > 0:
             overall_status = "needs_review"
         elif status_counts["review"] > 0:
             overall_status = "review_advised"
-        elif status_counts["not_found"] > 2:  # Missing too many critical fields
+        elif status_counts["not_found"] > 2:
             overall_status = "incomplete"
         else:
             overall_status = "confident"
-        
-        # Add metadata
+
+        contract = self._build_contract_output(fields, doc_type)
+
+        output.update(contract)
         output["_extraction_method"] = "ai_first"
         output["_extraction_confidence"] = round(avg_confidence, 3)
         output["_ai_provider"] = ai_provider
         output["_status"] = overall_status
-        output["_field_details"] = {
-            name: field.to_dict() for name, field in fields.items()
-        }
+        output["_field_details"] = {name: field.to_dict() for name, field in fields.items()}
         output["_status_counts"] = status_counts
-        
+
         logger.info(
-            "AI-first extraction complete: status=%s confidence=%.2f trusted=%d review=%d untrusted=%d",
-            overall_status, avg_confidence,
+            "AI-first extraction complete: doc_type=%s status=%s confidence=%.2f trusted=%d review=%d untrusted=%d",
+            doc_type, overall_status, avg_confidence,
             status_counts["trusted"],
             status_counts["review"],
             status_counts["untrusted"],
         )
-        
+
         return output
+
+    def _build_contract_output(
+        self,
+        fields: Dict[str, ExtractedFieldResult],
+        doc_type: str,
+    ) -> Dict[str, Any]:
+        """Build strict extraction contract payload."""
+        schema = self.DOC_TYPE_FIELDS.get(doc_type) or {"required": [], "optional": []}
+        canonical_keys = list(dict.fromkeys(schema["required"] + schema["optional"]))
+
+        extracted_fields: Dict[str, Any] = {}
+        field_confidence: Dict[str, float] = {}
+        field_evidence_spans: Dict[str, List[Dict[str, Any]]] = {}
+        conflicts: List[Dict[str, Any]] = []
+
+        for key in canonical_keys:
+            field = fields.get(key)
+            value = (field.normalized_value or field.value) if field else None
+            extracted_fields[key] = value
+            field_confidence[key] = round(field.ai_confidence, 3) if field else 0.0
+            field_evidence_spans[key] = []
+
+            if field and field.issues:
+                conflicts.append({"field": key, "issues": list(field.issues)})
+
+        missing_fields = [k for k in schema["required"] if extracted_fields.get(k) in (None, "", [])]
+
+        return {
+            "extracted_fields": extracted_fields,
+            "field_confidence": field_confidence,
+            "field_evidence_spans": field_evidence_spans,
+            "missing_fields": missing_fields,
+            "conflicts": conflicts,
+        }
     
+    def _filter_canonical_ai_result(self, ai_result: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
+        schema = self.DOC_TYPE_FIELDS.get(doc_type)
+        if not schema:
+            return dict(ai_result)
+        allowed = set(schema["required"] + schema["optional"])
+        return {k: v for k, v in ai_result.items() if k in allowed or k.startswith("_")}
+
     async def _regex_fallback(self, raw_text: str) -> Dict[str, Any]:
         """Fall back to pure regex extraction when AI fails."""
         from .lc_extractor import extract_lc_structured
@@ -456,6 +565,11 @@ class AIFirstExtractor:
     def _empty_result(self, reason: str) -> Dict[str, Any]:
         """Return empty result with reason."""
         return {
+            "extracted_fields": {},
+            "field_confidence": {},
+            "field_evidence_spans": {},
+            "missing_fields": [],
+            "conflicts": [],
             "_extraction_method": "none",
             "_extraction_confidence": 0.0,
             "_status": "failed",
@@ -528,7 +642,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -592,6 +706,8 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
         
         if not ai_result:
             return self._empty_result("ai_failed")
+
+        ai_result = self._filter_canonical_ai_result(ai_result, "commercial_invoice")
         
         # Process fields
         fields: Dict[str, ExtractedFieldResult] = {}
@@ -601,7 +717,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
             field_result = self._process_field(field_name, ai_value, raw_text)
             fields[field_name] = field_result
         
-        return self._build_output(fields, ai_provider, doc_type="invoice")
+        return self._build_output(fields, ai_provider, doc_type="commercial_invoice")
     
     async def _run_invoice_ai_extraction(
         self,
@@ -632,28 +748,18 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
             
             logger.info(f"Invoice AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
             
-            # Parse JSON response
-            import json
-            try:
-                # Clean response
-                clean = response.strip()
-                if clean.startswith("```"):
-                    clean = clean.split("```")[1]
-                    if clean.startswith("json"):
-                        clean = clean[4:]
-                
-                result = json.loads(clean)
-                
-                # Add confidence to each field
-                for key in result:
-                    if result[key] is not None:
-                        result[key] = {"value": result[key], "confidence": 0.75}
-                
-                return result, provider.__class__.__name__
-                
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse AI invoice response: {e}")
+            # Parse JSON response with single repair retry
+            result = await _parse_llm_json_with_repair(provider, response)
+            if not result:
+                logger.warning("Failed to parse/repair AI invoice response")
                 return None, "parse_error"
+
+            # Add confidence to each field
+            for key in result:
+                if result[key] is not None:
+                    result[key] = {"value": result[key], "confidence": 0.75}
+
+            return result, provider.__class__.__name__
                 
         except Exception as e:
             logger.error(f"Invoice AI extraction error: {e}", exc_info=True)
@@ -707,7 +813,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
         doc_type: str = "invoice",
     ) -> Dict[str, Any]:
         """Build output with document type."""
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -757,7 +863,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -806,6 +912,8 @@ class BLAIFirstExtractor(AIFirstExtractor):
         
         if not ai_result:
             return self._empty_result("ai_failed")
+
+        ai_result = self._filter_canonical_ai_result(ai_result, "bill_of_lading")
         
         # Process fields
         fields: Dict[str, ExtractedFieldResult] = {}
@@ -846,27 +954,18 @@ class BLAIFirstExtractor(AIFirstExtractor):
             
             logger.info(f"B/L AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
             
-            # Parse JSON response
-            import json
-            try:
-                clean = response.strip()
-                if clean.startswith("```"):
-                    clean = clean.split("```")[1]
-                    if clean.startswith("json"):
-                        clean = clean[4:]
-                
-                result = json.loads(clean)
-                
-                # Add confidence to each field
-                for key in result:
-                    if result[key] is not None:
-                        result[key] = {"value": result[key], "confidence": 0.75}
-                
-                return result, provider.__class__.__name__
-                
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse AI B/L response: {e}")
+            # Parse JSON response with single repair retry
+            result = await _parse_llm_json_with_repair(provider, response)
+            if not result:
+                logger.warning("Failed to parse/repair AI B/L response")
                 return None, "parse_error"
+
+            # Add confidence to each field
+            for key in result:
+                if result[key] is not None:
+                    result[key] = {"value": result[key], "confidence": 0.75}
+
+            return result, provider.__class__.__name__
                 
         except Exception as e:
             logger.error(f"B/L AI extraction error: {e}", exc_info=True)
@@ -987,7 +1086,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
         doc_type: str = "bill_of_lading",
     ) -> Dict[str, Any]:
         """Build output with document type."""
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -1034,7 +1133,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -1084,6 +1183,8 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
         
         if not ai_result:
             return self._empty_result("ai_failed")
+
+        ai_result = self._filter_canonical_ai_result(ai_result, "packing_list")
         
         fields: Dict[str, ExtractedFieldResult] = {}
         for field_name, ai_value in ai_result.items():
@@ -1164,7 +1265,7 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
         ai_provider: str,
         doc_type: str = "packing_list",
     ) -> Dict[str, Any]:
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -1206,7 +1307,7 @@ OPTIONAL FIELDS:
 - transport_details: Shipping information
 - marks_and_numbers: Shipping marks
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -1256,6 +1357,8 @@ class CertificateOfOriginAIFirstExtractor(AIFirstExtractor):
         
         if not ai_result:
             return self._empty_result("ai_failed")
+
+        ai_result = self._filter_canonical_ai_result(ai_result, "certificate_of_origin")
         
         fields: Dict[str, ExtractedFieldResult] = {}
         for field_name, ai_value in ai_result.items():
@@ -1288,7 +1391,7 @@ class CertificateOfOriginAIFirstExtractor(AIFirstExtractor):
         ai_provider: str,
         doc_type: str = "certificate_of_origin",
     ) -> Dict[str, Any]:
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -1332,7 +1435,7 @@ OPTIONAL FIELDS:
 - claims_payable_at: Where claims are paid
 - survey_agent: Survey/claims agent
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -1387,6 +1490,8 @@ class InsuranceCertificateAIFirstExtractor(AIFirstExtractor):
         
         if not ai_result:
             return self._empty_result("ai_failed")
+
+        ai_result = self._filter_canonical_ai_result(ai_result, "insurance_certificate")
         
         fields: Dict[str, ExtractedFieldResult] = {}
         for field_name, ai_value in ai_result.items():
@@ -1425,7 +1530,7 @@ class InsuranceCertificateAIFirstExtractor(AIFirstExtractor):
         ai_provider: str,
         doc_type: str = "insurance_certificate",
     ) -> Dict[str, Any]:
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -1466,7 +1571,7 @@ OPTIONAL FIELDS:
 - inspector_name: Name of the inspector
 - inspection_location: Where inspection took place
 
-Return a JSON object with these fields. Use null for any field not found.
+Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
 
 ---
 DOCUMENT TEXT:
@@ -1548,7 +1653,7 @@ class InspectionCertificateAIFirstExtractor(AIFirstExtractor):
         ai_provider: str,
         doc_type: str = "inspection_certificate",
     ) -> Dict[str, Any]:
-        output = super()._build_output(fields, ai_provider)
+        output = super()._build_output(fields, ai_provider, doc_type=doc_type)
         output["_document_type"] = doc_type
         return output
 
@@ -1556,6 +1661,52 @@ class InspectionCertificateAIFirstExtractor(AIFirstExtractor):
 # =====================================================================
 # GENERIC AI EXTRACTION HELPER
 # =====================================================================
+
+def _extract_candidate_json_text(response: str) -> str:
+    clean = response.strip()
+    if clean.startswith("```"):
+        clean = clean.split("```")[1]
+        if clean.startswith("json"):
+            clean = clean[4:]
+    match = re.search(r"\{[\s\S]*\}", clean)
+    return match.group(0) if match else clean
+
+
+async def _repair_json_once(
+    provider: Any,
+    response_text: str,
+) -> Optional[Dict[str, Any]]:
+    """One retry/repair path for invalid JSON responses."""
+    try:
+        repair_prompt = (
+            "Repair this payload into valid JSON object only. Keep original keys and values, "
+            "remove comments/markdown/trailing commas, do not add explanatory text.\n\n"
+            f"PAYLOAD:\n{response_text[:8000]}"
+        )
+        repaired, _, _ = await provider.generate(
+            prompt=repair_prompt,
+            system_prompt="You are a JSON repair tool. Return ONLY valid JSON object.",
+            temperature=0.0,
+            max_tokens=2200,
+        )
+        candidate = _extract_candidate_json_text(repaired)
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+async def _parse_llm_json_with_repair(
+    provider: Any,
+    response: str,
+) -> Optional[Dict[str, Any]]:
+    candidate = _extract_candidate_json_text(response)
+    try:
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return await _repair_json_once(provider, response)
+
 
 async def _run_ai_extraction_generic(
     self,
@@ -1586,25 +1737,16 @@ async def _run_ai_extraction_generic(
         
         logger.info(f"Generic AI extraction: tokens_in={tokens_in} tokens_out={tokens_out}")
         
-        import json
-        try:
-            clean = response.strip()
-            if clean.startswith("```"):
-                clean = clean.split("```")[1]
-                if clean.startswith("json"):
-                    clean = clean[4:]
-            
-            result = json.loads(clean)
-            
-            for key in result:
-                if result[key] is not None:
-                    result[key] = {"value": result[key], "confidence": 0.75}
-            
-            return result, provider.__class__.__name__
-            
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse AI response: {e}")
+        result = await _parse_llm_json_with_repair(provider, response)
+        if not result:
+            logger.warning("Failed to parse/repair AI response")
             return None, "parse_error"
+
+        for key in result:
+            if result[key] is not None:
+                result[key] = {"value": result[key], "confidence": 0.75}
+
+        return result, provider.__class__.__name__
             
     except Exception as e:
         logger.error(f"AI extraction error: {e}", exc_info=True)
