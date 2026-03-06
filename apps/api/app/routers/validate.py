@@ -3795,34 +3795,37 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
 
     text_output = ""
 
+    min_chars_for_skip = max(1, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
+
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
-        if text_output.strip():
-            return {
-                "text": text_output,
-                "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
-            }
     except Exception:
         pass
 
-    try:
-        from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
-        reader = PdfReader(BytesIO(file_bytes))
-        pieces = []
-        for page in reader.pages:
-            try:
-                pieces.append(page.extract_text() or "")
-            except Exception:
-                continue
-        text_output = "\n".join(pieces)
-        if text_output.strip():
-            return {
-                "text": text_output,
-                "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
-            }
-    except Exception:
-        pass
+    # Fallback plain-text extraction pass if pdfminer is empty/weak
+    if len((text_output or "").strip()) < min_chars_for_skip:
+        try:
+            from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
+            reader = PdfReader(BytesIO(file_bytes))
+            pieces = []
+            for page in reader.pages:
+                try:
+                    pieces.append(page.extract_text() or "")
+                except Exception:
+                    continue
+            pypdf_text = "\n".join(pieces)
+            if len((pypdf_text or "").strip()) > len((text_output or "").strip()):
+                text_output = pypdf_text
+        except Exception:
+            pass
+
+    # If direct PDF text is already rich enough, skip OCR provider calls.
+    if len((text_output or "").strip()) >= min_chars_for_skip:
+        return {
+            "text": text_output,
+            "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
+        }
 
     if not settings.OCR_ENABLED:
         return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
@@ -3841,7 +3844,18 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
     ocr_text = ocr_result.get("text") or ""
     artifacts = ocr_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=ocr_text)
 
-    if ocr_text.strip():
+    text_output_clean = (text_output or "").strip()
+    ocr_text_clean = (ocr_text or "").strip()
+
+    # Prefer OCR when it materially improves extracted text volume.
+    if ocr_text_clean and len(ocr_text_clean) >= max(min_chars_for_skip, int(len(text_output_clean) * 1.2)):
+        return {"text": ocr_text, "artifacts": artifacts}
+
+    # Keep best available non-OCR text if OCR is absent or not materially better.
+    if text_output_clean:
+        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+
+    if ocr_text_clean:
         return {"text": ocr_text, "artifacts": artifacts}
 
     return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}

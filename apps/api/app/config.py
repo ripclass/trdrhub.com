@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     OCR_MAX_PAGES: int = 50  # Maximum pages for OCR processing
     OCR_TIMEOUT_SEC: int = 120  # Timeout for OCR operations (increased for 30+ page docs)
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
+    OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # If extracted text is shorter, still run OCR providers
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
     
     # Document Set Configuration (based on UCP600/ISBP745 norms)
