@@ -3723,6 +3723,25 @@ def _empty_extraction_artifacts_v1(
     }
 
 
+def _merge_text_sources(*texts: Optional[str]) -> str:
+    """Merge text sources into a deduplicated line stream while preserving order."""
+    merged_lines: List[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        if not text:
+            continue
+        for line in str(text).splitlines():
+            normalized = re.sub(r"\s+", " ", line).strip()
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_lines.append(normalized)
+    return "\n".join(merged_lines)
+
+
 def _build_extraction_artifacts_from_ocr(
     raw_text: str,
     provider_result: Optional[Any] = None,
@@ -3847,18 +3866,19 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
     text_output_clean = (text_output or "").strip()
     ocr_text_clean = (ocr_text or "").strip()
 
-    # Prefer OCR when it materially improves extracted text volume.
-    if ocr_text_clean and len(ocr_text_clean) >= max(min_chars_for_skip, int(len(text_output_clean) * 1.2)):
-        return {"text": ocr_text, "artifacts": artifacts}
+    merged_text = _merge_text_sources(text_output_clean, ocr_text_clean)
 
-    # Keep best available non-OCR text if OCR is absent or not materially better.
+    # If OCR is available, prefer merged evidence to maximize deterministic token recall.
+    if ocr_text_clean:
+        merged_artifacts = dict(artifacts)
+        merged_artifacts["raw_text"] = merged_text or ocr_text
+        return {"text": merged_text or ocr_text, "artifacts": merged_artifacts}
+
+    # No OCR available: return best extracted direct text.
     if text_output_clean:
         return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
 
-    if ocr_text_clean:
-        return {"text": ocr_text, "artifacts": artifacts}
-
-    return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+    return {"text": merged_text or text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=merged_text or text_output)}
 
 
 async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
