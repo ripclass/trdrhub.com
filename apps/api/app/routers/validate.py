@@ -241,21 +241,37 @@ def _apply_two_stage_validation(
     
     try:
         extractor = _get_two_stage_extractor()
-        
-        # Convert extracted_fields to format expected by two-stage extractor
-        # If values are already dicts with confidence, use them; otherwise wrap
+
+        # Prefer canonical AI-first contract payload when present.
+        source_fields = extracted_fields
+        contract_fields = extracted_fields.get("extracted_fields")
+        if isinstance(contract_fields, dict):
+            source_fields = contract_fields
+
+        # Convert to format expected by two-stage extractor.
         ai_extraction: Dict[str, Any] = {}
-        for field_name, value in extracted_fields.items():
-            if field_name.startswith("_"):  # Skip metadata fields
+        for field_name, value in source_fields.items():
+            if not isinstance(field_name, str):
                 continue
-            if field_name == "raw_text":  # Skip raw text
+            if field_name.startswith("_"):
                 continue
-            if isinstance(value, dict) and "value" in value:
-                ai_extraction[field_name] = value
-            elif isinstance(value, dict) and "confidence" in value:
-                ai_extraction[field_name] = value
+            if field_name == "raw_text":
+                continue
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            if isinstance(value, (list, tuple, set, dict)) and len(value) == 0:
+                continue
+
+            if isinstance(value, dict):
+                # Accept only structured field payloads, skip nested contract containers.
+                if "value" in value or "text" in value or "confidence" in value:
+                    ai_extraction[field_name] = value
+                else:
+                    continue
             else:
-                # Wrap raw value with default confidence
+                # Wrap raw scalar/list values with a default confidence.
                 ai_extraction[field_name] = {"value": value, "confidence": 0.7}
         
         if not ai_extraction:
@@ -265,14 +281,20 @@ def _apply_two_stage_validation(
         validated = extractor.process(ai_extraction, document_type)
         summary = extractor.get_extraction_summary(validated)
         
-        # Build output with normalized values and validation metadata
-        validated_fields = dict(extracted_fields)  # Keep original structure
+        # Build output with normalized values and validation metadata.
+        # Keep original shape, but also update canonical field map for downstream consumers.
+        validated_fields = dict(extracted_fields)
+        canonical_fields = dict(source_fields) if isinstance(source_fields, dict) else {}
         validation_details: Dict[str, Dict[str, Any]] = {}
         
         for field_name, field_result in validated.items():
-            # Use normalized value if available
-            if field_result.normalized_value is not None:
-                validated_fields[field_name] = field_result.normalized_value
+            normalized_value = (
+                field_result.normalized_value
+                if field_result.normalized_value is not None
+                else field_result.raw_value
+            )
+            validated_fields[field_name] = normalized_value
+            canonical_fields[field_name] = normalized_value
             
             # Add validation metadata
             validation_details[field_name] = {
@@ -282,6 +304,10 @@ def _apply_two_stage_validation(
                 "final_confidence": field_result.final_confidence,
                 "issues": field_result.issues,
             }
+
+        # Preserve canonical contract map when present (AI-first path).
+        if isinstance(contract_fields, dict):
+            validated_fields["extracted_fields"] = canonical_fields
         
         # Add validation metadata to the fields dict
         validated_fields["_two_stage_validation"] = {
@@ -2745,7 +2771,11 @@ async def _build_document_context(
                             if not context.get("lc_number") and lc_number:
                                 context["lc_number"] = lc_number
                             
-                            doc_info["extracted_fields"] = validated_lc
+                            doc_info["extracted_fields"] = (
+                                validated_lc.get("extracted_fields")
+                                if isinstance(validated_lc.get("extracted_fields"), dict)
+                                else validated_lc
+                            )
                             doc_info["extraction_status"] = "success"
                             doc_info["extraction_method"] = extraction_method
                             doc_info["extraction_confidence"] = extraction_confidence
@@ -2777,7 +2807,11 @@ async def _build_document_context(
                                 logger.info(f"LC context keys: {list(lc_payload.keys())}")
                                 if not context.get("lc_number") and validated_lc.get("number"):
                                     context["lc_number"] = validated_lc["number"]
-                                doc_info["extracted_fields"] = validated_lc
+                                doc_info["extracted_fields"] = (
+                                    validated_lc.get("extracted_fields")
+                                    if isinstance(validated_lc.get("extracted_fields"), dict)
+                                    else validated_lc
+                                )
                                 doc_info["extraction_status"] = "success"
                                 doc_info["validation_summary"] = validation_summary
                             else:
@@ -2810,7 +2844,11 @@ async def _build_document_context(
                         context["invoice"]["raw_text"] = extracted_text
                         context["invoice"].update(validated_invoice)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_invoice
+                        doc_info["extracted_fields"] = (
+                            validated_invoice.get("extracted_fields")
+                            if isinstance(validated_invoice.get("extracted_fields"), dict)
+                            else validated_invoice
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
@@ -2839,7 +2877,11 @@ async def _build_document_context(
                         context["invoice"]["raw_text"] = extracted_text
                         context["invoice"].update(validated_invoice)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_invoice
+                        doc_info["extracted_fields"] = (
+                            validated_invoice.get("extracted_fields")
+                            if isinstance(validated_invoice.get("extracted_fields"), dict)
+                            else validated_invoice
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
@@ -2870,7 +2912,11 @@ async def _build_document_context(
                         context["bill_of_lading"]["raw_text"] = extracted_text
                         context["bill_of_lading"].update(validated_bl)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_bl
+                        doc_info["extracted_fields"] = (
+                            validated_bl.get("extracted_fields")
+                            if isinstance(validated_bl.get("extracted_fields"), dict)
+                            else validated_bl
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
@@ -2899,7 +2945,11 @@ async def _build_document_context(
                         context["bill_of_lading"]["raw_text"] = extracted_text
                         context["bill_of_lading"].update(validated_bl)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_bl
+                        doc_info["extracted_fields"] = (
+                            validated_bl.get("extracted_fields")
+                            if isinstance(validated_bl.get("extracted_fields"), dict)
+                            else validated_bl
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
@@ -2928,7 +2978,11 @@ async def _build_document_context(
                         pkg_ctx["raw_text"] = extracted_text
                         pkg_ctx.update(validated_packing)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_packing
+                        doc_info["extracted_fields"] = (
+                            validated_packing.get("extracted_fields")
+                            if isinstance(validated_packing.get("extracted_fields"), dict)
+                            else validated_packing
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
@@ -2953,7 +3007,11 @@ async def _build_document_context(
                         pkg_ctx["raw_text"] = extracted_text
                         pkg_ctx.update(validated_packing)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_packing
+                        doc_info["extracted_fields"] = (
+                            validated_packing.get("extracted_fields")
+                            if isinstance(validated_packing.get("extracted_fields"), dict)
+                            else validated_packing
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
@@ -2986,7 +3044,11 @@ async def _build_document_context(
                         coo_ctx["raw_text"] = extracted_text
                         coo_ctx.update(validated_coo)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_coo
+                        doc_info["extracted_fields"] = (
+                            validated_coo.get("extracted_fields")
+                            if isinstance(validated_coo.get("extracted_fields"), dict)
+                            else validated_coo
+                        )
                         doc_info["extraction_status"] = effective_extraction_status
                         doc_info["parse_complete"] = parse_complete
                         doc_info["parse_completeness"] = coo_completeness.get("required_ratio")
@@ -3027,7 +3089,11 @@ async def _build_document_context(
                         coo_ctx["raw_text"] = extracted_text
                         coo_ctx.update(validated_coo)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_coo
+                        doc_info["extracted_fields"] = (
+                            validated_coo.get("extracted_fields")
+                            if isinstance(validated_coo.get("extracted_fields"), dict)
+                            else validated_coo
+                        )
                         doc_info["extraction_status"] = effective_extraction_status
                         doc_info["parse_complete"] = parse_complete
                         doc_info["parse_completeness"] = coo_completeness.get("required_ratio")
@@ -3061,7 +3127,11 @@ async def _build_document_context(
                         insurance_ctx["raw_text"] = extracted_text
                         insurance_ctx.update(validated_insurance)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_insurance
+                        doc_info["extracted_fields"] = (
+                            validated_insurance.get("extracted_fields")
+                            if isinstance(validated_insurance.get("extracted_fields"), dict)
+                            else validated_insurance
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
@@ -3086,7 +3156,11 @@ async def _build_document_context(
                         insurance_ctx["raw_text"] = extracted_text
                         insurance_ctx.update(validated_insurance)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_insurance
+                        doc_info["extracted_fields"] = (
+                            validated_insurance.get("extracted_fields")
+                            if isinstance(validated_insurance.get("extracted_fields"), dict)
+                            else validated_insurance
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary
@@ -3115,7 +3189,11 @@ async def _build_document_context(
                         inspection_ctx["raw_text"] = extracted_text
                         inspection_ctx.update(validated_inspection)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_inspection
+                        doc_info["extracted_fields"] = (
+                            validated_inspection.get("extracted_fields")
+                            if isinstance(validated_inspection.get("extracted_fields"), dict)
+                            else validated_inspection
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = extraction_method
                         doc_info["extraction_confidence"] = extraction_confidence
@@ -3140,7 +3218,11 @@ async def _build_document_context(
                         inspection_ctx["raw_text"] = extracted_text
                         inspection_ctx.update(validated_inspection)
                         has_structured_data = True
-                        doc_info["extracted_fields"] = validated_inspection
+                        doc_info["extracted_fields"] = (
+                            validated_inspection.get("extracted_fields")
+                            if isinstance(validated_inspection.get("extracted_fields"), dict)
+                            else validated_inspection
+                        )
                         doc_info["extraction_status"] = "success"
                         doc_info["extraction_method"] = "regex_fallback"
                         doc_info["validation_summary"] = validation_summary

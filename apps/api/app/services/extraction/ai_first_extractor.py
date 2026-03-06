@@ -550,7 +550,77 @@ class AIFirstExtractor:
         if not schema:
             return dict(ai_result)
         allowed = set(schema["required"] + schema["optional"])
-        return {k: v for k, v in ai_result.items() if k in allowed or k.startswith("_")}
+        doc_aliases: Dict[str, Dict[str, str]] = {
+            "commercial_invoice": {
+                "invoice_no": "invoice_number",
+                "inv_no": "invoice_number",
+                "invoice_num": "invoice_number",
+                "invoice_reference": "invoice_number",
+                "invoice_amount": "amount",
+                "total_amount": "amount",
+                "seller": "seller_name",
+                "buyer": "buyer_name",
+                "lc_number": "lc_reference",
+                "lc_no": "lc_reference",
+                "lc_ref": "lc_reference",
+            },
+            "bill_of_lading": {
+                "bill_of_lading_number": "bl_number",
+                "b_l_number": "bl_number",
+                "bl_no": "bl_number",
+                "bl_num": "bl_number",
+                "on_board_date": "shipped_on_board_date",
+                "date_of_shipment": "shipped_on_board_date",
+                "vessel": "vessel_name",
+                "voyage": "voyage_number",
+                "notify": "notify_party",
+                "loading_port": "port_of_loading",
+                "discharge_port": "port_of_discharge",
+            },
+        }
+        alias_map = doc_aliases.get(doc_type, {})
+
+        # AI providers sometimes wrap canonical fields in nested objects
+        # (e.g., {"extracted_fields": {...}} or {"fields": {...}}).
+        candidate_sources: List[Dict[str, Any]] = [ai_result]
+        for wrapper_key in ("extracted_fields", "fields", "data", "result", "payload"):
+            wrapped = ai_result.get(wrapper_key)
+            if isinstance(wrapped, dict):
+                candidate_sources.append(wrapped)
+                nested_value = wrapped.get("value")
+                if isinstance(nested_value, dict):
+                    candidate_sources.append(nested_value)
+
+        # Import lazily to avoid introducing a hard dependency at module load.
+        try:
+            from app.services.validation.alias_normalization import canonical_field_key  # type: ignore
+        except Exception:
+            canonical_field_key = lambda key: str(key).strip().lower()
+
+        filtered: Dict[str, Any] = {}
+        for source in candidate_sources:
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                if not isinstance(key, str):
+                    continue
+                if key.startswith("_"):
+                    continue
+                normalized_key = canonical_field_key(key)
+                canonical = key if key in allowed else alias_map.get(normalized_key, normalized_key)
+                if canonical not in allowed:
+                    continue
+                # Prefer populated values, but keep first seen otherwise.
+                existing = filtered.get(canonical)
+                if canonical not in filtered or existing in (None, "", [], {}) and value not in (None, "", [], {}):
+                    filtered[canonical] = value
+
+        # Preserve root metadata keys.
+        for key, value in ai_result.items():
+            if isinstance(key, str) and key.startswith("_"):
+                filtered[key] = value
+
+        return filtered
 
     async def _regex_fallback(self, raw_text: str) -> Dict[str, Any]:
         """Fall back to pure regex extraction when AI fails."""
@@ -755,10 +825,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 logger.warning("Failed to parse/repair AI invoice response")
                 return None, "parse_error"
 
-            # Add confidence to each field
-            for key in result:
-                if result[key] is not None:
-                    result[key] = {"value": result[key], "confidence": 0.75}
+            result = _wrap_ai_result_with_default_confidence(result)
 
             return result, provider_used
 
@@ -962,10 +1029,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 logger.warning("Failed to parse/repair AI B/L response")
                 return None, "parse_error"
 
-            # Add confidence to each field
-            for key in result:
-                if result[key] is not None:
-                    result[key] = {"value": result[key], "confidence": 0.75}
+            result = _wrap_ai_result_with_default_confidence(result)
 
             return result, provider_used
 
@@ -1674,6 +1738,28 @@ def _extract_candidate_json_text(response: str) -> str:
     return match.group(0) if match else clean
 
 
+def _wrap_ai_result_with_default_confidence(
+    result: Dict[str, Any],
+    default_confidence: float = 0.75,
+) -> Dict[str, Any]:
+    """Attach default confidence to scalar AI fields without mutating wrapper payloads."""
+    wrapped: Dict[str, Any] = dict(result or {})
+    for key, value in list(wrapped.items()):
+        if not isinstance(key, str) or key.startswith("_"):
+            continue
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            # Keep already-structured field payloads untouched.
+            if "value" in value or "confidence" in value:
+                continue
+            # Preserve nested wrapper maps (e.g., extracted_fields/data) for canonical filter.
+            if key in {"extracted_fields", "fields", "data", "result", "payload"}:
+                continue
+        wrapped[key] = {"value": value, "confidence": default_confidence}
+    return wrapped
+
+
 async def _repair_json_once(
     provider: Any,
     response_text: str,
@@ -1745,9 +1831,7 @@ async def _run_ai_extraction_generic(
             logger.warning("Failed to parse/repair AI response")
             return None, "parse_error"
 
-        for key in result:
-            if result[key] is not None:
-                result[key] = {"value": result[key], "confidence": 0.75}
+        result = _wrap_ai_result_with_default_confidence(result)
 
         return result, provider_used
 
