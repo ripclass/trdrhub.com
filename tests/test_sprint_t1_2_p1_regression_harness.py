@@ -538,7 +538,11 @@ def test_blocked_submission_reason_codes_include_validation_blocked():
             }
 
     funcs = _load_validate_functions(
-        ["_build_blocked_structured_result"],
+        [
+            "_build_unresolved_critical_context",
+            "_build_submission_eligibility_context",
+            "_build_blocked_structured_result",
+        ],
         extra_globals={
             "uuid4": lambda: "doc-123",
             "_build_document_extraction_v1": lambda docs: {"documents": docs},
@@ -580,3 +584,92 @@ def test_blocked_submission_reason_codes_include_validation_blocked():
 
     assert result["submission_eligibility"]["reasons"] == ["validation_blocked"]
     assert result["submission_eligibility"]["source"] == "validation"
+
+
+def test_issue_payload_includes_decision_status_and_reason_code_when_field_matches():
+    funcs = _load_validate_functions(["_augment_issues_with_field_decisions"])
+    augment = funcs["_augment_issues_with_field_decisions"]
+
+    issues = [
+        {"id": "i-1", "field_name": "amount", "severity": "critical"},
+        {"id": "i-2", "title": "Doc mismatch"},
+    ]
+    decisions = {
+        "amount": {"status": "retry", "reason_code": "extraction_failed"},
+    }
+
+    augment(issues, decisions)
+
+    assert issues[0]["decision_status"] == "retry"
+    assert issues[0]["reason_code"] == "extraction_failed"
+    provenance = build_issue_provenance_v1(issues)
+    assert provenance["issues"][0]["decision_status"] == "retry"
+    assert provenance["issues"][0]["reason_code"] == "extraction_failed"
+
+
+def test_document_field_details_include_decision_and_retry_trace():
+    funcs = _load_validate_functions(["_augment_doc_field_details_with_decisions"])
+    augment = funcs["_augment_doc_field_details_with_decisions"]
+
+    docs = [
+        {
+            "filename": "lc.pdf",
+            "field_details": {"amount": {"confidence": 0.42}},
+            "extracted_fields": {
+                "_field_decisions": {
+                    "amount": {
+                        "status": "retry",
+                        "reason_code": "extraction_failed",
+                        "retry_trace": {"attempted_passes": ["regex_fallback"], "recovered": False},
+                    }
+                }
+            },
+        }
+    ]
+
+    augment(docs)
+
+    amount = docs[0]["field_details"]["amount"]
+    assert amount["decision_status"] == "retry"
+    assert amount["reason_code"] == "extraction_failed"
+    assert amount["retry_trace"]["recovered"] is False
+
+
+def test_submission_eligibility_aggregates_missing_reason_codes_and_unresolved_statuses():
+    funcs = _load_validate_functions(
+        ["_build_unresolved_critical_context", "_build_submission_eligibility_context"]
+    )
+    build_context = funcs["_build_submission_eligibility_context"]
+
+    gate_result = {"missing_reason_codes": ["missing_in_source"]}
+    decisions = {
+        "amount": {"status": "retry", "reason_code": "extraction_failed"},
+        "lc_number": {"status": "rejected", "reason_code": "conflict_detected"},
+    }
+
+    eligibility = build_context(gate_result, decisions)
+
+    assert set(eligibility["missing_reason_codes"]) == {
+        "missing_in_source",
+        "extraction_failed",
+        "conflict_detected",
+    }
+    assert set(eligibility["unresolved_critical_statuses"]) == {"retry", "rejected"}
+
+
+def test_unresolved_critical_fields_always_have_status_and_reason_code():
+    funcs = _load_validate_functions(["_build_unresolved_critical_context"])
+    build_unresolved = funcs["_build_unresolved_critical_context"]
+
+    unresolved = build_unresolved(
+        {
+            "amount": {"status": "retry", "reason_code": "extraction_failed"},
+            "beneficiary": {"status": "rejected"},
+        }
+    )
+
+    by_field = {item["field"]: item for item in unresolved}
+    assert by_field["amount"]["status"] == "retry"
+    assert by_field["amount"]["reason_code"] == "extraction_failed"
+    assert by_field["beneficiary"]["status"] == "rejected"
+    assert by_field["beneficiary"]["reason_code"] == "unknown"

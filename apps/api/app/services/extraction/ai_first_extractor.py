@@ -731,16 +731,17 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
             if not provider:
                 logger.warning("No LLM provider available for invoice extraction")
                 return None, "none"
-            
+
             prompt = INVOICE_EXTRACTION_PROMPT.format(
                 document_text=raw_text[:12000]
             )
-            
-            response, tokens_in, tokens_out = await provider.generate(
+
+            response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
                 prompt=prompt,
                 system_prompt=INVOICE_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
+                router_layer="L1",
             )
             
             if not response:
@@ -759,8 +760,8 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 if result[key] is not None:
                     result[key] = {"value": result[key], "confidence": 0.75}
 
-            return result, provider.__class__.__name__
-                
+            return result, provider_used
+
         except Exception as e:
             logger.error(f"Invoice AI extraction error: {e}", exc_info=True)
             return None, "error"
@@ -937,16 +938,17 @@ class BLAIFirstExtractor(AIFirstExtractor):
             if not provider:
                 logger.warning("No LLM provider available for B/L extraction")
                 return None, "none"
-            
+
             prompt = BL_EXTRACTION_PROMPT.format(
                 document_text=raw_text[:12000]
             )
-            
-            response, tokens_in, tokens_out = await provider.generate(
+
+            response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
                 prompt=prompt,
                 system_prompt=BL_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
+                router_layer="L1",
             )
             
             if not response:
@@ -965,8 +967,8 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 if result[key] is not None:
                     result[key] = {"value": result[key], "confidence": 0.75}
 
-            return result, provider.__class__.__name__
-                
+            return result, provider_used
+
         except Exception as e:
             logger.error(f"B/L AI extraction error: {e}", exc_info=True)
             return None, "error"
@@ -1722,14 +1724,15 @@ async def _run_ai_extraction_generic(
         if not provider:
             logger.warning("No LLM provider available")
             return None, "none"
-        
+
         prompt = prompt_template.format(document_text=raw_text[:12000])
-        
-        response, tokens_in, tokens_out = await provider.generate(
+
+        response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.1,
             max_tokens=2000,
+            router_layer="L1",
         )
         
         if not response:
@@ -1746,8 +1749,8 @@ async def _run_ai_extraction_generic(
             if result[key] is not None:
                 result[key] = {"value": result[key], "confidence": 0.75}
 
-        return result, provider.__class__.__name__
-            
+        return result, provider_used
+
     except Exception as e:
         logger.error(f"AI extraction error: {e}", exc_info=True)
         return None, "error"

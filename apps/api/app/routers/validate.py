@@ -1835,6 +1835,10 @@ async def validate_doc(
             # Always add v2 fields (gate passed at this point)
             structured_result["validation_blocked"] = False
             structured_result["validation_status"] = "processing"
+
+            field_decisions = _extract_field_decisions_from_payload(payload)
+            _augment_issues_with_field_decisions(structured_result.get("issues") or [], field_decisions)
+            _augment_doc_field_details_with_decisions(payload.get("documents") or [])
             
             if v2_gate_result is not None:
                 # Add gate result
@@ -1947,14 +1951,17 @@ async def validate_doc(
                     f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
                 )
 
-            missing_reason_codes = (
-                (structured_result.get("gate_result") or {}).get("missing_reason_codes") or []
+            eligibility_context = _build_submission_eligibility_context(
+                structured_result.get("gate_result") or {},
+                field_decisions,
             )
 
             structured_result["submission_eligibility"] = {
                 "can_submit": submission_can_submit,
                 "reasons": submission_reasons,
-                "missing_reason_codes": missing_reason_codes,
+                "missing_reason_codes": eligibility_context["missing_reason_codes"],
+                "unresolved_critical_fields": eligibility_context["unresolved_critical_fields"],
+                "unresolved_critical_statuses": eligibility_context["unresolved_critical_statuses"],
                 "source": "validation",
             }
             
@@ -2139,14 +2146,17 @@ async def validate_doc(
                     f"bank_verdict_{str(bank_verdict.get('verdict', 'unknown')).lower()}"
                 )
 
-            missing_reason_codes = (
-                (structured_result.get("gate_result") or {}).get("missing_reason_codes") or []
+            eligibility_context = _build_submission_eligibility_context(
+                structured_result.get("gate_result") or {},
+                field_decisions,
             )
 
             structured_result["submission_eligibility"] = {
                 "can_submit": can_submit,
                 "reasons": submission_reasons,
-                "missing_reason_codes": missing_reason_codes,
+                "missing_reason_codes": eligibility_context["missing_reason_codes"],
+                "unresolved_critical_fields": eligibility_context["unresolved_critical_fields"],
+                "unresolved_critical_statuses": eligibility_context["unresolved_critical_statuses"],
                 "source": "validation",
             }
         except Exception as contract_err:
@@ -3072,6 +3082,7 @@ async def _build_document_context(
         logger.warning("No context extracted from any files")
     
     if document_details:
+        _augment_doc_field_details_with_decisions(document_details)
         context["documents"] = document_details
 
     context["documents_presence"] = documents_presence
@@ -3543,6 +3554,17 @@ def _build_blocked_structured_result(
         compliance_rate=0,
     )
 
+    gate_dict = v2_gate_result.to_dict()
+    eligibility_context = _build_submission_eligibility_context(gate_dict, {})
+    unresolved_critical_fields = [
+        {
+            "field": field,
+            "status": "rejected",
+            "reason_code": "unknown",
+        }
+        for field in (v2_gate_result.missing_critical or [])
+    ]
+
     result = {
         "version": "structured_result_v1",
         
@@ -3552,11 +3574,14 @@ def _build_blocked_structured_result(
         "submission_eligibility": {
             "can_submit": False,
             "reasons": ["validation_blocked"],
+            "missing_reason_codes": eligibility_context["missing_reason_codes"],
+            "unresolved_critical_fields": unresolved_critical_fields,
+            "unresolved_critical_statuses": ["rejected"] if unresolved_critical_fields else [],
             "source": "validation",
         },
         
         # Gate result
-        "gate_result": v2_gate_result.to_dict(),
+        "gate_result": gate_dict,
         
         # Extraction summary
         "extraction_summary": {
@@ -4341,6 +4366,132 @@ def _fields_to_flat_context(fields: List[Any]) -> Dict[str, Any]:
     if field_details:
         context["_field_details"] = field_details
     return context
+
+
+def _extract_field_decisions_from_payload(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Best-effort extraction of LC field decisions from current payload/context."""
+    if not isinstance(payload, dict):
+        return {}
+
+    for candidate in (
+        payload.get("lc"),
+        payload.get("lc_structured_output"),
+        payload.get("extracted_fields"),
+    ):
+        if isinstance(candidate, dict):
+            decisions = candidate.get("_field_decisions")
+            if isinstance(decisions, dict):
+                return decisions
+    return {}
+
+
+def _build_unresolved_critical_context(field_decisions: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return unresolved critical field diagnostics with mandatory status + reason_code."""
+    unresolved: List[Dict[str, Any]] = []
+    for field, decision in (field_decisions or {}).items():
+        if not isinstance(decision, dict):
+            continue
+        status = str(decision.get("status") or "").strip().lower()
+        if status not in {"retry", "rejected"}:
+            continue
+        reason_code = str(decision.get("reason_code") or "").strip()
+        if not reason_code:
+            reason_code = "unknown"
+        entry = {
+            "field": field,
+            "status": status,
+            "reason_code": reason_code,
+        }
+        if "retry_trace" in decision:
+            entry["retry_trace"] = decision.get("retry_trace")
+        unresolved.append(entry)
+    return unresolved
+
+
+def _augment_doc_field_details_with_decisions(documents: List[Dict[str, Any]]) -> None:
+    """Inject decision/status/reason/retry_trace into document field_details (in-place)."""
+    for doc in documents or []:
+        if not isinstance(doc, dict):
+            continue
+        extracted_fields = doc.get("extracted_fields") or {}
+        if not isinstance(extracted_fields, dict):
+            continue
+
+        field_decisions = extracted_fields.get("_field_decisions")
+        if not isinstance(field_decisions, dict) or not field_decisions:
+            continue
+
+        field_details = doc.get("field_details")
+        if not isinstance(field_details, dict):
+            field_details = {}
+            doc["field_details"] = field_details
+
+        for field, decision in field_decisions.items():
+            if not isinstance(decision, dict):
+                continue
+            details = field_details.get(field)
+            if not isinstance(details, dict):
+                details = {}
+                field_details[field] = details
+
+            details["decision_status"] = str(decision.get("status") or details.get("decision_status") or "unknown").lower()
+            details["reason_code"] = str(decision.get("reason_code") or details.get("reason_code") or "unknown")
+            details["decision"] = {
+                "status": details["decision_status"],
+                "reason_code": details["reason_code"],
+            }
+            if "retry_trace" in decision:
+                details["retry_trace"] = decision.get("retry_trace")
+
+
+def _augment_issues_with_field_decisions(
+    issues: List[Dict[str, Any]],
+    field_decisions: Dict[str, Dict[str, Any]],
+) -> None:
+    """Inject decision status/reason_code in issue payload where a field decision exists."""
+    if not issues or not field_decisions:
+        return
+
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        field_name = (
+            issue.get("field")
+            or issue.get("field_name")
+            or issue.get("source_field")
+            or issue.get("lc_field")
+        )
+        if not field_name:
+            continue
+        decision = field_decisions.get(str(field_name))
+        if not isinstance(decision, dict):
+            continue
+
+        issue["decision_status"] = str(decision.get("status") or issue.get("decision_status") or "unknown").lower()
+        issue["reason_code"] = str(decision.get("reason_code") or issue.get("reason_code") or "unknown")
+        issue["decision"] = {
+            "status": issue["decision_status"],
+            "reason_code": issue["reason_code"],
+        }
+
+
+def _build_submission_eligibility_context(
+    gate_result: Dict[str, Any],
+    field_decisions: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Aggregate missing reason codes + unresolved critical statuses for submission eligibility."""
+    unresolved = _build_unresolved_critical_context(field_decisions)
+    reasons = set((gate_result or {}).get("missing_reason_codes") or [])
+    statuses = set()
+    for item in unresolved:
+        reasons.add(item.get("reason_code") or "unknown")
+        statuses.add(item.get("status") or "unknown")
+
+    return {
+        "missing_reason_codes": sorted(str(r) for r in reasons if r),
+        "unresolved_critical_fields": unresolved,
+        "unresolved_critical_statuses": sorted(str(s) for s in statuses if s),
+    }
 
 
 def _parse_json_if_possible(value: Any) -> Any:

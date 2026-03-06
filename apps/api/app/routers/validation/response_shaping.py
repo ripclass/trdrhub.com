@@ -326,18 +326,24 @@ def build_issue_provenance_v1(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not isinstance(document_names, list):
             document_names = [document_names]
 
-        provenance.append(
-            {
-                "issue_id": issue_id,
-                "source": source,
-                "ruleset_domain": ruleset_domain,
-                "rule": issue.get("rule") or issue.get("rule_id"),
-                "severity": issue.get("severity"),
-                "document_ids": document_ids,
-                "document_types": document_types,
-                "document_names": document_names,
-            }
-        )
+        provenance_item = {
+            "issue_id": issue_id,
+            "source": source,
+            "ruleset_domain": ruleset_domain,
+            "rule": issue.get("rule") or issue.get("rule_id"),
+            "severity": issue.get("severity"),
+            "document_ids": document_ids,
+            "document_types": document_types,
+            "document_names": document_names,
+        }
+        if issue.get("decision_status") is not None:
+            provenance_item["decision_status"] = issue.get("decision_status")
+        if issue.get("reason_code") is not None:
+            provenance_item["reason_code"] = issue.get("reason_code")
+        if issue.get("decision") is not None:
+            provenance_item["decision"] = issue.get("decision")
+
+        provenance.append(provenance_item)
 
     return {
         "version": "issue_provenance_v1",

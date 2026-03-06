@@ -146,7 +146,220 @@ def _diagnose_candidates(
         "conflict": conflict,
     }
 
-def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
+
+def _candidate_value(candidate: Any) -> Any:
+    if isinstance(candidate, dict) and "value" in candidate:
+        return candidate.get("value")
+    return candidate
+
+
+def _candidate_method(candidate: Any, fallback_method: str = "regex") -> str:
+    if isinstance(candidate, dict):
+        method = candidate.get("method")
+        if method in {"ocr", "table", "kv", "llm", "regex"}:
+            return method
+    return fallback_method
+
+
+def _has_evidence_in_text(value: Any, text: str) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, dict):
+        for key in ("name", "value", "amount", "currency"):
+            nested = value.get(key)
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip().lower() in (text or "").lower()
+        return False
+    if isinstance(value, str):
+        needle = value.strip()
+        return bool(needle) and needle.lower() in (text or "").lower()
+    return True
+
+
+def _arbitrate_field(
+    *,
+    field: str,
+    candidates: List[Any],
+    raw_text: str,
+    validator: Optional[Any] = None,
+    normalizer: Optional[Any] = None,
+    fallback_method: str = "regex",
+) -> Tuple[Any, Dict[str, Any], Dict[str, Any]]:
+    extracted_candidates = [_candidate_value(c) for c in candidates if _candidate_value(c) not in (None, "")]
+    diag = _diagnose_candidates(extracted_candidates, validator=validator, normalizer=normalizer)
+
+    valid_candidates = diag.get("valid_candidates") or []
+    selected = valid_candidates[0] if valid_candidates else None
+    selected_method = fallback_method
+    for c in candidates:
+        if _candidate_value(c) == selected:
+            selected_method = _candidate_method(c, fallback_method=fallback_method)
+            break
+
+    # Strict rule order:
+    # 1) conflict -> rejected/conflict_detected
+    # 2) no candidate -> rejected/missing_in_source
+    # 3) candidate exists but parse/validation fails -> retry/extraction_failed
+    # 4) candidate valid and evidence-backed -> accepted
+    if diag.get("conflict"):
+        decision = {
+            "field": field,
+            "value": None,
+            "status": "rejected",
+            "reason_code": "conflict_detected",
+            "evidence_present": False,
+            "method": selected_method,
+        }
+        return None, diag, decision
+
+    if not diag.get("candidates"):
+        decision = {
+            "field": field,
+            "value": None,
+            "status": "rejected",
+            "reason_code": "missing_in_source",
+            "evidence_present": False,
+            "method": fallback_method,
+        }
+        return None, diag, decision
+
+    if not valid_candidates:
+        method = _candidate_method(candidates[0], fallback_method=fallback_method) if candidates else fallback_method
+        decision = {
+            "field": field,
+            "value": None,
+            "status": "retry",
+            "reason_code": "extraction_failed",
+            "evidence_present": False,
+            "method": method,
+        }
+        return None, diag, decision
+
+    evidence_present = _has_evidence_in_text(selected, raw_text)
+    if not evidence_present:
+        decision = {
+            "field": field,
+            "value": selected,
+            "status": "retry",
+            "reason_code": "extraction_failed",
+            "evidence_present": False,
+            "method": selected_method,
+        }
+        return None, diag, decision
+
+    decision = {
+        "field": field,
+        "value": selected,
+        "status": "accepted",
+        "reason_code": "missing_in_source",
+        "evidence_present": True,
+        "method": selected_method,
+    }
+    return selected, diag, decision
+
+
+def _is_unresolved_critical(decision: Dict[str, Any], field_spec: Dict[str, Any]) -> bool:
+    if not field_spec.get("critical", False):
+        return False
+    status = str(decision.get("status") or "").lower()
+    return status in {"retry", "rejected"}
+
+
+def _upgrade_reason(current_reason: Optional[str], candidate_reason: Optional[str]) -> str:
+    order = {
+        "missing_in_source": 0,
+        "extraction_failed": 1,
+        "conflict_detected": 2,
+    }
+    cur = current_reason if current_reason in order else "missing_in_source"
+    nxt = candidate_reason if candidate_reason in order else cur
+    return cur if order[cur] >= order[nxt] else nxt
+
+
+def _filter_candidates_by_methods(candidates: List[Any], allowed_methods: set[str]) -> List[Any]:
+    return [c for c in (candidates or []) if _candidate_method(c) in allowed_methods]
+
+
+def _retry_unresolved_critical_fields(
+    *,
+    field_decisions: Dict[str, Dict[str, Any]],
+    field_diagnostics: Dict[str, Dict[str, Any]],
+    field_candidates: Dict[str, List[Any]],
+    field_specs: Dict[str, Dict[str, Any]],
+    raw_text: str,
+    llm_field_repair: Optional[Any] = None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    """Run bounded C2 retry orchestration for unresolved CRITICAL fields only."""
+    updated_decisions: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in (field_decisions or {}).items()}
+    updated_diagnostics: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in (field_diagnostics or {}).items()}
+    recovered_values: Dict[str, Any] = {}
+
+    for field, spec in (field_specs or {}).items():
+        decision = dict(updated_decisions.get(field) or {"field": field})
+        trace = {
+            "attempted_passes": [],
+            "final_pass_used": None,
+            "recovered": False,
+        }
+
+        if not _is_unresolved_critical(decision, spec):
+            decision["retry_trace"] = trace
+            updated_decisions[field] = decision
+            continue
+
+        current_reason = decision.get("reason_code")
+        passes = [
+            ("table_kv_reparse", _filter_candidates_by_methods(field_candidates.get(field, []), {"table", "kv"})),
+            ("regex_fallback", _filter_candidates_by_methods(field_candidates.get(field, []), {"regex"})),
+            ("llm_field_repair", []),
+        ]
+
+        for pass_name, pass_candidates in passes:
+            trace["attempted_passes"].append(pass_name)
+
+            if pass_name == "llm_field_repair":
+                repaired = None
+                if llm_field_repair:
+                    try:
+                        repaired = llm_field_repair(field=field, raw_text=raw_text)
+                    except Exception:
+                        repaired = None
+                pass_candidates = [{"value": repaired, "method": "llm"}] if repaired not in (None, "") else []
+
+            value, diag, retry_decision = _arbitrate_field(
+                field=field,
+                candidates=pass_candidates,
+                raw_text=raw_text,
+                validator=spec.get("validator"),
+                normalizer=spec.get("normalizer"),
+                fallback_method=spec.get("fallback_method", "regex"),
+            )
+
+            if retry_decision.get("status") != "accepted":
+                current_reason = _upgrade_reason(current_reason, retry_decision.get("reason_code"))
+                retry_decision["reason_code"] = current_reason
+            retry_decision["retry_trace"] = trace
+
+            updated_diagnostics[field] = {**diag, "decision": retry_decision}
+            updated_decisions[field] = retry_decision
+
+            if retry_decision.get("status") == "accepted" and value is not None:
+                trace["final_pass_used"] = pass_name
+                trace["recovered"] = True
+                retry_decision["retry_trace"] = trace
+                updated_diagnostics[field] = {**diag, "decision": retry_decision}
+                updated_decisions[field] = retry_decision
+                recovered_values[field] = value
+                break
+
+        if not trace["recovered"]:
+            updated_decisions[field]["retry_trace"] = trace
+            if updated_diagnostics.get(field):
+                updated_diagnostics[field]["decision"] = updated_decisions[field]
+
+    return updated_decisions, updated_diagnostics, recovered_values
+
+def extract_lc_structured(raw_text: str, llm_field_repair: Optional[Any] = None) -> Dict[str, Any]:
     """
     Top-level extraction orchestrator. Works with LC PDFs converted to text or OCR text.
 
@@ -182,18 +395,18 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     
     # LC number - with validation to reject garbage
     lc_number_candidates = [
-        mt_fields.get("reference"),
-        (mt_core.get("number") if mt_core else None),
-        _first(LC_NO_RE, text),
+        {"value": mt_fields.get("reference"), "method": "kv"},
+        {"value": (mt_core.get("number") if mt_core else None), "method": "kv"},
+        {"value": _first(LC_NO_RE, text), "method": "regex"},
     ]
-    lc_number_diag = _diagnose_candidates(
-        lc_number_candidates,
+    lc_number, lc_number_diag, lc_number_decision = _arbitrate_field(
+        field="lc_number",
+        candidates=lc_number_candidates,
+        raw_text=text,
         validator=_is_valid_lc_number,
         normalizer=_normalize_text,
+        fallback_method="regex",
     )
-    lc_number = None
-    if not lc_number_diag.get("conflict") and lc_number_diag.get("valid_candidates"):
-        lc_number = lc_number_diag["valid_candidates"][0]
     
     # Amount and Currency
     credit_amount = mt_fields.get("credit_amount")
@@ -202,27 +415,28 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     currency_candidates = []
 
     if credit_amount and isinstance(credit_amount, dict):
-        amount_candidates.append(credit_amount.get("amount"))
-        currency_candidates.append(credit_amount.get("currency"))
-    amount_candidates.append(mt_core.get("amount") if mt_core else None)
-    amount_candidates.append(_amount(text))
-    currency_candidates.append(mt_core.get("currency") if mt_core else None)
+        amount_candidates.append({"value": credit_amount.get("amount"), "method": "kv"})
+        currency_candidates.append({"value": credit_amount.get("currency"), "method": "kv"})
+    amount_candidates.append({"value": mt_core.get("amount") if mt_core else None, "method": "kv"})
+    amount_candidates.append({"value": _amount(text), "method": "regex"})
+    currency_candidates.append({"value": mt_core.get("currency") if mt_core else None, "method": "kv"})
 
-    amount_diag = _diagnose_candidates(
-        amount_candidates,
+    amount_value, amount_diag, amount_decision = _arbitrate_field(
+        field="amount",
+        candidates=amount_candidates,
+        raw_text=text,
         normalizer=_normalize_amount,
+        fallback_method="regex",
     )
-    currency_diag = _diagnose_candidates(
-        currency_candidates,
+    currency, currency_diag, currency_decision = _arbitrate_field(
+        field="currency",
+        candidates=currency_candidates,
+        raw_text=text,
         normalizer=_normalize_text,
+        fallback_method="regex",
     )
 
-    amount_raw = None
-    if not amount_diag.get("conflict") and amount_diag.get("valid_candidates"):
-        amount_raw = str(amount_diag["valid_candidates"][0])
-
-    if not currency_diag.get("conflict") and currency_diag.get("valid_candidates"):
-        currency = currency_diag["valid_candidates"][0]
+    amount_raw = str(amount_value) if amount_value is not None else None
     
     # Incoterm
     incoterm_line = _first(INCOTERM_RE, text)
@@ -255,14 +469,14 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
     applicant_line, beneficiary_line = _parse_parties(text)
 
     applicant_candidates = [
-        _party_name(mt_fields.get("applicant")),
-        _party_name(mt_core.get("applicant") if mt_core else None),
-        _party_name(applicant_line),
+        {"value": _party_name(mt_fields.get("applicant")), "method": "kv"},
+        {"value": _party_name(mt_core.get("applicant") if mt_core else None), "method": "kv"},
+        {"value": _party_name(applicant_line), "method": "regex"},
     ]
     beneficiary_candidates = [
-        _party_name(mt_fields.get("beneficiary")),
-        _party_name(mt_core.get("beneficiary") if mt_core else None),
-        _party_name(beneficiary_line),
+        {"value": _party_name(mt_fields.get("beneficiary")), "method": "kv"},
+        {"value": _party_name(mt_core.get("beneficiary") if mt_core else None), "method": "kv"},
+        {"value": _party_name(beneficiary_line), "method": "regex"},
     ]
 
     if not applicant_raw or not beneficiary_raw:
@@ -288,21 +502,36 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
         else:
             beneficiary = {"name": beneficiary_name} if isinstance(beneficiary_name, str) else beneficiary_name
 
-    applicant_diag = _diagnose_candidates(
-        applicant_candidates,
+    applicant_value, applicant_diag, applicant_decision = _arbitrate_field(
+        field="applicant",
+        candidates=applicant_candidates,
+        raw_text=text,
         validator=_is_valid_party_name,
         normalizer=_normalize_text,
+        fallback_method="regex",
     )
-    beneficiary_diag = _diagnose_candidates(
-        beneficiary_candidates,
+    beneficiary_value, beneficiary_diag, beneficiary_decision = _arbitrate_field(
+        field="beneficiary",
+        candidates=beneficiary_candidates,
+        raw_text=text,
         validator=_is_valid_party_name,
         normalizer=_normalize_text,
+        fallback_method="regex",
     )
 
-    if applicant_diag.get("conflict"):
+    if applicant_value is None:
         applicant = None
-    if beneficiary_diag.get("conflict"):
+    elif isinstance(applicant, dict):
+        applicant["name"] = _strip(str(applicant_value))
+    else:
+        applicant = {"name": _strip(str(applicant_value))}
+
+    if beneficiary_value is None:
         beneficiary = None
+    elif isinstance(beneficiary, dict):
+        beneficiary["name"] = _strip(str(beneficiary_value))
+    else:
+        beneficiary = {"name": _strip(str(beneficiary_value))}
 
     # 3) Parse documentary sections (46A & 47A), plus goods normalization + HS codes
     docs46a = parse_46a_block(text)
@@ -347,13 +576,82 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             total_qty += float(qty)
 
     # 4) Compose structured result (NO large narrative blobs here)
-    field_diagnostics = {
-        "lc_number": lc_number_diag,
-        "amount": amount_diag,
-        "currency": currency_diag,
-        "applicant": applicant_diag,
-        "beneficiary": beneficiary_diag,
+    field_decisions = {
+        "lc_number": lc_number_decision,
+        "amount": amount_decision,
+        "currency": currency_decision,
+        "applicant": applicant_decision,
+        "beneficiary": beneficiary_decision,
     }
+
+    field_diagnostics = {
+        "lc_number": {**lc_number_diag, "decision": lc_number_decision},
+        "amount": {**amount_diag, "decision": amount_decision},
+        "currency": {**currency_diag, "decision": currency_decision},
+        "applicant": {**applicant_diag, "decision": applicant_decision},
+        "beneficiary": {**beneficiary_diag, "decision": beneficiary_decision},
+    }
+
+    field_candidates = {
+        "lc_number": lc_number_candidates,
+        "amount": amount_candidates,
+        "currency": currency_candidates,
+        "applicant": applicant_candidates,
+        "beneficiary": beneficiary_candidates,
+    }
+    field_specs = {
+        "lc_number": {
+            "critical": True,
+            "validator": _is_valid_lc_number,
+            "normalizer": _normalize_text,
+            "fallback_method": "regex",
+        },
+        "amount": {
+            "critical": True,
+            "validator": None,
+            "normalizer": _normalize_amount,
+            "fallback_method": "regex",
+        },
+        "currency": {
+            "critical": True,
+            "validator": None,
+            "normalizer": _normalize_text,
+            "fallback_method": "regex",
+        },
+        "applicant": {
+            "critical": True,
+            "validator": _is_valid_party_name,
+            "normalizer": _normalize_text,
+            "fallback_method": "regex",
+        },
+        "beneficiary": {
+            "critical": True,
+            "validator": _is_valid_party_name,
+            "normalizer": _normalize_text,
+            "fallback_method": "regex",
+        },
+    }
+
+    field_decisions, field_diagnostics, recovered_values = _retry_unresolved_critical_fields(
+        field_decisions=field_decisions,
+        field_diagnostics=field_diagnostics,
+        field_candidates=field_candidates,
+        field_specs=field_specs,
+        raw_text=text,
+        llm_field_repair=llm_field_repair,
+    )
+
+    if "lc_number" in recovered_values:
+        lc_number = recovered_values["lc_number"]
+    if "amount" in recovered_values:
+        amount_value = recovered_values["amount"]
+        amount_raw = str(amount_value) if amount_value is not None else None
+    if "currency" in recovered_values:
+        currency = recovered_values["currency"]
+    if "applicant" in recovered_values:
+        applicant = {"name": _strip(str(recovered_values["applicant"]))}
+    if "beneficiary" in recovered_values:
+        beneficiary = {"name": _strip(str(recovered_values["beneficiary"]))}
 
     lc_structured: Dict[str, Any] = {
         "number": lc_number,
@@ -392,6 +690,7 @@ def extract_lc_structured(raw_text: str) -> Dict[str, Any]:
             ),
         },
         "_field_diagnostics": field_diagnostics,
+        "_field_decisions": field_decisions,
         "source": {
             "parsers": (
                 ["mt700_full", "mt700_core", "regex_core", "46A_parser", "47A_parser", "goods_46a_parser", "hs_code_extractor"]
