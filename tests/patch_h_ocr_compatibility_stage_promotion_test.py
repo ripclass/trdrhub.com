@@ -51,6 +51,8 @@ def _load_validate_namespace() -> dict[str, object]:
         "_stage_promotion_v1_enabled",
         "_stage_threshold_tuning_v1_enabled",
         "_detect_input_mime_type",
+        "_looks_like_plaintext_bytes",
+        "_extract_plaintext_bytes",
         "_normalize_ocr_input",
         "_prepare_provider_ocr_payload",
         "_map_ocr_provider_error_code",

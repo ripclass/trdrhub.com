@@ -4400,8 +4400,6 @@ _STAGE_CRITICAL_FIELD_TO_ANCHOR_FIELD = {
 
 def _detect_input_mime_type(file_bytes: bytes, filename: str, content_type: Optional[str]) -> str:
     detected = str(content_type or "").strip().lower()
-    if detected and detected != "application/octet-stream":
-        return detected
     if file_bytes.startswith(b"%PDF"):
         return "application/pdf"
     if file_bytes[:8] == b"\x89PNG\r\n\x1a\n":
@@ -4410,6 +4408,10 @@ def _detect_input_mime_type(file_bytes: bytes, filename: str, content_type: Opti
         return "image/jpeg"
     if file_bytes[:4] in (b"II*\x00", b"MM\x00*"):
         return "image/tiff"
+    if _looks_like_plaintext_bytes(file_bytes):
+        return "text/plain"
+    if detected and detected != "application/octet-stream":
+        return detected
     lowered_name = (filename or "").lower()
     if lowered_name.endswith(".pdf"):
         return "application/pdf"
@@ -4420,6 +4422,37 @@ def _detect_input_mime_type(file_bytes: bytes, filename: str, content_type: Opti
     if lowered_name.endswith(".tif") or lowered_name.endswith(".tiff"):
         return "image/tiff"
     return "application/octet-stream"
+
+
+def _looks_like_plaintext_bytes(file_bytes: bytes) -> bool:
+    sample = bytes(file_bytes[:4096] or b"")
+    if not sample:
+        return False
+    if sample.startswith(b"%PDF") or sample[:8] == b"\x89PNG\r\n\x1a\n" or sample[:2] == b"\xff\xd8" or sample[:4] in (b"II*\x00", b"MM\x00*"):
+        return False
+    if b"\x00" in sample:
+        return False
+    printable = 0
+    alpha = 0
+    for byte in sample:
+        if byte in (9, 10, 13) or 32 <= byte <= 126:
+            printable += 1
+            if 65 <= byte <= 90 or 97 <= byte <= 122:
+                alpha += 1
+    ratio = float(printable) / float(len(sample))
+    return ratio >= 0.92 and alpha >= 8
+
+
+def _extract_plaintext_bytes(file_bytes: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            decoded = file_bytes.decode(encoding)
+        except Exception:
+            continue
+        cleaned = decoded.replace("\x00", "").strip()
+        if cleaned:
+            return cleaned
+    return ""
 
 
 def _normalize_ocr_input(
@@ -5421,6 +5454,7 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
     text_output = ""
     pypdf_text = ""
     stage_candidates: Dict[str, str] = {}
+    detected_input_mime = _detect_input_mime_type(file_bytes, filename, content_type)
 
     def _choose_stage() -> Optional[Dict[str, Any]]:
         selector = globals().get("_select_best_extraction_stage")
@@ -5436,53 +5470,58 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
 
     min_chars_for_skip = max(1, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
 
-    logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pdfminer_native")
-    try:
-        from pdfminer.high_level import extract_text  # type: ignore
-        text_output = extract_text(BytesIO(file_bytes))
-        _record_extraction_stage(artifacts, filename=filename, stage="pdfminer_native", text=text_output)
-    except Exception as exc:
-        _record_extraction_stage(
-            artifacts,
-            filename=filename,
-            stage="pdfminer_native",
-            error=str(exc),
-        )
-
-    # Fallback plain-text extraction pass if pdfminer is empty/weak
-    if len((text_output or "").strip()) < min_chars_for_skip:
-        logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pypdf_native")
+    if detected_input_mime == "text/plain":
+        logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "plaintext_native")
+        text_output = _extract_plaintext_bytes(file_bytes)
+        _record_extraction_stage(artifacts, filename=filename, stage="plaintext_native", text=text_output)
+    else:
+        logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pdfminer_native")
         try:
-            from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
-            reader = PdfReader(BytesIO(file_bytes))
-            pieces = []
-            for page in reader.pages:
-                try:
-                    pieces.append(page.extract_text() or "")
-                except Exception:
-                    continue
-            pypdf_text = "\n".join(pieces)
-            _record_extraction_stage(artifacts, filename=filename, stage="pypdf_native", text=pypdf_text)
-            if len((pypdf_text or "").strip()) > len((text_output or "").strip()):
-                text_output = pypdf_text
+            from pdfminer.high_level import extract_text  # type: ignore
+            text_output = extract_text(BytesIO(file_bytes))
+            _record_extraction_stage(artifacts, filename=filename, stage="pdfminer_native", text=text_output)
         except Exception as exc:
             _record_extraction_stage(
                 artifacts,
                 filename=filename,
-                stage="pypdf_native",
+                stage="pdfminer_native",
                 error=str(exc),
             )
 
+        # Fallback plain-text extraction pass if pdfminer is empty/weak
+        if len((text_output or "").strip()) < min_chars_for_skip:
+            logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pypdf_native")
+            try:
+                from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
+                reader = PdfReader(BytesIO(file_bytes))
+                pieces = []
+                for page in reader.pages:
+                    try:
+                        pieces.append(page.extract_text() or "")
+                    except Exception:
+                        continue
+                pypdf_text = "\n".join(pieces)
+                _record_extraction_stage(artifacts, filename=filename, stage="pypdf_native", text=pypdf_text)
+                if len((pypdf_text or "").strip()) > len((text_output or "").strip()):
+                    text_output = pypdf_text
+            except Exception as exc:
+                _record_extraction_stage(
+                    artifacts,
+                    filename=filename,
+                    stage="pypdf_native",
+                    error=str(exc),
+                )
+
     text_output_clean = (text_output or "").strip()
     if text_output_clean:
-        stage_candidates["native_pdf_text"] = text_output
+        stage_candidates["plaintext_native" if detected_input_mime == "text/plain" else "native_pdf_text"] = text_output
 
     # If direct PDF text is already rich enough, skip OCR provider calls.
     if len(text_output_clean) >= min_chars_for_skip:
         selection = _choose_stage()
         return _finalize_text_extraction_result(
             artifacts,
-            stage=(selection or {}).get("stage") or "native_pdf_text",
+            stage=(selection or {}).get("stage") or ("plaintext_native" if detected_input_mime == "text/plain" else "native_pdf_text"),
             text=(selection or {}).get("text") or text_output,
         )
 
@@ -5494,7 +5533,7 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
             selection = _choose_stage()
             return _finalize_text_extraction_result(
                 artifacts,
-                stage=(selection or {}).get("stage") or "native_pdf_text",
+                stage=(selection or {}).get("stage") or ("plaintext_native" if detected_input_mime == "text/plain" else "native_pdf_text"),
                 text=(selection or {}).get("text") or text_output,
             )
         if hotfix_enabled:
@@ -5516,14 +5555,47 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
                     text=(selection or {}).get("text") or fallback_text,
                 )
         _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
-        return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
+        return _finalize_text_extraction_result(
+            artifacts,
+            stage="plaintext_native" if detected_input_mime == "text/plain" else "native_pdf_text",
+            text="",
+        )
+
+    if detected_input_mime == "text/plain":
+        if text_output_clean:
+            selection = _choose_stage()
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage=(selection or {}).get("stage") or "plaintext_native",
+                text=(selection or {}).get("text") or text_output,
+            )
+        if hotfix_enabled:
+            fallback_text = _scrape_binary_text_metadata(file_bytes)
+            _record_extraction_stage(
+                artifacts,
+                filename=filename,
+                stage="binary_metadata_scrape",
+                text=fallback_text,
+                fallback=True,
+            )
+            if (fallback_text or "").strip():
+                _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                stage_candidates["binary_metadata_scrape"] = fallback_text
+                selection = _choose_stage()
+                return _finalize_text_extraction_result(
+                    artifacts,
+                    stage=(selection or {}).get("stage") or "binary_metadata_scrape",
+                    text=(selection or {}).get("text") or fallback_text,
+                )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="plaintext_native", text="")
 
     page_count = 0
     try:
         from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
         page_count = len(PdfReader(BytesIO(file_bytes)).pages)
     except Exception:
-        page_count = 1 if content_type.startswith("image/") else 0
+        page_count = 1 if detected_input_mime.startswith("image/") else 0
 
     if page_count > settings.OCR_MAX_PAGES or len(file_bytes) > settings.OCR_MAX_BYTES:
         if text_output_clean:
