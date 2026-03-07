@@ -30,7 +30,10 @@ def evaluate_review_gate(
             continue
         if is_critical_missing_or_failed(f.state):
             reasons.append(f"critical_{f.name}_{f.state}")
-            reasons.append("FORMAT_INVALID" if f.state == "parse_failed" else "FIELD_NOT_FOUND")
+            if f.state == "parse_failed":
+                reasons.append("LOW_CONFIDENCE_CRITICAL" if "LOW_CONFIDENCE_CRITICAL" in (f.reason_codes or []) else "FORMAT_INVALID")
+            else:
+                reasons.append("FIELD_NOT_FOUND")
         if f.state == "found" and f.confidence < min_confidence:
             reasons.append(f"critical_{f.name}_low_confidence")
             reasons.append("LOW_CONFIDENCE_CRITICAL")

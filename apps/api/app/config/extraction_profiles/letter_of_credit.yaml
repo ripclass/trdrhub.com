@@ -5,8 +5,23 @@ critical_fields:
   - issuer
 review_gate:
   min_confidence: 0.80
+  plaintext_min_confidence: 0.78
   require_evidence: true
 pass_gate:
   min_confidence: 0.80
+  plaintext_min_confidence: 0.80
   require_evidence: true
   cross_checks: []
+plaintext_confidence:
+  found_base: 0.30
+  anchor_weight: 0.22
+  pattern_weight: 0.16
+  normalization_weight: 0.14
+  context_weight: 0.10
+  evidence_weight: 0.12
+  parse_failed_base: 0.24
+  anchor_parse_bonus: 0.08
+  evidence_missing_penalty: 0.18
+field_hints:
+  issue_date:
+    neighbor_window_lines: 1
