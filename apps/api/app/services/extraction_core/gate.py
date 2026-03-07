@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence
 
 from .contract import FieldExtraction
 from .field_states import is_critical_missing_or_failed
@@ -19,6 +19,8 @@ def evaluate_review_gate(
     critical_field_names: Iterable[str],
     min_confidence: float = 0.80,
     require_evidence: bool = True,
+    document_reason_codes: Optional[Iterable[str]] = None,
+    cross_field_reasons: Optional[Iterable[str]] = None,
 ) -> ReviewDecision:
     critical = set(critical_field_names)
     reasons: list[str] = []
@@ -28,9 +30,20 @@ def evaluate_review_gate(
             continue
         if is_critical_missing_or_failed(f.state):
             reasons.append(f"critical_{f.name}_{f.state}")
+            reasons.append("FORMAT_INVALID" if f.state == "parse_failed" else "FIELD_NOT_FOUND")
         if f.state == "found" and f.confidence < min_confidence:
             reasons.append(f"critical_{f.name}_low_confidence")
+            reasons.append("LOW_CONFIDENCE_CRITICAL")
         if require_evidence and f.state == "found" and not has_minimum_evidence(f):
             reasons.append(f"critical_{f.name}_evidence_missing")
+            reasons.append("EVIDENCE_MISSING")
+
+    for code in document_reason_codes or []:
+        if code:
+            reasons.append(str(code))
+
+    for code in cross_field_reasons or []:
+        if code:
+            reasons.append(str(code))
 
     return ReviewDecision(review_required=len(reasons) > 0, reasons=sorted(set(reasons)))

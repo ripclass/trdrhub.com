@@ -8,3 +8,8 @@ critical_fields:
 review_gate:
   min_confidence: 0.80
   require_evidence: true
+pass_gate:
+  min_confidence: 0.82
+  require_evidence: true
+  cross_checks:
+    - weight_consistency
