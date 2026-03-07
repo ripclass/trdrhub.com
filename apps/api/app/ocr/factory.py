@@ -10,6 +10,14 @@ from .google_documentai import GoogleDocumentAIAdapter
 from .aws_textract import AWSTextractAdapter
 from .deepseek_ocr import DeepSeekOCRAdapter
 from ..config import settings
+from ..services.ocr_diagnostics import (
+    classify_ocr_provider_error,
+    get_ocr_diagnostics,
+    record_ocr_provider_health_check,
+    record_ocr_provider_initialization,
+    record_ocr_runtime_failure,
+    record_ocr_runtime_success,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -69,22 +77,39 @@ class OCRFactory:
 
     def _initialize_adapters(self):
         """Initialize available OCR adapters based on configuration."""
+        diagnostics = get_ocr_diagnostics()
         if settings.USE_STUBS:
             from ..stubs.ocr_stub import StubOCRAdapter
 
             stub_adapter = StubOCRAdapter()
             self._configured_providers = [stub_adapter.provider_name]
+            diagnostics.sync_from_settings()
             self._register_adapter(stub_adapter)
+            record_ocr_provider_initialization(
+                stub_adapter.provider_name,
+                configured=True,
+                initialized=True,
+                healthy=True,
+            )
             self._update_primary_and_fallback()
             logger.info(
-                "OCR factory initialized stub_mode=%s configured_providers=%s initialized_providers=%s",
+                "OCR factory initialized stub_mode=%s configured_providers=%s initialized_providers=%s provider_states=%s",
                 True,
                 self._configured_providers,
                 self.initialized_providers,
+                {
+                    entry["provider_name"]: {
+                        "configured": entry["configured"],
+                        "initialized": entry["initialized"],
+                        "healthy": entry["healthy"],
+                    }
+                    for entry in diagnostics.ordered_states(self._configured_providers)
+                },
             )
             return
 
         self._configured_providers = self._resolve_configured_provider_order()
+        diagnostics.sync_from_settings()
 
         if settings.USE_DEEPSEEK_OCR:
             self._try_initialize_provider(
@@ -104,9 +129,18 @@ class OCRFactory:
 
         self._update_primary_and_fallback()
         logger.info(
-            "OCR factory initialized configured_providers=%s initialized_providers=%s",
+            "OCR factory initialized configured_providers=%s initialized_providers=%s provider_states=%s",
             self._configured_providers,
             self.initialized_providers,
+            {
+                entry["provider_name"]: {
+                    "configured": entry["configured"],
+                    "initialized": entry["initialized"],
+                    "healthy": entry["healthy"],
+                    "last_error_code": entry["last_error_code"],
+                }
+                for entry in diagnostics.ordered_states(self._configured_providers)
+            },
         )
 
         if not self._adapters:
@@ -139,12 +173,28 @@ class OCRFactory:
         try:
             adapter = builder()
             self._register_adapter(adapter)
+            record_ocr_provider_initialization(
+                provider_name,
+                configured=provider_name in self._configured_providers,
+                initialized=True,
+                healthy=True,
+            )
             logger.info("OCR provider initialized provider=%s", provider_name)
         except Exception as exc:
+            error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+            record_ocr_provider_initialization(
+                provider_name,
+                configured=provider_name in self._configured_providers,
+                initialized=False,
+                healthy=False,
+                error_code=error_code,
+                error_message=str(exc),
+            )
             logger.warning(
-                "OCR provider initialization failed provider=%s error_type=%s message=%s",
+                "OCR provider initialization failed provider=%s error_type=%s error_code=%s message=%s",
                 provider_name,
                 type(exc).__name__,
+                error_code,
                 str(exc),
             )
 
@@ -192,6 +242,53 @@ class OCRFactory:
             return ordered[1:] + ordered[:1]
         return ordered
 
+    async def refresh_provider_health_states(self) -> List[Dict[str, object]]:
+        """Refresh configured provider health status into the diagnostics registry."""
+        diagnostics = get_ocr_diagnostics()
+        diagnostics.sync_from_settings()
+        refreshed: List[Dict[str, object]] = []
+
+        for provider_name in self._configured_providers:
+            adapter = self._adapter_map.get(provider_name)
+            if not adapter:
+                refreshed.append(
+                    record_ocr_provider_health_check(
+                        provider_name,
+                        configured=True,
+                        initialized=False,
+                        healthy=False,
+                        error_code="OCR_PROVIDER_UNAVAILABLE",
+                        error_message="provider_not_initialized",
+                    )
+                )
+                continue
+
+            try:
+                healthy = await adapter.health_check()
+                refreshed.append(
+                    record_ocr_provider_health_check(
+                        provider_name,
+                        configured=True,
+                        initialized=True,
+                        healthy=healthy,
+                        error_code=None if healthy else "OCR_PROVIDER_UNAVAILABLE",
+                        error_message=None if healthy else "provider_unhealthy",
+                    )
+                )
+            except Exception as exc:
+                error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+                refreshed.append(
+                    record_ocr_provider_health_check(
+                        provider_name,
+                        configured=True,
+                        initialized=True,
+                        healthy=False,
+                        error_code=error_code,
+                        error_message=str(exc),
+                    )
+                )
+        return refreshed
+
     async def get_adapter(self, prefer_fallback: bool = False) -> OCRAdapter:
         """
         Get an OCR adapter, with optional fallback preference.
@@ -209,13 +306,37 @@ class OCRFactory:
         for index, adapter in enumerate(ordered_adapters):
             try:
                 if await adapter.health_check():
+                    record_ocr_provider_health_check(
+                        adapter.provider_name,
+                        configured=adapter.provider_name in self._configured_providers,
+                        initialized=True,
+                        healthy=True,
+                    )
                     self._record_selection(adapter.provider_name, index)
                     return adapter
+                record_ocr_provider_health_check(
+                    adapter.provider_name,
+                    configured=adapter.provider_name in self._configured_providers,
+                    initialized=True,
+                    healthy=False,
+                    error_code="OCR_PROVIDER_UNAVAILABLE",
+                    error_message="provider_unhealthy",
+                )
             except Exception as exc:
+                error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+                record_ocr_provider_health_check(
+                    adapter.provider_name,
+                    configured=adapter.provider_name in self._configured_providers,
+                    initialized=True,
+                    healthy=False,
+                    error_code=error_code,
+                    error_message=str(exc),
+                )
                 logger.warning(
-                    "OCR provider health check failed provider=%s error_type=%s message=%s",
+                    "OCR provider health check failed provider=%s error_type=%s error_code=%s message=%s",
                     adapter.provider_name,
                     type(exc).__name__,
+                    error_code,
                     str(exc),
                 )
 
@@ -247,14 +368,37 @@ class OCRFactory:
             provider_name = adapter.provider_name
             try:
                 if not await adapter.health_check():
+                    record_ocr_provider_health_check(
+                        provider_name,
+                        configured=provider_name in self._configured_providers,
+                        initialized=True,
+                        healthy=False,
+                        error_code="OCR_PROVIDER_UNAVAILABLE",
+                        error_message="provider_unhealthy",
+                    )
                     logger.warning("OCR provider unhealthy during process provider=%s", provider_name)
                     fallback_count += 1
                     continue
+                record_ocr_provider_health_check(
+                    provider_name,
+                    configured=provider_name in self._configured_providers,
+                    initialized=True,
+                    healthy=True,
+                )
             except Exception as exc:
+                error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+                record_ocr_runtime_failure(
+                    provider_name,
+                    error_code=error_code,
+                    error_message=str(exc),
+                    stage="process_document_health_check",
+                    attempt_number=fallback_count + 1,
+                )
                 logger.warning(
-                    "OCR provider health check failed during process provider=%s error_type=%s message=%s",
+                    "OCR provider health check failed during process provider=%s error_type=%s error_code=%s message=%s",
                     provider_name,
                     type(exc).__name__,
+                    error_code,
                     str(exc),
                 )
                 fallback_count += 1
@@ -267,21 +411,39 @@ class OCRFactory:
                     document_id=document_id,
                 )
             except Exception as exc:
+                error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+                record_ocr_runtime_failure(
+                    provider_name,
+                    error_code=error_code,
+                    error_message=str(exc),
+                    stage="process_document",
+                    attempt_number=fallback_count + 1,
+                )
                 logger.warning(
-                    "OCR provider process failed provider=%s error_type=%s message=%s",
+                    "OCR provider process failed provider=%s error_type=%s error_code=%s message=%s",
                     provider_name,
                     type(exc).__name__,
+                    error_code,
                     str(exc),
                 )
                 fallback_count += 1
                 continue
 
             if result and not result.error:
+                record_ocr_runtime_success(provider_name, stage="process_document")
                 self._record_selection(provider_name, fallback_count)
                 return result
 
             last_result = result
-            logger.warning("OCR provider returned error provider=%s", provider_name)
+            error_code = classify_ocr_provider_error(getattr(result, "error", None)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+            record_ocr_runtime_failure(
+                provider_name,
+                error_code=error_code,
+                error_message=getattr(result, "error", None),
+                stage="process_document",
+                attempt_number=fallback_count + 1,
+            )
+            logger.warning("OCR provider returned error provider=%s error_code=%s", provider_name, error_code)
             fallback_count += 1
 
         if last_result is not None:
@@ -297,12 +459,37 @@ class OCRFactory:
         for adapter in self.get_ordered_adapters():
             try:
                 if await adapter.health_check():
+                    record_ocr_provider_health_check(
+                        adapter.provider_name,
+                        configured=adapter.provider_name in self._configured_providers,
+                        initialized=True,
+                        healthy=True,
+                    )
                     healthy_adapters.append(adapter)
+                else:
+                    record_ocr_provider_health_check(
+                        adapter.provider_name,
+                        configured=adapter.provider_name in self._configured_providers,
+                        initialized=True,
+                        healthy=False,
+                        error_code="OCR_PROVIDER_UNAVAILABLE",
+                        error_message="provider_unhealthy",
+                    )
             except Exception as exc:
+                error_code = classify_ocr_provider_error(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
+                record_ocr_provider_health_check(
+                    adapter.provider_name,
+                    configured=adapter.provider_name in self._configured_providers,
+                    initialized=True,
+                    healthy=False,
+                    error_code=error_code,
+                    error_message=str(exc),
+                )
                 logger.warning(
-                    "OCR provider health check failed provider=%s error_type=%s message=%s",
+                    "OCR provider health check failed provider=%s error_type=%s error_code=%s message=%s",
                     adapter.provider_name,
                     type(exc).__name__,
+                    error_code,
                     str(exc),
                 )
 

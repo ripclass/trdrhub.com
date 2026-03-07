@@ -59,6 +59,7 @@ from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, 
 
 # V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
+from app.routes.ocr_health import router as ocr_health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
 from app.config import settings
@@ -168,6 +169,13 @@ async def lifespan(app: FastAPI):
         )
     else:
         logger.info("All startup validations passed")
+
+    try:
+        from app.services.ocr_diagnostics import emit_ocr_startup_summary
+
+        await emit_ocr_startup_summary()
+    except Exception as e:
+        logger.warning("OCR startup diagnostics probe failed", error=str(e))
     
     # Removed legacy sync event – rules are now DB-driven.
 
@@ -274,6 +282,7 @@ app.include_router(sanctions.router)  # Sanctions Screener (party, vessel, goods
 app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack, bank submissions)
 app.include_router(jobs_public.router)  # Public validation job status/results endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
+app.include_router(ocr_health_router)   # Internal OCR provider diagnostics endpoint
 
 # Development-only routes
 if settings.is_development() or settings.USE_STUBS:

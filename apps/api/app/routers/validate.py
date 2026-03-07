@@ -5174,6 +5174,7 @@ def _build_provider_attempt_record(
     return {
         "stage": stage,
         "provider": provider_name,
+        "attempt_number": int(payload.get("attempt_number") or 1),
         "status": status,
         "text_len": len((text or "").strip()),
         "error_code": error_code,
@@ -5192,11 +5193,111 @@ def _map_ocr_provider_error_code(error: Optional[str]) -> Optional[str]:
     if not error:
         return None
     lowered = str(error).strip().lower()
-    if any(token in lowered for token in ("unsupported", "invalid mime", "content type", "content-type", "format")):
+    if not lowered:
+        return None
+    if any(
+        token in lowered
+        for token in (
+            "unsupported",
+            "invalid mime",
+            "content type",
+            "content-type",
+            "mime type",
+            "bad format",
+            "invalid document format",
+            "unsupporteddocumentexception",
+            "unsupported document",
+            "unsupported file type",
+            "format",
+        )
+    ):
         return "OCR_UNSUPPORTED_FORMAT"
-    if any(token in lowered for token in ("empty_output", "empty output", "empty result", "no text", "no_ocr_provider_returned_text", "no text extracted")):
+    if any(
+        token in lowered
+        for token in (
+            "empty_output",
+            "empty output",
+            "empty result",
+            "empty_result",
+            "no text",
+            "no_ocr_provider_returned_text",
+            "no text extracted",
+            "no output",
+            "blank document",
+        )
+    ):
         return "OCR_EMPTY_RESULT"
-    return "OCR_PROVIDER_UNAVAILABLE"
+    if any(token in lowered for token in ("processor not found", "processor_not_found", "document ai processor not found")):
+        return "OCR_PROCESSOR_NOT_FOUND"
+    if "processor" in lowered and "not found" in lowered:
+        return "OCR_PROCESSOR_NOT_FOUND"
+    if any(
+        token in lowered
+        for token in (
+            "permission denied",
+            "forbidden",
+            "access denied",
+            "not authorized",
+            "not allowed",
+            "insufficient permissions",
+            "status code 403",
+        )
+    ):
+        return "OCR_PERMISSION_DENIED"
+    if any(
+        token in lowered
+        for token in (
+            "unauthenticated",
+            "authentication failed",
+            "auth failed",
+            "auth failure",
+            "invalid credentials",
+            "invalid api key",
+            "api key",
+            "credential",
+            "credentials",
+            "expiredtoken",
+            "signaturedoesnotmatch",
+            "could not load default credentials",
+            "status code 401",
+        )
+    ):
+        return "OCR_AUTH_FAILURE"
+    if any(
+        token in lowered
+        for token in (
+            "timeout",
+            "timed out",
+            "deadline exceeded",
+            "read timed out",
+            "connect timeout",
+            "request timeout",
+        )
+    ):
+        return "OCR_TIMEOUT"
+    if any(
+        token in lowered
+        for token in (
+            "connection reset",
+            "connection error",
+            "connection refused",
+            "connection aborted",
+            "connection closed",
+            "network",
+            "dns",
+            "temporary failure in name resolution",
+            "name or service not known",
+            "failed to establish a new connection",
+            "service unavailable",
+            "ssl",
+            "tls",
+            "unreachable",
+            "proxyerror",
+            "remote disconnected",
+        )
+    ):
+        return "OCR_NETWORK_ERROR"
+    return "OCR_UNKNOWN_PROVIDER_ERROR"
 
 
 def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) -> Dict[str, Any]:
@@ -5822,6 +5923,46 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
         "payload_source": first_payload.get("payload_source"),
     }
 
+    record_runtime_failure = None
+    record_runtime_success = None
+    try:
+        from app.services.ocr_diagnostics import record_ocr_runtime_failure, record_ocr_runtime_success
+    except Exception:
+        record_ocr_runtime_failure = None
+        record_ocr_runtime_success = None
+
+    def _record_runtime(
+        *,
+        provider_name: str,
+        error_code: Optional[str],
+        error_message: Optional[str],
+        stage: str,
+        attempt_number: int,
+        payload: Dict[str, Any],
+        success: bool = False,
+    ) -> None:
+        if success:
+            if callable(record_runtime_success):
+                try:
+                    record_runtime_success(provider_name, stage=stage)
+                except Exception:
+                    return
+            return
+        if callable(record_runtime_failure) and error_code:
+            try:
+                record_runtime_failure(
+                    provider_name,
+                    error_code=error_code,
+                    error_message=error_message,
+                    stage=stage,
+                    attempt_number=attempt_number,
+                    normalized_mime=payload.get("normalized_mime"),
+                    page_count=int(payload.get("page_count") or 1),
+                    bytes_sent=int(payload.get("bytes_sent") or 0),
+                )
+            except Exception:
+                return
+
     if plan.get("error_code"):
         artifacts["provider_attempts"] = [
             {
@@ -5849,22 +5990,27 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
 
         service = get_ocr_service()
         if not await service.health_check():
+            first_attempt_number = len(provider_attempts) + 1
+            unhealthy_payload = dict(first_payload)
+            unhealthy_payload["attempt_number"] = first_attempt_number
             provider_attempts.append(
-                {
-                    "stage": "ocr_secondary",
-                    "provider": "ocr_service",
-                    "status": "unhealthy",
-                    "text_len": 0,
-                    "error": "service_unhealthy",
-                    "error_code": "OCR_PROVIDER_UNAVAILABLE",
-                    "input_mime": first_payload.get("input_mime"),
-                    "normalized_mime": first_payload.get("normalized_mime"),
-                    "retry_used": False,
-                    "page_index": 1,
-                    "page_count": int(first_payload.get("page_count") or 1),
-                    "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                    "payload_source": first_payload.get("payload_source"),
-                }
+                _build_provider_attempt_record(
+                    stage="ocr_secondary",
+                    provider_name="ocr_service",
+                    payload=unhealthy_payload,
+                    text="",
+                    status="unhealthy",
+                    error_code="OCR_PROVIDER_UNAVAILABLE",
+                    error="service_unhealthy",
+                )
+            )
+            _record_runtime(
+                provider_name="ocr_service",
+                error_code="OCR_PROVIDER_UNAVAILABLE",
+                error_message="service_unhealthy",
+                stage="ocr_secondary",
+                attempt_number=first_attempt_number,
+                payload=unhealthy_payload,
             )
             artifacts["provider_attempts"] = provider_attempts
             artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
@@ -5878,9 +6024,13 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
         for group in plan.get("groups") or []:
             group_success = False
             for payload in group:
+                attempt_number = len(provider_attempts) + 1
+                payload = dict(payload)
+                payload["attempt_number"] = attempt_number
                 logger.info(
-                    "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
+                    "validate.extraction.provider_input provider=%s attempt=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
                     "ocr_service",
+                    attempt_number,
                     payload.get("input_mime"),
                     payload.get("normalized_mime"),
                     payload.get("page_count"),
@@ -5900,7 +6050,7 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
                 text = result.get("text") or ""
                 error = result.get("error")
                 success = bool((text or "").strip()) and not error
-                error_code = None if success else (_map_ocr_provider_error_code(error) if error else "OCR_EMPTY_RESULT")
+                error_code = None if success else (result.get("error_code") or (_map_ocr_provider_error_code(error) if error else "OCR_EMPTY_RESULT"))
                 provider_attempts.append(
                     _build_provider_attempt_record(
                         stage="ocr_secondary",
@@ -5913,14 +6063,25 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
                     )
                 )
                 logger.info(
-                    "validate.extraction.provider_response provider=%s status=%s error=%s text_len=%s retry_used=%s",
+                    "validate.extraction.provider_response provider=%s attempt=%s status=%s error_code=%s error=%s text_len=%s retry_used=%s",
                     "ocr_service",
+                    attempt_number,
                     provider_attempts[-1]["status"],
+                    error_code,
                     error,
                     provider_attempts[-1]["text_len"],
                     provider_attempts[-1]["retry_used"],
                 )
                 if success:
+                    _record_runtime(
+                        provider_name="ocr_service",
+                        error_code=None,
+                        error_message=None,
+                        stage="ocr_secondary",
+                        attempt_number=attempt_number,
+                        payload=payload,
+                        success=True,
+                    )
                     selected_payload = payload
                     collected_texts.append(text)
                     confidence = result.get("confidence")
@@ -5928,52 +6089,80 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
                         confidences.append(float(confidence))
                     group_success = True
                     break
+                logger.warning(
+                    "validate.extraction.provider_failure provider=%s attempt=%s normalized_mime=%s page_count=%s bytes_sent=%s error_code=%s",
+                    "ocr_service",
+                    attempt_number,
+                    payload.get("normalized_mime"),
+                    payload.get("page_count"),
+                    payload.get("bytes_sent"),
+                    error_code,
+                )
+                _record_runtime(
+                    provider_name="ocr_service",
+                    error_code=error_code,
+                    error_message=error,
+                    stage="ocr_secondary",
+                    attempt_number=attempt_number,
+                    payload=payload,
+                )
                 if error_code != "OCR_UNSUPPORTED_FORMAT":
                     break
             if group_success and not plan.get("aggregate_pages"):
                 break
     except asyncio.TimeoutError as exc:
+        timeout_attempt_number = len(provider_attempts) + 1
+        timeout_payload = dict(first_payload)
+        timeout_payload["attempt_number"] = timeout_attempt_number
         provider_attempts.append(
-            {
-                "stage": "ocr_secondary",
-                "provider": "ocr_service",
-                "status": "timeout",
-                "text_len": 0,
-                "error": "timeout",
-                "error_code": "OCR_PROVIDER_UNAVAILABLE",
-                "input_mime": first_payload.get("input_mime"),
-                "normalized_mime": first_payload.get("normalized_mime"),
-                "retry_used": False,
-                "page_index": 1,
-                "page_count": int(first_payload.get("page_count") or 1),
-                "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                "payload_source": first_payload.get("payload_source"),
-            }
+            _build_provider_attempt_record(
+                stage="ocr_secondary",
+                provider_name="ocr_service",
+                payload=timeout_payload,
+                text="",
+                status="timeout",
+                error_code="OCR_TIMEOUT",
+                error="timeout",
+            )
+        )
+        _record_runtime(
+            provider_name="ocr_service",
+            error_code="OCR_TIMEOUT",
+            error_message=str(exc),
+            stage="ocr_secondary",
+            attempt_number=timeout_attempt_number,
+            payload=timeout_payload,
         )
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = "OCR_TIMEOUT"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
     except Exception as exc:
+        error_attempt_number = len(provider_attempts) + 1
+        error_payload = dict(first_payload)
+        error_payload["attempt_number"] = error_attempt_number
+        error_code = _map_ocr_provider_error_code(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
         provider_attempts.append(
-            {
-                "stage": "ocr_secondary",
-                "provider": "ocr_service",
-                "status": "error",
-                "text_len": 0,
-                "error": str(exc),
-                "error_code": _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE",
-                "input_mime": first_payload.get("input_mime"),
-                "normalized_mime": first_payload.get("normalized_mime"),
-                "retry_used": False,
-                "page_index": 1,
-                "page_count": int(first_payload.get("page_count") or 1),
-                "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                "payload_source": first_payload.get("payload_source"),
-            }
+            _build_provider_attempt_record(
+                stage="ocr_secondary",
+                provider_name="ocr_service",
+                payload=error_payload,
+                text="",
+                status="error",
+                error_code=error_code,
+                error=str(exc),
+            )
+        )
+        _record_runtime(
+            provider_name="ocr_service",
+            error_code=error_code,
+            error_message=str(exc),
+            stage="ocr_secondary",
+            attempt_number=error_attempt_number,
+            payload=error_payload,
         )
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = error_code
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
 
@@ -5996,8 +6185,8 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
         return {"text": merged_text, "artifacts": success_artifacts}
 
     artifacts["provider_attempts"] = provider_attempts
-    artifacts["error_code"] = next((attempt.get("error_code") for attempt in provider_attempts if attempt.get("error_code")), None) or "OCR_PROVIDER_UNAVAILABLE"
-    artifacts["error"] = next((attempt.get("error") for attempt in provider_attempts if attempt.get("error")), None) or "secondary_ocr_unavailable"
+    artifacts["error_code"] = next((attempt.get("error_code") for attempt in provider_attempts if attempt.get("error_code")), None) or "OCR_EMPTY_RESULT"
+    artifacts["error"] = next((attempt.get("error") for attempt in provider_attempts if attempt.get("error")), None) or "secondary_ocr_empty_result"
     return {"text": "", "artifacts": artifacts}
 
 
@@ -6012,9 +6201,50 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
     }
     provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
     attempts: List[Dict[str, Any]] = []
+    record_runtime_failure = None
+    record_runtime_success = None
+
+    try:
+        from app.services.ocr_diagnostics import record_ocr_runtime_failure, record_ocr_runtime_success
+    except Exception:
+        record_runtime_failure = None
+        record_runtime_success = None
+
+    def _record_runtime(
+        *,
+        provider_name: str,
+        error_code: Optional[str],
+        error_message: Optional[str],
+        stage: str,
+        attempt_number: int,
+        payload: Dict[str, Any],
+        success: bool = False,
+    ) -> None:
+        if success:
+            if callable(record_runtime_success):
+                try:
+                    record_runtime_success(provider_name, stage=stage)
+                except Exception:
+                    return
+            return
+        if callable(record_runtime_failure) and error_code:
+            try:
+                record_runtime_failure(
+                    provider_name,
+                    error_code=error_code,
+                    error_message=error_message,
+                    stage=stage,
+                    attempt_number=attempt_number,
+                    normalized_mime=payload.get("normalized_mime"),
+                    page_count=int(payload.get("page_count") or 1),
+                    bytes_sent=int(payload.get("bytes_sent") or 0),
+                )
+            except Exception:
+                return
 
     try:
         factory = get_ocr_factory()
+        provider_order = list(getattr(factory, "configured_providers", None) or provider_order)
         all_adapters = factory.get_all_adapters()
         adapter_map = {adapter.provider_name: adapter for adapter in all_adapters}
 
@@ -6022,10 +6252,12 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
             full_provider_name = provider_map.get(provider_name, provider_name)
             adapter = adapter_map.get(full_provider_name)
             if not adapter:
+                attempt_number = len(attempts) + 1
                 attempts.append(
                     {
                         "stage": "ocr_provider_primary",
                         "provider": full_provider_name,
+                        "attempt_number": attempt_number,
                         "status": "missing_adapter",
                         "text_len": 0,
                         "error": "missing_adapter",
@@ -6039,16 +6271,26 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                         "payload_source": "missing_adapter",
                     }
                 )
+                _record_runtime(
+                    provider_name=full_provider_name,
+                    error_code="OCR_PROVIDER_UNAVAILABLE",
+                    error_message="missing_adapter",
+                    stage="ocr_provider_primary",
+                    attempt_number=attempt_number,
+                    payload={},
+                )
                 continue
 
             plan = _build_provider_runtime_payload_plan(full_provider_name, file_bytes, filename, content_type)
             first_group = (plan.get("groups") or [[]])[0] if isinstance(plan.get("groups"), list) else []
             first_payload = first_group[0] if first_group else {}
             if plan.get("error_code"):
+                attempt_number = len(attempts) + 1
                 attempts.append(
                     {
                         "stage": "ocr_provider_primary",
                         "provider": full_provider_name,
+                        "attempt_number": attempt_number,
                         "status": "guardrail_rejected",
                         "text_len": 0,
                         "error": plan.get("error"),
@@ -6066,22 +6308,27 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
 
             try:
                 if not await adapter.health_check():
+                    unhealthy_attempt_number = len(attempts) + 1
+                    unhealthy_payload = dict(first_payload)
+                    unhealthy_payload["attempt_number"] = unhealthy_attempt_number
                     attempts.append(
-                        {
-                            "stage": "ocr_provider_primary",
-                            "provider": full_provider_name,
-                            "status": "unhealthy",
-                            "text_len": 0,
-                            "error": "provider_unhealthy",
-                            "error_code": "OCR_PROVIDER_UNAVAILABLE",
-                            "input_mime": first_payload.get("input_mime"),
-                            "normalized_mime": first_payload.get("normalized_mime"),
-                            "retry_used": False,
-                            "page_index": 1,
-                            "page_count": int(first_payload.get("page_count") or 1),
-                            "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                            "payload_source": first_payload.get("payload_source"),
-                        }
+                        _build_provider_attempt_record(
+                            stage="ocr_provider_primary",
+                            provider_name=full_provider_name,
+                            payload=unhealthy_payload,
+                            text="",
+                            status="unhealthy",
+                            error_code="OCR_PROVIDER_UNAVAILABLE",
+                            error="provider_unhealthy",
+                        )
+                    )
+                    _record_runtime(
+                        provider_name=full_provider_name,
+                        error_code="OCR_PROVIDER_UNAVAILABLE",
+                        error_message="provider_unhealthy",
+                        stage="ocr_provider_primary",
+                        attempt_number=unhealthy_attempt_number,
+                        payload=unhealthy_payload,
                     )
                     continue
 
@@ -6092,9 +6339,13 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                 for group in plan.get("groups") or []:
                     group_success = False
                     for payload in group:
+                        attempt_number = len(attempts) + 1
+                        payload = dict(payload)
+                        payload["attempt_number"] = attempt_number
                         logger.info(
-                            "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
+                            "validate.extraction.provider_input provider=%s attempt=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
                             full_provider_name,
+                            attempt_number,
                             payload.get("input_mime"),
                             payload.get("normalized_mime"),
                             payload.get("page_count"),
@@ -6128,19 +6379,47 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                             )
                         )
                         logger.info(
-                            "validate.extraction.provider_response provider=%s status=%s error=%s text_len=%s retry_used=%s",
+                            "validate.extraction.provider_response provider=%s attempt=%s status=%s error_code=%s error=%s text_len=%s retry_used=%s",
                             full_provider_name,
+                            attempt_number,
                             attempts[-1]["status"],
+                            error_code,
                             error_text,
                             attempts[-1]["text_len"],
                             attempts[-1]["retry_used"],
                         )
                         if success:
+                            _record_runtime(
+                                provider_name=full_provider_name,
+                                error_code=None,
+                                error_message=None,
+                                stage="ocr_provider_primary",
+                                attempt_number=attempt_number,
+                                payload=payload,
+                                success=True,
+                            )
                             selected_payload = payload
                             collected_texts.append(text)
                             provider_results.append(result)
                             group_success = True
                             break
+                        logger.warning(
+                            "validate.extraction.provider_failure provider=%s attempt=%s normalized_mime=%s page_count=%s bytes_sent=%s error_code=%s",
+                            full_provider_name,
+                            attempt_number,
+                            payload.get("normalized_mime"),
+                            payload.get("page_count"),
+                            payload.get("bytes_sent"),
+                            error_code,
+                        )
+                        _record_runtime(
+                            provider_name=full_provider_name,
+                            error_code=error_code,
+                            error_message=error_text,
+                            stage="ocr_provider_primary",
+                            attempt_number=attempt_number,
+                            payload=payload,
+                        )
                         if error_code != "OCR_UNSUPPORTED_FORMAT":
                             break
                     if group_success and not plan.get("aggregate_pages"):
@@ -6174,42 +6453,71 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                         "payload_source": selected_payload.get("payload_source"),
                     }
                     return {"text": merged_text, "artifacts": artifacts}
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
+                timeout_attempt_number = len(attempts) + 1
+                timeout_payload = dict(first_payload)
+                timeout_payload["attempt_number"] = timeout_attempt_number
                 attempts.append(
-                    {
-                        "stage": "ocr_provider_primary",
-                        "provider": full_provider_name,
-                        "status": "timeout",
-                        "text_len": 0,
-                        "error": "timeout",
-                        "error_code": "OCR_PROVIDER_UNAVAILABLE",
-                        "input_mime": first_payload.get("input_mime"),
-                        "normalized_mime": first_payload.get("normalized_mime"),
-                        "retry_used": False,
-                        "page_index": 1,
-                        "page_count": int(first_payload.get("page_count") or 1),
-                        "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                        "payload_source": first_payload.get("payload_source"),
-                    }
+                    _build_provider_attempt_record(
+                        stage="ocr_provider_primary",
+                        provider_name=full_provider_name,
+                        payload=timeout_payload,
+                        text="",
+                        status="timeout",
+                        error_code="OCR_TIMEOUT",
+                        error="timeout",
+                    )
+                )
+                logger.warning(
+                    "validate.extraction.provider_failure provider=%s attempt=%s normalized_mime=%s page_count=%s bytes_sent=%s error_code=%s",
+                    full_provider_name,
+                    timeout_attempt_number,
+                    timeout_payload.get("normalized_mime"),
+                    timeout_payload.get("page_count"),
+                    timeout_payload.get("bytes_sent"),
+                    "OCR_TIMEOUT",
+                )
+                _record_runtime(
+                    provider_name=full_provider_name,
+                    error_code="OCR_TIMEOUT",
+                    error_message=str(exc),
+                    stage="ocr_provider_primary",
+                    attempt_number=timeout_attempt_number,
+                    payload=timeout_payload,
                 )
                 continue
             except Exception as exc:
+                error_attempt_number = len(attempts) + 1
+                error_payload = dict(first_payload)
+                error_payload["attempt_number"] = error_attempt_number
+                error_code = _map_ocr_provider_error_code(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
                 attempts.append(
-                    {
-                        "stage": "ocr_provider_primary",
-                        "provider": full_provider_name,
-                        "status": "error",
-                        "text_len": 0,
-                        "error": str(exc),
-                        "error_code": _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE",
-                        "input_mime": first_payload.get("input_mime"),
-                        "normalized_mime": first_payload.get("normalized_mime"),
-                        "retry_used": False,
-                        "page_index": 1,
-                        "page_count": int(first_payload.get("page_count") or 1),
-                        "bytes_sent": int(first_payload.get("bytes_sent") or 0),
-                        "payload_source": first_payload.get("payload_source"),
-                    }
+                    _build_provider_attempt_record(
+                        stage="ocr_provider_primary",
+                        provider_name=full_provider_name,
+                        payload=error_payload,
+                        text="",
+                        status="error",
+                        error_code=error_code,
+                        error=str(exc),
+                    )
+                )
+                logger.warning(
+                    "validate.extraction.provider_failure provider=%s attempt=%s normalized_mime=%s page_count=%s bytes_sent=%s error_code=%s",
+                    full_provider_name,
+                    error_attempt_number,
+                    error_payload.get("normalized_mime"),
+                    error_payload.get("page_count"),
+                    error_payload.get("bytes_sent"),
+                    error_code,
+                )
+                _record_runtime(
+                    provider_name=full_provider_name,
+                    error_code=error_code,
+                    error_message=str(exc),
+                    stage="ocr_provider_primary",
+                    attempt_number=error_attempt_number,
+                    payload=error_payload,
                 )
                 continue
 
@@ -6230,7 +6538,7 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
             (attempt.get("error_code") for attempt in attempts if attempt.get("error_code")),
             None,
         )
-        artifacts["error_code"] = attempt_error_code or "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = attempt_error_code or "OCR_EMPTY_RESULT"
         artifacts["error"] = "no_ocr_provider_returned_text"
         return {"text": "", "artifacts": artifacts}
     except Exception as exc:
@@ -6247,7 +6555,7 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
             "bytes_sent": fallback_input.get("bytes_sent"),
             "payload_source": fallback_input.get("payload_source"),
         }
-        artifacts["error_code"] = _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = _map_ocr_provider_error_code(str(exc)) or "OCR_UNKNOWN_PROVIDER_ERROR"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
 

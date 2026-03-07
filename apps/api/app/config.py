@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # If extracted text is shorter, still run OCR providers
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
+    OCR_RUNTIME_DIAGNOSTICS_ENABLED: bool = True  # Track bounded OCR runtime diagnostics
+    OCR_DIAGNOSTICS_MAX_ERRORS: int = 10  # Max recent OCR errors exposed by diagnostics endpoint
+    OCR_HEALTH_ENDPOINT_ENABLED: bool = True  # Enable internal OCR health endpoint
+    OCR_HEALTH_TOKEN: Optional[str] = None  # Optional shared token for OCR health endpoint
     OCR_NORMALIZATION_SHIM_ENABLED: bool = True  # Normalize PDFs/images before OCR provider calls
     OCR_NORMALIZATION_DPI: int = 300  # Deterministic render DPI for OCR normalization
     OCR_NORMALIZATION_IMAGE_FORMAT: str = "TIFF"  # Provider-friendly normalized output for PDFs
