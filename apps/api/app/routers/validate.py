@@ -477,13 +477,13 @@ def _extract_day1_raw_candidates(doc_info: Dict[str, Any], context_payload: Dict
         return None
 
     return {
-        "issuer": _pick("issuer", "issuer_name", "shipper", "beneficiary"),
+        "issuer": _pick("issuer", "issuer_name", "seller_name", "seller", "exporter_name", "shipper", "carrier", "beneficiary"),
         "bin": _pick("bin", "exporter_bin", "importer_bin", "seller_bin"),
         "tin": _pick("tin", "exporter_tin", "importer_tin", "tax_id"),
         "voyage": _pick("voyage", "voyage_number", "bl_voyage_no"),
-        "gross_weight": _pick("gross_weight", "gross_wt", "weight_gross", "gross"),
-        "net_weight": _pick("net_weight", "net_wt", "weight_net", "net"),
-        "doc_date": _pick("doc_date", "issue_date", "date", "invoice_date", "bl_date"),
+        "gross_weight": _pick("gross_weight", "gross_wt", "weight_gross", "gross", "total_gross_weight"),
+        "net_weight": _pick("net_weight", "net_wt", "weight_net", "net", "total_net_weight"),
+        "doc_date": _pick("doc_date", "issue_date", "date", "invoice_date", "bl_date", "date_of_issue", "shipped_on_board_date"),
     }
 
 
@@ -610,23 +610,111 @@ def _apply_direct_token_recovery(
     extracted_fields = doc_payload.get("extracted_fields") if isinstance(doc_payload.get("extracted_fields"), dict) else {}
     field_details = doc_payload.get("_field_details") if isinstance(doc_payload.get("_field_details"), dict) else {}
 
-    for field_name in ("buyer_po_number", "exporter_bin", "exporter_tin", "voyage_number", "gross_weight", "net_weight"):
+    def _normalized_key(value: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+    def _value_tokens(value: Any) -> set[str]:
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]{3,}", str(value or "").lower())
+            if token
+        }
+
+    def _recovery_value_compatible(field_name: str, existing_value: Any, recovered_value: Any) -> bool:
+        if existing_value in (None, "", [], {}) or recovered_value in (None, "", [], {}):
+            return True
+
+        existing_text = str(existing_value).strip()
+        recovered_text = str(recovered_value).strip()
+        if not existing_text or not recovered_text:
+            return False
+
+        if field_name == "issue_date":
+            existing_digits = re.sub(r"\D", "", existing_text)
+            recovered_digits = re.sub(r"\D", "", recovered_text)
+            if not existing_digits or not recovered_digits:
+                return False
+            return (
+                existing_digits == recovered_digits
+                or existing_digits.endswith(recovered_digits)
+                or recovered_digits.endswith(existing_digits)
+                or existing_digits in recovered_digits
+                or recovered_digits in existing_digits
+            )
+
+        if field_name in {"gross_weight", "net_weight"}:
+            existing_digits = re.sub(r"\D", "", existing_text)
+            recovered_digits = re.sub(r"\D", "", recovered_text)
+            return bool(existing_digits and existing_digits == recovered_digits)
+
+        if field_name == "issuer":
+            existing_tokens = _value_tokens(existing_text)
+            recovered_tokens = _value_tokens(recovered_text)
+            if not existing_tokens or not recovered_tokens:
+                return _normalized_key(existing_text) == _normalized_key(recovered_text)
+            shared = len(existing_tokens.intersection(recovered_tokens))
+            minimum = min(2, len(recovered_tokens))
+            return shared >= max(1, minimum)
+
+        return _normalized_key(existing_text) == _normalized_key(recovered_text)
+
+    for field_name in (
+        "buyer_po_number",
+        "exporter_bin",
+        "exporter_tin",
+        "invoice_number",
+        "bl_number",
+        "issue_date",
+        "issuer",
+        "voyage_number",
+        "gross_weight",
+        "net_weight",
+    ):
         item = recovered.get(field_name) or {}
         reason = str(item.get("reason") or "missing_in_source")
         value = item.get("value")
         snippet = item.get("evidence_snippet")
+        confidence = item.get("confidence")
+        source = item.get("source")
+
+        existing_value = extracted_fields.get(field_name)
+        if existing_value in (None, "", [], {}) and field_name in doc_payload:
+            existing_value = doc_payload.get(field_name)
+        compatible = _recovery_value_compatible(field_name, existing_value, value)
 
         if value not in (None, "") and field_name not in doc_payload:
             doc_payload[field_name] = value
         if value not in (None, "") and field_name not in extracted_fields:
             extracted_fields[field_name] = value
 
-        field_details[field_name] = {
-            **(field_details.get(field_name) or {}),
-            "reason": reason,
-            "evidence_snippet": snippet,
-            "source": item.get("source"),
-        }
+        existing_detail = field_details.get(field_name) if isinstance(field_details.get(field_name), dict) else {}
+        merged_detail = dict(existing_detail or {})
+        if reason != "missing_in_source" or not merged_detail:
+            merged_detail["reason"] = reason
+        if source:
+            merged_detail["source"] = source
+        if compatible and snippet:
+            merged_detail["evidence_snippet"] = snippet
+            merged_detail["evidence"] = {
+                "text_span": snippet,
+                "page": 1,
+                "source": source,
+                "confidence": confidence,
+            }
+        if compatible and confidence is not None:
+            existing_confidence = merged_detail.get("confidence")
+            try:
+                existing_confidence_value = float(existing_confidence) if existing_confidence is not None else None
+            except (TypeError, ValueError):
+                existing_confidence_value = None
+            if (
+                existing_confidence_value is None
+                or float(confidence) >= existing_confidence_value
+                or not merged_detail.get("evidence_snippet")
+            ):
+                merged_detail["confidence"] = confidence
+
+        field_details[field_name] = merged_detail
 
     if extracted_fields:
         doc_payload["extracted_fields"] = extracted_fields

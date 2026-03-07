@@ -329,11 +329,145 @@ def _extract_identifier_with_evidence(
     }
 
 
+def _extract_pattern_with_evidence(
+    lines: Iterable[tuple[str, str]],
+    label_regex: str,
+    patterns: Iterable[str],
+    normalize: Optional[Any] = None,
+    validate: Optional[Any] = None,
+    lookahead: int = 1,
+) -> Dict[str, Any]:
+    label_seen = False
+    compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+    line_items = list(lines)
+    for idx, (line, source) in enumerate(line_items):
+        if re.search(label_regex, line, re.IGNORECASE):
+            label_seen = True
+        candidate_windows = [line]
+        for offset in range(1, max(1, lookahead) + 1):
+            if idx + offset < len(line_items):
+                candidate_windows.append(f"{line}: {line_items[idx + offset][0]}")
+        for candidate in candidate_windows:
+            for pattern in compiled_patterns:
+                match = pattern.search(candidate)
+                if not match:
+                    continue
+                value = (match.group(1) if match.lastindex else match.group(0)).strip()
+                if normalize:
+                    value = normalize(value)
+                if validate and not validate(value):
+                    return {"value": None, "reason": "parse_failed", "evidence_snippet": candidate, "source": source}
+                return {"value": value, "reason": "found", "evidence_snippet": candidate, "source": source}
+    return {
+        "value": None,
+        "reason": "parse_failed" if label_seen else "missing_in_source",
+        "evidence_snippet": None,
+        "source": None,
+    }
+
+
+def _clean_party_value(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip()).strip(" :-,")
+
+
+def _valid_party_value(value: str) -> bool:
+    text = _clean_party_value(value)
+    if len(text) < 3 or not any(ch.isalpha() for ch in text):
+        return False
+    word_tokens = [token.upper() for token in re.findall(r"[A-Z]{2,}", text.upper())]
+    if not word_tokens:
+        return False
+    blocked = {"BIN", "TIN", "VAT", "TAX", "DATE", "NO", "NUMBER", "REF", "REFERENCE", "WEIGHT", "GROSS", "NET"}
+    if word_tokens[0] in blocked:
+        return False
+    meaningful = [token for token in word_tokens if token not in blocked]
+    return bool(meaningful)
+
+
+def _extract_party_with_evidence(
+    lines: Iterable[tuple[str, str]],
+    label_regex: str,
+    lookahead: int = 2,
+) -> Dict[str, Any]:
+    label_seen = False
+    line_items = list(lines)
+    stop_regex = re.compile(
+        r"^(?:BUYER|CONSIGNEE|NOTIFY(?:\s+PARTY)?|SELLER|EXPORTER|SHIPPER|CARRIER|ISSUER|"
+        r"DATE(?:\s+OF\s+ISSUE)?|INVOICE(?:\s+DATE)?|B/?L(?:\s+NO)?|LC(?:\s+NO)?|L/C(?:\s+NO)?|"
+        r"TOTAL|GROSS|NET|PORT|VESSEL|VOYAGE|PACKING(?:\s+DETAILS)?)\b",
+        re.IGNORECASE,
+    )
+
+    for idx, (line, source) in enumerate(line_items):
+        if not re.search(label_regex, line, re.IGNORECASE):
+            continue
+        label_seen = True
+        inline = re.sub(label_regex, "", line, count=1, flags=re.IGNORECASE)
+        inline = re.sub(r"^\s*[:#-]?\s*", "", inline).strip()
+        if inline and _valid_party_value(inline):
+            return {
+                "value": _clean_party_value(inline),
+                "reason": "found",
+                "evidence_snippet": line,
+                "source": source,
+            }
+
+        continuation: list[str] = []
+        for offset in range(1, max(1, lookahead) + 1):
+            if idx + offset >= len(line_items):
+                break
+            next_line = line_items[idx + offset][0].strip()
+            if not next_line:
+                continue
+            if stop_regex.search(next_line):
+                break
+            continuation.append(next_line)
+            if len(continuation) >= lookahead:
+                break
+
+        if continuation:
+            value = _clean_party_value(continuation[0])
+            if _valid_party_value(value):
+                return {
+                    "value": value,
+                    "reason": "found",
+                    "evidence_snippet": " ".join([line] + continuation[:2]).strip(),
+                    "source": source,
+                }
+
+    return {
+        "value": None,
+        "reason": "parse_failed" if label_seen else "missing_in_source",
+        "evidence_snippet": None,
+        "source": None,
+    }
+
+
+def _recovery_confidence(field_name: str, source: Optional[str], reason: str) -> Optional[float]:
+    if reason != "found":
+        return None
+    base = {
+        "buyer_po_number": 0.88,
+        "exporter_bin": 0.9,
+        "exporter_tin": 0.9,
+        "invoice_number": 0.9,
+        "bl_number": 0.9,
+        "voyage_number": 0.86,
+        "gross_weight": 0.86,
+        "net_weight": 0.86,
+        "issue_date": 0.86,
+        "issuer": 0.86,
+    }.get(field_name, 0.85)
+    if source == "spans":
+        base = max(0.8, base - 0.02)
+    return round(base, 2)
+
+
 def extract_direct_token_recovery(
     raw_text: str,
     extraction_artifacts: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Deterministic token recovery for PO/BIN/TIN + B/L voyage/gross/net with evidence snippets."""
+    """Deterministic token recovery for critical doc tokens with evidence snippets."""
     all_lines = list(_iter_text_evidence_lines(raw_text, extraction_artifacts))
 
     def _norm_id(v: str) -> str:
@@ -373,6 +507,37 @@ def extract_direct_token_recovery(
         normalize=lambda v: re.sub(r"\D", "", v),
         validate=_valid_tin,
     )
+    recovered["invoice_number"] = _extract_pattern_with_evidence(
+        all_lines,
+        label_regex=r"(?:INVOICE\s*(?:NO\.?|NUMBER|#|REF(?:ERENCE)?)|INV(?:OICE)?\s*(?:NO\.?|NUMBER|#))",
+        patterns=[
+            r"(?:INVOICE\s*(?:NO\.?|NUMBER|#|REF(?:ERENCE)?)|INV(?:OICE)?\s*(?:NO\.?|NUMBER|#))\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/\.]{3,30})",
+        ],
+        normalize=_norm_id,
+        validate=lambda v: bool(re.match(r"^[A-Z0-9][A-Z0-9\-/\.]{3,30}$", v, re.IGNORECASE)),
+    )
+    recovered["bl_number"] = _extract_pattern_with_evidence(
+        all_lines,
+        label_regex=r"(?:B/?L|BILL\s+OF\s+LADING|TRANSPORT\s+DOCUMENT)\s*(?:NO\.?|NUMBER|#|REF(?:ERENCE)?)?",
+        patterns=[
+            r"(?:B/?L|BILL\s+OF\s+LADING|TRANSPORT\s+DOCUMENT)\s*(?:NO\.?|NUMBER|#|REF(?:ERENCE)?)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/\.]{3,30})",
+        ],
+        normalize=_norm_id,
+        validate=lambda v: bool(re.match(r"^[A-Z0-9][A-Z0-9\-/\.]{3,30}$", v, re.IGNORECASE)),
+    )
+    recovered["issue_date"] = _extract_pattern_with_evidence(
+        all_lines,
+        label_regex=r"(?:^:?31C:?|DATE\s+OF\s+ISSUE|ISSUE\s+DATE|INVOICE\s+DATE|PACKING\s+LIST\s+DATE|BL\s+DATE|SHIPMENT\s+DATE|SHIPPED\s+ON\s+BOARD\s+DATE|ON\s+BOARD\s+DATE|ISSUED\s+ON|DATED|DATE)\b",
+        patterns=[
+            r"(?:^:?31C:?|DATE\s+OF\s+ISSUE|ISSUE\s+DATE|INVOICE\s+DATE|PACKING\s+LIST\s+DATE|BL\s+DATE|SHIPMENT\s+DATE|SHIPPED\s+ON\s+BOARD\s+DATE|ON\s+BOARD\s+DATE|ISSUED\s+ON|DATED|DATE)\s*[:#-]?\s*([0-9A-Z][0-9A-Z ./-]{4,24})",
+        ],
+        normalize=lambda v: re.sub(r"\s+", " ", v).strip(" :-"),
+        validate=lambda v: bool(re.search(r"\d", v)),
+    )
+    recovered["issuer"] = _extract_party_with_evidence(
+        all_lines,
+        label_regex=r"(?:ISSUING\s+BANK|ISSUER|SELLER|EXPORTER|SHIPPER|CARRIER)\s*[:#-]?",
+    )
 
     # BL fields: use line-level parsing so evidence snippets are carried.
     voyage_status = {"value": None, "reason": "missing_in_source", "evidence_snippet": None, "source": None}
@@ -393,6 +558,14 @@ def extract_direct_token_recovery(
             vv = _parse_vessel_voyage_from_line(f"{line}: {all_lines[idx + 1][0]}")
         if vv.get("voyage_number") and voyage_status["value"] is None:
             voyage_status = {"value": vv["voyage_number"], "reason": "found", "evidence_snippet": line, "source": source}
+        elif voyage_status["value"] is None:
+            voyage_candidate = find_first_pattern_value(line, BL_RAW_PATTERNS["voyage_number"])
+            voyage_snippet = line
+            if not voyage_candidate and idx + 1 < len(all_lines):
+                voyage_snippet = f"{line}: {all_lines[idx + 1][0]}"
+                voyage_candidate = find_first_pattern_value(voyage_snippet, BL_RAW_PATTERNS["voyage_number"])
+            if voyage_candidate and _is_valid_voyage(voyage_candidate):
+                voyage_status = {"value": voyage_candidate, "reason": "found", "evidence_snippet": voyage_snippet, "source": source}
 
         wn = _parse_gross_net_from_line(line)
         if (not wn.get("gross_weight") or not wn.get("net_weight")) and idx + 1 < len(all_lines):
@@ -401,6 +574,22 @@ def extract_direct_token_recovery(
             gross_status = {"value": wn["gross_weight"], "reason": "found", "evidence_snippet": line, "source": source}
         if wn.get("net_weight") and net_status["value"] is None:
             net_status = {"value": wn["net_weight"], "reason": "found", "evidence_snippet": line, "source": source}
+        if gross_status["value"] is None:
+            gross_candidate = find_first_pattern_value(line, BL_RAW_PATTERNS["gross_weight"])
+            gross_snippet = line
+            if not gross_candidate and idx + 1 < len(all_lines):
+                gross_snippet = f"{line}: {all_lines[idx + 1][0]}"
+                gross_candidate = find_first_pattern_value(gross_snippet, BL_RAW_PATTERNS["gross_weight"])
+            if gross_candidate and _is_valid_weight_value(gross_candidate):
+                gross_status = {"value": gross_candidate, "reason": "found", "evidence_snippet": gross_snippet, "source": source}
+        if net_status["value"] is None:
+            net_candidate = find_first_pattern_value(line, BL_RAW_PATTERNS["net_weight"])
+            net_snippet = line
+            if not net_candidate and idx + 1 < len(all_lines):
+                net_snippet = f"{line}: {all_lines[idx + 1][0]}"
+                net_candidate = find_first_pattern_value(net_snippet, BL_RAW_PATTERNS["net_weight"])
+            if net_candidate and _is_valid_weight_value(net_candidate):
+                net_status = {"value": net_candidate, "reason": "found", "evidence_snippet": net_snippet, "source": source}
 
     if voyage_label_seen and voyage_status["value"] is None:
         voyage_status["reason"] = "parse_failed"
@@ -412,5 +601,12 @@ def extract_direct_token_recovery(
     recovered["voyage_number"] = voyage_status
     recovered["gross_weight"] = gross_status
     recovered["net_weight"] = net_status
+
+    for field_name, item in recovered.items():
+        if not isinstance(item, dict):
+            continue
+        confidence = _recovery_confidence(field_name, item.get("source"), str(item.get("reason") or ""))
+        if confidence is not None:
+            item["confidence"] = confidence
 
     return recovered
