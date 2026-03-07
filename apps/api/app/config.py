@@ -56,6 +56,20 @@ class Settings(BaseSettings):
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
     OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # If extracted text is shorter, still run OCR providers
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
+    OCR_NORMALIZATION_SHIM_ENABLED: bool = True  # Normalize PDFs/images before OCR provider calls
+    OCR_NORMALIZATION_DPI: int = 300  # Deterministic render DPI for OCR normalization
+    OCR_NORMALIZATION_IMAGE_FORMAT: str = "TIFF"  # Provider-friendly normalized output for PDFs
+    OCR_STAGE_SCORER_ENABLED: bool = True  # Score competing OCR/native stages before selecting text
+    OCR_STAGE_WEIGHT_TEXT_LEN: float = 0.30
+    OCR_STAGE_WEIGHT_ALNUM_RATIO: float = 0.20
+    OCR_STAGE_WEIGHT_ANCHOR_HIT: float = 0.25
+    OCR_STAGE_WEIGHT_FIELD_PATTERN: float = 0.25
+    OCR_STAGE_SELECTION_PRIORITY: List[str] = [
+        "ocr_provider_primary",
+        "ocr_secondary",
+        "native_pdf_text",
+        "binary_metadata_scrape",
+    ]
     
     # Document Set Configuration (based on UCP600/ISBP745 norms)
     DOC_SET_MIN_DOCS: int = 1  # Minimum docs for validation (LC-only mode)

@@ -3162,9 +3162,10 @@ async def _build_document_context(
         """Extract text with concurrency limit."""
         async with ocr_semaphore:
             filename = getattr(upload_file, "filename", f"document_{idx+1}")
+            document_type = _resolve_document_type(filename, idx, normalized_tags)
             logger.info(f"[OCR {idx+1}/{len(files_list)}] Starting extraction for {filename}")
             try:
-                extraction_result = await _extract_text_from_upload(upload_file)
+                extraction_result = await _extract_text_from_upload(upload_file, document_type=document_type)
                 text = extraction_result.get("text") or ""
                 artifacts = extraction_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=text)
                 logger.info(f"[OCR {idx+1}/{len(files_list)}] Completed {filename}: {len(text) if text else 0} chars")
@@ -4111,6 +4112,9 @@ def _empty_extraction_artifacts_v1(
         "fallback_activated": False,
         "final_stage": None,
         "final_text_length": len((raw_text or "").strip()),
+        "stage_scores": {},
+        "selected_stage": None,
+        "rejected_stages": {},
     }
 
 
@@ -4212,6 +4216,7 @@ def _finalize_text_extraction_result(
     text: str,
 ) -> Dict[str, Any]:
     artifacts["final_stage"] = stage
+    artifacts["selected_stage"] = artifacts.get("selected_stage") or stage
     artifacts["final_text_length"] = len((text or "").strip())
     artifacts["raw_text"] = text or ""
     return {"text": text or "", "artifacts": artifacts}
@@ -4319,7 +4324,302 @@ def _scrape_binary_text_metadata(file_bytes: bytes) -> str:
     return "\n".join(candidates)
 
 
-async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
+_STAGE_FIELD_PATTERNS = {
+    "issue_date": [r"\b\d{4}-\d{2}-\d{2}\b", r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"],
+    "bin_tin": [r"\b(bin|tin)\b", r"\b\d{9,15}\b"],
+    "gross_weight": [r"\bgross\s+weight\b", r"\b\d+(?:\.\d+)?\s?(kg|kgs|kilograms?)\b"],
+    "net_weight": [r"\bnet\s+weight\b", r"\b\d+(?:\.\d+)?\s?(kg|kgs|kilograms?)\b"],
+    "issuer": [r"\bissuer\b", r"\bissuing bank\b", r"\bseller\b", r"\bexporter\b", r"\bcarrier\b", r"\bauthority\b"],
+    "voyage": [r"\bvoyage\b", r"\bvessel\b", r"\bvsl\b"],
+}
+
+_STAGE_CRITICAL_FIELD_TO_ANCHOR_FIELD = {
+    "bin_tin": "bin",
+    "voyage": "voyage",
+    "gross_weight": "gross_weight",
+    "net_weight": "net_weight",
+    "issue_date": "doc_date",
+    "issuer": "issuer",
+}
+
+
+def _detect_input_mime_type(file_bytes: bytes, filename: str, content_type: Optional[str]) -> str:
+    detected = str(content_type or "").strip().lower()
+    if detected and detected != "application/octet-stream":
+        return detected
+    if file_bytes.startswith(b"%PDF"):
+        return "application/pdf"
+    if file_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if file_bytes[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if file_bytes[:4] in (b"II*\x00", b"MM\x00*"):
+        return "image/tiff"
+    lowered_name = (filename or "").lower()
+    if lowered_name.endswith(".pdf"):
+        return "application/pdf"
+    if lowered_name.endswith(".png"):
+        return "image/png"
+    if lowered_name.endswith(".jpg") or lowered_name.endswith(".jpeg"):
+        return "image/jpeg"
+    if lowered_name.endswith(".tif") or lowered_name.endswith(".tiff"):
+        return "image/tiff"
+    return "application/octet-stream"
+
+
+def _normalize_ocr_input(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
+    detected_mime = _detect_input_mime_type(file_bytes, filename, content_type)
+    dpi = max(72, int(getattr(settings, "OCR_NORMALIZATION_DPI", 300) or 300))
+    if not getattr(settings, "OCR_NORMALIZATION_SHIM_ENABLED", True):
+        return {
+            "content": file_bytes,
+            "content_type": detected_mime,
+            "original_content_type": detected_mime,
+            "page_count": 1,
+            "dpi": dpi,
+            "error_code": None,
+            "error": None,
+        }
+
+    if detected_mime == "application/pdf":
+        page_count = 0
+        try:
+            from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
+
+            page_count = len(PdfReader(BytesIO(file_bytes)).pages)
+        except Exception:
+            page_count = 0
+
+        if (
+            page_count and page_count > int(getattr(settings, "OCR_MAX_PAGES", 50) or 50)
+        ) or len(file_bytes) > int(getattr(settings, "OCR_MAX_BYTES", 50 * 1024 * 1024) or (50 * 1024 * 1024)):
+            return {
+                "content": file_bytes,
+                "content_type": detected_mime,
+                "original_content_type": detected_mime,
+                "page_count": page_count,
+                "dpi": dpi,
+                "error_code": None,
+                "error": "normalization_guardrail_skip",
+            }
+
+        try:
+            from pdf2image import convert_from_bytes  # type: ignore
+            from PIL import ImageOps  # type: ignore
+
+            rendered_pages = convert_from_bytes(file_bytes, dpi=dpi, fmt="png", thread_count=1)
+            if not rendered_pages:
+                raise ValueError("pdf_render_empty")
+            normalized_pages = []
+            for image in rendered_pages:
+                normalized = ImageOps.exif_transpose(image)
+                if normalized.mode != "RGB":
+                    normalized = normalized.convert("RGB")
+                normalized_pages.append(normalized)
+
+            buffer = BytesIO()
+            normalized_pages[0].save(
+                buffer,
+                format="TIFF",
+                save_all=True,
+                append_images=normalized_pages[1:],
+                compression="tiff_deflate",
+                dpi=(dpi, dpi),
+            )
+            return {
+                "content": buffer.getvalue(),
+                "content_type": "image/tiff",
+                "original_content_type": detected_mime,
+                "page_count": len(normalized_pages),
+                "dpi": dpi,
+                "error_code": None,
+                "error": None,
+            }
+        except Exception as exc:
+            return {
+                "content": file_bytes,
+                "content_type": detected_mime,
+                "original_content_type": detected_mime,
+                "page_count": page_count or 1,
+                "dpi": dpi,
+                "error_code": "OCR_UNSUPPORTED_FORMAT",
+                "error": str(exc),
+            }
+
+    if detected_mime.startswith("image/"):
+        try:
+            from PIL import Image, ImageOps  # type: ignore
+
+            image = Image.open(BytesIO(file_bytes))
+            normalized = ImageOps.exif_transpose(image)
+            if normalized.mode != "RGB":
+                normalized = normalized.convert("RGB")
+
+            buffer = BytesIO()
+            normalized.save(buffer, format="PNG", dpi=(dpi, dpi))
+            return {
+                "content": buffer.getvalue(),
+                "content_type": "image/png",
+                "original_content_type": detected_mime,
+                "page_count": 1,
+                "dpi": dpi,
+                "error_code": None,
+                "error": None,
+            }
+        except Exception as exc:
+            return {
+                "content": file_bytes,
+                "content_type": detected_mime,
+                "original_content_type": detected_mime,
+                "page_count": 1,
+                "dpi": dpi,
+                "error_code": "OCR_UNSUPPORTED_FORMAT",
+                "error": str(exc),
+            }
+
+    return {
+        "content": file_bytes,
+        "content_type": detected_mime,
+        "original_content_type": detected_mime,
+        "page_count": 1,
+        "dpi": dpi,
+        "error_code": "OCR_UNSUPPORTED_FORMAT",
+        "error": "unsupported_input_mime",
+    }
+
+
+def _map_ocr_provider_error_code(error: Optional[str]) -> Optional[str]:
+    if not error:
+        return None
+    lowered = str(error).strip().lower()
+    if any(token in lowered for token in ("unsupported", "invalid mime", "content type", "content-type", "format")):
+        return "OCR_UNSUPPORTED_FORMAT"
+    return "OCR_PROVIDER_UNAVAILABLE"
+
+
+def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) -> Dict[str, Any]:
+    stripped = str(text or "").strip()
+    total_chars = len(stripped)
+    non_space_chars = sum(1 for ch in stripped if not ch.isspace())
+    alnum_chars = sum(1 for ch in stripped if ch.isalnum())
+    target_chars = max(100, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
+    text_len_score = min(1.0, float(total_chars) / float(target_chars))
+    alnum_ratio_score = min(1.0, float(alnum_chars) / float(max(1, non_space_chars)))
+
+    critical_fields: List[str] = []
+    anchor_hit_score = 0.0
+    try:
+        from app.services.extraction_core.profiles import load_profile
+        from app.services.validation.day1_retrieval_guard import evaluate_anchor_evidence
+
+        if document_type:
+            critical_fields = list((load_profile(document_type) or {}).get("critical_fields") or [])
+        anchor_checks = evaluate_anchor_evidence(stripped, min_score=0.0)
+        relevant_anchor_scores = [
+            anchor_checks[anchor_field].score
+            for field_name in critical_fields
+            for anchor_field in [_STAGE_CRITICAL_FIELD_TO_ANCHOR_FIELD.get(field_name)]
+            if anchor_field and anchor_field in anchor_checks
+        ]
+        if relevant_anchor_scores:
+            anchor_hit_score = sum(relevant_anchor_scores) / float(len(relevant_anchor_scores))
+    except Exception:
+        critical_fields = critical_fields or []
+        anchor_hit_score = 0.0
+
+    field_pattern_hits = 0
+    field_pattern_total = 0
+    for field_name in critical_fields:
+        patterns = _STAGE_FIELD_PATTERNS.get(field_name) or []
+        if not patterns:
+            continue
+        field_pattern_total += 1
+        if any(re.search(pattern, stripped, re.IGNORECASE) for pattern in patterns):
+            field_pattern_hits += 1
+    field_pattern_score = (
+        float(field_pattern_hits) / float(field_pattern_total)
+        if field_pattern_total
+        else 0.0
+    )
+
+    weights = {
+        "text_len_score": float(getattr(settings, "OCR_STAGE_WEIGHT_TEXT_LEN", 0.30) or 0.30),
+        "alnum_ratio_score": float(getattr(settings, "OCR_STAGE_WEIGHT_ALNUM_RATIO", 0.20) or 0.20),
+        "anchor_hit_score": float(getattr(settings, "OCR_STAGE_WEIGHT_ANCHOR_HIT", 0.25) or 0.25),
+        "field_pattern_score": float(getattr(settings, "OCR_STAGE_WEIGHT_FIELD_PATTERN", 0.25) or 0.25),
+    }
+    weight_total = sum(weights.values()) or 1.0
+    overall_score = (
+        (text_len_score * weights["text_len_score"])
+        + (alnum_ratio_score * weights["alnum_ratio_score"])
+        + (anchor_hit_score * weights["anchor_hit_score"])
+        + (field_pattern_score * weights["field_pattern_score"])
+    ) / weight_total
+
+    return {
+        "stage": stage,
+        "overall_score": round(overall_score, 6),
+        "text_len_score": round(text_len_score, 6),
+        "alnum_ratio_score": round(alnum_ratio_score, 6),
+        "anchor_hit_score": round(anchor_hit_score, 6),
+        "field_pattern_score": round(field_pattern_score, 6),
+        "text_length": total_chars,
+    }
+
+
+def _select_best_extraction_stage(
+    stage_candidates: Dict[str, str],
+    artifacts: Dict[str, Any],
+    document_type: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if not stage_candidates:
+        artifacts["stage_scores"] = {}
+        artifacts["selected_stage"] = None
+        artifacts["rejected_stages"] = {}
+        return None
+
+    stage_scores = {
+        stage: _score_stage_candidate(stage, text, document_type)
+        for stage, text in stage_candidates.items()
+    }
+    priorities = list(getattr(settings, "OCR_STAGE_SELECTION_PRIORITY", []) or [])
+    priority_index = {stage: index for index, stage in enumerate(priorities)}
+
+    if getattr(settings, "OCR_STAGE_SCORER_ENABLED", True):
+        ordered_candidates = sorted(
+            stage_candidates.items(),
+            key=lambda item: (
+                stage_scores[item[0]].get("overall_score", 0.0),
+                -priority_index.get(item[0], len(priority_index)),
+            ),
+            reverse=True,
+        )
+    else:
+        ordered_candidates = sorted(
+            stage_candidates.items(),
+            key=lambda item: priority_index.get(item[0], len(priority_index)),
+        )
+
+    selected_stage, selected_text = ordered_candidates[0]
+    selected_score = stage_scores[selected_stage].get("overall_score", 0.0)
+    rejected_stages = {}
+    for stage, _text in ordered_candidates[1:]:
+        rejected_stages[stage] = {
+            "reason": (
+                "lower_score"
+                if stage_scores[stage].get("overall_score", 0.0) < selected_score
+                else "tie_break_priority"
+            ),
+            "score": stage_scores[stage].get("overall_score", 0.0),
+        }
+
+    artifacts["stage_scores"] = stage_scores
+    artifacts["selected_stage"] = selected_stage
+    artifacts["rejected_stages"] = rejected_stages
+    return {"stage": selected_stage, "text": selected_text}
+
+
+async def _extract_text_from_upload(upload_file: Any, document_type: Optional[str] = None) -> Dict[str, Any]:
     """Extract text + normalized OCR artifacts from an uploaded file."""
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
@@ -4358,6 +4658,19 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
     artifacts = _empty_extraction_artifacts_v1()
     text_output = ""
     pypdf_text = ""
+    stage_candidates: Dict[str, str] = {}
+
+    def _choose_stage() -> Optional[Dict[str, Any]]:
+        selector = globals().get("_select_best_extraction_stage")
+        if callable(selector):
+            return selector(stage_candidates, artifacts, document_type)
+        if not stage_candidates:
+            return None
+        stage_name, stage_text = next(iter(stage_candidates.items()))
+        artifacts["selected_stage"] = stage_name
+        artifacts["stage_scores"] = artifacts.get("stage_scores") or {}
+        artifacts["rejected_stages"] = artifacts.get("rejected_stages") or {}
+        return {"stage": stage_name, "text": stage_text}
 
     min_chars_for_skip = max(1, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
 
@@ -4399,13 +4712,16 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
             )
 
     text_output_clean = (text_output or "").strip()
+    if text_output_clean:
+        stage_candidates["native_pdf_text"] = text_output
 
     # If direct PDF text is already rich enough, skip OCR provider calls.
     if len(text_output_clean) >= min_chars_for_skip:
+        selection = _choose_stage()
         return _finalize_text_extraction_result(
             artifacts,
-            stage="native_pdf_text",
-            text=text_output,
+            stage=(selection or {}).get("stage") or "native_pdf_text",
+            text=(selection or {}).get("text") or text_output,
         )
 
     if not text_output_clean:
@@ -4413,10 +4729,11 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
 
     if not settings.OCR_ENABLED:
         if text_output_clean:
+            selection = _choose_stage()
             return _finalize_text_extraction_result(
                 artifacts,
-                stage="native_pdf_text",
-                text=text_output,
+                stage=(selection or {}).get("stage") or "native_pdf_text",
+                text=(selection or {}).get("text") or text_output,
             )
         if hotfix_enabled:
             fallback_text = _scrape_binary_text_metadata(file_bytes)
@@ -4429,10 +4746,12 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
             )
             if (fallback_text or "").strip():
                 _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                stage_candidates["binary_metadata_scrape"] = fallback_text
+                selection = _choose_stage()
                 return _finalize_text_extraction_result(
                     artifacts,
-                    stage="binary_metadata_scrape",
-                    text=fallback_text,
+                    stage=(selection or {}).get("stage") or "binary_metadata_scrape",
+                    text=(selection or {}).get("text") or fallback_text,
                 )
         _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
         return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
@@ -4446,10 +4765,11 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
 
     if page_count > settings.OCR_MAX_PAGES or len(file_bytes) > settings.OCR_MAX_BYTES:
         if text_output_clean:
+            selection = _choose_stage()
             return _finalize_text_extraction_result(
                 artifacts,
-                stage="native_pdf_text",
-                text=text_output,
+                stage=(selection or {}).get("stage") or "native_pdf_text",
+                text=(selection or {}).get("text") or text_output,
             )
         if hotfix_enabled:
             fallback_text = _scrape_binary_text_metadata(file_bytes)
@@ -4462,10 +4782,12 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
             )
             if (fallback_text or "").strip():
                 _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                stage_candidates["binary_metadata_scrape"] = fallback_text
+                selection = _choose_stage()
                 return _finalize_text_extraction_result(
                     artifacts,
-                    stage="binary_metadata_scrape",
-                    text=fallback_text,
+                    stage=(selection or {}).get("stage") or "binary_metadata_scrape",
+                    text=(selection or {}).get("text") or fallback_text,
                 )
         _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
         return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
@@ -4492,10 +4814,12 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
     if ocr_text_clean:
         if not text_output_clean:
             _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+        stage_candidates["ocr_provider_primary"] = merged_text or ocr_text
+        selection = _choose_stage()
         return _finalize_text_extraction_result(
             artifacts,
-            stage="ocr_provider_primary",
-            text=merged_text or ocr_text,
+            stage=(selection or {}).get("stage") or "ocr_provider_primary",
+            text=(selection or {}).get("text") or (merged_text or ocr_text),
         )
 
     if hotfix_enabled:
@@ -4517,10 +4841,12 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
 
         if secondary_text_clean:
             _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+            stage_candidates["ocr_secondary"] = _merge_text_sources(text_output_clean, secondary_text_clean, ocr_text_clean)
+            selection = _choose_stage()
             return _finalize_text_extraction_result(
                 artifacts,
-                stage="ocr_secondary",
-                text=_merge_text_sources(text_output_clean, secondary_text_clean, ocr_text_clean),
+                stage=(selection or {}).get("stage") or "ocr_secondary",
+                text=(selection or {}).get("text") or _merge_text_sources(text_output_clean, secondary_text_clean, ocr_text_clean),
             )
 
         binary_text = _scrape_binary_text_metadata(file_bytes)
@@ -4533,18 +4859,21 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
         )
         if (binary_text or "").strip():
             _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+            stage_candidates["binary_metadata_scrape"] = _merge_text_sources(text_output_clean, binary_text)
+            selection = _choose_stage()
             return _finalize_text_extraction_result(
                 artifacts,
-                stage="binary_metadata_scrape",
-                text=_merge_text_sources(text_output_clean, binary_text),
+                stage=(selection or {}).get("stage") or "binary_metadata_scrape",
+                text=(selection or {}).get("text") or _merge_text_sources(text_output_clean, binary_text),
             )
 
     # No OCR available: return best extracted direct text.
     if text_output_clean:
+        selection = _choose_stage()
         return _finalize_text_extraction_result(
             artifacts,
-            stage="native_pdf_text",
-            text=text_output,
+            stage=(selection or {}).get("stage") or "native_pdf_text",
+            text=(selection or {}).get("text") or text_output,
         )
 
     _record_extraction_reason_code(
@@ -4559,6 +4888,14 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
     """Attempt a deterministic secondary OCR path that bypasses the factory adapter chain."""
     artifacts = _empty_extraction_artifacts_v1()
     provider_attempts: List[Dict[str, Any]] = []
+    normalized_input = _normalize_ocr_input(file_bytes, filename, content_type)
+    artifacts["normalization"] = {
+        "original_mime": normalized_input.get("original_content_type"),
+        "normalized_mime": normalized_input.get("content_type"),
+        "page_count": normalized_input.get("page_count"),
+        "dpi": normalized_input.get("dpi"),
+        "bytes_sent": len(normalized_input.get("content") or b""),
+    }
 
     try:
         from app.services.ocr_service import get_ocr_service
@@ -4568,11 +4905,30 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
         attempt: Dict[str, Any] = {"provider": "ocr_service", "healthy": bool(is_healthy)}
         provider_attempts.append(attempt)
         if is_healthy:
+            logger.info(
+                "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s",
+                "ocr_service",
+                normalized_input.get("original_content_type"),
+                normalized_input.get("content_type"),
+                normalized_input.get("page_count"),
+                normalized_input.get("dpi"),
+                len(normalized_input.get("content") or b""),
+            )
             result = await asyncio.wait_for(
-                service.extract_text(file_bytes, filename=filename, content_type=content_type),
+                service.extract_text(
+                    normalized_input.get("content") or file_bytes,
+                    filename=filename,
+                    content_type=normalized_input.get("content_type") or content_type,
+                ),
                 timeout=settings.OCR_TIMEOUT_SEC,
             )
             text = result.get("text") or ""
+            logger.info(
+                "validate.extraction.provider_response provider=%s status=%s error=%s",
+                "ocr_service",
+                "success" if (text or "").strip() and not result.get("error") else "error",
+                result.get("error"),
+            )
             if (text or "").strip():
                 artifacts["provider_attempts"] = provider_attempts
                 artifacts["provider"] = result.get("provider") or "ocr_service"
@@ -4584,19 +4940,19 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
     except asyncio.TimeoutError as exc:
         provider_attempts.append({"provider": "ocr_service", "error": "timeout", "healthy": False})
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = normalized_input.get("error_code") or "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
     except Exception as exc:
         provider_attempts.append({"provider": "ocr_service", "error": str(exc), "healthy": False})
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = normalized_input.get("error_code") or _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
 
     artifacts["provider_attempts"] = provider_attempts
-    artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
-    artifacts["error"] = "secondary_ocr_unavailable"
+    artifacts["error_code"] = normalized_input.get("error_code") or _map_ocr_provider_error_code(attempt.get("error")) or "OCR_PROVIDER_UNAVAILABLE"
+    artifacts["error"] = attempt.get("error") or "secondary_ocr_unavailable"
     return {"text": "", "artifacts": artifacts}
 
 
@@ -4611,6 +4967,7 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
     }
     provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
     attempts: List[Dict[str, Any]] = []
+    normalized_input = _normalize_ocr_input(file_bytes, filename, content_type)
 
     try:
         factory = get_ocr_factory()
@@ -4629,11 +4986,31 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                     attempts.append({"provider": full_provider_name, "status": "unhealthy"})
                     continue
 
+                logger.info(
+                    "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s",
+                    full_provider_name,
+                    normalized_input.get("original_content_type"),
+                    normalized_input.get("content_type"),
+                    normalized_input.get("page_count"),
+                    normalized_input.get("dpi"),
+                    len(normalized_input.get("content") or b""),
+                )
                 result = await asyncio.wait_for(
-                    adapter.process_file_bytes(file_bytes, filename, content_type, uuid4()),
+                    adapter.process_file_bytes(
+                        normalized_input.get("content") or file_bytes,
+                        filename,
+                        normalized_input.get("content_type") or content_type,
+                        uuid4(),
+                    ),
                     timeout=settings.OCR_TIMEOUT_SEC,
                 )
 
+                logger.info(
+                    "validate.extraction.provider_response provider=%s status=%s error=%s",
+                    full_provider_name,
+                    "success" if result and result.full_text and not result.error else "error",
+                    getattr(result, "error", None),
+                )
                 if result and result.full_text and not result.error:
                     artifacts = _build_extraction_artifacts_from_ocr(
                         raw_text=result.full_text,
@@ -4644,30 +5021,63 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                         {"provider": full_provider_name, "status": "success"}
                     ]
                     artifacts["provider"] = full_provider_name
+                    artifacts["normalization"] = {
+                        "original_mime": normalized_input.get("original_content_type"),
+                        "normalized_mime": normalized_input.get("content_type"),
+                        "page_count": normalized_input.get("page_count"),
+                        "dpi": normalized_input.get("dpi"),
+                        "bytes_sent": len(normalized_input.get("content") or b""),
+                    }
                     return {"text": result.full_text, "artifacts": artifacts}
                 attempts.append(
                     {
                         "provider": full_provider_name,
                         "status": "empty_output" if result and not result.error else "error",
                         "error": getattr(result, "error", None),
+                        "error_code": _map_ocr_provider_error_code(getattr(result, "error", None)),
                     }
                 )
             except asyncio.TimeoutError:
                 attempts.append({"provider": full_provider_name, "status": "timeout"})
                 continue
             except Exception as exc:
-                attempts.append({"provider": full_provider_name, "status": "error", "error": str(exc)})
+                attempts.append(
+                    {
+                        "provider": full_provider_name,
+                        "status": "error",
+                        "error": str(exc),
+                        "error_code": _map_ocr_provider_error_code(str(exc)),
+                    }
+                )
                 continue
 
         artifacts = _empty_extraction_artifacts_v1()
         artifacts["provider_attempts"] = attempts
-        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["normalization"] = {
+            "original_mime": normalized_input.get("original_content_type"),
+            "normalized_mime": normalized_input.get("content_type"),
+            "page_count": normalized_input.get("page_count"),
+            "dpi": normalized_input.get("dpi"),
+            "bytes_sent": len(normalized_input.get("content") or b""),
+        }
+        attempt_error_code = next(
+            (attempt.get("error_code") for attempt in attempts if attempt.get("error_code")),
+            None,
+        )
+        artifacts["error_code"] = normalized_input.get("error_code") or attempt_error_code or "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = "no_ocr_provider_returned_text"
         return {"text": "", "artifacts": artifacts}
     except Exception as exc:
         artifacts = _empty_extraction_artifacts_v1()
         artifacts["provider_attempts"] = attempts
-        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["normalization"] = {
+            "original_mime": normalized_input.get("original_content_type"),
+            "normalized_mime": normalized_input.get("content_type"),
+            "page_count": normalized_input.get("page_count"),
+            "dpi": normalized_input.get("dpi"),
+            "bytes_sent": len(normalized_input.get("content") or b""),
+        }
+        artifacts["error_code"] = normalized_input.get("error_code") or _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
 
