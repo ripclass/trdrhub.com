@@ -1,0 +1,8 @@
+version: profiles-v1
+doc_type: letter_of_credit
+critical_fields:
+  - issue_date
+  - issuer
+review_gate:
+  min_confidence: 0.80
+  require_evidence: true

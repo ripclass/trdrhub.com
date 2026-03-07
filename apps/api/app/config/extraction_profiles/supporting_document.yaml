@@ -1,0 +1,6 @@
+version: profiles-v1
+doc_type: supporting_document
+critical_fields: []
+review_gate:
+  min_confidence: 0.80
+  require_evidence: true

@@ -1,0 +1,12 @@
+version: profiles-v1
+doc_type: bill_of_lading
+critical_fields:
+  - bin_tin
+  - voyage
+  - gross_weight
+  - net_weight
+  - issue_date
+  - issuer
+review_gate:
+  min_confidence: 0.80
+  require_evidence: true

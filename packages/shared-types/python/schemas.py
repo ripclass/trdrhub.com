@@ -270,6 +270,9 @@ class DocumentExtractionDocument(BaseModel):
     extracted_fields: Optional[Dict[str, Any]] = None
     issues_count: Optional[int] = Field(default=None, ge=0)
     ocr_confidence: Optional[float] = None
+    review_required: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    critical_field_states: Dict[str, str] = Field(default_factory=dict)
 
 
 class DocumentExtractionSummary(BaseModel):
@@ -306,6 +309,9 @@ class StructuredResultDocument(BaseModel):
     extraction_status: str
     extracted_fields: Dict[str, Any]
     issues_count: int = Field(ge=0)
+    review_required: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    critical_field_states: Dict[str, str] = Field(default_factory=dict)
 
 
 class StructuredResultIssue(BaseModel):
@@ -351,6 +357,7 @@ class StructuredResultPayload(BaseModel):
     issues: List[StructuredResultIssue]
     analytics: StructuredResultAnalytics
     timeline: List[TimelineEntry]
+    extraction_core_v1: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_core_v1")
 
 
 # ============================================================================

@@ -146,6 +146,9 @@ export interface ValidationDocument {
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;
+  reviewRequired?: boolean;
+  reviewReasons?: string[];
+  criticalFieldStates?: Record<string, string>;
 }
 
 export type DocumentRiskEntry = SharedDocumentRiskEntry;

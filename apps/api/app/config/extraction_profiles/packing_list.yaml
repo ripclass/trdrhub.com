@@ -1,0 +1,10 @@
+version: profiles-v1
+doc_type: packing_list
+critical_fields:
+  - gross_weight
+  - net_weight
+  - issue_date
+  - issuer
+review_gate:
+  min_confidence: 0.80
+  require_evidence: true

@@ -76,6 +76,12 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "discrepancyCount": discrepancy_count,
                 "issues_count": issues_count,
                 "ocrConfidence": ocr_confidence,
+                "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
+                "reviewRequired": bool(doc.get("review_required") or doc.get("reviewRequired")),
+                "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
+                "reviewReasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
+                "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
+                "criticalFieldStates": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
                 "extraction_artifacts_v1": extraction_artifacts_v1,
             }
         )

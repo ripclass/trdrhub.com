@@ -50,6 +50,10 @@ from typing import Optional, List, Dict, Any, Tuple
 import re
 
 from app.services.validation.alias_normalization import canonical_field_key, extract_direct_token_recovery
+from app.services.extraction_core.review_metadata import (
+    annotate_documents_with_review_metadata as _annotate_documents_with_review_metadata,
+    build_extraction_core_bundle as _build_extraction_core_bundle,
+)
 
 # Import refactored validation utilities (from split modules)
 from app.routers.validation import (
@@ -2142,6 +2146,16 @@ async def validate_doc(
 
         _sync_structured_result_collections(structured_result)
 
+        extraction_core_bundle = payload.get("_extraction_core_v1") if isinstance(payload, dict) else None
+        if not isinstance(extraction_core_bundle, dict):
+            extraction_core_bundle = (
+                _build_extraction_core_bundle(payload.get("documents") or [])
+                if isinstance(payload, dict)
+                else None
+            )
+        if isinstance(extraction_core_bundle, dict):
+            structured_result["_extraction_core_v1"] = extraction_core_bundle
+
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
         # FIX: Merge ALL fields including status counts, verified, warnings, etc.
@@ -2969,6 +2983,12 @@ def _build_document_summaries(
             "missing_required_fields": detail.get("missing_required_fields") or [],
             "required_fields_found": detail.get("required_fields_found"),
             "required_fields_total": detail.get("required_fields_total"),
+            "review_required": bool(detail.get("review_required") or detail.get("reviewRequired")),
+            "reviewRequired": bool(detail.get("review_required") or detail.get("reviewRequired")),
+            "review_reasons": detail.get("review_reasons") or detail.get("reviewReasons") or [],
+            "reviewReasons": detail.get("review_reasons") or detail.get("reviewReasons") or [],
+            "critical_field_states": detail.get("critical_field_states") or detail.get("criticalFieldStates") or {},
+            "criticalFieldStates": detail.get("critical_field_states") or detail.get("criticalFieldStates") or {},
             "extraction_artifacts_v1": detail.get("extraction_artifacts_v1") or _empty_extraction_artifacts_v1(
                 raw_text=detail.get("raw_text") or detail.get("raw_text_preview") or "",
                 ocr_confidence=detail.get("ocr_confidence"),
@@ -3833,6 +3853,9 @@ async def _build_document_context(
     
     if document_details:
         _augment_doc_field_details_with_decisions(document_details)
+        extraction_core_bundle = _annotate_documents_with_review_metadata(document_details)
+        if isinstance(extraction_core_bundle, dict):
+            context["_extraction_core_v1"] = extraction_core_bundle
         context["documents"] = document_details
 
     context["documents_presence"] = documents_presence
@@ -4309,6 +4332,9 @@ def _build_blocked_structured_result(
             "issues_count": 0,
             "raw_text_preview": doc.get("raw_text_preview"),  # Keep preview text
             "ocr_confidence": doc.get("ocr_confidence"),
+            "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
+            "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
+            "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
             "extraction_artifacts_v1": doc.get("extraction_artifacts_v1") or fallback_artifacts,
         })
     
@@ -4456,6 +4482,10 @@ def _build_blocked_structured_result(
         "customs_pack": None,
         "ai_enrichment": None,
     }
+
+    extraction_core_bundle = _build_extraction_core_bundle(documents)
+    if isinstance(extraction_core_bundle, dict):
+        result["_extraction_core_v1"] = extraction_core_bundle
 
     return result
 

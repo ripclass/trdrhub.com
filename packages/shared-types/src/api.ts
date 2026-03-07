@@ -255,6 +255,9 @@ export const DocumentExtractionDocumentSchema = z.object({
   extracted_fields: z.record(z.unknown()).optional(),
   issues_count: z.number().nonnegative().optional(),
   ocr_confidence: z.number().optional(),
+  review_required: z.boolean().optional(),
+  review_reasons: z.array(z.string()).optional(),
+  critical_field_states: z.record(z.string()).optional(),
 }).passthrough();
 export type DocumentExtractionDocument = z.infer<typeof DocumentExtractionDocumentSchema>;
 
@@ -300,6 +303,9 @@ export const StructuredResultDocumentSchema = z.object({
   extraction_status: z.string().optional(),
   extracted_fields: z.record(z.unknown()).optional(),
   issues_count: z.number().nonnegative().optional(),
+  review_required: z.boolean().optional(),
+  review_reasons: z.array(z.string()).optional(),
+  critical_field_states: z.record(z.string()).optional(),
   // Legacy camelCase fields for backward compatibility
   id: z.string().optional(),
   name: z.string().optional(),
@@ -363,6 +369,7 @@ export const StructuredResultSchema = z.object({
   timeline: z.array(StructuredTimelineEntrySchema),
   extracted_documents: z.record(z.unknown()).optional(),
   lc_structured: z.record(z.unknown()).optional(), // Structured LC data from extractor (MT700, goods, clauses, etc.)
+  _extraction_core_v1: z.record(z.unknown()).optional(),
 }).passthrough(); // Allow extra fields for backward compatibility
 export type StructuredResult = z.infer<typeof StructuredResultSchema>;
 export const StructuredProcessingSummarySchema = ProcessingSummarySchema;

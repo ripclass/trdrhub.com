@@ -1,0 +1,11 @@
+version: profiles-v1
+doc_type: commercial_invoice
+critical_fields:
+  - bin_tin
+  - gross_weight
+  - net_weight
+  - issue_date
+  - issuer
+review_gate:
+  min_confidence: 0.80
+  require_evidence: true

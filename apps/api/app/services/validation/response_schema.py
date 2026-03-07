@@ -223,6 +223,9 @@ class DocumentExtractionEntryV1:
     extraction_confidence: Optional[float] = None
     extracted_fields_count: int = 0
     issues_count: int = 0
+    review_required: bool = False
+    review_reasons: List[str] = field(default_factory=list)
+    critical_field_states: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -235,6 +238,9 @@ class DocumentExtractionEntryV1:
             "extraction_confidence": self.extraction_confidence,
             "extracted_fields_count": self.extracted_fields_count,
             "issues_count": self.issues_count,
+            "review_required": self.review_required,
+            "review_reasons": self.review_reasons,
+            "critical_field_states": self.critical_field_states,
         }
 
 
@@ -586,6 +592,9 @@ def build_document_extraction_v1(document_summaries: List[Dict[str, Any]]) -> Di
             extraction_confidence=doc.get("extraction_confidence") or doc.get("extractionConfidence"),
             extracted_fields_count=len(extracted_fields) if isinstance(extracted_fields, dict) else 0,
             issues_count=int(issues_count) if isinstance(issues_count, (int, float)) else 0,
+            review_required=bool(doc.get("review_required") or doc.get("reviewRequired")),
+            review_reasons=doc.get("review_reasons") or doc.get("reviewReasons") or [],
+            critical_field_states=doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
         )
         documents.append(entry)
 

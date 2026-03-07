@@ -112,6 +112,9 @@ const mapDocuments = (docs: any[] = []) => {
       missingRequiredFields: doc?.missing_required_fields ?? [],
       requiredFieldsFound: doc?.required_fields_found,
       requiredFieldsTotal: doc?.required_fields_total,
+      reviewRequired: Boolean(doc?.review_required ?? doc?.reviewRequired),
+      reviewReasons: doc?.review_reasons ?? doc?.reviewReasons ?? [],
+      criticalFieldStates: doc?.critical_field_states ?? doc?.criticalFieldStates ?? {},
       extractedFields: doc?.extracted_fields ?? {},
     };
   });

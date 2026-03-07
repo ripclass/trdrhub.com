@@ -285,6 +285,9 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "missing_required_fields": doc.get("missing_required_fields") or [],
                 "required_fields_found": doc.get("required_fields_found"),
                 "required_fields_total": doc.get("required_fields_total"),
+                "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
+                "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
+                "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
             }
         )
 
