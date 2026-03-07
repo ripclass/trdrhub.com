@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trdr.parser.day1.schema.v1",
+  "title": "Day1 Parsed Trade Doc",
+  "type": "object",
+  "required": ["meta", "fields", "confidence", "raw"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["schema_version", "parser_stage", "source_type", "doc_id", "parsed_at"],
+      "properties": {
+        "schema_version": {"const": "v1.0.0-day1"},
+        "parser_stage": {"enum": ["native", "ocr", "llm_assist"]},
+        "source_type": {"enum": ["pdf_native", "pdf_scanned", "image"]},
+        "doc_id": {"type": "string", "minLength": 1},
+        "parsed_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "fields": {
+      "type": "object",
+      "required": ["issuer", "bin", "tin", "voyage", "gross_weight", "net_weight", "doc_date"],
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "object",
+      "required": ["overall", "by_field"],
+      "properties": {
+        "overall": {"type": "number", "minimum": 0, "maximum": 1},
+        "by_field": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "raw": {"type": "object"},
+    "errors": {"type": "array"}
+  },
+  "additionalProperties": false
+}
