@@ -17,6 +17,7 @@ PREPARSER_HARDENING_ENV = "LCCOPILOT_PREPARSER_HARDENING_ENABLED"
 FAILURE_TAXONOMY_V2_ENV = "LCCOPILOT_FAILURE_TAXONOMY_V2_ENABLED"
 PASS_GATE_V2_ENV = "LCCOPILOT_PASS_GATE_V2_ENABLED"
 TOP3_FIELD_BOOST_V1_ENV = "LCCOPILOT_TOP3_FIELD_BOOST_V1_ENABLED"
+TOP3_FIELD_LIFT_V2_ENV = "LCCOPILOT_TOP3_FIELD_LIFT_V2_ENABLED"
 
 _OCR_DIGIT_MAP = str.maketrans({"O": "0", "I": "1", "L": "1", "S": "5", "B": "8"})
 _WEIGHT_UNIT_OCR_FIXUPS = {
@@ -107,6 +108,14 @@ def _top3_field_boost_v1_enabled() -> bool:
     return _env_enabled(TOP3_FIELD_BOOST_V1_ENV)
 
 
+def _top3_field_lift_v2_enabled() -> bool:
+    return _env_enabled(TOP3_FIELD_LIFT_V2_ENV)
+
+
+def _top3_lift_active() -> bool:
+    return _top3_field_boost_v1_enabled() and _top3_field_lift_v2_enabled()
+
+
 _DEFAULT_FIELD_ALIASES: Dict[str, Tuple[str, ...]] = {
     "issue_date": ("issue_date", "date", "invoice_date", "bl_date", "date_of_issue", "doc_date"),
     "issuer": ("issuer", "issuer_name"),
@@ -143,10 +152,31 @@ _FIELD_LABEL_TOKENS: Dict[str, Tuple[str, ...]] = {
     "issue_date": ("issue date", "date of issue", "invoice date", "bl date", "packing list date", ":31c:"),
     "amount": (":32b:", "credit amount", "invoice amount", "total amount", "amount"),
     "currency": (":32b:", "currency", "ccy", "credit amount", "invoice amount", "amount"),
-    "bin_tin": ("bin", "tin", "tax id", "tax identification", "vat reg", "vat no", "etin"),
+    "bin_tin": (
+        "bin",
+        "tin",
+        "bin/tin",
+        "tin/bin",
+        "tax id",
+        "tax identification",
+        "taxpayer identification",
+        "taxpayer id",
+        "vat reg",
+        "vat registration",
+        "vat registration no",
+        "vat no",
+        "business identification",
+        "business id",
+        "etin",
+        "e-tin",
+        "seller bin",
+        "seller tin",
+        "exporter bin",
+        "exporter tin",
+    ),
     "voyage": ("voyage", "voy no", "voy.", "vvd", "vessel/voy"),
-    "gross_weight": ("gross/net", "gross weight", "gross wt", "gross wgt", "g.w.", "gw"),
-    "net_weight": ("gross/net", "net weight", "net wt", "net wgt", "n.w.", "nw"),
+    "gross_weight": ("gross/net", "gross weight", "gross wt", "gross wgt", "g.w.", "gw", "gross mass"),
+    "net_weight": ("gross/net", "net weight", "net wt", "net wgt", "n.w.", "nw", "net mass"),
     "issuer": ("issuing bank", "issuer", "seller", "shipper", "carrier", "exporter"),
 }
 
@@ -234,6 +264,136 @@ def _clamp_confidence(value: float) -> float:
     if value > 1:
         return 1.0
     return round(value, 4)
+
+
+def _profile_field_hints(document_type: str, field_name: str) -> Dict[str, Any]:
+    profile = load_profile(document_type or "supporting_document")
+    field_hints = profile.get("field_hints") if isinstance(profile.get("field_hints"), dict) else {}
+    hints = field_hints.get(field_name)
+    return hints if isinstance(hints, dict) else {}
+
+
+def _hint_ints(values: Any, default: Sequence[int]) -> List[int]:
+    parsed: List[int] = []
+    for value in values or []:
+        try:
+            parsed.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return parsed or list(default)
+
+
+def _hint_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_numeric_value(token: str) -> Optional[float]:
+    normalized = _normalize_numeric_token(token)
+    if not normalized:
+        return None
+    if "," in normalized and "." in normalized:
+        normalized = normalized.replace(",", "")
+    elif "," in normalized:
+        parts = normalized.split(",")
+        if len(parts) == 2 and 1 <= len(parts[1]) <= 2:
+            normalized = f"{parts[0]}.{parts[1]}"
+        else:
+            normalized = "".join(parts)
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
+def _split_table_columns(line: str) -> List[str]:
+    text = _normalize_text(line)
+    if not text:
+        return []
+    if "|" in text:
+        parts = text.split("|")
+    elif "\t" in text:
+        parts = text.split("\t")
+    else:
+        parts = re.split(r"\s{2,}", text)
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def _weight_numeric_from_normalized(value: Any) -> Optional[float]:
+    text = _normalize_text(value)
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _weight_is_sane(normalized_value: Any, document_type: str, field_name: str) -> bool:
+    numeric = _weight_numeric_from_normalized(normalized_value)
+    if numeric is None:
+        return False
+    hints = _profile_field_hints(document_type, field_name)
+    min_kg = _hint_float(hints.get("min_kg"), 0.01)
+    max_kg = _hint_float(hints.get("max_kg"), 500000.0)
+    return min_kg <= numeric <= max_kg
+
+
+def _candidate_confidence_for_field(
+    *,
+    field_name: str,
+    document_type: str,
+    source: str,
+    state: str,
+    explicit_confidence: Optional[float] = None,
+    anchor_hit: bool = False,
+    evidence_snippet: Optional[str] = None,
+    normalized_value: Optional[Any] = None,
+) -> float:
+    score = _compute_candidate_confidence(
+        source=source,
+        state=state,
+        explicit_confidence=explicit_confidence,
+        anchor_hit=anchor_hit,
+        evidence_snippet=evidence_snippet,
+        normalized_value=normalized_value,
+    )
+    if explicit_confidence is not None or not (_top3_lift_active() and field_name in _TOP3_FIELD_NAMES):
+        return score
+    if state != "found" or normalized_value in (None, "", [], {}):
+        return score
+
+    if anchor_hit:
+        score += 0.03
+    if evidence_snippet and _label_seen(evidence_snippet, field_name, document_type):
+        score += 0.04
+
+    if field_name == "bin_tin":
+        hints = _profile_field_hints(document_type, field_name)
+        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
+        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+        digits = re.sub(r"\D", "", _normalize_text(normalized_value))
+        if len(digits) in preferred_lengths:
+            score += 0.06
+        elif len(digits) in allowed_lengths:
+            score += 0.02
+        else:
+            score -= 0.16
+    elif field_name in {"gross_weight", "net_weight"}:
+        numeric = _weight_numeric_from_normalized(normalized_value)
+        if numeric is not None:
+            score += 0.04
+        if _normalize_text(normalized_value).upper().endswith(" KG"):
+            score += 0.04
+        if _weight_is_sane(normalized_value, document_type, field_name):
+            score += 0.04
+        else:
+            score -= 0.16
+
+    return _clamp_confidence(score)
 
 
 def _field_tokens(field_name: str, document_type: str) -> Tuple[str, ...]:
@@ -575,20 +735,40 @@ def _normalize_currency(raw_value: Any) -> Tuple[Optional[str], Optional[str]]:
     return match.group(1), None
 
 
-def _normalize_bin_tin(raw_value: Any) -> Tuple[Optional[str], Optional[str]]:
+def _normalize_bin_tin(raw_value: Any, document_type: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     text = _normalize_numeric_context(raw_value)
     if not text:
         return None, "FIELD_NOT_FOUND"
     text = re.sub(
-        r"\b(?:EXPORTER|SELLER|SHIPPER|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|BIN|TIN|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\b",
+        r"\b(?:EXPORTER|SELLER|SHIPPER|BUSINESS\s*IDENTIFICATION|BUSINESS\s*ID|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|BIN|TIN|TAX\s*PAYER\s*IDENTIFICATION|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\b",
         " ",
         text,
     )
-    digits = re.sub(r"\D", "", text)
-    if len(digits) == 13:
-        return digits, None
-    if 10 <= len(digits) <= 12:
-        return digits, None
+    hints = _profile_field_hints(document_type or "supporting_document", "bin_tin")
+    preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
+    allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+
+    candidates: List[str] = []
+    for token in re.findall(r"[A-Z0-9-]{4,}", text):
+        digits = re.sub(r"\D", "", token)
+        if digits:
+            candidates.append(digits)
+    flattened = re.sub(r"\D", "", text)
+    if flattened:
+        candidates.append(flattened)
+
+    ordered_candidates: List[str] = []
+    for digits in sorted(candidates, key=lambda item: (-len(item), candidates.index(item))):
+        if digits not in ordered_candidates:
+            ordered_candidates.append(digits)
+
+    for length in preferred_lengths:
+        for digits in ordered_candidates:
+            if len(digits) == length:
+                return digits, None
+    for digits in ordered_candidates:
+        if len(digits) in allowed_lengths:
+            return digits, None
     return None, "FORMAT_INVALID"
 
 
@@ -605,7 +785,11 @@ def _normalize_voyage(raw_value: Any) -> Tuple[Optional[str], Optional[str]]:
     return text, None
 
 
-def _normalize_weight(raw_value: Any) -> Tuple[Optional[str], Optional[float], Optional[str]]:
+def _normalize_weight(
+    raw_value: Any,
+    field_name: Optional[str] = None,
+    document_type: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[float], Optional[str]]:
     text = _base_clean(raw_value).upper()
     if not text:
         return None, None, "FIELD_NOT_FOUND"
@@ -614,16 +798,19 @@ def _normalize_weight(raw_value: Any) -> Tuple[Optional[str], Optional[float], O
     match = re.search(r"([0-9OISBL][0-9OISBL,]*(?:[.][0-9OISBL]+)?)\s*([A-Z0-9]+)", text)
     if not match:
         return None, None, "FORMAT_INVALID"
-    number_text = _normalize_numeric_token(match.group(1)).replace(",", "")
+    number_text = match.group(1)
     unit = re.sub(r"[^A-Z]", "", _WEIGHT_UNIT_OCR_FIXUPS.get(match.group(2).upper(), match.group(2).upper()))
     factor = _WEIGHT_UNIT_ALIASES.get(unit)
     if factor is None:
         return None, None, "FORMAT_INVALID"
-    try:
-        value = float(number_text)
-    except ValueError:
+    value = _parse_numeric_value(number_text)
+    if value is None:
         return None, None, "FORMAT_INVALID"
     kg_value = round(value * factor, 3)
+    if abs(kg_value - round(kg_value)) <= 0.01:
+        kg_value = float(round(kg_value))
+    if field_name and document_type and not _weight_is_sane(f"{_format_decimal(kg_value)} KG", document_type, field_name):
+        return None, None, "FORMAT_INVALID"
     return f"{_format_decimal(kg_value)} KG", kg_value, None
 
 
@@ -643,7 +830,11 @@ def _normalize_issuer(raw_value: Any) -> Tuple[Optional[str], Optional[str]]:
     return text, None
 
 
-def _normalize_field_value(field_name: str, raw_value: Any) -> Tuple[Optional[Any], Optional[str], Optional[float]]:
+def _normalize_field_value(
+    field_name: str,
+    raw_value: Any,
+    document_type: str = "supporting_document",
+) -> Tuple[Optional[Any], Optional[str], Optional[float]]:
     if field_name == "lc_number":
         normalized, error = _normalize_lc_number(raw_value)
         return normalized, error, None
@@ -657,13 +848,13 @@ def _normalize_field_value(field_name: str, raw_value: Any) -> Tuple[Optional[An
         normalized, error = _normalize_currency(raw_value)
         return normalized, error, None
     if field_name == "bin_tin":
-        normalized, error = _normalize_bin_tin(raw_value)
+        normalized, error = _normalize_bin_tin(raw_value, document_type)
         return normalized, error, None
     if field_name == "voyage":
         normalized, error = _normalize_voyage(raw_value)
         return normalized, error, None
     if field_name in {"gross_weight", "net_weight"}:
-        normalized, numeric_kg, error = _normalize_weight(raw_value)
+        normalized, numeric_kg, error = _normalize_weight(raw_value, field_name, document_type)
         return normalized, error, numeric_kg
     if field_name == "issuer":
         normalized, error = _normalize_issuer(raw_value)
@@ -684,6 +875,7 @@ def _patterns_for_field(field_name: str, document_type: str) -> Sequence[re.Patt
         )
     if field_name == "bin_tin":
         return (
+            re.compile(r"(?:EXPORTER|SELLER|SHIPPER)\s*(?:BIN|TIN|BIN\s*/\s*TIN|TIN\s*/\s*BIN)\s*(?:(?:NO\.?|NUMBER)\s*)?[:#-]?\s*([A-Z0-9OISBL-]{8,24})", re.IGNORECASE),
             re.compile(r"(?:BIN(?:\s*/\s*TIN)?|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?)\s*(?:(?:NO\.?|NUMBER)\s*)?[:#-]?\s*([A-Z0-9OISBL-]{8,24})", re.IGNORECASE),
             re.compile(r"(?:TIN(?:\s*/\s*BIN)?|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\s*(?:(?:NO\.?|NUMBER)\s*)?[:#-]?\s*([A-Z0-9OISBL-]{8,24})", re.IGNORECASE),
         )
@@ -744,6 +936,48 @@ def _find_weight_pair_match(field_name: str, raw_text: str) -> Tuple[Optional[st
             continue
         value = match.group(1) if field_name == "gross_weight" else match.group(2)
         return f"{value} {match.group(3)}", window, True
+    return None, None, False
+
+
+def _find_weight_table_value(field_name: str, raw_text: str) -> Tuple[Optional[str], Optional[str], bool]:
+    if field_name not in {"gross_weight", "net_weight"} or not _top3_lift_active():
+        return None, None, False
+
+    lines = _scan_lines(raw_text)
+    target_token = "gross" if field_name == "gross_weight" else "net"
+    other_token = "net" if field_name == "gross_weight" else "gross"
+    value_pattern = re.compile(
+        r"[0-9OISBL][0-9OISBL,]*(?:[.][0-9OISBL]+)?\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)",
+        re.IGNORECASE,
+    )
+
+    for index, header_line in enumerate(lines[:-1]):
+        header_lower = header_line.lower()
+        if target_token not in header_lower or other_token not in header_lower:
+            continue
+        data_line = lines[index + 1]
+
+        header_columns = _split_table_columns(header_line)
+        data_columns = _split_table_columns(data_line)
+        if len(header_columns) >= 2 and len(data_columns) >= 2:
+            target_index = next(
+                (
+                    position
+                    for position, column in enumerate(header_columns)
+                    if target_token in column.lower()
+                ),
+                None,
+            )
+            if target_index is not None and target_index < len(data_columns):
+                match = value_pattern.search(data_columns[target_index])
+                if match:
+                    return match.group(0), f"{header_line} {data_line}", True
+
+        values = [match.group(0) for match in value_pattern.finditer(data_line)]
+        if len(values) >= 2:
+            value = values[0] if field_name == "gross_weight" else values[1]
+            return value, f"{header_line} {data_line}", True
+
     return None, None, False
 
 
@@ -832,16 +1066,47 @@ def _parse_field_from_text(field_name: str, raw_text: str, document_type: str) -
     if field_name in {"amount", "currency"}:
         return _parse_amount_currency_fields(raw_text).get(field_name, _ParsedFieldCandidate(field_name, None, None, "missing", 0.0, None, ["FIELD_NOT_FOUND"], "preparser"))
     if _top3_field_boost_v1_enabled() and field_name in {"gross_weight", "net_weight"}:
+        tabular_value, tabular_snippet, tabular_anchor_hit = _find_weight_table_value(field_name, raw_text)
+        if tabular_value is not None:
+            normalized_value, error_code, _ = _normalize_field_value(field_name, tabular_value, document_type)
+            state = infer_field_state(normalized_value, parse_error=error_code is not None)
+            return _ParsedFieldCandidate(
+                field_name,
+                tabular_value,
+                normalized_value,
+                state,
+                _candidate_confidence_for_field(
+                    field_name=field_name,
+                    document_type=document_type,
+                    source="preparser",
+                    state=state,
+                    anchor_hit=tabular_anchor_hit,
+                    evidence_snippet=tabular_snippet,
+                    normalized_value=normalized_value,
+                ),
+                tabular_snippet,
+                _field_reason_codes(state, [error_code]),
+                "preparser",
+                tabular_anchor_hit,
+            )
         paired_value, paired_snippet, paired_anchor_hit = _find_weight_pair_match(field_name, raw_text)
         if paired_value is not None:
-            normalized_value, error_code, _ = _normalize_field_value(field_name, paired_value)
+            normalized_value, error_code, _ = _normalize_field_value(field_name, paired_value, document_type)
             state = infer_field_state(normalized_value, parse_error=error_code is not None)
             return _ParsedFieldCandidate(
                 field_name,
                 paired_value,
                 normalized_value,
                 state,
-                _compute_candidate_confidence(source="preparser", state=state, anchor_hit=paired_anchor_hit, evidence_snippet=paired_snippet, normalized_value=normalized_value),
+                _candidate_confidence_for_field(
+                    field_name=field_name,
+                    document_type=document_type,
+                    source="preparser",
+                    state=state,
+                    anchor_hit=paired_anchor_hit,
+                    evidence_snippet=paired_snippet,
+                    normalized_value=normalized_value,
+                ),
                 paired_snippet,
                 _field_reason_codes(state, [error_code]),
                 "preparser",
@@ -861,14 +1126,22 @@ def _parse_field_from_text(field_name: str, raw_text: str, document_type: str) -
             "preparser",
             anchor_hit,
         )
-    normalized_value, error_code, _ = _normalize_field_value(field_name, matched_value)
+    normalized_value, error_code, _ = _normalize_field_value(field_name, matched_value, document_type)
     state = infer_field_state(normalized_value, parse_error=error_code is not None)
     return _ParsedFieldCandidate(
         field_name,
         matched_value,
         normalized_value,
         state,
-        _compute_candidate_confidence(source="preparser", state=state, anchor_hit=anchor_hit, evidence_snippet=snippet, normalized_value=normalized_value),
+        _candidate_confidence_for_field(
+            field_name=field_name,
+            document_type=document_type,
+            source="preparser",
+            state=state,
+            anchor_hit=anchor_hit,
+            evidence_snippet=snippet,
+            normalized_value=normalized_value,
+        ),
         snippet,
         _field_reason_codes(state, [error_code]),
         "preparser",
@@ -897,7 +1170,7 @@ def _build_existing_candidate(
     normalized_value = None
     normalize_error = None
     if selected_value not in (None, "", [], {}):
-        normalized_value, normalize_error, _ = _normalize_field_value(field_name, selected_value)
+        normalized_value, normalize_error, _ = _normalize_field_value(field_name, selected_value, document_type)
     parse_error = _infer_parse_error(detail_candidates) or normalize_error is not None
     state = infer_field_state(normalized_value if normalize_error is None else None, parse_error=parse_error)
     if selected_value not in (None, "", [], {}) and normalize_error is None and normalized_value in (None, "", [], {}):
@@ -909,7 +1182,9 @@ def _build_existing_candidate(
         details.get("raw_value", selected_value),
         normalized_value if state == "found" else None,
         state,
-        _compute_candidate_confidence(
+        _candidate_confidence_for_field(
+            field_name=field_name,
+            document_type=document_type,
             source="existing",
             state=state,
             explicit_confidence=explicit_confidence if explicit_confidence is not None else _field_confidence(document, details),
@@ -1127,15 +1402,33 @@ def build_document_extraction(document: Dict[str, Any]) -> DocumentExtraction:
         evidence = _build_evidence_refs(details, value, raw_text)
         if not evidence and selected_candidate.source == "preparser":
             evidence = _build_parser_evidence(selected_candidate.evidence_snippet, selected_candidate.confidence)
+        effective_confidence = selected_candidate.confidence
+        explicit_detail_confidence = _coerce_confidence(details.get("confidence"))
+        if (
+            _top3_lift_active()
+            and str(field_name) in _TOP3_FIELD_NAMES
+            and selected_candidate.source == "preparser"
+            and explicit_detail_confidence is not None
+        ):
+            effective_confidence = min(effective_confidence, explicit_detail_confidence)
+        field_reason_codes = list(selected_candidate.reason_codes)
+        if (
+            _top3_lift_active()
+            and str(field_name) in _TOP3_FIELD_NAMES
+            and selected_candidate.state == "found"
+            and effective_confidence < min_confidence
+            and "LOW_CONFIDENCE_CRITICAL" not in field_reason_codes
+        ):
+            field_reason_codes.append("LOW_CONFIDENCE_CRITICAL")
         fields.append(
             FieldExtraction(
                 name=str(field_name),
                 value_raw=selected_candidate.value_raw,
                 value_normalized=selected_candidate.value_normalized,
                 state=selected_candidate.state,  # type: ignore[arg-type]
-                confidence=selected_candidate.confidence,
+                confidence=effective_confidence,
                 evidence=evidence,
-                reason_codes=selected_candidate.reason_codes,
+                reason_codes=sorted(dict.fromkeys(field_reason_codes)),
             )
         )
 

@@ -40,6 +40,7 @@ def _load_validate_namespace() -> dict[str, object]:
         "_extraction_fallback_hotfix_enabled",
         "_ocr_compatibility_v1_enabled",
         "_stage_promotion_v1_enabled",
+        "_stage_threshold_tuning_v1_enabled",
         "_finalize_text_backed_extraction_status",
         "_detect_input_mime_type",
         "_normalize_ocr_input",

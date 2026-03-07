@@ -4157,6 +4157,11 @@ def _stage_promotion_v1_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _stage_threshold_tuning_v1_enabled() -> bool:
+    raw = str(os.getenv("LCCOPILOT_STAGE_THRESHOLD_TUNING_V1_ENABLED", "1") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 def _record_extraction_reason_code(artifacts: Dict[str, Any], reason_code: Optional[str]) -> None:
     if not reason_code:
         return
@@ -4701,13 +4706,16 @@ def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) 
     alnum_ratio_score = min(1.0, float(alnum_chars) / float(max(1, non_space_chars)))
 
     critical_fields: List[str] = []
+    stage_tuning: Dict[str, Any] = {}
     anchor_hit_score = 0.0
     try:
         from app.services.extraction_core.profiles import load_profile
         from app.services.validation.day1_retrieval_guard import evaluate_anchor_evidence
 
         if document_type:
-            critical_fields = list((load_profile(document_type) or {}).get("critical_fields") or [])
+            profile = load_profile(document_type) or {}
+            critical_fields = list(profile.get("critical_fields") or [])
+            stage_tuning = profile.get("stage_tuning") if isinstance(profile.get("stage_tuning"), dict) else {}
         anchor_checks = evaluate_anchor_evidence(stripped, min_score=0.0)
         relevant_anchor_scores = [
             anchor_checks[anchor_field].score
@@ -4751,24 +4759,55 @@ def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) 
     ) / weight_total
 
     target_field_hits = 0
-    if document_type and stage != "binary_metadata_scrape":
+    top3_anchor_hits = 0
+    top3_numeric_hits = 0
+    top3_quality_score = 0.0
+    if document_type:
         try:
             from app.services.extraction_core.review_metadata import _preparse_document_fields
 
             parsed = _preparse_document_fields(stripped, document_type)
+            top3_fields = [field_name for field_name in critical_fields if field_name in {"bin_tin", "gross_weight", "net_weight"}]
             target_field_hits = sum(
                 1
                 for field_name in ("bin_tin", "gross_weight", "net_weight")
                 if getattr(parsed.get(field_name), "state", None) == "found"
             )
+            top3_anchor_hits = sum(
+                1
+                for field_name in top3_fields
+                if bool(getattr(parsed.get(field_name), "anchor_hit", False))
+            )
+            top3_numeric_hits = sum(
+                1
+                for field_name in top3_fields
+                if getattr(parsed.get(field_name), "state", None) == "found"
+                and getattr(parsed.get(field_name), "value_normalized", None) not in (None, "", [], {})
+            )
+            if top3_fields:
+                numeric_weight = float(stage_tuning.get("top3_numeric_weight", 0.7) or 0.7)
+                anchor_weight = float(stage_tuning.get("top3_anchor_weight", 0.3) or 0.3)
+                weight_sum = max(0.1, numeric_weight + anchor_weight)
+                top3_quality_score = min(
+                    1.0,
+                    (
+                        (float(top3_numeric_hits) * numeric_weight)
+                        + (float(top3_anchor_hits) * anchor_weight)
+                    ) / (float(len(top3_fields)) * weight_sum),
+                )
         except Exception:
             target_field_hits = 0
+            top3_anchor_hits = 0
+            top3_numeric_hits = 0
+            top3_quality_score = 0.0
 
     source_preference_bonus = 0.0
     if stage != "binary_metadata_scrape" and (anchor_hit_score > 0 or field_pattern_score > 0):
         source_preference_bonus += 0.08
     if target_field_hits:
         source_preference_bonus += min(0.18, 0.06 * float(target_field_hits))
+    if _stage_threshold_tuning_v1_enabled() and stage != "binary_metadata_scrape" and top3_quality_score > 0:
+        source_preference_bonus += min(0.12, 0.10 * float(top3_quality_score))
 
     selection_score = overall_score + source_preference_bonus
 
@@ -4782,6 +4821,9 @@ def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) 
         "field_pattern_score": round(field_pattern_score, 6),
         "source_preference_bonus": round(source_preference_bonus, 6),
         "target_field_hits": int(target_field_hits),
+        "top3_anchor_hits": int(top3_anchor_hits),
+        "top3_numeric_hits": int(top3_numeric_hits),
+        "top3_quality_score": round(top3_quality_score, 6),
         "text_length": total_chars,
     }
 
@@ -4797,24 +4839,65 @@ def _select_best_extraction_stage(
         artifacts["rejected_stages"] = {}
         return None
 
+    profile: Dict[str, Any] = {}
+    critical_fields: List[str] = []
+    stage_tuning: Dict[str, Any] = {}
+    if document_type:
+        try:
+            from app.services.extraction_core.profiles import load_profile
+
+            profile = load_profile(document_type) or {}
+            critical_fields = list(profile.get("critical_fields") or [])
+            stage_tuning = profile.get("stage_tuning") if isinstance(profile.get("stage_tuning"), dict) else {}
+        except Exception:
+            profile = {}
+            critical_fields = []
+            stage_tuning = {}
+
     stage_scores = {
         stage: _score_stage_candidate(stage, text, document_type)
         for stage, text in stage_candidates.items()
     }
     priorities = list(getattr(settings, "OCR_STAGE_SELECTION_PRIORITY", []) or [])
     priority_index = {stage: index for index, stage in enumerate(priorities)}
+    top3_fields = [field_name for field_name in critical_fields if field_name in {"bin_tin", "gross_weight", "net_weight"}]
+    threshold_tuning_enabled = _stage_threshold_tuning_v1_enabled() and bool(top3_fields)
+    binary_min_quality = float(stage_tuning.get("top3_binary_min_quality", 0.58) or 0.58)
+    binary_min_target_hits = int(stage_tuning.get("top3_binary_min_target_hits", 1) or 1)
+    promotion_min_quality = float(stage_tuning.get("top3_promotion_min_quality", 0.34) or 0.34)
+    promotion_min_target_hits = int(stage_tuning.get("top3_promotion_min_target_hits", 1) or 1)
 
     selection_reason = "highest_selection_score"
     binary_penalty_applied = False
+    binary_rejected_for_top3 = False
     promoted_from_stage: Optional[str] = None
     promotion_candidates: List[str] = []
     if _stage_promotion_v1_enabled() and "binary_metadata_scrape" in stage_scores:
+        binary_score = stage_scores.get("binary_metadata_scrape") or {}
+        binary_low_quality_for_top3 = bool(
+            threshold_tuning_enabled
+            and (
+                float(binary_score.get("top3_quality_score", 0.0) or 0.0) < binary_min_quality
+                or int(binary_score.get("target_field_hits", 0) or 0) < binary_min_target_hits
+            )
+        )
         promotion_candidates = [
             stage
             for stage, score in stage_scores.items()
             if stage != "binary_metadata_scrape"
             and (
-                score.get("target_field_hits", 0) > 0
+                (
+                    threshold_tuning_enabled
+                    and (
+                        int(score.get("target_field_hits", 0) or 0) >= promotion_min_target_hits
+                        or (
+                            float(score.get("top3_quality_score", 0.0) or 0.0) >= promotion_min_quality
+                            and int(score.get("top3_anchor_hits", 0) or 0) > 0
+                            and float(score.get("field_pattern_score", 0.0) or 0.0) > 0.0
+                        )
+                    )
+                )
+                or score.get("target_field_hits", 0) > 0
                 or (
                     score.get("anchor_hit_score", 0.0) > 0
                     and score.get("field_pattern_score", 0.0) > 0
@@ -4823,13 +4906,14 @@ def _select_best_extraction_stage(
         ]
         if promotion_candidates:
             binary_penalty_applied = True
-            penalty = 0.24
+            binary_rejected_for_top3 = binary_low_quality_for_top3
+            penalty = 0.38 if binary_low_quality_for_top3 else 0.24
             stage_scores["binary_metadata_scrape"]["binary_scrape_penalty"] = round(penalty, 6)
             stage_scores["binary_metadata_scrape"]["selection_score"] = round(
                 stage_scores["binary_metadata_scrape"].get("selection_score", stage_scores["binary_metadata_scrape"].get("overall_score", 0.0)) - penalty,
                 6,
             )
-            selection_reason = "binary_scrape_penalized"
+            selection_reason = "binary_scrape_rejected_low_top3_quality" if binary_low_quality_for_top3 else "binary_scrape_penalized"
         else:
             stage_scores["binary_metadata_scrape"]["binary_scrape_penalty"] = 0.0
 
@@ -4870,13 +4954,19 @@ def _select_best_extraction_stage(
         promoted_from_stage = selected_stage
         selected_stage = promoted_stage
         selected_text = stage_candidates[promoted_stage]
-        selection_reason = "anchor_promoted_over_binary_scrape"
+        selection_reason = "binary_scrape_rejected_low_top3_quality" if binary_rejected_for_top3 else "anchor_promoted_over_binary_scrape"
     elif (
         _stage_promotion_v1_enabled()
         and binary_penalty_applied
         and selected_stage in promotion_candidates
     ):
-        selection_reason = "anchor_promoted_over_binary_scrape"
+        selection_reason = "binary_scrape_rejected_low_top3_quality" if binary_rejected_for_top3 else "anchor_promoted_over_binary_scrape"
+    elif (
+        threshold_tuning_enabled
+        and selected_stage == "binary_metadata_scrape"
+        and float(stage_scores[selected_stage].get("top3_quality_score", 0.0) or 0.0) < binary_min_quality
+    ):
+        selection_reason = "binary_scrape_only_available"
 
     selected_score = stage_scores[selected_stage].get("selection_score", stage_scores[selected_stage].get("overall_score", 0.0))
     rejected_stages = {}
@@ -4899,8 +4989,12 @@ def _select_best_extraction_stage(
         "selected_stage": selected_stage,
         "reason": selection_reason,
         "binary_scrape_penalty_applied": binary_penalty_applied,
+        "binary_rejected_for_top3": binary_rejected_for_top3,
         "promoted_from_stage": promoted_from_stage,
         "promotion_candidates": promotion_candidates[:6],
+        "binary_min_quality": round(binary_min_quality, 4),
+        "binary_quality_score": round(float((stage_scores.get("binary_metadata_scrape") or {}).get("top3_quality_score", 0.0) or 0.0), 4),
+        "selected_stage_quality_score": round(float(stage_scores[selected_stage].get("top3_quality_score", 0.0) or 0.0), 4),
     }
     return {"stage": selected_stage, "text": selected_text}
 

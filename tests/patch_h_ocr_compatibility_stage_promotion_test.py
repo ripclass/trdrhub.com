@@ -49,6 +49,7 @@ def _load_validate_namespace() -> dict[str, object]:
         "_empty_extraction_artifacts_v1",
         "_ocr_compatibility_v1_enabled",
         "_stage_promotion_v1_enabled",
+        "_stage_threshold_tuning_v1_enabled",
         "_detect_input_mime_type",
         "_normalize_ocr_input",
         "_prepare_provider_ocr_payload",
@@ -305,7 +306,10 @@ def test_patch_h_stage_promotion_prefers_anchor_stage_over_binary_scrape(monkeyp
     )
 
     assert selected["stage"] == "ocr_provider_primary"
-    assert artifacts["stage_selection_rationale"]["reason"] == "anchor_promoted_over_binary_scrape"
+    assert artifacts["stage_selection_rationale"]["reason"] in {
+        "anchor_promoted_over_binary_scrape",
+        "binary_scrape_rejected_low_top3_quality",
+    }
     assert artifacts["stage_scores"]["binary_metadata_scrape"]["binary_scrape_penalty"] > 0
 
 
