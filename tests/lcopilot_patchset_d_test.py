@@ -49,12 +49,17 @@ def _load_validate_namespace() -> dict[str, object]:
     wanted = {
         "_empty_extraction_artifacts_v1",
         "_extraction_fallback_hotfix_enabled",
+        "_ocr_compatibility_v1_enabled",
         "_record_extraction_reason_code",
         "_record_extraction_stage",
         "_merge_extraction_artifacts",
         "_finalize_text_extraction_result",
         "_merge_text_sources",
         "_scrape_binary_text_metadata",
+        "_detect_input_mime_type",
+        "_normalize_ocr_input",
+        "_prepare_provider_ocr_payload",
+        "_map_ocr_provider_error_code",
         "_extract_text_from_upload",
         "_try_secondary_ocr_adapter",
         "_finalize_text_backed_extraction_status",
@@ -70,7 +75,7 @@ def _load_validate_namespace() -> dict[str, object]:
             "import os\n"
             "import re\n"
             "from io import BytesIO\n"
-            "from typing import Any, Dict, List, Optional\n"
+            "from typing import Any, Dict, List, Optional, Tuple\n"
         ).body
         + selected,
         type_ignores=[],

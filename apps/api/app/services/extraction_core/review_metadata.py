@@ -16,8 +16,17 @@ EXTRACTION_CORE_V1_ENV = "LCCOPILOT_EXTRACTION_CORE_V1_ENABLED"
 PREPARSER_HARDENING_ENV = "LCCOPILOT_PREPARSER_HARDENING_ENABLED"
 FAILURE_TAXONOMY_V2_ENV = "LCCOPILOT_FAILURE_TAXONOMY_V2_ENABLED"
 PASS_GATE_V2_ENV = "LCCOPILOT_PASS_GATE_V2_ENABLED"
+TOP3_FIELD_BOOST_V1_ENV = "LCCOPILOT_TOP3_FIELD_BOOST_V1_ENABLED"
 
 _OCR_DIGIT_MAP = str.maketrans({"O": "0", "I": "1", "L": "1", "S": "5", "B": "8"})
+_WEIGHT_UNIT_OCR_FIXUPS = {
+    "K6": "KG",
+    "K65": "KGS",
+    "K9": "KG",
+    "K95": "KGS",
+    "L8": "LB",
+    "L85": "LBS",
+}
 _CANONICAL_REASON_CODES = {
     "OCR_UNSUPPORTED_FORMAT",
     "OCR_TIMEOUT",
@@ -57,6 +66,7 @@ _PREPARSER_FIELDS = (
     "issuer",
 )
 _FIELD_PRIORITY = {name: index for index, name in enumerate(_PREPARSER_FIELDS)}
+_TOP3_FIELD_NAMES = frozenset({"bin_tin", "gross_weight", "net_weight"})
 
 
 @dataclass(frozen=True)
@@ -91,6 +101,10 @@ def _failure_taxonomy_v2_enabled() -> bool:
 
 def _pass_gate_v2_enabled() -> bool:
     return _env_enabled(PASS_GATE_V2_ENV)
+
+
+def _top3_field_boost_v1_enabled() -> bool:
+    return _env_enabled(TOP3_FIELD_BOOST_V1_ENV)
 
 
 _DEFAULT_FIELD_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -204,6 +218,10 @@ def _scan_lines(raw_text: str) -> List[str]:
 
 def _normalize_numeric_context(raw_text: str) -> str:
     return _base_clean(raw_text).upper().translate(_OCR_DIGIT_MAP)
+
+
+def _normalize_numeric_token(token: str) -> str:
+    return _base_clean(token).upper().translate(_OCR_DIGIT_MAP)
 
 
 def _format_decimal(value: float, decimals: int = 3) -> str:
@@ -561,6 +579,11 @@ def _normalize_bin_tin(raw_value: Any) -> Tuple[Optional[str], Optional[str]]:
     text = _normalize_numeric_context(raw_value)
     if not text:
         return None, "FIELD_NOT_FOUND"
+    text = re.sub(
+        r"\b(?:EXPORTER|SELLER|SHIPPER|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|BIN|TIN|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\b",
+        " ",
+        text,
+    )
     digits = re.sub(r"\D", "", text)
     if len(digits) == 13:
         return digits, None
@@ -586,11 +609,13 @@ def _normalize_weight(raw_value: Any) -> Tuple[Optional[str], Optional[float], O
     text = _base_clean(raw_value).upper()
     if not text:
         return None, None, "FIELD_NOT_FOUND"
-    match = re.search(r"([0-9][0-9,]*(?:[.][0-9]+)?)\s*([A-Z]+)", text)
+    text = re.sub(r"\bK[69]S?\b", lambda match: _WEIGHT_UNIT_OCR_FIXUPS.get(match.group(0), match.group(0)), text)
+    text = re.sub(r"\bL8S?\b", lambda match: _WEIGHT_UNIT_OCR_FIXUPS.get(match.group(0), match.group(0)), text)
+    match = re.search(r"([0-9OISBL][0-9OISBL,]*(?:[.][0-9OISBL]+)?)\s*([A-Z0-9]+)", text)
     if not match:
         return None, None, "FORMAT_INVALID"
-    number_text = match.group(1).replace(",", "")
-    unit = match.group(2)
+    number_text = _normalize_numeric_token(match.group(1)).replace(",", "")
+    unit = re.sub(r"[^A-Z]", "", _WEIGHT_UNIT_OCR_FIXUPS.get(match.group(2).upper(), match.group(2).upper()))
     factor = _WEIGHT_UNIT_ALIASES.get(unit)
     if factor is None:
         return None, None, "FORMAT_INVALID"
@@ -659,8 +684,8 @@ def _patterns_for_field(field_name: str, document_type: str) -> Sequence[re.Patt
         )
     if field_name == "bin_tin":
         return (
-            re.compile(r"(?:BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?)\s*(?:NO\.?|NUMBER|#|:)?\s*([A-Z0-9-]{8,20})", re.IGNORECASE),
-            re.compile(r"(?:TIN|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([A-Z0-9-]{8,20})", re.IGNORECASE),
+            re.compile(r"(?:BIN(?:\s*/\s*TIN)?|VAT\s*REG(?:ISTRATION)?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?)\s*(?:(?:NO\.?|NUMBER)\s*)?[:#-]?\s*([A-Z0-9OISBL-]{8,24})", re.IGNORECASE),
+            re.compile(r"(?:TIN(?:\s*/\s*BIN)?|TAX\s*ID|TAX\s*IDENTIFICATION|E-?TIN|ETIN)\s*(?:(?:NO\.?|NUMBER)\s*)?[:#-]?\s*([A-Z0-9OISBL-]{8,24})", re.IGNORECASE),
         )
     if field_name == "voyage":
         return (
@@ -669,13 +694,13 @@ def _patterns_for_field(field_name: str, document_type: str) -> Sequence[re.Patt
         )
     if field_name == "gross_weight":
         return (
-            re.compile(r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:#-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE)?)\s*/\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE)?", re.IGNORECASE),
-            re.compile(r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|GW)\s*[:#-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE))", re.IGNORECASE),
+            re.compile(r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:#-]?\s*([0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)?)\s*/\s*[0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)?", re.IGNORECASE),
+            re.compile(r"(?:GROSS\s*(?:WEIGHT|WT|WGT)|G\.?\s*W\.?|GW)\s*[:#-]?\s*([0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE))", re.IGNORECASE),
         )
     if field_name == "net_weight":
         return (
-            re.compile(r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:#-]?\s*[0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE)?\s*/\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE)?)", re.IGNORECASE),
-            re.compile(r"(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|NW)\s*[:#-]?\s*([0-9.,]+\s*(?:KGS?|KG|LBS?|LB|MT|TON|TONNE))", re.IGNORECASE),
+            re.compile(r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:#-]?\s*[0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)?\s*/\s*([0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)?)", re.IGNORECASE),
+            re.compile(r"(?:NET\s*(?:WEIGHT|WT|WGT)|N\.?\s*W\.?|NW)\s*[:#-]?\s*([0-9OISBL.,]+\s*(?:KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE))", re.IGNORECASE),
         )
     if field_name == "issuer":
         tokens = "|".join(re.escape(token) for token in _field_tokens("issuer", document_type))
@@ -683,11 +708,50 @@ def _patterns_for_field(field_name: str, document_type: str) -> Sequence[re.Patt
     return ()
 
 
+def _field_search_windows(lines: Sequence[str], field_name: str) -> List[str]:
+    if not (_top3_field_boost_v1_enabled() and field_name in _TOP3_FIELD_NAMES):
+        return [line for line in lines if line]
+
+    windows: List[str] = []
+    seen: set[str] = set()
+    for index, line in enumerate(lines):
+        candidates = [line]
+        if index + 1 < len(lines):
+            candidates.append(f"{line} {lines[index + 1]}")
+        if index > 0:
+            candidates.append(f"{lines[index - 1]} {line}")
+        if index > 0 and index + 1 < len(lines):
+            candidates.append(f"{lines[index - 1]} {line} {lines[index + 1]}")
+        for candidate in candidates:
+            normalized = re.sub(r"\s+", " ", _normalize_text(candidate)).strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                windows.append(normalized)
+    return windows
+
+
+def _find_weight_pair_match(field_name: str, raw_text: str) -> Tuple[Optional[str], Optional[str], bool]:
+    if field_name not in {"gross_weight", "net_weight"}:
+        return None, None, False
+
+    pair_pattern = re.compile(
+        r"(?:GROSS\s*/\s*NET|GROSS\s*WT\s*/\s*NET\s*WT|GW\s*/\s*NW)\s*(?:WEIGHT|WT|WGT)?\s*[:#-]?\s*([0-9OISBL.,]+)\s*/\s*([0-9OISBL.,]+)\s*(KGS?|KG|KILOGRAMS?|LBS?|LB|MT|TON|TONNE)",
+        re.IGNORECASE,
+    )
+    for window in _field_search_windows(_scan_lines(raw_text), field_name):
+        match = pair_pattern.search(window)
+        if not match:
+            continue
+        value = match.group(1) if field_name == "gross_weight" else match.group(2)
+        return f"{value} {match.group(3)}", window, True
+    return None, None, False
+
+
 def _find_field_match(field_name: str, raw_text: str, document_type: str) -> Tuple[Optional[str], Optional[str], bool]:
     lines = _scan_lines(raw_text)
     label_present = _label_seen(raw_text, field_name, document_type)
     patterns = _patterns_for_field(field_name, document_type)
-    for line in lines:
+    for line in _field_search_windows(lines, field_name):
         for pattern in patterns:
             match = pattern.search(line)
             if match:
@@ -767,6 +831,22 @@ def _parse_amount_currency_fields(raw_text: str) -> Dict[str, _ParsedFieldCandid
 def _parse_field_from_text(field_name: str, raw_text: str, document_type: str) -> _ParsedFieldCandidate:
     if field_name in {"amount", "currency"}:
         return _parse_amount_currency_fields(raw_text).get(field_name, _ParsedFieldCandidate(field_name, None, None, "missing", 0.0, None, ["FIELD_NOT_FOUND"], "preparser"))
+    if _top3_field_boost_v1_enabled() and field_name in {"gross_weight", "net_weight"}:
+        paired_value, paired_snippet, paired_anchor_hit = _find_weight_pair_match(field_name, raw_text)
+        if paired_value is not None:
+            normalized_value, error_code, _ = _normalize_field_value(field_name, paired_value)
+            state = infer_field_state(normalized_value, parse_error=error_code is not None)
+            return _ParsedFieldCandidate(
+                field_name,
+                paired_value,
+                normalized_value,
+                state,
+                _compute_candidate_confidence(source="preparser", state=state, anchor_hit=paired_anchor_hit, evidence_snippet=paired_snippet, normalized_value=normalized_value),
+                paired_snippet,
+                _field_reason_codes(state, [error_code]),
+                "preparser",
+                paired_anchor_hit,
+            )
     matched_value, snippet, anchor_hit = _find_field_match(field_name, raw_text, document_type)
     if matched_value is None:
         state = "parse_failed" if anchor_hit else "missing"
@@ -856,6 +936,19 @@ def _build_existing_candidate(
 def _merge_field_candidates(existing_candidate: _ParsedFieldCandidate, parsed_candidate: Optional[_ParsedFieldCandidate]) -> _ParsedFieldCandidate:
     if not parsed_candidate:
         return existing_candidate
+    if (
+        _top3_field_boost_v1_enabled()
+        and existing_candidate.name in _TOP3_FIELD_NAMES
+        and existing_candidate.state == "found"
+        and parsed_candidate.state == "found"
+    ):
+        existing_has_evidence = bool(existing_candidate.evidence_snippet)
+        parsed_has_evidence = bool(parsed_candidate.evidence_snippet)
+        if parsed_has_evidence and (
+            not existing_has_evidence
+            or parsed_candidate.confidence > existing_candidate.confidence
+        ):
+            return parsed_candidate
     if existing_candidate.state == "found":
         return existing_candidate
     if parsed_candidate.state == "found":

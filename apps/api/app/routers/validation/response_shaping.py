@@ -122,6 +122,7 @@ def build_extraction_debug(document: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
     return {
         "selected_stage": str(selected_stage) if selected_stage else None,
+        "selected_stage_rationale": artifacts.get("stage_selection_rationale") if isinstance(artifacts.get("stage_selection_rationale"), dict) else None,
         "stage_scores": _normalize_stage_scores(artifacts.get("stage_scores")),
         "stage_attempts": stage_attempts,
         "critical_field_states": dict(critical_field_states),
