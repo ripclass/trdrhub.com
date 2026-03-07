@@ -226,6 +226,7 @@ class DocumentExtractionEntryV1:
     review_required: bool = False
     review_reasons: List[str] = field(default_factory=list)
     critical_field_states: Dict[str, str] = field(default_factory=dict)
+    extraction_debug: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -241,6 +242,7 @@ class DocumentExtractionEntryV1:
             "review_required": self.review_required,
             "review_reasons": self.review_reasons,
             "critical_field_states": self.critical_field_states,
+            "extraction_debug": self.extraction_debug,
         }
 
 
@@ -402,6 +404,7 @@ class ValidationResponseSchema:
     
     # Audit
     audit_trail_id: Optional[str] = None
+    extraction_diagnostics: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON response."""
@@ -427,6 +430,7 @@ class ValidationResponseSchema:
             "lc_structured": self.lc_structured,
             "customs_pack": self.customs_pack,
             "ai_enrichment": self.ai_enrichment,
+            "_extraction_diagnostics": self.extraction_diagnostics,
             
             # Audit
             "audit_trail_id": self.audit_trail_id,
@@ -595,6 +599,7 @@ def build_document_extraction_v1(document_summaries: List[Dict[str, Any]]) -> Di
             review_required=bool(doc.get("review_required") or doc.get("reviewRequired")),
             review_reasons=doc.get("review_reasons") or doc.get("reviewReasons") or [],
             critical_field_states=doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
+            extraction_debug=doc.get("extraction_debug") or doc.get("extractionDebug"),
         )
         documents.append(entry)
 

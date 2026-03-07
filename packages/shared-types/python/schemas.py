@@ -273,6 +273,7 @@ class DocumentExtractionDocument(BaseModel):
     review_required: Optional[bool] = None
     review_reasons: List[str] = Field(default_factory=list)
     critical_field_states: Dict[str, str] = Field(default_factory=dict)
+    extraction_debug: Optional[Dict[str, Any]] = None
 
 
 class DocumentExtractionSummary(BaseModel):
@@ -312,6 +313,7 @@ class StructuredResultDocument(BaseModel):
     review_required: Optional[bool] = None
     review_reasons: List[str] = Field(default_factory=list)
     critical_field_states: Dict[str, str] = Field(default_factory=dict)
+    extraction_debug: Optional[Dict[str, Any]] = None
 
 
 class StructuredResultIssue(BaseModel):
@@ -358,6 +360,7 @@ class StructuredResultPayload(BaseModel):
     analytics: StructuredResultAnalytics
     timeline: List[TimelineEntry]
     extraction_core_v1: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_core_v1")
+    extraction_diagnostics: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_diagnostics")
 
 
 # ============================================================================

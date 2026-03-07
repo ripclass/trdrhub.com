@@ -2182,6 +2182,30 @@ async def validate_doc(
         if isinstance(extraction_core_bundle, dict):
             structured_result["_extraction_core_v1"] = extraction_core_bundle
 
+        try:
+            _response_shaping.attach_extraction_observability(document_summaries)
+            _response_shaping.attach_extraction_observability(
+                structured_result.get("documents") if isinstance(structured_result.get("documents"), list) else []
+            )
+            _response_shaping.attach_extraction_observability(
+                structured_result.get("documents_structured")
+                if isinstance(structured_result.get("documents_structured"), list)
+                else []
+            )
+            _sync_structured_result_collections(structured_result)
+            extraction_diagnostics = _response_shaping.build_extraction_diagnostics(
+                structured_result.get("documents")
+                if isinstance(structured_result.get("documents"), list)
+                else structured_result.get("documents_structured")
+                if isinstance(structured_result.get("documents_structured"), list)
+                else document_summaries,
+                extraction_core_bundle if isinstance(extraction_core_bundle, dict) else None,
+            )
+            if isinstance(extraction_diagnostics, dict):
+                structured_result["_extraction_diagnostics"] = extraction_diagnostics
+        except Exception as exc:
+            logger.warning("Extraction diagnostics shaping skipped: %s", exc, exc_info=True)
+
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
         # FIX: Merge ALL fields including status counts, verified, warnings, etc.
@@ -5193,6 +5217,7 @@ def _build_blocked_structured_result(
         },
     }
 
+    _response_shaping.attach_extraction_observability(docs_structured)
     document_extraction = _build_document_extraction_v1(docs_structured)
     processing_summary_v2 = _build_processing_summary_v2(
         processing_summary,
@@ -5318,6 +5343,12 @@ def _build_blocked_structured_result(
     extraction_core_bundle = _build_extraction_core_bundle(documents)
     if isinstance(extraction_core_bundle, dict):
         result["_extraction_core_v1"] = extraction_core_bundle
+    extraction_diagnostics = _response_shaping.build_extraction_diagnostics(
+        docs_structured,
+        extraction_core_bundle if isinstance(extraction_core_bundle, dict) else None,
+    )
+    if isinstance(extraction_diagnostics, dict):
+        result["_extraction_diagnostics"] = extraction_diagnostics
 
     return result
 

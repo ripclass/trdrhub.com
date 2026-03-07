@@ -5,10 +5,196 @@ Helpers for assembling response summaries and timelines.
 Extracted from validate.py to preserve behavior.
 """
 
+import os
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .utilities import format_duration, normalize_issue_severity
+
+
+EXPOSURE_DIAGNOSTICS_V1_ENV = "LCCOPILOT_EXPOSURE_DIAGNOSTICS_V1_ENABLED"
+_MAX_STAGE_ATTEMPTS = 8
+_MAX_REASON_CODES = 24
+_MAX_STAGE_SCORE_STAGES = 8
+_MAX_STAGE_SCORE_KEYS = 8
+_SAFE_REASON_CODE_RE = re.compile(r"^[A-Z0-9_]{2,64}$")
+
+
+def exposure_diagnostics_v1_enabled() -> bool:
+    raw = str(os.getenv(EXPOSURE_DIAGNOSTICS_V1_ENV, "1") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _sanitize_reason_codes(values: Optional[List[Any]]) -> List[str]:
+    codes: List[str] = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if _SAFE_REASON_CODE_RE.fullmatch(text):
+            if text not in codes:
+                codes.append(text)
+        if len(codes) >= _MAX_REASON_CODES:
+            break
+    return codes
+
+
+def _normalize_stage_scores(value: Any) -> Dict[str, Dict[str, float]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: Dict[str, Dict[str, float]] = {}
+    for stage_name in list(value.keys())[:_MAX_STAGE_SCORE_STAGES]:
+        stage_payload = value.get(stage_name)
+        if not isinstance(stage_payload, dict):
+            continue
+        score_map: Dict[str, float] = {}
+        for key in list(stage_payload.keys())[:_MAX_STAGE_SCORE_KEYS]:
+            score_value = stage_payload.get(key)
+            if isinstance(score_value, bool):
+                score_map[str(key)] = 1.0 if score_value else 0.0
+            elif isinstance(score_value, (int, float)):
+                score_map[str(key)] = round(float(score_value), 4)
+        normalized[str(stage_name)] = score_map
+    return normalized
+
+
+def _extract_stage_error_code(value: Any) -> Optional[str]:
+    entries = value if isinstance(value, list) else [value]
+    codes = _sanitize_reason_codes(entries)
+    return codes[0] if codes else None
+
+
+def build_extraction_debug(document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not exposure_diagnostics_v1_enabled():
+        return None
+    if not isinstance(document, dict):
+        return None
+
+    artifacts = (
+        document.get("extraction_artifacts_v1")
+        if isinstance(document.get("extraction_artifacts_v1"), dict)
+        else {}
+    )
+    critical_field_states = (
+        document.get("critical_field_states")
+        if isinstance(document.get("critical_field_states"), dict)
+        else document.get("criticalFieldStates")
+        if isinstance(document.get("criticalFieldStates"), dict)
+        else {}
+    )
+    review_reasons = document.get("review_reasons") or document.get("reviewReasons") or []
+    if not artifacts and not critical_field_states and not review_reasons:
+        return None
+
+    attempted_stages = artifacts.get("attempted_stages") if isinstance(artifacts.get("attempted_stages"), list) else []
+    stage_errors = artifacts.get("stage_errors") if isinstance(artifacts.get("stage_errors"), dict) else {}
+    text_length_by_stage = artifacts.get("text_length_by_stage") if isinstance(artifacts.get("text_length_by_stage"), dict) else {}
+
+    stage_attempts: List[Dict[str, Any]] = []
+    for stage_name in attempted_stages[:_MAX_STAGE_ATTEMPTS]:
+        stage_attempts.append(
+            {
+                "stage": str(stage_name),
+                "text_length": int(text_length_by_stage.get(stage_name) or 0),
+                "error_code": _extract_stage_error_code(stage_errors.get(stage_name)),
+            }
+        )
+
+    selected_stage = artifacts.get("selected_stage") or artifacts.get("final_stage")
+    if not stage_attempts and selected_stage:
+        stage_attempts.append(
+            {
+                "stage": str(selected_stage),
+                "text_length": int(artifacts.get("final_text_length") or 0),
+                "error_code": _extract_stage_error_code(artifacts.get("error_code")),
+            }
+        )
+
+    found_fields = sum(1 for state in critical_field_states.values() if state == "found")
+    total_fields = len(critical_field_states)
+    coverage = round(found_fields / total_fields, 3) if total_fields else None
+    reason_codes = _sanitize_reason_codes(
+        list(artifacts.get("canonical_reason_codes") or [])
+        + list(artifacts.get("reason_codes") or [])
+        + list(review_reasons or [])
+    )
+
+    return {
+        "selected_stage": str(selected_stage) if selected_stage else None,
+        "stage_scores": _normalize_stage_scores(artifacts.get("stage_scores")),
+        "stage_attempts": stage_attempts,
+        "critical_field_states": dict(critical_field_states),
+        "reason_codes": reason_codes,
+        "coverage": coverage,
+    }
+
+
+def attach_extraction_observability(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not exposure_diagnostics_v1_enabled():
+        return documents
+
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        extraction_debug = build_extraction_debug(document)
+        if not extraction_debug:
+            continue
+        document["extraction_debug"] = extraction_debug
+        document["extractionDebug"] = extraction_debug
+    return documents
+
+
+def build_extraction_diagnostics(
+    documents: List[Dict[str, Any]],
+    extraction_core_bundle: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    if not exposure_diagnostics_v1_enabled():
+        return None
+
+    unresolved_fields: List[str] = []
+    failure_reasons: List[str] = []
+    coverage_values: List[float] = []
+    critical_fields_evaluated = 0
+    critical_fields_unresolved = 0
+    review_required_documents = 0
+
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        extraction_debug = document.get("extraction_debug") if isinstance(document.get("extraction_debug"), dict) else build_extraction_debug(document)
+        if not extraction_debug:
+            continue
+        if bool(document.get("review_required") or document.get("reviewRequired")):
+            review_required_documents += 1
+        critical_states = extraction_debug.get("critical_field_states") if isinstance(extraction_debug.get("critical_field_states"), dict) else {}
+        critical_fields_evaluated += len(critical_states)
+        for field_name, state in critical_states.items():
+            if state != "found":
+                critical_fields_unresolved += 1
+                unresolved_fields.append(str(field_name))
+        coverage = extraction_debug.get("coverage")
+        if isinstance(coverage, (int, float)):
+            coverage_values.append(float(coverage))
+        failure_reasons.extend(extraction_debug.get("reason_codes") or [])
+
+    if isinstance(extraction_core_bundle, dict):
+        meta = extraction_core_bundle.get("meta") if isinstance(extraction_core_bundle.get("meta"), dict) else {}
+        if isinstance(meta.get("review_required_count"), int):
+            review_required_documents = int(meta.get("review_required_count"))
+
+    return {
+        "version": "extraction_diagnostics_v1",
+        "unresolved_critical_fields": sorted(dict.fromkeys(unresolved_fields))[:50],
+        "failure_reasons": _sanitize_reason_codes(failure_reasons),
+        "review_gate_inputs": {
+            "documents_evaluated": len([doc for doc in documents or [] if isinstance(doc, dict)]),
+            "review_required_documents": review_required_documents,
+            "critical_fields_evaluated": critical_fields_evaluated,
+            "critical_fields_unresolved": critical_fields_unresolved,
+            "average_coverage": round(sum(coverage_values) / len(coverage_values), 3) if coverage_values else None,
+        },
+    }
 
 
 def summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -288,6 +474,7 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
                 "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
                 "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
+                "extraction_debug": doc.get("extraction_debug") or doc.get("extractionDebug"),
             }
         )
 
