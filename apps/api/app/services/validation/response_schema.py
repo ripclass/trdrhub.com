@@ -561,7 +561,7 @@ def _normalize_document_status(doc: Dict[str, Any]) -> str:
     status = (doc.get("status") or doc.get("extraction_status") or doc.get("extractionStatus") or "success").lower()
     if status in {"error", "failed", "fail", "empty"}:
         return "error"
-    if status in {"warning", "warn", "partial", "text_only", "pending"}:
+    if status in {"warning", "warn", "partial", "text_only", "pending", "parse_failed"}:
         return "warning"
     if status in {"success", "verified", "ok", "complete"}:
         return "success"

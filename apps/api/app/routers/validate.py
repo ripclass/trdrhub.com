@@ -405,6 +405,32 @@ def _apply_extraction_guard(doc_info: Dict[str, Any], extracted_text: str) -> No
         doc_info["downgrade_reason"] = "rich_ocr_text_but_no_parsed_fields"
 
 
+def _finalize_text_backed_extraction_status(
+    doc_info: Dict[str, Any],
+    document_type: str,
+    extracted_text: str,
+) -> None:
+    if not _extraction_fallback_hotfix_enabled():
+        return
+
+    if not (extracted_text or "").strip():
+        return
+
+    extracted_fields = doc_info.get("extracted_fields") or {}
+    if isinstance(extracted_fields, dict) and extracted_fields:
+        return
+
+    status_now = str(doc_info.get("extraction_status") or "empty").lower()
+    if status_now in {"success", "partial"}:
+        return
+
+    if document_type == "supporting_document":
+        doc_info["extraction_status"] = "text_only"
+    else:
+        doc_info["extraction_status"] = "parse_failed"
+    doc_info.setdefault("downgrade_reason", "text_recovered_but_fields_unresolved")
+
+
 def _context_payload_for_doc_type(context: Dict[str, Any], document_type: str) -> Dict[str, Any]:
     if document_type in ("letter_of_credit", "swift_message", "lc_application"):
         return context.get("lc") or {}
@@ -2932,7 +2958,7 @@ def _build_document_summaries(
         severity_status = _severity_to_status(max_severity)
         if severity_status in {"error", "warning"}:
             return severity_status
-        if extraction in {"partial", "pending", "text_only"}:
+        if extraction in {"partial", "pending", "text_only", "parse_failed"}:
             return "warning"
         if parse_complete is False:
             return "warning"
@@ -3203,6 +3229,14 @@ async def _build_document_context(
         if not extracted_text:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
+            logger.info(
+                "validate.extraction.final file=%s doc_type=%s status=%s fallback=%s reason_codes=%s",
+                filename,
+                document_type,
+                doc_info["extraction_status"],
+                bool(extraction_artifacts_v1.get("fallback_activated")),
+                extraction_artifacts_v1.get("reason_codes") or [],
+            )
             document_details.append(doc_info)
             continue
         
@@ -3761,15 +3795,24 @@ async def _build_document_context(
                 extra_context["raw_text"] = extracted_text
         except Exception as e:
             logger.error(f"Error extracting fields from {filename}: {e}", exc_info=True)
+            _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text or "")
+            logger.info(
+                "validate.extraction.final file=%s doc_type=%s status=%s fallback=%s reason_codes=%s",
+                filename,
+                document_type,
+                doc_info.get("extraction_status"),
+                bool(extraction_artifacts_v1.get("fallback_activated")),
+                extraction_artifacts_v1.get("reason_codes") or [],
+            )
             document_details.append(doc_info)
             continue
 
         if doc_info.get("extracted_fields"):
             doc_info["raw_text_preview"] = extracted_text[:500]
-        elif doc_info.get("extraction_status") in {"empty", "text_only"} and extracted_text:
+        elif extracted_text:
             # Ensure at least a preview is available for OCR overview
             doc_info["raw_text_preview"] = extracted_text[:500]
-            if doc_info.get("extraction_status") == "empty":
+            if doc_info.get("extraction_status") == "empty" and not _extraction_fallback_hotfix_enabled():
                 doc_info["extraction_status"] = "text_only"
 
         context_payload = _context_payload_for_doc_type(context, document_type)
@@ -3784,6 +3827,7 @@ async def _build_document_context(
 
         _enforce_day1_runtime_policy(doc_info, context_payload if isinstance(context_payload, dict) else {}, document_type, extracted_text)
         _apply_extraction_guard(doc_info, extracted_text)
+        _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text)
         summary = doc_info.get("validation_summary") or {}
         llm_trace = _resolve_doc_llm_trace(
             context_payload if isinstance(context_payload, dict) else {},
@@ -3829,6 +3873,14 @@ async def _build_document_context(
             extraction_status=extraction_status_now,
             downgrade_reason=downgrade_reason,
         )
+        logger.info(
+            "validate.extraction.final file=%s doc_type=%s status=%s fallback=%s reason_codes=%s",
+            filename,
+            document_type,
+            extraction_status_now,
+            bool(extraction_artifacts_v1.get("fallback_activated")),
+            extraction_artifacts_v1.get("reason_codes") or [],
+        )
         debug_extraction_trace.append(trace_payload)
 
         document_details.append(doc_info)
@@ -3839,11 +3891,19 @@ async def _build_document_context(
         entry["present"] = True
         entry["count"] += 1
 
+    text_backed_documents = any(
+        bool(((doc.get("extraction_artifacts_v1") or {}).get("raw_text") or "").strip())
+        or bool((doc.get("raw_text_preview") or "").strip())
+        for doc in document_details
+    )
+
     # Set extraction status
     if has_structured_data:
         context["extraction_status"] = "success"
         logger.info(f"Final extracted context structure: {list(context.keys())}")
-    elif any(key in context for key in ("lc", "invoice", "bill_of_lading")):
+    elif any(key in context for key in ("lc", "invoice", "bill_of_lading")) or (
+        _extraction_fallback_hotfix_enabled() and text_backed_documents
+    ):
         # We have raw_text but no structured fields
         context["extraction_status"] = "partial"
         logger.warning("Extracted raw text but no structured fields could be parsed")
@@ -4043,7 +4103,118 @@ def _empty_extraction_artifacts_v1(
         "spans": [],
         "bbox": [],
         "ocr_confidence": ocr_confidence,
+        "attempted_stages": [],
+        "text_length_by_stage": {},
+        "stage_errors": {},
+        "reason_codes": [],
+        "provider_attempts": [],
+        "fallback_activated": False,
+        "final_stage": None,
+        "final_text_length": len((raw_text or "").strip()),
     }
+
+
+def _extraction_fallback_hotfix_enabled() -> bool:
+    raw = str(os.getenv("LCCOPILOT_EXTRACTION_FALLBACK_HOTFIX", "1") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _record_extraction_reason_code(artifacts: Dict[str, Any], reason_code: Optional[str]) -> None:
+    if not reason_code:
+        return
+    reasons = artifacts.setdefault("reason_codes", [])
+    if reason_code not in reasons:
+        reasons.append(reason_code)
+
+
+def _record_extraction_stage(
+    artifacts: Dict[str, Any],
+    *,
+    filename: str,
+    stage: str,
+    text: str = "",
+    error_code: Optional[str] = None,
+    error: Optional[str] = None,
+    fallback: bool = False,
+) -> None:
+    attempted = artifacts.setdefault("attempted_stages", [])
+    if stage not in attempted:
+        attempted.append(stage)
+
+    text_length = len((text or "").strip())
+    artifacts.setdefault("text_length_by_stage", {})[stage] = text_length
+
+    if fallback:
+        artifacts["fallback_activated"] = True
+
+    if error_code or error:
+        stage_errors = artifacts.setdefault("stage_errors", {})
+        entries = stage_errors.setdefault(stage, [])
+        if error_code and error_code not in entries:
+            entries.append(error_code)
+        if error:
+            error_text = str(error)
+            if error_text and error_text not in entries:
+                entries.append(error_text)
+
+    if error_code:
+        _record_extraction_reason_code(artifacts, error_code)
+
+    logger.info(
+        "validate.extraction.stage file=%s stage=%s text_len=%s fallback=%s error_code=%s",
+        filename,
+        stage,
+        text_length,
+        bool(artifacts.get("fallback_activated")),
+        error_code,
+    )
+
+
+def _merge_extraction_artifacts(base: Dict[str, Any], overlay: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    result = dict(base or {})
+    if not isinstance(overlay, dict):
+        return result
+
+    for key, value in overlay.items():
+        if key in {"attempted_stages", "reason_codes"}:
+            merged = list(result.get(key) or [])
+            for item in value or []:
+                if item not in merged:
+                    merged.append(item)
+            result[key] = merged
+        elif key in {"text_length_by_stage"}:
+            merged_map = dict(result.get(key) or {})
+            merged_map.update(value or {})
+            result[key] = merged_map
+        elif key in {"stage_errors"}:
+            merged_errors = dict(result.get(key) or {})
+            for stage_name, errors in (value or {}).items():
+                existing = list(merged_errors.get(stage_name) or [])
+                for entry in errors or []:
+                    if entry not in existing:
+                        existing.append(entry)
+                merged_errors[stage_name] = existing
+            result[key] = merged_errors
+        elif key in {"provider_attempts"}:
+            existing_attempts = list(result.get(key) or [])
+            existing_attempts.extend(value or [])
+            result[key] = existing_attempts
+        elif value not in (None, "", [], {}):
+            result[key] = value
+
+    return result
+
+
+def _finalize_text_extraction_result(
+    artifacts: Dict[str, Any],
+    *,
+    stage: str,
+    text: str,
+) -> Dict[str, Any]:
+    artifacts["final_stage"] = stage
+    artifacts["final_text_length"] = len((text or "").strip())
+    artifacts["raw_text"] = text or ""
+    return {"text": text or "", "artifacts": artifacts}
 
 
 def _merge_text_sources(*texts: Optional[str]) -> str:
@@ -4116,10 +4287,43 @@ def _build_extraction_artifacts_from_ocr(
     return artifacts
 
 
+def _scrape_binary_text_metadata(file_bytes: bytes) -> str:
+    """Best-effort printable-text scrape from binary payloads as a final recovery stage."""
+    if not file_bytes:
+        return ""
+
+    decoded = file_bytes.decode("latin-1", errors="ignore")
+    text_segments = re.findall(r"\(([^()]{6,200})\)", decoded)
+    if not text_segments:
+        text_segments = re.findall(r"[A-Za-z0-9][A-Za-z0-9:/,.\-() ]{5,}", decoded)
+
+    candidates: List[str] = []
+    seen: set[str] = set()
+    for segment in text_segments:
+        normalized = re.sub(r"\s+", " ", segment).strip()
+        if len(normalized) < 6:
+            continue
+        lower = normalized.lower()
+        if lower in seen:
+            continue
+        if lower in {"obj", "endobj", "stream", "endstream", "xref", "trailer"}:
+            continue
+        noise_count = sum(1 for ch in normalized if ch in "<>{}[]\\")
+        if noise_count > max(3, len(normalized) // 6):
+            continue
+        seen.add(lower)
+        candidates.append(normalized)
+        if len(candidates) >= 80:
+            break
+
+    return "\n".join(candidates)
+
+
 async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
     """Extract text + normalized OCR artifacts from an uploaded file."""
     filename = getattr(upload_file, "filename", "unknown")
     content_type = getattr(upload_file, "content_type", "unknown")
+    hotfix_enabled = _extraction_fallback_hotfix_enabled()
 
     logger.log(TRACE_LOG_LEVEL, "Starting text extraction for %s (type=%s)", filename, content_type)
 
@@ -4129,24 +4333,50 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
         logger.info(f"✓ Read {len(file_bytes)} bytes from {filename}")
     except Exception as e:
         logger.error(f"✗ Failed to read file {filename}: {e}", exc_info=True)
-        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
+        artifacts = _empty_extraction_artifacts_v1()
+        _record_extraction_stage(
+            artifacts,
+            filename=filename,
+            stage="read_upload",
+            error="file_read_failed",
+        )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="read_upload", text="")
 
     if not file_bytes:
         logger.warning(f"⚠ Empty file content for {filename}")
-        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
+        artifacts = _empty_extraction_artifacts_v1()
+        _record_extraction_stage(
+            artifacts,
+            filename=filename,
+            stage="read_upload",
+            error="file_bytes_empty",
+        )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="read_upload", text="")
 
+    artifacts = _empty_extraction_artifacts_v1()
     text_output = ""
+    pypdf_text = ""
 
     min_chars_for_skip = max(1, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
 
+    logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pdfminer_native")
     try:
         from pdfminer.high_level import extract_text  # type: ignore
         text_output = extract_text(BytesIO(file_bytes))
-    except Exception:
-        pass
+        _record_extraction_stage(artifacts, filename=filename, stage="pdfminer_native", text=text_output)
+    except Exception as exc:
+        _record_extraction_stage(
+            artifacts,
+            filename=filename,
+            stage="pdfminer_native",
+            error=str(exc),
+        )
 
     # Fallback plain-text extraction pass if pdfminer is empty/weak
     if len((text_output or "").strip()) < min_chars_for_skip:
+        logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "pypdf_native")
         try:
             from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
             reader = PdfReader(BytesIO(file_bytes))
@@ -4157,20 +4387,55 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
                 except Exception:
                     continue
             pypdf_text = "\n".join(pieces)
+            _record_extraction_stage(artifacts, filename=filename, stage="pypdf_native", text=pypdf_text)
             if len((pypdf_text or "").strip()) > len((text_output or "").strip()):
                 text_output = pypdf_text
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_extraction_stage(
+                artifacts,
+                filename=filename,
+                stage="pypdf_native",
+                error=str(exc),
+            )
+
+    text_output_clean = (text_output or "").strip()
 
     # If direct PDF text is already rich enough, skip OCR provider calls.
-    if len((text_output or "").strip()) >= min_chars_for_skip:
-        return {
-            "text": text_output,
-            "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output),
-        }
+    if len(text_output_clean) >= min_chars_for_skip:
+        return _finalize_text_extraction_result(
+            artifacts,
+            stage="native_pdf_text",
+            text=text_output,
+        )
+
+    if not text_output_clean:
+        _record_extraction_reason_code(artifacts, "PARSER_EMPTY_OUTPUT")
 
     if not settings.OCR_ENABLED:
-        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+        if text_output_clean:
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage="native_pdf_text",
+                text=text_output,
+            )
+        if hotfix_enabled:
+            fallback_text = _scrape_binary_text_metadata(file_bytes)
+            _record_extraction_stage(
+                artifacts,
+                filename=filename,
+                stage="binary_metadata_scrape",
+                text=fallback_text,
+                fallback=True,
+            )
+            if (fallback_text or "").strip():
+                _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                return _finalize_text_extraction_result(
+                    artifacts,
+                    stage="binary_metadata_scrape",
+                    text=fallback_text,
+                )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
 
     page_count = 0
     try:
@@ -4180,28 +4445,159 @@ async def _extract_text_from_upload(upload_file: Any) -> Dict[str, Any]:
         page_count = 1 if content_type.startswith("image/") else 0
 
     if page_count > settings.OCR_MAX_PAGES or len(file_bytes) > settings.OCR_MAX_BYTES:
-        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+        if text_output_clean:
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage="native_pdf_text",
+                text=text_output,
+            )
+        if hotfix_enabled:
+            fallback_text = _scrape_binary_text_metadata(file_bytes)
+            _record_extraction_stage(
+                artifacts,
+                filename=filename,
+                stage="binary_metadata_scrape",
+                text=fallback_text,
+                fallback=True,
+            )
+            if (fallback_text or "").strip():
+                _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                return _finalize_text_extraction_result(
+                    artifacts,
+                    stage="binary_metadata_scrape",
+                    text=fallback_text,
+                )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
 
     ocr_result = await _try_ocr_providers(file_bytes, filename, content_type)
     ocr_text = ocr_result.get("text") or ""
-    artifacts = ocr_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=ocr_text)
-
-    text_output_clean = (text_output or "").strip()
+    ocr_artifacts = ocr_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=ocr_text)
+    artifacts = _merge_extraction_artifacts(artifacts, ocr_artifacts)
     ocr_text_clean = (ocr_text or "").strip()
 
-    merged_text = _merge_text_sources(text_output_clean, ocr_text_clean)
+    _record_extraction_stage(
+        artifacts,
+        filename=filename,
+        stage="ocr_provider_primary",
+        text=ocr_text,
+        error_code=ocr_artifacts.get("error_code") if not ocr_text_clean else None,
+        error=ocr_artifacts.get("error") if not ocr_text_clean else None,
+        fallback=not bool(text_output_clean),
+    )
+
+    merged_text = _merge_text_sources(text_output_clean, ocr_text_clean, pypdf_text)
 
     # If OCR is available, prefer merged evidence to maximize deterministic token recall.
     if ocr_text_clean:
-        merged_artifacts = dict(artifacts)
-        merged_artifacts["raw_text"] = merged_text or ocr_text
-        return {"text": merged_text or ocr_text, "artifacts": merged_artifacts}
+        if not text_output_clean:
+            _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+        return _finalize_text_extraction_result(
+            artifacts,
+            stage="ocr_provider_primary",
+            text=merged_text or ocr_text,
+        )
+
+    if hotfix_enabled:
+        secondary_result = await _try_secondary_ocr_adapter(file_bytes, filename, content_type)
+        secondary_text = secondary_result.get("text") or ""
+        secondary_artifacts = secondary_result.get("artifacts") or _empty_extraction_artifacts_v1(raw_text=secondary_text)
+        artifacts = _merge_extraction_artifacts(artifacts, secondary_artifacts)
+        secondary_text_clean = (secondary_text or "").strip()
+
+        _record_extraction_stage(
+            artifacts,
+            filename=filename,
+            stage="ocr_secondary",
+            text=secondary_text,
+            error_code=secondary_artifacts.get("error_code") if not secondary_text_clean else None,
+            error=secondary_artifacts.get("error") if not secondary_text_clean else None,
+            fallback=True,
+        )
+
+        if secondary_text_clean:
+            _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage="ocr_secondary",
+                text=_merge_text_sources(text_output_clean, secondary_text_clean, ocr_text_clean),
+            )
+
+        binary_text = _scrape_binary_text_metadata(file_bytes)
+        _record_extraction_stage(
+            artifacts,
+            filename=filename,
+            stage="binary_metadata_scrape",
+            text=binary_text,
+            fallback=True,
+        )
+        if (binary_text or "").strip():
+            _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage="binary_metadata_scrape",
+                text=_merge_text_sources(text_output_clean, binary_text),
+            )
 
     # No OCR available: return best extracted direct text.
     if text_output_clean:
-        return {"text": text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=text_output)}
+        return _finalize_text_extraction_result(
+            artifacts,
+            stage="native_pdf_text",
+            text=text_output,
+        )
 
-    return {"text": merged_text or text_output, "artifacts": _empty_extraction_artifacts_v1(raw_text=merged_text or text_output)}
+    _record_extraction_reason_code(
+        artifacts,
+        ocr_artifacts.get("error_code") or "OCR_PROVIDER_UNAVAILABLE",
+    )
+    _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+    return _finalize_text_extraction_result(artifacts, stage="ocr_provider_primary", text="")
+
+
+async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
+    """Attempt a deterministic secondary OCR path that bypasses the factory adapter chain."""
+    artifacts = _empty_extraction_artifacts_v1()
+    provider_attempts: List[Dict[str, Any]] = []
+
+    try:
+        from app.services.ocr_service import get_ocr_service
+
+        service = get_ocr_service()
+        is_healthy = await service.health_check()
+        attempt: Dict[str, Any] = {"provider": "ocr_service", "healthy": bool(is_healthy)}
+        provider_attempts.append(attempt)
+        if is_healthy:
+            result = await asyncio.wait_for(
+                service.extract_text(file_bytes, filename=filename, content_type=content_type),
+                timeout=settings.OCR_TIMEOUT_SEC,
+            )
+            text = result.get("text") or ""
+            if (text or "").strip():
+                artifacts["provider_attempts"] = provider_attempts
+                artifacts["provider"] = result.get("provider") or "ocr_service"
+                artifacts["ocr_confidence"] = result.get("confidence")
+                return {"text": text, "artifacts": artifacts}
+            attempt["error"] = result.get("error") or "empty_output"
+        else:
+            attempt["error"] = "service_unhealthy"
+    except asyncio.TimeoutError as exc:
+        provider_attempts.append({"provider": "ocr_service", "error": "timeout", "healthy": False})
+        artifacts["provider_attempts"] = provider_attempts
+        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error"] = str(exc)
+        return {"text": "", "artifacts": artifacts}
+    except Exception as exc:
+        provider_attempts.append({"provider": "ocr_service", "error": str(exc), "healthy": False})
+        artifacts["provider_attempts"] = provider_attempts
+        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error"] = str(exc)
+        return {"text": "", "artifacts": artifacts}
+
+    artifacts["provider_attempts"] = provider_attempts
+    artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+    artifacts["error"] = "secondary_ocr_unavailable"
+    return {"text": "", "artifacts": artifacts}
 
 
 async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str) -> Dict[str, Any]:
@@ -4214,6 +4610,7 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         "textract": "aws_textract",
     }
     provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
+    attempts: List[Dict[str, Any]] = []
 
     try:
         factory = get_ocr_factory()
@@ -4224,10 +4621,12 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
             full_provider_name = provider_map.get(provider_name, provider_name)
             adapter = adapter_map.get(full_provider_name)
             if not adapter:
+                attempts.append({"provider": full_provider_name, "status": "missing_adapter"})
                 continue
 
             try:
                 if not await adapter.health_check():
+                    attempts.append({"provider": full_provider_name, "status": "unhealthy"})
                     continue
 
                 result = await asyncio.wait_for(
@@ -4241,15 +4640,36 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                         provider_result=result,
                         ocr_confidence=result.overall_confidence,
                     )
+                    artifacts["provider_attempts"] = attempts + [
+                        {"provider": full_provider_name, "status": "success"}
+                    ]
+                    artifacts["provider"] = full_provider_name
                     return {"text": result.full_text, "artifacts": artifacts}
+                attempts.append(
+                    {
+                        "provider": full_provider_name,
+                        "status": "empty_output" if result and not result.error else "error",
+                        "error": getattr(result, "error", None),
+                    }
+                )
             except asyncio.TimeoutError:
+                attempts.append({"provider": full_provider_name, "status": "timeout"})
                 continue
-            except Exception:
+            except Exception as exc:
+                attempts.append({"provider": full_provider_name, "status": "error", "error": str(exc)})
                 continue
 
-        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
-    except Exception:
-        return {"text": "", "artifacts": _empty_extraction_artifacts_v1()}
+        artifacts = _empty_extraction_artifacts_v1()
+        artifacts["provider_attempts"] = attempts
+        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error"] = "no_ocr_provider_returned_text"
+        return {"text": "", "artifacts": artifacts}
+    except Exception as exc:
+        artifacts = _empty_extraction_artifacts_v1()
+        artifacts["provider_attempts"] = attempts
+        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error"] = str(exc)
+        return {"text": "", "artifacts": artifacts}
 
 
 def _severity_rank(severity: Optional[str]) -> int:
@@ -4348,7 +4768,9 @@ def _build_blocked_structured_result(
         "total_documents": len(documents),
         "successful_extractions": sum(1 for d in documents if d.get("extraction_status") == "success"),
         "failed_extractions": sum(1 for d in documents if d.get("extraction_status") in ("failed", "error", "empty")),
-        "partial_extractions": sum(1 for d in documents if d.get("extraction_status") in ("text_only", "partial")),
+        "partial_extractions": sum(
+            1 for d in documents if d.get("extraction_status") in ("text_only", "partial", "parse_failed")
+        ),
         "total_issues": len(blocking_issues),
         "compliance_rate": 0,  # 0 because validation is blocked
         "processing_time_seconds": round(processing_duration, 2),

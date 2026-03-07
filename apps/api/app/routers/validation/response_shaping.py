@@ -246,7 +246,7 @@ def _normalize_doc_status(
         return "success" if parse_complete is not False else "warning"
     if extraction in {"failed", "error", "empty"}:
         return "error"
-    if extraction in {"partial", "text_only", "pending", "unknown"}:
+    if extraction in {"partial", "text_only", "pending", "unknown", "parse_failed"}:
         return "warning"
     return "warning"
 
