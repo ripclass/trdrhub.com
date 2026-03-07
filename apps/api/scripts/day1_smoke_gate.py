@@ -11,18 +11,24 @@ import requests
 
 def _pick_files(input_dir: Path, limit: int) -> List[Path]:
     exts = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
-    files = [p for p in sorted(input_dir.iterdir()) if p.is_file() and p.suffix.lower() in exts]
+    files = [p for p in sorted(input_dir.rglob("*")) if p.is_file() and p.suffix.lower() in exts]
     return files[:limit]
 
 
-def _post_validate(base_url: str, file_path: Path, timeout: int = 120) -> Dict[str, Any]:
+def _post_validate(base_url: str, file_path: Path, timeout: int = 120, bearer: str = "", api_key: str = "") -> Dict[str, Any]:
     mime = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
     url = base_url.rstrip("/") + "/api/validate/"
+    headers: Dict[str, str] = {}
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    if api_key:
+        headers["x-api-key"] = api_key
     with file_path.open("rb") as f:
         resp = requests.post(
             url,
             files={"file": (file_path.name, f, mime)},
             data={"userType": "exporter"},
+            headers=headers,
             timeout=timeout,
         )
     resp.raise_for_status()
@@ -37,7 +43,7 @@ def _extract_gate_metrics(payload: Dict[str, Any]) -> Tuple[str, Dict[str, Any],
     return status, contract, metrics
 
 
-def run_smoke(base_url: str, input_dir: Path, limit: int) -> Dict[str, Any]:
+def run_smoke(base_url: str, input_dir: Path, limit: int, bearer: str = "", api_key: str = "") -> Dict[str, Any]:
     files = _pick_files(input_dir, limit)
     if not files:
         raise RuntimeError(f"No documents found in {input_dir}")
@@ -50,7 +56,7 @@ def run_smoke(base_url: str, input_dir: Path, limit: int) -> Dict[str, Any]:
 
     for fp in files:
         try:
-            payload = _post_validate(base_url, fp)
+            payload = _post_validate(base_url, fp, bearer=bearer, api_key=api_key)
             status, contract, metrics = _extract_gate_metrics(payload)
             contract_counts[status] = contract_counts.get(status, 0) + 1
             total_ret_no_hit += int(metrics.get("ret_no_hit") or 0)
@@ -92,10 +98,12 @@ def main() -> None:
     parser.add_argument("--base-url", required=True, help="API base url, e.g. http://localhost:8000")
     parser.add_argument("--input-dir", required=True, help="Directory with docs (.pdf/.png/...) for smoke")
     parser.add_argument("--limit", type=int, default=20, help="Number of docs to run (default: 20)")
+    parser.add_argument("--bearer", default="", help="Bearer token for Authorization header")
+    parser.add_argument("--api-key", default="", help="Optional x-api-key header")
     parser.add_argument("--out", default="day1_smoke_report.json", help="Output report file")
     args = parser.parse_args()
 
-    report = run_smoke(args.base_url, Path(args.input_dir), args.limit)
+    report = run_smoke(args.base_url, Path(args.input_dir), args.limit, bearer=args.bearer, api_key=args.api_key)
     out_path = Path(args.out)
     out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
