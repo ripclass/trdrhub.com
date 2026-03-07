@@ -4157,6 +4157,11 @@ def _stage_promotion_v1_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _ocr_adapter_runtime_payload_fix_v1_enabled() -> bool:
+    raw = str(os.getenv("LCCOPILOT_OCR_ADAPTER_RUNTIME_PAYLOAD_FIX_V1_ENABLED", "1") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 def _stage_threshold_tuning_v1_enabled() -> bool:
     raw = str(os.getenv("LCCOPILOT_STAGE_THRESHOLD_TUNING_V1_ENABLED", "1") or "1").strip().lower()
     return raw not in {"0", "false", "no", "off"}
@@ -4682,6 +4687,383 @@ def _prepare_provider_ocr_payload(
         "payload_source": "unsupported",
         "error_code": normalized_input.get("error_code") or "OCR_UNSUPPORTED_FORMAT",
         "error": normalized_input.get("error") or "provider_payload_incompatible",
+    }
+
+
+def _provider_runtime_limits(provider_name: str) -> Dict[str, Any]:
+    provider_key = str(provider_name or "").strip().lower()
+    max_pages_default = int(getattr(settings, "OCR_MAX_PAGES", 50) or 50)
+    max_bytes_default = int(getattr(settings, "OCR_MAX_BYTES", 50 * 1024 * 1024) or (50 * 1024 * 1024))
+    limits = {
+        "google_documentai": {
+            "supported_mimes": {"application/pdf", "image/png", "image/jpeg", "image/tiff"},
+            "max_pages": max_pages_default,
+            "max_bytes": min(max_bytes_default, 20 * 1024 * 1024),
+        },
+        "ocr_service": {
+            "supported_mimes": {"application/pdf", "image/png", "image/jpeg", "image/tiff"},
+            "max_pages": max_pages_default,
+            "max_bytes": min(max_bytes_default, 20 * 1024 * 1024),
+        },
+        "aws_textract": {
+            "supported_mimes": {"image/png", "image/jpeg"},
+            "max_pages": min(max_pages_default, 15),
+            "max_bytes": min(max_bytes_default, 5 * 1024 * 1024),
+        },
+    }
+    return limits.get(
+        provider_key,
+        {
+            "supported_mimes": {"application/pdf", "image/png", "image/jpeg", "image/tiff"},
+            "max_pages": max_pages_default,
+            "max_bytes": max_bytes_default,
+        },
+    )
+
+
+def _pdf_page_count(file_bytes: bytes) -> int:
+    try:
+        from PyPDF2 import PdfReader  # type: ignore[reportMissingImports]
+
+        return len(PdfReader(BytesIO(file_bytes)).pages)
+    except Exception:
+        return 0
+
+
+def _render_pdf_runtime_images(
+    file_bytes: bytes,
+    *,
+    dpi: int,
+    output_format: str,
+) -> List[bytes]:
+    from pdf2image import convert_from_bytes  # type: ignore
+    from PIL import ImageOps  # type: ignore
+
+    fmt = output_format.upper()
+    save_format = "JPEG" if fmt == "JPEG" else "PNG"
+    rendered_pages = convert_from_bytes(file_bytes, dpi=dpi, fmt=save_format.lower(), thread_count=1)
+    page_payloads: List[bytes] = []
+    for image in rendered_pages:
+        normalized = ImageOps.exif_transpose(image)
+        if fmt == "JPEG":
+            if normalized.mode != "RGB":
+                normalized = normalized.convert("RGB")
+        elif normalized.mode != "RGB":
+            normalized = normalized.convert("RGB")
+        buffer = BytesIO()
+        save_kwargs: Dict[str, Any] = {"format": save_format, "dpi": (dpi, dpi)}
+        if save_format == "JPEG":
+            save_kwargs["quality"] = 90
+        normalized.save(buffer, **save_kwargs)
+        page_payloads.append(buffer.getvalue())
+    return page_payloads
+
+
+def _normalize_runtime_image_bytes(
+    file_bytes: bytes,
+    *,
+    dpi: int,
+    output_format: str,
+) -> bytes:
+    from PIL import Image, ImageOps  # type: ignore
+
+    image = Image.open(BytesIO(file_bytes))
+    normalized = ImageOps.exif_transpose(image)
+    save_format = "JPEG" if output_format.upper() == "JPEG" else "PNG"
+    if save_format == "JPEG":
+        if normalized.mode != "RGB":
+            normalized = normalized.convert("RGB")
+    elif normalized.mode != "RGB":
+        normalized = normalized.convert("RGB")
+    buffer = BytesIO()
+    save_kwargs: Dict[str, Any] = {"format": save_format, "dpi": (dpi, dpi)}
+    if save_format == "JPEG":
+        save_kwargs["quality"] = 90
+    normalized.save(buffer, **save_kwargs)
+    return buffer.getvalue()
+
+
+def _build_runtime_payload_entry(
+    *,
+    provider_name: str,
+    file_bytes: bytes,
+    filename: str,
+    input_mime: str,
+    normalized_mime: str,
+    page_count: int,
+    bytes_sent: int,
+    payload_source: str,
+    retry_used: bool,
+    dpi: Optional[int] = None,
+    page_index: Optional[int] = None,
+) -> Dict[str, Any]:
+    return {
+        "provider": provider_name,
+        "content": file_bytes,
+        "filename": filename,
+        "content_type": normalized_mime,
+        "input_mime": input_mime,
+        "normalized_mime": normalized_mime,
+        "page_count": int(page_count or 1),
+        "page_index": int(page_index or 1),
+        "dpi": dpi,
+        "bytes_sent": int(bytes_sent),
+        "payload_source": payload_source,
+        "retry_used": bool(retry_used),
+    }
+
+
+def _build_google_docai_payload_plan(
+    provider_name: str,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> Dict[str, Any]:
+    input_mime = _detect_input_mime_type(file_bytes, filename, content_type)
+    limits = _provider_runtime_limits(provider_name)
+    dpi = max(72, int(getattr(settings, "OCR_NORMALIZATION_DPI", 300) or 300))
+    page_count = _pdf_page_count(file_bytes) if input_mime == "application/pdf" else 1
+
+    if page_count and page_count > int(limits["max_pages"]):
+        return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": f"page_limit_exceeded:{page_count}"}
+    if len(file_bytes) > int(limits["max_bytes"]):
+        return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": f"byte_limit_exceeded:{len(file_bytes)}"}
+
+    groups: List[List[Dict[str, Any]]] = []
+    if input_mime == "application/pdf":
+        primary = _build_runtime_payload_entry(
+            provider_name=provider_name,
+            file_bytes=file_bytes,
+            filename=filename,
+            input_mime=input_mime,
+            normalized_mime="application/pdf",
+            page_count=max(1, page_count),
+            bytes_sent=len(file_bytes),
+            payload_source="runtime_pdf_direct",
+            retry_used=False,
+            dpi=dpi,
+        )
+        fallback_groups = [primary]
+        try:
+            normalized = _normalize_ocr_input(file_bytes, filename, content_type, provider_name)
+            if normalized.get("error_code") is None and normalized.get("content"):
+                fallback_groups.append(
+                    _build_runtime_payload_entry(
+                        provider_name=provider_name,
+                        file_bytes=normalized.get("content") or b"",
+                        filename=filename,
+                        input_mime=input_mime,
+                        normalized_mime=str(normalized.get("content_type") or "image/tiff"),
+                        page_count=int(normalized.get("page_count") or page_count or 1),
+                        bytes_sent=len(normalized.get("content") or b""),
+                        payload_source="runtime_pdf_retry_image",
+                        retry_used=True,
+                        dpi=int(normalized.get("dpi") or dpi),
+                    )
+                )
+        except Exception:
+            pass
+        groups.append(fallback_groups)
+    elif input_mime.startswith("image/"):
+        try:
+            primary_bytes = _normalize_runtime_image_bytes(file_bytes, dpi=dpi, output_format="PNG")
+            group = [
+                _build_runtime_payload_entry(
+                    provider_name=provider_name,
+                    file_bytes=primary_bytes,
+                    filename=filename,
+                    input_mime=input_mime,
+                    normalized_mime="image/png",
+                    page_count=1,
+                    bytes_sent=len(primary_bytes),
+                    payload_source="runtime_image_png",
+                    retry_used=False,
+                    dpi=dpi,
+                )
+            ]
+            if input_mime != "image/png":
+                group.append(
+                    _build_runtime_payload_entry(
+                        provider_name=provider_name,
+                        file_bytes=file_bytes,
+                        filename=filename,
+                        input_mime=input_mime,
+                        normalized_mime=input_mime,
+                        page_count=1,
+                        bytes_sent=len(file_bytes),
+                        payload_source="runtime_image_original",
+                        retry_used=True,
+                        dpi=dpi,
+                    )
+                )
+            groups.append(group)
+        except Exception as exc:
+            return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": str(exc)}
+    else:
+        return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": "unsupported_input_mime"}
+
+    return {"groups": groups, "aggregate_pages": False, "error_code": None, "error": None}
+
+
+def _build_textract_payload_plan(
+    provider_name: str,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> Dict[str, Any]:
+    input_mime = _detect_input_mime_type(file_bytes, filename, content_type)
+    limits = _provider_runtime_limits(provider_name)
+    dpi = max(72, int(getattr(settings, "OCR_NORMALIZATION_DPI", 300) or 300))
+
+    groups: List[List[Dict[str, Any]]] = []
+    try:
+        if input_mime == "application/pdf":
+            png_pages = _render_pdf_runtime_images(file_bytes, dpi=dpi, output_format="PNG")
+            jpeg_pages = _render_pdf_runtime_images(file_bytes, dpi=dpi, output_format="JPEG")
+            page_count = len(png_pages)
+            if page_count > int(limits["max_pages"]):
+                return {"groups": [], "aggregate_pages": True, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": f"page_limit_exceeded:{page_count}"}
+            for page_index, page_bytes in enumerate(png_pages, start=1):
+                if len(page_bytes) > int(limits["max_bytes"]):
+                    return {"groups": [], "aggregate_pages": True, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": f"byte_limit_exceeded:{len(page_bytes)}"}
+                group = [
+                    _build_runtime_payload_entry(
+                        provider_name=provider_name,
+                        file_bytes=page_bytes,
+                        filename=filename,
+                        input_mime=input_mime,
+                        normalized_mime="image/png",
+                        page_count=page_count,
+                        page_index=page_index,
+                        bytes_sent=len(page_bytes),
+                        payload_source="runtime_pdf_page_png",
+                        retry_used=False,
+                        dpi=dpi,
+                    )
+                ]
+                if page_index <= len(jpeg_pages):
+                    group.append(
+                        _build_runtime_payload_entry(
+                            provider_name=provider_name,
+                            file_bytes=jpeg_pages[page_index - 1],
+                            filename=filename,
+                            input_mime=input_mime,
+                            normalized_mime="image/jpeg",
+                            page_count=page_count,
+                            page_index=page_index,
+                            bytes_sent=len(jpeg_pages[page_index - 1]),
+                            payload_source="runtime_pdf_page_jpeg_retry",
+                            retry_used=True,
+                            dpi=dpi,
+                        )
+                    )
+                groups.append(group)
+        elif input_mime.startswith("image/"):
+            png_bytes = _normalize_runtime_image_bytes(file_bytes, dpi=dpi, output_format="PNG")
+            jpeg_bytes = _normalize_runtime_image_bytes(file_bytes, dpi=dpi, output_format="JPEG")
+            groups.append(
+                [
+                    _build_runtime_payload_entry(
+                        provider_name=provider_name,
+                        file_bytes=png_bytes,
+                        filename=filename,
+                        input_mime=input_mime,
+                        normalized_mime="image/png",
+                        page_count=1,
+                        bytes_sent=len(png_bytes),
+                        payload_source="runtime_image_png",
+                        retry_used=False,
+                        dpi=dpi,
+                    ),
+                    _build_runtime_payload_entry(
+                        provider_name=provider_name,
+                        file_bytes=jpeg_bytes,
+                        filename=filename,
+                        input_mime=input_mime,
+                        normalized_mime="image/jpeg",
+                        page_count=1,
+                        bytes_sent=len(jpeg_bytes),
+                        payload_source="runtime_image_jpeg_retry",
+                        retry_used=True,
+                        dpi=dpi,
+                    ),
+                ]
+            )
+        else:
+            return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": "unsupported_input_mime"}
+    except Exception as exc:
+        return {"groups": [], "aggregate_pages": False, "error_code": "OCR_UNSUPPORTED_FORMAT", "error": str(exc)}
+
+    return {"groups": groups, "aggregate_pages": True, "error_code": None, "error": None}
+
+
+def _build_provider_runtime_payload_plan(
+    provider_name: str,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> Dict[str, Any]:
+    if not _ocr_adapter_runtime_payload_fix_v1_enabled():
+        payload = _prepare_provider_ocr_payload(provider_name, file_bytes, filename, content_type)
+        if payload.get("error_code"):
+            return {
+                "groups": [],
+                "aggregate_pages": False,
+                "error_code": payload.get("error_code"),
+                "error": payload.get("error"),
+            }
+        return {
+            "groups": [[
+                _build_runtime_payload_entry(
+                    provider_name=provider_name,
+                    file_bytes=payload.get("content") or b"",
+                    filename=filename,
+                    input_mime=str(payload.get("original_content_type") or payload.get("content_type") or content_type),
+                    normalized_mime=str(payload.get("content_type") or content_type),
+                    page_count=int(payload.get("page_count") or 1),
+                    bytes_sent=int(payload.get("bytes_sent") or len(payload.get("content") or b"")),
+                    payload_source=str(payload.get("payload_source") or "normalized"),
+                    retry_used=False,
+                    dpi=payload.get("dpi"),
+                )
+            ]],
+            "aggregate_pages": False,
+            "error_code": None,
+            "error": None,
+        }
+
+    provider_key = str(provider_name or "").strip().lower()
+    if provider_key in {"google_documentai", "ocr_service"}:
+        return _build_google_docai_payload_plan(provider_name, file_bytes, filename, content_type)
+    if provider_key == "aws_textract":
+        return _build_textract_payload_plan(provider_name, file_bytes, filename, content_type)
+    return _build_google_docai_payload_plan(provider_name, file_bytes, filename, content_type)
+
+
+def _build_provider_attempt_record(
+    *,
+    stage: str,
+    provider_name: str,
+    payload: Dict[str, Any],
+    text: str,
+    status: str,
+    error_code: Optional[str] = None,
+    error: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "stage": stage,
+        "provider": provider_name,
+        "status": status,
+        "text_len": len((text or "").strip()),
+        "error_code": error_code,
+        "error": error,
+        "input_mime": payload.get("input_mime"),
+        "normalized_mime": payload.get("normalized_mime"),
+        "retry_used": bool(payload.get("retry_used")),
+        "page_index": int(payload.get("page_index") or 1),
+        "page_count": int(payload.get("page_count") or 1),
+        "bytes_sent": int(payload.get("bytes_sent") or 0),
+        "payload_source": payload.get("payload_source"),
     }
 
 
@@ -5268,88 +5650,194 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
     """Attempt a deterministic secondary OCR path that bypasses the factory adapter chain."""
     artifacts = _empty_extraction_artifacts_v1()
     provider_attempts: List[Dict[str, Any]] = []
-    provider_input = _prepare_provider_ocr_payload("ocr_service", file_bytes, filename, content_type)
+    plan = _build_provider_runtime_payload_plan("ocr_service", file_bytes, filename, content_type)
+    first_group = (plan.get("groups") or [[]])[0] if isinstance(plan.get("groups"), list) else []
+    first_payload = first_group[0] if first_group else {}
     artifacts["normalization"] = {
-        "original_mime": provider_input.get("original_content_type"),
-        "normalized_mime": provider_input.get("content_type"),
-        "page_count": provider_input.get("page_count"),
-        "dpi": provider_input.get("dpi"),
-        "bytes_sent": provider_input.get("bytes_sent"),
-        "payload_source": provider_input.get("payload_source"),
+        "original_mime": first_payload.get("input_mime"),
+        "normalized_mime": first_payload.get("normalized_mime"),
+        "page_count": first_payload.get("page_count"),
+        "dpi": first_payload.get("dpi"),
+        "bytes_sent": first_payload.get("bytes_sent"),
+        "payload_source": first_payload.get("payload_source"),
     }
 
-    if provider_input.get("error_code"):
+    if plan.get("error_code"):
         artifacts["provider_attempts"] = [
             {
+                "stage": "ocr_secondary",
                 "provider": "ocr_service",
                 "status": "guardrail_rejected",
-                "error": provider_input.get("error"),
-                "error_code": provider_input.get("error_code"),
+                "text_len": 0,
+                "error": plan.get("error"),
+                "error_code": plan.get("error_code"),
+                "input_mime": _detect_input_mime_type(file_bytes, filename, content_type),
+                "normalized_mime": None,
+                "retry_used": False,
+                "page_index": 1,
+                "page_count": 1,
+                "bytes_sent": 0,
+                "payload_source": "plan_error",
             }
         ]
-        artifacts["error_code"] = provider_input.get("error_code")
-        artifacts["error"] = provider_input.get("error")
+        artifacts["error_code"] = plan.get("error_code")
+        artifacts["error"] = plan.get("error")
         return {"text": "", "artifacts": artifacts}
 
     try:
         from app.services.ocr_service import get_ocr_service
 
         service = get_ocr_service()
-        is_healthy = await service.health_check()
-        attempt: Dict[str, Any] = {"provider": "ocr_service", "healthy": bool(is_healthy)}
-        provider_attempts.append(attempt)
-        if is_healthy:
-            logger.info(
-                "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s",
-                "ocr_service",
-                provider_input.get("original_content_type"),
-                provider_input.get("content_type"),
-                provider_input.get("page_count"),
-                provider_input.get("dpi"),
-                provider_input.get("bytes_sent"),
-                provider_input.get("payload_source"),
+        if not await service.health_check():
+            provider_attempts.append(
+                {
+                    "stage": "ocr_secondary",
+                    "provider": "ocr_service",
+                    "status": "unhealthy",
+                    "text_len": 0,
+                    "error": "service_unhealthy",
+                    "error_code": "OCR_PROVIDER_UNAVAILABLE",
+                    "input_mime": first_payload.get("input_mime"),
+                    "normalized_mime": first_payload.get("normalized_mime"),
+                    "retry_used": False,
+                    "page_index": 1,
+                    "page_count": int(first_payload.get("page_count") or 1),
+                    "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                    "payload_source": first_payload.get("payload_source"),
+                }
             )
-            result = await asyncio.wait_for(
-                service.extract_text(
-                    provider_input.get("content") or file_bytes,
-                    filename=filename,
-                    content_type=provider_input.get("content_type") or content_type,
-                ),
-                timeout=settings.OCR_TIMEOUT_SEC,
-            )
-            text = result.get("text") or ""
-            logger.info(
-                "validate.extraction.provider_response provider=%s status=%s error=%s",
-                "ocr_service",
-                "success" if (text or "").strip() and not result.get("error") else "error",
-                result.get("error"),
-            )
-            if (text or "").strip():
-                artifacts["provider_attempts"] = provider_attempts
-                artifacts["provider"] = result.get("provider") or "ocr_service"
-                artifacts["ocr_confidence"] = result.get("confidence")
-                return {"text": text, "artifacts": artifacts}
-            attempt["error"] = result.get("error") or "empty_output"
-            attempt["error_code"] = _map_ocr_provider_error_code(attempt.get("error")) or "OCR_EMPTY_RESULT"
-        else:
-            attempt["error"] = "service_unhealthy"
-            attempt["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+            artifacts["provider_attempts"] = provider_attempts
+            artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
+            artifacts["error"] = "service_unhealthy"
+            return {"text": "", "artifacts": artifacts}
+
+        collected_texts: List[str] = []
+        confidences: List[float] = []
+        selected_payload = first_payload
+
+        for group in plan.get("groups") or []:
+            group_success = False
+            for payload in group:
+                logger.info(
+                    "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
+                    "ocr_service",
+                    payload.get("input_mime"),
+                    payload.get("normalized_mime"),
+                    payload.get("page_count"),
+                    payload.get("dpi"),
+                    payload.get("bytes_sent"),
+                    payload.get("payload_source"),
+                    payload.get("retry_used"),
+                )
+                result = await asyncio.wait_for(
+                    service.extract_text(
+                        payload.get("content") or file_bytes,
+                        filename=payload.get("filename") or filename,
+                        content_type=payload.get("normalized_mime") or content_type,
+                    ),
+                    timeout=settings.OCR_TIMEOUT_SEC,
+                )
+                text = result.get("text") or ""
+                error = result.get("error")
+                success = bool((text or "").strip()) and not error
+                error_code = None if success else (_map_ocr_provider_error_code(error) if error else "OCR_EMPTY_RESULT")
+                provider_attempts.append(
+                    _build_provider_attempt_record(
+                        stage="ocr_secondary",
+                        provider_name="ocr_service",
+                        payload=payload,
+                        text=text,
+                        status="success" if success else "empty_output" if not error else "error",
+                        error_code=error_code,
+                        error=error,
+                    )
+                )
+                logger.info(
+                    "validate.extraction.provider_response provider=%s status=%s error=%s text_len=%s retry_used=%s",
+                    "ocr_service",
+                    provider_attempts[-1]["status"],
+                    error,
+                    provider_attempts[-1]["text_len"],
+                    provider_attempts[-1]["retry_used"],
+                )
+                if success:
+                    selected_payload = payload
+                    collected_texts.append(text)
+                    confidence = result.get("confidence")
+                    if isinstance(confidence, (int, float)):
+                        confidences.append(float(confidence))
+                    group_success = True
+                    break
+                if error_code != "OCR_UNSUPPORTED_FORMAT":
+                    break
+            if group_success and not plan.get("aggregate_pages"):
+                break
     except asyncio.TimeoutError as exc:
-        provider_attempts.append({"provider": "ocr_service", "error": "timeout", "healthy": False})
+        provider_attempts.append(
+            {
+                "stage": "ocr_secondary",
+                "provider": "ocr_service",
+                "status": "timeout",
+                "text_len": 0,
+                "error": "timeout",
+                "error_code": "OCR_PROVIDER_UNAVAILABLE",
+                "input_mime": first_payload.get("input_mime"),
+                "normalized_mime": first_payload.get("normalized_mime"),
+                "retry_used": False,
+                "page_index": 1,
+                "page_count": int(first_payload.get("page_count") or 1),
+                "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                "payload_source": first_payload.get("payload_source"),
+            }
+        )
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = provider_input.get("error_code") or "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
     except Exception as exc:
-        provider_attempts.append({"provider": "ocr_service", "error": str(exc), "healthy": False})
+        provider_attempts.append(
+            {
+                "stage": "ocr_secondary",
+                "provider": "ocr_service",
+                "status": "error",
+                "text_len": 0,
+                "error": str(exc),
+                "error_code": _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE",
+                "input_mime": first_payload.get("input_mime"),
+                "normalized_mime": first_payload.get("normalized_mime"),
+                "retry_used": False,
+                "page_index": 1,
+                "page_count": int(first_payload.get("page_count") or 1),
+                "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                "payload_source": first_payload.get("payload_source"),
+            }
+        )
         artifacts["provider_attempts"] = provider_attempts
-        artifacts["error_code"] = provider_input.get("error_code") or _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
+        artifacts["error_code"] = _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE"
         artifacts["error"] = str(exc)
         return {"text": "", "artifacts": artifacts}
 
+    if collected_texts:
+        merged_text = _merge_text_sources(*collected_texts)
+        success_artifacts = _empty_extraction_artifacts_v1(
+            raw_text=merged_text,
+            ocr_confidence=(sum(confidences) / len(confidences)) if confidences else None,
+        )
+        success_artifacts["provider_attempts"] = provider_attempts
+        success_artifacts["provider"] = "ocr_service"
+        success_artifacts["normalization"] = {
+            "original_mime": selected_payload.get("input_mime"),
+            "normalized_mime": selected_payload.get("normalized_mime"),
+            "page_count": selected_payload.get("page_count"),
+            "dpi": selected_payload.get("dpi"),
+            "bytes_sent": selected_payload.get("bytes_sent"),
+            "payload_source": selected_payload.get("payload_source"),
+        }
+        return {"text": merged_text, "artifacts": success_artifacts}
+
     artifacts["provider_attempts"] = provider_attempts
-    artifacts["error_code"] = provider_input.get("error_code") or attempt.get("error_code") or _map_ocr_provider_error_code(attempt.get("error")) or "OCR_PROVIDER_UNAVAILABLE"
-    artifacts["error"] = attempt.get("error") or "secondary_ocr_unavailable"
+    artifacts["error_code"] = next((attempt.get("error_code") for attempt in provider_attempts if attempt.get("error_code")), None) or "OCR_PROVIDER_UNAVAILABLE"
+    artifacts["error"] = next((attempt.get("error") for attempt in provider_attempts if attempt.get("error")), None) or "secondary_ocr_unavailable"
     return {"text": "", "artifacts": artifacts}
 
 
@@ -5374,104 +5862,205 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
             full_provider_name = provider_map.get(provider_name, provider_name)
             adapter = adapter_map.get(full_provider_name)
             if not adapter:
-                attempts.append({"provider": full_provider_name, "status": "missing_adapter"})
-                continue
-
-            provider_input = _prepare_provider_ocr_payload(full_provider_name, file_bytes, filename, content_type)
-            if provider_input.get("error_code"):
                 attempts.append(
                     {
+                        "stage": "ocr_provider_primary",
+                        "provider": full_provider_name,
+                        "status": "missing_adapter",
+                        "text_len": 0,
+                        "error": "missing_adapter",
+                        "error_code": "OCR_PROVIDER_UNAVAILABLE",
+                        "input_mime": _detect_input_mime_type(file_bytes, filename, content_type),
+                        "normalized_mime": None,
+                        "retry_used": False,
+                        "page_index": 1,
+                        "page_count": 1,
+                        "bytes_sent": 0,
+                        "payload_source": "missing_adapter",
+                    }
+                )
+                continue
+
+            plan = _build_provider_runtime_payload_plan(full_provider_name, file_bytes, filename, content_type)
+            first_group = (plan.get("groups") or [[]])[0] if isinstance(plan.get("groups"), list) else []
+            first_payload = first_group[0] if first_group else {}
+            if plan.get("error_code"):
+                attempts.append(
+                    {
+                        "stage": "ocr_provider_primary",
                         "provider": full_provider_name,
                         "status": "guardrail_rejected",
-                        "error": provider_input.get("error"),
-                        "error_code": provider_input.get("error_code"),
-                        "bytes_sent": provider_input.get("bytes_sent"),
+                        "text_len": 0,
+                        "error": plan.get("error"),
+                        "error_code": plan.get("error_code"),
+                        "input_mime": _detect_input_mime_type(file_bytes, filename, content_type),
+                        "normalized_mime": None,
+                        "retry_used": False,
+                        "page_index": 1,
+                        "page_count": 1,
+                        "bytes_sent": 0,
+                        "payload_source": "plan_error",
                     }
                 )
                 continue
 
             try:
                 if not await adapter.health_check():
-                    attempts.append({"provider": full_provider_name, "status": "unhealthy", "error_code": "OCR_PROVIDER_UNAVAILABLE"})
+                    attempts.append(
+                        {
+                            "stage": "ocr_provider_primary",
+                            "provider": full_provider_name,
+                            "status": "unhealthy",
+                            "text_len": 0,
+                            "error": "provider_unhealthy",
+                            "error_code": "OCR_PROVIDER_UNAVAILABLE",
+                            "input_mime": first_payload.get("input_mime"),
+                            "normalized_mime": first_payload.get("normalized_mime"),
+                            "retry_used": False,
+                            "page_index": 1,
+                            "page_count": int(first_payload.get("page_count") or 1),
+                            "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                            "payload_source": first_payload.get("payload_source"),
+                        }
+                    )
                     continue
 
-                logger.info(
-                    "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s",
-                    full_provider_name,
-                    provider_input.get("original_content_type"),
-                    provider_input.get("content_type"),
-                    provider_input.get("page_count"),
-                    provider_input.get("dpi"),
-                    provider_input.get("bytes_sent"),
-                    provider_input.get("payload_source"),
-                )
-                result = await asyncio.wait_for(
-                    adapter.process_file_bytes(
-                        provider_input.get("content") or file_bytes,
-                        filename,
-                        provider_input.get("content_type") or content_type,
-                        uuid4(),
-                    ),
-                    timeout=settings.OCR_TIMEOUT_SEC,
-                )
+                collected_texts: List[str] = []
+                provider_results: List[Any] = []
+                selected_payload = first_payload
 
-                logger.info(
-                    "validate.extraction.provider_response provider=%s status=%s error=%s",
-                    full_provider_name,
-                    "success" if result and result.full_text and not result.error else "error",
-                    getattr(result, "error", None),
-                )
-                if result and result.full_text and not result.error:
-                    artifacts = _build_extraction_artifacts_from_ocr(
-                        raw_text=result.full_text,
-                        provider_result=result,
-                        ocr_confidence=result.overall_confidence,
-                    )
-                    artifacts["provider_attempts"] = attempts + [
-                        {"provider": full_provider_name, "status": "success", "bytes_sent": provider_input.get("bytes_sent")}
+                for group in plan.get("groups") or []:
+                    group_success = False
+                    for payload in group:
+                        logger.info(
+                            "validate.extraction.provider_input provider=%s original_mime=%s normalized_mime=%s page_count=%s dpi=%s bytes_sent=%s payload_source=%s retry_used=%s",
+                            full_provider_name,
+                            payload.get("input_mime"),
+                            payload.get("normalized_mime"),
+                            payload.get("page_count"),
+                            payload.get("dpi"),
+                            payload.get("bytes_sent"),
+                            payload.get("payload_source"),
+                            payload.get("retry_used"),
+                        )
+                        result = await asyncio.wait_for(
+                            adapter.process_file_bytes(
+                                payload.get("content") or file_bytes,
+                                payload.get("filename") or filename,
+                                payload.get("normalized_mime") or content_type,
+                                uuid4(),
+                            ),
+                            timeout=settings.OCR_TIMEOUT_SEC,
+                        )
+                        text = getattr(result, "full_text", "") or ""
+                        error_text = getattr(result, "error", None)
+                        success = bool((text or "").strip()) and not error_text
+                        error_code = None if success else (_map_ocr_provider_error_code(error_text) if error_text else "OCR_EMPTY_RESULT")
+                        attempts.append(
+                            _build_provider_attempt_record(
+                                stage="ocr_provider_primary",
+                                provider_name=full_provider_name,
+                                payload=payload,
+                                text=text,
+                                status="success" if success else "empty_output" if not error_text else "error",
+                                error_code=error_code,
+                                error=error_text,
+                            )
+                        )
+                        logger.info(
+                            "validate.extraction.provider_response provider=%s status=%s error=%s text_len=%s retry_used=%s",
+                            full_provider_name,
+                            attempts[-1]["status"],
+                            error_text,
+                            attempts[-1]["text_len"],
+                            attempts[-1]["retry_used"],
+                        )
+                        if success:
+                            selected_payload = payload
+                            collected_texts.append(text)
+                            provider_results.append(result)
+                            group_success = True
+                            break
+                        if error_code != "OCR_UNSUPPORTED_FORMAT":
+                            break
+                    if group_success and not plan.get("aggregate_pages"):
+                        break
+
+                if collected_texts:
+                    merged_text = _merge_text_sources(*collected_texts)
+                    confidence_values = [
+                        float(result.overall_confidence)
+                        for result in provider_results
+                        if isinstance(getattr(result, "overall_confidence", None), (int, float))
                     ]
+                    average_confidence = (
+                        sum(confidence_values) / len(confidence_values)
+                        if confidence_values
+                        else None
+                    )
+                    artifacts = _build_extraction_artifacts_from_ocr(
+                        raw_text=merged_text,
+                        provider_result=provider_results[0] if provider_results else None,
+                        ocr_confidence=average_confidence,
+                    )
+                    artifacts["provider_attempts"] = attempts
                     artifacts["provider"] = full_provider_name
                     artifacts["normalization"] = {
-                        "original_mime": provider_input.get("original_content_type"),
-                        "normalized_mime": provider_input.get("content_type"),
-                        "page_count": provider_input.get("page_count"),
-                        "dpi": provider_input.get("dpi"),
-                        "bytes_sent": provider_input.get("bytes_sent"),
-                        "payload_source": provider_input.get("payload_source"),
+                        "original_mime": selected_payload.get("input_mime"),
+                        "normalized_mime": selected_payload.get("normalized_mime"),
+                        "page_count": selected_payload.get("page_count"),
+                        "dpi": selected_payload.get("dpi"),
+                        "bytes_sent": selected_payload.get("bytes_sent"),
+                        "payload_source": selected_payload.get("payload_source"),
                     }
-                    return {"text": result.full_text, "artifacts": artifacts}
-                error_text = getattr(result, "error", None)
-                error_code = _map_ocr_provider_error_code(error_text) if error_text else "OCR_EMPTY_RESULT"
+                    return {"text": merged_text, "artifacts": artifacts}
+            except asyncio.TimeoutError:
                 attempts.append(
                     {
+                        "stage": "ocr_provider_primary",
                         "provider": full_provider_name,
-                        "status": "empty_output" if result and not result.error else "error",
-                        "error": error_text or "empty_output",
-                        "error_code": error_code,
-                        "bytes_sent": provider_input.get("bytes_sent"),
+                        "status": "timeout",
+                        "text_len": 0,
+                        "error": "timeout",
+                        "error_code": "OCR_PROVIDER_UNAVAILABLE",
+                        "input_mime": first_payload.get("input_mime"),
+                        "normalized_mime": first_payload.get("normalized_mime"),
+                        "retry_used": False,
+                        "page_index": 1,
+                        "page_count": int(first_payload.get("page_count") or 1),
+                        "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                        "payload_source": first_payload.get("payload_source"),
                     }
                 )
-            except asyncio.TimeoutError:
-                attempts.append({"provider": full_provider_name, "status": "timeout", "error": "timeout", "error_code": "OCR_PROVIDER_UNAVAILABLE"})
                 continue
             except Exception as exc:
                 attempts.append(
                     {
+                        "stage": "ocr_provider_primary",
                         "provider": full_provider_name,
                         "status": "error",
+                        "text_len": 0,
                         "error": str(exc),
-                        "error_code": _map_ocr_provider_error_code(str(exc)),
-                        "bytes_sent": provider_input.get("bytes_sent"),
+                        "error_code": _map_ocr_provider_error_code(str(exc)) or "OCR_PROVIDER_UNAVAILABLE",
+                        "input_mime": first_payload.get("input_mime"),
+                        "normalized_mime": first_payload.get("normalized_mime"),
+                        "retry_used": False,
+                        "page_index": 1,
+                        "page_count": int(first_payload.get("page_count") or 1),
+                        "bytes_sent": int(first_payload.get("bytes_sent") or 0),
+                        "payload_source": first_payload.get("payload_source"),
                     }
                 )
                 continue
 
         artifacts = _empty_extraction_artifacts_v1()
         artifacts["provider_attempts"] = attempts
-        last_input = _prepare_provider_ocr_payload(provider_map.get(provider_order[0], provider_order[0]), file_bytes, filename, content_type)
+        last_plan = _build_provider_runtime_payload_plan(provider_map.get(provider_order[0], provider_order[0]), file_bytes, filename, content_type)
+        last_group = (last_plan.get("groups") or [[]])[0] if isinstance(last_plan.get("groups"), list) else []
+        last_input = last_group[0] if last_group else {}
         artifacts["normalization"] = {
-            "original_mime": last_input.get("original_content_type"),
-            "normalized_mime": last_input.get("content_type"),
+            "original_mime": last_input.get("input_mime"),
+            "normalized_mime": last_input.get("normalized_mime"),
             "page_count": last_input.get("page_count"),
             "dpi": last_input.get("dpi"),
             "bytes_sent": last_input.get("bytes_sent"),
@@ -5487,10 +6076,12 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
     except Exception as exc:
         artifacts = _empty_extraction_artifacts_v1()
         artifacts["provider_attempts"] = attempts
-        fallback_input = _prepare_provider_ocr_payload(provider_map.get(provider_order[0], provider_order[0]), file_bytes, filename, content_type)
+        fallback_plan = _build_provider_runtime_payload_plan(provider_map.get(provider_order[0], provider_order[0]), file_bytes, filename, content_type)
+        fallback_group = (fallback_plan.get("groups") or [[]])[0] if isinstance(fallback_plan.get("groups"), list) else []
+        fallback_input = fallback_group[0] if fallback_group else {}
         artifacts["normalization"] = {
-            "original_mime": fallback_input.get("original_content_type"),
-            "normalized_mime": fallback_input.get("content_type"),
+            "original_mime": fallback_input.get("input_mime"),
+            "normalized_mime": fallback_input.get("normalized_mime"),
             "page_count": fallback_input.get("page_count"),
             "dpi": fallback_input.get("dpi"),
             "bytes_sent": fallback_input.get("bytes_sent"),

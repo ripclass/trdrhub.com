@@ -90,16 +90,33 @@ def build_extraction_debug(document: Dict[str, Any]) -> Optional[Dict[str, Any]]
     attempted_stages = artifacts.get("attempted_stages") if isinstance(artifacts.get("attempted_stages"), list) else []
     stage_errors = artifacts.get("stage_errors") if isinstance(artifacts.get("stage_errors"), dict) else {}
     text_length_by_stage = artifacts.get("text_length_by_stage") if isinstance(artifacts.get("text_length_by_stage"), dict) else {}
+    provider_attempts = artifacts.get("provider_attempts") if isinstance(artifacts.get("provider_attempts"), list) else []
 
     stage_attempts: List[Dict[str, Any]] = []
-    for stage_name in attempted_stages[:_MAX_STAGE_ATTEMPTS]:
-        stage_attempts.append(
-            {
-                "stage": str(stage_name),
-                "text_length": int(text_length_by_stage.get(stage_name) or 0),
-                "error_code": _extract_stage_error_code(stage_errors.get(stage_name)),
-            }
-        )
+    if provider_attempts:
+        for entry in provider_attempts[:_MAX_STAGE_ATTEMPTS]:
+            if not isinstance(entry, dict):
+                continue
+            stage_attempts.append(
+                {
+                    "stage": str(entry.get("stage") or entry.get("provider") or "ocr_provider_primary"),
+                    "provider": str(entry.get("provider") or "") or None,
+                    "text_length": int(entry.get("text_len") or entry.get("text_length") or 0),
+                    "error_code": _extract_stage_error_code(entry.get("error_code") or entry.get("error")),
+                    "input_mime": str(entry.get("input_mime") or "") or None,
+                    "normalized_mime": str(entry.get("normalized_mime") or "") or None,
+                    "retry_used": bool(entry.get("retry_used")),
+                }
+            )
+    else:
+        for stage_name in attempted_stages[:_MAX_STAGE_ATTEMPTS]:
+            stage_attempts.append(
+                {
+                    "stage": str(stage_name),
+                    "text_length": int(text_length_by_stage.get(stage_name) or 0),
+                    "error_code": _extract_stage_error_code(stage_errors.get(stage_name)),
+                }
+            )
 
     selected_stage = artifacts.get("selected_stage") or artifacts.get("final_stage")
     if not stage_attempts and selected_stage:
