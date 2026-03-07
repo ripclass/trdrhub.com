@@ -52,7 +52,7 @@ export interface PackageResponse {
 
 export interface ValidationError {
   message: string;
-  type: 'rate_limit' | 'validation' | 'network' | 'server' | 'unknown' | 'quota';
+  type: 'rate_limit' | 'validation' | 'network' | 'server' | 'unknown' | 'quota' | 'parsing';
   statusCode?: number;
   errorCode?: string;  // Backend error_code for actionable errors
   quota?: {

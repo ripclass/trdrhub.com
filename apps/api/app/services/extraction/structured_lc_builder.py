@@ -118,6 +118,22 @@ def _default_timeline(count: int) -> List[Dict[str, Any]]:
     ]
 
 
+def _normalize_timeline(raw_timeline: Any, count: int) -> List[Dict[str, Any]]:
+    if isinstance(raw_timeline, list):
+        return raw_timeline or _default_timeline(count)
+    if isinstance(raw_timeline, dict):
+        events = raw_timeline.get("events")
+        if isinstance(events, list):
+            return events or _default_timeline(count)
+    return _default_timeline(count)
+
+
+def _timeline_metadata(raw_timeline: Any) -> Dict[str, Any]:
+    if isinstance(raw_timeline, dict):
+        return raw_timeline
+    return {}
+
+
 def build_unified_structured_result(
     session_documents: List[Dict[str, Any]],
     extractor_outputs: Optional[Dict[str, Any]] = None,
@@ -141,14 +157,16 @@ def build_unified_structured_result(
         extractor_outputs.get("clauses_47a") or 
         []
     )
-    timeline = extractor_outputs.get("timeline") or _default_timeline(len(docs_structured))
+    raw_timeline = extractor_outputs.get("timeline")
+    timeline = _normalize_timeline(raw_timeline, len(docs_structured))
+    timeline_meta = _timeline_metadata(raw_timeline)
     issues = extractor_outputs.get("issues", [])
 
     # Build dates object from extractor outputs
     dates = {
-        "issue": extractor_outputs.get("issue_date") or extractor_outputs.get("timeline", {}).get("issue_date"),
-        "expiry": extractor_outputs.get("expiry_date") or extractor_outputs.get("timeline", {}).get("expiry_date"),
-        "latest_shipment": extractor_outputs.get("latest_shipment") or extractor_outputs.get("timeline", {}).get("latest_shipment"),
+        "issue": extractor_outputs.get("issue_date") or timeline_meta.get("issue_date"),
+        "expiry": extractor_outputs.get("expiry_date") or timeline_meta.get("expiry_date"),
+        "latest_shipment": extractor_outputs.get("latest_shipment") or timeline_meta.get("latest_shipment"),
         "place_of_expiry": extractor_outputs.get("place_of_expiry"),
     }
     # Filter out None values from dates
@@ -217,10 +235,12 @@ def build_unified_structured_result(
         "version": OPTION_E_VERSION,
         **lc_type_fields,
         "lc_structured": lc_structured,
+        "documents": docs_structured,
         "documents_structured": docs_structured,
         "issues": issues,
         "processing_summary": processing_summary,
         "analytics": analytics,
+        "timeline": timeline,
         "ai_enrichment": {"enabled": False, "notes": []},
     }
 

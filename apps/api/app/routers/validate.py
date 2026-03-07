@@ -202,6 +202,63 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
     return _two_stage_extractor
 
 
+def _sync_structured_result_collections(structured_result: Dict[str, Any]) -> None:
+    """Keep top-level document/timeline aliases aligned for downstream consumers."""
+    if not isinstance(structured_result, dict):
+        return
+
+    lc_structured = structured_result.get("lc_structured") or {}
+    documents = structured_result.get("documents") or structured_result.get("documents_structured")
+    if not documents and isinstance(lc_structured, dict):
+        documents = lc_structured.get("documents_structured")
+
+    if isinstance(documents, list):
+        structured_result.setdefault("documents", documents)
+        structured_result.setdefault("documents_structured", documents)
+
+    if "timeline" not in structured_result and isinstance(lc_structured, dict):
+        timeline = lc_structured.get("timeline")
+        if isinstance(timeline, list):
+            structured_result["timeline"] = timeline
+
+
+def _build_issue_dedup_key(issue: Dict[str, Any]) -> str:
+    """Build a deterministic dedup key that preserves per-document discrepancies."""
+
+    def _normalize_list(value: Any) -> List[str]:
+        if isinstance(value, list):
+            items = value
+        elif value in (None, ""):
+            items = []
+        else:
+            items = [value]
+        return sorted(str(item) for item in items if item not in (None, ""))
+
+    dedup_payload = {
+        "rule": issue.get("rule") or "",
+        "title": issue.get("title") or "",
+        "ruleset_domain": issue.get("ruleset_domain") or "",
+        "field": issue.get("field") or issue.get("field_name") or "",
+        "document_ids": _normalize_list(
+            issue.get("document_ids") or issue.get("documentId")
+        ),
+        "document_names": _normalize_list(
+            issue.get("document_names")
+            or issue.get("documents")
+            or issue.get("documentName")
+            or issue.get("document_name")
+        ),
+        "document_types": _normalize_list(
+            issue.get("document_types")
+            or issue.get("documentType")
+            or issue.get("document_type")
+        ),
+        "expected": str(issue.get("expected") or ""),
+        "found": str(issue.get("found") or issue.get("actual") or ""),
+    }
+    return json.dumps(dedup_payload, sort_keys=True)
+
+
 def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
     """Extract LC type overrides from request payload.
 
@@ -1893,12 +1950,15 @@ async def validate_doc(
         seen_rules = set()
         deduplicated_results = []
         for issue in failed_results:
-            rule_id = issue.get("rule") or issue.get("title") or str(len(deduplicated_results))
-            if rule_id not in seen_rules:
-                seen_rules.add(rule_id)
+            dedup_key = _build_issue_dedup_key(issue)
+            if dedup_key not in seen_rules:
+                seen_rules.add(dedup_key)
                 deduplicated_results.append(issue)
             else:
-                logger.debug("Removed duplicate issue: %s", rule_id)
+                logger.debug(
+                    "Removed duplicate issue: %s",
+                    issue.get("rule") or issue.get("title") or dedup_key,
+                )
         
         if len(failed_results) != len(deduplicated_results):
             logger.warning(
@@ -1906,6 +1966,24 @@ async def validate_doc(
                 len(failed_results) - len(deduplicated_results)
             )
         
+        if validation_session and current_user.is_bank_user() and current_user.company_id:
+            try:
+                policy_results = await apply_bank_policy(
+                    validation_results=deduplicated_results,
+                    bank_id=str(current_user.company_id),
+                    document_data=payload,
+                    db_session=db,
+                    validation_session_id=str(validation_session.id),
+                    user_id=str(current_user.id),
+                )
+                deduplicated_results = [
+                    issue for issue in policy_results if not issue.get("passed", False)
+                ]
+            except Exception as e:
+                logger.warning("Bank policy application skipped: %s", e)
+
+        results = list(deduplicated_results)
+
         logger.info(
             "V2 Validation: total_issues=%d (extraction=%d crossdoc=%d db_rules=%d) after_dedup=%d",
             len(failed_results),
@@ -1914,7 +1992,7 @@ async def validate_doc(
             len(db_rule_issues) if db_rule_issues else 0,
             len(deduplicated_results),
         )
-        
+
         issue_cards, reference_issues = build_issue_cards(deduplicated_results)
         checkpoint("issue_cards_built")
 
@@ -1974,20 +2052,11 @@ async def validate_doc(
         checkpoint("document_summaries_built")
         
         processing_duration = time.time() - start_time
-        processing_summary = _build_processing_summary(document_summaries, processing_duration, len(failed_results))
-
-        if validation_session and current_user.is_bank_user() and current_user.company_id:
-            try:
-                results = await apply_bank_policy(
-                    validation_results=results,
-                    bank_id=str(current_user.company_id),
-                    document_data=payload,
-                    db_session=db,
-                    validation_session_id=str(validation_session.id),
-                    user_id=str(current_user.id),
-                )
-            except Exception as e:
-                logger.warning("Bank policy application skipped: %s", e)
+        processing_summary = _build_processing_summary(
+            document_summaries,
+            processing_duration,
+            len(deduplicated_results),
+        )
 
         # Ensure document_summaries is a list (fallback to empty if malformed)
         final_documents = document_summaries if isinstance(document_summaries, list) else []
@@ -2071,9 +2140,7 @@ async def validate_doc(
             )
             structured_result["customs_pack"] = None
 
-        lc_structured_docs = (structured_result.get("lc_structured") or {}).get("documents_structured") or []
-        if lc_structured_docs and not structured_result.get("documents_structured"):
-            structured_result["documents_structured"] = lc_structured_docs
+        _sync_structured_result_collections(structured_result)
 
         # Merge actual processing_summary values into structured_result
         # This ensures processing_time_display and other fields are populated
@@ -2137,7 +2204,11 @@ async def validate_doc(
             # Build document list for composition analysis
             doc_list_for_composition = []
             detected_types_debug = []
-            for doc in structured_result.get("documents", []):
+            for doc in (
+                structured_result.get("documents")
+                or structured_result.get("documents_structured")
+                or []
+            ):
                 raw_type = doc.get("documentType", doc.get("type", doc.get("document_type", "supporting_document")))
                 # Normalize using shared document types (handles ALL aliases)
                 normalized_type = normalize_document_type(raw_type)

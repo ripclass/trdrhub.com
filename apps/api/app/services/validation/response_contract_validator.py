@@ -136,6 +136,61 @@ def _is_empty(value: Any) -> bool:
     return False
 
 
+def _extract_contract_lc_data(structured_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve LC data from both legacy and current structured_result locations."""
+    lc_data = structured_result.get("lc_data") or {}
+    if not lc_data:
+        lc_data = structured_result.get("extracted_context", {}).get("lc", {})
+    if not lc_data:
+        lc_data = structured_result.get("mt700", {})
+    if lc_data:
+        return lc_data
+
+    lc_structured = structured_result.get("lc_structured") or {}
+    if not isinstance(lc_structured, dict):
+        return {}
+
+    dates = lc_structured.get("dates") or {}
+    if not isinstance(dates, dict):
+        dates = {}
+
+    ports = lc_structured.get("ports") or {}
+    if not isinstance(ports, dict):
+        ports = {}
+
+    banks = lc_structured.get("banks") or {}
+    if not isinstance(banks, dict):
+        banks = {}
+
+    amount = lc_structured.get("amount")
+    amount_currency = amount.get("currency") if isinstance(amount, dict) else None
+
+    return {
+        **lc_structured,
+        "number": lc_structured.get("number") or lc_structured.get("lc_number"),
+        "amount": amount,
+        "currency": lc_structured.get("currency") or amount_currency,
+        "expiry_date": lc_structured.get("expiry_date") or dates.get("expiry"),
+        "latest_shipment_date": (
+            lc_structured.get("latest_shipment_date")
+            or lc_structured.get("latest_shipment")
+            or dates.get("latest_shipment")
+        ),
+        "issuing_bank": lc_structured.get("issuing_bank") or banks.get("issuing"),
+        "applicant": lc_structured.get("applicant"),
+        "beneficiary": lc_structured.get("beneficiary"),
+        "additional_conditions": (
+            lc_structured.get("additional_conditions") or lc_structured.get("clauses")
+        ),
+        "goods_description": lc_structured.get("goods_description"),
+        "port_of_loading": lc_structured.get("port_of_loading") or ports.get("loading"),
+        "port_of_discharge": (
+            lc_structured.get("port_of_discharge") or ports.get("discharge")
+        ),
+        "incoterm": lc_structured.get("incoterm"),
+    }
+
+
 def validate_response_contract(
     structured_result: Dict[str, Any],
     strict: bool = False,
@@ -155,13 +210,7 @@ def validate_response_contract(
     # ==========================================================================
     # LC DATA VALIDATION
     # ==========================================================================
-    lc_data = structured_result.get("lc_data") or {}
-    
-    # Also check alternative locations for LC data
-    if not lc_data:
-        lc_data = structured_result.get("extracted_context", {}).get("lc", {})
-    if not lc_data:
-        lc_data = structured_result.get("mt700", {})
+    lc_data = _extract_contract_lc_data(structured_result)
     
     # Required LC fields
     for field_key, reason in REQUIRED_LC_FIELDS.items():

@@ -300,8 +300,6 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     [];
   const optionEDocuments = ensureArray(rawDocs);
 
-  console.log('[DOCS_MAPPER_DEBUG] rawDocs type:', typeof rawDocs, 'isArray:', Array.isArray(rawDocs), 'optionEDocuments:', optionEDocuments);
-
   const documents = mapDocuments(optionEDocuments);
   
   // Safely extract issues - ensure it's always an array
