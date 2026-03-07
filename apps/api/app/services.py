@@ -346,8 +346,12 @@ class DocumentProcessingService:
     async def process_documents(self, session: ValidationSession):
         """Process all documents in a validation session."""
         try:
-            # Get OCR adapter
-            ocr_adapter = await self.ocr_factory.get_adapter()
+            logger = logging.getLogger(__name__)
+            logger.info(
+                "Document OCR pipeline configured_providers=%s initialized_providers=%s",
+                self.ocr_factory.configured_providers,
+                self.ocr_factory.initialized_providers,
+            )
             
             # Get all documents for this session
             documents = self.db.query(Document).filter(
@@ -358,10 +362,10 @@ class DocumentProcessingService:
             # Process each document with OCR
             ocr_results = []
             for document in documents:
-                ocr_result = await ocr_adapter.process_document(
+                ocr_result = await self.ocr_factory.process_document_with_fallback(
                     s3_bucket=os.getenv('S3_BUCKET_NAME', 'lcopilot-documents'),
                     s3_key=document.s3_key,
-                    document_id=document.id
+                    document_id=document.id,
                 )
                 ocr_results.append(ocr_result)
             
