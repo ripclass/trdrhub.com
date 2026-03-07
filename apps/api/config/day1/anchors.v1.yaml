@@ -1,0 +1,19 @@
+anchor_dictionary_v1:
+  version: "1.0.0"
+  entities:
+    - key: bin_tin
+      aliases: [bin, tin, tax id, taxpayer id, vat reg, importer tin, consignee tin]
+      negatives: [invoice no, lc no, bl no, registration no]
+    - key: bl_voyage
+      aliases: [voyage, voy no, voyage no, voy., vsl/voy, vessel/voyage]
+      negatives: [flight no, truck no, booking no]
+    - key: gross_weight
+      aliases: [gross weight, gross wt, g.w., gw, gross mass]
+      negatives: [gross amount]
+    - key: net_weight
+      aliases: [net weight, net wt, n.w., nw, net mass]
+      negatives: [net amount]
+    - key: issue_date
+      aliases: [issue date, dated, date of issue]
+    - key: issuer
+      aliases: [issued by, issuer, issuing authority, for and on behalf]

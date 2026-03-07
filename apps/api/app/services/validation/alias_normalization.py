@@ -290,3 +290,127 @@ def text_has_size_breakdown(text: str) -> bool:
         return False
     t = text.upper()
     return any(indicator in t for indicator in SIZE_BREAKDOWN_INDICATORS)
+
+
+def _iter_text_evidence_lines(raw_text: str, extraction_artifacts: Optional[Dict[str, Any]]) -> Iterable[tuple[str, str]]:
+    """Yield (line, source) pairs from merged raw text then OCR spans."""
+    for line in [ln.strip() for ln in (raw_text or "").splitlines() if ln and ln.strip()]:
+        yield line, "raw_text"
+    for line in [ln.strip() for ln in _iter_artifact_lines(extraction_artifacts) if ln and ln.strip()]:
+        yield line, "spans"
+
+
+def _extract_identifier_with_evidence(
+    lines: Iterable[tuple[str, str]],
+    label_regex: str,
+    value_regex: str,
+    normalize: Optional[Any] = None,
+    validate: Optional[Any] = None,
+) -> Dict[str, Any]:
+    label_seen = False
+    for line, source in lines:
+        upper = line.upper()
+        if re.search(label_regex, upper, re.IGNORECASE):
+            label_seen = True
+            match = re.search(value_regex, upper, re.IGNORECASE)
+            if not match:
+                continue
+            value = (match.group(1) if match.lastindex else match.group(0)).strip()
+            if normalize:
+                value = normalize(value)
+            if validate and not validate(value):
+                return {"value": None, "reason": "parse_failed", "evidence_snippet": line, "source": source}
+            return {"value": value, "reason": "found", "evidence_snippet": line, "source": source}
+    return {
+        "value": None,
+        "reason": "parse_failed" if label_seen else "missing_in_source",
+        "evidence_snippet": None,
+        "source": None,
+    }
+
+
+def extract_direct_token_recovery(
+    raw_text: str,
+    extraction_artifacts: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Deterministic token recovery for PO/BIN/TIN + B/L voyage/gross/net with evidence snippets."""
+    all_lines = list(_iter_text_evidence_lines(raw_text, extraction_artifacts))
+
+    def _norm_id(v: str) -> str:
+        return re.sub(r"\s+", "", v).strip(" :-")
+
+    def _valid_po(v: str) -> bool:
+        return bool(re.match(r"^[A-Z0-9]{2,}(?:[-/][A-Z0-9]{2,})+$", v, re.IGNORECASE))
+
+    def _valid_bin(v: str) -> bool:
+        digits = re.sub(r"\D", "", v)
+        return 9 <= len(digits) <= 14
+
+    def _valid_tin(v: str) -> bool:
+        digits = re.sub(r"\D", "", v)
+        return 10 <= len(digits) <= 15
+
+    recovered: Dict[str, Dict[str, Any]] = {}
+
+    recovered["buyer_po_number"] = _extract_identifier_with_evidence(
+        all_lines,
+        label_regex=r"(?:BUYER\s+)?(?:PURCHASE\s+ORDER|P\.?\s*O\.?|PO)\b",
+        value_regex=r"(?:PURCHASE\s+ORDER\s*(?:NO\.?|NUMBER)?|P\.?\s*O\.?\s*(?:NO\.?|NUMBER)?|PO\s*(?:NO\.?|NUMBER)?)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/]{4,})",
+        normalize=_norm_id,
+        validate=_valid_po,
+    )
+    recovered["exporter_bin"] = _extract_identifier_with_evidence(
+        all_lines,
+        label_regex=r"(?:\bBIN\b|B\.?I\.?N\.?|VAT\s*REG|BUSINESS\s+IDENTIFICATION)",
+        value_regex=r"(?:\bBIN\b|B\.?I\.?N\.?|VAT\s*REG(?:ISTRATION)?(?:\s*NO\.?|\s*NUMBER)?|BUSINESS\s+IDENTIFICATION(?:\s*NO\.?|\s*NUMBER)?)\s*[:#-]?\s*([0-9][0-9\s\-]{7,})",
+        normalize=_norm_id,
+        validate=_valid_bin,
+    )
+    recovered["exporter_tin"] = _extract_identifier_with_evidence(
+        all_lines,
+        label_regex=r"(?:\bTIN\b|T\.?I\.?N\.?|E-?TIN|ETIN|TAX\s*(?:ID|REG|IDENTIFICATION|PAYER\s+ID))",
+        value_regex=r"(?:\bTIN\b|T\.?I\.?N\.?|E-?TIN|ETIN|TAX\s*(?:ID|REG(?:ISTRATION)?|IDENTIFICATION|PAYER\s+ID))\s*(?:NO\.?|NUMBER)?\s*[:#-]?\s*([0-9][0-9\s\-]{8,})",
+        normalize=lambda v: re.sub(r"\D", "", v),
+        validate=_valid_tin,
+    )
+
+    # BL fields: use line-level parsing so evidence snippets are carried.
+    voyage_status = {"value": None, "reason": "missing_in_source", "evidence_snippet": None, "source": None}
+    gross_status = {"value": None, "reason": "missing_in_source", "evidence_snippet": None, "source": None}
+    net_status = {"value": None, "reason": "missing_in_source", "evidence_snippet": None, "source": None}
+    voyage_label_seen = False
+    grossnet_label_seen = False
+
+    for idx, (line, source) in enumerate(all_lines):
+        lowered = line.lower()
+        if any(tok in lowered for tok in ("voy", "voyage", "vvd")):
+            voyage_label_seen = True
+        if "gross" in lowered or "net" in lowered or "g/w" in lowered or "n/w" in lowered:
+            grossnet_label_seen = True
+
+        vv = _parse_vessel_voyage_from_line(line)
+        if not vv.get("voyage_number") and idx + 1 < len(all_lines):
+            vv = _parse_vessel_voyage_from_line(f"{line}: {all_lines[idx + 1][0]}")
+        if vv.get("voyage_number") and voyage_status["value"] is None:
+            voyage_status = {"value": vv["voyage_number"], "reason": "found", "evidence_snippet": line, "source": source}
+
+        wn = _parse_gross_net_from_line(line)
+        if (not wn.get("gross_weight") or not wn.get("net_weight")) and idx + 1 < len(all_lines):
+            wn = _parse_gross_net_from_line(f"{line}: {all_lines[idx + 1][0]}")
+        if wn.get("gross_weight") and gross_status["value"] is None:
+            gross_status = {"value": wn["gross_weight"], "reason": "found", "evidence_snippet": line, "source": source}
+        if wn.get("net_weight") and net_status["value"] is None:
+            net_status = {"value": wn["net_weight"], "reason": "found", "evidence_snippet": line, "source": source}
+
+    if voyage_label_seen and voyage_status["value"] is None:
+        voyage_status["reason"] = "parse_failed"
+    if grossnet_label_seen and gross_status["value"] is None:
+        gross_status["reason"] = "parse_failed"
+    if grossnet_label_seen and net_status["value"] is None:
+        net_status["reason"] = "parse_failed"
+
+    recovered["voyage_number"] = voyage_status
+    recovered["gross_weight"] = gross_status
+    recovered["net_weight"] = net_status
+
+    return recovered

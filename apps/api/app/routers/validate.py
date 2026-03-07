@@ -49,7 +49,7 @@ from fastapi import Header
 from typing import Optional, List, Dict, Any, Tuple
 import re
 
-from app.services.validation.alias_normalization import canonical_field_key
+from app.services.validation.alias_normalization import canonical_field_key, extract_direct_token_recovery
 
 # Import refactored validation utilities (from split modules)
 from app.routers.validation import (
@@ -170,6 +170,19 @@ from app.services.validation.confidence_weighting import (
 from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
+from app.services.validation.day1_normalizers import (
+    normalize_bin,
+    normalize_tin,
+    normalize_voyage,
+    normalize_weight,
+    validate_gross_net_pair,
+    normalize_date,
+    normalize_issuer,
+)
+from app.services.validation.day1_fallback import resolve_fallback_chain
+from app.services.validation.day1_configs import load_day1_schema
+from app.services.validation.day1_contract import enforce_day1_response_contract
+from app.services.validation.day1_retrieval_guard import apply_anchor_evidence_floor
 from app.services.rules_service import get_ucp_description_sync, get_isbp_description_sync
 from app.services.extraction.two_stage_extractor import (
     TwoStageExtractor,
@@ -347,6 +360,195 @@ def _context_payload_for_doc_type(context: Dict[str, Any], document_type: str) -
     if document_type == "inspection_certificate":
         return context.get("inspection_certificate") or {}
     return {}
+
+
+def _first_non_empty(*values: Any) -> Optional[str]:
+    for value in values:
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, (dict, list)):
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _extract_day1_raw_candidates(doc_info: Dict[str, Any], context_payload: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    extracted_fields = doc_info.get("extracted_fields") if isinstance(doc_info.get("extracted_fields"), dict) else {}
+
+    def _pick(*keys: str) -> Optional[str]:
+        for key in keys:
+            if key in extracted_fields:
+                value = _first_non_empty(extracted_fields.get(key))
+                if value:
+                    return value
+            if key in context_payload:
+                value = _first_non_empty(context_payload.get(key))
+                if value:
+                    return value
+        return None
+
+    return {
+        "issuer": _pick("issuer", "issuer_name", "shipper", "beneficiary"),
+        "bin": _pick("bin", "exporter_bin", "importer_bin", "seller_bin"),
+        "tin": _pick("tin", "exporter_tin", "importer_tin", "tax_id"),
+        "voyage": _pick("voyage", "voyage_number", "bl_voyage_no"),
+        "gross_weight": _pick("gross_weight", "gross_wt", "weight_gross", "gross"),
+        "net_weight": _pick("net_weight", "net_wt", "weight_net", "net"),
+        "doc_date": _pick("doc_date", "issue_date", "date", "invoice_date", "bl_date"),
+    }
+
+
+def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict[str, Any], document_type: str, extracted_text: str) -> None:
+    # only enforce for target doc families
+    if document_type not in {
+        "letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice",
+        "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "inspection_certificate",
+    }:
+        return
+
+    raw = _extract_day1_raw_candidates(doc_info, context_payload)
+    guarded_raw, retrieval_errors, anchor_scores = apply_anchor_evidence_floor(raw, extracted_text, min_score=0.15)
+
+    bin_n = normalize_bin(guarded_raw.get("bin"))
+    tin_n = normalize_tin(guarded_raw.get("tin"))
+    voy_n = normalize_voyage(guarded_raw.get("voyage"))
+    gross_n = normalize_weight(guarded_raw.get("gross_weight"))
+    net_n = normalize_weight(guarded_raw.get("net_weight"))
+    date_n = normalize_date(guarded_raw.get("doc_date"))
+    issuer_n = normalize_issuer(guarded_raw.get("issuer"))
+
+    field_ok = {
+        "issuer": issuer_n.valid,
+        "bin": bin_n.valid,
+        "tin": tin_n.valid,
+        "voyage": voy_n.valid,
+        "gross_weight": gross_n.valid,
+        "net_weight": net_n.valid,
+        "doc_date": date_n.valid,
+    }
+    coverage = sum(1 for ok in field_ok.values() if ok)
+
+    # approximate stage classification for Day-1 fallback telemetry
+    extraction_method = str(doc_info.get("extraction_method") or "").lower()
+    native_fields = guarded_raw if extraction_method in {"native", "pdf_native"} else {}
+    ocr_fields = guarded_raw if extraction_method in {"regex_fallback", "fallback", "ocr", ""} else {}
+    llm_fields = guarded_raw if "ai" in extraction_method or "llm" in extraction_method else {}
+    fallback_decision = resolve_fallback_chain(native_fields=native_fields, ocr_fields=ocr_fields, llm_fields=llm_fields, threshold=5)
+
+    day1_errors: List[str] = list(retrieval_errors)
+    for result in (issuer_n, bin_n, tin_n, voy_n, date_n):
+        if result.error_code:
+            day1_errors.append(result.error_code)
+    for result in (gross_n, net_n):
+        if result.error_code:
+            day1_errors.append(result.error_code)
+    pair_error = validate_gross_net_pair(gross_n, net_n)
+    if pair_error:
+        day1_errors.append(pair_error)
+
+    day1_payload = {
+        "schema_version": "v1.0.0-day1",
+        "meta": {
+            "schema_version": "v1.0.0-day1",
+            "parser_stage": fallback_decision.selected_stage,
+            "source_type": "pdf_native" if fallback_decision.selected_stage == "native" else "pdf_scanned",
+            "doc_id": str(doc_info.get("id") or ""),
+            "parsed_at": datetime.utcnow().isoformat() + "Z",
+        },
+        "fields": {
+            "issuer": {"value": guarded_raw.get("issuer"), "normalized": issuer_n.normalized},
+            "bin": {"value": guarded_raw.get("bin"), "normalized": bin_n.normalized},
+            "tin": {"value": guarded_raw.get("tin"), "normalized": tin_n.normalized},
+            "voyage": {"value": guarded_raw.get("voyage"), "normalized": voy_n.normalized},
+            "gross_weight": {"value": guarded_raw.get("gross_weight"), "normalized_kg": gross_n.normalized_kg, "unit": gross_n.unit},
+            "net_weight": {"value": guarded_raw.get("net_weight"), "normalized_kg": net_n.normalized_kg, "unit": net_n.unit},
+            "doc_date": {"value": guarded_raw.get("doc_date"), "iso_date": date_n.normalized},
+        },
+        "confidence": {
+            "overall": round(float(coverage) / 7.0, 3),
+            "by_field": {k: (1.0 if v else 0.0) for k, v in field_ok.items()},
+        },
+        "raw": {"text": extracted_text[:1000], "tokens": []},
+        "errors": [{"code": code, "message": code} for code in sorted(set(day1_errors))],
+    }
+
+    schema = load_day1_schema()
+    required_top = set(schema.get("required") or [])
+    schema_ok = required_top.issubset(set(day1_payload.keys()))
+
+    doc_info["day1_runtime"] = {
+        "coverage": coverage,
+        "threshold": 5,
+        "schema_version": "v1.0.0-day1",
+        "fallback_stage": fallback_decision.selected_stage,
+        "schema_ok": schema_ok,
+        "errors": sorted(set(day1_errors)),
+        "anchor_scores": anchor_scores,
+    }
+
+    if not schema_ok:
+        doc_info["extraction_status"] = "failed"
+        doc_info["downgrade_reason"] = "day1_schema_invalid"
+    elif coverage < 5 and len(extracted_text or "") >= 100:
+        doc_info["extraction_status"] = "partial"
+        doc_info["downgrade_reason"] = "day1_coverage_below_threshold"
+
+    logger.info(
+        "validate.day1.runtime doc=%s type=%s stage=%s coverage=%s/7 schema_ok=%s errors=%s",
+        doc_info.get("filename"),
+        document_type,
+        fallback_decision.selected_stage,
+        coverage,
+        schema_ok,
+        sorted(set(day1_errors)),
+    )
+
+
+def _apply_direct_token_recovery(
+    doc_payload: Dict[str, Any],
+    extraction_artifacts_v1: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Recover deterministic token fields directly from merged text/spans and attach evidence metadata."""
+    if not isinstance(doc_payload, dict):
+        return doc_payload
+
+    raw_text = str(doc_payload.get("raw_text") or "")
+    extraction_artifacts = extraction_artifacts_v1 if isinstance(extraction_artifacts_v1, dict) else (
+        doc_payload.get("extraction_artifacts_v1") if isinstance(doc_payload.get("extraction_artifacts_v1"), dict) else {}
+    )
+    recovered = extract_direct_token_recovery(raw_text=raw_text, extraction_artifacts=extraction_artifacts)
+
+    extracted_fields = doc_payload.get("extracted_fields") if isinstance(doc_payload.get("extracted_fields"), dict) else {}
+    field_details = doc_payload.get("_field_details") if isinstance(doc_payload.get("_field_details"), dict) else {}
+
+    for field_name in ("buyer_po_number", "exporter_bin", "exporter_tin", "voyage_number", "gross_weight", "net_weight"):
+        item = recovered.get(field_name) or {}
+        reason = str(item.get("reason") or "missing_in_source")
+        value = item.get("value")
+        snippet = item.get("evidence_snippet")
+
+        if value not in (None, "") and field_name not in doc_payload:
+            doc_payload[field_name] = value
+        if value not in (None, "") and field_name not in extracted_fields:
+            extracted_fields[field_name] = value
+
+        field_details[field_name] = {
+            **(field_details.get(field_name) or {}),
+            "reason": reason,
+            "evidence_snippet": snippet,
+            "source": item.get("source"),
+        }
+
+    if extracted_fields:
+        doc_payload["extracted_fields"] = extracted_fields
+    if field_details:
+        doc_payload["_field_details"] = field_details
+    if extraction_artifacts:
+        doc_payload["extraction_artifacts_v1"] = extraction_artifacts
+
+    return doc_payload
 
 
 def _apply_two_stage_validation(
@@ -2487,10 +2689,27 @@ async def validate_doc(
         # =====================================================================
         try:
             structured_result = validate_and_annotate_response(structured_result)
+            structured_result = enforce_day1_response_contract(structured_result)
             if structured_result.get("_contract_warnings"):
                 logger.info(
                     "Contract validation: %d warnings added to response",
                     len(structured_result.get("_contract_warnings", []))
+                )
+            day1_contract = structured_result.get("_day1_contract") if isinstance(structured_result, dict) else None
+            if isinstance(day1_contract, dict):
+                logger.info(
+                    "Day1 response contract: status=%s docs=%s violations=%s",
+                    day1_contract.get("status"),
+                    day1_contract.get("documents_checked"),
+                    len(day1_contract.get("violations") or []),
+                )
+            day1_metrics = structured_result.get("_day1_metrics") if isinstance(structured_result, dict) else None
+            if isinstance(day1_metrics, dict):
+                logger.info(
+                    "Day1 telemetry counters: docs=%s RET_NO_HIT=%s RET_LOW_RELEVANCE=%s",
+                    day1_metrics.get("documents_total"),
+                    day1_metrics.get("ret_no_hit"),
+                    day1_metrics.get("ret_low_relevance"),
                 )
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
@@ -3462,8 +3681,18 @@ async def _build_document_context(
             if doc_info.get("extraction_status") == "empty":
                 doc_info["extraction_status"] = "text_only"
 
-        _apply_extraction_guard(doc_info, extracted_text)
         context_payload = _context_payload_for_doc_type(context, document_type)
+        if isinstance(context_payload, dict):
+            context_payload["raw_text"] = context_payload.get("raw_text") or extracted_text
+            context_payload["extraction_artifacts_v1"] = extraction_artifacts_v1
+            _apply_direct_token_recovery(context_payload, extraction_artifacts_v1)
+            if isinstance(context_payload.get("extracted_fields"), dict):
+                doc_info["extracted_fields"] = context_payload.get("extracted_fields")
+            if isinstance(context_payload.get("_field_details"), dict):
+                doc_info["field_details"] = context_payload.get("_field_details")
+
+        _enforce_day1_runtime_policy(doc_info, context_payload if isinstance(context_payload, dict) else {}, document_type, extracted_text)
+        _apply_extraction_guard(doc_info, extracted_text)
         summary = doc_info.get("validation_summary") or {}
         llm_trace = _resolve_doc_llm_trace(
             context_payload if isinstance(context_payload, dict) else {},

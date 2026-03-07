@@ -1,0 +1,28 @@
+telemetry_events_v1:
+  version: "1.0.0"
+  common_fields:
+    - event_time_iso
+    - pipeline_run_id
+    - doc_id
+    - stage
+    - status
+    - reason_code
+    - latency_ms
+    - environment
+  events:
+    - name: retrieval_started
+      stage: retrieval
+    - name: retrieval_completed
+      stage: retrieval
+    - name: extraction_started
+      stage: extraction
+    - name: extraction_field_result
+      stage: extraction
+    - name: extraction_completed
+      stage: extraction
+    - name: qa_check_result
+      stage: qa
+    - name: qa_completed
+      stage: qa
+    - name: pipeline_completed
+      stage: pipeline

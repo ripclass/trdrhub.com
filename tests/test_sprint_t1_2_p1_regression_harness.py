@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.validation.ai_validator import validate_bl_fields, validate_packing_list
 from app.services.validation.crossdoc_validator import CrossDocValidator
+from app.services.validation.alias_normalization import extract_direct_token_recovery
 from app.routers.validation.response_shaping import build_issue_provenance_v1
 
 
@@ -541,6 +542,51 @@ def test_fields_to_flat_context_preserves_reason_metadata():
     assert context["_field_details"]["voyage_number"]["reason"] == "missing_in_source"
     assert context["_field_details"]["gross_weight"]["reason"] == "parser_failed"
     assert "confidence" in context["_field_details"]["gross_weight"]
+
+
+def test_direct_token_recovery_extracts_po_bin_tin_and_bl_fields_with_evidence():
+    recovered = extract_direct_token_recovery(
+        raw_text=(
+            "BILL OF LADING\n"
+            "Buyer Purchase Order No. GBE-44592\n"
+            "Exporter BIN: 000334455-0103\n"
+            "Exporter TIN: 545342112233\n"
+            "VSL/VOY: MSC MAEVA / 778W\n"
+            "GROSS/NET WT: 20,400/18,950 KGS"
+        ),
+        extraction_artifacts={
+            "spans": [
+                {"text": "BUYER PURCHASE ORDER NO.", "bbox": {"page": 1, "x1": 10, "y1": 10}},
+                {"text": "GBE-44592", "bbox": {"page": 1, "x1": 120, "y1": 10}},
+            ]
+        },
+    )
+
+    assert recovered["buyer_po_number"]["value"] == "GBE-44592"
+    assert recovered["buyer_po_number"]["reason"] == "found"
+    assert recovered["buyer_po_number"]["evidence_snippet"]
+    assert recovered["exporter_bin"]["value"] == "000334455-0103"
+    assert recovered["exporter_tin"]["value"] == "545342112233"
+    assert recovered["voyage_number"]["value"] == "778W"
+    assert recovered["gross_weight"]["value"] == "20,400"
+    assert recovered["net_weight"]["value"] == "18,950 KGS"
+
+
+def test_apply_direct_token_recovery_updates_canonical_maps_for_bl_checks():
+    funcs = _load_validate_functions(["_apply_direct_token_recovery"], extra_globals={"extract_direct_token_recovery": extract_direct_token_recovery})
+    apply_recovery = funcs["_apply_direct_token_recovery"]
+
+    payload = {
+        "raw_text": "VSL/VOY: MSC MAEVA / 778W\nGROSS/NET WT: 20,400/18,950 KGS",
+        "extracted_fields": {},
+    }
+    patched = apply_recovery(payload, {"spans": [{"text": "VSL/VOY: MSC MAEVA / 778W"}]})
+
+    assert patched["voyage_number"] == "778W"
+    assert patched["gross_weight"] == "20,400"
+    assert patched["net_weight"] == "18,950 KGS"
+    assert patched["extracted_fields"]["voyage_number"] == "778W"
+    assert patched["_field_details"]["voyage_number"]["reason"] == "found"
 
 
 def test_packing_list_table_text_counts_as_size_breakdown():
