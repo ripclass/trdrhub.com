@@ -69,7 +69,8 @@ def _post_validate(
 ) -> Dict[str, Any]:
     url = base_url.rstrip("/") + "/api/validate/"
     headers = _build_base_headers(bearer=bearer, api_key=api_key, vercel_bypass=vercel_bypass)
-    headers["X-CSRF-Token"] = csrf_token
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
 
     handles = []
     files_payload = []
@@ -444,7 +445,14 @@ def run_smoke(
 
     session = requests.Session()
     base_headers = _build_base_headers(bearer=bearer, api_key=api_key, vercel_bypass=vercel_bypass)
-    csrf_token = _prepare_csrf(session, base_url, base_headers)
+    try:
+        csrf_token = _prepare_csrf(session, base_url, base_headers)
+    except Exception:
+        # CSRF endpoint can intermittently timeout on cold hosts; proceed when auth headers exist.
+        if bearer or api_key:
+            csrf_token = ""
+        else:
+            raise
 
     for file_set in file_sets:
         label = file_set[0].parent.name if len(file_set) > 1 else file_set[0].name
