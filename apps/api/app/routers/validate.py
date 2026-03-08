@@ -487,6 +487,30 @@ def _extract_day1_raw_candidates(doc_info: Dict[str, Any], context_payload: Dict
     }
 
 
+def _day1_policy_for_doc(document_type: str) -> Dict[str, Any]:
+    """Doc-type aware Day-1 runtime coverage policy."""
+    defaults = {"fields": ["issuer", "doc_date"], "threshold": 2}
+    policy_map: Dict[str, Dict[str, Any]] = {
+        "letter_of_credit": {"fields": ["issuer", "doc_date"], "threshold": 2},
+        "swift_message": {"fields": ["issuer", "doc_date"], "threshold": 2},
+        "lc_application": {"fields": ["issuer", "doc_date"], "threshold": 2},
+        "commercial_invoice": {"fields": ["issuer", "doc_date", "bin", "tin", "gross_weight", "net_weight"], "threshold": 2},
+        "proforma_invoice": {"fields": ["issuer", "doc_date", "bin", "tin", "gross_weight", "net_weight"], "threshold": 2},
+        "bill_of_lading": {"fields": ["issuer", "voyage", "gross_weight", "net_weight", "doc_date", "bin", "tin"], "threshold": 2},
+        "packing_list": {"fields": ["issuer", "doc_date", "gross_weight", "net_weight"], "threshold": 3},
+        "certificate_of_origin": {"fields": ["issuer", "doc_date", "bin", "tin"], "threshold": 2},
+        "insurance_certificate": {"fields": ["issuer", "doc_date"], "threshold": 1},
+        "inspection_certificate": {"fields": ["issuer", "doc_date"], "threshold": 1},
+    }
+    policy = policy_map.get(str(document_type or "").strip().lower(), defaults)
+    fields = [f for f in (policy.get("fields") or []) if f in {"issuer", "bin", "tin", "voyage", "gross_weight", "net_weight", "doc_date"}]
+    if not fields:
+        fields = list(defaults["fields"])
+    threshold = int(policy.get("threshold") or len(fields))
+    threshold = max(1, min(threshold, len(fields)))
+    return {"fields": fields, "threshold": threshold}
+
+
 def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict[str, Any], document_type: str, extracted_text: str) -> None:
     # only enforce for target doc families
     if document_type not in {
@@ -515,7 +539,10 @@ def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict
         "net_weight": net_n.valid,
         "doc_date": date_n.valid,
     }
-    coverage = sum(1 for ok in field_ok.values() if ok)
+    day1_policy = _day1_policy_for_doc(document_type)
+    active_fields = day1_policy["fields"]
+    threshold = int(day1_policy["threshold"])
+    coverage = sum(1 for field_name in active_fields if field_ok.get(field_name, False))
 
     # approximate stage classification for Day-1 fallback telemetry
     extraction_method = str(doc_info.get("extraction_method") or "").lower()
@@ -554,7 +581,7 @@ def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict
             "doc_date": {"value": guarded_raw.get("doc_date"), "iso_date": date_n.normalized},
         },
         "confidence": {
-            "overall": round(float(coverage) / 7.0, 3),
+            "overall": round(float(coverage) / float(max(1, len(active_fields))), 3),
             "by_field": {k: (1.0 if v else 0.0) for k, v in field_ok.items()},
         },
         "raw": {"text": extracted_text[:1000], "tokens": []},
@@ -567,7 +594,8 @@ def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict
 
     doc_info["day1_runtime"] = {
         "coverage": coverage,
-        "threshold": 5,
+        "threshold": threshold,
+        "active_fields": active_fields,
         "schema_version": "v1.0.0-day1",
         "fallback_stage": fallback_decision.selected_stage,
         "schema_ok": schema_ok,
@@ -578,16 +606,17 @@ def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict
     if not schema_ok:
         doc_info["extraction_status"] = "failed"
         doc_info["downgrade_reason"] = "day1_schema_invalid"
-    elif coverage < 5 and len(extracted_text or "") >= 100:
+    elif coverage < threshold and len(extracted_text or "") >= 100:
         doc_info["extraction_status"] = "partial"
         doc_info["downgrade_reason"] = "day1_coverage_below_threshold"
 
     logger.info(
-        "validate.day1.runtime doc=%s type=%s stage=%s coverage=%s/7 schema_ok=%s errors=%s",
+        "validate.day1.runtime doc=%s type=%s stage=%s coverage=%s/%s schema_ok=%s errors=%s",
         doc_info.get("filename"),
         document_type,
         fallback_decision.selected_stage,
         coverage,
+        len(active_fields),
         schema_ok,
         sorted(set(day1_errors)),
     )
