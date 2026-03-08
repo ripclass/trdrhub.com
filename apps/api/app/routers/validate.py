@@ -569,17 +569,21 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
             code for code in reason_codes if str(code) not in drop_reason_codes
         ]
 
+    force_pass_enabled = bool(getattr(settings, "CYCLE2_RUNTIME_FORCE_PASS_ENABLED", True))
+
     if not kept:
         eligibility["can_submit"] = True
         eligibility["review_required"] = False
-        current_status = str(structured_result.get("validation_status") or "").lower()
-        if current_status in {"review", "partial", "blocked", "unknown", ""}:
-            structured_result["validation_status"] = "pass"
-        if str(structured_result.get("status") or "").lower() in {"review", "partial", "blocked", "unknown", ""}:
-            structured_result["status"] = "pass"
+        if force_pass_enabled:
+            current_status = str(structured_result.get("validation_status") or "").lower()
+            if current_status in {"review", "partial", "blocked", "unknown", ""}:
+                structured_result["validation_status"] = "pass"
+            if str(structured_result.get("status") or "").lower() in {"review", "partial", "blocked", "unknown", ""}:
+                structured_result["status"] = "pass"
 
     structured_result["_cycle2_runtime_recovery"] = {
         "enabled": True,
+        "force_pass_enabled": force_pass_enabled,
         "removed_fields": sorted(set(removed)),
         "remaining_unresolved_count": len(kept),
         "can_submit": bool(eligibility.get("can_submit")),

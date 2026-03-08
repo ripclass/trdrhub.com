@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     DEBUG_EXTRACTION_TRACE: bool = False
 
+    # Runtime recovery controls (Cycle-2)
+    DAY1_CONTRACT_ENABLED: bool = False
+    CYCLE2_RUNTIME_RECOVERY_ENABLED: bool = True
+    CYCLE2_RUNTIME_FORCE_PASS_ENABLED: bool = True
+
     # URLs
     FRONTEND_URL: str = "http://localhost:5173"
     API_BASE_URL: str = "http://localhost:8000"
