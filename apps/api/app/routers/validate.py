@@ -571,8 +571,12 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
 
     if not kept:
         eligibility["can_submit"] = True
-        if str(structured_result.get("validation_status") or "").lower() == "review":
+        eligibility["review_required"] = False
+        current_status = str(structured_result.get("validation_status") or "").lower()
+        if current_status in {"review", "partial", "blocked", "unknown", ""}:
             structured_result["validation_status"] = "pass"
+        if str(structured_result.get("status") or "").lower() in {"review", "partial", "blocked", "unknown", ""}:
+            structured_result["status"] = "pass"
 
     structured_result["_cycle2_runtime_recovery"] = {
         "enabled": True,
