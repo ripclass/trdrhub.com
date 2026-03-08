@@ -511,6 +511,55 @@ def _day1_policy_for_doc(document_type: str) -> Dict[str, Any]:
     return {"fields": fields, "threshold": threshold}
 
 
+def _build_day1_relay_debug(structured_result: Dict[str, Any]) -> Dict[str, Any]:
+    def _surface_docs(path: str) -> List[Dict[str, Any]]:
+        if path == "documents":
+            docs = structured_result.get("documents")
+        elif path == "processing_summary.documents":
+            docs = (structured_result.get("processing_summary") or {}).get("documents")
+        elif path == "processing_summary_v2.documents":
+            docs = (structured_result.get("processing_summary_v2") or {}).get("documents")
+        elif path == "document_extraction_v1.documents":
+            docs = (structured_result.get("document_extraction_v1") or {}).get("documents")
+        else:
+            docs = None
+        return [doc for doc in docs if isinstance(doc, dict)] if isinstance(docs, list) else []
+
+    def _doc_runtime_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
+        runtime = doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {}
+        if not runtime and isinstance(doc.get("day1Runtime"), dict):
+            runtime = doc.get("day1Runtime")
+        errors = runtime.get("errors") if isinstance(runtime.get("errors"), list) else []
+        return {
+            "filename": doc.get("filename") or doc.get("name"),
+            "document_type": doc.get("document_type") or doc.get("documentType") or doc.get("type"),
+            "runtime_present": bool(runtime),
+            "coverage": int(runtime.get("coverage") or 0) if runtime else 0,
+            "threshold": int(runtime.get("threshold") or 0) if runtime else 0,
+            "fallback_stage": runtime.get("fallback_stage") if runtime else None,
+            "error_codes": [str(code) for code in errors if isinstance(code, str)],
+        }
+
+    surfaces: Dict[str, List[Dict[str, Any]]] = {}
+    for surface in [
+        "documents",
+        "processing_summary.documents",
+        "processing_summary_v2.documents",
+        "document_extraction_v1.documents",
+    ]:
+        docs = _surface_docs(surface)
+        surfaces[surface] = [_doc_runtime_summary(doc) for doc in docs]
+
+    return {
+        "patch_markers": {
+            "runtime_passthrough": True,
+            "policy_mode": "doc_type",
+            "ocr_pdf_retry": "normalized_image_before_binary_scrape",
+        },
+        "surfaces": surfaces,
+    }
+
+
 def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict[str, Any], document_type: str, extracted_text: str) -> None:
     # only enforce for target doc families
     if document_type not in {
@@ -2941,6 +2990,17 @@ async def validate_doc(
         # =====================================================================
         try:
             structured_result = validate_and_annotate_response(structured_result)
+            structured_result["_day1_relay_debug"] = _build_day1_relay_debug(structured_result)
+            relay_surfaces = (structured_result.get("_day1_relay_debug") or {}).get("surfaces")
+            if isinstance(relay_surfaces, dict):
+                compact = {
+                    key: {
+                        "docs": len(value or []),
+                        "runtime_present": sum(1 for doc in (value or []) if isinstance(doc, dict) and doc.get("runtime_present")),
+                    }
+                    for key, value in relay_surfaces.items()
+                }
+                logger.info("validate.day1.relay surfaces=%s", compact)
             structured_result = enforce_day1_response_contract(structured_result)
             if structured_result.get("_contract_warnings"):
                 logger.info(

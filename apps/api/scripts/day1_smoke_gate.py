@@ -195,6 +195,8 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
     gate_result = _coerce_dict(structured.get("gate_result"))
     extraction_diagnostics = _coerce_dict(structured.get("_extraction_diagnostics"))
     day1_contract = _coerce_dict(structured.get("_day1_contract"))
+    day1_relay_debug = _coerce_dict(structured.get("_day1_relay_debug"))
+    day1_contract_debug = _coerce_dict(structured.get("_day1_contract_debug"))
     documents = (
         _coerce_list(structured.get("documents"))
         or _coerce_list(structured.get("documents_structured"))
@@ -290,6 +292,44 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
         if state != "found":
             _append_unique_text(unresolved_critical_fields, field_name)
 
+    relay_surfaces = _coerce_dict(day1_relay_debug.get("surfaces"))
+    runtime_presence_by_surface: Dict[str, Dict[str, int]] = {}
+    for surface_name, entries in relay_surfaces.items():
+        entry_list = _coerce_list(entries)
+        runtime_presence_by_surface[str(surface_name)] = {
+            "docs": len(entry_list),
+            "runtime_present": sum(1 for item in entry_list if isinstance(item, dict) and item.get("runtime_present")),
+        }
+
+    contract_documents_source = str(day1_contract_debug.get("documents_source") or "")
+    contract_docs = _coerce_list(day1_contract_debug.get("per_doc"))
+    contract_doc_runtime_missing = [
+        str(doc.get("filename") or "")
+        for doc in contract_docs
+        if isinstance(doc, dict) and not bool(doc.get("runtime_present"))
+    ]
+    contract_doc_thresholds = {
+        str(doc.get("filename") or ""): int(doc.get("threshold") or 0)
+        for doc in contract_docs
+        if isinstance(doc, dict) and str(doc.get("filename") or "").strip()
+    }
+    contract_doc_fallback_stages = {
+        str(doc.get("filename") or ""): str(doc.get("fallback_stage") or "")
+        for doc in contract_docs
+        if isinstance(doc, dict) and str(doc.get("filename") or "").strip()
+    }
+
+    contract_violation_reason_codes: List[str] = []
+    for violation in _coerce_list(day1_contract.get("violations")):
+        if isinstance(violation, dict):
+            _append_unique_text(contract_violation_reason_codes, violation.get("code"))
+
+    field_diagnostic_reason_codes = [
+        code
+        for code in _sorted_unique_texts(violation_reason_codes)
+        if code not in _sorted_unique_texts(contract_violation_reason_codes)
+    ]
+
     return {
         "unresolved_critical_fields": _sorted_unique_texts(unresolved_critical_fields),
         "violation_reason_codes": _sorted_unique_texts(violation_reason_codes),
@@ -299,6 +339,13 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
             for field in sorted(source_doc_hints)
             if field in field_level_status or field in source_doc_hints
         },
+        "contract_documents_source": contract_documents_source,
+        "runtime_presence_by_surface": runtime_presence_by_surface,
+        "contract_doc_runtime_missing": _sorted_unique_texts(contract_doc_runtime_missing),
+        "contract_doc_thresholds": contract_doc_thresholds,
+        "contract_doc_fallback_stages": contract_doc_fallback_stages,
+        "contract_violation_reason_codes": _sorted_unique_texts(contract_violation_reason_codes),
+        "field_diagnostic_reason_codes": field_diagnostic_reason_codes,
     }
 
 
@@ -419,6 +466,13 @@ def run_smoke(
                 "violation_reason_codes": diagnostics["violation_reason_codes"],
                 "field_level_status": diagnostics["field_level_status"],
                 "critical_field_source_doc_hints": diagnostics["critical_field_source_doc_hints"],
+                "contract_documents_source": diagnostics["contract_documents_source"],
+                "runtime_presence_by_surface": diagnostics["runtime_presence_by_surface"],
+                "contract_doc_runtime_missing": diagnostics["contract_doc_runtime_missing"],
+                "contract_doc_thresholds": diagnostics["contract_doc_thresholds"],
+                "contract_doc_fallback_stages": diagnostics["contract_doc_fallback_stages"],
+                "contract_violation_reason_codes": diagnostics["contract_violation_reason_codes"],
+                "field_diagnostic_reason_codes": diagnostics["field_diagnostic_reason_codes"],
             })
         except Exception as e:
             results.append({
@@ -431,6 +485,13 @@ def run_smoke(
                 "violation_reason_codes": [],
                 "field_level_status": {},
                 "critical_field_source_doc_hints": {},
+                "contract_documents_source": "",
+                "runtime_presence_by_surface": {},
+                "contract_doc_runtime_missing": [],
+                "contract_doc_thresholds": {},
+                "contract_doc_fallback_stages": {},
+                "contract_violation_reason_codes": [],
+                "field_diagnostic_reason_codes": [],
             })
             contract_counts["unknown"] = contract_counts.get("unknown", 0) + 1
 

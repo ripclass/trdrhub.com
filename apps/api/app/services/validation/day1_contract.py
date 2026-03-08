@@ -6,16 +6,16 @@ from app.services.validation.day1_configs import load_day1_reason_codes
 from app.services.validation.day1_telemetry import build_day1_metrics
 
 
-def _extract_documents(structured_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _extract_documents_with_source(structured_result: Dict[str, Any]) -> tuple[List[Dict[str, Any]], str]:
     candidates = [
-        (structured_result.get("processing_summary_v2") or {}).get("documents"),
-        (structured_result.get("processing_summary") or {}).get("documents"),
-        structured_result.get("documents"),
+        ("processing_summary_v2.documents", (structured_result.get("processing_summary_v2") or {}).get("documents")),
+        ("processing_summary.documents", (structured_result.get("processing_summary") or {}).get("documents")),
+        ("documents", structured_result.get("documents")),
     ]
-    for docs in candidates:
+    for source, docs in candidates:
         if isinstance(docs, list):
-            return [d for d in docs if isinstance(d, dict)]
-    return []
+            return [d for d in docs if isinstance(d, dict)], source
+    return [], "none"
 
 
 def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -28,12 +28,13 @@ def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[st
     if not isinstance(structured_result, dict):
         return structured_result
 
-    docs = _extract_documents(structured_result)
+    docs, documents_source = _extract_documents_with_source(structured_result)
     reason_cfg = load_day1_reason_codes()
     allowed = set((reason_cfg.get("reason_code_enum_v1") or {}).get("values") or [])
 
     warnings = list(structured_result.get("_contract_warnings") or [])
     violations: List[Dict[str, Any]] = []
+    per_doc_debug: List[Dict[str, Any]] = []
 
     for doc in docs:
         runtime = doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {}
@@ -44,23 +45,27 @@ def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[st
         schema_ok = bool(runtime.get("schema_ok", True))
         errors = runtime.get("errors") if isinstance(runtime.get("errors"), list) else []
 
-        status = str(doc.get("extraction_status") or "unknown")
-        if status == "success" and (coverage < threshold or not schema_ok):
+        status_before = str(doc.get("extraction_status") or "unknown")
+        if status_before == "success" and (coverage < threshold or not schema_ok):
             doc["extraction_status"] = "partial"
             doc.setdefault("downgrade_reason", "day1_contract_guard")
+        status_after = str(doc.get("extraction_status") or status_before)
 
+        doc_violation_codes: List[str] = []
         if coverage < threshold:
             violations.append({
                 "document": doc.get("filename"),
                 "code": "QA_REQUIRED_FIELD_EMPTY",
                 "detail": f"coverage {coverage}/{threshold}",
             })
+            doc_violation_codes.append("QA_REQUIRED_FIELD_EMPTY")
         if not schema_ok:
             violations.append({
                 "document": doc.get("filename"),
                 "code": "PRM_OUTPUT_SCHEMA_VIOLATION",
                 "detail": "day1 schema check failed",
             })
+            doc_violation_codes.append("PRM_OUTPUT_SCHEMA_VIOLATION")
 
         for code in errors:
             if isinstance(code, str) and code not in allowed:
@@ -69,6 +74,22 @@ def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[st
                     "code": "SYS_UNKNOWN",
                     "detail": f"unmapped_reason_code:{code}",
                 })
+                doc_violation_codes.append("SYS_UNKNOWN")
+
+        per_doc_debug.append({
+            "filename": doc.get("filename"),
+            "document_type": doc.get("document_type"),
+            "runtime_present": bool(runtime),
+            "coverage": coverage,
+            "threshold": threshold,
+            "active_fields": runtime.get("active_fields") if isinstance(runtime.get("active_fields"), list) else [],
+            "schema_ok": schema_ok,
+            "fallback_stage": runtime.get("fallback_stage"),
+            "errors": [str(code) for code in errors if isinstance(code, str)],
+            "extraction_status_before": status_before,
+            "extraction_status_after": status_after,
+            "contract_violation_codes": sorted(set(doc_violation_codes)),
+        })
 
     status = "pass"
     if violations:
@@ -81,6 +102,11 @@ def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[st
         "documents_checked": len(docs),
     }
     structured_result["_day1_contract"] = contract_block
+    structured_result["_day1_contract_debug"] = {
+        "documents_source": documents_source,
+        "documents_checked": len(docs),
+        "per_doc": per_doc_debug,
+    }
 
     metrics = build_day1_metrics(structured_result)
     structured_result["_day1_metrics"] = metrics
