@@ -37,6 +37,8 @@ def enforce_day1_response_contract(structured_result: Dict[str, Any]) -> Dict[st
 
     for doc in docs:
         runtime = doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {}
+        if not runtime and isinstance(doc.get("day1Runtime"), dict):
+            runtime = doc.get("day1Runtime")
         coverage = int(runtime.get("coverage") or 0)
         threshold = int(runtime.get("threshold") or 5)
         schema_ok = bool(runtime.get("schema_ok", True))

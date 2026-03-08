@@ -493,6 +493,7 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
                 "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
                 "extraction_debug": doc.get("extraction_debug") or doc.get("extractionDebug"),
+                "day1_runtime": doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {},
             }
         )
 

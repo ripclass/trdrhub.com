@@ -72,6 +72,7 @@ def build_document_summaries(
             "fieldDetails": detail.get("field_details") or {},
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
+            "day1_runtime": detail.get("day1_runtime") if isinstance(detail.get("day1_runtime"), dict) else {},
         }
 
     if details:
@@ -237,6 +238,7 @@ def build_documents_section(
                 "extracted_fields": filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
                 "field_details": doc.get("fieldDetails") or doc.get("field_details") or {},
                 "issues_count": issue_counts.get(doc_id, 0),
+                "day1_runtime": doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {},
             }
         )
     return section
