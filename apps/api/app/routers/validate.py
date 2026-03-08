@@ -6135,7 +6135,11 @@ async def _try_secondary_ocr_adapter(file_bytes: bytes, filename: str, content_t
                     attempt_number=attempt_number,
                     payload=payload,
                 )
-                if error_code != "OCR_UNSUPPORTED_FORMAT":
+                should_retry_normalized_pdf = (
+                    str(payload.get("payload_source") or "") == "runtime_pdf_direct"
+                    and str(error_code or "") in {"OCR_UNSUPPORTED_FORMAT", "OCR_EMPTY_RESULT"}
+                )
+                if error_code != "OCR_UNSUPPORTED_FORMAT" and not should_retry_normalized_pdf:
                     break
             if group_success and not plan.get("aggregate_pages"):
                 break
@@ -6449,7 +6453,11 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
                             attempt_number=attempt_number,
                             payload=payload,
                         )
-                        if error_code != "OCR_UNSUPPORTED_FORMAT":
+                        should_retry_normalized_pdf = (
+                            str(payload.get("payload_source") or "") == "runtime_pdf_direct"
+                            and str(error_code or "") in {"OCR_UNSUPPORTED_FORMAT", "OCR_EMPTY_RESULT"}
+                        )
+                        if error_code != "OCR_UNSUPPORTED_FORMAT" and not should_retry_normalized_pdf:
                             break
                     if group_success and not plan.get("aggregate_pages"):
                         break
