@@ -197,6 +197,7 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
     day1_contract = _coerce_dict(structured.get("_day1_contract"))
     day1_relay_debug = _coerce_dict(structured.get("_day1_relay_debug"))
     day1_contract_debug = _coerce_dict(structured.get("_day1_contract_debug"))
+    day1_hook_callsite_summary = _coerce_dict(structured.get("_day1_hook_callsite_summary"))
     documents = (
         _coerce_list(structured.get("documents"))
         or _coerce_list(structured.get("documents_structured"))
@@ -350,6 +351,7 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
         "runtime_presence_by_surface": runtime_presence_by_surface,
         "hook_presence_by_surface": hook_presence_by_surface,
         "contract_doc_runtime_missing": _sorted_unique_texts(contract_doc_runtime_missing),
+        "day1_hook_callsite_summary": day1_hook_callsite_summary,
         "contract_doc_thresholds": contract_doc_thresholds,
         "contract_doc_fallback_stages": contract_doc_fallback_stages,
         "contract_violation_reason_codes": _sorted_unique_texts(contract_violation_reason_codes),
@@ -478,6 +480,7 @@ def run_smoke(
                 "runtime_presence_by_surface": diagnostics["runtime_presence_by_surface"],
                 "hook_presence_by_surface": diagnostics["hook_presence_by_surface"],
                 "contract_doc_runtime_missing": diagnostics["contract_doc_runtime_missing"],
+                "day1_hook_callsite_summary": diagnostics["day1_hook_callsite_summary"],
                 "contract_doc_thresholds": diagnostics["contract_doc_thresholds"],
                 "contract_doc_fallback_stages": diagnostics["contract_doc_fallback_stages"],
                 "contract_violation_reason_codes": diagnostics["contract_violation_reason_codes"],
@@ -498,6 +501,7 @@ def run_smoke(
                 "runtime_presence_by_surface": {},
                 "hook_presence_by_surface": {},
                 "contract_doc_runtime_missing": [],
+                "day1_hook_callsite_summary": {},
                 "contract_doc_thresholds": {},
                 "contract_doc_fallback_stages": {},
                 "contract_violation_reason_codes": [],

@@ -3006,6 +3006,7 @@ async def validate_doc(
         # =====================================================================
         try:
             structured_result = validate_and_annotate_response(structured_result)
+            structured_result["_day1_hook_callsite_summary"] = payload.get("_day1_hook_callsite_summary") if isinstance(payload.get("_day1_hook_callsite_summary"), dict) else {}
             structured_result["_day1_relay_debug"] = _build_day1_relay_debug(structured_result)
             relay_surfaces = (structured_result.get("_day1_relay_debug") or {}).get("surfaces")
             if isinstance(relay_surfaces, dict):
@@ -4150,6 +4151,14 @@ async def _build_document_context(
     context["documents_presence"] = documents_presence
     context["documents_summary"] = documents_presence
     context["_debug_extraction_trace"] = debug_extraction_trace
+    hook_docs = [doc for doc in (document_details or []) if isinstance(doc, dict)]
+    context["_day1_hook_callsite_summary"] = {
+        "documents_total": len(hook_docs),
+        "day1_hook_attempted_docs": sum(1 for doc in hook_docs if bool((doc.get("_day1_runtime_hook") or {}).get("callsite_reached"))),
+        "day1_hook_invoked_docs": sum(1 for doc in hook_docs if bool((doc.get("_day1_runtime_hook") or {}).get("invoked"))),
+        "day1_hook_attached_docs": sum(1 for doc in hook_docs if bool((doc.get("_day1_runtime_hook") or {}).get("attached"))),
+        "hook_filenames": [str(doc.get("filename") or doc.get("name") or "") for doc in hook_docs if bool((doc.get("_day1_runtime_hook") or {}).get("callsite_reached"))],
+    }
     if context.get("lc"):
         context["lc"] = _normalize_lc_payload_structures(context["lc"])
 
