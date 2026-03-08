@@ -529,6 +529,7 @@ def _build_day1_relay_debug(structured_result: Dict[str, Any]) -> Dict[str, Any]
         runtime = doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {}
         if not runtime and isinstance(doc.get("day1Runtime"), dict):
             runtime = doc.get("day1Runtime")
+        hook = doc.get("_day1_runtime_hook") if isinstance(doc.get("_day1_runtime_hook"), dict) else {}
         errors = runtime.get("errors") if isinstance(runtime.get("errors"), list) else []
         return {
             "filename": doc.get("filename") or doc.get("name"),
@@ -538,6 +539,12 @@ def _build_day1_relay_debug(structured_result: Dict[str, Any]) -> Dict[str, Any]
             "threshold": int(runtime.get("threshold") or 0) if runtime else 0,
             "fallback_stage": runtime.get("fallback_stage") if runtime else None,
             "error_codes": [str(code) for code in errors if isinstance(code, str)],
+            "hook_callsite_reached": bool(hook.get("callsite_reached")),
+            "hook_invoked": bool(hook.get("invoked")),
+            "hook_attached": bool(hook.get("attached")),
+            "hook_runtime_present": bool(hook.get("post_enforce_runtime_present")),
+            "hook_skipped": bool(hook.get("skipped")),
+            "hook_skip_reason": str(hook.get("reason") or ""),
         }
 
     surfaces: Dict[str, List[Dict[str, Any]]] = {}
@@ -561,11 +568,17 @@ def _build_day1_relay_debug(structured_result: Dict[str, Any]) -> Dict[str, Any]
 
 
 def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict[str, Any], document_type: str, extracted_text: str) -> None:
+    doc_info["_day1_runtime_hook"] = {
+        "invoked": True,
+        "document_type": document_type,
+    }
     # only enforce for target doc families
     if document_type not in {
         "letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice",
         "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "inspection_certificate",
     }:
+        doc_info["_day1_runtime_hook"]["skipped"] = True
+        doc_info["_day1_runtime_hook"]["reason"] = "unsupported_document_type"
         return
 
     raw = _extract_day1_raw_candidates(doc_info, context_payload)
@@ -651,6 +664,9 @@ def _enforce_day1_runtime_policy(doc_info: Dict[str, Any], context_payload: Dict
         "errors": sorted(set(day1_errors)),
         "anchor_scores": anchor_scores,
     }
+    doc_info["_day1_runtime_hook"]["attached"] = True
+    doc_info["_day1_runtime_hook"]["coverage"] = coverage
+    doc_info["_day1_runtime_hook"]["threshold"] = threshold
 
     if not schema_ok:
         doc_info["extraction_status"] = "failed"
@@ -4027,7 +4043,18 @@ async def _build_document_context(
             if isinstance(context_payload.get("_field_details"), dict):
                 doc_info["field_details"] = context_payload.get("_field_details")
 
+        doc_info.setdefault("_day1_runtime_hook", {})
+        doc_info["_day1_runtime_hook"]["callsite_reached"] = True
         _enforce_day1_runtime_policy(doc_info, context_payload if isinstance(context_payload, dict) else {}, document_type, extracted_text)
+        doc_info["_day1_runtime_hook"]["post_enforce_runtime_present"] = bool(isinstance(doc_info.get("day1_runtime"), dict) and doc_info.get("day1_runtime"))
+        logger.info(
+            "validate.day1.hook file=%s doc_type=%s invoked=%s attached=%s runtime_present=%s",
+            filename,
+            document_type,
+            bool((doc_info.get("_day1_runtime_hook") or {}).get("invoked")),
+            bool((doc_info.get("_day1_runtime_hook") or {}).get("attached")),
+            bool((doc_info.get("_day1_runtime_hook") or {}).get("post_enforce_runtime_present")),
+        )
         _apply_extraction_guard(doc_info, extracted_text)
         _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text)
         summary = doc_info.get("validation_summary") or {}

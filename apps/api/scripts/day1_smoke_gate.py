@@ -294,11 +294,18 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     relay_surfaces = _coerce_dict(day1_relay_debug.get("surfaces"))
     runtime_presence_by_surface: Dict[str, Dict[str, int]] = {}
+    hook_presence_by_surface: Dict[str, Dict[str, int]] = {}
     for surface_name, entries in relay_surfaces.items():
         entry_list = _coerce_list(entries)
         runtime_presence_by_surface[str(surface_name)] = {
             "docs": len(entry_list),
             "runtime_present": sum(1 for item in entry_list if isinstance(item, dict) and item.get("runtime_present")),
+        }
+        hook_presence_by_surface[str(surface_name)] = {
+            "callsite_reached": sum(1 for item in entry_list if isinstance(item, dict) and item.get("hook_callsite_reached")),
+            "invoked": sum(1 for item in entry_list if isinstance(item, dict) and item.get("hook_invoked")),
+            "attached": sum(1 for item in entry_list if isinstance(item, dict) and item.get("hook_attached")),
+            "runtime_present": sum(1 for item in entry_list if isinstance(item, dict) and item.get("hook_runtime_present")),
         }
 
     contract_documents_source = str(day1_contract_debug.get("documents_source") or "")
@@ -341,6 +348,7 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
         },
         "contract_documents_source": contract_documents_source,
         "runtime_presence_by_surface": runtime_presence_by_surface,
+        "hook_presence_by_surface": hook_presence_by_surface,
         "contract_doc_runtime_missing": _sorted_unique_texts(contract_doc_runtime_missing),
         "contract_doc_thresholds": contract_doc_thresholds,
         "contract_doc_fallback_stages": contract_doc_fallback_stages,
@@ -468,6 +476,7 @@ def run_smoke(
                 "critical_field_source_doc_hints": diagnostics["critical_field_source_doc_hints"],
                 "contract_documents_source": diagnostics["contract_documents_source"],
                 "runtime_presence_by_surface": diagnostics["runtime_presence_by_surface"],
+                "hook_presence_by_surface": diagnostics["hook_presence_by_surface"],
                 "contract_doc_runtime_missing": diagnostics["contract_doc_runtime_missing"],
                 "contract_doc_thresholds": diagnostics["contract_doc_thresholds"],
                 "contract_doc_fallback_stages": diagnostics["contract_doc_fallback_stages"],
@@ -487,6 +496,7 @@ def run_smoke(
                 "critical_field_source_doc_hints": {},
                 "contract_documents_source": "",
                 "runtime_presence_by_surface": {},
+                "hook_presence_by_surface": {},
                 "contract_doc_runtime_missing": [],
                 "contract_doc_thresholds": {},
                 "contract_doc_fallback_stages": {},
