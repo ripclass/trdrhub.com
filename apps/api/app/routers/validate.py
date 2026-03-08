@@ -3018,28 +3018,32 @@ async def validate_doc(
                     for key, value in relay_surfaces.items()
                 }
                 logger.info("validate.day1.relay surfaces=%s", compact)
-            structured_result = enforce_day1_response_contract(structured_result)
-            if structured_result.get("_contract_warnings"):
-                logger.info(
-                    "Contract validation: %d warnings added to response",
-                    len(structured_result.get("_contract_warnings", []))
-                )
-            day1_contract = structured_result.get("_day1_contract") if isinstance(structured_result, dict) else None
-            if isinstance(day1_contract, dict):
-                logger.info(
-                    "Day1 response contract: status=%s docs=%s violations=%s",
-                    day1_contract.get("status"),
-                    day1_contract.get("documents_checked"),
-                    len(day1_contract.get("violations") or []),
-                )
-            day1_metrics = structured_result.get("_day1_metrics") if isinstance(structured_result, dict) else None
-            if isinstance(day1_metrics, dict):
-                logger.info(
-                    "Day1 telemetry counters: docs=%s RET_NO_HIT=%s RET_LOW_RELEVANCE=%s",
-                    day1_metrics.get("documents_total"),
-                    day1_metrics.get("ret_no_hit"),
-                    day1_metrics.get("ret_low_relevance"),
-                )
+
+            if bool(getattr(settings, "DAY1_CONTRACT_ENABLED", False)):
+                structured_result = enforce_day1_response_contract(structured_result)
+                if structured_result.get("_contract_warnings"):
+                    logger.info(
+                        "Contract validation: %d warnings added to response",
+                        len(structured_result.get("_contract_warnings", []))
+                    )
+                day1_contract = structured_result.get("_day1_contract") if isinstance(structured_result, dict) else None
+                if isinstance(day1_contract, dict):
+                    logger.info(
+                        "Day1 response contract: status=%s docs=%s violations=%s",
+                        day1_contract.get("status"),
+                        day1_contract.get("documents_checked"),
+                        len(day1_contract.get("violations") or []),
+                    )
+                day1_metrics = structured_result.get("_day1_metrics") if isinstance(structured_result, dict) else None
+                if isinstance(day1_metrics, dict):
+                    logger.info(
+                        "Day1 telemetry counters: docs=%s RET_NO_HIT=%s RET_LOW_RELEVANCE=%s",
+                        day1_metrics.get("documents_total"),
+                        day1_metrics.get("ret_no_hit"),
+                        day1_metrics.get("ret_low_relevance"),
+                    )
+            else:
+                logger.info("Day1 response contract overlay disabled (DAY1_CONTRACT_ENABLED=false)")
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
 
