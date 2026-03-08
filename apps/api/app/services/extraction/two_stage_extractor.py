@@ -16,13 +16,33 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 from app.reference_data.ports import get_port_registry
 from app.reference_data.currencies import get_currency_registry
 from app.reference_data.countries import get_country_registry
 
 logger = logging.getLogger(__name__)
+
+_LOCALE_PROFILES_DIR = Path(__file__).resolve().parents[2] / "config" / "extraction_profiles" / "locale"
+
+
+def _load_locale_profile(locale: str) -> Dict[str, Any]:
+    requested = (locale or "").strip().lower() or "global_default"
+    fallback = "global_default"
+
+    for name in [requested, fallback]:
+        path = _LOCALE_PROFILES_DIR / f"{name}.yaml"
+        if path.exists():
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    return {
+        "locale": fallback,
+        "tax_id": {"min_digits": 6, "max_digits": 20},
+    }
 
 
 class ExtractionStatus(str, Enum):
@@ -88,10 +108,11 @@ class ExtractedField:
 class FieldValidator:
     """Deterministic validator for extracted fields."""
     
-    def __init__(self):
+    def __init__(self, locale: str = "global_default"):
         self._port_registry = get_port_registry()
         self._currency_registry = get_currency_registry()
         self._country_registry = get_country_registry()
+        self._locale_profile = _load_locale_profile(locale)
     
     def validate(self, field: ExtractedField) -> Tuple[float, List[str]]:
         """
@@ -370,23 +391,30 @@ class FieldValidator:
         return 0.9 if unit else 0.8, []
     
     def _validate_tax_id(self, field: ExtractedField) -> Tuple[float, List[str]]:
-        """Validate BIN/TIN style identifiers."""
+        """Validate BIN/TIN style identifiers with locale-aware length ranges."""
         value = str(field.raw_value).strip()
         issues: List[str] = []
-        
+
         if not value:
             return 0.0, ["Empty tax ID"]
-        
+
         # Allow digits with optional hyphens/spaces
-        if not re.match(r"^[0-9\-\s]{6,20}$", value):
+        if not re.match(r"^[0-9\-\s]{6,24}$", value):
             issues.append("Tax ID contains invalid characters")
             return 0.3, issues
-        
+
+        tax_profile = self._locale_profile.get("tax_id") if isinstance(self._locale_profile, dict) else {}
+        min_digits = int((tax_profile or {}).get("min_digits", 6))
+        max_digits = int((tax_profile or {}).get("max_digits", 20))
+
         digits = re.sub(r"[^0-9]", "", value)
-        if len(digits) < 9:
-            issues.append("Tax ID too short")
+        if len(digits) < min_digits:
+            issues.append(f"Tax ID too short for locale (min {min_digits} digits)")
             return 0.4, issues
-        
+        if len(digits) > max_digits:
+            issues.append(f"Tax ID too long for locale (max {max_digits} digits)")
+            return 0.4, issues
+
         field.normalized_value = value
         return 0.9, []
     
@@ -413,13 +441,15 @@ class TwoStageExtractor:
     TRUSTED_THRESHOLD = 0.8
     REVIEW_THRESHOLD = 0.5
     
-    def __init__(self):
-        self.validator = FieldValidator()
+    def __init__(self, locale: str = "global_default"):
+        self.locale = locale
+        self.validator = FieldValidator(locale=locale)
     
     def process(
         self,
         ai_extraction: Dict[str, Any],
         document_type: str = "unknown",
+        locale: Optional[str] = None,
     ) -> Dict[str, ExtractedField]:
         """
         Process AI extraction results through validation.
@@ -431,6 +461,10 @@ class TwoStageExtractor:
         Returns:
             Dict of field_name -> ExtractedField with status
         """
+        if locale and locale != self.locale:
+            self.locale = locale
+            self.validator = FieldValidator(locale=locale)
+
         results: Dict[str, ExtractedField] = {}
         
         # Map document type to expected fields
@@ -626,6 +660,7 @@ class TwoStageExtractor:
 def two_stage_extract(
     ai_results: Dict[str, Any],
     document_type: str = "unknown",
+    locale: str = "global_default",
 ) -> Tuple[Dict[str, ExtractedField], Dict[str, Any]]:
     """
     Run two-stage extraction on AI results.
@@ -633,8 +668,8 @@ def two_stage_extract(
     Returns:
         (fields_dict, summary_dict)
     """
-    extractor = TwoStageExtractor()
-    fields = extractor.process(ai_results, document_type)
+    extractor = TwoStageExtractor(locale=locale)
+    fields = extractor.process(ai_results, document_type, locale=locale)
     summary = extractor.get_extraction_summary(fields)
     return fields, summary
 

@@ -1,0 +1,4 @@
+locale: global_default
+tax_id:
+  min_digits: 6
+  max_digits: 20

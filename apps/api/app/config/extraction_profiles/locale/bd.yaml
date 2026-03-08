@@ -1,0 +1,4 @@
+locale: bd
+tax_id:
+  min_digits: 9
+  max_digits: 15

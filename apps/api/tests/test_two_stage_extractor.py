@@ -161,6 +161,28 @@ class TestFieldValidator:
         assert score < 1.0
         assert "8 or 11" in issues[0]
 
+    def test_tax_id_unknown_locale_uses_global_default(self):
+        validator = FieldValidator(locale="unknown_locale")
+        field = ExtractedField(
+            name="exporter_tin",
+            field_type=FieldType.TAX_ID,
+            raw_value="12345678",
+        )
+        score, issues = validator.validate(field)
+        assert score >= 0.8
+        assert not issues
+
+    def test_tax_id_bd_locale_stays_strict(self):
+        validator = FieldValidator(locale="bd")
+        field = ExtractedField(
+            name="exporter_tin",
+            field_type=FieldType.TAX_ID,
+            raw_value="12345678",
+        )
+        score, issues = validator.validate(field)
+        assert score < 0.8
+        assert any("too short" in issue.lower() for issue in issues)
+
 
 class TestTwoStageExtractor:
     """Tests for the full two-stage pipeline."""
