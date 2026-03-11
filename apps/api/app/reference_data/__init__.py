@@ -10,16 +10,19 @@ This module provides canonical lookups for:
 All data is versioned and cached for fast lookups.
 """
 
-from .ports import PortRegistry, Port
-from .currencies import CurrencyRegistry, Currency
-from .countries import CountryRegistry, Country
+from .ports import PortRegistry, Port, get_port_registry
+from .currencies import CurrencyRegistry, Currency, get_currency_registry
+from .countries import CountryRegistry, Country, get_country_registry
 
 __all__ = [
     "PortRegistry",
     "Port",
+    "get_port_registry",
     "CurrencyRegistry", 
     "Currency",
+    "get_currency_registry",
     "CountryRegistry",
     "Country",
+    "get_country_registry",
 ]
 
