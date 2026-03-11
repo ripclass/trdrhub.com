@@ -1986,6 +1986,11 @@ async def validate_doc(
                 "major_issues": int(ai_metadata.get("major_issues", 0) or 0),
                 "minor_issues": int(ai_metadata.get("minor_issues", 0) or 0),
                 "documents_checked": len(documents_for_ai) if isinstance(documents_for_ai, list) else 0,
+                "derived_ai_verdict": (
+                    "reject" if int(ai_metadata.get("critical_issues", 0) or 0) > 0 else (
+                        "warn" if int(ai_metadata.get("major_issues", 0) or 0) > 0 else "pass"
+                    )
+                ),
                 "metadata": ai_metadata or {},
             }
             
@@ -8227,6 +8232,16 @@ def _build_validation_contract(
             recommended_escalation_layer = "L3"
             next_action = "escalate_to_l3"
 
+    submission_reasons = list(submission_eligibility.get("reasons") or [])
+    missing_reason_codes = list(submission_eligibility.get("missing_reason_codes") or [])
+    unresolved_critical_fields = [
+        item.get("field") if isinstance(item, dict) else item
+        for item in (submission_eligibility.get("unresolved_critical_fields") or [])
+    ]
+    unresolved_critical_fields = [str(x).strip() for x in unresolved_critical_fields if str(x).strip()]
+    review_required_reason = sorted(set(review_required_reason))
+    escalation_triggers = sorted(set(escalation_triggers))
+
     return {
         "ai_verdict": ai_verdict,
         "ruleset_verdict": ruleset_verdict,
@@ -8234,17 +8249,27 @@ def _build_validation_contract(
         "override_reason": override_reason,
         "disagreement_flag": disagreement_flag,
         "arbitration_mode": arbitration_mode,
-        "review_required_reason": sorted(set(review_required_reason)),
+        "review_required_reason": review_required_reason,
         "rules_veto_classes": rules_veto_classes,
         "rules_trigger_classes": rules_trigger_classes,
         "immediate_rules_veto": immediate_rules_veto,
-        "escalation_triggers": sorted(set(escalation_triggers)),
+        "escalation_triggers": escalation_triggers,
         "recommended_escalation_layer": recommended_escalation_layer,
         "next_action": next_action,
         "rules_evidence": {
             "missing_critical_fields": missing_critical,
+            "unresolved_critical_fields": unresolved_critical_fields,
+            "missing_reason_codes": missing_reason_codes,
             "submission_can_submit": bool(submission_eligibility.get("can_submit", True)),
-            "submission_reasons": list(submission_eligibility.get("reasons") or []),
+            "submission_reasons": submission_reasons,
+            "bank_reasons": list(bank_verdict.get("reasons") or []),
+            "bank_risk_flags": list(bank_verdict.get("risk_flags") or []),
+        },
+        "evidence_summary": {
+            "primary_review_drivers": review_required_reason,
+            "primary_veto_drivers": rules_veto_classes,
+            "primary_escalation_drivers": escalation_triggers,
+            "submission_readiness": "ready" if submission_eligibility.get("can_submit", True) else "not_ready",
         },
         "ai_issue_counts": {
             "critical": ai_critical,
