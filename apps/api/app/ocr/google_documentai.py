@@ -6,22 +6,25 @@ import os
 import time
 import json
 import tempfile
+import logging
 from typing import Dict, List, Any
 from uuid import UUID
 
 try:
     from google.cloud import documentai
     from google.cloud.exceptions import GoogleCloudError
-    print("✓ google-cloud-documentai imported successfully")
 except ImportError as e:
-    # Log the actual import error for debugging
+    # Keep missing optional dependency non-fatal at import time.
     import traceback
-    print(f"✗ Failed to import google-cloud-documentai: {e}")
-    traceback.print_exc()
-    
-    # Mock Google Cloud imports for environments without credentials
+    logging.getLogger(__name__).warning(
+        "google-cloud-documentai not available; GoogleDocumentAIAdapter will stay disabled until installed: %s",
+        e,
+    )
+    logging.getLogger(__name__).debug(traceback.format_exc())
+
     class GoogleCloudError(Exception):
         pass
+
     documentai = None
 
 from .base import OCRAdapter, OCRResult, OCRTextElement, BoundingBox

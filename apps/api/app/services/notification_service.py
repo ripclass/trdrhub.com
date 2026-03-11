@@ -11,8 +11,12 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import aiohttp
 import hashlib
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
 
@@ -105,8 +109,13 @@ class EmailProvider(NotificationProvider):
 class SlackProvider(NotificationProvider):
     """Slack webhook provider"""
 
+    def _require_aiohttp(self):
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is not installed; Slack notifications are unavailable")
+
     async def send(self, recipient: str, subject: str, body: str, metadata: Dict[str, Any] = None) -> bool:
         try:
+            self._require_aiohttp()
             webhook_url = self.config.get("webhook_url")
 
             # Format for Slack
@@ -160,6 +169,7 @@ class SlackProvider(NotificationProvider):
 
     async def test_connection(self) -> Dict[str, Any]:
         try:
+            self._require_aiohttp()
             webhook_url = self.config.get("webhook_url")
 
             test_message = {
@@ -189,8 +199,13 @@ class SlackProvider(NotificationProvider):
 class WebhookProvider(NotificationProvider):
     """Generic webhook provider"""
 
+    def _require_aiohttp(self):
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is not installed; webhook notifications are unavailable")
+
     async def send(self, recipient: str, subject: str, body: str, metadata: Dict[str, Any] = None) -> bool:
         try:
+            self._require_aiohttp()
             webhook_url = self.config.get("webhook_url")
             headers = self.config.get("headers", {})
 
@@ -217,6 +232,7 @@ class WebhookProvider(NotificationProvider):
 
     async def test_connection(self) -> Dict[str, Any]:
         try:
+            self._require_aiohttp()
             webhook_url = self.config.get("webhook_url")
             headers = self.config.get("headers", {})
 

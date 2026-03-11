@@ -426,6 +426,7 @@ def run_smoke(
     api_key: str = "",
     vercel_bypass: str = "",
     bundle_by_dir: bool = True,
+    request_timeout: int = 300,
 ) -> Dict[str, Any]:
     if bundle_by_dir:
         file_sets = _pick_file_sets(input_dir, limit_sets=limit)
@@ -462,6 +463,7 @@ def run_smoke(
                 base_url,
                 file_set,
                 csrf_token,
+                timeout=request_timeout,
                 bearer=bearer,
                 api_key=api_key,
                 vercel_bypass=vercel_bypass,
@@ -546,6 +548,7 @@ def main() -> None:
     parser.add_argument("--bearer", default="", help="Bearer token for Authorization header")
     parser.add_argument("--api-key", default="", help="Optional x-api-key header")
     parser.add_argument("--vercel-bypass", default="", help="Optional Vercel deployment protection bypass token")
+    parser.add_argument("--timeout", type=int, default=300, help="Per-request timeout seconds (default: 300)")
     parser.add_argument("--out", default="day1_smoke_report.json", help="Output report file")
     args = parser.parse_args()
 
@@ -557,6 +560,7 @@ def main() -> None:
         api_key=args.api_key,
         vercel_bypass=args.vercel_bypass,
         bundle_by_dir=not args.no_bundle_by_dir,
+        request_timeout=args.timeout,
     )
     out_path = Path(args.out)
     out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

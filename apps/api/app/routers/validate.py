@@ -136,6 +136,7 @@ from app.services.extraction.ai_first_extractor import (
     extract_insurance_ai_first,
     extract_inspection_ai_first,
 )
+from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -3547,9 +3548,144 @@ async def _build_document_context(
         
         logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
 
+        launch_pipeline_result: Optional[Dict[str, Any]] = None
+        launch_pipeline = get_launch_extraction_pipeline()
+        if document_type in ("letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice", "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "inspection_certificate", "supporting_document"):
+            try:
+                launch_pipeline_result = await launch_pipeline.process_document(
+                    extracted_text=extracted_text,
+                    document_type=document_type,
+                    filename=filename,
+                    extraction_artifacts_v1=extraction_artifacts_v1,
+                )
+            except Exception as launch_exc:
+                logger.warning("Launch extraction pipeline failed for %s: %s", filename, launch_exc, exc_info=True)
+                launch_pipeline_result = None
+
         try:
-            # Treat LC, SWIFT messages, and LC applications as LC-like documents
-            is_lc_like = document_type in ("letter_of_credit", "swift_message", "lc_application")
+            if launch_pipeline_result and launch_pipeline_result.get("handled"):
+                context_key = launch_pipeline_result.get("context_key")
+                context_payload = launch_pipeline_result.get("context_payload") or {}
+                if context_key and isinstance(context_payload, dict):
+                    target_ctx = context.setdefault(context_key, {})
+                    if context_key == "lc" and "raw_text" not in target_ctx:
+                        context["lc_text"] = extracted_text
+                        target_ctx["source_type"] = document_type
+                    target_ctx.update(context_payload)
+
+                validation_doc_type = launch_pipeline_result.get("validation_doc_type")
+                if validation_doc_type and context_key and isinstance(context.get(context_key), dict):
+                    validated_payload, validation_summary = _apply_two_stage_validation(
+                        context[context_key], validation_doc_type, filename, job_id=job_id
+                    )
+                    context[context_key].update(validated_payload)
+                    launch_pipeline_result.setdefault("doc_info_patch", {})["validation_summary"] = validation_summary
+                    if context_key == "lc":
+                        context["lc_structured_output"] = validated_payload
+
+                if launch_pipeline_result.get("lc_number") and not context.get("lc_number"):
+                    context["lc_number"] = launch_pipeline_result.get("lc_number")
+
+                doc_info.update(launch_pipeline_result.get("doc_info_patch") or {})
+                has_structured_data = bool(launch_pipeline_result.get("has_structured_data")) or has_structured_data
+
+                if doc_info.get("extracted_fields"):
+                    doc_info["raw_text_preview"] = extracted_text[:500]
+                elif extracted_text:
+                    doc_info["raw_text_preview"] = extracted_text[:500]
+                    if doc_info.get("extraction_status") == "empty" and not _extraction_fallback_hotfix_enabled():
+                        doc_info["extraction_status"] = "text_only"
+
+                context_payload = _context_payload_for_doc_type(context, document_type)
+                if isinstance(context_payload, dict):
+                    context_payload["raw_text"] = context_payload.get("raw_text") or extracted_text
+                    context_payload["extraction_artifacts_v1"] = extraction_artifacts_v1
+                    _apply_direct_token_recovery(context_payload, extraction_artifacts_v1)
+                    if isinstance(context_payload.get("extracted_fields"), dict):
+                        doc_info["extracted_fields"] = context_payload.get("extracted_fields")
+                    if isinstance(context_payload.get("_field_details"), dict):
+                        doc_info["field_details"] = context_payload.get("_field_details")
+
+                doc_info.setdefault("_day1_runtime_hook", {})
+                doc_info["_day1_runtime_hook"]["callsite_reached"] = True
+                _enforce_day1_runtime_policy(doc_info, context_payload if isinstance(context_payload, dict) else {}, document_type, extracted_text)
+                doc_info["_day1_runtime_hook"]["post_enforce_runtime_present"] = bool(isinstance(doc_info.get("day1_runtime"), dict) and doc_info.get("day1_runtime"))
+                logger.info(
+                    "validate.day1.hook file=%s doc_type=%s invoked=%s attached=%s runtime_present=%s",
+                    filename,
+                    document_type,
+                    bool((doc_info.get("_day1_runtime_hook") or {}).get("invoked")),
+                    bool((doc_info.get("_day1_runtime_hook") or {}).get("attached")),
+                    bool((doc_info.get("_day1_runtime_hook") or {}).get("post_enforce_runtime_present")),
+                )
+                _apply_extraction_guard(doc_info, extracted_text)
+                _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text)
+                summary = doc_info.get("validation_summary") or {}
+                llm_trace = _resolve_doc_llm_trace(
+                    context_payload if isinstance(context_payload, dict) else {},
+                    doc_info.get("extraction_method"),
+                    has_two_stage=bool(summary),
+                )
+                canonical_before = int(summary.get("canonical_field_count_before") or _count_populated_canonical_fields(doc_info.get("extracted_fields") or {}))
+                canonical_after = int(summary.get("canonical_field_count_after") or _count_populated_canonical_fields(doc_info.get("extracted_fields") or {}))
+                extraction_status_now = str(doc_info.get("extraction_status") or "unknown")
+                downgrade_reason = doc_info.get("downgrade_reason")
+                if not downgrade_reason and extraction_status_now in {"partial", "error", "failed"}:
+                    downgrade_reason = doc_info.get("extraction_error") or doc_info.get("ai_first_status") or "downgraded"
+
+                trace_payload = _build_document_extraction_payload(
+                    doc_type=document_type,
+                    file_name=filename,
+                    job_id=job_id,
+                    ocr_text_len=len(extracted_text or ""),
+                    extractor_path=llm_trace.get("extractor_path") or "fallback",
+                    llm_provider=llm_trace.get("provider"),
+                    llm_model=llm_trace.get("model"),
+                    router_layer=llm_trace.get("router_layer"),
+                    ai_response_present=canonical_before > 0 or bool(doc_info.get("ai_first_status")),
+                    ai_parse_success=canonical_before > 0,
+                    canonical_before_two_stage=canonical_before,
+                    canonical_after_two_stage=canonical_after,
+                    extraction_status=extraction_status_now,
+                    downgrade_reason=downgrade_reason,
+                )
+                _log_document_extraction_telemetry(
+                    doc_type=document_type,
+                    file_name=filename,
+                    job_id=job_id,
+                    ocr_text_len=len(extracted_text or ""),
+                    extractor_path=llm_trace.get("extractor_path") or "fallback",
+                    llm_provider=llm_trace.get("provider"),
+                    llm_model=llm_trace.get("model"),
+                    router_layer=llm_trace.get("router_layer"),
+                    ai_response_present=canonical_before > 0 or bool(doc_info.get("ai_first_status")),
+                    ai_parse_success=canonical_before > 0,
+                    canonical_before_two_stage=canonical_before,
+                    canonical_after_two_stage=canonical_after,
+                    extraction_status=extraction_status_now,
+                    downgrade_reason=downgrade_reason,
+                )
+                logger.info(
+                    "validate.extraction.final file=%s doc_type=%s status=%s fallback=%s reason_codes=%s",
+                    filename,
+                    document_type,
+                    extraction_status_now,
+                    bool(extraction_artifacts_v1.get("fallback_activated")),
+                    extraction_artifacts_v1.get("reason_codes") or [],
+                )
+                debug_extraction_trace.append(trace_payload)
+
+                document_details.append(doc_info)
+                entry = documents_presence.setdefault(
+                    document_type,
+                    {"present": False, "count": 0},
+                )
+                entry["present"] = True
+                entry["count"] += 1
+                continue
+            else:
+                # Treat LC, SWIFT messages, and LC applications as LC-like documents
+                is_lc_like = document_type in ("letter_of_credit", "swift_message", "lc_application")
             
             if is_lc_like:
                 lc_payload = context.setdefault("lc", {})

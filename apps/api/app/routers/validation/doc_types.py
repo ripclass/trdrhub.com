@@ -17,6 +17,11 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
         "lc_document",
         "draft lc",
         "draft_lc",
+        "bank guarantee",
+        "bank_guarantee",
+        "standby letter of credit",
+        "standby lc",
+        "sblc",
     ],
     # Importer Draft LC document types
     "swift_message": [
@@ -48,6 +53,14 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
         "commercial invoice",
         "ci",
         "inv",
+        "bill of exchange",
+        "draft",
+        "promissory note",
+        "promissory_note",
+        "payment receipt",
+        "receipt",
+        "debit note",
+        "credit note",
     ],
     "bill_of_lading": [
         "bill of lading",
@@ -57,7 +70,23 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
         "bol",
         "bl",
         "shipping document",
+        "transport document",
+        "ocean bill of lading",
+        "sea waybill",
+        "air waybill",
         "awb",
+        "multimodal transport document",
+        "combined transport document",
+        "railway consignment note",
+        "road transport document",
+        "forwarder's certificate of receipt",
+        "fcr",
+        "house bill of lading",
+        "master bill of lading",
+        "delivery order",
+        "mate's receipt",
+        "mates receipt",
+        "shipping company certificate",
     ],
     "packing_list": [
         "packing list",
@@ -67,17 +96,61 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
     "insurance_certificate": [
         "insurance",
         "insurance certificate",
+        "insurance policy",
         "policy",
+        "beneficiary certificate",
+        "beneficiary_certificate",
+        "manufacturer's certificate",
+        "manufacturers certificate",
+        "certificate of conformity",
+        "certificate_of_conformity",
+        "non-manipulation certificate",
+        "halal certificate",
+        "kosher certificate",
+        "organic certificate",
     ],
     "certificate_of_origin": [
         "certificate of origin",
         "coo",
         "gsp",
+        "gsp form a",
+        "form a",
+        "eur.1",
+        "eur1",
+        "movement certificate",
+        "customs declaration",
+        "export license",
+        "import license",
+        "phytosanitary certificate",
+        "fumigation certificate",
+        "health certificate",
+        "veterinary certificate",
+        "sanitary certificate",
+        "sanitary_certificate",
+        "cites permit",
+        "radiation certificate",
+        "radiation_certificate",
     ],
     "inspection_certificate": [
         "inspection",
-        "analysis",
+        "inspection certificate",
+        "pre-shipment inspection",
+        "pre shipment inspection",
+        "psi",
         "quality certificate",
+        "weight certificate",
+        "weight_certificate",
+        "weight list",
+        "measurement certificate",
+        "measurement_certificate",
+        "analysis certificate",
+        "lab test report",
+        "lab_test_report",
+        "laboratory test report",
+        "sgs certificate",
+        "bureau veritas certificate",
+        "intertek certificate",
+        "analysis",
     ],
     "supporting_document": [
         "supporting",
@@ -123,7 +196,9 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
     """Guess document type using filename hints or position."""
     if filename:
         lower = filename.lower()
-        if any(token in lower for token in ("invoice", "inv")):
+        if lower in {"lc.pdf", "lc"} or any(token in lower for token in ("bank guarantee", "bank_guarantee", "standby letter of credit", "standby lc", "sblc")):
+            return "letter_of_credit"
+        if any(token in lower for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in lower for token in (
             "bill of lading",
@@ -134,17 +209,31 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
             "bl",
             "shipping",
             "bol",
+            "ocean bill",
+            "sea waybill",
+            "air waybill",
+            "awb",
+            "multimodal",
+            "combined transport",
+            "railway consignment",
+            "road transport",
+            "forwarder",
+            "fcr",
+            "house bill",
+            "master bill",
+            "delivery order",
+            "mate",
         )):
             return "bill_of_lading"
         if any(token in lower for token in ("packing", "packlist")):
             return "packing_list"
-        if any(token in lower for token in ("insurance", "policy")):
+        if any(token in lower for token in ("insurance", "insurance policy", "policy", "beneficiary certificate", "beneficiary_certificate", "manufacturer's certificate", "manufacturers certificate", "certificate of conformity", "certificate_of_conformity", "non-manipulation certificate", "halal certificate", "kosher certificate", "organic certificate")):
             return "insurance_certificate"
-        if any(token in lower for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
-            return "certificate_of_origin"
-        if any(token in lower for token in ("inspection", "analysis", "quality")):
+        if any(token in lower for token in ("inspection", "pre-shipment", "pre shipment", "psi", "analysis", "quality", "weight certificate", "weight_certificate", "weight list", "weight_list", "measurement certificate", "measurement_certificate", "lab test", "lab_test_report", "sgs", "bureau veritas", "intertek")):
             return "inspection_certificate"
-        if any(token in lower for token in ("lc_", "letter_of_credit", "mt700")) or lower.endswith("_lc.pdf"):
+        if any(token in lower for token in ("certificate_of_origin", "coo", "gsp", "gsp form a", "form a", "eur.1", "eur1", "movement certificate", "customs declaration", "export license", "import license", "phytosanitary", "fumigation", "health certificate", "veterinary certificate", "sanitary certificate", "sanitary_certificate", "cites permit", "radiation certificate", "radiation_certificate")):
+            return "certificate_of_origin"
+        if any(token in lower for token in ("lc_", "letter_of_credit", "mt700", "bank guarantee", "standby letter of credit", "standby lc", "sblc")) or lower.endswith("_lc.pdf"):
             return "letter_of_credit"
         if " credit " in lower:
             return "letter_of_credit"
@@ -161,7 +250,9 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
     """Infer the document type using filename patterns."""
     if filename:
         name = filename.lower()
-        if any(token in name for token in ("invoice", "inv")):
+        if name in {"lc.pdf", "lc"} or any(token in name for token in ("bank guarantee", "bank_guarantee", "standby letter of credit", "standby lc", "sblc")):
+            return "letter_of_credit"
+        if any(token in name for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in name for token in (
             "bill_of_lading",
@@ -171,17 +262,31 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
             "bl",
             "shipping",
             "bol",
+            "ocean bill",
+            "sea waybill",
+            "air waybill",
+            "awb",
+            "multimodal",
+            "combined transport",
+            "railway consignment",
+            "road transport",
+            "forwarder",
+            "fcr",
+            "house bill",
+            "master bill",
+            "delivery order",
+            "mate",
         )):
             return "bill_of_lading"
         if any(token in name for token in ("packing", "packlist")):
             return "packing_list"
-        if any(token in name for token in ("insurance", "policy")):
+        if any(token in name for token in ("insurance", "insurance policy", "policy", "beneficiary certificate", "beneficiary_certificate", "manufacturer's certificate", "manufacturers certificate", "certificate of conformity", "certificate_of_conformity", "non-manipulation certificate", "halal certificate", "kosher certificate", "organic certificate")):
             return "insurance_certificate"
-        if any(token in name for token in ("certificate_of_origin", "coo", "gsp", "certificate")):
-            return "certificate_of_origin"
-        if any(token in name for token in ("inspection", "quality", "analysis")):
+        if any(token in name for token in ("inspection", "pre-shipment", "pre shipment", "psi", "quality", "analysis", "weight certificate", "weight_certificate", "weight list", "weight_list", "measurement certificate", "measurement_certificate", "lab test", "lab_test_report", "sgs", "bureau veritas", "intertek")):
             return "inspection_certificate"
-        if any(token in name for token in ("lc_", "letter_of_credit", "mt700")) or name.endswith("_lc.pdf"):
+        if any(token in name for token in ("certificate_of_origin", "coo", "gsp", "gsp form a", "form a", "eur.1", "eur1", "movement certificate", "customs declaration", "export license", "import license", "phytosanitary", "fumigation", "health certificate", "veterinary certificate", "sanitary certificate", "sanitary_certificate", "cites permit", "radiation certificate", "radiation_certificate")):
+            return "certificate_of_origin"
+        if any(token in name for token in ("lc_", "letter_of_credit", "mt700", "bank guarantee", "standby letter of credit", "standby lc", "sblc")) or name.endswith("_lc.pdf"):
             return "letter_of_credit"
         if " credit " in name:
             return "letter_of_credit"
