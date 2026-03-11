@@ -8153,6 +8153,28 @@ def _build_validation_contract(
     if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
         review_required_reason.append("submission_not_ready")
 
+    immediate_rules_veto = bool(rules_veto_classes)
+    escalation_triggers: List[str] = []
+    if disagreement_flag and not immediate_rules_veto:
+        escalation_triggers.append("ai_rules_disagreement")
+    if ai_verdict in {"warn", "reject"} and ruleset_verdict == "pass":
+        escalation_triggers.append("ai_detected_non_deterministic_risk")
+    if ruleset_verdict == "review":
+        escalation_triggers.append("rules_review_signal")
+    if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
+        escalation_triggers.append("submission_not_ready")
+
+    recommended_escalation_layer = None
+    next_action = "accept_final_verdict"
+    if immediate_rules_veto:
+        next_action = "respect_rules_veto"
+    elif escalation_triggers:
+        recommended_escalation_layer = "L2"
+        next_action = "escalate_to_l2"
+        if ai_verdict == "reject" and ruleset_verdict == "pass":
+            recommended_escalation_layer = "L3"
+            next_action = "escalate_to_l3"
+
     return {
         "ai_verdict": ai_verdict,
         "ruleset_verdict": ruleset_verdict,
@@ -8162,6 +8184,10 @@ def _build_validation_contract(
         "arbitration_mode": arbitration_mode,
         "review_required_reason": sorted(set(review_required_reason)),
         "rules_veto_classes": rules_veto_classes,
+        "immediate_rules_veto": immediate_rules_veto,
+        "escalation_triggers": sorted(set(escalation_triggers)),
+        "recommended_escalation_layer": recommended_escalation_layer,
+        "next_action": next_action,
         "rules_evidence": {
             "missing_critical_fields": missing_critical,
             "submission_can_submit": bool(submission_eligibility.get("can_submit", True)),
