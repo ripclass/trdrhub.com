@@ -168,6 +168,14 @@ class Settings(BaseSettings):
     AI_MAX_OUTPUT_TOKENS_TRANSLATE: int = 600  # Translation max tokens
     AI_MAX_OUTPUT_TOKENS_CHAT: int = 400  # Chat max tokens
     AI_TIMEOUT_MS: int = 15000  # LLM API timeout
+    # Extraction-specific routing: keep separate from validation AI router layers.
+    EXTRACTION_AI_ENABLED: bool = True
+    EXTRACTION_PRIMARY_PROVIDER: str = "openrouter"
+    EXTRACTION_PRIMARY_MODEL: Optional[str] = None
+    EXTRACTION_FALLBACK_PROVIDER: Optional[str] = None
+    EXTRACTION_FALLBACK_MODEL: Optional[str] = None
+    EXTRACTION_TIMEOUT_MS: int = 30000
+    EXTRACTION_MAX_TOKENS: int = 2000
     AI_SEMANTIC_ENABLED: bool = True  # Enable semantic rule operator
     AI_SEMANTIC_MODEL: str = "gpt-4o-mini"
     AI_SEMANTIC_LOW_COST_MODEL: str = "gpt-4o-mini"

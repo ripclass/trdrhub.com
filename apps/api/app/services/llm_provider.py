@@ -548,11 +548,14 @@ class LLMProviderFactory:
         """
         call_kwargs = dict(kwargs)
         layer = LLMProviderFactory._layer_from_kwargs(**call_kwargs)
+        extraction_mode = bool(call_kwargs.pop("extraction_mode", False))
+        explicit_fallback_provider = call_kwargs.pop("fallback_provider", None)
+        explicit_fallback_model = call_kwargs.pop("fallback_model", None)
         # router_layer/layer are control-plane hints and must not be sent to model providers
         call_kwargs.pop("router_layer", None)
         call_kwargs.pop("layer", None)
 
-        routing_enabled = os.getenv("AI_LAYER_ROUTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        routing_enabled = (not extraction_mode) and os.getenv("AI_LAYER_ROUTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
         resolved_primary_model = model_override
         if not resolved_primary_model and routing_enabled:
@@ -575,10 +578,12 @@ class LLMProviderFactory:
             logger.error(f"Primary provider ({provider_name}) failed: {e}")
 
             # First fallback: same-provider model fallback (OpenRouter/OpenAI)
-            fallback_model = LLMProviderFactory._layer_fallback_model(layer) if routing_enabled else (
-                os.getenv("LLM_FALLBACK_MODEL")
-                or os.getenv("LLM_LOW_COST_MODEL")
-                or "openai/gpt-4o-mini"
+            fallback_model = explicit_fallback_model or (
+                LLMProviderFactory._layer_fallback_model(layer) if routing_enabled else (
+                    os.getenv("LLM_FALLBACK_MODEL")
+                    or os.getenv("LLM_LOW_COST_MODEL")
+                    or "openai/gpt-4o-mini"
+                )
             )
             if not model_override and isinstance(provider, (OpenRouterProvider, OpenAIProvider)):
                 try:
@@ -605,13 +610,17 @@ class LLMProviderFactory:
                     )
 
             # Second fallback: provider chain
-            fallback_order = [OpenRouterProvider, OpenAIProvider, AnthropicProvider, GeminiProvider]
-            for FallbackClass in fallback_order:
-                if isinstance(provider, FallbackClass):
-                    continue  # Skip the one that already failed
+            if explicit_fallback_provider:
+                provider_chain = [explicit_fallback_provider]
+            else:
+                provider_chain = ["openrouter", "openai", "anthropic", "gemini"]
 
+            for fallback_name_pref in provider_chain:
+                fallback_provider = None
                 try:
-                    fallback_provider = FallbackClass()
+                    if fallback_name_pref == provider_name:
+                        continue
+                    fallback_provider = LLMProviderFactory.create_provider(fallback_name_pref)
                     fallback_name = LLMProviderFactory._get_provider_name(fallback_provider)
 
                     output, tokens_in, tokens_out = await fallback_provider.generate(
@@ -619,7 +628,7 @@ class LLMProviderFactory:
                         system_prompt=system_prompt,
                         max_tokens=max_tokens,
                         temperature=temperature,
-                        model_override=resolved_primary_model,
+                        model_override=fallback_model if fallback_name in {"openrouter", "openai"} else resolved_primary_model,
                         **call_kwargs
                     )
                     logger.info(f"Fallback to {fallback_name} succeeded")

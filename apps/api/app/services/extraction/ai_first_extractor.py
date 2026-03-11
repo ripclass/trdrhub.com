@@ -62,6 +62,64 @@ def _log_ai_first_event(event: str, **payload: Any) -> None:
     logger.info("ai_first.telemetry %s", json.dumps({"event": event, **safe_payload}, default=str))
 
 
+def _resolve_extraction_config() -> Dict[str, Any]:
+    primary_provider = os.getenv("EXTRACTION_PRIMARY_PROVIDER") or os.getenv("LLM_PROVIDER", "openrouter")
+    primary_model = (
+        os.getenv("EXTRACTION_PRIMARY_MODEL")
+        or os.getenv("OPENROUTER_MODEL_VERSION")
+        or os.getenv("LLM_PRIMARY_MODEL")
+        or os.getenv("LLM_MODEL_VERSION")
+        or "openai/gpt-4o-mini"
+    )
+    fallback_provider = os.getenv("EXTRACTION_FALLBACK_PROVIDER") or primary_provider
+    fallback_model = (
+        os.getenv("EXTRACTION_FALLBACK_MODEL")
+        or os.getenv("LLM_FALLBACK_MODEL")
+        or primary_model
+    )
+    max_tokens = int(os.getenv("EXTRACTION_MAX_TOKENS") or "2000")
+    return {
+        "primary_provider": primary_provider,
+        "primary_model": primary_model,
+        "fallback_provider": fallback_provider,
+        "fallback_model": fallback_model,
+        "max_tokens": max_tokens,
+    }
+
+
+async def _generate_extraction_with_model_routing(
+    prompt: str,
+    system_prompt: str,
+    *,
+    temperature: float = 0.1,
+    max_tokens: Optional[int] = None,
+) -> Tuple[str, int, int, str, Dict[str, Any]]:
+    from ..llm_provider import LLMProviderFactory
+
+    extraction_cfg = _resolve_extraction_config()
+    effective_max_tokens = max_tokens or extraction_cfg["max_tokens"]
+
+    response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+        prompt=prompt,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=effective_max_tokens,
+        primary_provider=extraction_cfg["primary_provider"],
+        model_override=extraction_cfg["primary_model"],
+        fallback_provider=extraction_cfg["fallback_provider"],
+        fallback_model=extraction_cfg["fallback_model"],
+        extraction_mode=True,
+    )
+    llm_trace = {
+        "provider": provider_used or extraction_cfg["primary_provider"],
+        "model": extraction_cfg["primary_model"],
+        "router_layer": "EXTRACTION",
+        "fallback_provider": extraction_cfg["fallback_provider"],
+        "fallback_model": extraction_cfg["fallback_model"],
+    }
+    return response, tokens_in, tokens_out, provider_used, llm_trace
+
+
 class FieldStatus(str, Enum):
     """Status of an extracted field."""
     TRUSTED = "trusted"
@@ -881,15 +939,12 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
 
-            router_layer = "L1"
-            response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+            response, tokens_in, tokens_out, provider_used, llm_trace = await _generate_extraction_with_model_routing(
                 prompt=prompt,
                 system_prompt=INVOICE_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
-                router_layer=router_layer,
             )
-            llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
             _log_ai_first_event(
                 "invoice_model_call",
                 provider=llm_trace["provider"],
@@ -1112,15 +1167,12 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 document_text=raw_text[:12000]
             )
 
-            router_layer = "L1"
-            response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+            response, tokens_in, tokens_out, provider_used, llm_trace = await _generate_extraction_with_model_routing(
                 prompt=prompt,
                 system_prompt=BL_EXTRACTION_SYSTEM_PROMPT,
                 temperature=0.1,
                 max_tokens=2000,
-                router_layer=router_layer,
             )
-            llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
             _log_ai_first_event(
                 "bl_model_call",
                 provider=llm_trace["provider"],
@@ -1942,15 +1994,12 @@ async def _run_ai_extraction_generic(
 
         prompt = prompt_template.format(document_text=raw_text[:12000])
 
-        router_layer = "L1"
-        response, tokens_in, tokens_out, provider_used = await LLMProviderFactory.generate_with_fallback(
+        response, tokens_in, tokens_out, provider_used, llm_trace = await _generate_extraction_with_model_routing(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.1,
             max_tokens=2000,
-            router_layer=router_layer,
         )
-        llm_trace = _resolve_llm_trace(provider, provider_used, router_layer=router_layer)
         _log_ai_first_event(
             "generic_model_call",
             provider=llm_trace["provider"],
