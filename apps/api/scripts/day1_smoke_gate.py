@@ -299,6 +299,19 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if not unresolved_critical_fields:
         _append_unique_text(unresolved_critical_fields, extraction_diagnostics.get("unresolved_critical_fields"))
+        allowed_unresolved_fields = {str(field).strip() for field in unresolved_critical_fields if str(field).strip()}
+
+    if allowed_unresolved_fields:
+        field_level_status = {
+            field: state
+            for field, state in field_level_status.items()
+            if field in allowed_unresolved_fields
+        }
+        source_doc_hints = {
+            field: hint
+            for field, hint in source_doc_hints.items()
+            if field in allowed_unresolved_fields
+        }
 
     relay_surfaces = _coerce_dict(day1_relay_debug.get("surfaces"))
     runtime_presence_by_surface: Dict[str, Dict[str, int]] = {}
