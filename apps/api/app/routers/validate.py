@@ -3033,6 +3033,7 @@ async def validate_doc(
                 bank_verdict,
                 structured_result.get("gate_result") or {},
                 structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
+                issues=structured_result.get("issues") or [],
             )
             structured_result["validation_contract_v1"] = await _run_validation_arbitration_escalation(
                 structured_result.get("validation_contract_v1") or {},
@@ -8138,6 +8139,33 @@ def _classify_reason_semantics(
     }
 
 
+def _extract_rule_evidence_items(issues: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        rule_id = (
+            issue.get("rule_id")
+            or issue.get("ruleId")
+            or issue.get("source_rule_id")
+            or issue.get("sourceRuleId")
+        )
+        severity = issue.get("severity") or issue.get("level")
+        expected_outcome = issue.get("expected_outcome") or issue.get("expectedOutcome")
+        conditions = issue.get("conditions") or issue.get("trigger_conditions") or issue.get("triggerConditions")
+        code = issue.get("code") or issue.get("reason_code") or issue.get("reasonCode")
+        if not any([rule_id, severity, expected_outcome, conditions, code]):
+            continue
+        items.append({
+            "rule_id": rule_id,
+            "severity": severity,
+            "expected_outcome": expected_outcome,
+            "conditions": conditions,
+            "reason_code": code,
+        })
+    return items[:10]
+
+
 def _classify_rules_signal_classes(
     bank_verdict: Optional[Dict[str, Any]],
     gate_result: Optional[Dict[str, Any]],
@@ -8188,6 +8216,7 @@ def _build_validation_contract(
     bank_verdict: Optional[Dict[str, Any]],
     gate_result: Optional[Dict[str, Any]],
     submission_eligibility: Optional[Dict[str, Any]],
+    issues: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build side-by-side AI/rules/final validation verdict contract."""
     ai_validation = ai_validation or {}
@@ -8226,6 +8255,7 @@ def _build_validation_contract(
         submission_eligibility,
     )
     reason_semantics = _classify_reason_semantics(submission_eligibility, bank_verdict)
+    rule_evidence_items = _extract_rule_evidence_items(issues)
     domain_risk_summary = {
         "sanctions": "hard_fail" if "sanctions" in rules_veto_classes else None,
         "tbml": "review_required" if "tbml" in rules_trigger_classes else None,
@@ -8331,6 +8361,7 @@ def _build_validation_contract(
             "bank_recommendation": bank_verdict.get("recommendation"),
             "bank_action_items": list(bank_verdict.get("action_items") or []),
             "bank_action_items_count": bank_verdict.get("action_items_count"),
+            "rule_evidence_items": rule_evidence_items,
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
         },
