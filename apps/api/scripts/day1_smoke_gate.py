@@ -170,10 +170,13 @@ def _merge_field_status(
     field_name: str,
     state: Any,
     source_hint: str,
+    allowed_fields: Optional[set[str]] = None,
 ) -> None:
     field = str(field_name or "").strip()
     normalized_state = str(state or "").strip().lower()
     if not field or not normalized_state:
+        return
+    if allowed_fields is not None and field not in allowed_fields:
         return
 
     priority = {
@@ -233,9 +236,14 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 if direct_hint:
                     source_doc_hints[field_name] = direct_hint
+                explicit_status = str(item.get("status") or "").strip().lower()
+                if explicit_status:
+                    field_level_status[field_name] = explicit_status
             _append_unique_text(violation_reason_codes, item.get("reason_code"))
         else:
             _append_unique_text(unresolved_critical_fields, item)
+
+    allowed_unresolved_fields = {str(field).strip() for field in unresolved_critical_fields if str(field).strip()}
 
     _append_unique_text(violation_reason_codes, submission_eligibility.get("missing_reason_codes"))
     _append_unique_text(violation_reason_codes, gate_result.get("missing_reason_codes"))
@@ -269,6 +277,7 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
                     str(field_name),
                     state,
                     _field_source_doc_hint(document, str(field_name)),
+                    allowed_fields=allowed_unresolved_fields if allowed_unresolved_fields else None,
                 )
 
         artifacts = _coerce_dict(document.get("extraction_artifacts_v1"))
@@ -283,16 +292,13 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
                 str(field_name),
                 state,
                 _field_source_doc_hint(document, str(field_name)),
+                allowed_fields=allowed_unresolved_fields if allowed_unresolved_fields else None,
             )
             if str(state or "").strip().lower() != "found":
                 _append_unique_text(violation_reason_codes, details.get("reason_codes"))
 
     if not unresolved_critical_fields:
         _append_unique_text(unresolved_critical_fields, extraction_diagnostics.get("unresolved_critical_fields"))
-
-    for field_name, state in field_level_status.items():
-        if state != "found":
-            _append_unique_text(unresolved_critical_fields, field_name)
 
     relay_surfaces = _coerce_dict(day1_relay_debug.get("surfaces"))
     runtime_presence_by_surface: Dict[str, Dict[str, int]] = {}
