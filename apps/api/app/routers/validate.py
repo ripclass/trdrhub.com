@@ -8077,6 +8077,51 @@ def _augment_issues_with_field_decisions(
         }
 
 
+def _classify_rules_signal_classes(
+    bank_verdict: Optional[Dict[str, Any]],
+    gate_result: Optional[Dict[str, Any]],
+    submission_eligibility: Optional[Dict[str, Any]],
+) -> Tuple[List[str], List[str]]:
+    bank_verdict = bank_verdict or {}
+    gate_result = gate_result or {}
+    submission_eligibility = submission_eligibility or {}
+
+    veto_classes: List[str] = []
+    trigger_classes: List[str] = []
+    signal_texts: List[str] = []
+
+    signal_texts.extend(str(x) for x in (submission_eligibility.get("reasons") or []) if x)
+    signal_texts.extend(str(x) for x in (submission_eligibility.get("missing_reason_codes") or []) if x)
+    signal_texts.extend(str(x) for x in (bank_verdict.get("reasons") or []) if x)
+    signal_texts.extend(str(x) for x in (bank_verdict.get("risk_flags") or []) if x)
+    signal_texts.extend(str(x) for x in (gate_result.get("missing_reason_codes") or []) if x)
+
+    normalized = " | ".join(signal_texts).lower()
+
+    if any(token in normalized for token in ["sanction", "watchlist", "ofac", "sdn"]):
+        veto_classes.append("sanctions")
+    if any(token in normalized for token in ["tbml", "trade_based_money_laundering", "overinvoic", "underinvoic", "routing_anomal", "quantity_value_mismatch"]):
+        trigger_classes.append("tbml")
+    if any(token in normalized for token in ["shell_risk", "shell-risk", "ownership_opacity", "weak_business_footprint", "high_risk_counterparty"]):
+        trigger_classes.append("shell_risk")
+
+    missing_critical = [
+        str(field).strip()
+        for field in ((gate_result or {}).get("missing_critical") or [])
+        if str(field).strip()
+    ]
+    if missing_critical:
+        veto_classes.append("missing_critical_controls")
+
+    rules_raw = str(bank_verdict.get("verdict") or "").strip().upper()
+    if rules_raw in {"REJECT", "HOLD"}:
+        veto_classes.append("bank_submission_verdict")
+    elif rules_raw == "CAUTION":
+        trigger_classes.append("rules_review_signal")
+
+    return sorted(set(veto_classes)), sorted(set(trigger_classes))
+
+
 def _build_validation_contract(
     ai_validation: Optional[Dict[str, Any]],
     bank_verdict: Optional[Dict[str, Any]],
@@ -8114,11 +8159,11 @@ def _build_validation_contract(
         for field in ((gate_result or {}).get("missing_critical") or [])
         if str(field).strip()
     ]
-    rules_veto_classes: List[str] = []
-    if rules_raw in {"REJECT", "HOLD"}:
-        rules_veto_classes.append("bank_submission_verdict")
-    if missing_critical:
-        rules_veto_classes.append("missing_critical_fields")
+    rules_veto_classes, rules_trigger_classes = _classify_rules_signal_classes(
+        bank_verdict,
+        gate_result,
+        submission_eligibility,
+    )
 
     disagreement_flag = ai_verdict != ruleset_verdict
     final_verdict = ruleset_verdict
@@ -8167,6 +8212,7 @@ def _build_validation_contract(
         escalation_triggers.append("ai_detected_non_deterministic_risk")
     if ruleset_verdict == "review":
         escalation_triggers.append("rules_review_signal")
+    escalation_triggers.extend(rules_trigger_classes)
     if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
         escalation_triggers.append("submission_not_ready")
 
@@ -8190,6 +8236,7 @@ def _build_validation_contract(
         "arbitration_mode": arbitration_mode,
         "review_required_reason": sorted(set(review_required_reason)),
         "rules_veto_classes": rules_veto_classes,
+        "rules_trigger_classes": rules_trigger_classes,
         "immediate_rules_veto": immediate_rules_veto,
         "escalation_triggers": sorted(set(escalation_triggers)),
         "recommended_escalation_layer": recommended_escalation_layer,
