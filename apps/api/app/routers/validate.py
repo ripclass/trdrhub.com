@@ -46,7 +46,7 @@ from app.config import settings
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
 from app.services.lc_classifier import detect_lc_type
 from fastapi import Header
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Set
 import re
 
 from app.services.validation.alias_normalization import canonical_field_key, extract_direct_token_recovery
@@ -524,6 +524,9 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
     if not isinstance(eligibility, dict):
         return structured_result
 
+    if "raw_submission_eligibility" not in structured_result:
+        structured_result["raw_submission_eligibility"] = copy.deepcopy(eligibility)
+
     unresolved = eligibility.get("unresolved_critical_fields")
     if not isinstance(unresolved, list):
         return structured_result
@@ -582,6 +585,7 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
             if str(structured_result.get("status") or "").lower() in {"review", "partial", "blocked", "unknown", ""}:
                 structured_result["status"] = "pass"
 
+    structured_result["effective_submission_eligibility"] = copy.deepcopy(eligibility)
     structured_result["_cycle2_runtime_recovery"] = {
         "enabled": True,
         "force_pass_enabled": force_pass_enabled,
@@ -1103,30 +1107,35 @@ def get_or_create_demo_user(db: Session) -> User:
     user = db.query(User).filter(User.email == demo_email).first()
     
     if not user:
-        # Create demo company first
-        # Use raw SQL to avoid schema mismatch issues
+        # Create demo company first when the surrounding schema exists.
+        # In minimal/local validation-only runtimes, the companies table may not be present.
         from sqlalchemy import text
-        result = db.execute(text("SELECT id FROM companies WHERE name = :name"), {"name": "Demo Company"})
-        demo_company_row = result.first()
-        
-        if not demo_company_row:
-            # Insert demo company using raw SQL (matching actual schema)
-            company_id = uuid4()
-            db.execute(
-                text("""
-                    INSERT INTO companies (id, name, type, created_at, updated_at)
-                    VALUES (:id, :name, :type, NOW(), NOW())
-                """),
-                {
-                    "id": company_id,
-                    "name": "Demo Company",
-                    "type": "sme"
-                }
-            )
-            db.flush()
-            demo_company_id = company_id
-        else:
-            demo_company_id = demo_company_row[0]
+        from sqlalchemy.exc import SQLAlchemyError
+        demo_company_id = None
+        try:
+            result = db.execute(text("SELECT id FROM companies WHERE name = :name"), {"name": "Demo Company"})
+            demo_company_row = result.first()
+            
+            if not demo_company_row:
+                company_id = uuid4()
+                db.execute(
+                    text("""
+                        INSERT INTO companies (id, name, type, created_at, updated_at)
+                        VALUES (:id, :name, :type, NOW(), NOW())
+                    """),
+                    {
+                        "id": company_id,
+                        "name": "Demo Company",
+                        "type": "sme"
+                    }
+                )
+                db.flush()
+                demo_company_id = company_id
+            else:
+                demo_company_id = demo_company_row[0]
+        except SQLAlchemyError:
+            db.rollback()
+            demo_company_id = None
         
         # Create demo user
         # Use pre-computed bcrypt hash to avoid bcrypt backend initialization issues in production
@@ -2793,6 +2802,7 @@ async def validate_doc(
             eligibility_context = _build_submission_eligibility_context(
                 structured_result.get("gate_result") or {},
                 field_decisions,
+                documents=payload.get("documents") or structured_result.get("documents") or structured_result.get("documents_structured") or [],
             )
 
             structured_result["submission_eligibility"] = {
@@ -2803,6 +2813,8 @@ async def validate_doc(
                 "unresolved_critical_statuses": eligibility_context["unresolved_critical_statuses"],
                 "source": "validation",
             }
+            structured_result["raw_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
+            structured_result["effective_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
             
             # =====================================================================
             # AMENDMENT GENERATION (for fixable discrepancies)
@@ -2988,6 +3000,7 @@ async def validate_doc(
             eligibility_context = _build_submission_eligibility_context(
                 structured_result.get("gate_result") or {},
                 field_decisions,
+                documents=payload.get("documents") or structured_result.get("documents") or structured_result.get("documents_structured") or [],
             )
 
             structured_result["submission_eligibility"] = {
@@ -2998,6 +3011,8 @@ async def validate_doc(
                 "unresolved_critical_statuses": eligibility_context["unresolved_critical_statuses"],
                 "source": "validation",
             }
+            structured_result["raw_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
+            structured_result["effective_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
         except Exception as contract_err:
             logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
         
@@ -7060,6 +7075,22 @@ def _build_blocked_structured_result(
             "unresolved_critical_statuses": ["rejected"] if unresolved_critical_fields else [],
             "source": "validation",
         },
+        "raw_submission_eligibility": {
+            "can_submit": False,
+            "reasons": ["validation_blocked"],
+            "missing_reason_codes": eligibility_context["missing_reason_codes"],
+            "unresolved_critical_fields": unresolved_critical_fields,
+            "unresolved_critical_statuses": ["rejected"] if unresolved_critical_fields else [],
+            "source": "validation",
+        },
+        "effective_submission_eligibility": {
+            "can_submit": False,
+            "reasons": ["validation_blocked"],
+            "missing_reason_codes": eligibility_context["missing_reason_codes"],
+            "unresolved_critical_fields": unresolved_critical_fields,
+            "unresolved_critical_statuses": ["rejected"] if unresolved_critical_fields else [],
+            "source": "validation",
+        },
         
         # Gate result
         "gate_result": gate_dict,
@@ -7876,11 +7907,64 @@ def _extract_field_decisions_from_payload(payload: Dict[str, Any]) -> Dict[str, 
     return {}
 
 
-def _build_unresolved_critical_context(field_decisions: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_document_field_hint_index(documents: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """Best-effort field -> source document/type hint map from document surfaces."""
+    hint_index: Dict[str, Dict[str, str]] = {}
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        doc_hint = str(
+            document.get("filename")
+            or document.get("file_name")
+            or document.get("name")
+            or document.get("document_type")
+            or document.get("documentType")
+            or document.get("source_type")
+            or ""
+        ).strip()
+        doc_type_hint = str(
+            document.get("document_type")
+            or document.get("documentType")
+            or document.get("source_type")
+            or document.get("sourceType")
+            or ""
+        ).strip()
+
+        candidate_maps = [
+            document.get("critical_field_states"),
+            document.get("criticalFieldStates"),
+            (document.get("extraction_artifacts_v1") or {}).get("field_diagnostics") if isinstance(document.get("extraction_artifacts_v1"), dict) else None,
+            document.get("field_details"),
+            document.get("_field_details"),
+        ]
+        for candidate in candidate_maps:
+            if not isinstance(candidate, dict):
+                continue
+            for field_name in candidate.keys():
+                field_key = str(field_name or "").strip()
+                if not field_key or field_key in hint_index:
+                    continue
+                hint_index[field_key] = {
+                    "source_document": doc_hint,
+                    "document_type": doc_type_hint,
+                }
+    return hint_index
+
+
+def _build_unresolved_critical_context(
+    field_decisions: Dict[str, Dict[str, Any]],
+    critical_fields: Optional[Set[str]] = None,
+    documents: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """Return unresolved critical field diagnostics with mandatory status + reason_code."""
     unresolved: List[Dict[str, Any]] = []
+    critical_filter = {str(field).strip() for field in (critical_fields or set()) if str(field).strip()}
+    hint_index = _build_document_field_hint_index(documents or [])
     for field, decision in (field_decisions or {}).items():
         if not isinstance(decision, dict):
+            continue
+        normalized_field = str(field or "").strip()
+        if critical_filter and normalized_field not in critical_filter:
             continue
         status = str(decision.get("status") or "").strip().lower()
         if status not in {"retry", "rejected"}:
@@ -7889,10 +7973,15 @@ def _build_unresolved_critical_context(field_decisions: Dict[str, Dict[str, Any]
         if not reason_code:
             reason_code = "unknown"
         entry = {
-            "field": field,
+            "field": normalized_field,
             "status": status,
             "reason_code": reason_code,
         }
+        hint = hint_index.get(normalized_field) or {}
+        if hint.get("source_document"):
+            entry["source_document"] = hint.get("source_document")
+        if hint.get("document_type"):
+            entry["document_type"] = hint.get("document_type")
         if "retry_trace" in decision:
             entry["retry_trace"] = decision.get("retry_trace")
         unresolved.append(entry)
@@ -7969,9 +8058,42 @@ def _augment_issues_with_field_decisions(
 def _build_submission_eligibility_context(
     gate_result: Dict[str, Any],
     field_decisions: Dict[str, Dict[str, Any]],
+    documents: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Aggregate missing reason codes + unresolved critical statuses for submission eligibility."""
-    unresolved = _build_unresolved_critical_context(field_decisions)
+    gate_missing_critical = {
+        str(field).strip()
+        for field in ((gate_result or {}).get("missing_critical") or [])
+        if str(field).strip()
+    }
+    unresolved = _build_unresolved_critical_context(
+        field_decisions,
+        critical_fields=gate_missing_critical,
+        documents=documents,
+    )
+    unresolved_by_field = {
+        str(item.get("field") or "").strip(): item
+        for item in unresolved
+        if isinstance(item, dict) and str(item.get("field") or "").strip()
+    }
+
+    hint_index = _build_document_field_hint_index(documents or [])
+    for field_name in sorted(gate_missing_critical):
+        if field_name in unresolved_by_field:
+            continue
+        fallback_entry = {
+            "field": field_name,
+            "status": "rejected",
+            "reason_code": "critical_missing",
+        }
+        hint = hint_index.get(field_name) or {}
+        if hint.get("source_document"):
+            fallback_entry["source_document"] = hint.get("source_document")
+        if hint.get("document_type"):
+            fallback_entry["document_type"] = hint.get("document_type")
+        unresolved.append(fallback_entry)
+        unresolved_by_field[field_name] = fallback_entry
+
     reasons = set((gate_result or {}).get("missing_reason_codes") or [])
     statuses = set()
     for item in unresolved:
