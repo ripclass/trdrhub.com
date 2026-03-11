@@ -136,6 +136,19 @@ def _document_hint(document: Dict[str, Any]) -> str:
     )
 
 
+FIELD_DOC_HINT_PREFERENCES = {
+    "issue_date": ("lc", "letter_of_credit", "invoice", "bill_of_lading", "air_waybill"),
+    "issuer": ("lc", "letter_of_credit", "insurance", "certificate", "beneficiary_certificate"),
+    "voyage": ("bill_of_lading", "bl", "air_waybill", "transport"),
+    "net_weight": ("packing", "packing_list", "weight", "weight_certificate", "invoice"),
+    "gross_weight": ("packing", "packing_list", "weight", "weight_certificate", "invoice"),
+    "bin_tin": ("invoice", "packing", "packing_list", "certificate"),
+    "amount": ("lc", "letter_of_credit", "invoice", "credit_note"),
+    "currency": ("lc", "letter_of_credit", "invoice", "credit_note"),
+    "lc_number": ("lc", "letter_of_credit"),
+}
+
+
 def _field_source_doc_hint(document: Dict[str, Any], field_name: str) -> str:
     field_details = _coerce_dict(document.get("field_details")) or _coerce_dict(document.get("fieldDetails"))
     field_entry = _coerce_dict(field_details.get(field_name))
@@ -164,6 +177,18 @@ def _field_source_doc_hint(document: Dict[str, Any], field_name: str) -> str:
     return _document_hint(document)
 
 
+def _hint_match_score(field_name: str, source_hint: str) -> int:
+    field = str(field_name or "").strip().lower()
+    hint = str(source_hint or "").strip().lower()
+    if not field or not hint:
+        return 0
+    prefs = FIELD_DOC_HINT_PREFERENCES.get(field, ())
+    for idx, token in enumerate(prefs):
+        if token in hint:
+            return 100 - idx
+    return 1
+
+
 def _merge_field_status(
     field_level_status: Dict[str, str],
     source_doc_hints: Dict[str, str],
@@ -189,13 +214,16 @@ def _merge_field_status(
         field_level_status[field] = normalized_state
         if source_hint:
             source_doc_hints[field] = source_hint
-    elif source_hint and field not in source_doc_hints:
-        source_doc_hints[field] = source_hint
+    elif source_hint:
+        existing = source_doc_hints.get(field, "")
+        if not existing or _hint_match_score(field, source_hint) > _hint_match_score(field, existing):
+            source_doc_hints[field] = source_hint
 
 
 def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
     structured = _coerce_dict(payload.get("structured_result"))
     submission_eligibility = _coerce_dict(structured.get("submission_eligibility"))
+    validation_contract = _coerce_dict(structured.get("validation_contract_v1"))
     gate_result = _coerce_dict(structured.get("gate_result"))
     extraction_diagnostics = _coerce_dict(structured.get("_extraction_diagnostics"))
     day1_contract = _coerce_dict(structured.get("_day1_contract"))
@@ -361,6 +389,7 @@ def _extract_set_diagnostics(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "unresolved_critical_fields": _sorted_unique_texts(unresolved_critical_fields),
         "violation_reason_codes": _sorted_unique_texts(violation_reason_codes),
+        "validation_contract_v1": validation_contract,
         "field_level_status": {field: field_level_status[field] for field in sorted(field_level_status)},
         "critical_field_source_doc_hints": {
             field: source_doc_hints[field]
@@ -503,6 +532,7 @@ def run_smoke(
                 "ret_low_relevance": int(metrics.get("ret_low_relevance") or 0),
                 "unresolved_critical_fields": diagnostics["unresolved_critical_fields"],
                 "violation_reason_codes": diagnostics["violation_reason_codes"],
+                "validation_contract_v1": diagnostics["validation_contract_v1"],
                 "field_level_status": diagnostics["field_level_status"],
                 "critical_field_source_doc_hints": diagnostics["critical_field_source_doc_hints"],
                 "contract_documents_source": diagnostics["contract_documents_source"],
