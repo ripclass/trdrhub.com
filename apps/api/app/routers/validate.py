@@ -3029,6 +3029,12 @@ async def validate_doc(
                 structured_result.get("gate_result") or {},
                 structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
             )
+            structured_result["validation_contract_v1"] = await _run_validation_arbitration_escalation(
+                structured_result.get("validation_contract_v1") or {},
+                structured_result.get("ai_validation") or {},
+                bank_verdict,
+                structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
+            )
         except Exception as contract_err:
             logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
         
@@ -8200,6 +8206,105 @@ def _build_validation_contract(
         },
         "rules_source_verdict": rules_raw or None,
     }
+
+
+async def _run_validation_arbitration_escalation(
+    validation_contract: Dict[str, Any],
+    ai_validation: Optional[Dict[str, Any]],
+    bank_verdict: Optional[Dict[str, Any]],
+    submission_eligibility: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Run L2/L3 arbitration when the contract recommends escalation."""
+    contract = dict(validation_contract or {})
+    layer = str(contract.get("recommended_escalation_layer") or "").strip().upper()
+    if not layer or layer not in {"L2", "L3"}:
+        return contract
+    if contract.get("immediate_rules_veto"):
+        contract["escalation_result"] = {
+            "attempted": False,
+            "bypassed": True,
+            "reason": "immediate_rules_veto",
+        }
+        return contract
+
+    from app.services.llm_provider import LLMProviderFactory
+
+    ai_validation = ai_validation or {}
+    bank_verdict = bank_verdict or {}
+    submission_eligibility = submission_eligibility or {}
+
+    system_prompt = (
+        "You are a conservative trade-finance arbitration layer. "
+        "Given AI findings and deterministic rules findings, return JSON only with keys: "
+        "escalated_verdict (pass|review|reject), confidence (0..1), rationale, rules_should_veto (boolean). "
+        "Never override a hard deterministic veto. Prefer review over false pass."
+    )
+    prompt = json.dumps({
+        "ai_verdict": contract.get("ai_verdict"),
+        "ruleset_verdict": contract.get("ruleset_verdict"),
+        "final_verdict_before_escalation": contract.get("final_verdict"),
+        "override_reason": contract.get("override_reason"),
+        "disagreement_flag": contract.get("disagreement_flag"),
+        "review_required_reason": contract.get("review_required_reason"),
+        "rules_veto_classes": contract.get("rules_veto_classes"),
+        "rules_evidence": contract.get("rules_evidence"),
+        "ai_issue_counts": contract.get("ai_issue_counts"),
+        "bank_verdict": bank_verdict,
+        "submission_eligibility": {
+            "can_submit": submission_eligibility.get("can_submit"),
+            "reasons": submission_eligibility.get("reasons"),
+        },
+    }, ensure_ascii=False)
+
+    try:
+        raw_output, _, _, provider_used = await LLMProviderFactory.generate_with_fallback(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.1,
+            max_tokens=500,
+            router_layer=layer,
+        )
+        parsed = _parse_json_if_possible(raw_output)
+        escalated_verdict = str((parsed or {}).get("escalated_verdict") or "").strip().lower()
+        if escalated_verdict not in {"pass", "review", "reject"}:
+            escalated_verdict = contract.get("final_verdict")
+        confidence = (parsed or {}).get("confidence")
+        rationale = str((parsed or {}).get("rationale") or "").strip() or None
+        rules_should_veto = bool((parsed or {}).get("rules_should_veto", False))
+
+        if rules_should_veto and contract.get("rules_veto_classes"):
+            escalated_verdict = "reject"
+
+        if escalated_verdict == "pass" and contract.get("final_verdict") != "pass":
+            escalated_verdict = "review"
+
+        if escalated_verdict in {"review", "reject"} and escalated_verdict != contract.get("final_verdict"):
+            contract["final_verdict"] = escalated_verdict
+            contract["override_reason"] = contract.get("override_reason") or f"{layer.lower()}_arbitration_adjustment"
+
+        contract["escalation_result"] = {
+            "attempted": True,
+            "layer": layer,
+            "provider": provider_used,
+            "escalated_verdict": escalated_verdict,
+            "confidence": confidence,
+            "rationale": rationale,
+            "rules_should_veto": rules_should_veto,
+        }
+        if layer == "L2" and escalated_verdict == "review" and contract.get("disagreement_flag"):
+            contract["next_action"] = "escalate_to_l3"
+            contract["recommended_escalation_layer"] = "L3"
+        else:
+            contract["next_action"] = "accept_final_verdict"
+            contract["recommended_escalation_layer"] = None
+        return contract
+    except Exception as exc:
+        contract["escalation_result"] = {
+            "attempted": True,
+            "layer": layer,
+            "error": str(exc),
+        }
+        return contract
 
 
 def _build_submission_eligibility_context(
