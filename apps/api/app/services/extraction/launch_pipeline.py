@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
+from app.reference_data import get_country_registry, get_currency_registry, get_port_registry
 from app.rules.extractors import DocumentFieldExtractor
 from app.rules.models import DocumentType
 from app.services.document_intelligence.ocr_quality_gate import OCRQualityGate
@@ -19,6 +21,52 @@ from app.services.extraction.ai_first_extractor import (
 from app.services.extraction.iso20022_lc_extractor import extract_iso20022_with_ai_fallback
 
 logger = logging.getLogger(__name__)
+
+
+CANONICAL_DOCUMENT_ALIASES = {
+    "lc": "letter_of_credit",
+    "l/c": "letter_of_credit",
+    "mt700": "letter_of_credit",
+    "swift mt": "swift_message",
+    "swift": "swift_message",
+    "invoice": "commercial_invoice",
+    "commercial invoice": "commercial_invoice",
+    "proforma": "proforma_invoice",
+    "proforma invoice": "proforma_invoice",
+    "bill of lading": "bill_of_lading",
+    "b/l": "bill_of_lading",
+    "bl": "bill_of_lading",
+    "sea waybill": "sea_waybill",
+    "air waybill": "air_waybill",
+    "awb": "air_waybill",
+    "packing": "packing_list",
+    "packing list": "packing_list",
+    "certificate of origin": "certificate_of_origin",
+    "coo": "certificate_of_origin",
+    "insurance": "insurance_certificate",
+    "insurance certificate": "insurance_certificate",
+    "weight list": "weight_certificate",
+    "weight certificate": "weight_certificate",
+    "lab test report": "lab_test_report",
+    "certificate of conformity": "certificate_of_conformity",
+}
+
+MEASUREMENT_LABEL_ALIASES = {
+    "gross": "gross_weight",
+    "gross wt": "gross_weight",
+    "gross weight": "gross_weight",
+    "gr wt": "gross_weight",
+    "g/w": "gross_weight",
+    "net": "net_weight",
+    "net wt": "net_weight",
+    "net weight": "net_weight",
+    "n/w": "net_weight",
+    "measurements": "measurement_value",
+    "measurement": "measurement_value",
+    "dimensions": "measurement_value",
+    "dimension": "measurement_value",
+    "size": "measurement_value",
+}
 
 
 class LaunchExtractionPipeline:
@@ -436,7 +484,7 @@ class LaunchExtractionPipeline:
                 return {
                     "handled": True,
                     "context_key": "packing_list",
-                    "context_payload": {**packing_struct, "raw_text": extracted_text},
+                    "context_payload": _apply_canonical_normalization({**packing_struct, "raw_text": extracted_text}),
                     "doc_info_patch": {
                         **base_patch,
                         "extracted_fields": packing_struct.get("extracted_fields") if isinstance(packing_struct.get("extracted_fields"), dict) else packing_struct,
@@ -461,7 +509,7 @@ class LaunchExtractionPipeline:
                 return {
                     "handled": True,
                     "context_key": "packing_list",
-                    "context_payload": {**packing_context, "raw_text": extracted_text},
+                    "context_payload": _apply_canonical_normalization({**packing_context, "raw_text": extracted_text}),
                     "doc_info_patch": {
                         **base_patch,
                         "extracted_fields": packing_context,
@@ -658,14 +706,14 @@ class LaunchExtractionPipeline:
             },
             "review_reasons": list(quality_assessment.warnings or []),
         }
-        payload = {
+        payload = _apply_canonical_normalization({
             "raw_text": extracted_text,
             "supporting_subtype_guess": supporting_guess.get("subtype"),
             "supporting_family_guess": supporting_guess.get("family"),
             "guess_confidence": supporting_guess.get("confidence"),
             "guess_reasons": supporting_guess.get("reasons"),
             "document_summary": _summarize_supporting_document(extracted_text),
-        }
+        })
         review_reasons = list(base_patch.get("review_reasons") or [])
         if supporting_guess.get("confidence", 0.0) < 0.5:
             review_reasons.append("supporting_document_low_confidence_classification")
@@ -1042,7 +1090,7 @@ def _shape_invoice_financial_payload(payload: Dict[str, Any], *, invoice_subtype
         _extract_amount_value(raw_text, ["amount", "total amount", "receipt amount", "note amount"]),
     )
     shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]))
-    return shaped
+    return _apply_canonical_normalization(shaped)
 
 
 def _assess_lc_financial_completeness(payload: Optional[Dict[str, Any]], *, lc_subtype: str) -> Dict[str, Any]:
@@ -1108,7 +1156,7 @@ def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw
     shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]))
     shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("number"), shaped.get("reference"), _extract_label_value(raw_text, ["lc number", "credit number", "reference number"]))
     shaped["guarantee_reference"] = _first(shaped.get("guarantee_reference"), _extract_label_value(raw_text, ["guarantee no", "guarantee number", "reference number"]))
-    return shaped
+    return _apply_canonical_normalization(shaped)
 
 
 def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insurance_subtype: str) -> Dict[str, Any]:
@@ -1183,7 +1231,7 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
         shaped.get("issuing_authority"),
         _extract_label_value(raw_text, ["insurer", "insurance company", "underwriter", "issued by", "issuer"]),
     )
-    return shaped
+    return _apply_canonical_normalization(shaped)
 
 
 def _assess_regulatory_completeness(payload: Optional[Dict[str, Any]], *, regulatory_subtype: str) -> Dict[str, Any]:
@@ -1277,7 +1325,7 @@ def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: st
         shaped.get("permit_number"),
         _extract_label_value(raw_text, ["permit no", "permit number"]),
     )
-    return shaped
+    return _apply_canonical_normalization(shaped)
 
 
 def _assess_inspection_completeness(payload: Optional[Dict[str, Any]], *, inspection_subtype: str) -> Dict[str, Any]:
@@ -1383,7 +1431,7 @@ def _shape_inspection_payload(payload: Dict[str, Any], *, inspection_subtype: st
         if upper_candidate in {"CERTIFICATE", "MEASUREMENT CERTIFICATE", "MEASUREMENTS CERTIFICATE", "DIMENSION CERTIFICATE"}:
             measurement_candidate = None
     shaped["measurement_value"] = measurement_candidate
-    return shaped
+    return _apply_canonical_normalization(shaped)
 
 
 def _assess_transport_completeness(payload: Optional[Dict[str, Any]], *, transport_subtype: str) -> Dict[str, Any]:
@@ -1488,11 +1536,166 @@ def _shape_transport_payload(payload: Dict[str, Any], *, transport_subtype: str,
             _extract_label_value(raw_text, ["consignment note", "consignment no", "document no", "fcr no", "delivery order no"]),
         )
 
+    return _apply_canonical_normalization(shaped)
+
+
+def _normalize_lookup_key(value: str) -> str:
+    compact = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", compact).strip()
+
+
+def _normalize_country_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return value
+    country = get_country_registry().resolve(raw)
+    if country:
+        return country.name
+    return raw
+
+
+def _normalize_port_value(value: Any, country_hint: Optional[str] = None) -> Dict[str, Any]:
+    result = {"value": value, "code": None, "country_code": None, "country_name": None}
+    if not isinstance(value, str):
+        return result
+    raw = value.strip()
+    if not raw:
+        result["value"] = raw
+        return result
+    hint = None
+    if isinstance(country_hint, str) and country_hint.strip():
+        country = get_country_registry().resolve(country_hint.strip())
+        hint = country.alpha2 if country else country_hint.strip().upper()
+    port = get_port_registry().resolve(raw, country_hint=hint)
+    if port:
+        result.update({
+            "value": port.name,
+            "code": port.code,
+            "country_code": port.country_code,
+            "country_name": port.country_name,
+        })
+        return result
+    result["value"] = raw
+    return result
+
+
+def _normalize_currency_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return value
+    registry = get_currency_registry()
+    normalized = registry.normalize(raw)
+    if normalized:
+        return normalized
+    token_match = re.search(r"\b([A-Z]{3})\b", raw.upper())
+    if token_match and registry.is_valid(token_match.group(1)):
+        return token_match.group(1)
+    return raw
+
+
+def _normalize_measurement_label(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    key = _normalize_lookup_key(value)
+    return MEASUREMENT_LABEL_ALIASES.get(key, value.strip())
+
+
+def _normalize_document_alias(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    key = _normalize_lookup_key(value)
+    direct = CANONICAL_DOCUMENT_ALIASES.get(key)
+    if direct:
+        return direct
+    snake = re.sub(r"\s+", "_", key)
+    return CANONICAL_DOCUMENT_ALIASES.get(snake, value.strip())
+
+
+def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
+    shaped = dict(payload or {})
+    normalization_meta = shaped.get("normalization") if isinstance(shaped.get("normalization"), dict) else {}
+
+    for field in ("currency",):
+        if field in shaped:
+            original = shaped.get(field)
+            normalized = _normalize_currency_value(original)
+            shaped[field] = normalized
+            if normalized != original:
+                normalization_meta[field] = {"raw": original, "canonical": normalized}
+
+    for field in ("country_of_origin", "origin_country", "country", "country_name"):
+        if field in shaped:
+            original = shaped.get(field)
+            normalized = _normalize_country_value(original)
+            shaped[field] = normalized
+            if normalized != original:
+                normalization_meta[field] = {"raw": original, "canonical": normalized}
+
+    country_hint = shaped.get("country_of_origin") or shaped.get("origin_country") or shaped.get("country") or shaped.get("country_name")
+    port_fields = (
+        "port_of_loading",
+        "port_of_discharge",
+        "port_of_receipt",
+        "place_of_receipt",
+        "place_of_delivery",
+        "final_destination",
+        "airport_of_departure",
+        "airport_of_destination",
+    )
+    for field in port_fields:
+        if field in shaped:
+            original = shaped.get(field)
+            port_norm = _normalize_port_value(original, country_hint=country_hint)
+            shaped[field] = port_norm["value"]
+            if port_norm.get("code"):
+                normalization_meta[field] = {
+                    "raw": original,
+                    "canonical": port_norm["value"],
+                    "unlocode": port_norm.get("code"),
+                    "country_code": port_norm.get("country_code"),
+                    "country_name": port_norm.get("country_name"),
+                }
+                shaped[f"{field}_unlocode"] = port_norm.get("code")
+                if port_norm.get("country_code"):
+                    shaped.setdefault(f"{field}_country_code", port_norm.get("country_code"))
+                if port_norm.get("country_name"):
+                    shaped.setdefault(f"{field}_country_name", port_norm.get("country_name"))
+
+    for field in ("source_type", "supporting_subtype_guess", "document_type"):
+        if field in shaped:
+            original = shaped.get(field)
+            normalized = _normalize_document_alias(original)
+            shaped[field] = normalized
+            if normalized != original:
+                normalization_meta[field] = {"raw": original, "canonical": normalized}
+
+    measurement_aliases = shaped.get("measurement_aliases") if isinstance(shaped.get("measurement_aliases"), dict) else {}
+    for label_field, canonical_field in list(MEASUREMENT_LABEL_ALIASES.items()):
+        if label_field in shaped and canonical_field not in shaped:
+            shaped[canonical_field] = shaped.get(label_field)
+            measurement_aliases[label_field] = canonical_field
+
+    for key, value in list(shaped.items()):
+        canonical_key = _normalize_measurement_label(key)
+        if canonical_key != key and canonical_key not in shaped and value not in (None, ""):
+            shaped[canonical_key] = value
+            measurement_aliases[key] = canonical_key
+
+    if measurement_aliases:
+        shaped["measurement_aliases"] = measurement_aliases
+        normalization_meta.setdefault("measurement_aliases", dict(measurement_aliases))
+
+    if normalization_meta:
+        shaped["normalization"] = normalization_meta
+
     return shaped
 
 
 def _extract_label_value(text: str, labels: List[str]) -> Optional[str]:
-    import re
     source = text or ""
     for label in labels:
         pattern = rf"(?:{re.escape(label)})\s*[:\-]?\s*([^\n\r]+)"
@@ -1505,7 +1708,6 @@ def _extract_label_value(text: str, labels: List[str]) -> Optional[str]:
 
 
 def _extract_amount_value(text: str, labels: List[str]) -> Optional[str]:
-    import re
     source = text or ""
     for label in labels:
         pattern = rf"(?:{re.escape(label)})\s*[:\-]?\s*([A-Z]{{3}}\s*[0-9][0-9,\.]*|[0-9][0-9,\.]*\s*[A-Z]{{3}}|[0-9][0-9,\.]*)"

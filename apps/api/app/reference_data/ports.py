@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 
 # Data directory
 DATA_DIR = Path(__file__).parent / "data"
+DEFAULT_UNLOCODE_FILE = DATA_DIR / "unlocode_ports.json"
+DEFAULT_DATA_CANDIDATES = [
+    DEFAULT_UNLOCODE_FILE,
+    DATA_DIR / "ports.json",
+    DATA_DIR / "unlocode.json",
+]
+CANONICAL_NAME_OVERRIDES = {
+    "BDCGP": "Chattogram",
+}
+CANONICAL_EXTRA_ALIASES = {
+    "BDCGP": ["Chattogram"],
+}
 
 
 @dataclass
@@ -126,7 +138,8 @@ class PortRegistry:
         Initialize port registry.
         
         Args:
-            data_file: Path to UN/LOCODE JSON. If None, uses embedded data.
+            data_file: Path to UN/LOCODE JSON. If None, auto-detects a local dataset
+                under app/reference_data/data/ before falling back to embedded ports.
         """
         self._ports_by_code: Dict[str, Port] = {}
         self._ports_by_name: Dict[str, List[Port]] = {}  # Normalized name -> ports
@@ -143,18 +156,27 @@ class PortRegistry:
     
     def _load_data(self, data_file: Optional[Path] = None):
         """Load port data from file or embedded data."""
-        if data_file and data_file.exists():
-            with open(data_file, 'r', encoding='utf-8') as f:
+        selected_file = data_file
+        if selected_file is None:
+            for candidate in DEFAULT_DATA_CANDIDATES:
+                if candidate.exists():
+                    selected_file = candidate
+                    break
+
+        if selected_file and selected_file.exists():
+            with open(selected_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 for entry in data:
+                    code = entry["code"]
+                    aliases = list(entry.get("aliases", [])) + list(CANONICAL_EXTRA_ALIASES.get(code, []))
                     port = Port(
-                        code=entry["code"],
-                        name=entry["name"],
+                        code=code,
+                        name=CANONICAL_NAME_OVERRIDES.get(code, entry["name"]),
                         country_code=entry["country_code"],
                         country_name=entry.get("country_name", ""),
                         subdivision=entry.get("subdivision"),
                         function=entry.get("function"),
-                        aliases=entry.get("aliases", []),
+                        aliases=aliases,
                     )
                     self._ports_by_code[port.code] = port
         else:
@@ -225,12 +247,13 @@ class PortRegistry:
         ]
         
         for code, name, country_code, country_name in essential:
+            aliases = list(self.MANUAL_ALIASES.get(code, [])) + list(CANONICAL_EXTRA_ALIASES.get(code, []))
             port = Port(
                 code=code,
-                name=name,
+                name=CANONICAL_NAME_OVERRIDES.get(code, name),
                 country_code=country_code,
                 country_name=country_name,
-                aliases=self.MANUAL_ALIASES.get(code, []),
+                aliases=aliases,
             )
             self._ports_by_code[code] = port
     
