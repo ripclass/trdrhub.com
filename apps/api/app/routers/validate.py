@@ -8103,34 +8103,70 @@ def _build_validation_contract(
     }
     ruleset_verdict = rules_map.get(rules_raw, "review" if gate_result.get("missing_critical") else "pass")
 
+    missing_critical = [
+        str(field).strip()
+        for field in ((gate_result or {}).get("missing_critical") or [])
+        if str(field).strip()
+    ]
+    rules_veto_classes: List[str] = []
+    if rules_raw in {"REJECT", "HOLD"}:
+        rules_veto_classes.append("bank_submission_verdict")
+    if missing_critical:
+        rules_veto_classes.append("missing_critical_fields")
+
+    disagreement_flag = ai_verdict != ruleset_verdict
     final_verdict = ruleset_verdict
     override_reason = None
+    arbitration_mode = "aligned"
 
     if ai_verdict == "pass" and ruleset_verdict == "reject":
         final_verdict = "reject"
         override_reason = "rules_veto_critical_control"
+        arbitration_mode = "rules_veto"
     elif ai_verdict == "reject" and ruleset_verdict == "pass":
         final_verdict = "review"
         override_reason = "ai_reject_rules_clean_review_required"
+        arbitration_mode = "disagreement_review"
     elif ai_verdict == "warn" and ruleset_verdict in {"pass", "review"}:
         final_verdict = "review"
-        if ruleset_verdict == "pass":
-            override_reason = "ai_warn_requires_review"
+        override_reason = "ai_warn_requires_review" if ruleset_verdict == "pass" else "combined_review_signal"
+        arbitration_mode = "ai_escalation"
     elif ruleset_verdict == "review":
         final_verdict = "review"
         if ai_verdict == "pass":
             override_reason = "rules_require_review"
+            arbitration_mode = "rules_review"
 
     if submission_eligibility and not submission_eligibility.get("can_submit", True):
         if final_verdict == "pass":
             final_verdict = "review"
             override_reason = override_reason or "submission_not_ready"
+            arbitration_mode = "submission_gate_review"
+
+    review_required_reason = []
+    if disagreement_flag:
+        review_required_reason.append("ai_rules_disagreement")
+    if ruleset_verdict == "review":
+        review_required_reason.append("rules_review_signal")
+    if ai_verdict in {"warn", "reject"} and final_verdict == "review":
+        review_required_reason.append("ai_escalation")
+    if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
+        review_required_reason.append("submission_not_ready")
 
     return {
         "ai_verdict": ai_verdict,
         "ruleset_verdict": ruleset_verdict,
         "final_verdict": final_verdict,
         "override_reason": override_reason,
+        "disagreement_flag": disagreement_flag,
+        "arbitration_mode": arbitration_mode,
+        "review_required_reason": sorted(set(review_required_reason)),
+        "rules_veto_classes": rules_veto_classes,
+        "rules_evidence": {
+            "missing_critical_fields": missing_critical,
+            "submission_can_submit": bool(submission_eligibility.get("can_submit", True)),
+            "submission_reasons": list(submission_eligibility.get("reasons") or []),
+        },
         "ai_issue_counts": {
             "critical": ai_critical,
             "major": ai_major,
