@@ -8169,6 +8169,12 @@ def _build_validation_contract(
         gate_result,
         submission_eligibility,
     )
+    domain_risk_summary = {
+        "sanctions": "hard_fail" if "sanctions" in rules_veto_classes else None,
+        "tbml": "review_required" if "tbml" in rules_trigger_classes else None,
+        "shell_risk": "review_required" if "shell_risk" in rules_trigger_classes else None,
+        "missing_critical_controls": "hard_fail" if "missing_critical_controls" in rules_veto_classes else None,
+    }
 
     disagreement_flag = ai_verdict != ruleset_verdict
     final_verdict = ruleset_verdict
@@ -8264,12 +8270,14 @@ def _build_validation_contract(
             "submission_reasons": submission_reasons,
             "bank_reasons": list(bank_verdict.get("reasons") or []),
             "bank_risk_flags": list(bank_verdict.get("risk_flags") or []),
+            "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
         },
         "evidence_summary": {
             "primary_review_drivers": review_required_reason,
             "primary_veto_drivers": rules_veto_classes,
             "primary_escalation_drivers": escalation_triggers,
             "submission_readiness": "ready" if submission_eligibility.get("can_submit", True) else "not_ready",
+            "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
         },
         "ai_issue_counts": {
             "critical": ai_critical,
