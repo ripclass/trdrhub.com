@@ -1,4 +1,5 @@
 # TRDR Hub
+<!-- git-pipeline-check -->
 
 **Enterprise-grade trade compliance tools for SME exporters, trade banks, and compliance teams.**
 
