@@ -1980,6 +1980,14 @@ async def validate_doc(
                 ai_metadata.get("critical_issues", 0),
                 ai_metadata.get("major_issues", 0),
             )
+            structured_result["ai_validation"] = {
+                "issue_count": len(ai_issues),
+                "critical_issues": int(ai_metadata.get("critical_issues", 0) or 0),
+                "major_issues": int(ai_metadata.get("major_issues", 0) or 0),
+                "minor_issues": int(ai_metadata.get("minor_issues", 0) or 0),
+                "documents_checked": len(documents_for_ai) if isinstance(documents_for_ai, list) else 0,
+                "metadata": ai_metadata or {},
+            }
             
             # Convert AI issues to same format as crossdoc issues
             for ai_issue in ai_issues:
@@ -2971,6 +2979,8 @@ async def validate_doc(
             structured_result["analytics"]["document_status_distribution"] = (
                 processing_summary_v2.get("status_counts")
             )
+            if isinstance(structured_result.get("validation_contract_v1"), dict):
+                structured_result["analytics"]["validation_contract_v1"] = structured_result.get("validation_contract_v1")
 
             customs_pack = structured_result.get("customs_pack")
             if isinstance(customs_pack, dict):
@@ -3013,6 +3023,12 @@ async def validate_doc(
             }
             structured_result["raw_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
             structured_result["effective_submission_eligibility"] = copy.deepcopy(structured_result["submission_eligibility"])
+            structured_result["validation_contract_v1"] = _build_validation_contract(
+                structured_result.get("ai_validation"),
+                bank_verdict,
+                structured_result.get("gate_result") or {},
+                structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
+            )
         except Exception as contract_err:
             logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
         
@@ -8053,6 +8069,75 @@ def _augment_issues_with_field_decisions(
             "status": issue["decision_status"],
             "reason_code": issue["reason_code"],
         }
+
+
+def _build_validation_contract(
+    ai_validation: Optional[Dict[str, Any]],
+    bank_verdict: Optional[Dict[str, Any]],
+    gate_result: Optional[Dict[str, Any]],
+    submission_eligibility: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build side-by-side AI/rules/final validation verdict contract."""
+    ai_validation = ai_validation or {}
+    bank_verdict = bank_verdict or {}
+    gate_result = gate_result or {}
+    submission_eligibility = submission_eligibility or {}
+
+    ai_critical = int(ai_validation.get("critical_issues", 0) or 0)
+    ai_major = int(ai_validation.get("major_issues", 0) or 0)
+    ai_minor = int(ai_validation.get("minor_issues", 0) or 0)
+
+    if ai_critical > 0:
+        ai_verdict = "reject"
+    elif ai_major > 0:
+        ai_verdict = "warn"
+    else:
+        ai_verdict = "pass"
+
+    rules_raw = str(bank_verdict.get("verdict") or "").strip().upper()
+    rules_map = {
+        "REJECT": "reject",
+        "HOLD": "reject",
+        "CAUTION": "review",
+        "SUBMIT": "pass",
+    }
+    ruleset_verdict = rules_map.get(rules_raw, "review" if gate_result.get("missing_critical") else "pass")
+
+    final_verdict = ruleset_verdict
+    override_reason = None
+
+    if ai_verdict == "pass" and ruleset_verdict == "reject":
+        final_verdict = "reject"
+        override_reason = "rules_veto_critical_control"
+    elif ai_verdict == "reject" and ruleset_verdict == "pass":
+        final_verdict = "review"
+        override_reason = "ai_reject_rules_clean_review_required"
+    elif ai_verdict == "warn" and ruleset_verdict in {"pass", "review"}:
+        final_verdict = "review"
+        if ruleset_verdict == "pass":
+            override_reason = "ai_warn_requires_review"
+    elif ruleset_verdict == "review":
+        final_verdict = "review"
+        if ai_verdict == "pass":
+            override_reason = "rules_require_review"
+
+    if submission_eligibility and not submission_eligibility.get("can_submit", True):
+        if final_verdict == "pass":
+            final_verdict = "review"
+            override_reason = override_reason or "submission_not_ready"
+
+    return {
+        "ai_verdict": ai_verdict,
+        "ruleset_verdict": ruleset_verdict,
+        "final_verdict": final_verdict,
+        "override_reason": override_reason,
+        "ai_issue_counts": {
+            "critical": ai_critical,
+            "major": ai_major,
+            "minor": ai_minor,
+        },
+        "rules_source_verdict": rules_raw or None,
+    }
 
 
 def _build_submission_eligibility_context(
