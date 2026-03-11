@@ -8084,14 +8084,19 @@ def _augment_issues_with_field_decisions(
 
 def _classify_reason_semantics(
     submission_eligibility: Optional[Dict[str, Any]],
+    bank_verdict: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[str]]:
     submission_eligibility = submission_eligibility or {}
+    bank_verdict = bank_verdict or {}
     reason_codes = [str(x).strip().lower() for x in (submission_eligibility.get("missing_reason_codes") or []) if str(x).strip()]
+    submission_reasons = [str(x).strip().lower() for x in (submission_eligibility.get("reasons") or []) if str(x).strip()]
+    bank_reasons = [str(x).strip().lower() for x in (bank_verdict.get("reasons") or []) if str(x).strip()]
     unresolved = submission_eligibility.get("unresolved_critical_fields") or []
 
     extraction_failures: List[str] = []
     missing_fields: List[str] = []
     parse_failures: List[str] = []
+    rule_decision_basis: List[str] = []
 
     for item in unresolved:
         if isinstance(item, dict):
@@ -8113,10 +8118,23 @@ def _classify_reason_semantics(
         if any(token in code for token in ["ocr_", "field_not_found", "format_invalid", "fallback_text_recovered"]):
             extraction_failures.append(code)
 
+    for reason in submission_reasons + bank_reasons:
+        if reason == "bank_verdict_reject":
+            rule_decision_basis.append("bank_submission_verdict")
+        elif reason == "bank_verdict_caution":
+            rule_decision_basis.append("rules_review_signal")
+        elif "sanction" in reason:
+            rule_decision_basis.append("sanctions")
+        elif "tbml" in reason:
+            rule_decision_basis.append("tbml")
+        elif "shell" in reason:
+            rule_decision_basis.append("shell_risk")
+
     return {
         "extraction_failures": sorted(set(x for x in extraction_failures if x)),
         "missing_fields": sorted(set(x for x in missing_fields if x)),
         "parse_failures": sorted(set(x for x in parse_failures if x)),
+        "rule_decision_basis": sorted(set(x for x in rule_decision_basis if x)),
     }
 
 
@@ -8207,7 +8225,7 @@ def _build_validation_contract(
         gate_result,
         submission_eligibility,
     )
-    reason_semantics = _classify_reason_semantics(submission_eligibility)
+    reason_semantics = _classify_reason_semantics(submission_eligibility, bank_verdict)
     domain_risk_summary = {
         "sanctions": "hard_fail" if "sanctions" in rules_veto_classes else None,
         "tbml": "review_required" if "tbml" in rules_trigger_classes else None,
@@ -8319,6 +8337,8 @@ def _build_validation_contract(
             "submission_readiness": "ready" if submission_eligibility.get("can_submit", True) else "not_ready",
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
+            "decision_basis": reason_semantics.get("rule_decision_basis", []),
+            "evidence_quality": "rule_direct" if reason_semantics.get("rule_decision_basis") else ("extraction_only" if reason_semantics.get("extraction_failures") else "mixed_or_unknown"),
         },
         "ai_issue_counts": {
             "critical": ai_critical,
