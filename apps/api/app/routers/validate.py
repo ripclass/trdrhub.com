@@ -432,6 +432,35 @@ def _finalize_text_backed_extraction_status(
     doc_info.setdefault("downgrade_reason", "text_recovered_but_fields_unresolved")
 
 
+def _stabilize_document_review_semantics(doc_info: Dict[str, Any], extracted_text: str) -> None:
+    extracted_fields = doc_info.get("extracted_fields") or {}
+    if not isinstance(extracted_fields, dict):
+        extracted_fields = {}
+
+    review_reasons = list(doc_info.get("review_reasons") or doc_info.get("reviewReasons") or [])
+    reason_codes = set(doc_info.get("reason_codes") or [])
+    status_now = str(doc_info.get("extraction_status") or "unknown").lower()
+    text_len = len((extracted_text or "").strip())
+    populated = _count_populated_canonical_fields(extracted_fields)
+    parse_complete = doc_info.get("parse_complete")
+
+    strong_native_recovery = text_len >= 180 and populated >= 2
+    if strong_native_recovery and status_now in {"text_only", "parse_failed"}:
+        doc_info["extraction_status"] = "partial" if populated < 4 or parse_complete is False else "success"
+        doc_info.setdefault("downgrade_reason", "native_text_recovered")
+
+    if strong_native_recovery and review_reasons:
+        filtered_reasons = [r for r in review_reasons if str(r) != "OCR_AUTH_ERROR"]
+        if filtered_reasons != review_reasons:
+            review_reasons = filtered_reasons
+            doc_info["review_reasons"] = filtered_reasons
+            doc_info["reviewReasons"] = filtered_reasons
+
+        if not review_reasons and not reason_codes.intersection({"LOW_CONFIDENCE_CRITICAL", "FORMAT_INVALID"}):
+            doc_info["review_required"] = False
+            doc_info["reviewRequired"] = False
+
+
 def _context_payload_for_doc_type(context: Dict[str, Any], document_type: str) -> Dict[str, Any]:
     if document_type in ("letter_of_credit", "swift_message", "lc_application"):
         return context.get("lc") or {}
@@ -3735,6 +3764,7 @@ async def _build_document_context(
                 )
                 _apply_extraction_guard(doc_info, extracted_text)
                 _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text)
+                _stabilize_document_review_semantics(doc_info, extracted_text)
                 summary = doc_info.get("validation_summary") or {}
                 llm_trace = _resolve_doc_llm_trace(
                     context_payload if isinstance(context_payload, dict) else {},
@@ -4395,6 +4425,7 @@ async def _build_document_context(
         )
         _apply_extraction_guard(doc_info, extracted_text)
         _finalize_text_backed_extraction_status(doc_info, document_type, extracted_text)
+        _stabilize_document_review_semantics(doc_info, extracted_text)
         summary = doc_info.get("validation_summary") or {}
         llm_trace = _resolve_doc_llm_trace(
             context_payload if isinstance(context_payload, dict) else {},
@@ -8635,6 +8666,23 @@ def _normalize_lc_payload_structures(lc_payload: Any) -> Dict[str, Any]:
     if not isinstance(parsed, dict):
         return {}
 
+    def _coerce_sequence(value: Any) -> Any:
+        parsed_value = _parse_json_if_possible(value)
+        if isinstance(parsed_value, list):
+            return parsed_value
+        if isinstance(parsed_value, str):
+            text = parsed_value.strip()
+            if text.startswith("[") and text.endswith("]"):
+                try:
+                    import ast
+                    coerced = ast.literal_eval(text)
+                    if isinstance(coerced, list):
+                        return coerced
+                except Exception:
+                    return [text]
+            return [text] if text else []
+        return value
+
     nested_keys = (
         "applicant",
         "beneficiary",
@@ -8650,8 +8698,35 @@ def _normalize_lc_payload_structures(lc_payload: Any) -> Dict[str, Any]:
             if isinstance(nested, dict):
                 parsed[key] = nested
 
+    for list_key in ("documents_required", "required_documents", "additional_conditions", "clauses", "goods"):
+        if list_key in parsed:
+            parsed[list_key] = _coerce_sequence(parsed.get(list_key))
+
     if "goods_items" in parsed:
         parsed["goods_items"] = _coerce_goods_items(parsed.get("goods_items"))
+
+    if not parsed.get("goods") and parsed.get("goods_description"):
+        parsed["goods"] = [{"description": parsed.get("goods_description")}]
+
+    mt700 = parsed.get("mt700")
+    if isinstance(mt700, dict):
+        blocks = mt700.get("blocks") or {}
+        if isinstance(blocks, dict):
+            sanitized_blocks = {k: v for k, v in blocks.items() if v not in (None, "", [], {})}
+            mt700["blocks"] = sanitized_blocks
+        mt700["raw_text"] = mt700.get("raw_text") or parsed.get("raw_text")
+        parsed["mt700"] = mt700
+
+    issuer = parsed.get("issuer")
+    if isinstance(issuer, str):
+        issuer_clean = issuer.strip()
+        upper_issuer = issuer_clean.upper()
+        if upper_issuer.startswith(("1)", "2)", "3)", "4)", "5)")) or "FULL SET CLEAN ON BOARD" in upper_issuer:
+            parsed["issuer"] = None
+
+    bl_number = parsed.get("bl_number")
+    if isinstance(bl_number, str) and bl_number.strip().upper() in {"CONSIGNED", "TO ORDER", "TO THE ORDER"}:
+        parsed["bl_number"] = None
 
     return parsed
 
