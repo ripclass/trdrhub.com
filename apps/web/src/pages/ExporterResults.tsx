@@ -103,6 +103,51 @@ type ExporterResultsProps = {
   onTabChange?: (tab: ResultsTab) => void;
 };
 
+const getTruthfulDocumentTypeLabel = (filename: string | undefined, typeKey: string): string => {
+  const safeFilename = (filename || '').toLowerCase();
+
+  if (/beneficiary[_\s-]?certificate|beneficiary[_\s-]?cert|beneficiary\b/.test(safeFilename)) {
+    return 'Beneficiary Certificate';
+  }
+  if (/weight[_\s-]?list/.test(safeFilename)) {
+    return 'Weight List';
+  }
+  if (/weight[_\s-]?certificate|weight[_\s-]?cert/.test(safeFilename)) {
+    return 'Weight Certificate';
+  }
+
+  return DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
+};
+
+const buildWarningReasons = ({
+  extractionStatus,
+  issuesCount,
+  missingRequiredFields,
+  parseComplete,
+}: {
+  extractionStatus: string;
+  issuesCount: number;
+  missingRequiredFields: unknown[];
+  parseComplete: boolean | undefined;
+}): string[] => {
+  const reasons: string[] = [];
+
+  if (['partial', 'pending', 'text_only'].includes(extractionStatus)) {
+    reasons.push(`Extraction ${extractionStatus.replace('_', ' ')}`);
+  }
+  if (parseComplete === false) {
+    reasons.push('Parse incomplete');
+  }
+  if (Array.isArray(missingRequiredFields) && missingRequiredFields.length > 0) {
+    reasons.push(`Missing required fields (${missingRequiredFields.length})`);
+  }
+  if (issuesCount > 0) {
+    reasons.push(`Discrepancies attached (${issuesCount})`);
+  }
+
+  return reasons;
+};
+
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
 
 export default function ExporterResults({
@@ -736,7 +781,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         return "success";
       })();
       // Ensure type is always a string to prevent React Error #31
-      const typeLabel = DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
+      const parseComplete = typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete;
+      const missingRequiredFields = docAny.missing_required_fields ?? [];
+      const typeLabel = getTruthfulDocumentTypeLabel(filename, typeKey);
       return {
         id: documentId,
         documentId,
@@ -747,9 +794,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         extractionStatus,
         status,
         issuesCount,
-        parseComplete: typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete,
+        parseComplete,
         parseCompleteness: docAny.parse_completeness ?? docAny.parseCompleteness,
-        missingRequiredFields: docAny.missing_required_fields ?? [],
+        missingRequiredFields,
+        warningReasons: buildWarningReasons({
+          extractionStatus,
+          issuesCount,
+          missingRequiredFields,
+          parseComplete,
+        }),
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
@@ -2021,6 +2074,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const requiredFieldsFound = (document as any).requiredFieldsFound;
               const requiredFieldsTotal = (document as any).requiredFieldsTotal;
               const discrepancyCount = document.issuesCount ?? 0;
+              const warningReasons = ((document as any).warningReasons ?? []) as string[];
               
               return (
                 <Card
@@ -2084,6 +2138,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           : typeof parseCompleteness === "number"
                           ? ` (${Math.round(parseCompleteness * 100)}%)`
                           : ""}
+                      </div>
+                    )}
+                    {warningReasons.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {warningReasons.map((reason, idx) => (
+                          <Badge key={`${document.id}-reason-${idx}`} variant="outline" className="text-xs border-amber-500/30 text-amber-700 bg-amber-500/5">
+                            {reason}
+                          </Badge>
+                        ))}
                       </div>
                     )}
                     {hasFieldEntries ? (
