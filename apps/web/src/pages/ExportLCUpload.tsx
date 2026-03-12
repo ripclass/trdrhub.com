@@ -50,6 +50,7 @@ interface UploadedFile {
   progress: number;
   preview?: string;
   documentType?: string; // Selected document type
+  manualDocumentType?: boolean;
   // Auto-detection fields
   detectedType?: string;
   detectedConfidence?: number;
@@ -253,16 +254,25 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
           if (filesData.length > 0) {
             // Files available from session storage - restore them
-            const restoredFiles: UploadedFile[] = filesData.map(fileData => ({
-              id: fileData.id,
-              file: new File([], fileData.name), // Placeholder file object
-              name: fileData.name,
-              size: fileData.size,
-              type: fileData.type,
-              status: fileData.status,
-              progress: fileData.progress,
-              documentType: fileData.documentType || "other",
-            }));
+            const restoredFiles: UploadedFile[] = filesData.map(fileData => {
+              const detection = detectDocumentType(fileData.name);
+              const restoredDocumentType = fileData.documentType || fileData.tag || detection.type;
+              return {
+                id: fileData.id,
+                file: new File([], fileData.name), // Placeholder file object
+                name: fileData.name,
+                size: fileData.size,
+                type: fileData.type,
+                status: fileData.status,
+                progress: fileData.progress,
+                documentType: restoredDocumentType,
+                manualDocumentType: !!fileData.manualDocumentType,
+                detectedType: fileData.detectedType || detection.type,
+                detectedConfidence: fileData.detectedConfidence ?? detection.confidence,
+                isTradeDocument: fileData.isTradeDocument ?? detection.isTradeDoc,
+                relevanceWarning: fileData.relevanceWarning ?? detection.warning,
+              };
+            });
 
             setUploadedFiles(restoredFiles);
             setHasSessionFiles(true);
@@ -348,6 +358,11 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         size: file.size,
         type: file.type,
         documentType: file.documentType,
+        manualDocumentType: file.manualDocumentType,
+        detectedType: file.detectedType,
+        detectedConfidence: file.detectedConfidence,
+        isTradeDocument: file.isTradeDocument,
+        relevanceWarning: file.relevanceWarning,
         status: file.status,
         progress: file.progress,
         // Note: Not storing actual file content for demo purposes
@@ -492,6 +507,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         status: "pending" as const,
         progress: 0,
         documentType: detection.type, // Auto-set from detection
+        manualDocumentType: false,
         detectedType: detection.type,
         detectedConfidence: detection.confidence,
         isTradeDocument: detection.isTradeDoc,
@@ -555,7 +571,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const updateFileDocumentType = (fileId: string, documentType: string) => {
     setUploadedFiles((prev) => {
       const updated = prev.map((file) =>
-        file.id === fileId ? { ...file, documentType } : file
+        file.id === fileId ? { ...file, documentType, manualDocumentType: true } : file
       );
       if (showDocTypeErrors) {
         const completed = updated.filter((file) => file.status === "completed");
@@ -630,10 +646,27 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
     const files = completedFiles.map(f => f.file);
 
+    const resolveFinalDocumentType = (file: UploadedFile): string => {
+      const normalizedManual = normalizeDocumentType(file.documentType);
+      const normalizedDetected = normalizeDocumentType(file.detectedType);
+
+      if (file.manualDocumentType && normalizedManual && normalizedManual !== DOCUMENT_TYPE_VALUES.UNKNOWN) {
+        return normalizedManual;
+      }
+      if (normalizedDetected && normalizedDetected !== DOCUMENT_TYPE_VALUES.UNKNOWN && normalizedDetected !== DOCUMENT_TYPE_VALUES.OTHER) {
+        return normalizedDetected;
+      }
+      if (normalizedManual && normalizedManual !== DOCUMENT_TYPE_VALUES.UNKNOWN) {
+        return normalizedManual;
+      }
+      return DOCUMENT_TYPE_VALUES.OTHER;
+    };
+
     // Create document tags mapping
     const documentTags: Record<string, string> = {};
     completedFiles.forEach(file => {
-      documentTags[file.name] = file.documentType || 'supporting_document';
+      const finalDocumentType = resolveFinalDocumentType(file);
+      documentTags[file.name] = finalDocumentType;
     });
 
     try {
@@ -649,6 +682,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       console.log('📁 Files to validate:', files.map(f => f.name));
       console.log('🏷️  LC Number:', lcNumber.trim());
       console.log('📋 Document Tags:', documentTags);
+      console.log('🧭 Final Tag Resolution:', completedFiles.map(file => ({
+        name: file.name,
+        detectedType: file.detectedType,
+        selectedType: file.documentType,
+        manualDocumentType: file.manualDocumentType,
+        finalTag: documentTags[file.name],
+      })));
       console.log('⚙️  LC Type Override:', lcTypeOverride);
 
       // Validate using V1 API
