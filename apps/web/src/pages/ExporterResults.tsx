@@ -124,11 +124,13 @@ const buildWarningReasons = ({
   issuesCount,
   missingRequiredFields,
   parseComplete,
+  reviewReasons,
 }: {
   extractionStatus: string;
   issuesCount: number;
   missingRequiredFields: unknown[];
   parseComplete: boolean | undefined;
+  reviewReasons: unknown[];
 }): string[] => {
   const reasons: string[] = [];
 
@@ -144,8 +146,15 @@ const buildWarningReasons = ({
   if (issuesCount > 0) {
     reasons.push(`Discrepancies attached (${issuesCount})`);
   }
+  if (Array.isArray(reviewReasons)) {
+    for (const rawReason of reviewReasons) {
+      const reason = String(rawReason || '').trim();
+      if (!reason) continue;
+      reasons.push(reason.replace(/_/g, ' '));
+    }
+  }
 
-  return reasons;
+  return Array.from(new Set(reasons));
 };
 
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
@@ -783,6 +792,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       // Ensure type is always a string to prevent React Error #31
       const parseComplete = typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete;
       const missingRequiredFields = docAny.missing_required_fields ?? [];
+      const reviewReasons = docAny.review_reasons ?? docAny.reviewReasons ?? [];
       const typeLabel = getTruthfulDocumentTypeLabel(filename, typeKey);
       return {
         id: documentId,
@@ -802,7 +812,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           issuesCount,
           missingRequiredFields,
           parseComplete,
+          reviewReasons,
         }),
+        reviewReasons,
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
@@ -1727,7 +1739,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       <div className="text-sm text-muted-foreground">Verified</div>
                     </div>
                     <div className="text-center p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                      <div className="text-2xl font-bold text-warning">{totalDiscrepancies}</div>
+                      <div className="text-2xl font-bold text-warning">{warningCount}</div>
                       <div className="text-sm text-muted-foreground">Warnings</div>
                     </div>
                   </div>
