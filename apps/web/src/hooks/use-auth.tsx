@@ -1,7 +1,7 @@
 import * as React from 'react'
 import type { Role } from '@/types/analytics'
 import { supabase } from '@/lib/supabase'
-import { api } from '@/api/client'
+import { api, API_BASE_URL } from '@/api/client'
 import { logger } from '@/lib/logger'
 
 // Auth-specific logger (debug logs only in development)
@@ -246,7 +246,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fetch CSRF token after successful profile fetch
       try {
         const { fetchCsrfToken } = await import('@/lib/csrf')
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
         await fetchCsrfToken(API_BASE_URL)
       } catch (csrfError) {
         authLogger.warn('Failed to fetch CSRF token:', csrfError)
@@ -483,7 +482,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Create user in backend database with company info
       // CRITICAL: This must succeed for onboarding data to be saved
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       const registerPayload: any = {
         email,
         password,
