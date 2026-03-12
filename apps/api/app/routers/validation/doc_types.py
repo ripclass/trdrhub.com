@@ -98,60 +98,88 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
         "insurance certificate",
         "insurance policy",
         "policy",
+    ],
+    "beneficiary_certificate": [
         "beneficiary certificate",
         "beneficiary_certificate",
+        "beneficiary cert",
+        "beneficiary statement",
+    ],
+    "manufacturer_certificate": [
         "manufacturer's certificate",
         "manufacturers certificate",
+        "manufacturer certificate",
+        "manufacturer_certificate",
+    ],
+    "conformity_certificate": [
         "certificate of conformity",
         "certificate_of_conformity",
-        "non-manipulation certificate",
-        "halal certificate",
-        "kosher certificate",
-        "organic certificate",
+        "conformity certificate",
+        "conformity_certificate",
     ],
+    "non_manipulation_certificate": [
+        "non-manipulation certificate",
+        "non manipulation certificate",
+        "non_manipulation_certificate",
+    ],
+    "halal_certificate": ["halal certificate", "halal_certificate"],
+    "kosher_certificate": ["kosher certificate", "kosher_certificate"],
+    "organic_certificate": ["organic certificate", "organic_certificate"],
     "certificate_of_origin": [
         "certificate of origin",
         "coo",
-        "gsp",
-        "gsp form a",
-        "form a",
-        "eur.1",
-        "eur1",
-        "movement certificate",
-        "customs declaration",
-        "export license",
-        "import license",
-        "phytosanitary certificate",
-        "fumigation certificate",
-        "health certificate",
-        "veterinary certificate",
-        "sanitary certificate",
-        "sanitary_certificate",
-        "cites permit",
-        "radiation certificate",
-        "radiation_certificate",
     ],
+    "gsp_form_a": ["gsp", "gsp form a", "form a", "gsp_form_a"],
+    "eur1_movement_certificate": ["eur.1", "eur1", "movement certificate", "eur1_movement_certificate"],
+    "customs_declaration": ["customs declaration", "customs_declaration"],
+    "export_license": ["export license", "export_license"],
+    "import_license": ["import license", "import_license"],
+    "phytosanitary_certificate": ["phytosanitary certificate", "phytosanitary_certificate", "phytosanitary", "phyto"],
+    "fumigation_certificate": ["fumigation certificate", "fumigation_certificate", "fumigation"],
+    "health_certificate": ["health certificate", "health_certificate"],
+    "veterinary_certificate": ["veterinary certificate", "veterinary_certificate", "veterinary", "vet"],
+    "sanitary_certificate": ["sanitary certificate", "sanitary_certificate", "sanitary"],
+    "radiation_certificate": ["radiation certificate", "radiation_certificate"],
     "inspection_certificate": [
         "inspection",
         "inspection certificate",
+    ],
+    "pre_shipment_inspection": [
         "pre-shipment inspection",
         "pre shipment inspection",
         "psi",
+        "pre_shipment_inspection",
+    ],
+    "quality_certificate": [
         "quality certificate",
+        "quality_certificate",
+    ],
+    "weight_certificate": [
         "weight certificate",
         "weight_certificate",
+    ],
+    "weight_list": [
         "weight list",
+        "weight_list",
+    ],
+    "measurement_certificate": [
         "measurement certificate",
         "measurement_certificate",
+    ],
+    "analysis_certificate": [
         "analysis certificate",
+        "analysis_certificate",
+        "analysis",
+    ],
+    "lab_test_report": [
         "lab test report",
         "lab_test_report",
         "laboratory test report",
-        "sgs certificate",
-        "bureau veritas certificate",
-        "intertek certificate",
-        "analysis",
+        "lab test",
     ],
+    "sgs_certificate": ["sgs certificate", "sgs_certificate", "sgs"],
+    "bureau_veritas_certificate": ["bureau veritas certificate", "bureau_veritas_certificate", "bureau veritas", "bv"],
+    "intertek_certificate": ["intertek certificate", "intertek_certificate", "intertek"],
     "supporting_document": [
         "supporting",
         "misc",
@@ -227,11 +255,67 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
             return "bill_of_lading"
         if any(token in lower for token in ("packing", "packlist")):
             return "packing_list"
-        if any(token in lower for token in ("insurance", "insurance policy", "policy", "beneficiary certificate", "beneficiary_certificate", "manufacturer's certificate", "manufacturers certificate", "certificate of conformity", "certificate_of_conformity", "non-manipulation certificate", "halal certificate", "kosher certificate", "organic certificate")):
+        if any(token in lower for token in ("beneficiary certificate", "beneficiary_certificate", "beneficiary cert", "beneficiary statement")):
+            return "beneficiary_certificate"
+        if any(token in lower for token in ("manufacturer's certificate", "manufacturers certificate", "manufacturer certificate", "manufacturer_certificate")):
+            return "manufacturer_certificate"
+        if any(token in lower for token in ("certificate of conformity", "certificate_of_conformity", "conformity certificate", "conformity_certificate")):
+            return "conformity_certificate"
+        if any(token in lower for token in ("non-manipulation certificate", "non manipulation certificate", "non_manipulation_certificate")):
+            return "non_manipulation_certificate"
+        if any(token in lower for token in ("halal certificate", "halal_certificate", "halal")):
+            return "halal_certificate"
+        if any(token in lower for token in ("kosher certificate", "kosher_certificate", "kosher")):
+            return "kosher_certificate"
+        if any(token in lower for token in ("organic certificate", "organic_certificate", "organic")):
+            return "organic_certificate"
+        if any(token in lower for token in ("insurance", "insurance certificate", "insurance policy", "policy")):
             return "insurance_certificate"
-        if any(token in lower for token in ("inspection", "pre-shipment", "pre shipment", "psi", "analysis", "quality", "weight certificate", "weight_certificate", "weight list", "weight_list", "measurement certificate", "measurement_certificate", "lab test", "lab_test_report", "sgs", "bureau veritas", "intertek")):
+        if any(token in lower for token in ("pre-shipment", "pre shipment", "psi", "pre_shipment_inspection")):
+            return "pre_shipment_inspection"
+        if any(token in lower for token in ("weight list", "weight_list")):
+            return "weight_list"
+        if any(token in lower for token in ("weight certificate", "weight_certificate", "weighment")):
+            return "weight_certificate"
+        if any(token in lower for token in ("measurement certificate", "measurement_certificate", "measurement", "dimension")):
+            return "measurement_certificate"
+        if any(token in lower for token in ("analysis certificate", "analysis_certificate", "analysis")):
+            return "analysis_certificate"
+        if any(token in lower for token in ("lab test report", "lab_test_report", "laboratory test report", "lab test")):
+            return "lab_test_report"
+        if any(token in lower for token in ("quality certificate", "quality_certificate", "quality")):
+            return "quality_certificate"
+        if any(token in lower for token in ("sgs certificate", "sgs_certificate", "sgs")):
+            return "sgs_certificate"
+        if any(token in lower for token in ("bureau veritas certificate", "bureau_veritas_certificate", "bureau veritas", "bv")):
+            return "bureau_veritas_certificate"
+        if any(token in lower for token in ("intertek certificate", "intertek_certificate", "intertek")):
+            return "intertek_certificate"
+        if any(token in lower for token in ("inspection", "inspection certificate")):
             return "inspection_certificate"
-        if any(token in lower for token in ("certificate_of_origin", "coo", "gsp", "gsp form a", "form a", "eur.1", "eur1", "movement certificate", "customs declaration", "export license", "import license", "phytosanitary", "fumigation", "health certificate", "veterinary certificate", "sanitary certificate", "sanitary_certificate", "cites permit", "radiation certificate", "radiation_certificate")):
+        if any(token in lower for token in ("gsp", "gsp form a", "form a", "gsp_form_a")):
+            return "gsp_form_a"
+        if any(token in lower for token in ("eur.1", "eur1", "movement certificate", "eur1_movement_certificate")):
+            return "eur1_movement_certificate"
+        if any(token in lower for token in ("customs declaration", "customs_declaration")):
+            return "customs_declaration"
+        if any(token in lower for token in ("export license", "export_license")):
+            return "export_license"
+        if any(token in lower for token in ("import license", "import_license")):
+            return "import_license"
+        if any(token in lower for token in ("phytosanitary certificate", "phytosanitary_certificate", "phytosanitary", "phyto")):
+            return "phytosanitary_certificate"
+        if any(token in lower for token in ("fumigation certificate", "fumigation_certificate", "fumigation")):
+            return "fumigation_certificate"
+        if any(token in lower for token in ("health certificate", "health_certificate")):
+            return "health_certificate"
+        if any(token in lower for token in ("veterinary certificate", "veterinary_certificate", "veterinary", "vet")):
+            return "veterinary_certificate"
+        if any(token in lower for token in ("sanitary certificate", "sanitary_certificate", "sanitary")):
+            return "sanitary_certificate"
+        if any(token in lower for token in ("radiation certificate", "radiation_certificate")):
+            return "radiation_certificate"
+        if any(token in lower for token in ("certificate_of_origin", "certificate of origin", "coo")):
             return "certificate_of_origin"
         if any(token in lower for token in ("lc_", "letter_of_credit", "mt700", "bank guarantee", "standby letter of credit", "standby lc", "sblc")) or lower.endswith("_lc.pdf"):
             return "letter_of_credit"
@@ -280,11 +364,67 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
             return "bill_of_lading"
         if any(token in name for token in ("packing", "packlist")):
             return "packing_list"
-        if any(token in name for token in ("insurance", "insurance policy", "policy", "beneficiary certificate", "beneficiary_certificate", "manufacturer's certificate", "manufacturers certificate", "certificate of conformity", "certificate_of_conformity", "non-manipulation certificate", "halal certificate", "kosher certificate", "organic certificate")):
+        if any(token in name for token in ("beneficiary certificate", "beneficiary_certificate", "beneficiary cert", "beneficiary statement")):
+            return "beneficiary_certificate"
+        if any(token in name for token in ("manufacturer's certificate", "manufacturers certificate", "manufacturer certificate", "manufacturer_certificate")):
+            return "manufacturer_certificate"
+        if any(token in name for token in ("certificate of conformity", "certificate_of_conformity", "conformity certificate", "conformity_certificate")):
+            return "conformity_certificate"
+        if any(token in name for token in ("non-manipulation certificate", "non manipulation certificate", "non_manipulation_certificate")):
+            return "non_manipulation_certificate"
+        if any(token in name for token in ("halal certificate", "halal_certificate", "halal")):
+            return "halal_certificate"
+        if any(token in name for token in ("kosher certificate", "kosher_certificate", "kosher")):
+            return "kosher_certificate"
+        if any(token in name for token in ("organic certificate", "organic_certificate", "organic")):
+            return "organic_certificate"
+        if any(token in name for token in ("insurance", "insurance certificate", "insurance policy", "policy")):
             return "insurance_certificate"
-        if any(token in name for token in ("inspection", "pre-shipment", "pre shipment", "psi", "quality", "analysis", "weight certificate", "weight_certificate", "weight list", "weight_list", "measurement certificate", "measurement_certificate", "lab test", "lab_test_report", "sgs", "bureau veritas", "intertek")):
+        if any(token in name for token in ("pre-shipment", "pre shipment", "psi", "pre_shipment_inspection")):
+            return "pre_shipment_inspection"
+        if any(token in name for token in ("weight list", "weight_list")):
+            return "weight_list"
+        if any(token in name for token in ("weight certificate", "weight_certificate", "weighment")):
+            return "weight_certificate"
+        if any(token in name for token in ("measurement certificate", "measurement_certificate", "measurement", "dimension")):
+            return "measurement_certificate"
+        if any(token in name for token in ("analysis certificate", "analysis_certificate", "analysis")):
+            return "analysis_certificate"
+        if any(token in name for token in ("lab test report", "lab_test_report", "laboratory test report", "lab test")):
+            return "lab_test_report"
+        if any(token in name for token in ("quality certificate", "quality_certificate", "quality")):
+            return "quality_certificate"
+        if any(token in name for token in ("sgs certificate", "sgs_certificate", "sgs")):
+            return "sgs_certificate"
+        if any(token in name for token in ("bureau veritas certificate", "bureau_veritas_certificate", "bureau veritas", "bv")):
+            return "bureau_veritas_certificate"
+        if any(token in name for token in ("intertek certificate", "intertek_certificate", "intertek")):
+            return "intertek_certificate"
+        if any(token in name for token in ("inspection", "inspection certificate")):
             return "inspection_certificate"
-        if any(token in name for token in ("certificate_of_origin", "coo", "gsp", "gsp form a", "form a", "eur.1", "eur1", "movement certificate", "customs declaration", "export license", "import license", "phytosanitary", "fumigation", "health certificate", "veterinary certificate", "sanitary certificate", "sanitary_certificate", "cites permit", "radiation certificate", "radiation_certificate")):
+        if any(token in name for token in ("gsp", "gsp form a", "form a", "gsp_form_a")):
+            return "gsp_form_a"
+        if any(token in name for token in ("eur.1", "eur1", "movement certificate", "eur1_movement_certificate")):
+            return "eur1_movement_certificate"
+        if any(token in name for token in ("customs declaration", "customs_declaration")):
+            return "customs_declaration"
+        if any(token in name for token in ("export license", "export_license")):
+            return "export_license"
+        if any(token in name for token in ("import license", "import_license")):
+            return "import_license"
+        if any(token in name for token in ("phytosanitary certificate", "phytosanitary_certificate", "phytosanitary", "phyto")):
+            return "phytosanitary_certificate"
+        if any(token in name for token in ("fumigation certificate", "fumigation_certificate", "fumigation")):
+            return "fumigation_certificate"
+        if any(token in name for token in ("health certificate", "health_certificate")):
+            return "health_certificate"
+        if any(token in name for token in ("veterinary certificate", "veterinary_certificate", "veterinary", "vet")):
+            return "veterinary_certificate"
+        if any(token in name for token in ("sanitary certificate", "sanitary_certificate", "sanitary")):
+            return "sanitary_certificate"
+        if any(token in name for token in ("radiation certificate", "radiation_certificate")):
+            return "radiation_certificate"
+        if any(token in name for token in ("certificate_of_origin", "certificate of origin", "coo")):
             return "certificate_of_origin"
         if any(token in name for token in ("lc_", "letter_of_credit", "mt700", "bank guarantee", "standby letter of credit", "standby lc", "sblc")) or name.endswith("_lc.pdf"):
             return "letter_of_credit"
