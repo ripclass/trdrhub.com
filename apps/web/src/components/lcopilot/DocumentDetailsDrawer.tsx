@@ -39,6 +39,10 @@ export interface DocumentForDrawer {
   extractionStatus?: string;
   issuesCount: number;
   extractedFields: Record<string, any>;
+  warningReasons?: string[];
+  reviewReasons?: string[];
+  criticalFieldStates?: Record<string, any>;
+  fieldDiagnostics?: Record<string, any>;
   ocrConfidence?: number;
   sourceFormat?: string;
   isElectronicBL?: boolean;
@@ -271,6 +275,10 @@ export function DocumentDetailsDrawer({
   const fieldEntries = Object.entries(extractedFields).filter(([key]) =>
     shouldShowField(key)
   );
+  const warningReasons = (document.warningReasons || []).filter(Boolean);
+  const reviewReasons = (document.reviewReasons || []).filter(Boolean);
+  const criticalFieldStates = document.criticalFieldStates || {};
+  const fieldDiagnostics = document.fieldDiagnostics || {};
 
   const extractionStatus = (document.extractionStatus ?? '').toLowerCase();
   const extractionModeLabel = (() => {
@@ -457,6 +465,75 @@ export function DocumentDetailsDrawer({
 
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-6 pb-6">
+            {(warningReasons.length > 0 || reviewReasons.length > 0) && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Warning & Review Reasons
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(new Set([...warningReasons, ...reviewReasons])).map((reason, idx) => (
+                    <Badge key={`reason-${idx}`} variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
+                      {String(reason).replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Object.keys(criticalFieldStates).length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Critical Field States
+                </h4>
+                <div className="space-y-2">
+                  {Object.entries(criticalFieldStates).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between p-3 rounded-md bg-muted/30">
+                      <span className="text-sm font-medium">{humanizeFieldName(key)}</span>
+                      <Badge variant="outline" className="text-xs">{String(value)}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Object.keys(fieldDiagnostics).length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Field Diagnostics
+                </h4>
+                <div className="space-y-3">
+                  {Object.entries(fieldDiagnostics).map(([key, diag]) => {
+                    const d = (diag && typeof diag === 'object') ? (diag as Record<string, any>) : {};
+                    const state = d.state ? String(d.state) : 'unknown';
+                    const evidence = d.evidence_snippet ? String(d.evidence_snippet) : '';
+                    const reasonCodes = Array.isArray(d.reason_codes) ? d.reason_codes : [];
+                    return (
+                      <div key={key} className="p-3 rounded-md bg-muted/30 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium">{humanizeFieldName(key)}</span>
+                          <Badge variant="outline" className="text-xs">{state.replace(/_/g, ' ')}</Badge>
+                        </div>
+                        {reasonCodes.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {reasonCodes.map((code: any, idx: number) => (
+                              <Badge key={`${key}-code-${idx}`} variant="outline" className="text-xs">
+                                {String(code).replace(/_/g, ' ')}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {evidence && (
+                          <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                            {evidence}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {fieldEntries.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />

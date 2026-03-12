@@ -815,6 +815,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           reviewReasons,
         }),
         reviewReasons,
+        criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
+        fieldDiagnostics: docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {},
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
