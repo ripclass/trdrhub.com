@@ -1128,26 +1128,68 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const requirementChecklist = useMemo(() => {
     const requiredConditions = lcRequirementSource;
+    const humanizeIssueReason = (reason: string): string => {
+      const key = String(reason || '').trim();
+      const map: Record<string, string> = {
+        LOW_CONFIDENCE_CRITICAL: 'Critical fields need manual review',
+        critical_bin_tin_low_confidence: 'Exporter BIN/TIN confidence is low',
+        OCR_AUTH_ERROR: 'Text extraction confidence is limited',
+        LOW_CONFIDENCE: 'Extraction confidence is low',
+        REVIEW_REQUIRED: 'Manual review required',
+      };
+      return map[key] || key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+    };
+
     const normalizedDocs = documents.map((doc) => ({
       ...doc,
       normalizedType: String(doc.typeKey || '').toLowerCase(),
-      warningReasons: ((doc as any).warningReasons ?? []) as string[],
-      reviewReasons: ((doc as any).reviewReasons ?? []) as string[],
+      warningReasons: (((doc as any).warningReasons ?? []) as string[]).map(humanizeIssueReason),
+      reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map(humanizeIssueReason),
     }));
 
     const requirementRules = [
-      { key: 'commercial_invoice', label: 'Commercial Invoice', matchers: ['commercial invoice', 'signed commercial invoice', 'invoice'], docTypes: ['commercial_invoice'] },
-      { key: 'bill_of_lading', label: 'Ocean Bill of Lading', matchers: ['bill of lading', 'ocean b/l', 'full set clean on board'], docTypes: ['bill_of_lading'] },
-      { key: 'packing_list', label: 'Packing List', matchers: ['packing list'], docTypes: ['packing_list'] },
-      { key: 'certificate_of_origin', label: 'Certificate of Origin', matchers: ['certificate of origin', 'country of origin'], docTypes: ['certificate_of_origin'] },
-      { key: 'insurance_certificate', label: 'Insurance Certificate', matchers: ['insurance policy', 'insurance certificate', 'icc (a)', 'war & srcc'], docTypes: ['insurance_certificate', 'insurance_policy'] },
-      { key: 'beneficiary_certificate', label: 'Beneficiary Certificate', matchers: ['beneficiary certificate', 'beneficiary statement'], docTypes: ['beneficiary_certificate'] },
-      { key: 'weight_list', label: 'Weight List', matchers: ['weight list', 'gross/net weight'], docTypes: ['weight_list', 'weight_certificate'] },
+      {
+        key: 'commercial_invoice',
+        label: 'Commercial Invoice',
+        matchers: [/\bcommercial invoice\b/i, /\bsigned commercial invoice\b/i],
+        docTypes: ['commercial_invoice'],
+      },
+      {
+        key: 'bill_of_lading',
+        label: 'Ocean Bill of Lading',
+        matchers: [/\bbill of lading\b/i, /\bocean b\/l\b/i, /\bfull set clean on board\b/i],
+        docTypes: ['bill_of_lading'],
+      },
+      {
+        key: 'packing_list',
+        label: 'Packing List',
+        matchers: [/\bpacking list\b/i],
+        docTypes: ['packing_list'],
+      },
+      {
+        key: 'certificate_of_origin',
+        label: 'Certificate of Origin',
+        matchers: [/\bcertificate of origin\b/i, /\bcountry of origin certificate\b/i],
+        docTypes: ['certificate_of_origin'],
+      },
+      {
+        key: 'insurance_certificate',
+        label: 'Insurance Certificate',
+        matchers: [/\binsurance policy\b/i, /\binsurance certificate\b/i, /\bicc \(a\)\b/i, /\bwar\b/i, /\bsrcc\b/i],
+        docTypes: ['insurance_certificate', 'insurance_policy'],
+      },
+      {
+        key: 'beneficiary_certificate',
+        label: 'Beneficiary Certificate',
+        matchers: [/\bbeneficiary certificate\b/i, /\bbeneficiary statement\b/i],
+        docTypes: ['beneficiary_certificate'],
+      },
     ];
 
     const items = requirementRules
-      .filter((rule) => requiredConditions.some((condition) => rule.matchers.some((matcher) => condition.toLowerCase().includes(matcher))))
       .map((rule) => {
+        const requirementText = requiredConditions.find((condition) => rule.matchers.some((matcher) => matcher.test(condition))) || null;
+        if (!requirementText) return null;
         const matchedDoc = normalizedDocs.find((doc) => rule.docTypes.includes(doc.normalizedType));
         const issues = matchedDoc
           ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
@@ -1165,9 +1207,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           status,
           matchedDoc,
           issues,
-          requirementText: requiredConditions.find((condition) => rule.matchers.some((matcher) => condition.toLowerCase().includes(matcher))) || rule.label,
+          requirementText,
         };
-      });
+      })
+      .filter(Boolean) as Array<{
+        key: string;
+        label: string;
+        status: 'found' | 'missing' | 'review' | 'error';
+        matchedDoc: (typeof normalizedDocs)[number] | undefined;
+        issues: string[];
+        requirementText: string;
+      }>;
 
     return items;
   }, [documents, lcRequirementSource]);
