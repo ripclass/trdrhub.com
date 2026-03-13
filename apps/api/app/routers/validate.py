@@ -3806,6 +3806,8 @@ def _maybe_promote_document_type_from_content(
     filename: Optional[str],
     current_type: str,
     extracted_text: Optional[str],
+    required_document_types: Optional[List[str]] = None,
+    has_primary_lc_anchor: bool = False,
 ) -> Dict[str, Any]:
     """
     Use OCR/text content to promote weak filename-based guesses.
@@ -3821,6 +3823,7 @@ def _maybe_promote_document_type_from_content(
         "content_classification": None,
         "promoted": False,
     }
+    required_doc_set = {str(item).strip().lower() for item in (required_document_types or []) if str(item).strip()}
 
     if not extracted_text or len((extracted_text or "").strip()) < 50:
         return result
@@ -3832,6 +3835,25 @@ def _maybe_promote_document_type_from_content(
     }
 
     explicit_type = _explicit_title_document_type(extracted_text)
+    if current_type in weak_types and explicit_type and explicit_type in required_doc_set and explicit_type != "letter_of_credit":
+        result["document_type"] = explicit_type
+        result["promoted"] = True
+        result["content_classification"] = {
+            "document_type": explicit_type,
+            "confidence": 0.98,
+            "confidence_level": "high",
+            "is_reliable": True,
+            "reasoning": "Explicit document-title/header markers matched a document required by the resolved LC.",
+            "matched_patterns": ["explicit_document_title_markers", "lc_required_doc_prior"],
+        }
+        logger.info(
+            "Promoted document type from explicit OCR title + LC requirement for %s: %s -> %s",
+            filename,
+            current_type,
+            explicit_type,
+        )
+        return result
+
     if current_type in weak_types and explicit_type and explicit_type != "letter_of_credit":
         result["document_type"] = explicit_type
         result["promoted"] = True
@@ -3852,6 +3874,23 @@ def _maybe_promote_document_type_from_content(
         return result
 
     if current_type in weak_types and explicit_type == "letter_of_credit" and _looks_like_letter_of_credit_text(extracted_text):
+        if has_primary_lc_anchor:
+            result["document_type"] = "duplicate_lc_candidate"
+            result["promoted"] = True
+            result["content_classification"] = {
+                "document_type": "duplicate_lc_candidate",
+                "confidence": 0.86,
+                "confidence_level": "high",
+                "is_reliable": True,
+                "reasoning": "Strong LC-like structure detected, but a primary LC anchor already exists for this job.",
+                "matched_patterns": ["strong_lc_text_markers", "explicit_document_title_markers", "existing_lc_anchor"],
+            }
+            logger.info(
+                "Demoted extra LC-like document for %s: %s -> duplicate_lc_candidate because primary LC already exists",
+                filename,
+                current_type,
+            )
+            return result
         result["document_type"] = "letter_of_credit"
         result["promoted"] = True
         result["content_classification"] = {
@@ -4090,6 +4129,9 @@ async def _build_document_context(
     logger.info(f"Parallel OCR complete: {len(extracted_texts)} files in {ocr_elapsed:.2f}s")
     # ═══════════════════════════════════════════════════════════════════════════
 
+    lc_required_document_types = _infer_required_document_types_from_lc(context.get("lc") or {})
+    primary_lc_anchor_seen = False
+
     for idx, upload_file in enumerate(files_list):
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
         content_type = getattr(upload_file, "content_type", "unknown")
@@ -4139,6 +4181,8 @@ async def _build_document_context(
             filename=filename,
             current_type=document_type,
             extracted_text=extracted_text,
+            required_document_types=lc_required_document_types,
+            has_primary_lc_anchor=primary_lc_anchor_seen,
         )
         doc_info["content_classification"] = content_type_resolution.get("content_classification")
         if content_type_resolution.get("promoted"):
@@ -4148,6 +4192,11 @@ async def _build_document_context(
             doc_info["document_type_resolution"] = "content_promoted"
         else:
             doc_info["document_type_resolution"] = "tag_or_filename"
+
+        if document_type == "letter_of_credit":
+            primary_lc_anchor_seen = True
+        elif document_type == "duplicate_lc_candidate":
+            doc_info.setdefault("review_flags", []).append("extra_lc_like_document")
 
         launch_pipeline_result: Optional[Dict[str, Any]] = None
         launch_pipeline = get_launch_extraction_pipeline()

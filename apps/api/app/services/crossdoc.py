@@ -57,6 +57,8 @@ DEFAULT_LABELS = {
     "organic_certificate": "Organic Certificate",
     "warehouse_receipt": "Warehouse Receipt",
     "cargo_manifest": "Cargo Manifest",
+    "duplicate_lc_candidate": "Duplicate LC Candidate",
+    "lc_related_document": "LC-Related Document",
     "supporting_document": "Supporting Document",
 }
 
