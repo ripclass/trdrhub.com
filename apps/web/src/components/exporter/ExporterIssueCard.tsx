@@ -149,6 +149,33 @@ const BUSINESS_IMPACT = {
   },
 } as const;
 
+const COMPLIANCE_IMPACT = {
+  critical: {
+    label: 'Compliance Hold',
+    description: 'Internal compliance review required before proceeding',
+    color: 'bg-sky-700 text-white',
+    Icon: ShieldAlert,
+  },
+  major: {
+    label: 'Compliance Alert',
+    description: 'Escalate to internal compliance review',
+    color: 'bg-sky-600 text-white',
+    Icon: ShieldAlert,
+  },
+  medium: {
+    label: 'Manual Compliance Review',
+    description: 'Review required before submission decision',
+    color: 'bg-sky-100 text-sky-900',
+    Icon: ShieldAlert,
+  },
+  minor: {
+    label: 'Compliance Note',
+    description: 'Monitor within internal compliance workflow',
+    color: 'bg-sky-50 text-sky-800',
+    Icon: ShieldAlert,
+  },
+} as const;
+
 const severityTokens = {
   critical: {
     label: 'Critical',
@@ -233,7 +260,10 @@ export function ExporterIssueCard({
   };
 
   // Get business impact for this severity
-  const impact = BUSINESS_IMPACT[normalizedSeverity] ?? BUSINESS_IMPACT.minor;
+  const isComplianceIssue = issue.bucket === 'Compliance / Risk Review';
+  const impact = isComplianceIssue
+    ? COMPLIANCE_IMPACT[normalizedSeverity] ?? COMPLIANCE_IMPACT.minor
+    : BUSINESS_IMPACT[normalizedSeverity] ?? BUSINESS_IMPACT.minor;
   const ImpactIcon = impact.Icon;
   
   // Check if this is an AI-detected issue
@@ -370,11 +400,11 @@ export function ExporterIssueCard({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">LC Basis / Clause</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{isComplianceIssue ? 'Screening Basis' : 'LC Basis / Clause'}</p>
             <p className="text-sm mt-1">{lcBasis}</p>
           </div>
           <div className="rounded-md border p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Examiner Note</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{isComplianceIssue ? 'Compliance Note' : 'Examiner Note'}</p>
             <p className="text-sm mt-1">{examinerNote}</p>
           </div>
         </div>

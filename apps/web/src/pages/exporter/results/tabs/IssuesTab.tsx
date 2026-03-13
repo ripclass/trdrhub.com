@@ -18,6 +18,11 @@ interface SeverityCounts {
   minor: number;
 }
 
+interface BucketCounts {
+  compliance: number;
+  documentary: number;
+}
+
 interface IssuesTabProps {
   hasIssueCards: boolean;
   issueCards: IssueCard[];
@@ -72,6 +77,17 @@ export function IssuesTab({
     return { documentary, complianceRisk };
   }, [filteredIssueCards]);
 
+  const bucketCounts = useMemo<BucketCounts>(() => {
+    let compliance = 0;
+    let documentary = 0;
+    issueCards.forEach((card) => {
+      const bucket = (card as any).bucket || "Document-Level Discrepancies";
+      if (bucket === "Compliance / Risk Review") compliance += 1;
+      else documentary += 1;
+    });
+    return { compliance, documentary };
+  }, [issueCards]);
+
   if (!hasIssueCards) {
     return (
       <>
@@ -98,11 +114,11 @@ export function IssuesTab({
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Issue Review Summary</CardTitle>
           <p className="text-sm text-muted-foreground">
-            The following findings are organized for documentary rectification and compliance escalation. Resolve documentary discrepancies before presentation and route compliance alerts to internal review.
+            Documentary findings are separated from compliance/risk alerts. Resolve documentary discrepancies before presentation and route compliance alerts to internal review instead of treating them as ordinary LC discrepancies.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-5">
             <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">High-likelihood discrepancy</p>
               <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
@@ -114,6 +130,10 @@ export function IssuesTab({
             <div className="p-3 rounded-lg bg-muted/30 border border-muted">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review required</p>
               <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-sky-500/5 border border-sky-500/20">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Compliance alerts</p>
+              <p className="text-2xl font-bold text-sky-700">{bucketCounts.compliance}</p>
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
