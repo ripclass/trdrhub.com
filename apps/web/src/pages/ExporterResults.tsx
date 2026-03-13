@@ -1272,6 +1272,32 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return rank[a.priority] - rank[b.priority];
     });
   }, [requirementChecklist, issueCards]);
+  const customsPackReadiness = useMemo(() => {
+    const blockers = requirementChecklist.filter((item) => item.status === 'missing');
+    const reviews = requirementChecklist.filter((item) => item.status === 'review');
+    const ownerBuckets = {
+      beneficiary: 0,
+      thirdParty: 0,
+      mixed: 0,
+      compliance: 0,
+      waiver: 0,
+    };
+    issueCards.forEach((issue) => {
+      const owner = String((issue as any).fixOwner || '').toLowerCase();
+      if (owner.includes('beneficiary')) ownerBuckets.beneficiary += 1;
+      else if (owner.includes('third')) ownerBuckets.thirdParty += 1;
+      else if (owner.includes('mixed')) ownerBuckets.mixed += 1;
+      else if (owner.includes('compliance')) ownerBuckets.compliance += 1;
+      else if (owner.includes('waiver')) ownerBuckets.waiver += 1;
+    });
+    const status = blockers.length > 0 ? 'not_ready' : reviews.length > 0 || issueCards.length > 0 ? 'review_required' : 'ready';
+    const summary = blockers.length > 0
+      ? 'Not ready for clean presentation until missing required documents are addressed.'
+      : reviews.length > 0 || issueCards.length > 0
+      ? 'Presentation requires review or remediation before it should be treated as clean.'
+      : 'Document set appears ready for clean presentation on current review.';
+    return { status, summary, blockers, reviews, ownerBuckets };
+  }, [requirementChecklist, issueCards]);
   const readinessStatus = useMemo(() => {
     if (!validationState) return null;
     if (validationState.status === "compliant") return "success";
@@ -2226,6 +2252,50 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </div>
                 </div>
+
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-lg border border-border/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Submission Readiness</p>
+                      <p className="text-lg font-semibold">
+                        {customsPackReadiness.status === 'ready' ? 'Ready for presentation' : customsPackReadiness.status === 'review_required' ? 'Review before presentation' : 'Not ready for presentation'}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2">{customsPackReadiness.summary}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Blockers</p>
+                      <p className="text-2xl font-semibold">{customsPackReadiness.blockers.length}</p>
+                      <p className="text-sm text-muted-foreground mt-2">Missing required documents that block clean submission.</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Review Queue</p>
+                      <p className="text-2xl font-semibold">{customsPackReadiness.reviews.length + actionEngine.length}</p>
+                      <p className="text-sm text-muted-foreground mt-2">Items that still need review, amendment, waiver, or compliance handling.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-5">
+                    <div className="rounded-lg border border-border/60 p-3 text-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Beneficiary</p>
+                      <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.beneficiary}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 text-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Third Party</p>
+                      <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.thirdParty}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 text-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Mixed</p>
+                      <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.mixed}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 text-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Compliance</p>
+                      <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.compliance}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 text-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Waiver</p>
+                      <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.waiver}</p>
+                    </div>
+                  </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
