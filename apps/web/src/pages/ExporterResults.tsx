@@ -2139,6 +2139,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               extractionStatus: document.extractionStatus,
                               issuesCount: document.issuesCount,
                               extractedFields: document.extractedFields,
+                              warningReasons: (document as any).warningReasons ?? [],
+                              reviewReasons: (document as any).reviewReasons ?? [],
+                              criticalFieldStates: (document as any).criticalFieldStates ?? {},
+                              fieldDiagnostics: (document as any).fieldDiagnostics ?? {},
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
@@ -2164,12 +2168,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </div>
                     )}
                     {warningReasons.length > 0 && (
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {warningReasons.map((reason, idx) => (
-                          <Badge key={`${document.id}-reason-${idx}`} variant="outline" className="text-xs border-amber-500/30 text-amber-700 bg-amber-500/5">
-                            {reason}
-                          </Badge>
-                        ))}
+                      <div className="mb-3 space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          {warningReasons.map((reason, idx) => (
+                            <Badge key={`${document.id}-reason-${idx}`} variant="outline" className="text-xs border-amber-500/30 text-amber-700 bg-amber-500/5">
+                              {reason}
+                            </Badge>
+                          ))}
+                        </div>
+                        <p className="text-xs text-amber-700">
+                          {warningReasons[0]}
+                        </p>
                       </div>
                     )}
                     {hasFieldEntries ? (

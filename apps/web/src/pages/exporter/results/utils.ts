@@ -160,32 +160,51 @@ export const formatAsBulletPoints = (text: any): string[] => {
  */
 export const formatConditions = (conditions: any): string[] => {
   if (!conditions) return [];
-  
-  // Handle single string (pipe or semicolon separated)
+
+  const splitConditionString = (value: string): string[] => {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    // Handle stringified Python/JSON lists like: ['a', 'b'] or ["a", "b"]
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) return [];
+      const parsed = inner
+        .split(/',\s*'|",\s*"|',\s*"|",\s*'/)
+        .map((part) => part.replace(/^['"]|['"]$/g, '').trim())
+        .filter(Boolean);
+      if (parsed.length > 0) return parsed;
+    }
+
+    const delimiters = ['|', ';', '\n'];
+    for (const delimiter of delimiters) {
+      if (trimmed.includes(delimiter)) {
+        const parts = trimmed
+          .split(delimiter)
+          .map((s: string) => s.trim().replace(/^['"]|['"]$/g, ''))
+          .filter((s: string) => s.length > 0);
+        if (parts.length > 1) return parts;
+      }
+    }
+
+    return [trimmed.replace(/^['"]|['"]$/g, '')];
+  };
+
   if (typeof conditions === "string") {
-    const delimiter = conditions.includes("|") ? "|" : 
-                      conditions.includes(";") ? ";" : "\n";
-    return conditions
-      .split(delimiter)
-      .map((s: string) => s.trim())
-      .filter((s: string) => s.length > 0);
+    return splitConditionString(conditions);
   }
-  
+
   if (!Array.isArray(conditions)) return [];
-  
+
   return conditions
-    .map((c: any) => {
-      // Handle plain strings
-      if (typeof c === "string") return c.trim();
-      // Handle objects with text property
-      if (c && typeof c.text === "string") return c.text.trim();
-      // Handle objects with value property
-      if (c && typeof c.value === "string") return c.value.trim();
-      // Handle objects with condition property
-      if (c && typeof c.condition === "string") return c.condition.trim();
-      return null;
+    .flatMap((c: any) => {
+      if (typeof c === "string") return splitConditionString(c);
+      if (c && typeof c.text === "string") return splitConditionString(c.text);
+      if (c && typeof c.value === "string") return splitConditionString(c.value);
+      if (c && typeof c.condition === "string") return splitConditionString(c.condition);
+      return [];
     })
-    .filter((c: string | null): c is string => c !== null && c.length > 0);
+    .filter((c: string) => c.length > 0);
 };
 
 /**
