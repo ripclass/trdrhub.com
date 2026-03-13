@@ -3507,6 +3507,90 @@ def _build_document_summaries(
     return summaries
 
 
+def _maybe_promote_document_type_from_content(
+    *,
+    filename: Optional[str],
+    current_type: str,
+    extracted_text: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Use OCR/text content to promote weak filename-based guesses.
+
+    Important: this is intentionally conservative.
+    We only override the incoming type when the current type is generic/weak
+    (for example `supporting_document`) and content classification is reliable.
+    This avoids trampling explicit user choices while still rescuing uploads like
+    `img123.pdf` that actually contain an LC/invoice/B/L/etc.
+    """
+    result: Dict[str, Any] = {
+        "document_type": current_type,
+        "content_classification": None,
+        "promoted": False,
+    }
+
+    if not extracted_text or len((extracted_text or "").strip()) < 50:
+        return result
+
+    try:
+        from app.models import DocumentType
+        from app.services.document_intelligence import get_doc_type_classifier
+    except Exception as exc:
+        logger.debug("Content classifier unavailable for %s: %s", filename, exc)
+        return result
+
+    fallback_type = None
+    try:
+        fallback_type = DocumentType(current_type)
+    except Exception:
+        fallback_type = DocumentType.SUPPORTING_DOCUMENT
+
+    try:
+        classifier = get_doc_type_classifier()
+        classification = classifier.classify(
+            text=extracted_text,
+            filename=filename,
+            fallback_type=fallback_type,
+        )
+    except Exception as exc:
+        logger.warning("Content classification failed for %s: %s", filename, exc)
+        return result
+
+    classification_payload = {
+        "document_type": classification.document_type.value,
+        "confidence": classification.confidence,
+        "confidence_level": classification.confidence_level.value,
+        "is_reliable": classification.is_reliable,
+        "reasoning": classification.reasoning,
+        "matched_patterns": classification.matched_patterns,
+    }
+    result["content_classification"] = classification_payload
+
+    weak_types = {
+        "supporting_document",
+        "other",
+        "unknown",
+    }
+
+    classified_type = classification.document_type.value
+    if (
+        classification.is_reliable
+        and classified_type
+        and classified_type != current_type
+        and current_type in weak_types
+    ):
+        result["document_type"] = classified_type
+        result["promoted"] = True
+        logger.info(
+            "Promoted document type from content for %s: %s -> %s (confidence=%.2f)",
+            filename,
+            current_type,
+            classified_type,
+            classification.confidence,
+        )
+
+    return result
+
+
 async def _build_document_context(
     files_list: List[Any],
     document_tags: Optional[Dict[str, Any]] = None,
@@ -3691,6 +3775,20 @@ async def _build_document_context(
             continue
         
         logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
+
+        content_type_resolution = _maybe_promote_document_type_from_content(
+            filename=filename,
+            current_type=document_type,
+            extracted_text=extracted_text,
+        )
+        doc_info["content_classification"] = content_type_resolution.get("content_classification")
+        if content_type_resolution.get("promoted"):
+            doc_info["original_document_type"] = document_type
+            document_type = str(content_type_resolution.get("document_type") or document_type)
+            doc_info["document_type"] = document_type
+            doc_info["document_type_resolution"] = "content_promoted"
+        else:
+            doc_info["document_type_resolution"] = "tag_or_filename"
 
         launch_pipeline_result: Optional[Dict[str, Any]] = None
         launch_pipeline = get_launch_extraction_pipeline()
