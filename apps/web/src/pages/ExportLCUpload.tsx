@@ -761,7 +761,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       setShowDocTypeErrors(false);
     }
 
-    const files = completedFiles.map(f => f.file);
+    const files = lcIntake.file ? [lcIntake.file, ...completedFiles.map(f => f.file)] : completedFiles.map(f => f.file);
 
     const resolveFinalDocumentType = (file: UploadedFile): string => {
       const normalizedManual = normalizeDocumentType(file.documentType);
@@ -781,6 +781,9 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
     // Create document tags mapping
     const documentTags: Record<string, string> = {};
+    if (lcIntake.file) {
+      documentTags[lcIntake.file.name] = DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT;
+    }
     completedFiles.forEach(file => {
       const finalDocumentType = resolveFinalDocumentType(file);
       documentTags[file.name] = finalDocumentType;

@@ -3682,6 +3682,36 @@ def _looks_like_letter_of_credit_text(extracted_text: Optional[str]) -> bool:
     return matched >= 2
 
 
+def _explicit_title_document_type(extracted_text: Optional[str]) -> Optional[str]:
+    if not extracted_text:
+        return None
+    normalized = re.sub(r"\s+", " ", str(extracted_text or "").strip().lower())
+    if len(normalized) < 20:
+        return None
+
+    title_rules = [
+        ("letter_of_credit", ["documentary credit number", "letter of credit", "documents required", "additional conditions"]),
+        ("commercial_invoice", ["commercial invoice", "invoice no", "total invoice value"]),
+        ("bill_of_lading", ["bill of lading", "b/l no", "clean on board"]),
+        ("packing_list", ["packing list", "marks & numbers", "packing list no"]),
+        ("beneficiary_certificate", ["beneficiary certificate", "we, beneficiary", "hereby certify that"]),
+        ("weight_list", ["weight list", "gross weight", "net weight"]),
+        ("insurance_certificate", ["insurance certificate", "insured value", "cover:"]),
+        ("certificate_of_origin", ["certificate of origin", "country of origin"]),
+    ]
+
+    for canonical_type, markers in title_rules:
+        if canonical_type == "weight_list":
+            if "weight list" in normalized and ("gross weight" in normalized or "net weight" in normalized):
+                return canonical_type
+            continue
+        if sum(1 for marker in markers if marker in normalized) >= 2:
+            return canonical_type
+        if markers[0] in normalized[:220]:
+            return canonical_type
+    return None
+
+
 def _supporting_guess_to_canonical_type(subtype: Optional[str], family: Optional[str]) -> Optional[str]:
     subtype_key = str(subtype or "").strip().lower().replace("-", "_").replace(" ", "_")
     family_key = str(family or "").strip().lower()
@@ -3801,7 +3831,27 @@ def _maybe_promote_document_type_from_content(
         "unknown",
     }
 
-    if current_type in weak_types and _looks_like_letter_of_credit_text(extracted_text):
+    explicit_type = _explicit_title_document_type(extracted_text)
+    if current_type in weak_types and explicit_type and explicit_type != "letter_of_credit":
+        result["document_type"] = explicit_type
+        result["promoted"] = True
+        result["content_classification"] = {
+            "document_type": explicit_type,
+            "confidence": 0.96,
+            "confidence_level": "high",
+            "is_reliable": True,
+            "reasoning": "Explicit document-title/header markers detected directly from OCR text.",
+            "matched_patterns": ["explicit_document_title_markers"],
+        }
+        logger.info(
+            "Promoted document type from explicit OCR title for %s: %s -> %s",
+            filename,
+            current_type,
+            explicit_type,
+        )
+        return result
+
+    if current_type in weak_types and explicit_type == "letter_of_credit" and _looks_like_letter_of_credit_text(extracted_text):
         result["document_type"] = "letter_of_credit"
         result["promoted"] = True
         result["content_classification"] = {
@@ -3810,7 +3860,7 @@ def _maybe_promote_document_type_from_content(
             "confidence_level": "high",
             "is_reliable": True,
             "reasoning": "Strong LC/MT700 textual markers detected directly from OCR text.",
-            "matched_patterns": ["strong_lc_text_markers"],
+            "matched_patterns": ["strong_lc_text_markers", "explicit_document_title_markers"],
         }
         logger.info(
             "Promoted document type from strong LC markers for %s: %s -> letter_of_credit",
