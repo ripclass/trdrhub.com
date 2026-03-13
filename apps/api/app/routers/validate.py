@@ -3532,6 +3532,95 @@ def _looks_like_letter_of_credit_text(extracted_text: Optional[str]) -> bool:
     return matched >= 2
 
 
+def _supporting_guess_to_canonical_type(subtype: Optional[str], family: Optional[str]) -> Optional[str]:
+    subtype_key = str(subtype or "").strip().lower().replace("-", "_").replace(" ", "_")
+    family_key = str(family or "").strip().lower()
+
+    subtype_map = {
+        "bill_of_lading": "bill_of_lading",
+        "waybill": "air_waybill",
+        "awb": "air_waybill",
+        "packing_list": "packing_list",
+        "weight_list": "weight_list",
+        "weight_certificate": "weight_certificate",
+        "commercial_invoice": "commercial_invoice",
+        "invoice": "commercial_invoice",
+        "certificate_of_origin": "certificate_of_origin",
+        "origin": "certificate_of_origin",
+        "insurance": "insurance_certificate",
+        "insurance_policy": "insurance_policy",
+        "insurance_certificate": "insurance_certificate",
+        "inspection": "inspection_certificate",
+        "inspection_certificate": "inspection_certificate",
+        "analysis": "analysis_certificate",
+        "analysis_certificate": "analysis_certificate",
+        "test_report": "lab_test_report",
+        "quality": "quality_certificate",
+        "quality_certificate": "quality_certificate",
+        "sgs": "sgs_certificate",
+        "intertek": "intertek_certificate",
+        "bureau_veritas": "bureau_veritas_certificate",
+        "phytosanitary": "phytosanitary_certificate",
+        "fumigation": "fumigation_certificate",
+        "health_certificate": "health_certificate",
+        "beneficiary_certificate": "beneficiary_certificate",
+        "beneficiary_statement": "beneficiary_certificate",
+        "conformity": "conformity_certificate",
+        "conformity_certificate": "conformity_certificate",
+        "halal": "halal_certificate",
+        "kosher": "kosher_certificate",
+        "organic": "organic_certificate",
+        "bank_guarantee": "letter_of_credit",
+        "standby_letter_of_credit": "letter_of_credit",
+    }
+    if subtype_key in subtype_map:
+        return subtype_map[subtype_key]
+
+    family_map = {
+        "transport_document": "bill_of_lading",
+        "inspection_testing_quality": "inspection_certificate",
+        "origin_customs_regulatory": "certificate_of_origin",
+        "insurance_compliance_special_certificates": "insurance_certificate",
+        "commercial_payment_instruments": "commercial_invoice",
+        "lc_financial_undertakings": "letter_of_credit",
+    }
+    return family_map.get(family_key)
+
+
+def _maybe_promote_supporting_document_from_known_trade_set(
+    *,
+    filename: Optional[str],
+    extracted_text: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    try:
+        from app.services.extraction.launch_pipeline import _guess_supporting_document_subtype
+    except Exception as exc:
+        logger.debug("Supporting subtype guess unavailable for %s: %s", filename, exc)
+        return None
+
+    guess = _guess_supporting_document_subtype(
+        filename=filename or "",
+        extracted_text=extracted_text or "",
+    ) or {}
+    confidence = float(guess.get("confidence") or 0.0)
+    subtype = guess.get("subtype")
+    family = guess.get("family")
+    canonical_type = _supporting_guess_to_canonical_type(subtype, family)
+    if not canonical_type or confidence < 0.55:
+        return None
+
+    return {
+        "document_type": canonical_type,
+        "confidence": confidence,
+        "confidence_level": "medium" if confidence < 0.75 else "high",
+        "is_reliable": True,
+        "reasoning": "Known trade-document subtype inferred from supporting-document classifier over OCR text.",
+        "matched_patterns": list(guess.get("reasons") or []),
+        "supporting_subtype_guess": subtype,
+        "supporting_family_guess": family,
+    }
+
+
 def _maybe_promote_document_type_from_content(
     *,
     filename: Optional[str],
@@ -3579,6 +3668,33 @@ def _maybe_promote_document_type_from_content(
             current_type,
         )
         return result
+
+    if current_type in weak_types:
+        supporting_promotion = _maybe_promote_supporting_document_from_known_trade_set(
+            filename=filename,
+            extracted_text=extracted_text,
+        )
+        if supporting_promotion:
+            result["document_type"] = str(supporting_promotion.get("document_type") or current_type)
+            result["promoted"] = True
+            result["content_classification"] = {
+                "document_type": supporting_promotion.get("document_type"),
+                "confidence": supporting_promotion.get("confidence"),
+                "confidence_level": supporting_promotion.get("confidence_level"),
+                "is_reliable": supporting_promotion.get("is_reliable"),
+                "reasoning": supporting_promotion.get("reasoning"),
+                "matched_patterns": supporting_promotion.get("matched_patterns") or [],
+                "supporting_subtype_guess": supporting_promotion.get("supporting_subtype_guess"),
+                "supporting_family_guess": supporting_promotion.get("supporting_family_guess"),
+            }
+            logger.info(
+                "Promoted supporting document from known trade set for %s: %s -> %s (confidence=%.2f)",
+                filename,
+                current_type,
+                result["document_type"],
+                float(supporting_promotion.get("confidence") or 0.0),
+            )
+            return result
 
     try:
         from app.models import DocumentType
