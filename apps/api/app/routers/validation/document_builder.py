@@ -16,6 +16,7 @@ from .utilities import (
     normalize_doc_match_key,
     strip_extension,
     filter_user_facing_fields,
+    resolve_structured_document_type,
 )
 from .issue_resolver import (
     resolve_issue_stats,
@@ -46,9 +47,7 @@ def build_document_summaries(
 
     def _build_summary_from_detail(detail: Dict[str, Any], index: int) -> Dict[str, Any]:
         filename = detail.get("filename") or detail.get("name")
-        doc_type = detail.get("document_type") or infer_document_type_from_name(filename, index)
-        # Normalize doc_type to canonical form (e.g., "Bill of Lading" -> "bill_of_lading")
-        normalized_type = normalize_doc_type_key(doc_type) or doc_type or "supporting_document"
+        normalized_type = resolve_structured_document_type(detail, filename=filename, index=index) or "supporting_document"
         detail_id = detail.get("id") or str(uuid4())
         stats = resolve_issue_stats(
             detail_id,
@@ -221,7 +220,7 @@ def build_documents_section(
 ) -> List[Dict[str, Any]]:
     """Build the documents section for structured output."""
     section: List[Dict[str, Any]] = []
-    for doc in documents:
+    for index, doc in enumerate(documents):
         doc_id = doc.get("id") or str(uuid4())
         extraction_status = (
             doc.get("extractionStatus")
@@ -229,16 +228,22 @@ def build_documents_section(
             or doc.get("status")
             or "unknown"
         )
+        filename = doc.get("name") or doc.get("filename")
+        canonical_type = resolve_structured_document_type(doc, filename=filename, index=index) or "supporting_document"
         section.append(
             {
                 "document_id": doc_id,
-                "document_type": humanize_doc_type(doc.get("documentType") or doc.get("type")),
-                "filename": doc.get("name"),
+                "document_type": canonical_type,
+                "document_type_label": humanize_doc_type(canonical_type),
+                "filename": filename,
                 "extraction_status": extraction_status,
                 "extracted_fields": filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
                 "field_details": doc.get("fieldDetails") or doc.get("field_details") or {},
                 "issues_count": issue_counts.get(doc_id, 0),
                 "day1_runtime": doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {},
+                "document_type_resolution": doc.get("document_type_resolution"),
+                "content_classification": doc.get("content_classification"),
+                "original_document_type": doc.get("original_document_type"),
             }
         )
     return section

@@ -102,7 +102,7 @@ const mapDocuments = (docs: any[] = []) => {
       documentId,
       name: filename,
       filename,
-      type: normalizeDocType(typeKey),
+      type: doc?.document_type_label ?? normalizeDocType(typeKey),
       typeKey,
       extractionStatus,
       status,

@@ -772,7 +772,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const docAny = doc as Record<string, any>;
       const documentId = String(doc.document_id ?? docAny.id ?? index);
       const filename = doc.filename ?? docAny.name ?? `Document ${index + 1}`;
-      const typeKeyRaw = doc.document_type ?? docAny.type ?? "supporting_document";
+      const typeKeyRaw = doc.document_type ?? docAny.documentType ?? docAny.type ?? "supporting_document";
       const typeKey = (typeKeyRaw || "supporting_document").toString();
       // Check multiple keys - backend sends discrepancyCount (camelCase)
       const issuesCount = Number(doc.discrepancyCount ?? doc.issues_count ?? docAny.discrepancyCount ?? docAny.issues ?? docAny.discrepancy_count ?? 0);
@@ -793,7 +793,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const parseComplete = typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete;
       const missingRequiredFields = docAny.missing_required_fields ?? [];
       const reviewReasons = docAny.review_reasons ?? docAny.reviewReasons ?? [];
-      const typeLabel = getTruthfulDocumentTypeLabel(filename, typeKey);
+      const typeLabel = safeString(doc.document_type_label ?? docAny.document_type_label ?? getTruthfulDocumentTypeLabel(filename, typeKey));
       return {
         id: documentId,
         documentId,

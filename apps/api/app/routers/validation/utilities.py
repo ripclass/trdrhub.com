@@ -104,6 +104,111 @@ def humanize_doc_type(doc_type: Optional[str]) -> str:
     return DEFAULT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
 
 
+_SUPPORTING_SUBTYPE_TO_CANONICAL = {
+    "bill_of_lading": "bill_of_lading",
+    "waybill": "air_waybill",
+    "awb": "air_waybill",
+    "packing_list": "packing_list",
+    "weight_list": "weight_list",
+    "weight_certificate": "weight_certificate",
+    "invoice": "commercial_invoice",
+    "commercial_invoice": "commercial_invoice",
+    "certificate": "supporting_document",
+    "certificate_of_origin": "certificate_of_origin",
+    "origin": "certificate_of_origin",
+    "insurance": "insurance_certificate",
+    "insurance_certificate": "insurance_certificate",
+    "insurance_policy": "insurance_policy",
+    "inspection": "inspection_certificate",
+    "inspection_certificate": "inspection_certificate",
+    "analysis": "analysis_certificate",
+    "analysis_certificate": "analysis_certificate",
+    "test_report": "lab_test_report",
+    "quality": "quality_certificate",
+    "quality_certificate": "quality_certificate",
+    "beneficiary_certificate": "beneficiary_certificate",
+    "beneficiary_statement": "beneficiary_certificate",
+    "manufacturer_certificate": "manufacturer_certificate",
+    "conformity": "conformity_certificate",
+    "conformity_certificate": "conformity_certificate",
+    "phytosanitary": "phytosanitary_certificate",
+    "fumigation": "fumigation_certificate",
+    "health_certificate": "health_certificate",
+    "halal": "halal_certificate",
+    "kosher": "kosher_certificate",
+    "organic": "organic_certificate",
+}
+
+_SUPPORTING_FAMILY_TO_CANONICAL = {
+    "transport_document": "bill_of_lading",
+    "inspection_testing_quality": "inspection_certificate",
+    "origin_customs_regulatory": "certificate_of_origin",
+    "insurance_compliance_special_certificates": "insurance_certificate",
+    "commercial_payment_instruments": "commercial_invoice",
+    "lc_financial_undertakings": "letter_of_credit",
+}
+
+
+def resolve_structured_document_type(detail: Optional[Dict[str, Any]], *, filename: Optional[str] = None, index: int = 0) -> str:
+    """Resolve the best canonical document type from a detail payload.
+
+    This is the single response-shaping truth function. It prefers explicit canonical
+    types, then content-classification promotions, then supporting subtype/family hints,
+    then weak field-signature inference, and only finally falls back to filename/index.
+    """
+    payload = detail or {}
+    raw_candidates = [
+        payload.get("document_type"),
+        payload.get("documentType"),
+        payload.get("type"),
+        payload.get("content_classification", {}).get("document_type") if isinstance(payload.get("content_classification"), dict) else None,
+        payload.get("extracted_fields", {}).get("document_type") if isinstance(payload.get("extracted_fields"), dict) else None,
+        payload.get("extracted_fields", {}).get("source_type") if isinstance(payload.get("extracted_fields"), dict) else None,
+    ]
+    for candidate in raw_candidates:
+        normalized = normalize_doc_type_key(candidate)
+        if normalized and normalized != "supporting_document":
+            return normalized
+
+    extracted_fields = payload.get("extracted_fields") if isinstance(payload.get("extracted_fields"), dict) else {}
+    subtype_candidates = [
+        payload.get("supporting_subtype_guess"),
+        payload.get("supportingSubtypeGuess"),
+        extracted_fields.get("supporting_subtype_guess"),
+        extracted_fields.get("supportingSubtypeGuess"),
+        extracted_fields.get("document_type"),
+    ]
+    for subtype in subtype_candidates:
+        normalized_subtype = normalize_doc_type_key(subtype)
+        if normalized_subtype in _SUPPORTING_SUBTYPE_TO_CANONICAL:
+            canonical = _SUPPORTING_SUBTYPE_TO_CANONICAL[normalized_subtype]
+            if canonical != "supporting_document":
+                return canonical
+
+    family_candidates = [
+        payload.get("supporting_family_guess"),
+        payload.get("supportingFamilyGuess"),
+        extracted_fields.get("supporting_family_guess"),
+        extracted_fields.get("supportingFamilyGuess"),
+    ]
+    for family in family_candidates:
+        family_key = str(family or "").strip().lower()
+        if family_key in _SUPPORTING_FAMILY_TO_CANONICAL:
+            return _SUPPORTING_FAMILY_TO_CANONICAL[family_key]
+
+    field_keys = {str(key).strip().lower() for key in extracted_fields.keys()}
+    if {"gross_weight", "net_weight"} & field_keys:
+        return "weight_list"
+    if {"packing_list_number", "total_packages", "package_count", "marks_and_numbers"} & field_keys:
+        return "packing_list"
+    if {"beneficiary_statement", "certificate_text", "certification_text"} & field_keys:
+        return "beneficiary_certificate"
+    if {"policy_number", "insured_amount", "coverage_amount"} & field_keys:
+        return "insurance_certificate"
+
+    return infer_document_type_from_name(filename, index)
+
+
 def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
     """Infer the document type using filename patterns."""
     if filename:
