@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, type ChangeEvent } from "react";
 import { useDropzone } from "react-dropzone";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,9 @@ import {
   Eye,
   Trash2,
   Plus,
-  CheckCircle
+  CheckCircle,
+  Lock,
+  Sparkles
 } from "lucide-react";
 
 interface UploadedFile {
@@ -56,6 +58,36 @@ interface UploadedFile {
   detectedConfidence?: number;
   isTradeDocument?: boolean;
   relevanceWarning?: string;
+}
+
+interface LCIntakeState {
+  status: "idle" | "uploading" | "resolved" | "invalid" | "ambiguous";
+  file: File | null;
+  message?: string;
+  continuationAllowed?: boolean;
+  isLc?: boolean;
+  jobId?: string;
+  lcSummary?: Record<string, any>;
+  lcDetection?: {
+    lc_type?: string;
+    confidence?: number;
+    reason?: string;
+    is_draft?: boolean;
+    source?: string;
+  };
+  requiredDocumentTypes?: string[];
+  documentsRequired?: string[];
+  specialConditions?: string[];
+  detectedDocuments?: Array<{ type: string; filename?: string; document_type_resolution?: string }>;
+  error?: {
+    error_code?: string;
+    title?: string;
+    message?: string;
+    detail?: string;
+    action?: string;
+    redirect_url?: string;
+    help_text?: string;
+  };
 }
 
 // Generate document type options from SHARED TYPES - SINGLE SOURCE OF TRUTH
@@ -182,6 +214,7 @@ type ExportLCUploadProps = {
 
 export default function ExportLCUpload({ embedded = false, onComplete }: ExportLCUploadProps = {}) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [lcIntake, setLcIntake] = useState<LCIntakeState>({ status: "idle", file: null });
   const [lcNumber, setLcNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [showRateLimit, setShowRateLimit] = useState(false);
@@ -228,6 +261,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   
   // Validation hook
   const { validate, isLoading: isValidating, clearError } = useValidate();
+  const isLCResolved = lcIntake.status === "resolved" && !!lcIntake.continuationAllowed;
   
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
   const { checkLCExists } = useVersions();
@@ -612,11 +646,94 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     }
   };
 
+  const handleLCIntakeFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] || null;
+    if (!nextFile) return;
+
+    setLcIntake({ status: "uploading", file: nextFile });
+
+    try {
+      const response = await validate({
+        files: [nextFile],
+        userType: "exporter",
+        workflowType: "export-lc-intake",
+        lcTypeOverride,
+        intakeOnly: true,
+        mode: "lc_intake",
+      });
+
+      if (response.status === "blocked" || response.status === "invalid") {
+        setLcIntake({
+          status: response.status === "blocked" ? "invalid" : response.status,
+          file: nextFile,
+          message: response.message,
+          continuationAllowed: response.continuation_allowed,
+          isLc: response.is_lc,
+          lcSummary: response.lc_summary,
+          lcDetection: response.lc_detection,
+          requiredDocumentTypes: response.required_document_types || [],
+          documentsRequired: response.documents_required || [],
+          specialConditions: response.special_conditions || [],
+          detectedDocuments: response.detected_documents || [],
+          error: response.error,
+        });
+        return;
+      }
+
+      setLcIntake({
+        status: response.status === "resolved" ? "resolved" : "ambiguous",
+        file: nextFile,
+        message: response.message,
+        continuationAllowed: response.continuation_allowed,
+        isLc: response.is_lc,
+        jobId: response.jobId || response.job_id,
+        lcSummary: response.lc_summary,
+        lcDetection: response.lc_detection,
+        requiredDocumentTypes: response.required_document_types || [],
+        documentsRequired: response.documents_required || [],
+        specialConditions: response.special_conditions || [],
+        detectedDocuments: response.detected_documents || [],
+      });
+
+      if (response.lc_summary?.lc_number && !lcNumber.trim()) {
+        setLcNumber(String(response.lc_summary.lc_number));
+      }
+
+      toast({
+        title: response.continuation_allowed ? "LC Resolved" : "LC Needs Review",
+        description: response.message || "LC intake completed.",
+      });
+    } catch (error: any) {
+      console.error('LC intake failed:', error);
+      setLcIntake({
+        status: "invalid",
+        file: nextFile,
+        message: error?.message || "Could not process the LC file.",
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleClearLCIntake = () => {
+    setLcIntake({ status: "idle", file: null });
+    setUploadedFiles([]);
+  };
+
   const handleProcessLC = async () => {
+    if (!isLCResolved) {
+      toast({
+        title: "Upload LC First",
+        description: "Resolve the Letter of Credit before validating supporting documents.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (uploadedFiles.length === 0) {
       toast({
         title: "No Files Selected",
-        description: "Please upload at least one document to proceed.",
+        description: "Please upload at least one supporting document to proceed.",
         variant: "destructive",
       });
       return;
@@ -785,7 +902,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   };
 
   const completedFiles = uploadedFiles.filter(f => f.status === "completed");
-  const isReadyToProcess = completedFiles.length > 0 && lcNumber.trim() && !isProcessing;
+  const isReadyToProcess = isLCResolved && completedFiles.length > 0 && !!lcNumber.trim() && !isProcessing;
 
   const wrapperClass = embedded
     ? "mx-auto w-full max-w-4xl py-4"
@@ -984,44 +1101,184 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
           <PreparationGuide />
         </div>
 
-        {/* File Upload Area */}
+        {/* Step 1: LC Intake */}
+        <Card className="mb-6 shadow-soft border-0">
+          <CardHeader>
+            <CardTitle>Step 1 — Upload Letter of Credit</CardTitle>
+            <CardDescription>
+              Start with the LC first. We’ll detect required supporting documents automatically and unlock the bulk uploader below.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="border-2 border-dashed rounded-lg p-6 text-center border-exporter/30 bg-exporter/5">
+              <input
+                id="lc-intake-upload"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={handleLCIntakeFileChange}
+              />
+              <div className="flex flex-col items-center gap-3">
+                <div className="bg-exporter/10 p-3 rounded-full">
+                  <Sparkles className="w-7 h-7 text-exporter" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground mb-1">Upload LC first</h3>
+                  <p className="text-sm text-muted-foreground">
+                    We’ll check whether it is a real LC, identify flow, and extract required supporting documents.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <Button asChild variant="outline" disabled={lcIntake.status === "uploading" || isProcessing}>
+                    <label htmlFor="lc-intake-upload" className="cursor-pointer">
+                      <Plus className="w-4 h-4 mr-2" />
+                      {lcIntake.file ? "Replace LC" : "Choose LC File"}
+                    </label>
+                  </Button>
+                  {lcIntake.file && (
+                    <Button variant="ghost" onClick={handleClearLCIntake}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {lcIntake.file && (
+              <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium text-foreground">{lcIntake.file.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(lcIntake.file.size)}</p>
+                  </div>
+                  <Badge variant={isLCResolved ? "default" : lcIntake.status === "uploading" ? "outline" : "secondary"}>
+                    {lcIntake.status === "uploading" ? "Checking LC..." : isLCResolved ? "LC Resolved" : lcIntake.status}
+                  </Badge>
+                </div>
+
+                {(lcIntake.message || lcIntake.error?.message) && (
+                  <div className={cn(
+                    "rounded-md p-3 text-sm border",
+                    isLCResolved ? "bg-green-50 border-green-200 text-green-800" : "bg-amber-50 border-amber-200 text-amber-800"
+                  )}>
+                    {lcIntake.error?.message || lcIntake.message}
+                  </div>
+                )}
+
+                {lcIntake.lcDetection && (
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Badge variant="outline">Type: {lcIntake.lcDetection.lc_type || "unknown"}</Badge>
+                    {typeof lcIntake.lcDetection.confidence === 'number' && (
+                      <Badge variant="outline">Confidence: {Math.round(lcIntake.lcDetection.confidence * 100)}%</Badge>
+                    )}
+                    {lcIntake.lcDetection.is_draft && <Badge variant="outline">Draft LC</Badge>}
+                  </div>
+                )}
+
+                {Object.keys(lcIntake.lcSummary || {}).length > 0 && (
+                  <div className="grid md:grid-cols-3 gap-3 text-sm">
+                    {Object.entries(lcIntake.lcSummary || {}).slice(0, 6).map(([key, value]) => (
+                      <div key={key} className="rounded bg-background p-3 border border-gray-200/60">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{key.replace(/_/g, ' ')}</p>
+                        <p className="font-medium text-foreground break-words">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Step 1.5: Requirement summary / live checklist */}
+        <Card className="mb-6 shadow-soft border-0">
+          <CardHeader>
+            <CardTitle>Required Documents</CardTitle>
+            <CardDescription>
+              {isLCResolved
+                ? "These requirements were detected from the LC. Upload the remaining documents below in any order, any filename."
+                : "Required documents will appear here after the LC is resolved."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!isLCResolved ? (
+              <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-muted-foreground">
+                <Lock className="w-4 h-4" />
+                Upload and resolve the LC first to unlock the supporting-document checklist.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {(lcIntake.requiredDocumentTypes || []).length > 0 ? (
+                    (lcIntake.requiredDocumentTypes || []).map((docType) => {
+                      const label = exportDocumentTypes.find((t) => t.value === docType)?.label || docType;
+                      const isFound = completedFiles.some((file) => normalizeDocumentType(file.documentType) === docType || normalizeDocumentType(file.detectedType) === docType);
+                      return (
+                        <Badge key={docType} variant={isFound ? "default" : "outline"}>
+                          {label} {isFound ? "• Found" : "• Missing"}
+                        </Badge>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No explicit supporting-document requirements were extracted yet.</p>
+                  )}
+                </div>
+                {(lcIntake.specialConditions || []).length > 0 && (
+                  <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10">
+                    <p className="text-sm font-medium text-foreground mb-2">Special Conditions</p>
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+                      {(lcIntake.specialConditions || []).slice(0, 4).map((item, index) => (
+                        <li key={`${item}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Step 2: Supporting document bulk uploader */}
         <Card className="mb-8 shadow-soft border-0">
           <CardHeader>
-            <CardTitle>LC & Trade Documents Upload</CardTitle>
+            <CardTitle>Step 2 — Upload Supporting Documents</CardTitle>
             <CardDescription>
-              Upload LC and trade documents (Invoice, Packing List, BL, COO, etc.). Maximum 10 files, 10MB each.
+              Upload remaining documents in any order, any filename. We’ll match them against LC requirements.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div
-              {...getRootProps()}
-              className={`
-                border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                ${isDragActive 
-                  ? "border-exporter bg-exporter/5" 
-                  : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20"
-                }
-              `}
+              {...(isLCResolved ? getRootProps() : {})}
+              className={cn(
+                "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+                isLCResolved
+                  ? isDragActive
+                    ? "border-exporter bg-exporter/5 cursor-pointer"
+                    : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
+                  : "border-gray-200 bg-muted/30 opacity-70 cursor-not-allowed"
+              )}
             >
-              <input {...getInputProps()} />
+              {isLCResolved && <input {...getInputProps()} />}
               <div className="flex flex-col items-center gap-4">
-                <div className="bg-exporter/10 p-4 rounded-full">
-                  <Upload className="w-8 h-8 text-exporter" />
+                <div className={cn("p-4 rounded-full", isLCResolved ? "bg-exporter/10" : "bg-muted") }>
+                  {isLCResolved ? <Upload className="w-8 h-8 text-exporter" /> : <Lock className="w-8 h-8 text-muted-foreground" />}
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">
-                    {isDragActive ? "Drop files here..." : "Upload Documents"}
+                    {isLCResolved ? (isDragActive ? "Drop supporting documents here..." : "Upload Supporting Documents") : "Supporting uploader locked"}
                   </h3>
                   <p className="text-muted-foreground mb-4">
-                    Drag and drop your files here, or click to browse
+                    {isLCResolved
+                      ? "Drag and drop your supporting files here, or click to browse"
+                      : "Resolve the LC above to unlock supporting document upload."}
                   </p>
                   <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
-                    {exportDocumentTypes.map(type => (
+                    {exportDocumentTypes.slice(0, 12).map(type => (
                       <Badge key={type.value} variant="outline">{type.label}</Badge>
                     ))}
                   </div>
                 </div>
-                <Button variant="outline">
+                <Button variant="outline" disabled={!isLCResolved}>
                   <Plus className="w-4 h-4 mr-2" />
                   Choose Files
                 </Button>
@@ -1031,7 +1288,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
             {/* Uploaded Files List */}
             {uploadedFiles.length > 0 && (
               <div className="mt-6 space-y-3">
-                <h4 className="font-semibold text-foreground">Uploaded Files ({uploadedFiles.length})</h4>
+                <h4 className="font-semibold text-foreground">Uploaded Supporting Files ({uploadedFiles.length})</h4>
                 {uploadedFiles.map((file) => (
                   <div key={file.id} className="flex items-center gap-4 p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
                     <div className="flex-shrink-0">
@@ -1065,22 +1322,17 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                       
                       {file.status === "completed" && (
                         <div className="space-y-2">
-                          {/* Upload status + Auto-detection badge */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <CheckCircle className="w-4 h-4 text-success" />
                             <span className="text-xs text-success">Upload complete</span>
                             {file.detectedType && file.detectedConfidence && file.detectedConfidence > 0.6 && (
-                              <Badge 
-                                variant="outline" 
-                                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
-                              >
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                                 Auto-detected: {exportDocumentTypes.find(d => d.value === file.detectedType)?.label || file.detectedType}
                                 {file.detectedConfidence >= 0.8 && " ✓"}
                               </Badge>
                             )}
                           </div>
 
-                          {/* Relevance Warning */}
                           {file.relevanceWarning && (
                             <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200">
                               <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
@@ -1088,7 +1340,6 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                             </div>
                           )}
 
-                          {/* Document Type Selection */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <Label className="text-xs text-muted-foreground whitespace-nowrap">
                               Document Type:
@@ -1097,119 +1348,53 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                               value={file.documentType ?? "other"}
                               onValueChange={(value) => updateFileDocumentType(file.id, value)}
                             >
-                              <SelectTrigger
-                                className={cn(
-                                  "h-7 text-xs w-48",
-                                  showDocTypeErrors &&
-                                    !file.documentType &&
-                                    "border-destructive focus-visible:ring-destructive",
-                                  file.relevanceWarning && "border-amber-300"
-                                )}
-                              >
+                              <SelectTrigger className={cn("h-7 text-xs w-48", showDocTypeErrors && !file.documentType && "border-destructive focus-visible:ring-destructive", file.relevanceWarning && "border-amber-300")}>
                                 <SelectValue placeholder="Select type" />
                               </SelectTrigger>
                               <SelectContent className="max-h-80 overflow-y-auto">
-                                {/* Core Documents */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
-                                  Core Documents
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">Core Documents</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.CORE).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Transport Documents */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Transport Documents
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Transport Documents</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.TRANSPORT).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Inspection & Quality */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Inspection & Quality
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Inspection & Quality</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.INSPECTION).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Health Certificates */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Health & Agricultural
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Health & Agricultural</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.HEALTH).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Financial Documents */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Financial Documents
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Financial Documents</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.FINANCIAL).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Customs Documents */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Customs & Trade
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Customs & Trade</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.CUSTOMS).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
-                                
-                                {/* Other Documents */}
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">
-                                  Other
-                                </div>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 bg-muted/50">Other</div>
                                 {exportDocumentTypes.filter(t => t.category === DOCUMENT_CATEGORIES.OTHER).map(t => (
-                                  <SelectItem key={t.value} value={t.value}>
-                                    {t.emoji} {t.label}
-                                  </SelectItem>
+                                  <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                            {showDocTypeErrors && !file.documentType && (
-                              <p className="text-xs text-destructive">
-                                Select the correct document category.
-                              </p>
-                            )}
+                            {showDocTypeErrors && !file.documentType && <p className="text-xs text-destructive">Select the correct document category.</p>}
                           </div>
                         </div>
                       )}
                       
-                      {file.status === "error" && (
-                        <p className="text-xs text-destructive">Upload failed</p>
-                      )}
+                      {file.status === "error" && <p className="text-xs text-destructive">Upload failed</p>}
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePreviewFile(file)}
-                        disabled={file.status === "uploading"}
-                        title="Preview file"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => handlePreviewFile(file)} disabled={file.status === "uploading"} title="Preview file">
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => removeFile(file.id)}
-                        disabled={file.status === "uploading"}
-                      >
+                      <Button variant="outline" size="sm" onClick={() => removeFile(file.id)} disabled={file.status === "uploading"}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>

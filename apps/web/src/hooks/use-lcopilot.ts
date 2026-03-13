@@ -25,13 +25,35 @@ export interface ValidationRequest {
   workflowType?: string; // Specific workflow type
   metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
   lcTypeOverride?: 'auto' | 'export' | 'import';
+  intakeOnly?: boolean;
+  mode?: 'intake' | 'lc_intake';
 }
 
 export interface ValidationResponse {
-  jobId: string;
-  request_id: string;
-  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error';
+  jobId?: string;
+  request_id?: string;
+  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error' | 'blocked' | 'resolved' | 'invalid' | 'ambiguous';
   job_id?: string; // temporary compatibility field
+  block_reason?: string;
+  error?: any;
+  detected_documents?: Array<{ type: string; filename?: string; document_type_resolution?: string }>;
+  lc_detection?: {
+    lc_type?: string;
+    confidence?: number;
+    reason?: string;
+    is_draft?: boolean;
+    source?: string;
+  };
+  continuation_allowed?: boolean;
+  intake_mode?: boolean;
+  is_lc?: boolean;
+  lc_summary?: Record<string, any>;
+  required_document_types?: string[];
+  documents_required?: string[];
+  special_conditions?: string[];
+  message?: string;
+  action_required?: string;
+  redirect_url?: string;
 }
 
 export interface JobStatus {
@@ -106,7 +128,18 @@ export const useValidate = () => {
         formData.append('lc_type_override', request.lcTypeOverride);
       }
 
-      lcopilotLogger.debug('Making validation request', { filesCount: request.files.length });
+      if (request.intakeOnly) {
+        formData.append('intake_only', 'true');
+      }
+      if (request.mode) {
+        formData.append('mode', request.mode);
+      }
+
+      lcopilotLogger.debug('Making validation request', {
+        filesCount: request.files.length,
+        intakeOnly: request.intakeOnly,
+        mode: request.mode,
+      });
 
       const response = await api.post('/api/validate', formData, {
         headers: {
