@@ -3507,6 +3507,31 @@ def _build_document_summaries(
     return summaries
 
 
+def _looks_like_letter_of_credit_text(extracted_text: Optional[str]) -> bool:
+    """Return True when OCR text contains strong LC/MT700-style signals."""
+    if not extracted_text:
+        return False
+
+    text = str(extracted_text or "").strip()
+    if len(text) < 50:
+        return False
+
+    normalized = text.upper()
+    strong_patterns = [
+        r":40[A-E]:",
+        r":45A:",
+        r":46A:",
+        r":47A:",
+        r"DOCUMENTARY\s*CREDIT",
+        r"LETTER\s*OF\s*CREDIT",
+        r"IRREVOCABLE",
+        r"UCP\s*600",
+        r"MT\s*700",
+    ]
+    matched = sum(1 for pattern in strong_patterns if re.search(pattern, normalized, re.IGNORECASE))
+    return matched >= 2
+
+
 def _maybe_promote_document_type_from_content(
     *,
     filename: Optional[str],
@@ -3529,6 +3554,30 @@ def _maybe_promote_document_type_from_content(
     }
 
     if not extracted_text or len((extracted_text or "").strip()) < 50:
+        return result
+
+    weak_types = {
+        "supporting_document",
+        "other",
+        "unknown",
+    }
+
+    if current_type in weak_types and _looks_like_letter_of_credit_text(extracted_text):
+        result["document_type"] = "letter_of_credit"
+        result["promoted"] = True
+        result["content_classification"] = {
+            "document_type": "letter_of_credit",
+            "confidence": 0.95,
+            "confidence_level": "high",
+            "is_reliable": True,
+            "reasoning": "Strong LC/MT700 textual markers detected directly from OCR text.",
+            "matched_patterns": ["strong_lc_text_markers"],
+        }
+        logger.info(
+            "Promoted document type from strong LC markers for %s: %s -> letter_of_credit",
+            filename,
+            current_type,
+        )
         return result
 
     try:
@@ -3564,12 +3613,6 @@ def _maybe_promote_document_type_from_content(
         "matched_patterns": classification.matched_patterns,
     }
     result["content_classification"] = classification_payload
-
-    weak_types = {
-        "supporting_document",
-        "other",
-        "unknown",
-    }
 
     classified_type = classification.document_type.value
     if (
