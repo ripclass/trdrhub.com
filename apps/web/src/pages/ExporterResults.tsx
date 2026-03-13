@@ -893,6 +893,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         "lc-dates",
       )
     : [];
+  const lcPrimaryDocument = documents.find((doc) => String(doc.typeKey || '').toLowerCase() === 'letter_of_credit');
+  const lcPrimaryExtractedFields = (lcPrimaryDocument?.extractedFields ?? {}) as Record<string, any>;
   const lcGoodsItems = lcData && Array.isArray(lcData.goods_items) ? lcData.goods_items : [];
   const lcApplicantCard = lcData ? renderPartyCard("Applicant", lcData.applicant, "lc-applicant") : null;
   const lcBeneficiaryCard = lcData ? renderPartyCard("Beneficiary", lcData.beneficiary, "lc-beneficiary") : null;
@@ -1098,6 +1100,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () => Math.max(0, complianceScore - warningCount * 5),
     [complianceScore, warningCount],
   );
+  const lcRequirementSource = useMemo(() => {
+    const candidates = [
+      lcData?.documents_required,
+      lcData?.required_documents,
+      lcPrimaryExtractedFields?.documents_required,
+      lcPrimaryExtractedFields?.required_documents,
+      lcPrimaryExtractedFields?.documentsRequired,
+      lcPrimaryExtractedFields?.requiredDocuments,
+    ];
+    for (const candidate of candidates) {
+      const formatted = formatConditions(candidate);
+      if (formatted.length > 0) {
+        return formatted;
+      }
+    }
+    return [] as string[];
+  }, [lcData, lcPrimaryExtractedFields]);
+
   const performanceInsights = useMemo(
     () => [
       extractionSuccessful + "/" + (totalDocuments || 0) + " documents extracted successfully",
@@ -1107,7 +1127,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const requirementChecklist = useMemo(() => {
-    const requiredConditions = formatConditions(lcData?.documents_required ?? lcData?.required_documents ?? []);
+    const requiredConditions = lcRequirementSource;
     const normalizedDocs = documents.map((doc) => ({
       ...doc,
       normalizedType: String(doc.typeKey || '').toLowerCase(),
@@ -1150,7 +1170,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
 
     return items;
-  }, [documents, lcData]);
+  }, [documents, lcRequirementSource]);
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
