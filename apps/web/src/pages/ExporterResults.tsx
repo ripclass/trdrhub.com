@@ -106,6 +106,15 @@ type ExporterResultsProps = {
 const getTruthfulDocumentTypeLabel = (filename: string | undefined, typeKey: string): string => {
   const safeFilename = (filename || '').toLowerCase();
 
+  if (typeKey === 'letter_of_credit') {
+    return 'Primary Letter of Credit';
+  }
+  if (typeKey === 'duplicate_lc_candidate') {
+    return 'Duplicate LC Candidate';
+  }
+  if (typeKey === 'lc_related_document') {
+    return 'LC-Related Document';
+  }
   if (/beneficiary[_\s-]?certificate|beneficiary[_\s-]?cert|beneficiary\b/.test(safeFilename)) {
     return 'Beneficiary Certificate';
   }

@@ -264,15 +264,30 @@ def _build_sanctions_issue(
     else:
         title = f"Potential Sanctions Match: {party_type}"
     
+    def _normalize_percent_score(value: Any) -> float:
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if score <= 0:
+            return 0.0
+        if score <= 1:
+            return score * 100.0
+        if score <= 100:
+            return score
+        return min(score, 100.0)
+
     # Build expected vs actual
     if match_info:
         matched_name = match_info.matched_name
-        match_score = f"{match_info.match_score:.0%}"
+        match_score_value = _normalize_percent_score(match_info.match_score)
+        match_score = f"{match_score_value:.0f}%"
         matched_list = match_info.list_name
         programs = ", ".join(match_info.programs) if match_info.programs else "N/A"
     else:
         matched_name = "Unknown"
-        match_score = f"{result.highest_score:.0%}"
+        match_score_value = _normalize_percent_score(result.highest_score)
+        match_score = f"{match_score_value:.0f}%"
         matched_list = ", ".join(result.lists_screened)
         programs = "N/A"
     

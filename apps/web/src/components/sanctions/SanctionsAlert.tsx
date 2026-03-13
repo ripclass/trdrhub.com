@@ -13,6 +13,15 @@ interface SanctionsAlertProps {
   compact?: boolean;
 }
 
+function normalizeConfidencePercent(score?: number | null): string {
+  if (score === null || score === undefined || Number.isNaN(score)) return "0%";
+  const numeric = Number(score);
+  if (numeric <= 0) return "0%";
+  if (numeric <= 1) return `${(numeric * 100).toFixed(0)}%`;
+  if (numeric <= 100) return `${numeric.toFixed(0)}%`;
+  return "100%";
+}
+
 export function SanctionsAlert({
   sanctionsScreening,
   sanctionsBlocked,
@@ -64,7 +73,7 @@ export function SanctionsAlert({
                         </Badge>
                       </div>
                       <Badge className="bg-red-500/30 text-red-300">
-                        {issue.score ? `${(issue.score * 100).toFixed(0)}% Match` : "Confirmed Match"}
+                        {issue.score ? `${normalizeConfidencePercent(issue.score)} Match` : "Confirmed Match"}
                       </Badge>
                     </div>
                   </div>
@@ -127,7 +136,7 @@ export function SanctionsAlert({
                       </Badge>
                     </div>
                     <Badge className="bg-amber-500/30 text-amber-300">
-                      {issue.score ? `${(issue.score * 100).toFixed(0)}% Similarity` : "Potential Match"}
+                      {issue.score ? `${normalizeConfidencePercent(issue.score)} Similarity` : "Potential Match"}
                     </Badge>
                   </div>
                 </div>
