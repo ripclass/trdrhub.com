@@ -1128,23 +1128,35 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const requirementChecklist = useMemo(() => {
     const requiredConditions = lcRequirementSource;
-    const humanizeIssueReason = (reason: string): string => {
+    const humanizeIssueReason = (reason: string, docType?: string): string => {
       const key = String(reason || '').trim();
-      const map: Record<string, string> = {
-        LOW_CONFIDENCE_CRITICAL: 'Critical fields need manual review',
-        critical_bin_tin_low_confidence: 'Exporter BIN/TIN confidence is low',
-        OCR_AUTH_ERROR: 'Text extraction confidence is limited',
-        LOW_CONFIDENCE: 'Extraction confidence is low',
-        REVIEW_REQUIRED: 'Manual review required',
-      };
-      return map[key] || key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+      const normalizedDocType = String(docType || '').toLowerCase();
+      if (key === 'LOW_CONFIDENCE_CRITICAL') {
+        if (normalizedDocType === 'packing_list') return 'Packing-list detail needs manual review before clean presentation.';
+        if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate wording was recognized, but structured extraction is incomplete.';
+        if (normalizedDocType === 'weight_list' || normalizedDocType === 'weight_certificate') return 'Weight values were found, but document structure still needs manual confirmation.';
+        return 'Key required fields need manual review before clean presentation.';
+      }
+      if (key === 'critical_bin_tin_low_confidence') {
+        return 'Exporter BIN/TIN was not confidently confirmed on this document.';
+      }
+      if (key === 'OCR_AUTH_ERROR') {
+        return 'Text extraction confidence is limited; visual confirmation is recommended.';
+      }
+      if (key === 'LOW_CONFIDENCE') {
+        return 'Extraction confidence is limited for this document.';
+      }
+      if (key === 'REVIEW_REQUIRED') {
+        return 'This document requires manual review before clean presentation.';
+      }
+      return key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
     };
 
     const normalizedDocs = documents.map((doc) => ({
       ...doc,
       normalizedType: String(doc.typeKey || '').toLowerCase(),
-      warningReasons: (((doc as any).warningReasons ?? []) as string[]).map(humanizeIssueReason),
-      reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map(humanizeIssueReason),
+      warningReasons: (((doc as any).warningReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
+      reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
     }));
 
     const requirementRules = [
