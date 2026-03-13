@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, Optional
 
 from app.core.lc_types import LCType, LCTypeGuess
+from app.services.lc_type_detector import detect_lc_family
 
 COUNTRY_SYNONYMS = {
     "u.s.a": "united states",
@@ -40,6 +41,9 @@ def detect_lc_type(
 
     lc_context = lc_data or {}
     shipment_context = shipment_data or {}
+
+    family_signal = detect_lc_family(lc_context)
+    lc_family = family_signal.get("family", "unknown")
 
     ports_context = lc_context.get("ports") or {}
     lc_format = (lc_context.get("format") or "").lower()
@@ -81,12 +85,17 @@ def detect_lc_type(
     )
 
     def _guess(lc_type_value: str, reason_text: str, confidence_value: float) -> LCTypeGuess:
-        return {
+        source = "auto-detected" if lc_family == "unknown" else f"auto-detected:{lc_family}"
+        payload: LCTypeGuess = {
             "lc_type": lc_type_value,
             "reason": reason_text,
             "confidence": confidence_value,
-            "source": "auto-detected",
+            "source": source,
         }
+        payload["family"] = lc_family
+        payload["family_confidence"] = family_signal.get("confidence", 0.0)
+        payload["family_evidence"] = family_signal.get("evidence", [])
+        return payload
 
     flow_export = (
         applicant_country
@@ -233,6 +242,20 @@ def detect_lc_type(
                 "discharge port information."
             ),
             0.55,
+        )
+
+    if lc_family == "iso":
+        return _guess(
+            LCType.UNKNOWN.value,
+            "ISO 20022 / MX documentary-credit structure detected, but country/port flow data is insufficient to classify import vs export.",
+            0.25,
+        )
+
+    if lc_family == "mt":
+        return _guess(
+            LCType.UNKNOWN.value,
+            "SWIFT MT documentary-credit structure detected, but country/port flow data is insufficient to classify import vs export.",
+            0.2,
         )
 
     return _guess(
