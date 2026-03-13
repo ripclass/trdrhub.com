@@ -1106,6 +1106,90 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
+  const requirementChecklist = useMemo(() => {
+    const requiredConditions = formatConditions(lcData?.documents_required ?? lcData?.required_documents ?? []);
+    const normalizedDocs = documents.map((doc) => ({
+      ...doc,
+      normalizedType: String(doc.typeKey || '').toLowerCase(),
+      warningReasons: ((doc as any).warningReasons ?? []) as string[],
+      reviewReasons: ((doc as any).reviewReasons ?? []) as string[],
+    }));
+
+    const requirementRules = [
+      { key: 'commercial_invoice', label: 'Commercial Invoice', matchers: ['commercial invoice', 'signed commercial invoice', 'invoice'], docTypes: ['commercial_invoice'] },
+      { key: 'bill_of_lading', label: 'Ocean Bill of Lading', matchers: ['bill of lading', 'ocean b/l', 'full set clean on board'], docTypes: ['bill_of_lading'] },
+      { key: 'packing_list', label: 'Packing List', matchers: ['packing list'], docTypes: ['packing_list'] },
+      { key: 'certificate_of_origin', label: 'Certificate of Origin', matchers: ['certificate of origin', 'country of origin'], docTypes: ['certificate_of_origin'] },
+      { key: 'insurance_certificate', label: 'Insurance Certificate', matchers: ['insurance policy', 'insurance certificate', 'icc (a)', 'war & srcc'], docTypes: ['insurance_certificate', 'insurance_policy'] },
+      { key: 'beneficiary_certificate', label: 'Beneficiary Certificate', matchers: ['beneficiary certificate', 'beneficiary statement'], docTypes: ['beneficiary_certificate'] },
+      { key: 'weight_list', label: 'Weight List', matchers: ['weight list', 'gross/net weight'], docTypes: ['weight_list', 'weight_certificate'] },
+    ];
+
+    const items = requirementRules
+      .filter((rule) => requiredConditions.some((condition) => rule.matchers.some((matcher) => condition.toLowerCase().includes(matcher))))
+      .map((rule) => {
+        const matchedDoc = normalizedDocs.find((doc) => rule.docTypes.includes(doc.normalizedType));
+        const issues = matchedDoc
+          ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
+          : ['Document not uploaded yet'];
+        const status = !matchedDoc
+          ? 'missing'
+          : matchedDoc.status === 'success'
+          ? 'found'
+          : matchedDoc.status === 'warning'
+          ? 'review'
+          : 'error';
+        return {
+          key: rule.key,
+          label: rule.label,
+          status,
+          matchedDoc,
+          issues,
+          requirementText: requiredConditions.find((condition) => rule.matchers.some((matcher) => condition.toLowerCase().includes(matcher))) || rule.label,
+        };
+      });
+
+    return items;
+  }, [documents, lcData]);
+  const actionEngine = useMemo(() => {
+    const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
+
+    requirementChecklist.forEach((item) => {
+      if (item.status === 'missing') {
+        actions.push({
+          priority: 'critical',
+          title: `Upload ${item.label}`,
+          detail: item.requirementText,
+        });
+        return;
+      }
+      if (item.status === 'review') {
+        actions.push({
+          priority: 'major',
+          title: `Review ${item.label}`,
+          detail: item.issues[0] || 'This document requires manual review before submission.',
+        });
+      }
+    });
+
+    issueCards.slice(0, 5).forEach((issue) => {
+      actions.push({
+        priority: normalizeDiscrepancySeverity(issue.severity) === 'critical' ? 'critical' : 'major',
+        title: safeString(issue.title || issue.message || 'Resolve discrepancy'),
+        detail: safeString(issue.detail || issue.message || 'Resolve this issue before submission.'),
+      });
+    });
+
+    const unique = new Map<string, { priority: 'critical' | 'major' | 'minor'; title: string; detail: string }>();
+    actions.forEach((action) => {
+      if (!unique.has(action.title)) unique.set(action.title, action);
+    });
+
+    return Array.from(unique.values()).sort((a, b) => {
+      const rank = { critical: 0, major: 1, minor: 2 };
+      return rank[a.priority] - rank[b.priority];
+    });
+  }, [requirementChecklist, issueCards]);
   const readinessStatus = useMemo(() => {
     if (!validationState) return null;
     if (validationState.status === "compliant") return "success";
@@ -1784,6 +1868,76 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Card>
             </div>
             
+            {/* Required-doc checklist + action engine */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold">Required Document Checklist</CardTitle>
+                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    LC requirements translated into live checklist status
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {requirementChecklist.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
+                  ) : (
+                    requirementChecklist.map((item) => (
+                      <div key={item.key} className="rounded-lg border border-border/60 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-sm">{item.label}</p>
+                            <p className="text-xs text-muted-foreground">{item.requirementText}</p>
+                          </div>
+                          <StatusBadge status={item.status === 'found' ? 'success' : item.status === 'missing' ? 'error' : 'warning'}>
+                            {item.status === 'found' ? 'Found' : item.status === 'missing' ? 'Missing' : 'Needs Review'}
+                          </StatusBadge>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.matchedDoc ? (
+                            <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
+                          ) : (
+                            'No uploaded document matched this LC requirement yet.'
+                          )}
+                        </div>
+                        {item.issues.length > 0 && (
+                          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                            {item.issues.slice(0, 2).map((issue, idx) => (
+                              <li key={`${item.key}-issue-${idx}`}>{issue}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold">Action Engine</CardTitle>
+                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Prioritized next steps before submission
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {actionEngine.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No immediate actions generated from the current validation state.</p>
+                  ) : (
+                    actionEngine.slice(0, 6).map((action, idx) => (
+                      <div key={`${action.title}-${idx}`} className="rounded-lg border border-border/60 p-3 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-sm">{action.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{action.detail}</p>
+                        </div>
+                        <Badge variant={action.priority === 'critical' ? 'destructive' : 'outline'} className={action.priority === 'major' ? 'border-amber-500/30 text-amber-700 bg-amber-500/5' : ''}>
+                          {action.priority}
+                        </Badge>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             {/* Analytics Summary (merged from Analytics tab) */}
             <div className="grid gap-6 md:grid-cols-2">
               <Card className="shadow-soft border border-border/60">
@@ -1991,59 +2145,102 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Manifest</p>
-                    {manifestData && (
-                      <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Generated
-                      </Badge>
-                    )}
-                  </div>
-                  {manifestData ? (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">Submission Checklist</p>
+                      <Badge variant="outline">{requirementChecklist.length} tracked</Badge>
+                    </div>
                     <div className="rounded-lg border border-border/60 p-4 space-y-3">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide">LC Number</p>
-                          <p className="font-medium">{manifestData.lc_number}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide">Generated</p>
-                          <p className="font-medium">
-                            {format(new Date(manifestData.generated_at), "MMM d, yyyy HH:mm")}
-                          </p>
-                        </div>
-                      </div>
-                      <Separator />
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Documents Included ({manifestData.documents.length})
-                        </p>
-                        <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
-                          {manifestData.documents.map((doc, idx) => (
-                            <li key={`${doc.name}-${idx}`} className="flex items-center justify-between px-3 py-2 text-sm">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-muted-foreground" />
-                                <span className="font-medium">{doc.name}</span>
+                      {requirementChecklist.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No required-document checklist available yet.</p>
+                      ) : (
+                        requirementChecklist.map((item) => (
+                          <div key={`customs-${item.key}`} className="flex items-start justify-between gap-3 border-b border-border/40 pb-3 last:border-b-0 last:pb-0">
+                            <div>
+                              <p className="text-sm font-medium">{item.label}</p>
+                              <p className="text-xs text-muted-foreground">{item.matchedDoc ? `Matched: ${item.matchedDoc.name}` : 'Not uploaded yet'}</p>
+                            </div>
+                            <StatusBadge status={item.status === 'found' ? 'success' : item.status === 'missing' ? 'error' : 'warning'}>
+                              {item.status === 'found' ? 'Found' : item.status === 'missing' ? 'Missing' : 'Review'}
+                            </StatusBadge>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-4 space-y-2">
+                      <p className="text-sm font-semibold">Action Queue</p>
+                      {actionEngine.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No action items currently blocking the customs pack.</p>
+                      ) : (
+                        <ul className="space-y-2 text-sm">
+                          {actionEngine.slice(0, 5).map((action, idx) => (
+                            <li key={`customs-action-${idx}`} className="flex items-start gap-2">
+                              <AlertTriangle className={cn('w-4 h-4 mt-0.5 shrink-0', action.priority === 'critical' ? 'text-destructive' : 'text-amber-500')} />
+                              <div>
+                                <p className="font-medium">{action.title}</p>
+                                <p className="text-xs text-muted-foreground">{action.detail}</p>
                               </div>
-                              <Badge variant="outline">{safeString(doc.type)}</Badge>
                             </li>
                           ))}
                         </ul>
-                      </div>
+                      )}
                     </div>
-                  ) : (
-                    <Card className="border-dashed bg-muted/20">
-                      <CardContent className="py-8 text-center">
-                        <Package className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground mb-1">No manifest generated yet</p>
-                        <p className="text-xs text-muted-foreground">
-                          Click "Generate Customs Pack" above to create your customs manifest.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">Manifest</p>
+                      {manifestData && (
+                        <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Generated
+                        </Badge>
+                      )}
+                    </div>
+                    {manifestData ? (
+                      <div className="rounded-lg border border-border/60 p-4 space-y-3">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">LC Number</p>
+                            <p className="font-medium">{manifestData.lc_number}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Generated</p>
+                            <p className="font-medium">
+                              {format(new Date(manifestData.generated_at), "MMM d, yyyy HH:mm")}
+                            </p>
+                          </div>
+                        </div>
+                        <Separator />
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Documents Included ({manifestData.documents.length})
+                          </p>
+                          <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+                            {manifestData.documents.map((doc, idx) => (
+                              <li key={`${doc.name}-${idx}`} className="flex items-center justify-between px-3 py-2 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-muted-foreground" />
+                                  <span className="font-medium">{doc.name}</span>
+                                </div>
+                                <Badge variant="outline">{safeString(doc.type)}</Badge>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ) : (
+                      <Card className="border-dashed bg-muted/20">
+                        <CardContent className="py-8 text-center">
+                          <Package className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground mb-1">No manifest generated yet</p>
+                          <p className="text-xs text-muted-foreground">
+                            Click "Generate Customs Pack" above to create your customs manifest.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
