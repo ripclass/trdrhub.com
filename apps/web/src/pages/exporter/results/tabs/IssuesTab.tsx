@@ -1,10 +1,10 @@
 /**
  * Issues/Discrepancies Tab Component
- * Shows validation issues with filtering and AI insights
+ * Banker-grade issue review surface with bucketed findings
  */
 
-import { ReactNode } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { ReactNode, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck } from "lucide-react";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
@@ -33,6 +33,13 @@ interface IssuesTabProps {
   onDraftEmail?: (context: EmailDraftContext) => void;
 }
 
+const BUCKETS = [
+  "Missing Required Documents",
+  "Document-Level Discrepancies",
+  "Cross-Document Conditions",
+  "Extraction / Manual Review",
+] as const;
+
 export function IssuesTab({
   hasIssueCards,
   issueCards,
@@ -47,6 +54,24 @@ export function IssuesTab({
   companyName,
   onDraftEmail,
 }: IssuesTabProps) {
+  const grouped = useMemo(() => {
+    const documentary = new Map<string, IssueCard[]>();
+    BUCKETS.forEach((b) => documentary.set(b, []));
+    const complianceRisk: IssueCard[] = [];
+
+    filteredIssueCards.forEach((card) => {
+      const bucket = (card as any).bucket || "Document-Level Discrepancies";
+      if (bucket === "Compliance / Risk Review") {
+        complianceRisk.push(card);
+        return;
+      }
+      if (!documentary.has(bucket)) documentary.set(bucket, []);
+      documentary.get(bucket)!.push(card);
+    });
+
+    return { documentary, complianceRisk };
+  }, [filteredIssueCards]);
+
   if (!hasIssueCards) {
     return (
       <>
@@ -70,18 +95,24 @@ export function IssuesTab({
   return (
     <>
       <Card className="shadow-soft border border-border/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Issue Review Summary</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            The following findings are organized for documentary rectification and compliance escalation. Resolve documentary discrepancies before presentation and route compliance alerts to internal review.
+          </p>
+        </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-4">
             <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Critical</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">High-likelihood discrepancy</p>
               <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
             </div>
             <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Major</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Likely discrepancy</p>
               <p className="text-2xl font-bold text-warning">{severityCounts.major}</p>
             </div>
             <div className="p-3 rounded-lg bg-muted/30 border border-muted">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Minor</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review required</p>
               <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
@@ -92,9 +123,9 @@ export function IssuesTab({
           <div className="flex flex-wrap gap-2">
             {[
               { value: "all" as const, label: `All (${issueCards.length})` },
-              { value: "critical" as const, label: `Critical (${severityCounts.critical})` },
-              { value: "major" as const, label: `Major (${severityCounts.major})` },
-              { value: "minor" as const, label: `Minor (${severityCounts.minor})` },
+              { value: "critical" as const, label: `High-likelihood (${severityCounts.critical})` },
+              { value: "major" as const, label: `Likely (${severityCounts.major})` },
+              { value: "minor" as const, label: `Review required (${severityCounts.minor})` },
             ].map((option) => (
               <Button
                 key={option.value}
@@ -108,6 +139,7 @@ export function IssuesTab({
           </div>
         </CardContent>
       </Card>
+
       {filteredIssueCards.length === 0 ? (
         <Card className="shadow-soft border border-dashed">
           <CardContent className="py-6 text-center text-sm text-muted-foreground">
@@ -115,22 +147,54 @@ export function IssuesTab({
           </CardContent>
         </Card>
       ) : (
-        filteredIssueCards.map((card, index) => {
-          const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
-          const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-          return (
-            <ExporterIssueCard
-              key={fallbackId}
-              issue={card}
-              normalizedSeverity={normalizedSeverity}
-              documentStatusMap={documentStatusMap}
-              fallbackId={fallbackId}
-              lcNumber={lcNumber}
-              companyName={companyName}
-              onDraftEmail={onDraftEmail}
-            />
-          );
-        })
+        <div className="space-y-6">
+          {Array.from(grouped.documentary.entries()).map(([bucket, cards]) => {
+            if (!cards.length) return null;
+            return (
+              <section key={bucket} className="space-y-3">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">{bucket}</h3>
+                {cards.map((card, index) => {
+                  const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+                  const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+                  return (
+                    <ExporterIssueCard
+                      key={fallbackId}
+                      issue={card}
+                      normalizedSeverity={normalizedSeverity}
+                      documentStatusMap={documentStatusMap}
+                      fallbackId={fallbackId}
+                      lcNumber={lcNumber}
+                      companyName={companyName}
+                      onDraftEmail={onDraftEmail}
+                    />
+                  );
+                })}
+              </section>
+            );
+          })}
+
+          {grouped.complianceRisk.length > 0 && (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Compliance / Risk Review</h3>
+              {grouped.complianceRisk.map((card, index) => {
+                const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+                const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+                return (
+                  <ExporterIssueCard
+                    key={fallbackId}
+                    issue={card}
+                    normalizedSeverity={normalizedSeverity}
+                    documentStatusMap={documentStatusMap}
+                    fallbackId={fallbackId}
+                    lcNumber={lcNumber}
+                    companyName={companyName}
+                    onDraftEmail={onDraftEmail}
+                  />
+                );
+              })}
+            </section>
+          )}
+        </div>
       )}
       {renderAIInsightsCard()}
       {renderReferenceIssuesCard()}

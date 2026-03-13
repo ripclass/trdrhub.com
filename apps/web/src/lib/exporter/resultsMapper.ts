@@ -62,16 +62,89 @@ const formatTextValue = (value: any): string => {
 
 const normalizeSeverity = (value?: string | null): string => {
   const normalized = (value ?? '').toLowerCase();
-  if (['critical', 'fail', 'error', 'high'].includes(normalized)) {
-    return 'critical';
-  }
-  if (['major', 'warn', 'warning', 'medium'].includes(normalized)) {
-    return 'major';
-  }
-  if (['minor', 'low'].includes(normalized)) {
-    return 'minor';
-  }
+  if (['critical', 'fail', 'error', 'high'].includes(normalized)) return 'critical';
+  if (['major', 'warn', 'warning', 'medium'].includes(normalized)) return 'major';
+  if (['minor', 'low'].includes(normalized)) return 'minor';
+  if (['info', 'informational'].includes(normalized)) return 'info';
   return normalized || 'minor';
+};
+
+const humanizeText = (value?: string | null): string => {
+  if (!value) return '';
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+};
+
+const classifyBucket = (issue: any, severity: string): string => {
+  const text = [
+    issue?.title,
+    issue?.description,
+    issue?.rule,
+    issue?.ruleset_domain,
+    issue?.category,
+    issue?.document_type,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (text.includes('missing') && (text.includes('document') || text.includes('doc'))) {
+    return 'Missing Required Documents';
+  }
+  if (text.includes('crossdoc') || text.includes('cross-document') || text.includes('across documents')) {
+    return 'Cross-Document Conditions';
+  }
+  if (
+    text.includes('sanction') ||
+    text.includes('aml') ||
+    text.includes('compliance') ||
+    text.includes('risk') ||
+    text.includes('ofac') ||
+    text.includes('watchlist')
+  ) {
+    return 'Compliance / Risk Review';
+  }
+  if (
+    text.includes('ocr') ||
+    text.includes('extraction') ||
+    text.includes('manual review') ||
+    text.includes('unreadable') ||
+    text.includes('confidence') ||
+    severity === 'info'
+  ) {
+    return 'Extraction / Manual Review';
+  }
+  return 'Document-Level Discrepancies';
+};
+
+const getSeverityDisplay = (severity: string, bucket: string): string => {
+  if (bucket === 'Compliance / Risk Review') return 'Compliance alert';
+  if (severity === 'critical') return 'High-likelihood discrepancy';
+  if (severity === 'major') return 'Likely discrepancy';
+  if (severity === 'minor') return 'Review required';
+  return 'Informational';
+};
+
+const getFixOwner = (issue: any, bucket: string): string => {
+  const text = [issue?.title, issue?.description, issue?.suggestion].filter(Boolean).join(' ').toLowerCase();
+  if (text.includes('amend') || text.includes('waiver')) return 'Waiver / Amendment';
+  if (bucket === 'Compliance / Risk Review') return 'Internal Compliance';
+  if (bucket === 'Cross-Document Conditions') return 'Mixed';
+  if (text.includes('carrier') || text.includes('supplier') || text.includes('insurer') || text.includes('issuer')) return 'Third Party';
+  if (bucket === 'Missing Required Documents' || bucket === 'Document-Level Discrepancies') return 'Beneficiary';
+  return 'Unknown';
+};
+
+const buildNextAction = (bucket: string, suggestion: string): string => {
+  if (suggestion && suggestion !== '—') return suggestion;
+  if (bucket === 'Missing Required Documents') return 'Obtain and upload the missing required document set.';
+  if (bucket === 'Compliance / Risk Review') return 'Escalate to compliance for disposition and approval.';
+  if (bucket === 'Extraction / Manual Review') return 'Validate source document manually and confirm extracted values.';
+  if (bucket === 'Cross-Document Conditions') return 'Reconcile conflicting values across all referenced documents.';
+  return 'Correct the document field and revalidate before submission.';
 };
 
 const mapDocuments = (docs: any[] = []) => {
@@ -189,27 +262,54 @@ const mapIssues = (
     const firstDoc = documentNames[0];
     const docMeta = firstDoc ? lookup.get(firstDoc.toLowerCase()) : undefined;
 
+    const severity = normalizeSeverity(issue?.severity ?? provenanceEntry?.severity);
+    const expected = formatTextValue(issue?.expected);
+    const found = formatTextValue(issue?.found ?? issue?.actual);
+    const suggestion = formatTextValue(issue?.suggestion ?? issue?.suggested_fix);
+    const bucket = classifyBucket(issue, severity);
+    const severityDisplay = getSeverityDisplay(severity, bucket);
+    const lcBasis =
+      issue?.ucp_reference ||
+      issue?.isbp_reference ||
+      issue?.rule ||
+      humanizeText(issue?.ruleset_domain) ||
+      'LC examination baseline';
+    const fixOwner = getFixOwner(issue, bucket);
+    const examinerNote = issue?.description ?? issue?.message ?? issue?.note ?? 'Review against LC terms and supporting documents.';
+    const nextAction = buildNextAction(bucket, suggestion);
+    const confidenceRaw = issue?.extraction_confidence ?? issue?.confidence ?? issue?.match_confidence;
+    const confidence = typeof confidenceRaw === 'number' ? Math.max(0, Math.min(1, confidenceRaw)) : undefined;
+
     return {
       id: String(issue?.id ?? issue?.rule ?? `issue-${index}`),
       rule: issue?.rule ?? provenanceEntry?.rule,
-      title: issue?.title ?? 'Review Required',
+      title: issue?.title ?? humanizeText(issue?.rule) ?? 'Review Required',
       description: issue?.description ?? issue?.message ?? '',
       priority: issue?.severity,
-      severity: normalizeSeverity(issue?.severity ?? provenanceEntry?.severity),
+      severity,
+      severity_display: severityDisplay,
+      bucket,
+      lc_basis: lcBasis,
       documentName: issue?.document_name ?? issue?.documentName ?? firstDoc ?? docMeta?.name,
       documentType: issue?.document_type ?? issue?.documentType ?? docMeta?.type,
       documents: documentNames,
-      expected: formatTextValue(issue?.expected),
-      actual: formatTextValue(issue?.found ?? issue?.actual),
-      suggestion: formatTextValue(issue?.suggestion ?? issue?.suggested_fix),
+      expected,
+      actual: found,
+      found,
+      examiner_note: examinerNote,
+      fix_owner: fixOwner,
+      remediation_owner: fixOwner,
+      next_action: nextAction,
+      confidence,
+      suggestion,
       field: issue?.field ?? issue?.metadata?.field,
       ruleset_domain: issue?.ruleset_domain ?? provenanceEntry?.ruleset_domain,
-      // Only include references if they have actual content (not empty strings)
       ucpReference: issue?.ucp_reference && issue.ucp_reference.trim() ? issue.ucp_reference.trim() : undefined,
       ucpDescription: issue?.ucp_description ?? undefined,
       isbpReference: issue?.isbp_reference && issue.isbp_reference.trim() ? issue.isbp_reference.trim() : undefined,
       isbpDescription: issue?.isbp_description ?? undefined,
-      autoGenerated: issue?.auto_generated ?? false,
+      auto_generated: issue?.auto_generated ?? false,
+      extraction_confidence: confidence,
     };
   });
 };

@@ -452,6 +452,15 @@ export const IssueCardSchema = z.object({
   tolerance_applied: ToleranceAppliedSchema.optional(),
   extraction_confidence: z.number().optional(),
   amendment_available: z.boolean().optional(),
+  bucket: z.string().optional(),
+  severity_display: z.string().optional(),
+  lc_basis: z.string().optional(),
+  found: z.string().optional(),
+  examiner_note: z.string().optional(),
+  fix_owner: z.string().optional(),
+  next_action: z.string().optional(),
+  confidence: z.number().optional(),
+  remediation_owner: z.string().optional(),
 });
 export type IssueCard = z.infer<typeof IssueCardSchema>;
 

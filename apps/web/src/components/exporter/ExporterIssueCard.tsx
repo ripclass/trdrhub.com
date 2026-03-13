@@ -218,6 +218,13 @@ export function ExporterIssueCard({
   const severity = severityTokens[normalizedSeverity] ?? severityTokens.minor;
   const Icon = severity.Icon;
   const documentNames = (issue.documents ?? []).filter(Boolean);
+  const bucket = (issue as any).bucket ?? 'Document-Level Discrepancies';
+  const severityDisplay = (issue as any).severity_display ?? (normalizedSeverity === 'critical' ? 'High-likelihood discrepancy' : normalizedSeverity === 'major' ? 'Likely discrepancy' : 'Review required');
+  const lcBasis = (issue as any).lc_basis ?? issue.ucpReference ?? issue.isbpReference ?? issue.rule ?? 'LC examination baseline';
+  const examinerNote = (issue as any).examiner_note ?? issue.description ?? 'Review against LC terms and presented documents.';
+  const fixOwner = (issue as any).fix_owner ?? (issue as any).remediation_owner ?? 'Unknown';
+  const nextAction = (issue as any).next_action ?? issue.suggestion ?? 'Correct and revalidate before submission.';
+  const confidence = (issue as any).confidence ?? issue.extraction_confidence;
 
   const buildDocumentBadgeClass = (status?: string) => {
     if (status === 'success') return 'bg-success/10 text-success border-success/30';
@@ -269,15 +276,17 @@ export function ExporterIssueCard({
               className={cn('gap-1 border text-xs font-semibold', severity.bg)}
             >
               <Icon className="w-3.5 h-3.5" />
-              {severity.label}
+              {severityDisplay}
             </Badge>
           </div>
         </div>
-        {issue.priority && (
-          <p className="text-xs font-medium text-muted-foreground">
-            Priority: {issue.priority.charAt(0).toUpperCase() + issue.priority.slice(1)}
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="text-xs">{bucket}</Badge>
+          <Badge variant="outline" className="text-xs">Fix owner: {fixOwner}</Badge>
+          {typeof confidence === 'number' && (
+            <Badge variant="outline" className="text-xs">Confidence: {(confidence * 100).toFixed(0)}%</Badge>
+          )}
+        </div>
         {issue.description ? (
           <CardDescription className="text-sm text-muted-foreground">{issue.description}</CardDescription>
         ) : null}
@@ -358,7 +367,18 @@ export function ExporterIssueCard({
             })}
           </div>
         )}
-        
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">LC Basis / Clause</p>
+            <p className="text-sm mt-1">{lcBasis}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Examiner Note</p>
+            <p className="text-sm mt-1">{examinerNote}</p>
+          </div>
+        </div>
+
         {/* Color-coded Expected/Found (from V2) */}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
@@ -414,19 +434,17 @@ export function ExporterIssueCard({
             )}
           </div>
         )}
-        {issue.suggestion && issue.suggestion !== '—' && (
-          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-            <div className="flex items-start gap-2">
-              <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">
-                  Suggested Solution
-                </p>
-                <p className="text-sm text-blue-800 dark:text-blue-200">{issue.suggestion}</p>
-              </div>
+        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">
+                Next Action
+              </p>
+              <p className="text-sm text-blue-800 dark:text-blue-200">{nextAction}</p>
             </div>
           </div>
-        )}
+        </div>
         
         {/* How to Fix Section - Actionable guidance */}
         <HowToFixSection 
