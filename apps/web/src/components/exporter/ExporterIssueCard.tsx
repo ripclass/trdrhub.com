@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type { IssueCard } from '@/types/lcopilot';
-import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale, BookOpen } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Ban, FileWarning, Lightbulb, Sparkles, CheckCircle, Scale, BookOpen, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { HowToFixSection, type EmailDraftContext } from './HowToFixSection';
 
