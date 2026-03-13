@@ -290,6 +290,108 @@ def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
             return None
     return None
 
+
+def _extract_intake_only(payload: Dict[str, Any]) -> bool:
+    options = payload.get("options") or {}
+    candidates = [
+        payload.get("intake_only"),
+        payload.get("intakeOnly"),
+        options.get("intake_only"),
+        options.get("intakeOnly"),
+        payload.get("mode"),
+    ]
+    truthy = {"1", "true", "yes", "on", "intake", "lc_intake"}
+    for candidate in candidates:
+        if isinstance(candidate, bool):
+            return candidate
+        if candidate is None:
+            continue
+        if str(candidate).strip().lower() in truthy:
+            return True
+    return False
+
+
+def _coerce_text_list(value: Any) -> List[str]:
+    parsed = _parse_json_if_possible(value)
+    if parsed in (None, "", [], {}):
+        return []
+    if isinstance(parsed, list):
+        return [str(item).strip() for item in parsed if str(item).strip()]
+    if isinstance(parsed, str):
+        text = parsed.strip()
+        if not text:
+            return []
+        return [text]
+    return [str(parsed).strip()]
+
+
+_DOC_REQUIREMENT_HINTS: List[Tuple[str, Tuple[str, ...]]] = [
+    ("commercial_invoice", ("commercial invoice", "invoice", "signed invoice")),
+    ("bill_of_lading", ("bill of lading", "full set clean on board", "marine bill of lading", "ocean bill of lading")),
+    ("air_waybill", ("air waybill", "awb", "airway bill")),
+    ("packing_list", ("packing list", "packing", "detailed packing list")),
+    ("certificate_of_origin", ("certificate of origin", "country of origin", "coo")),
+    ("insurance_certificate", ("insurance certificate", "insurance policy", "marine insurance")),
+    ("inspection_certificate", ("inspection certificate", "certificate of inspection")),
+    ("beneficiary_certificate", ("beneficiary certificate", "beneficiary's certificate", "beneficiary statement")),
+    ("manufacturer_certificate", ("manufacturer certificate", "manufacturer's certificate")),
+    ("conformity_certificate", ("certificate of conformity", "conformity certificate")),
+    ("non_manipulation_certificate", ("non-manipulation certificate", "non manipulation certificate")),
+    ("weight_certificate", ("weight certificate", "weighment certificate")),
+    ("weight_list", ("weight list",)),
+    ("phytosanitary_certificate", ("phytosanitary certificate", "phyto certificate")),
+    ("fumigation_certificate", ("fumigation certificate",)),
+    ("health_certificate", ("health certificate",)),
+    ("analysis_certificate", ("certificate of analysis", "analysis certificate")),
+    ("lab_test_report", ("test report", "lab test report", "laboratory report")),
+    ("quality_certificate", ("quality certificate",)),
+]
+
+
+def _infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[str]:
+    texts: List[str] = []
+    for key in ("documents_required", "required_documents", "additional_conditions", "clauses", "clauses_47a"):
+        texts.extend(_coerce_text_list(lc_payload.get(key)))
+
+    mt700 = lc_payload.get("mt700") or {}
+    if isinstance(mt700, dict):
+        blocks = mt700.get("blocks") or {}
+        if isinstance(blocks, dict):
+            texts.extend(_coerce_text_list(blocks.get("46A")))
+            texts.extend(_coerce_text_list(blocks.get("47A")))
+
+    haystack = "\n".join(texts).lower()
+    matches: List[str] = []
+    for canonical, hints in _DOC_REQUIREMENT_HINTS:
+        if any(hint in haystack for hint in hints):
+            matches.append(canonical)
+    return sorted(set(matches))
+
+
+def _build_lc_intake_summary(lc_payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(lc_payload, dict):
+        return {}
+
+    applicant = lc_payload.get("applicant") if isinstance(lc_payload.get("applicant"), dict) else {}
+    beneficiary = lc_payload.get("beneficiary") if isinstance(lc_payload.get("beneficiary"), dict) else {}
+    amount = lc_payload.get("amount") if isinstance(lc_payload.get("amount"), dict) else {}
+    dates = lc_payload.get("dates") if isinstance(lc_payload.get("dates"), dict) else {}
+    ports = lc_payload.get("ports") if isinstance(lc_payload.get("ports"), dict) else {}
+
+    summary = {
+        "lc_number": lc_payload.get("number") or lc_payload.get("lc_number"),
+        "applicant": applicant.get("name") or lc_payload.get("applicant_name"),
+        "beneficiary": beneficiary.get("name") or lc_payload.get("beneficiary_name"),
+        "currency": amount.get("currency") or lc_payload.get("currency"),
+        "amount": amount.get("amount") or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
+        "issue_date": dates.get("issue_date") or lc_payload.get("issue_date"),
+        "expiry_date": dates.get("expiry_date") or lc_payload.get("expiry_date"),
+        "latest_shipment_date": dates.get("latest_shipment_date") or lc_payload.get("latest_shipment_date"),
+        "port_of_loading": ports.get("port_of_loading") or lc_payload.get("port_of_loading"),
+        "port_of_discharge": ports.get("port_of_discharge") or lc_payload.get("port_of_discharge"),
+    }
+    return {key: value for key, value in summary.items() if value not in (None, "", [], {})}
+
 # _filter_user_facing_fields moved to app.routers.validation.utilities
 
 
@@ -1365,6 +1467,8 @@ async def validate_doc(
         if not doc_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
+        intake_only = _extract_intake_only(payload)
+
         checkpoint("form_parsed")
 
         # Build job context early so async extraction/two-stage telemetry always
@@ -1467,6 +1571,8 @@ async def validate_doc(
                 ],
                 "message": "Please upload your Letter of Credit (MT700/MT760) to proceed with validation.",
                 "action_required": "Add Letter of Credit",
+                "continuation_allowed": False,
+                "intake_mode": bool(intake_only),
             }
         
         context_contains_structured_data = any(
@@ -1612,6 +1718,50 @@ async def validate_doc(
                 "message": dashboard_lc_mismatch["message"],
                 "action_required": dashboard_lc_mismatch["action"],
                 "redirect_url": dashboard_lc_mismatch["redirect_url"],
+                "continuation_allowed": False,
+                "intake_mode": bool(intake_only),
+            }
+
+        if intake_only:
+            lc_summary = _build_lc_intake_summary(lc_context)
+            required_document_types = _infer_required_document_types_from_lc(lc_context)
+            special_conditions = _coerce_text_list(
+                lc_context.get("additional_conditions")
+                or lc_context.get("clauses")
+                or lc_context.get("clauses_47a")
+            )
+            documents_required = _coerce_text_list(
+                lc_context.get("documents_required")
+                or lc_context.get("required_documents")
+            )
+            intake_status = "resolved" if has_lc_document else "invalid"
+            return {
+                "status": intake_status,
+                "intake_mode": True,
+                "continuation_allowed": bool(has_lc_document),
+                "is_lc": bool(has_lc_document),
+                "job_id": job_id,
+                "jobId": job_id,
+                "lc_detection": {
+                    "lc_type": lc_type,
+                    "confidence": lc_type_confidence,
+                    "reason": lc_type_reason,
+                    "is_draft": is_draft_lc,
+                    "source": lc_type_source,
+                },
+                "lc_summary": lc_summary,
+                "required_document_types": required_document_types,
+                "documents_required": documents_required,
+                "special_conditions": special_conditions,
+                "detected_documents": [
+                    {
+                        "type": doc.get("documentType") or doc.get("document_type"),
+                        "filename": doc.get("name") or doc.get("filename"),
+                        "document_type_resolution": doc.get("document_type_resolution"),
+                    }
+                    for doc in (extracted_context.get("documents") if extracted_context else []) or []
+                ],
+                "message": "LC intake resolved. Upload supporting documents next." if has_lc_document else "We could not confirm a valid LC.",
             }
 
         # =====================================================================
