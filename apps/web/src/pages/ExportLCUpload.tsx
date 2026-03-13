@@ -964,12 +964,12 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
       {!isLoadingDraft && (
         <div className={wrapperClass}>
-        {/* LC Information */}
+        {/* Advanced LC Overrides / Notes */}
         <Card className="mb-8 shadow-soft border-0">
           <CardHeader>
-            <CardTitle>LC Information</CardTitle>
+            <CardTitle>Advanced LC Overrides & Notes</CardTitle>
             <CardDescription>
-              Provide basic information about your Letter of Credit
+              Auto-detected LC information is preferred. Use this area only when you need to correct detection behavior or add optional notes.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
