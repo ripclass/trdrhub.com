@@ -101,8 +101,8 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Letter of Credit Overview/i)).toBeInTheDocument();
-    expect(screen.getByText(/Customs Risk Assessment/i)).toBeInTheDocument();
+    expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Processing Summary/i)[0]).toBeInTheDocument();
     expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument();
     expect(
@@ -146,8 +146,8 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
-    expect(screen.getByText(/Amount mismatch/i)).toBeInTheDocument();
     const primaryIssue = screen.getByTestId('issue-card-issue-1');
+    expect(within(primaryIssue).getByRole('heading', { name: /Amount mismatch/i })).toBeInTheDocument();
     expect(
       within(primaryIssue)
         .getAllByText(/^Expected$/i)[0],
@@ -176,16 +176,13 @@ describe('ExporterResults', () => {
     expect(severityBadge.className).toContain('bg-[#E24A4A]/10');
   });
 
-  it('renders analytics tab with compliance score', async () => {
-    const user = userEvent.setup();
+  it('renders merged analytics content in overview', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole('tab', { name: /Analytics/i }));
     expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
     expect(screen.getByText(`${mockValidationResults.analytics.compliance_score}%`)).toBeInTheDocument();
-    expect(screen.getByText(/Document Status Distribution/i)).toBeInTheDocument();
   });
 
   it('keeps document status counts aligned between overview and documents tab', async () => {
@@ -398,15 +395,16 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/All documents comply with LC terms/i)).toBeInTheDocument();
   });
 
-  it('indicates analytics unavailability when structured_result analytics are missing', async () => {
+  it('still renders overview when structured_result analytics are missing', async () => {
     const withoutAnalytics = buildValidationResults();
     (withoutAnalytics.structured_result as any).analytics = undefined;
     activeResults = withoutAnalytics;
 
-    const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    await user.click(screen.getByRole('tab', { name: /Analytics/i }));
-    expect(screen.getByText(/Analytics unavailable/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
   });
 
   it('hides the timeline when no events are provided', async () => {
@@ -426,9 +424,13 @@ describe('ExporterResults', () => {
     const docWithNoFields = buildValidationResults();
     docWithNoFields.documents[0].extractedFields = {};
     docWithNoFields.documents[0].extractionStatus = 'partial';
-    if (docWithNoFields.structured_result) {
-      docWithNoFields.structured_result.documents[0].extracted_fields = {};
-      docWithNoFields.structured_result.documents[0].extraction_status = 'partial';
+    if (docWithNoFields.structured_result?.documents_structured?.[0]) {
+      docWithNoFields.structured_result.documents_structured[0].extracted_fields = {};
+      docWithNoFields.structured_result.documents_structured[0].extraction_status = 'partial';
+    }
+    if (docWithNoFields.structured_result?.lc_structured?.documents_structured?.[0]) {
+      docWithNoFields.structured_result.lc_structured.documents_structured[0].extracted_fields = {};
+      docWithNoFields.structured_result.lc_structured.documents_structured[0].extraction_status = 'partial';
     }
     activeResults = docWithNoFields;
 
@@ -445,9 +447,13 @@ describe('ExporterResults', () => {
     docNoFieldsButVerified.documents[0].status = 'success';
     docNoFieldsButVerified.documents[0].extractionStatus = 'success';
     docNoFieldsButVerified.documents[0].extractedFields = {};
-    if (docNoFieldsButVerified.structured_result) {
-      docNoFieldsButVerified.structured_result.documents[0].extracted_fields = {};
-      docNoFieldsButVerified.structured_result.documents[0].extraction_status = 'success';
+    if (docNoFieldsButVerified.structured_result?.documents_structured?.[0]) {
+      docNoFieldsButVerified.structured_result.documents_structured[0].extracted_fields = {};
+      docNoFieldsButVerified.structured_result.documents_structured[0].extraction_status = 'success';
+    }
+    if (docNoFieldsButVerified.structured_result?.lc_structured?.documents_structured?.[0]) {
+      docNoFieldsButVerified.structured_result.lc_structured.documents_structured[0].extracted_fields = {};
+      docNoFieldsButVerified.structured_result.lc_structured.documents_structured[0].extraction_status = 'success';
     }
     activeResults = docNoFieldsButVerified;
 

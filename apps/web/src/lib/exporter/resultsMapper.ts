@@ -150,6 +150,8 @@ const classifyBucket = (issue: any, severity: string): string => {
     issue?.ruleset_domain,
     issue?.category,
     issue?.document_type,
+    issue?.bucket,
+    issue?.workflow_lane,
   ]
     .filter(Boolean)
     .join(' ')
@@ -158,18 +160,20 @@ const classifyBucket = (issue: any, severity: string): string => {
   if (text.includes('missing') && (text.includes('document') || text.includes('doc'))) {
     return 'Missing Required Documents';
   }
-  if (text.includes('crossdoc') || text.includes('cross-document') || text.includes('across documents')) {
-    return 'Cross-Document Conditions';
-  }
   if (
     text.includes('sanction') ||
     text.includes('aml') ||
     text.includes('compliance') ||
     text.includes('risk') ||
     text.includes('ofac') ||
-    text.includes('watchlist')
+    text.includes('watchlist') ||
+    text.includes('screening') ||
+    text.includes('compliance_review')
   ) {
     return 'Compliance / Risk Review';
+  }
+  if (text.includes('crossdoc') || text.includes('cross-document') || text.includes('across documents')) {
+    return 'Cross-Document Conditions';
   }
   if (
     text.includes('ocr') ||
