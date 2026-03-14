@@ -421,6 +421,12 @@ class ToleranceApplied(BaseModel):
     explicit: bool
 
 
+class WorkflowLane(str, Enum):
+    DOCUMENTARY_REVIEW = "documentary_review"
+    COMPLIANCE_REVIEW = "compliance_review"
+    MANUAL_REVIEW = "manual_review"
+
+
 class IssueCard(BaseModel):
     id: str
     rule: Optional[str] = None
@@ -444,6 +450,7 @@ class IssueCard(BaseModel):
     tolerance_applied: Optional[ToleranceApplied] = None
     extraction_confidence: Optional[float] = None
     amendment_available: Optional[bool] = None
+    workflow_lane: Optional[WorkflowLane] = None
 
 
 class ReferenceIssue(BaseModel):
@@ -562,6 +569,18 @@ class ValidationDocumentStatus(str, Enum):
     ERROR = "error"
 
 
+class DocumentRequirementStatus(str, Enum):
+    MATCHED = "matched"
+    PARTIAL = "partial"
+    MISSING = "missing"
+
+
+class DocumentReviewState(str, Enum):
+    READY = "ready"
+    NEEDS_REVIEW = "needs_review"
+    BLOCKED = "blocked"
+
+
 class ValidationDocument(BaseModel):
     id: str
     documentId: str
@@ -573,6 +592,14 @@ class ValidationDocument(BaseModel):
     status: ValidationDocumentStatus
     issuesCount: int
     extractedFields: Dict[str, Any]
+    missingRequiredFields: Optional[List[str]] = None
+    requiredFieldsFound: Optional[int] = None
+    requiredFieldsTotal: Optional[int] = None
+    reviewRequired: Optional[bool] = None
+    reviewReasons: Optional[List[str]] = None
+    criticalFieldStates: Optional[Dict[str, str]] = None
+    requirementStatus: Optional[DocumentRequirementStatus] = None
+    reviewState: Optional[DocumentReviewState] = None
 
 
 # ============================================================================
@@ -623,6 +650,7 @@ SCHEMAS = {
     'ReferenceIssue': ReferenceIssue,
     'AIEnrichmentPayload': AIEnrichmentPayload,
     'ToleranceApplied': ToleranceApplied,
+    'WorkflowLane': WorkflowLane,
     
     # V2 Validation Pipeline
     'GateResult': GateResult,
@@ -635,6 +663,8 @@ SCHEMAS = {
     
     # Validation Document
     'ValidationDocument': ValidationDocument,
+    'DocumentRequirementStatus': DocumentRequirementStatus,
+    'DocumentReviewState': DocumentReviewState,
     
     # Pagination
     'PaginationParams': PaginationParams,

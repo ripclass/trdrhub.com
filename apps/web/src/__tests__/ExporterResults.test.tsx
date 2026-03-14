@@ -246,6 +246,68 @@ describe('ExporterResults', () => {
     expect(within(customsPanel).getByText(readinessValue as string)).toBeInTheDocument();
   });
 
+  it('separates requirement coverage from review readiness in checklist rows', async () => {
+    const checklistResults = buildValidationResults();
+    checklistResults.documents = checklistResults.documents.map((doc) => {
+      if (doc.typeKey === 'commercial_invoice') {
+        return {
+          ...doc,
+          requirementStatus: 'matched',
+          reviewState: 'needs_review',
+          reviewReasons: ['Invoice totals need manual review'],
+        };
+      }
+      return doc;
+    });
+    checklistResults.structured_result = {
+      ...checklistResults.structured_result,
+      lc_structured: {
+        ...(checklistResults.structured_result?.lc_structured ?? {}),
+        documents_required: ['Signed Commercial Invoice', 'Beneficiary Certificate'],
+      },
+    } as typeof checklistResults.structured_result;
+    activeResults = checklistResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    expect(within(checklistCard).getByText(/Requirement: Matched/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/Review: Review required/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/Requirement: Missing/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/Review: Awaiting document/i)).toBeInTheDocument();
+  });
+
+  it('uses internal compliance review wording in the action engine', async () => {
+    const complianceResults = buildValidationResults({
+      issues: [
+        {
+          ...mockValidationResults.issues[0],
+          id: 'issue-compliance',
+          title: 'Potential sanctions match',
+          severity: 'critical',
+          bucket: 'Compliance / Risk Review',
+          workflow_lane: 'compliance_review',
+          fix_owner: 'Internal Compliance Review',
+          remediation_owner: 'Internal Compliance Review',
+          next_action: 'Route to internal compliance review, capture the disposition, and keep submission on hold until cleared.',
+        },
+      ],
+    });
+    activeResults = complianceResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Action Engine/i)).toBeInTheDocument(),
+    );
+
+    const actionCard = findCardByTitle(/Action Engine/i);
+    expect(within(actionCard).getByText(/Route Potential sanctions match to internal compliance review/i)).toBeInTheDocument();
+    expect(within(actionCard).getByText(/keep submission on hold until cleared/i)).toBeInTheDocument();
+  });
+
   it('gates submit eligibility when validation blocks submission', async () => {
     const gatedResults = buildValidationResults();
     gatedResults.structured_result = {

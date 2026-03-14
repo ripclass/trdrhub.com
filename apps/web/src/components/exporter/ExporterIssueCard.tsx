@@ -246,12 +246,33 @@ export function ExporterIssueCard({
   const Icon = severity.Icon;
   const documentNames = (issue.documents ?? []).filter(Boolean);
   const bucket = (issue as any).bucket ?? 'Document-Level Discrepancies';
+  const workflowLane =
+    (issue as any).workflow_lane ??
+    (bucket === 'Compliance / Risk Review'
+      ? 'compliance_review'
+      : bucket === 'Extraction / Manual Review'
+      ? 'manual_review'
+      : 'documentary_review');
   const severityDisplay = (issue as any).severity_display ?? (normalizedSeverity === 'critical' ? 'High-likelihood discrepancy' : normalizedSeverity === 'major' ? 'Likely discrepancy' : 'Review required');
   const lcBasis = (issue as any).lc_basis ?? issue.ucpReference ?? issue.isbpReference ?? issue.rule ?? 'LC examination baseline';
   const examinerNote = (issue as any).examiner_note ?? issue.description ?? 'Review against LC terms and presented documents.';
   const fixOwner = (issue as any).fix_owner ?? (issue as any).remediation_owner ?? 'Unknown';
   const nextAction = (issue as any).next_action ?? issue.suggestion ?? 'Correct and revalidate before submission.';
   const confidence = (issue as any).confidence ?? issue.extraction_confidence;
+  const ownerLabel = workflowLane === 'documentary_review' ? 'Fix owner' : 'Review owner';
+  const actionLabel = workflowLane === 'documentary_review' ? 'Next Action' : 'Review Action';
+  const basisLabel =
+    workflowLane === 'compliance_review'
+      ? 'Compliance Basis'
+      : workflowLane === 'manual_review'
+      ? 'Review Basis'
+      : 'LC Basis / Clause';
+  const noteLabel =
+    workflowLane === 'compliance_review'
+      ? 'Compliance Note'
+      : workflowLane === 'manual_review'
+      ? 'Review Note'
+      : 'Examiner Note';
 
   const buildDocumentBadgeClass = (status?: string) => {
     if (status === 'success') return 'bg-success/10 text-success border-success/30';
@@ -260,7 +281,7 @@ export function ExporterIssueCard({
   };
 
   // Get business impact for this severity
-  const isComplianceIssue = issue.bucket === 'Compliance / Risk Review';
+  const isComplianceIssue = bucket === 'Compliance / Risk Review';
   const impact = isComplianceIssue
     ? COMPLIANCE_IMPACT[normalizedSeverity] ?? COMPLIANCE_IMPACT.minor
     : BUSINESS_IMPACT[normalizedSeverity] ?? BUSINESS_IMPACT.minor;
@@ -312,7 +333,7 @@ export function ExporterIssueCard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="text-xs">{bucket}</Badge>
-          <Badge variant="outline" className="text-xs">Fix owner: {fixOwner}</Badge>
+          <Badge variant="outline" className="text-xs">{ownerLabel}: {fixOwner}</Badge>
           {typeof confidence === 'number' && (
             <Badge variant="outline" className="text-xs">Confidence: {(confidence * 100).toFixed(0)}%</Badge>
           )}
@@ -400,11 +421,11 @@ export function ExporterIssueCard({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{isComplianceIssue ? 'Screening Basis' : 'LC Basis / Clause'}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{basisLabel}</p>
             <p className="text-sm mt-1">{lcBasis}</p>
           </div>
           <div className="rounded-md border p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{isComplianceIssue ? 'Compliance Note' : 'Examiner Note'}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{noteLabel}</p>
             <p className="text-sm mt-1">{examinerNote}</p>
           </div>
         </div>
@@ -469,7 +490,7 @@ export function ExporterIssueCard({
             <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">
-                Next Action
+                {actionLabel}
               </p>
               <p className="text-sm text-blue-800 dark:text-blue-200">{nextAction}</p>
             </div>

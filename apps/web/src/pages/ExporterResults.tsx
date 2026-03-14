@@ -166,6 +166,28 @@ const buildWarningReasons = ({
   return Array.from(new Set(reasons));
 };
 
+type RequirementChecklistStatus = 'matched' | 'partial' | 'missing';
+type RequirementChecklistReviewState = 'ready' | 'needs_review' | 'blocked' | 'awaiting_document';
+
+const REQUIREMENT_STATUS_META: Record<
+  RequirementChecklistStatus,
+  { label: string; badgeStatus: 'success' | 'warning' | 'error' }
+> = {
+  matched: { label: 'Matched', badgeStatus: 'success' },
+  partial: { label: 'Partial', badgeStatus: 'warning' },
+  missing: { label: 'Missing', badgeStatus: 'error' },
+};
+
+const REVIEW_STATE_META: Record<
+  RequirementChecklistReviewState,
+  { label: string; badgeStatus: 'success' | 'warning' | 'error' }
+> = {
+  ready: { label: 'Ready', badgeStatus: 'success' },
+  needs_review: { label: 'Review required', badgeStatus: 'warning' },
+  blocked: { label: 'Blocked', badgeStatus: 'error' },
+  awaiting_document: { label: 'Awaiting document', badgeStatus: 'warning' },
+};
+
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
 
 export default function ExporterResults({
@@ -1203,31 +1225,61 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         const requirementText = requiredConditions.find((condition) => rule.matchers.some((matcher) => matcher.test(condition))) || null;
         if (!requirementText) return null;
         const matchedDoc = normalizedDocs.find((doc) => rule.docTypes.includes(doc.normalizedType));
-        const issues = matchedDoc
+        const requirementStatus: RequirementChecklistStatus = !matchedDoc
+          ? 'missing'
+          : (matchedDoc.requirementStatus ??
+              (((matchedDoc.missingRequiredFields ?? []) as string[]).length > 0 ? 'partial' : 'matched'));
+        const reviewState: RequirementChecklistReviewState = !matchedDoc
+          ? 'awaiting_document'
+          : matchedDoc.reviewState === 'blocked'
+          ? 'blocked'
+          : matchedDoc.reviewState === 'needs_review' || requirementStatus === 'partial'
+          ? 'needs_review'
+          : 'ready';
+        const reviewNotes = matchedDoc
           ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
           : ['Document not uploaded yet'];
-        const status = !matchedDoc
-          ? 'missing'
-          : matchedDoc.status === 'success'
-          ? 'found'
-          : matchedDoc.status === 'warning'
-          ? 'review'
-          : 'error';
+
+        if (
+          matchedDoc &&
+          requirementStatus === 'partial' &&
+          reviewNotes.length === 0 &&
+          Array.isArray(matchedDoc.missingRequiredFields) &&
+          matchedDoc.missingRequiredFields.length > 0
+        ) {
+          reviewNotes.push(
+            `Missing required fields: ${matchedDoc.missingRequiredFields
+              .slice(0, 3)
+              .map((field) => humanizeLabel(String(field)))
+              .join(', ')}`,
+          );
+        }
+
+        if (matchedDoc && reviewNotes.length === 0) {
+          if (reviewState === 'blocked') {
+            reviewNotes.push('This document is blocked from clean presentation until extraction or validation issues are resolved.');
+          } else if (reviewState === 'needs_review') {
+            reviewNotes.push('This document requires manual review before clean presentation.');
+          }
+        }
+
         return {
           key: rule.key,
           label: rule.label,
-          status,
+          requirementStatus,
+          reviewState,
           matchedDoc,
-          issues,
+          reviewNotes,
           requirementText,
         };
       })
       .filter(Boolean) as Array<{
         key: string;
         label: string;
-        status: 'found' | 'missing' | 'review' | 'error';
+        requirementStatus: RequirementChecklistStatus;
+        reviewState: RequirementChecklistReviewState;
         matchedDoc: (typeof normalizedDocs)[number] | undefined;
-        issues: string[];
+        reviewNotes: string[];
         requirementText: string;
       }>;
 
@@ -1237,7 +1289,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
     requirementChecklist.forEach((item) => {
-      if (item.status === 'missing') {
+      if (item.requirementStatus === 'missing') {
         actions.push({
           priority: 'critical',
           title: `Upload ${item.label}`,
@@ -1245,20 +1297,44 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         });
         return;
       }
-      if (item.status === 'review') {
+      if (item.reviewState === 'blocked') {
+        actions.push({
+          priority: 'critical',
+          title: `Clear ${item.label} review block`,
+          detail: item.reviewNotes[0] || 'This document is blocked from clean presentation until the review issue is cleared.',
+        });
+        return;
+      }
+      if (item.requirementStatus === 'partial') {
         actions.push({
           priority: 'major',
-          title: `Review ${item.label}`,
-          detail: item.issues[0] || 'This document requires manual review before submission.',
+          title: `Complete ${item.label} requirement coverage`,
+          detail: item.reviewNotes[0] || 'This matched document still has missing required elements against the LC requirement.',
+        });
+        return;
+      }
+      if (item.reviewState === 'needs_review') {
+        actions.push({
+          priority: 'major',
+          title: `Complete review for ${item.label}`,
+          detail: item.reviewNotes[0] || 'This document requires manual review before submission.',
         });
       }
     });
 
     issueCards.slice(0, 5).forEach((issue) => {
+      const workflowLane = String((issue as any).workflow_lane ?? '');
+      const nextAction = safeString((issue as any).next_action || issue.suggestion || issue.description || 'Review this issue before submission.');
+      const actionTitle =
+        workflowLane === 'compliance_review'
+          ? `Route ${safeString(issue.title || 'compliance alert')} to internal compliance review`
+          : workflowLane === 'manual_review'
+          ? `Complete manual review for ${safeString(issue.title || 'document review item')}`
+          : safeString(issue.title || (issue as any).message || 'Resolve documentary issue');
       actions.push({
         priority: normalizeDiscrepancySeverity(issue.severity) === 'critical' ? 'critical' : 'major',
-        title: safeString(issue.title || issue.message || 'Resolve discrepancy'),
-        detail: safeString(issue.detail || issue.message || 'Resolve this issue before submission.'),
+        title: actionTitle,
+        detail: nextAction,
       });
     });
 
@@ -1273,8 +1349,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
   }, [requirementChecklist, issueCards]);
   const customsPackReadiness = useMemo(() => {
-    const blockers = requirementChecklist.filter((item) => item.status === 'missing');
-    const reviews = requirementChecklist.filter((item) => item.status === 'review');
+    const blockers = requirementChecklist.filter(
+      (item) => item.requirementStatus === 'missing' || item.reviewState === 'blocked',
+    );
+    const reviews = requirementChecklist.filter(
+      (item) => item.requirementStatus === 'partial' || item.reviewState === 'needs_review',
+    );
     const ownerBuckets = {
       beneficiary: 0,
       thirdParty: 0,
@@ -1283,7 +1363,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       waiver: 0,
     };
     issueCards.forEach((issue) => {
-      const owner = String((issue as any).fixOwner || '').toLowerCase();
+      const owner = String(
+        (issue as any).fix_owner ?? (issue as any).remediation_owner ?? (issue as any).fixOwner ?? '',
+      ).toLowerCase();
       if (owner.includes('beneficiary')) ownerBuckets.beneficiary += 1;
       else if (owner.includes('third')) ownerBuckets.thirdParty += 1;
       else if (owner.includes('mixed')) ownerBuckets.mixed += 1;
@@ -1292,7 +1374,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
     const status = blockers.length > 0 ? 'not_ready' : reviews.length > 0 || issueCards.length > 0 ? 'review_required' : 'ready';
     const summary = blockers.length > 0
-      ? 'Not ready for clean presentation until missing required documents are addressed.'
+      ? 'Not ready for clean presentation until missing required documents and blocked review items are cleared.'
       : reviews.length > 0 || issueCards.length > 0
       ? 'Presentation requires review or remediation before it should be treated as clean.'
       : 'Document set appears ready for clean presentation on current review.';
@@ -1982,40 +2064,50 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Required Document Checklist</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    LC requirements translated into live checklist status
+                    Requirement coverage and review readiness shown separately
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {requirementChecklist.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
                   ) : (
-                    requirementChecklist.map((item) => (
-                      <div key={item.key} className="rounded-lg border border-border/60 p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-sm">{item.label}</p>
-                            <p className="text-xs text-muted-foreground">{item.requirementText}</p>
+                    requirementChecklist.map((item) => {
+                      const requirementMeta = REQUIREMENT_STATUS_META[item.requirementStatus];
+                      const reviewMeta = REVIEW_STATE_META[item.reviewState];
+
+                      return (
+                        <div key={item.key} className="rounded-lg border border-border/60 p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-sm">{item.label}</p>
+                              <p className="text-xs text-muted-foreground">{item.requirementText}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <StatusBadge status={requirementMeta.badgeStatus}>
+                                Requirement: {requirementMeta.label}
+                              </StatusBadge>
+                              <StatusBadge status={reviewMeta.badgeStatus}>
+                                Review: {reviewMeta.label}
+                              </StatusBadge>
+                            </div>
                           </div>
-                          <StatusBadge status={item.status === 'found' ? 'success' : item.status === 'missing' ? 'error' : 'warning'}>
-                            {item.status === 'found' ? 'Found' : item.status === 'missing' ? 'Missing' : 'Needs Review'}
-                          </StatusBadge>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {item.matchedDoc ? (
-                            <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
-                          ) : (
-                            'No uploaded document matched this LC requirement yet.'
+                          <div className="text-xs text-muted-foreground">
+                            {item.matchedDoc ? (
+                              <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
+                            ) : (
+                              'No uploaded document matched this LC requirement yet.'
+                            )}
+                          </div>
+                          {item.reviewNotes.length > 0 && (
+                            <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                              {item.reviewNotes.slice(0, 2).map((issue, idx) => (
+                                <li key={`${item.key}-issue-${idx}`}>{issue}</li>
+                              ))}
+                            </ul>
                           )}
                         </div>
-                        {item.issues.length > 0 && (
-                          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-                            {item.issues.slice(0, 2).map((issue, idx) => (
-                              <li key={`${item.key}-issue-${idx}`}>{issue}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </CardContent>
               </Card>
@@ -2265,7 +2357,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="rounded-lg border border-border/60 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Blockers</p>
                       <p className="text-2xl font-semibold">{customsPackReadiness.blockers.length}</p>
-                      <p className="text-sm text-muted-foreground mt-2">Missing required documents that block clean submission.</p>
+                      <p className="text-sm text-muted-foreground mt-2">Missing requirements or blocked reviews that prevent clean submission.</p>
                     </div>
                     <div className="rounded-lg border border-border/60 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Review Queue</p>
@@ -2308,17 +2400,27 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       {requirementChecklist.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No required-document checklist available yet.</p>
                       ) : (
-                        requirementChecklist.map((item) => (
-                          <div key={`customs-${item.key}`} className="flex items-start justify-between gap-3 border-b border-border/40 pb-3 last:border-b-0 last:pb-0">
-                            <div>
-                              <p className="text-sm font-medium">{item.label}</p>
-                              <p className="text-xs text-muted-foreground">{item.matchedDoc ? `Matched: ${item.matchedDoc.name}` : 'Not uploaded yet'}</p>
+                        requirementChecklist.map((item) => {
+                          const requirementMeta = REQUIREMENT_STATUS_META[item.requirementStatus];
+                          const reviewMeta = REVIEW_STATE_META[item.reviewState];
+
+                          return (
+                            <div key={`customs-${item.key}`} className="flex items-start justify-between gap-3 border-b border-border/40 pb-3 last:border-b-0 last:pb-0">
+                              <div>
+                                <p className="text-sm font-medium">{item.label}</p>
+                                <p className="text-xs text-muted-foreground">{item.matchedDoc ? `Matched: ${item.matchedDoc.name}` : 'Not uploaded yet'}</p>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <StatusBadge status={requirementMeta.badgeStatus}>
+                                  Requirement: {requirementMeta.label}
+                                </StatusBadge>
+                                <StatusBadge status={reviewMeta.badgeStatus}>
+                                  Review: {reviewMeta.label}
+                                </StatusBadge>
+                              </div>
                             </div>
-                            <StatusBadge status={item.status === 'found' ? 'success' : item.status === 'missing' ? 'error' : 'warning'}>
-                              {item.status === 'found' ? 'Found' : item.status === 'missing' ? 'Missing' : 'Review'}
-                            </StatusBadge>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                     <div className="rounded-lg border border-border/60 p-4 space-y-2">

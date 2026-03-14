@@ -146,7 +146,12 @@ export interface ValidationDocument {
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;
+  missingRequiredFields?: string[];
+  requiredFieldsFound?: number;
+  requiredFieldsTotal?: number;
+  requirementStatus?: 'matched' | 'partial' | 'missing';
   reviewRequired?: boolean;
+  reviewState?: 'ready' | 'needs_review' | 'blocked';
   reviewReasons?: string[];
   criticalFieldStates?: Record<string, string>;
 }

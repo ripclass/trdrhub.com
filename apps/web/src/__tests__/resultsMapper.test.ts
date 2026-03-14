@@ -31,5 +31,29 @@ describe('results mapper - option e payload', () => {
     expect(mapped.summary.successful_extractions).toBe(4);
     expect(mapped.summary.failed_extractions).toBe(1);
   });
+
+  it('normalizes compliance findings into internal review actions', () => {
+    const payload = JSON.parse(JSON.stringify(optionEFixture));
+    payload.structured_result.issues = [
+      {
+        id: 'compliance-1',
+        title: 'Potential sanctions match',
+        severity: 'critical',
+        documents: ['BillOfLading.pdf'],
+        expected: 'No sanctioned vessel or party involvement',
+        found: 'Potential OFAC vessel watchlist match',
+        suggested_fix: 'Resolve discrepancy before presentation.',
+        description: 'Sanctions screening requires escalation before any submission decision.',
+        rule: 'SANCTIONS-1',
+        ruleset_domain: 'icc.lcopilot.crossdoc',
+      },
+    ];
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.issues[0]?.workflow_lane).toBe('compliance_review');
+    expect(mapped.issues[0]?.fix_owner).toBe('Internal Compliance Review');
+    expect(mapped.issues[0]?.severity_display).toBe('Compliance hold');
+    expect(mapped.issues[0]?.next_action).toContain('internal compliance review');
+  });
 });
 

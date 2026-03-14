@@ -38,6 +38,70 @@ const deriveDocumentStatus = (extractionStatus: string, issuesCount: number): 's
   return 'success';
 };
 
+const isPlaceholderText = (value?: string | null): boolean => {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  const normalized = value.toString().trim();
+  return normalized.length === 0 || normalized === '—';
+};
+
+const deriveRequirementStatus = ({
+  missingRequiredFields,
+  requiredFieldsFound,
+  requiredFieldsTotal,
+}: {
+  missingRequiredFields: string[];
+  requiredFieldsFound?: number;
+  requiredFieldsTotal?: number;
+}): 'matched' | 'partial' | 'missing' => {
+  if (typeof requiredFieldsTotal === 'number' && requiredFieldsTotal > 0 && typeof requiredFieldsFound === 'number') {
+    if (requiredFieldsFound <= 0) {
+      return 'missing';
+    }
+    if (requiredFieldsFound < requiredFieldsTotal) {
+      return 'partial';
+    }
+  }
+
+  if (missingRequiredFields.length > 0) {
+    return 'partial';
+  }
+
+  return 'matched';
+};
+
+const deriveReviewState = ({
+  status,
+  extractionStatus,
+  reviewRequired,
+  reviewReasons,
+  issuesCount,
+}: {
+  status: 'success' | 'warning' | 'error';
+  extractionStatus: string;
+  reviewRequired: boolean;
+  reviewReasons: string[];
+  issuesCount: number;
+}): 'ready' | 'needs_review' | 'blocked' => {
+  const normalizedExtractionStatus = extractionStatus.toLowerCase();
+  if (status === 'error' || ['error', 'failed', 'empty'].includes(normalizedExtractionStatus)) {
+    return 'blocked';
+  }
+
+  if (
+    reviewRequired ||
+    reviewReasons.length > 0 ||
+    issuesCount > 0 ||
+    status === 'warning' ||
+    ['partial', 'pending', 'text_only', 'unknown'].includes(normalizedExtractionStatus)
+  ) {
+    return 'needs_review';
+  }
+
+  return 'ready';
+};
+
 const formatTextValue = (value: any): string => {
   if (value === null || value === undefined) {
     return '—';
@@ -121,7 +185,12 @@ const classifyBucket = (issue: any, severity: string): string => {
 };
 
 const getSeverityDisplay = (severity: string, bucket: string): string => {
-  if (bucket === 'Compliance / Risk Review') return 'Compliance alert';
+  if (bucket === 'Compliance / Risk Review') {
+    if (severity === 'critical') return 'Compliance hold';
+    if (severity === 'major') return 'Compliance escalation';
+    if (severity === 'minor') return 'Compliance review';
+    return 'Compliance note';
+  }
   if (severity === 'critical') return 'High-likelihood discrepancy';
   if (severity === 'major') return 'Likely discrepancy';
   if (severity === 'minor') return 'Review required';
@@ -131,17 +200,35 @@ const getSeverityDisplay = (severity: string, bucket: string): string => {
 const getFixOwner = (issue: any, bucket: string): string => {
   const text = [issue?.title, issue?.description, issue?.suggestion].filter(Boolean).join(' ').toLowerCase();
   if (text.includes('amend') || text.includes('waiver')) return 'Waiver / Amendment';
-  if (bucket === 'Compliance / Risk Review') return 'Internal Compliance';
+  if (bucket === 'Compliance / Risk Review') return 'Internal Compliance Review';
   if (bucket === 'Cross-Document Conditions') return 'Mixed';
   if (text.includes('carrier') || text.includes('supplier') || text.includes('insurer') || text.includes('issuer')) return 'Third Party';
   if (bucket === 'Missing Required Documents' || bucket === 'Document-Level Discrepancies') return 'Beneficiary';
   return 'Unknown';
 };
 
+const getWorkflowLane = (bucket: string): 'documentary_review' | 'compliance_review' | 'manual_review' => {
+  if (bucket === 'Compliance / Risk Review') {
+    return 'compliance_review';
+  }
+  if (bucket === 'Extraction / Manual Review') {
+    return 'manual_review';
+  }
+  return 'documentary_review';
+};
+
 const buildNextAction = (bucket: string, suggestion: string): string => {
-  if (suggestion && suggestion !== '—') return suggestion;
+  if (bucket === 'Compliance / Risk Review') {
+    if (
+      isPlaceholderText(suggestion) ||
+      /(correct|fix|amend|revalidate|resolve discrepancy|documentary|presentation)/i.test(suggestion)
+    ) {
+      return 'Route to internal compliance review, capture the disposition, and keep submission on hold until cleared.';
+    }
+    return suggestion;
+  }
+  if (!isPlaceholderText(suggestion)) return suggestion;
   if (bucket === 'Missing Required Documents') return 'Obtain and upload the missing required document set.';
-  if (bucket === 'Compliance / Risk Review') return 'Escalate to compliance for disposition and approval.';
   if (bucket === 'Extraction / Manual Review') return 'Validate source document manually and confirm extracted values.';
   if (bucket === 'Cross-Document Conditions') return 'Reconcile conflicting values across all referenced documents.';
   return 'Correct the document field and revalidate before submission.';
@@ -169,6 +256,42 @@ const mapDocuments = (docs: any[] = []) => {
       normalizedStatus === 'success' || normalizedStatus === 'warning' || normalizedStatus === 'error'
         ? (normalizedStatus as 'success' | 'warning' | 'error')
         : deriveDocumentStatus(extractionStatus, issuesCount);
+    const missingRequiredFields = Array.isArray(doc?.missing_required_fields)
+      ? doc.missing_required_fields.map((field: unknown) => String(field))
+      : Array.isArray(doc?.missingRequiredFields)
+      ? doc.missingRequiredFields.map((field: unknown) => String(field))
+      : [];
+    const requiredFieldsFound =
+      typeof doc?.required_fields_found === 'number'
+        ? doc.required_fields_found
+        : typeof doc?.requiredFieldsFound === 'number'
+        ? doc.requiredFieldsFound
+        : undefined;
+    const requiredFieldsTotal =
+      typeof doc?.required_fields_total === 'number'
+        ? doc.required_fields_total
+        : typeof doc?.requiredFieldsTotal === 'number'
+        ? doc.requiredFieldsTotal
+        : undefined;
+    const reviewRequired = Boolean(doc?.review_required ?? doc?.reviewRequired);
+    const reviewReasons = Array.isArray(doc?.review_reasons)
+      ? doc.review_reasons.map((reason: unknown) => String(reason))
+      : Array.isArray(doc?.reviewReasons)
+      ? doc.reviewReasons.map((reason: unknown) => String(reason))
+      : [];
+    const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
+    const requirementStatus = deriveRequirementStatus({
+      missingRequiredFields,
+      requiredFieldsFound,
+      requiredFieldsTotal,
+    });
+    const reviewState = deriveReviewState({
+      status,
+      extractionStatus,
+      reviewRequired,
+      reviewReasons,
+      issuesCount,
+    });
 
     return {
       id: documentId,
@@ -182,12 +305,14 @@ const mapDocuments = (docs: any[] = []) => {
       issuesCount,
       parseComplete: typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
       parseCompleteness: doc?.parse_completeness ?? doc?.parseCompleteness,
-      missingRequiredFields: doc?.missing_required_fields ?? [],
-      requiredFieldsFound: doc?.required_fields_found,
-      requiredFieldsTotal: doc?.required_fields_total,
-      reviewRequired: Boolean(doc?.review_required ?? doc?.reviewRequired),
-      reviewReasons: doc?.review_reasons ?? doc?.reviewReasons ?? [],
-      criticalFieldStates: doc?.critical_field_states ?? doc?.criticalFieldStates ?? {},
+      missingRequiredFields,
+      requiredFieldsFound,
+      requiredFieldsTotal,
+      reviewRequired,
+      reviewReasons,
+      criticalFieldStates,
+      requirementStatus,
+      reviewState,
       extractedFields: doc?.extracted_fields ?? {},
     };
   });
@@ -277,6 +402,7 @@ const mapIssues = (
     const fixOwner = getFixOwner(issue, bucket);
     const examinerNote = issue?.description ?? issue?.message ?? issue?.note ?? 'Review against LC terms and supporting documents.';
     const nextAction = buildNextAction(bucket, suggestion);
+    const workflowLane = getWorkflowLane(bucket);
     const confidenceRaw = issue?.extraction_confidence ?? issue?.confidence ?? issue?.match_confidence;
     const confidence = typeof confidenceRaw === 'number' ? Math.max(0, Math.min(1, confidenceRaw)) : undefined;
 
@@ -300,6 +426,7 @@ const mapIssues = (
       fix_owner: fixOwner,
       remediation_owner: fixOwner,
       next_action: nextAction,
+      workflow_lane: workflowLane,
       confidence,
       suggestion,
       field: issue?.field ?? issue?.metadata?.field,

@@ -61,11 +61,39 @@ interface FixInstruction {
   isInternal?: boolean; // Can be fixed without external parties
 }
 
+const getWorkflowLane = (issue: IssueCard): string => {
+  const bucket = (issue as any).bucket;
+  if ((issue as any).workflow_lane) {
+    return String((issue as any).workflow_lane);
+  }
+  if (bucket === "Compliance / Risk Review") {
+    return "compliance_review";
+  }
+  if (bucket === "Extraction / Manual Review") {
+    return "manual_review";
+  }
+  return "documentary_review";
+};
+
 // Get fix instructions based on issue type/rule
 function getFixInstructions(issue: IssueCard, lcNumber?: string): FixInstruction | null {
   const rule = issue.rule?.toUpperCase() || "";
   const title = issue.title?.toLowerCase() || "";
   const expected = issue.expected || "";
+  const workflowLane = getWorkflowLane(issue);
+
+  if (workflowLane === "compliance_review") {
+    return {
+      steps: [
+        "Confirm the trigger, screening context, and supporting evidence.",
+        "Record the review rationale, including any false-positive analysis.",
+        "Route the case to internal compliance for disposition and approval.",
+        "Keep submission on hold until the compliance decision is documented.",
+      ],
+      timeEstimate: "Same-day internal review unless external escalation is required",
+      isInternal: true,
+    };
+  }
   
   // BIN/TIN Missing
   if (rule.includes("BIN") || title.includes("bin missing")) {
@@ -253,6 +281,10 @@ export function HowToFixSection({
   const { toast } = useToast();
   
   const instructions = getFixInstructions(issue, lcNumber);
+  const workflowLane = getWorkflowLane(issue);
+  const sectionTitle = workflowLane === "documentary_review" ? "How to Fix" : "Review Workflow";
+  const internalBadgeLabel = workflowLane === "compliance_review" ? "Internal review" : "Self-fixable";
+  const stepsLabel = workflowLane === "compliance_review" ? "Review steps:" : "Steps:";
   
   if (!instructions) return null;
   
@@ -309,10 +341,10 @@ export function HowToFixSection({
         >
           <span className="flex items-center gap-2">
             <Wrench className="w-4 h-4" />
-            How to Fix
+            {sectionTitle}
             {instructions.isInternal && (
               <Badge variant="outline" className="text-[10px] ml-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                Self-fixable
+                {internalBadgeLabel}
               </Badge>
             )}
           </span>
@@ -356,7 +388,7 @@ export function HowToFixSection({
           {/* Steps */}
           <div className="space-y-2">
             <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
-              📝 Steps:
+              {stepsLabel}
             </p>
             <ol className="space-y-1.5 text-sm">
               {instructions.steps.map((step, idx) => (

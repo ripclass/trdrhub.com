@@ -429,6 +429,13 @@ export const ToleranceAppliedSchema = z.object({
 });
 export type ToleranceApplied = z.infer<typeof ToleranceAppliedSchema>;
 
+export const WorkflowLaneSchema = z.enum([
+  'documentary_review',
+  'compliance_review',
+  'manual_review',
+]);
+export type WorkflowLane = z.infer<typeof WorkflowLaneSchema>;
+
 export const IssueCardSchema = z.object({
   id: z.string(),
   rule: z.string().optional(),
@@ -461,6 +468,7 @@ export const IssueCardSchema = z.object({
   next_action: z.string().optional(),
   confidence: z.number().optional(),
   remediation_owner: z.string().optional(),
+  workflow_lane: WorkflowLaneSchema.optional(),
 });
 export type IssueCard = z.infer<typeof IssueCardSchema>;
 
@@ -569,6 +577,12 @@ export const SanctionsScreeningSummarySchema = z.object({
 });
 export type SanctionsScreeningSummary = z.infer<typeof SanctionsScreeningSummarySchema>;
 
+export const DocumentRequirementStatusSchema = z.enum(['matched', 'partial', 'missing']);
+export type DocumentRequirementStatus = z.infer<typeof DocumentRequirementStatusSchema>;
+
+export const DocumentReviewStateSchema = z.enum(['ready', 'needs_review', 'blocked']);
+export type DocumentReviewState = z.infer<typeof DocumentReviewStateSchema>;
+
 // ============================================================================
 // Validation Document Schema (Frontend-specific normalization)
 // ============================================================================
@@ -584,6 +598,14 @@ export const ValidationDocumentSchema = z.object({
   status: z.enum(['success', 'warning', 'error']),
   issuesCount: z.number(),
   extractedFields: z.record(z.unknown()),
+  missingRequiredFields: z.array(z.string()).optional(),
+  requiredFieldsFound: z.number().optional(),
+  requiredFieldsTotal: z.number().optional(),
+  reviewRequired: z.boolean().optional(),
+  reviewReasons: z.array(z.string()).optional(),
+  criticalFieldStates: z.record(z.string()).optional(),
+  requirementStatus: DocumentRequirementStatusSchema.optional(),
+  reviewState: DocumentReviewStateSchema.optional(),
 });
 export type ValidationDocument = z.infer<typeof ValidationDocumentSchema>;
 
@@ -721,6 +743,7 @@ export const schemas = {
   ReferenceIssue: ReferenceIssueSchema,
   AIEnrichmentPayload: AIEnrichmentPayloadSchema,
   ToleranceApplied: ToleranceAppliedSchema,
+  WorkflowLane: WorkflowLaneSchema,
   
   // V2 Validation Pipeline
   GateResult: GateResultSchema,
@@ -733,5 +756,7 @@ export const schemas = {
   
   // Full validation results
   ValidationDocument: ValidationDocumentSchema,
+  DocumentRequirementStatus: DocumentRequirementStatusSchema,
+  DocumentReviewState: DocumentReviewStateSchema,
   ValidationResults: ValidationResultsSchema,
 } as const;
