@@ -2296,6 +2296,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       <p className="text-lg font-semibold">{customsPackReadiness.ownerBuckets.waiver}</p>
                     </div>
                   </div>
+                </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">

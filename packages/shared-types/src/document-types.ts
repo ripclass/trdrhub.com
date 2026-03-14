@@ -932,10 +932,10 @@ export function isTransportDocument(typeValue: string): boolean {
  */
 export function isLCDocument(typeValue: string): boolean {
   const normalized = normalizeDocumentType(typeValue);
-  return [
-    DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT,
-    DOCUMENT_TYPE_VALUES.SWIFT_MESSAGE,
-    DOCUMENT_TYPE_VALUES.LC_APPLICATION,
-    DOCUMENT_TYPE_VALUES.STANDBY_LC,
-  ].includes(normalized);
+  return (
+    normalized === DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT ||
+    normalized === DOCUMENT_TYPE_VALUES.SWIFT_MESSAGE ||
+    normalized === DOCUMENT_TYPE_VALUES.LC_APPLICATION ||
+    normalized === DOCUMENT_TYPE_VALUES.STANDBY_LC
+  );
 }
