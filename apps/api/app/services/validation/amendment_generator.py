@@ -469,6 +469,29 @@ def generate_document_requirement_amendment(
     )
 
 
+def _looks_like_documentary_fix_not_lc_amendment(combined_text: str, expected: str, found: str) -> bool:
+    """Return True when the issue is a document-fix problem, not an LC-amendment candidate."""
+    text = f"{combined_text} {expected} {found}".lower()
+    documentary_markers = [
+        'bin',
+        'tin',
+        'purchase order',
+        'po number',
+        'lc no',
+        'lc number',
+        'document not uploaded',
+        'not uploaded yet',
+        'missing from documents',
+        'all documents must show',
+        'on all documents',
+        'commercial invoice=missing',
+        'bill of lading=missing',
+        'packing list=missing',
+        'certificate of origin=missing',
+    ]
+    return any(marker in text for marker in documentary_markers)
+
+
 def generate_amendment_for_discrepancy(
     discrepancy: Dict[str, Any],
     lc_data: Dict[str, Any],
@@ -559,13 +582,36 @@ def generate_amendment_for_discrepancy(
     # =========================================================================
     port_keywords = ["port", "loading", "discharge", "destination", "place of", 
                     "origin port", "final destination"]
+    explicit_port_markers = [
+        'port of loading',
+        'port of discharge',
+        'final destination',
+        'place of taking in charge',
+        '44e',
+        '44f',
+        'plc of takng in chrg',
+    ]
     if any(kw in combined_text for kw in port_keywords):
+        if _looks_like_documentary_fix_not_lc_amendment(combined_text, expected, found):
+            return None
+        if not any(marker in combined_text or marker in expected.lower() or marker in found.lower() for marker in explicit_port_markers):
+            return None
+
         current_port = expected.split(":")[-1].strip() if ":" in expected else expected.strip()
         proposed_port = found.split(":")[-1].strip() if ":" in found else found.strip()
+
+        # Reject obvious non-port values leaking into the amendment mapper
+        non_port_markers = ['missing', 'bin', 'tin', 'po', 'purchase order', 'invoice', 'certificate', 'bill of lading']
+        current_port_l = current_port.lower()
+        proposed_port_l = proposed_port.lower()
+        if any(marker in current_port_l or marker in proposed_port_l for marker in non_port_markers):
+            return None
+        if len(current_port) < 3 or len(proposed_port) < 3:
+            return None
         
         # Determine port type
         port_type = "loading"
-        if any(kw in combined_text for kw in ["discharge", "destination", "final"]):
+        if any(kw in combined_text for kw in ["discharge", "destination", "final", '44f']):
             port_type = "discharge"
         
         if current_port and proposed_port and current_port.lower() != proposed_port.lower():
