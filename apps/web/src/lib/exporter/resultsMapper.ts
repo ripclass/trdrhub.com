@@ -225,9 +225,9 @@ const buildNextAction = (bucket: string, suggestion: string): string => {
   if (bucket === 'Compliance / Risk Review') {
     if (
       isPlaceholderText(suggestion) ||
-      /(correct|fix|amend|revalidate|resolve discrepancy|documentary|presentation)/i.test(suggestion)
+      /(correct|fix|amend|revalidate|resolve discrepancy|documentary|presentation|proceed with caution|monitor closely|manual review recommended|review recommended)/i.test(suggestion)
     ) {
-      return 'Route to internal compliance review, capture the disposition, and keep submission on hold until cleared.';
+      return 'Route to internal compliance review, document the screening disposition, and hold bank presentation until compliance clearance is recorded.';
     }
     return suggestion;
   }

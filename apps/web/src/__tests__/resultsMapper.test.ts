@@ -55,5 +55,30 @@ describe('results mapper - option e payload', () => {
     expect(mapped.issues[0]?.severity_display).toBe('Compliance hold');
     expect(mapped.issues[0]?.next_action).toContain('internal compliance review');
   });
+
+  it('rewrites soft compliance caution text into explicit review workflow action', () => {
+    const payload = JSON.parse(JSON.stringify(optionEFixture));
+    payload.structured_result.issues = [
+      {
+        id: 'compliance-2',
+        title: 'Potential sanctions match: vessel',
+        severity: 'major',
+        documents: ['BillOfLading.pdf'],
+        expected: 'No sanctions matches for vessel',
+        found: 'Potential match: Unknown (75% confidence)',
+        suggested_fix: 'PROCEED WITH CAUTION - Flag state has elevated risk. Monitor closely.',
+        description: 'The vessel requires sanctions screening review before any presentation decision.',
+        rule: 'SANCTIONS-VESSEL-1',
+        ruleset_domain: 'compliance.screening',
+      },
+    ];
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.issues[0]?.workflow_lane).toBe('compliance_review');
+    expect(mapped.issues[0]?.severity_display).toBe('Compliance escalation');
+    expect(mapped.issues[0]?.next_action).toBe(
+      'Route to internal compliance review, document the screening disposition, and hold bank presentation until compliance clearance is recorded.',
+    );
+  });
 });
 
