@@ -134,26 +134,55 @@ const buildWarningReasons = ({
   missingRequiredFields,
   parseComplete,
   reviewReasons,
+  docType,
 }: {
   extractionStatus: string;
   issuesCount: number;
   missingRequiredFields: unknown[];
   parseComplete: boolean | undefined;
   reviewReasons: unknown[];
+  docType?: string;
 }): string[] => {
   const reasons: string[] = [];
+  const normalizedDocType = String(docType || '').toLowerCase();
+  const humanizeField = (field: unknown) =>
+    String(field || '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
 
   if (['partial', 'pending', 'text_only'].includes(extractionStatus)) {
-    reasons.push(`Extraction ${extractionStatus.replace('_', ' ')}`);
+    if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') {
+      reasons.push('Insurance coverage fields are incomplete and need manual confirmation before presentation.');
+    } else if (normalizedDocType === 'certificate_of_origin') {
+      reasons.push('Certificate of origin details are only partially extracted and need manual confirmation.');
+    } else if (normalizedDocType === 'packing_list') {
+      reasons.push('Packing-list details are only partially extracted and need manual confirmation.');
+    } else if (normalizedDocType === 'bill_of_lading') {
+      reasons.push('Bill of lading details need manual confirmation before clean presentation.');
+    } else {
+      reasons.push(`Document extraction is ${extractionStatus.replace('_', ' ')} and needs manual confirmation.`);
+    }
   }
   if (parseComplete === false) {
-    reasons.push('Parse incomplete');
+    reasons.push('Structured extraction is incomplete for this document.');
   }
   if (Array.isArray(missingRequiredFields) && missingRequiredFields.length > 0) {
-    reasons.push(`Missing required fields (${missingRequiredFields.length})`);
+    const formattedFields = missingRequiredFields
+      .map(humanizeField)
+      .filter(Boolean)
+      .slice(0, 3);
+    if (formattedFields.length === 1) {
+      reasons.push(`${formattedFields[0]} was not confidently extracted from this document.`);
+    } else if (formattedFields.length > 1) {
+      const extraCount = missingRequiredFields.length - formattedFields.length;
+      reasons.push(
+        `${formattedFields.join(', ')}${extraCount > 0 ? ` and ${extraCount} more field${extraCount > 1 ? 's' : ''}` : ''} were not confidently extracted from this document.`,
+      );
+    }
   }
   if (issuesCount > 0) {
-    reasons.push(`Discrepancies attached (${issuesCount})`);
+    reasons.push(`This document still has ${issuesCount} linked issue${issuesCount > 1 ? 's' : ''} to resolve before clean presentation.`);
   }
   if (Array.isArray(reviewReasons)) {
     for (const rawReason of reviewReasons) {
@@ -844,6 +873,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           missingRequiredFields,
           parseComplete,
           reviewReasons,
+          docType: typeKey,
         }),
         reviewReasons,
         criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
@@ -1157,19 +1187,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         if (normalizedDocType === 'packing_list') return 'Packing-list detail needs manual review before clean presentation.';
         if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate wording was recognized, but structured extraction is incomplete.';
         if (normalizedDocType === 'weight_list' || normalizedDocType === 'weight_certificate') return 'Weight values were found, but document structure still needs manual confirmation.';
+        if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin details need manual confirmation before clean presentation.';
+        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance coverage details need manual confirmation before clean presentation.';
+        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading details need manual review before clean presentation.';
         return 'Key required fields need manual review before clean presentation.';
       }
       if (key === 'critical_bin_tin_low_confidence') {
         return 'Exporter BIN/TIN was not confidently confirmed on this document.';
       }
       if (key === 'OCR_AUTH_ERROR') {
-        return 'Text extraction confidence is limited; visual confirmation is recommended.';
+        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.';
+        if (normalizedDocType === 'packing_list') return 'Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.';
+        if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.';
+        if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.';
+        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance text extraction confidence is limited; visually confirm coverage amount, risks, and certificate wording.';
+        return 'Text extraction confidence is limited; visually confirm the critical presentation fields.';
       }
       if (key === 'LOW_CONFIDENCE') {
-        return 'Extraction confidence is limited for this document.';
+        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading fields were extracted with limited confidence and need manual confirmation.';
+        if (normalizedDocType === 'packing_list') return 'Packing-list fields were extracted with limited confidence and need manual confirmation.';
+        return 'Extraction confidence is limited for this document and needs manual confirmation.';
       }
       if (key === 'REVIEW_REQUIRED') {
         return 'This document requires manual review before clean presentation.';
+      }
+      if (/^field not found$/i.test(key)) {
+        if (normalizedDocType === 'certificate_of_origin') return 'A required certificate-of-origin field was not found in the extracted content.';
+        if (normalizedDocType === 'beneficiary_certificate') return 'A required beneficiary-certificate field was not found in the extracted content.';
+        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'A required insurance field was not found in the extracted content.';
+        if (normalizedDocType === 'packing_list') return 'A required packing-list field was not found in the extracted content.';
+        if (normalizedDocType === 'bill_of_lading') return 'A required bill-of-lading field was not found in the extracted content.';
+        return 'A required field was not found in the extracted content.';
       }
       return key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
     };
