@@ -742,10 +742,19 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
 
     force_pass_enabled = bool(getattr(settings, "CYCLE2_RUNTIME_FORCE_PASS_ENABLED", True))
 
+    bank_verdict = structured_result.get("bank_verdict") if isinstance(structured_result.get("bank_verdict"), dict) else {}
+    validation_contract = structured_result.get("validation_contract_v1") if isinstance(structured_result.get("validation_contract_v1"), dict) else {}
+
+    bank_reject = str(bank_verdict.get("verdict") or "").strip().upper() == "REJECT"
+    final_reject = str(validation_contract.get("final_verdict") or "").strip().lower() == "reject"
+    rules_veto = str(validation_contract.get("arbitration_mode") or "").strip().lower() == "rules_veto" or bool(validation_contract.get("immediate_rules_veto"))
+    locked_not_submittable = bank_reject or final_reject or rules_veto
+
     if not kept:
-        eligibility["can_submit"] = True
-        eligibility["review_required"] = False
-        if force_pass_enabled:
+        if not locked_not_submittable:
+            eligibility["can_submit"] = True
+            eligibility["review_required"] = False
+        if force_pass_enabled and not locked_not_submittable:
             current_status = str(structured_result.get("validation_status") or "").lower()
             if current_status in {"review", "partial", "blocked", "unknown", ""}:
                 structured_result["validation_status"] = "pass"
@@ -760,6 +769,10 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
         "remaining_unresolved_count": len(kept),
         "can_submit": bool(eligibility.get("can_submit")),
         "validation_status": structured_result.get("validation_status"),
+        "locked_not_submittable": locked_not_submittable,
+        "bank_reject": bank_reject,
+        "final_reject": final_reject,
+        "rules_veto": rules_veto,
     }
     return structured_result
 
