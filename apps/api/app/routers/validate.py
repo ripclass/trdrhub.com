@@ -3104,6 +3104,12 @@ async def validate_doc(
                     "bank_code": bank_profile.bank_code,
                     "bank_name": bank_profile.bank_name,
                     "strictness": bank_profile.strictness.value,
+                    "country": getattr(bank_profile, "country", "") or "",
+                    "region": getattr(bank_profile, "region", "") or "",
+                    "source_issuing_bank": lc_context.get("issuing_bank") or mt700.get("issuing_bank") or "",
+                    "source_advising_bank": lc_context.get("advising_bank") or mt700.get("advising_bank") or "",
+                    "special_requirements": list(getattr(bank_profile, "special_requirements", []) or []),
+                    "blocked_conditions": list(getattr(bank_profile, "blocked_conditions", []) or []),
                 }
             
             # =====================================================================
@@ -3268,15 +3274,6 @@ async def validate_doc(
             "total_time_seconds": round(time.time() - start_time, 3),
         }
 
-        if validation_session:
-            validation_session.validation_results = {"structured_result": structured_result}
-            validation_session.status = SessionStatus.COMPLETED.value
-            validation_session.processing_completed_at = func.now()
-            db.commit()
-            db.refresh(validation_session)
-        else:
-            db.commit()
-
         if request_user_type == "bank" and validation_session:
             duration_ms = int((time.time() - start_time) * 1000)
             metadata_dict = payload.get("metadata") or {}
@@ -3387,6 +3384,15 @@ async def validate_doc(
                 logger.info("Day1 response contract overlay disabled (DAY1_CONTRACT_ENABLED=false)")
         except Exception as contract_err:
             logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
+
+        if validation_session:
+            validation_session.validation_results = {"structured_result": structured_result}
+            validation_session.status = SessionStatus.COMPLETED.value
+            validation_session.processing_completed_at = func.now()
+            db.commit()
+            db.refresh(validation_session)
+        else:
+            db.commit()
 
         # Add DB rules debug info to response
         structured_result["_db_rules_debug"] = db_rules_debug
