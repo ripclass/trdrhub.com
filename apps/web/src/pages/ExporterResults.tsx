@@ -51,7 +51,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
-import { useJob, useResults } from "@/hooks/use-lcopilot";
+import { useCanonicalJobResult } from "@/hooks/use-lcopilot";
 import type { ValidationResults, IssueCard, AIEnrichmentPayload, ReferenceIssue } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
@@ -241,12 +241,14 @@ export default function ExporterResults({
   const jobIdFromPath = params.jobId;
   const validationSessionId = jobIdParam || sessionParam || jobIdFromPath || null;
   
-  const { jobStatus, isPolling: isPollingJob, error: jobError } = useJob(validationSessionId);
-  const { getResults, isLoading: resultsLoading, error: resultsError, results: cachedResults } = useResults();
-  const fetchedOnceRef = useRef(false);
-  const lastFetchedJobIdRef = useRef<string | null>(null);
-  const [liveResults, setLiveResults] = useState<ValidationResults | null>(null);
-  const [resultsErrorState, setResultsErrorState] = useState<string | null>(null);
+  const {
+    jobStatus,
+    jobError,
+    results: resultData,
+    isLoading: resultsLoading,
+    resultsError,
+    refreshResults,
+  } = useCanonicalJobResult(validationSessionId);
   
   const lcNumberParam = lcNumberProp || searchParams.get('lc') || undefined;
   const tabParamRaw = searchParams.get("tab");
@@ -461,108 +463,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
 };
   
-  useEffect(() => {
-    setLiveResults(null);
-    setResultsErrorState(null);
-    fetchedOnceRef.current = false;
-    lastFetchedJobIdRef.current = null;
-    if (validationSessionId) {
-      resultsLogger.debug('Reset results state for session change', { validationSessionId });
-    }
-  }, [validationSessionId]);
-
-  const fetchResults = useCallback(
-    async (source: 'auto' | 'manual', sessionOverride?: string) => {
-      const targetId = sessionOverride ?? validationSessionId;
-      if (!targetId) {
-        resultsLogger.debug('Skip results fetch: missing session id');
-        return;
-      }
-
-      fetchedOnceRef.current = true;
-      lastFetchedJobIdRef.current = targetId;
-      resultsLogger.debug('Fetching results', { validationSessionId: targetId, source });
-
-      try {
-        const data = await getResults(targetId);
-        resultsLogger.debug('Results received', { validationSessionId: targetId });
-        setLiveResults(data);
-        setResultsErrorState(null);
-      } catch (e: any) {
-        resultsLogger.warn('Results fetch failed', { validationSessionId: targetId, error: e?.message });
-        fetchedOnceRef.current = false; // allow manual retry
-        lastFetchedJobIdRef.current = null;
-        setResultsErrorState(e?.message || 'Failed to load validation results.');
-        throw e;
-      }
-    },
-    [getResults, validationSessionId],
-  );
-
-  // Auto-fetch results when job reaches terminal state
-  useEffect(() => {
-    const normalizedStatus = (jobStatus?.status || '').toString().toLowerCase();
-    const isTerminal =
-      normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'error';
-    const alreadyFetched = fetchedOnceRef.current && lastFetchedJobIdRef.current === validationSessionId;
-
-    if (!validationSessionId) return;
-
-    // If job status is not available yet, wait for it (but don't block forever)
-    if (!normalizedStatus && !jobStatus) {
-      resultsLogger.debug('Waiting for job status', { validationSessionId });
+  const fetchResults = useCallback(async () => {
+    if (!validationSessionId) {
+      resultsLogger.debug('Skip manual refresh: missing session id');
       return;
     }
 
-    // If we have a status but it's not terminal, wait
-    if (normalizedStatus && !isTerminal) {
-      resultsLogger.debug('Job not terminal', { validationSessionId, status: normalizedStatus });
-      return;
-    }
-
-    // If job is terminal, fetch results
-    if (isTerminal) {
-      if (resultsLoading || alreadyFetched) return;
-
-      resultsLogger.debug('Fetching results triggered', { validationSessionId, status: normalizedStatus });
-      
-      fetchResults('auto', validationSessionId)
-        .then(() => resultsLogger.debug('Results fetch success'))
-        .catch((err) => resultsLogger.error('Results fetch error', err));
-    }
-  }, [validationSessionId, jobStatus?.status, resultsLoading, fetchResults, jobStatus]);
-
-  // Fallback: If we have a jobId but no jobStatus after 3 seconds, try fetching results anyway
-  // (This handles the case where the job is already completed when component mounts)
-  useEffect(() => {
-    if (!validationSessionId) return;
-    if (fetchedOnceRef.current) return;
-    if (resultsLoading) return;
-    if (jobStatus?.status) return; // If we have status, the main effect handles it
-
-    const timeoutId = setTimeout(() => {
-      resultsLogger.debug('Fallback fetch triggered', { validationSessionId });
-      fetchResults('auto', validationSessionId)
-        .then(() => resultsLogger.debug('Fallback fetch success'))
-        .catch((err) => resultsLogger.warn('Fallback fetch error', err));
-    }, 3000);
-
-    return () => clearTimeout(timeoutId);
-  }, [validationSessionId, fetchResults, jobStatus, resultsLoading]);
-
-  // Minimal terminal guard to force network call in case any guard above is bypassed
-  useEffect(() => {
-    const st = (jobStatus?.status || '').toLowerCase();
-    const terminal = ['completed', 'failed', 'error'];
-    const jobId = validationSessionId;
-
-    if (!jobId || !terminal.includes(st)) return;
-
-    resultsLogger.debug('Terminal guard fetch', { jobId, status: st });
-    fetchResults('auto', jobId)
-      .then(() => resultsLogger.debug('Terminal guard fetch success'))
-      .catch((err) => resultsLogger.error('Terminal guard fetch error', err));
-  }, [jobStatus?.status, validationSessionId, fetchResults]);
+    resultsLogger.debug('Manual results refresh', { validationSessionId });
+    await refreshResults('manual');
+  }, [refreshResults, validationSessionId]);
 
   const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
   const [showBankSelector, setShowBankSelector] = useState(false);
@@ -579,8 +488,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   
-  const resultData = liveResults ?? cachedResults;
-
   useEffect(() => {
     if (!initialTab) {
       return;
@@ -623,11 +530,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     jobStatus?.lcNumber ??
     null;
   const lcNumber = resolvedLcNumber ?? 'LC-UNKNOWN';
+  const guardrailsQueryEnabled = !!validationSessionId && !!resolvedLcNumber && enableBankSubmission;
   
   const { data: guardrails, isLoading: guardrailsLoading } = useQuery({
     queryKey: ['exporter-guardrails', validationSessionId, resolvedLcNumber],
     queryFn: () => exporterApi.checkGuardrails({ validation_session_id: validationSessionId, lc_number: resolvedLcNumber }),
-    enabled: !!validationSessionId && !!resolvedLcNumber && enableBankSubmission,
+    enabled: guardrailsQueryEnabled,
     refetchInterval: 30000, // Check every 30 seconds
   });
   
@@ -1045,7 +953,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     );
   }, [issueCards, issueFilter]);
   const showSkeletonLayout = Boolean(
-    validationSessionId && !resultData && resultsLoading && !(jobError || resultsError || resultsErrorState),
+    validationSessionId && !resultData && resultsLoading && !(jobError || resultsError),
   );
   const { successCount, errorCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
     // Use authoritative document_status from backend (same source as SummaryStrip)
@@ -1072,23 +980,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       resolvedErrorCount = fromDistError;
       resolvedWarningCount = fromDistWarning;
     } else {
-      // Fall back to canonical summary metrics (no client-side recomputation)
-      resolvedSuccessCount =
-        typeof summary?.successful_extractions === "number"
-          ? summary.successful_extractions
-          : typeof summary?.verified === "number"
-          ? summary.verified
-          : 0;
-
-      resolvedErrorCount =
-        typeof summary?.failed_extractions === "number"
-          ? summary.failed_extractions
-          : typeof summary?.errors === "number"
-          ? summary.errors
-          : 0;
-
-      resolvedWarningCount =
-        typeof summary?.warnings === "number" ? summary.warnings : 0;
+      // Fall back to the normalized document list so overview matches the Documents tab.
+      resolvedSuccessCount = documentStatusCounts.success;
+      resolvedErrorCount = documentStatusCounts.error;
+      resolvedWarningCount = documentStatusCounts.warning;
     }
 
     // Validation success rate (based on validation status)
@@ -1123,7 +1018,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     summary?.document_status,
     summary?.status_counts,
     analyticsData?.document_status_distribution,
+    documentStatusCounts.success,
     documentStatusCounts.warning,
+    documentStatusCounts.error,
     totalDocuments,
   ]);
   const complianceScore = useMemo(
@@ -1451,13 +1348,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
-    if (guardrailsLoading) return false;
+    if (guardrailsQueryEnabled && guardrailsLoading) return false;
     if (!canSubmitFromValidation) return false;
     if (!guardrails) {
       return canSubmitFromValidation;
     }
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [enableBankSubmission, guardrails, guardrailsLoading, canSubmitFromValidation]);
+  }, [enableBankSubmission, guardrails, guardrailsLoading, guardrailsQueryEnabled, canSubmitFromValidation]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -1491,10 +1388,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       );
     }
 
-    if (jobError || resultsError || resultsErrorState) {
+    if (jobError || resultsError) {
       const errorMessage =
         jobError?.message ||
-        resultsErrorState ||
         resultsError?.message ||
         "Failed to load validation results.";
       return (
@@ -1839,7 +1735,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => fetchResults('manual')}
+                  onClick={() => fetchResults()}
                   disabled={!validationSessionId || resultsLoading}
                   className="rounded-md border px-3 py-1 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >

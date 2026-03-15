@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useJob, useResults, usePackage } from "@/hooks/use-lcopilot";
+import { useCanonicalJobResult, usePackage } from "@/hooks/use-lcopilot";
 import type { ValidationResults } from "@/types/lcopilot";
 import { format } from "date-fns";
 import { isImporterFeatureEnabled } from "@/config/importerFeatureFlags";
@@ -687,8 +687,14 @@ export default function ImportResults({
   const isDemoJob = jobId.startsWith('demo-');
   const shouldUseAPI = !isDemoJob && !!rawJobId;
 
-  const { jobStatus, isPolling, startPolling } = useJob(shouldUseAPI ? jobId : null);
-  const { results, getResults, isLoading: isLoadingResults } = useResults();
+  const {
+    jobStatus,
+    isPolling,
+    results,
+    isLoading: isLoadingResults,
+    resultsError,
+    refreshResults,
+  } = useCanonicalJobResult(shouldUseAPI ? jobId : null);
   const { generatePackage, downloadPackage, isLoading: isGeneratingPackage } = usePackage();
   const [activeTab, setActiveTab] = useState("overview");
   const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
@@ -731,22 +737,7 @@ export default function ImportResults({
   const isLoadingRealData = shouldUseAPI && !hasRealResults && (isPolling || isLoadingResults || !jobStatus);
   
   // Check if job failed
-  const jobFailed = jobStatus?.status === 'failed';
-
-  // Start polling and fetch results for real jobs
-  useEffect(() => {
-    if (!shouldUseAPI) return;
-    
-    // Start polling if job is active and we're not already polling
-    if ((jobStatus?.status === 'processing' || jobStatus?.status === 'queued') && !isPolling) {
-      startPolling();
-    }
-
-    // Fetch results when job is completed
-    if (jobStatus?.status === 'completed' && !results) {
-      getResults(jobId);
-    }
-  }, [jobId, jobStatus, results, getResults, shouldUseAPI, isPolling, startPolling]);
+  const jobFailed = jobStatus?.status === 'failed' || jobStatus?.status === 'error';
 
   if (shouldRenderCanonicalResults && results) {
     return (
@@ -1119,6 +1110,37 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
               <Button onClick={() => navigate('/lcopilot/importer-dashboard?section=upload')}>
                 Back to Upload
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (shouldUseAPI && !hasRealResults && resultsError) {
+      return (
+        <div className="container mx-auto px-4 py-8 max-w-4xl">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Unable to load validation results</h3>
+              <p className="text-muted-foreground mb-4">
+                {resultsError.message || "The validation finished, but the canonical result payload could not be loaded."}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    refreshResults('manual').catch(() => {
+                      // surfaced through hook state
+                    });
+                  }}
+                >
+                  Retry Results
+                </Button>
+                <Button onClick={() => navigate('/lcopilot/importer-dashboard?section=upload')}>
+                  Back to Upload
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

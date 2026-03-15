@@ -723,6 +723,8 @@ function WorkspaceListItem({ draft, documentLabel, onResumeDraft, onDeleteDraft,
 }
 
 function RecentValidationsCard({ history }: { history: HistoryItem[] }) {
+  const navigate = useNavigate();
+
   return (
     <Card className="shadow-soft border-0">
       <CardHeader>
@@ -765,7 +767,11 @@ function RecentValidationsCard({ history }: { history: HistoryItem[] }) {
                 <StatusBadge status={item.risks === 0 ? "success" : "warning"}>
                   {item.risks === 0 ? "No issues" : item.risks === 1 ? "1 issue" : `${item.risks} issues`}
                 </StatusBadge>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/lcopilot/importer-dashboard?section=reviews&jobId=${item.id}`)}
+                >
                   View
                 </Button>
               </div>

@@ -32,7 +32,7 @@ export interface ValidationRequest {
 export interface ValidationResponse {
   jobId?: string;
   request_id?: string;
-  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error' | 'blocked' | 'resolved' | 'invalid' | 'ambiguous';
+  status: 'created' | 'uploading' | 'processing' | 'completed' | 'failed' | 'queued' | 'error' | 'blocked' | 'resolved' | 'invalid' | 'ambiguous';
   job_id?: string; // temporary compatibility field
   block_reason?: string;
   error?: any;
@@ -58,7 +58,7 @@ export interface ValidationResponse {
 
 export interface JobStatus {
   jobId: string;
-  status: 'created' | 'processing' | 'completed' | 'failed' | 'queued' | 'error';
+  status: 'created' | 'uploading' | 'processing' | 'completed' | 'failed' | 'queued' | 'error';
   progress?: number;
   error?: string;
   results?: any;
@@ -84,6 +84,72 @@ export interface ValidationError {
   };
   nextActionUrl?: string | null;
 }
+
+type GetResultsOptions = {
+  suppressError?: boolean;
+};
+
+const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'error']);
+
+const normalizeJobStatus = (status?: string | null): string =>
+  (status || '').toString().toLowerCase();
+
+const toResultsError = (err: any): ValidationError => {
+  if (err?.type && err?.message) {
+    return err as ValidationError;
+  }
+
+  if (err?.response) {
+    const { status, data } = err.response;
+    return {
+      type: 'server',
+      message: data?.message || data?.detail || 'Failed to get validation results.',
+      statusCode: status,
+      errorCode: data?.detail?.error_code || data?.error_code,
+    };
+  }
+
+  if (err instanceof Error) {
+    return {
+      type: 'parsing',
+      message: err.message || 'Failed to parse validation results.',
+    };
+  }
+
+  return {
+    type: 'network',
+    message: 'Network error while fetching results.',
+  };
+};
+
+export const fetchValidationResults = async (jobId: string): Promise<ValidationResults> => {
+  const response = await api.get(`/api/results/${jobId}`);
+  const payload = response.data;
+
+  if (payload?.telemetry?.timings) {
+    console.group('⏱️ Validation Timing Breakdown');
+    console.table(payload.telemetry.timings);
+    console.log(`Total backend time: ${payload.telemetry.total_time_seconds}s`);
+    console.groupEnd();
+  }
+
+  lcopilotLogger.debug('API response received', { jobId });
+
+  const normalized: ValidationResults = buildValidationResponse(payload);
+
+  if (isLCopilotFeatureEnabled('schema_validation')) {
+    const validationResult = safeValidateApiResponse(
+      ValidationResultsSchema,
+      normalized,
+      `results/${jobId}`
+    );
+    if (!validationResult) {
+      lcopilotLogger.warn('Schema validation warning - response may have unexpected shape', { jobId });
+    }
+  }
+
+  return normalized;
+};
 
 // Hook for validating documents
 export const useValidate = () => {
@@ -344,16 +410,37 @@ export const useJob = (jobId: string | null) => {
 };
 
 // Hook for getting validation results
-export const useResults = () => {
+export const useResults = (currentJobId?: string | null) => {
   const [results, setResults] = useState<ValidationResults | null>(null);
+  const [resultsJobId, setResultsJobId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ValidationError | null>(null);
   const queryClient = useQueryClient();
 
-  const getResults = useCallback(async (jobId: string): Promise<ValidationResults> => {
+  useEffect(() => {
+    if (currentJobId === undefined) {
+      return;
+    }
+
+    if (!currentJobId) {
+      setResults(null);
+      setResultsJobId(null);
+      setError(null);
+      return;
+    }
+
+    const cached = queryClient.getQueryData<ValidationResults>(['results', currentJobId]) ?? null;
+    setResults(cached);
+    setResultsJobId(currentJobId);
+    setError(null);
+  }, [currentJobId, queryClient]);
+
+  const getResults = useCallback(async (jobId: string, options?: GetResultsOptions): Promise<ValidationResults> => {
     lcopilotLogger.debug('Fetching results', { jobId });
     setIsLoading(true);
-    setError(null);
+    if (!options?.suppressError) {
+      setError(null);
+    }
 
     try {
       // Invalidate any cached results first
@@ -435,6 +522,125 @@ export const useResults = () => {
     isLoading,
     error,
     clearError: () => setError(null),
+  };
+};
+
+export const useCanonicalJobResult = (
+  jobId: string | null,
+  options: { enabled?: boolean; fallbackDelayMs?: number } = {},
+) => {
+  const enabled = (options.enabled ?? true) && !!jobId;
+  const fallbackDelayMs = options.fallbackDelayMs ?? 1000;
+  const queryClient = useQueryClient();
+  const { jobStatus, isPolling, error: jobError } = useJob(enabled ? jobId : null);
+  const [results, setResults] = useState<ValidationResults | null>(null);
+  const [resultsJobId, setResultsJobId] = useState<string | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [resultsError, setResultsError] = useState<ValidationError | null>(null);
+  const inFlightRef = useRef<Promise<ValidationResults | null> | null>(null);
+
+  useEffect(() => {
+    if (!jobId) {
+      setResults(null);
+      setResultsJobId(null);
+      setResultsError(null);
+      return;
+    }
+
+    const cached = queryClient.getQueryData<ValidationResults>(['results', jobId]) ?? null;
+    setResults(cached);
+    setResultsJobId(jobId);
+    setResultsError(null);
+    inFlightRef.current = null;
+  }, [jobId, queryClient]);
+
+  const refreshResults = useCallback(
+    async (reason: 'auto' | 'manual' = 'manual'): Promise<ValidationResults | null> => {
+      if (!enabled || !jobId) {
+        return null;
+      }
+
+      if (inFlightRef.current) {
+        return inFlightRef.current;
+      }
+
+      const status = normalizeJobStatus(jobStatus?.status);
+      const suppressError = reason !== 'manual' && !TERMINAL_JOB_STATUSES.has(status);
+
+      const request = (async () => {
+        setIsLoadingResults(true);
+        if (!suppressError) {
+          setResultsError(null);
+        }
+
+        try {
+          const data = await fetchValidationResults(jobId);
+          queryClient.setQueryData(['results', jobId], data);
+          setResults(data);
+          setResultsJobId(jobId);
+          setResultsError(null);
+          return data;
+        } catch (err: any) {
+          const validationError = toResultsError(err);
+          if (!suppressError) {
+            setResultsError(validationError);
+            throw validationError;
+          }
+          return null;
+        } finally {
+          setIsLoadingResults(false);
+          inFlightRef.current = null;
+        }
+      })();
+
+      inFlightRef.current = request;
+      return request;
+    },
+    [enabled, jobId, jobStatus?.status, queryClient],
+  );
+
+  const visibleResults =
+    jobId && resultsJobId !== jobId
+      ? queryClient.getQueryData<ValidationResults>(['results', jobId]) ?? null
+      : results;
+
+  const normalizedStatus = normalizeJobStatus(jobStatus?.status);
+  const isTerminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
+
+  useEffect(() => {
+    if (!enabled || !jobId || visibleResults || isLoadingResults) {
+      return;
+    }
+
+    if (isTerminal) {
+      refreshResults('auto').catch(() => {
+        // surfaced through hook state once the job is terminal
+      });
+    }
+  }, [enabled, isLoadingResults, isTerminal, jobId, refreshResults, visibleResults]);
+
+  useEffect(() => {
+    if (!enabled || !jobId || visibleResults || isLoadingResults || jobStatus?.status) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      refreshResults('auto').catch(() => {
+        // keep waiting until either job status or results become available
+      });
+    }, fallbackDelayMs);
+
+    return () => clearTimeout(timeoutId);
+  }, [enabled, fallbackDelayMs, isLoadingResults, jobId, jobStatus?.status, refreshResults, visibleResults]);
+
+  return {
+    jobStatus,
+    isPolling,
+    jobError,
+    results: visibleResults,
+    isLoading: enabled && !visibleResults && (isLoadingResults || isPolling || (!jobStatus && !jobError && !resultsError)),
+    resultsError: visibleResults ? null : resultsError ?? jobError,
+    refreshResults,
   };
 };
 

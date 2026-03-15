@@ -496,7 +496,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
           onComplete({ jobId: response.jobId, lcNumber, mode: processType });
         }, 500);
       } else {
-        navigate(`/import/results/${response.jobId}?mode=${processType}`);
+        navigate(`/lcopilot/import-results/${response.jobId}?mode=${processType}`);
       }
 
     } catch (error: any) {
@@ -547,7 +547,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
             onComplete({ jobId: mockJobId, lcNumber, mode: processType });
           }, 500);
         } else {
-          navigate(`/import/results/${mockJobId}?mode=${processType}`);
+          navigate(`/lcopilot/import-results/${mockJobId}?mode=${processType}`);
         }
         return; // Exit early, don't show error
       }
@@ -591,7 +591,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
             onComplete({ jobId: mockJobId, lcNumber, mode: processType });
           }, 500);
         } else {
-          navigate(`/import/results/${mockJobId}?mode=${processType}`);
+          navigate(`/lcopilot/import-results/${mockJobId}?mode=${processType}`);
         }
         return;
       }

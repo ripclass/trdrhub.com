@@ -10,6 +10,7 @@ let activeResults = buildValidationResults();
 const totalDocuments = mockValidationResults.documents.length;
 const totalDiscrepancies = mockValidationResults.issues.length;
 const successCount = mockValidationResults.documents.filter((doc) => doc.status === 'success').length;
+const warningDocumentCount = mockValidationResults.documents.filter((doc) => doc.status === 'warning').length;
 const expectedSeverityCounts = mockValidationResults.issues.reduce(
   (acc, issue) => {
     const severity = (issue.severity ?? '').toLowerCase();
@@ -25,8 +26,8 @@ const expectedSeverityCounts = mockValidationResults.issues.reduce(
   { critical: 0, major: 0, minor: 0 },
 );
 
-const findCardByTitle = (title: RegExp | string): HTMLElement => {
-  const heading = screen.getByText(title);
+const findCardByTitle = (title: RegExp | string, index = 0): HTMLElement => {
+  const heading = screen.getAllByText(title)[index];
   let current: HTMLElement | null = heading as HTMLElement;
   while (current && !current.className.toString().includes('shadow-soft')) {
     current = current.parentElement as HTMLElement | null;
@@ -36,19 +37,13 @@ const findCardByTitle = (title: RegExp | string): HTMLElement => {
 
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
-    useJob: () => ({
+    useCanonicalJobResult: () => ({
       jobStatus: { status: 'completed' },
-      isPolling: false,
-      error: null,
-      startPolling: vi.fn(),
-      clearError: vi.fn(),
-    }),
-    useResults: () => ({
-      getResults: vi.fn().mockResolvedValue(activeResults),
       results: activeResults,
       isLoading: false,
-      error: null,
-      clearError: vi.fn(),
+      resultsError: null,
+      jobError: null,
+      refreshResults: vi.fn().mockResolvedValue(activeResults),
     }),
   };
 });
@@ -91,6 +86,10 @@ vi.mock('@/api/exporter', () => ({
   },
 }));
 
+vi.mock('@/config/exporterFeatureFlags', () => ({
+  isExporterFeatureEnabled: vi.fn(() => true),
+}));
+
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
@@ -111,7 +110,7 @@ describe('ExporterResults', () => {
     expect(
       screen.getByText(new RegExp(`Issues \\(${totalDiscrepancies}\\)`, 'i')),
     ).toBeInTheDocument();
-    expect(screen.getByText(/LC Compliance/i)).toBeInTheDocument();
+    expect(screen.getByText(/LC Compliance:/i)).toBeInTheDocument();
 
     const statsCard = findCardByTitle(/Export Document Statistics/i);
     const verifiedLabel = within(statsCard).getByText(/^Verified$/i);
@@ -120,10 +119,10 @@ describe('ExporterResults', () => {
 
     const warningsLabel = within(statsCard).getByText(/^Warnings$/i);
     const warningsValue = warningsLabel.previousElementSibling;
-    expect(warningsValue?.textContent).toBe(String(totalDiscrepancies));
+    expect(warningsValue?.textContent).toBe(String(warningDocumentCount));
 
     const complianceRow = screen.getByText(/LC Compliance:/i).parentElement as HTMLElement;
-    const expectedCompliance = `${Math.round((successCount / totalDocuments) * 100)}%`;
+    const expectedCompliance = `${mockValidationResults.analytics.compliance_score}%`;
     expect(within(complianceRow).getByText(expectedCompliance)).toBeInTheDocument();
   });
 
@@ -161,15 +160,13 @@ describe('ExporterResults', () => {
     expect(expectedValueNodes[0]).toBeInTheDocument();
     expect(actualValueNodes[0]).toBeInTheDocument();
 
-    const criticalCard = screen.getAllByText(/^Critical$/i)[0]?.closest('div') as HTMLElement;
-    const majorCard = screen.getAllByText(/^Major$/i)[0]?.closest('div') as HTMLElement;
-    const minorCard = screen.getAllByText(/^Minor$/i)[0]?.closest('div') as HTMLElement;
-
-    const getCountText = (element?: HTMLElement | null) =>
-      element?.querySelector('.text-2xl')?.textContent ?? '';
-    expect(getCountText(criticalCard)).toBe(expectedSeverityCounts.critical.toString());
-    expect(getCountText(majorCard)).toBe(expectedSeverityCounts.major.toString());
-    expect(getCountText(minorCard)).toBe(expectedSeverityCounts.minor.toString());
+    const summaryCard = findCardByTitle(/Issue Review Summary/i);
+    const criticalLabel = within(summaryCard).getByText(/High-likelihood discrepancy/i);
+    const majorLabel = within(summaryCard).getByText(/Likely discrepancy/i);
+    const minorLabel = within(summaryCard).getByText(/^Review required$/i);
+    expect(criticalLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.critical.toString());
+    expect(majorLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.major.toString());
+    expect(minorLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.minor.toString());
 
     const severityBadge = screen.getByTestId('severity-issue-1');
     expect(severityBadge.dataset.icon).toBe('critical');
@@ -182,7 +179,7 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
     expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
-    expect(screen.getByText(`${mockValidationResults.analytics.compliance_score}%`)).toBeInTheDocument();
+    expect(screen.getAllByText(`${mockValidationResults.analytics.compliance_score}%`).length).toBeGreaterThan(0);
   });
 
   it('keeps document status counts aligned between overview and documents tab', async () => {
@@ -192,7 +189,7 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
     );
 
-    const statusCard = findCardByTitle(/Document Status/i);
+    const statusCard = findCardByTitle(/Document Status/i, 1);
     expect(within(statusCard).getByText('4 (67%)')).toBeInTheDocument();
     expect(within(statusCard).getByText('2 (33%)')).toBeInTheDocument();
 
@@ -216,14 +213,12 @@ describe('ExporterResults', () => {
     );
     expect(screen.getByRole('tab', { name: /Issues \(3\)/i })).toBeInTheDocument();
 
-    const statsCard = findCardByTitle(/Export Document Statistics/i);
-    const warningsLabel = within(statsCard).getByText(/^Warnings$/i);
-    const warningsValue = warningsLabel.previousElementSibling;
-    expect(warningsValue?.textContent).toBe('3');
-
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     expect(screen.getAllByTestId(/issue-card-/)).toHaveLength(3);
+    const summaryCard = findCardByTitle(/Issue Review Summary/i);
+    const totalIssuesLabel = within(summaryCard).getByText(/Total Issues/i);
+    expect(totalIssuesLabel.nextElementSibling?.textContent).toBe('3');
   });
 
   it('keeps customs readiness aligned between overview and customs tab', async () => {
@@ -325,8 +320,22 @@ describe('ExporterResults', () => {
 
   it('shows submit to bank when eligibility and guardrails allow', async () => {
     const eligibleResults = buildValidationResults();
+    eligibleResults.issues = [];
+    eligibleResults.summary = {
+      ...eligibleResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
     eligibleResults.structured_result = {
       ...eligibleResults.structured_result,
+      issues: [],
+      processing_summary: {
+        ...eligibleResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
       bank_verdict: {
         verdict: 'SUBMIT',
         verdict_color: 'green',
@@ -349,7 +358,9 @@ describe('ExporterResults', () => {
     );
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
-    expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument(),
+    );
   });
 
   it('renders UI when only structured_result payload is provided', async () => {

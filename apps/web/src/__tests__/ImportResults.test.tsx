@@ -43,15 +43,13 @@ const activeResults = buildValidationResults({
 });
 
 vi.mock('@/hooks/use-lcopilot', () => ({
-  useJob: () => ({
+  useCanonicalJobResult: () => ({
     jobStatus: { status: 'completed' },
     isPolling: false,
-    startPolling: vi.fn(),
-  }),
-  useResults: () => ({
     results: activeResults,
-    getResults: vi.fn(),
     isLoading: false,
+    resultsError: null,
+    refreshResults: vi.fn().mockResolvedValue(activeResults),
   }),
   usePackage: () => ({
     generatePackage: vi.fn(),
@@ -89,7 +87,7 @@ describe('ImportResults', () => {
     render(
       renderWithProviders(
         <ImportResults embedded jobId="job-123" mode="supplier" />,
-        '/import/results/job-123?mode=supplier',
+        '/lcopilot/import-results/job-123?mode=supplier',
       ),
     );
 
