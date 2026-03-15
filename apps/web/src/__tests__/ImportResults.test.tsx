@@ -106,6 +106,7 @@ describe('ImportResults', () => {
     expect(screen.getByText(/Industrial and Commercial Bank of China/i)).toBeInTheDocument();
     expect(screen.getByText(/1 Amendment Available/i)).toBeInTheDocument();
     expect(screen.queryByText(/Supplier Document Compliance/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Request Bank Review/i })).not.toBeInTheDocument();
   });
 
   it('transitions from loading to canonical results without violating hook order', async () => {

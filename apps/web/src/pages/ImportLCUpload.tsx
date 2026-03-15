@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
 import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { useDrafts, type DraftFile } from "@/hooks/use-drafts";
+import { buildImporterValidationFailureToast } from "@/lib/lcopilot/importerUpload";
 import { 
   FileText, 
   Upload, 
@@ -64,7 +65,7 @@ const supplierDocTypes = [
 const PROCESSING_PHASES = [
   { id: 'upload', label: 'Uploading documents', duration: 2, icon: Upload },
   { id: 'ocr', label: 'Extracting text (OCR)', duration: 35, icon: FileText },
-  { id: 'validation', label: 'Running compliance checks', duration: 5, icon: FileCheck },
+  { id: 'validation', label: 'Running validation checks', duration: 5, icon: FileCheck },
   { id: 'sanctions', label: 'Screening parties', duration: 10, icon: AlertTriangle },
   { id: 'complete', label: 'Building results', duration: 3, icon: CheckCircle },
 ];
@@ -472,6 +473,8 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
     setIsProcessing(true);
 
     try {
+      const normalizedLcNumber = lcNumber.trim();
+
       // Create document tags mapping
       const documentTags: Record<string, string> = {};
       completedFiles.forEach(file => {
@@ -489,29 +492,37 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
       setQuotaError(null);
       const response = await validate({
         files: completedFiles.map(f => f.file),
-        lcNumber,
+        lcNumber: normalizedLcNumber,
         notes,
         documentTags,
         userType: "importer",
         workflowType
       });
 
-      const processTitle = processType === "draft" ? "LC Risk Analysis Started" : "Compliance Check Started";
+      const processTitle = processType === "draft" ? "LC Risk Analysis Started" : "Supplier Review Started";
       const processDescription = processType === "draft"
         ? "Your draft LC is being analyzed for risks and unfavorable terms."
-        : "Your supplier documents are being checked against LC requirements.";
+        : "Your supplier documents are being reviewed against the canonical LC validation rules.";
 
       toast({
         title: processTitle,
         description: processDescription,
       });
 
+      if (currentDraftId) {
+        try {
+          await markDraftSubmitted(currentDraftId);
+        } catch (draftError) {
+          console.error('Failed to mark importer draft as submitted:', draftError);
+        }
+      }
+
       if (embedded && onComplete) {
         setTimeout(() => {
-          onComplete({ jobId: response.jobId, lcNumber, mode: processType });
+          onComplete({ jobId: response.jobId, lcNumber: normalizedLcNumber, mode: processType });
         }, 500);
       } else {
-        navigate(`/lcopilot/import-results/${response.jobId}?mode=${processType}`);
+        navigate(`/lcopilot/import-results/${response.jobId}?mode=${processType}&lc=${encodeURIComponent(normalizedLcNumber)}`);
       }
 
     } catch (error: any) {
@@ -527,24 +538,38 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
         return;
       }
 
-      // Check for network errors (either our ValidationError type or raw Axios errors)
+      toast(buildImporterValidationFailureToast(error));
+      return;
+
+      // Canonical importer beta path is truthful: do not fabricate demo results on request failure.
       const isNetworkError =
         error.type === 'network' ||
         error.type === 'server' ||
         error.code === 'ERR_NETWORK' ||
         error.name === 'AxiosError' ||
         !error.type;
-
-      // For demo purposes: if API fails (likely due to backend not running),
-      // create a mock job ID and redirect to results page with demo data
+      // Importer beta must fail truthfully here and let the user retry.
       if (isNetworkError) {
-        console.log("API unavailable, redirecting to demo results...");
+        const errorCode = error?.errorCode || error?.error_code || 'unknown';
+        const description =
+          errorCode !== 'unknown'
+            ? `${error.message || 'Unable to start validation.'} (${errorCode})`
+            : error.message || "Unable to start validation. Please try again.";
+
+        toast({
+          title: "Validation Failed",
+          description,
+          variant: "destructive",
+        });
+        return;
+
+        console.log("API unavailable, preserving truthful importer failure state.");
 
         const mockJobId = `demo-${processType}-${Date.now()}`;
 
         toast({
-          title: "Demo Mode",
-          description: "API unavailable - showing demo results with sample data.",
+          title: "Validation Failed",
+          description: "API unavailable. Please retry when the validation service is reachable.",
         });
 
         // Mark draft as submitted if we're working with a draft
@@ -581,14 +606,27 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
           variant: "destructive",
         });
       } else {
-        // Fallback - also redirect to demo for any unhandled errors
-        console.log("Unhandled error, falling back to demo mode...");
+        const errorCode = error?.errorCode || error?.error_code || 'unknown';
+        const description =
+          errorCode !== 'unknown'
+            ? `${error.message || 'Unable to start validation.'} (${errorCode})`
+            : error.message || "Unable to start validation. Please try again.";
+
+        toast({
+          title: "Validation Failed",
+          description,
+          variant: "destructive",
+        });
+        return;
+
+        // Legacy unreachable fallback kept only until importer upload cleanup is complete.
+        console.log("Unhandled importer upload error.");
 
         const mockJobId = `demo-${processType}-${Date.now()}`;
 
         toast({
-          title: "Demo Mode",
-          description: "Processing unavailable - showing demo results with sample data.",
+          title: "Validation Failed",
+          description: "Processing is unavailable right now. Please retry.",
         });
 
         // Mark draft as submitted if we're working with a draft
@@ -764,12 +802,12 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
         <Card className="shadow-soft border-0">
           <CardHeader>
             <CardTitle>
-              {fileType === "draft" ? "Start LC Risk Analysis" : "Start Compliance Check"}
+              {fileType === "draft" ? "Start LC Risk Analysis" : "Start Supplier Review"}
             </CardTitle>
             <CardDescription>
               {fileType === "draft" 
                 ? "Analyze draft LC terms for risks and unfavorable clauses"
-                : "Check supplier documents against LC requirements"
+                : "Review supplier documents against LC requirements"
               }
             </CardDescription>
           </CardHeader>
@@ -801,7 +839,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                 <div className="text-sm text-muted-foreground">
                   {completedFiles.length > 0 && lcNumber.trim() ? (
                     <span className="text-success">
-                      ✓ Ready to {fileType === "draft" ? "analyze LC risks" : "check compliance"}
+                      ✓ Ready to {fileType === "draft" ? "analyze LC risks" : "review supplier documents"}
                     </span>
                   ) : (
                     <span>Please upload documents and provide LC number to continue</span>
@@ -820,7 +858,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                     disabled={!(completedFiles.length > 0 && lcNumber.trim()) || isProcessing || isValidating || !quotaState.canValidate}
                     className="bg-gradient-importer hover:opacity-90"
                   >
-                    {(isProcessing || isValidating) ? "Processing..." : (fileType === "draft" ? "Analyze LC Risks" : "Check Compliance")}
+                    {(isProcessing || isValidating) ? "Processing..." : (fileType === "draft" ? "Analyze LC Risks" : "Review Supplier Documents")}
                   </Button>
                 </div>
               </div>
@@ -868,7 +906,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                   <p className="text-sm text-muted-foreground">
                     {currentDraftId
                       ? "Continue working on your saved draft"
-                      : "Upload draft LCs or supplier documents for compliance review"
+                      : "Upload draft LCs or supplier documents for importer-side LC review"
                     }
                   </p>
                 </div>
@@ -940,7 +978,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
           <CardHeader>
             <CardTitle>Document Upload & Processing</CardTitle>
             <CardDescription>
-              Choose your workflow: analyze draft LC for risks or check supplier documents for compliance
+              Choose your workflow: analyze draft LC terms or review supplier documents on the same LCopilot validation spine
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -952,7 +990,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                 </TabsTrigger>
                 <TabsTrigger value="supplier" className="flex items-center gap-2">
                   <ClipboardCheck className="w-4 h-4" />
-                  Supplier Document Check
+                  Supplier Document Review
                 </TabsTrigger>
               </TabsList>
               
@@ -977,8 +1015,8 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                   getSupplierInputProps,
                   isSupplierDragActive,
                   supplierDocTypes,
-                  "Upload Supplier Documents for Compliance Check",
-                  "Upload supplier's trade documents to verify compliance against your LC requirements"
+                  "Upload Supplier Documents for Review",
+                  "Upload supplier trade documents to verify them against your LC requirements"
                 )}
               </TabsContent>
             </Tabs>

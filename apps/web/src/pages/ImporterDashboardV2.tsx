@@ -48,6 +48,13 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  calculateDashboardStats,
+  formatTimeAgo,
+  sessionsToHistory,
+  type DashboardStats,
+  type HistoryItem,
+} from "@/components/dashboard";
 
 type Section =
   | "dashboard"
@@ -66,25 +73,6 @@ type Section =
   | "help";
 
 const SECTION_OPTIONS: Section[] = ["dashboard", "workspace", "templates", "upload", "reviews", "analytics", "notifications", "billing", "billing-usage", "ai-assistance", "content-library", "shipment-timeline", "settings", "help"];
-
-// Types for computed stats
-interface DashboardStats {
-  thisMonth: number;
-  successRate: number;
-  avgProcessingTime: string;
-  risksIdentified: number;
-  totalReviews: number;
-  documentsProcessed: number;
-}
-
-interface HistoryItem {
-  id: string;
-  date: string;
-  type: string;
-  supplier: string;
-  status: "approved" | "flagged" | "pending";
-  risks: number;
-}
 
 // Empty notifications - real notifications API not yet implemented
 const notifications: Notification[] = [];
@@ -255,79 +243,19 @@ export default function ImporterDashboardV2() {
     });
   };
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-
-    if (diffInHours < 1) return "Just now";
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d ago`;
-
-    return date.toLocaleDateString();
-  };
-
   if (!user) {
     return null;
   }
 
-  // Calculate real stats from sessions
-  const now = new Date();
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thisMonthSessions = sessions.filter(s => new Date(s.created_at) >= thisMonthStart);
-  const completedSessions = sessions.filter(s => s.status === 'completed');
-  const totalDiscrepancies = sessions.reduce((sum, s) => sum + (s.discrepancies?.length || 0), 0);
-  const totalDocuments = sessions.reduce((sum, s) => sum + (s.documents?.length || 0), 0);
-  
-  // Calculate success rate (sessions with 0 critical discrepancies)
-  const successfulSessions = completedSessions.filter(s => {
-    const criticalCount = (s.discrepancies || []).filter(d => d.severity === 'critical').length;
-    return criticalCount === 0;
+  const dashboardStats: DashboardStats = calculateDashboardStats(sessions, {
+    criticalOnly: true,
   });
-  const successRate = completedSessions.length > 0 
-    ? Math.round((successfulSessions.length / completedSessions.length) * 100 * 10) / 10
-    : 0;
 
-  // Calculate average processing time
-  const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
-  const avgProcessingMs = sessionsWithTime.length > 0
-    ? sessionsWithTime.reduce((sum, s) => {
-        const start = new Date(s.processing_started_at!).getTime();
-        const end = new Date(s.processing_completed_at!).getTime();
-        return sum + (end - start);
-      }, 0) / sessionsWithTime.length
-    : 0;
-  const avgProcessingTime = avgProcessingMs > 0 
-    ? `${(avgProcessingMs / 60000).toFixed(1)} min`
-    : "N/A";
-
-  // Computed dashboard stats
-  const dashboardStats: DashboardStats = {
-    thisMonth: thisMonthSessions.length,
-    successRate,
-    avgProcessingTime,
-    risksIdentified: totalDiscrepancies,
-    totalReviews: sessions.length,
-    documentsProcessed: totalDocuments,
-  };
-
-  // Transform sessions to history format
-  const recentHistory: HistoryItem[] = [...sessions]
-    .filter(s => s.status === 'completed')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5)
-    .map(s => ({
-      id: s.id,
-      date: new Date(s.created_at).toISOString().split('T')[0],
-      type: "LC Review",
-      supplier: s.extracted_data?.beneficiary_name || s.extracted_data?.applicant || "Unknown",
-      status: (s.discrepancies?.filter(d => d.severity === 'critical').length || 0) > 0 
-        ? "flagged" as const 
-        : "approved" as const,
-      risks: s.discrepancies?.length || 0,
-    }));
+  const recentHistory: HistoryItem[] = sessionsToHistory(sessions, {
+    limit: 5,
+    partyField: "beneficiary",
+    criticalOnly: true,
+  });
 
   return (
     <>
@@ -437,8 +365,8 @@ function DashboardOverview({
   return (
     <>
       <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back, Bangladesh Exports Ltd</h2>
-        <p className="text-muted-foreground">Here's what's happening with your LC validations today.</p>
+        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back</h2>
+        <p className="text-muted-foreground">Track importer-side LC reviews, supplier follow-up, and recent validation outcomes from the shared LCopilot beta spine.</p>
       </div>
 
       <StatGrid stats={stats} />
@@ -613,7 +541,7 @@ function WorkspaceCard({
         <CardTitle className="flex items-center gap-2">
           <Edit3 className="w-5 h-5" /> Your LC Workspace
         </CardTitle>
-        <CardDescription>Resume drafts or track amendments that need attention</CardDescription>
+        <CardDescription>Resume draft reviews or supplier follow-up work without leaving the importer workflow.</CardDescription>
       </CardHeader>
       <CardContent>
         {loadingDrafts ? (
@@ -624,10 +552,10 @@ function WorkspaceCard({
           >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="drafts" className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4" /> Drafts ({importerDrafts.length})
+                <Edit3 className="w-4 h-4" /> Draft Reviews ({importerDrafts.length})
               </TabsTrigger>
               <TabsTrigger value="amendments" className="flex items-center gap-2">
-                <GitBranch className="w-4 h-4" /> Amendments ({amendmentDrafts.length})
+                <GitBranch className="w-4 h-4" /> Supplier Follow-Up ({amendmentDrafts.length})
               </TabsTrigger>
             </TabsList>
 
@@ -635,8 +563,8 @@ function WorkspaceCard({
               {importerDrafts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p>No draft LC validations saved</p>
-                  <p className="text-sm">Start a new validation to create a draft</p>
+                  <p>No draft LC reviews saved</p>
+                  <p className="text-sm">Start a new importer review to create a draft</p>
                 </div>
               ) : (
                 importerDrafts.map((draft) => (
@@ -656,8 +584,8 @@ function WorkspaceCard({
               {amendmentDrafts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GitBranch className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p>No supplier amendments recorded</p>
-                  <p className="text-sm">Updates to supplier documents will appear here</p>
+                  <p>No supplier follow-up items recorded</p>
+                  <p className="text-sm">Supplier-document reviews that need another pass will appear here</p>
                 </div>
               ) : (
                 amendmentDrafts.map((draft) => (
@@ -730,9 +658,9 @@ function RecentValidationsCard({ history }: { history: HistoryItem[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FileText className="w-5 h-5" />
-          Recent LC Validations
+          Recent Importer Reviews
         </CardTitle>
-        <CardDescription>Your latest document validation results</CardDescription>
+        <CardDescription>Reopen recent importer jobs on the shared results spine</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -757,7 +685,7 @@ function RecentValidationsCard({ history }: { history: HistoryItem[] }) {
                   <h4 className="font-semibold text-foreground">
                     {item.type} #{item.id}
                   </h4>
-                  <p className="text-sm text-muted-foreground">Supplier: {item.supplier}</p>
+                  <p className="text-sm text-muted-foreground">Counterparty: {item.party}</p>
                   <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                     <span>{item.date}</span>
                   </div>
