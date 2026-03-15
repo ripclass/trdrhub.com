@@ -22,6 +22,13 @@ import type {
   ValidationDocument as SharedValidationDocument,
   ValidationResults as SharedValidationResults,
   ToleranceApplied as SharedToleranceApplied,
+  ValidationContractV1 as SharedValidationContractV1,
+  SubmissionEligibility as SharedSubmissionEligibility,
+  BankVerdict as SharedBankVerdict,
+  BankProfile as SharedBankProfile,
+  AmendmentsAvailable as SharedAmendmentsAvailable,
+  ContractWarning as SharedContractWarning,
+  ContractValidation as SharedContractValidation,
 } from '@shared/types';
 
 // Re-export schema-first types for use across the app
@@ -38,6 +45,13 @@ export type {
   SharedValidationDocument,
   SharedValidationResults,
   SharedToleranceApplied,
+  SharedValidationContractV1,
+  SharedSubmissionEligibility,
+  SharedBankVerdict,
+  SharedBankProfile,
+  SharedAmendmentsAvailable,
+  SharedContractWarning,
+  SharedContractValidation,
 };
 
 export type OptionEDocument = {
@@ -113,6 +127,13 @@ export type OptionEStructuredResult = StructuredResultPayload & {
     manifest: Array<{ name?: string | null; tag?: string | null }>;
     format: string;
   };
+  validation_contract_v1?: ValidationContractV1 | null;
+  submission_eligibility?: SubmissionEligibility | null;
+  raw_submission_eligibility?: SubmissionEligibility | null;
+  effective_submission_eligibility?: SubmissionEligibility | null;
+  bank_verdict?: StructuredResultBankVerdict | null;
+  bank_profile?: StructuredResultBankProfile | null;
+  amendments_available?: StructuredResultAmendmentsAvailable | null;
   ai_enrichment?: {
     enabled?: boolean;
     notes?: unknown[];
@@ -169,6 +190,11 @@ export type TimelineEvent = SharedTimelineEntry;
 export type StructuredResultAnalytics = SharedStructuredResultAnalytics;
 
 export type StructuredResultPayload = SharedStructuredResultPayload;
+export type ValidationContractV1 = SharedValidationContractV1;
+export type SubmissionEligibility = SharedSubmissionEligibility;
+export type StructuredResultBankVerdict = SharedBankVerdict;
+export type StructuredResultBankProfile = SharedBankProfile;
+export type StructuredResultAmendmentsAvailable = SharedAmendmentsAvailable;
 
 // Sanctions Screening Types - now using schema-first shared types
 export type SanctionsScreeningIssue = SharedSanctionsScreeningIssue;
@@ -177,23 +203,16 @@ export type SanctionsScreeningSummary = SharedSanctionsScreeningSummary;
 // Contract Validation Types (Output-First layer)
 export type ContractWarningSeverity = 'error' | 'warning' | 'info';
 
-export interface ContractWarning {
-  field: string;
-  message: string;
+export type ContractWarning = SharedContractWarning & {
   severity: ContractWarningSeverity;
-  source: string;  // lc_data, processing_summary, analytics, issues
-  suggestion?: string | null;
-}
+};
 
-export interface ContractValidation {
-  valid: boolean;
-  error_count: number;
-  warning_count: number;
-  info_count: number;
-}
+export type ContractValidation = SharedContractValidation;
 
 export interface ValidationResults {
   jobId: string;
+  job_id?: string;
+  validation_session_id?: string;
   summary: ProcessingSummaryPayload;
   documents: ValidationDocument[];
   issues: IssueCard[];
@@ -221,5 +240,5 @@ export interface ValidationResults {
   
   // Contract Validation additions (Output-First layer)
   contractWarnings?: ContractWarning[];
-  contractValidation?: ContractValidation;
+  contractValidation?: ContractValidation | null;
 }

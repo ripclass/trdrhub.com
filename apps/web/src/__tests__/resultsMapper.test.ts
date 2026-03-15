@@ -1,5 +1,6 @@
 import optionEFixture from './__fixtures__/results.optione.json';
 import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { buildValidationResults } from './fixtures/lcopilot';
 
 describe('results mapper - option e payload', () => {
   it('maps documents, issues, and customs risk from structured_result', () => {
@@ -79,6 +80,72 @@ describe('results mapper - option e payload', () => {
     expect(mapped.issues[0]?.next_action).toBe(
       'Route to internal compliance review, document the screening disposition, and hold bank presentation until compliance clearance is recorded.',
     );
+  });
+
+  it('preserves bank context and amendment intelligence on the canonical structured result path', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        bank_profile: {
+          bank_code: 'ICBC',
+          bank_name: 'Industrial and Commercial Bank of China',
+          strictness: 'strict',
+        },
+        amendments_available: {
+          count: 1,
+          amendments: [
+            {
+              issue_id: 'issue-44e',
+              field: {
+                tag: '44E',
+                name: 'Port of Loading',
+                current: 'MUMBAI',
+                proposed: 'CHITTAGONG',
+              },
+              narrative: 'Update the nominated port before presentation.',
+              swift_mt707_text: ':44E:CHITTAGONG',
+              bank_processing_days: 2,
+              estimated_fee_usd: 75,
+            },
+          ],
+          total_estimated_fee_usd: 75,
+          total_processing_days: 2,
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.structured_result.bank_profile?.strictness).toBe('strict');
+    expect(mapped.structured_result.amendments_available?.count).toBe(1);
+    expect(mapped.structured_result.amendments_available?.amendments[0]?.field.tag).toBe('44E');
+  });
+
+  it('surfaces a contract warning for false-pass contradictions instead of masking them', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        validation_contract_v1: {
+          final_verdict: 'pass',
+        },
+        effective_submission_eligibility: {
+          can_submit: false,
+          reasons: ['bank_verdict_reject'],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(
+      mapped.contractWarnings?.some(
+        (warning) =>
+          warning.field === 'validation_contract_v1.final_verdict' &&
+          warning.severity === 'error',
+      ),
+    ).toBe(true);
   });
 });
 

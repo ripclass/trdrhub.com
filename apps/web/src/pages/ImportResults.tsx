@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useJob, useResults, usePackage } from "@/hooks/use-lcopilot";
+import type { ValidationResults } from "@/types/lcopilot";
 import { format } from "date-fns";
 import { isImporterFeatureEnabled } from "@/config/importerFeatureFlags";
 import { importerApi } from "@/api/importer";
+import SummaryStrip from "@/components/lcopilot/SummaryStrip";
+import { LcHeader } from "@/components/lcopilot/LcHeader";
+import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
+import { deriveValidationState } from "@/lib/validation/validationState";
+import { getCanonicalResultTruth } from "@/lib/lcopilot/resultTruth";
+import {
+  AmendmentCard,
+  BankProfileBadge,
+  BankVerdictCard,
+  type AmendmentsAvailable,
+  type Amendment,
+  type BankProfile,
+  type BankVerdict,
+} from "./exporter/results";
+import { AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
 import {
   FileText,
   Download,
@@ -350,6 +366,308 @@ const transformApiToDraftFormat = (apiResults: any) => {
   };
 };
 
+const normalizeIssueFilterSeverity = (value?: string | null) => {
+  const normalized = String(value ?? '').toLowerCase();
+  if (['critical', 'error', 'high'].includes(normalized)) return 'critical';
+  if (['major', 'warning', 'warn', 'medium'].includes(normalized)) return 'major';
+  return 'minor';
+};
+
+function CanonicalImportValidationView({
+  results,
+  embedded,
+  activeTab,
+  setActiveTab,
+  issueFilter,
+  setIssueFilter,
+}: {
+  results: ValidationResults;
+  embedded: boolean;
+  activeTab: string;
+  setActiveTab: (value: string) => void;
+  issueFilter: "all" | "critical" | "major" | "minor";
+  setIssueFilter: (value: "all" | "critical" | "major" | "minor") => void;
+}) {
+  const navigate = useNavigate();
+  const structuredResult = results.structured_result;
+  const validationState = useMemo(
+    () => deriveValidationState(structuredResult as unknown as Record<string, unknown>),
+    [structuredResult],
+  );
+  const canonicalTruth = useMemo(() => getCanonicalResultTruth(results), [results]);
+  const issueCards = results.issues ?? [];
+  const filteredIssueCards = useMemo(() => {
+    if (issueFilter === 'all') return issueCards;
+    return issueCards.filter((issue) => normalizeIssueFilterSeverity(issue.severity) === issueFilter);
+  }, [issueCards, issueFilter]);
+  const severityCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, issue) => {
+          const normalized = normalizeIssueFilterSeverity(issue.severity);
+          acc[normalized] += 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 },
+      ),
+    [issueCards],
+  );
+  const documents = results.documents ?? [];
+  const summary = (results.summary ?? {}) as any;
+  const analytics = (results.analytics ?? {}) as any;
+  const totalDocuments = Number(summary.total_documents ?? documents.length ?? 0);
+  const statusCounts = summary.document_status ?? summary.status_counts ?? {
+    success: documents.filter((doc) => doc.status === 'success').length,
+    warning: documents.filter((doc) => doc.status === 'warning').length,
+    error: documents.filter((doc) => doc.status === 'error').length,
+  };
+  const successCount = Number(statusCounts.success ?? 0);
+  const warningCount = Number(statusCounts.warning ?? 0);
+  const errorCount = Number(statusCounts.error ?? 0);
+  const complianceScore = Number(
+    analytics.compliance_score ?? analytics.lc_compliance_score ?? summary.compliance_rate ?? 0,
+  );
+  const extractionAccuracy = totalDocuments > 0 ? Math.round((successCount / totalDocuments) * 100) : 0;
+  const customsReadyScore = Math.max(0, complianceScore - warningCount * 5);
+  const processingTime =
+    analytics.processing_time_display ??
+    summary.processing_time_display ??
+    (summary.processing_time_seconds != null ? `${summary.processing_time_seconds}s` : 'N/A');
+  const performanceInsights = [
+    `${successCount}/${totalDocuments || 0} documents extracted successfully`,
+    `${issueCards.length} issue${issueCards.length === 1 ? '' : 's'} detected`,
+    `Compliance score ${complianceScore}%`,
+  ];
+  const documentProcessingList = documents.map((doc) => ({
+    name: doc.name,
+    type: doc.type,
+    issues: doc.issuesCount,
+    status: doc.status,
+    risk: doc.issuesCount >= 3 ? 'high' : doc.issuesCount > 0 ? 'medium' : 'low',
+  }));
+  const documentStatusMap = useMemo(() => {
+    const map = new Map<string, { status?: string; type?: string }>();
+    documents.forEach((doc) => {
+      const candidates = [doc.name, doc.filename, doc.type, doc.typeKey];
+      candidates.forEach((candidate) => {
+        if (candidate) {
+          map.set(String(candidate).toLowerCase(), { status: doc.status, type: doc.type });
+        }
+      });
+    });
+    return map;
+  }, [documents]);
+  const contractWarnings = results.contractWarnings ?? [];
+
+  return (
+    <div className={embedded ? "space-y-6" : "min-h-screen bg-background"}>
+      {!embedded && (
+        <header className="bg-card border-b border-gray-200">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Link to="/lcopilot/importer-dashboard">
+                  <Button variant="outline" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-3">
+                  <div className="bg-gradient-primary p-2 rounded-lg">
+                    <ShieldCheck className="w-6 h-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-foreground">Importer Validation Results</h1>
+                    <p className="text-sm text-muted-foreground">
+                      Shared LCopilot result view backed by the canonical validation payload
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+      )}
+
+      <div className={embedded ? "space-y-6" : "container mx-auto px-4 py-8 max-w-7xl space-y-6"}>
+        {validationState?.isBlocked && (
+          <BlockedValidationCard
+            state={validationState}
+            onRetry={() => navigate("/lcopilot/importer-dashboard?section=upload")}
+          />
+        )}
+
+        {contractWarnings.length > 0 && (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Result Contract Warnings</CardTitle>
+              <CardDescription>
+                The frontend needed fallback handling for part of this result. Treat these warnings as payload drift, not normal UI behavior.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {contractWarnings.map((warning, index) => (
+                <div key={`${warning.field}-${index}`} className="text-sm">
+                  <span className="font-medium">{warning.field}:</span> {warning.message}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        <SummaryStrip
+          data={results}
+          overallStatus={canonicalTruth.overallStatus}
+          actualIssuesCount={issueCards.length}
+          complianceScore={complianceScore}
+          retryPath="/lcopilot/importer-dashboard?section=upload"
+        />
+
+        {structuredResult?.bank_profile && (
+          <BankProfileBadge profile={structuredResult.bank_profile as BankProfile} />
+        )}
+
+        {structuredResult?.bank_verdict && (
+          <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
+        )}
+
+        {structuredResult?.amendments_available && (structuredResult.amendments_available as AmendmentsAvailable).count > 0 && (
+          <AmendmentCard
+            amendments={structuredResult.amendments_available as AmendmentsAvailable}
+            onDownloadMT707={(amendment: Amendment) => {
+              const content = amendment.swift_mt707_text || amendment.mt707_text || '';
+              const blob = new Blob([content], { type: "text/plain" });
+              const url = URL.createObjectURL(blob);
+              const anchor = document.createElement("a");
+              anchor.href = url;
+              anchor.download = `MT707_Amendment_${amendment.field.tag}.txt`;
+              document.body.appendChild(anchor);
+              anchor.click();
+              document.body.removeChild(anchor);
+              URL.revokeObjectURL(url);
+            }}
+            onDownloadISO20022={(amendment: Amendment) => {
+              if (!amendment.iso20022_xml) return;
+              const blob = new Blob([amendment.iso20022_xml], { type: "application/xml" });
+              const url = URL.createObjectURL(blob);
+              const anchor = document.createElement("a");
+              anchor.href = url;
+              anchor.download = `ISO20022_Amendment_${amendment.field.tag}.xml`;
+              document.body.appendChild(anchor);
+              anchor.click();
+              document.body.removeChild(anchor);
+              URL.revokeObjectURL(url);
+            }}
+          />
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
+            <TabsTrigger value="issues">Issues ({issueCards.length})</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
+            <LcHeader data={results} />
+            <Card className="shadow-soft border border-border/60">
+              <CardHeader>
+                <CardTitle>Importer Review Summary</CardTitle>
+                <CardDescription>
+                  Submission readiness is driven from the canonical validation verdict and effective submission eligibility, not importer-only derived risk scores.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Final Verdict</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {canonicalTruth.finalVerdict ? canonicalTruth.finalVerdict.toUpperCase() : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Submission Readiness</p>
+                  <p className={`mt-1 text-lg font-semibold ${canonicalTruth.readinessClass}`}>
+                    {canonicalTruth.readinessLabel}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Can Submit</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {canonicalTruth.canSubmitFromValidation ? 'Yes' : 'No'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="documents" className="space-y-4">
+            {documents.map((doc) => (
+              <Card key={doc.documentId} className="shadow-soft border border-border/60">
+                <CardContent className="p-5 space-y-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="font-semibold">{doc.name}</h3>
+                      <p className="text-sm text-muted-foreground">{doc.type}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={doc.status}>
+                        {doc.status === 'success' ? 'Verified' : doc.status === 'warning' ? 'Review Required' : 'Fix Required'}
+                      </StatusBadge>
+                      <Badge variant="outline">{doc.issuesCount} issue{doc.issuesCount === 1 ? '' : 's'}</Badge>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {Object.entries(doc.extractedFields ?? {})
+                      .slice(0, 6)
+                      .map(([field, value]) => (
+                        <div key={field} className="rounded-md border p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{field.replace(/_/g, ' ')}</p>
+                          <p className="mt-1 text-sm font-medium break-words">{String(value ?? 'N/A')}</p>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </TabsContent>
+
+          <TabsContent value="issues" className="space-y-6">
+            <IssuesTab
+              hasIssueCards={issueCards.length > 0}
+              issueCards={issueCards}
+              filteredIssueCards={filteredIssueCards}
+              severityCounts={severityCounts}
+              issueFilter={issueFilter}
+              setIssueFilter={setIssueFilter}
+              documentStatusMap={documentStatusMap}
+              renderAIInsightsCard={() => null}
+              renderReferenceIssuesCard={() => null}
+            />
+          </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <AnalyticsTab
+              analyticsAvailable={Boolean(results.analytics)}
+              extractionAccuracy={extractionAccuracy}
+              lcComplianceScore={complianceScore}
+              customsReadyScore={customsReadyScore}
+              processingTime={processingTime}
+              totalDocuments={totalDocuments}
+              successCount={successCount}
+              warningCount={warningCount}
+              errorCount={errorCount}
+              performanceInsights={performanceInsights}
+              documentProcessingList={documentProcessingList}
+              documents={documents}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
 export default function ImportResults({
   embedded = false,
   jobId: jobIdOverride,
@@ -373,6 +691,7 @@ export default function ImportResults({
   const { results, getResults, isLoading: isLoadingResults } = useResults();
   const { generatePackage, downloadPackage, isLoading: isGeneratingPackage } = usePackage();
   const [activeTab, setActiveTab] = useState("overview");
+  const [issueFilter, setIssueFilter] = useState<"all" | "critical" | "major" | "minor">("all");
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [showSupplierDialog, setShowSupplierDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -387,18 +706,20 @@ export default function ImportResults({
   const enableBankPrecheck = isImporterFeatureEnabled("importer_bank_precheck");
   const enableSupplierFixPack = isImporterFeatureEnabled("supplier_fix_pack");
 
-  // Transform API results - use real data when available
   const hasRealResults = !!results;
-  const transformedSupplierData = hasRealResults ? transformApiToSupplierFormat(results) : null;
-  const transformedDraftData = hasRealResults ? transformApiToDraftFormat(results) : null;
+  const shouldRenderCanonicalResults = shouldUseAPI && hasRealResults;
+  const transformedSupplierData =
+    !shouldUseAPI && hasRealResults ? transformApiToSupplierFormat(results) : null;
+  const transformedDraftData =
+    !shouldUseAPI && hasRealResults ? transformApiToDraftFormat(results) : null;
   
   // Use real data if available, fall back to mock only for demo jobs
   const supplierData = transformedSupplierData || (isDemoJob ? mockSupplierResults : null);
   const draftData = transformedDraftData || (isDemoJob ? mockDraftLCResults : null);
-  const displayData = mode === 'draft' ? draftData : supplierData;
+  const displayData: any = mode === 'draft' ? draftData : supplierData;
   
   // Alias for backward compatibility with existing render code
-  const mockData = displayData;
+  const mockData: any = displayData;
   
   // Determine if ready to submit (only for supplier mode with no issues and feature flag enabled)
   const isReadyToSubmit = mode === 'supplier' && supplierData?.totalIssues === 0 && enableBankPrecheck;
@@ -417,8 +738,8 @@ export default function ImportResults({
     if (!shouldUseAPI) return;
     
     // Start polling if job is active and we're not already polling
-    if (jobStatus?.status === 'active' && !isPolling) {
-      startPolling(jobId);
+    if ((jobStatus?.status === 'processing' || jobStatus?.status === 'queued') && !isPolling) {
+      startPolling();
     }
 
     // Fetch results when job is completed
@@ -426,6 +747,19 @@ export default function ImportResults({
       getResults(jobId);
     }
   }, [jobId, jobStatus, results, getResults, shouldUseAPI, isPolling, startPolling]);
+
+  if (shouldRenderCanonicalResults && results) {
+    return (
+      <CanonicalImportValidationView
+        results={results}
+        embedded={embedded}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        issueFilter={issueFilter}
+        setIssueFilter={setIssueFilter}
+      />
+    );
+  }
 
   const handleDownloadReport = async () => {
     console.log("Download button clicked, jobId:", jobId);

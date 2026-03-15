@@ -94,6 +94,7 @@ import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
+import { getCanonicalResultTruth } from "@/lib/lcopilot/resultTruth";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -1136,6 +1137,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (!structuredResult) return null;
     return deriveValidationState(structuredResult as unknown as Record<string, unknown>);
   }, [structuredResult]);
+  const canonicalResultTruth = useMemo(
+    () => getCanonicalResultTruth(resultData ?? null),
+    [resultData],
+  );
   
   const documentRisk = useMemo(
     () =>
@@ -1428,35 +1433,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       : 'Document set appears ready for clean presentation on current review.';
     return { status, summary, blockers, reviews, ownerBuckets };
   }, [requirementChecklist, issueCards]);
-  const readinessStatus = useMemo(() => {
-    if (!validationState) return null;
-    if (validationState.status === "compliant") return "success";
-    if (validationState.status === "blocked" || validationState.status === "non_compliant") return "error";
-    return "warning";
-  }, [validationState]);
-  const overallStatus =
-    readinessStatus ??
-    (errorCount > 0 ? "error" : warningCount > 0 || totalDiscrepancies > 0 ? "warning" : "success");
+  const overallStatus = canonicalResultTruth.overallStatus;
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
-  const bankReadyLabel = validationState
-    ? validationState.status === "compliant"
-      ? "Ready"
-      : validationState.status === "blocked"
-      ? "Blocked"
-      : "Review needed"
-    : overallStatus === "success"
-    ? "Ready"
-    : "Review needed";
-  const bankReadyClass = validationState
-    ? validationState.status === "compliant"
-      ? "text-success"
-      : validationState.status === "blocked"
-      ? "text-destructive"
-      : "text-warning"
-    : overallStatus === "success"
-    ? "text-success"
-    : "text-warning";
+  const bankReadyLabel = canonicalResultTruth.readinessLabel;
+  const bankReadyClass = canonicalResultTruth.readinessClass;
   const processingSummaryExtras =
     (structuredResult as any)?.processing_summary_v2 ??
     (structuredResult?.processing_summary as Record<string, any> | undefined);
@@ -1465,13 +1446,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
-  const submissionEligibility = (structuredResult as any)?.submission_eligibility as
-    | { can_submit?: boolean; reasons?: string[] }
-    | undefined;
-  const bankVerdict = (structuredResult as any)?.bank_verdict as { can_submit?: boolean } | undefined;
-  const canSubmitFromValidation =
-    submissionEligibility?.can_submit ??
-    (structuredResult?.validation_blocked ? false : bankVerdict?.can_submit ?? false);
+  const submissionEligibility = canonicalResultTruth.submissionEligibility;
+  const bankVerdict = canonicalResultTruth.bankVerdict as { can_submit?: boolean } | null;
+  const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsLoading) return false;

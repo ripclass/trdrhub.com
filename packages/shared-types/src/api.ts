@@ -346,6 +346,21 @@ export const StructuredResultAnalyticsSchema = z.object({
   compliance_score: z.number(),
   issue_counts: SeverityBreakdownSchema,
   document_risk: z.array(DocumentRiskEntrySchema),
+  lc_compliance_score: z.number().optional(),
+  document_status_distribution: z.object({
+    success: z.number().optional(),
+    warning: z.number().optional(),
+    error: z.number().optional(),
+  }).optional(),
+  documents_processed: z.number().optional(),
+  processing_time_display: z.string().optional().nullable(),
+  compliance_level: z.string().optional(),
+  compliance_cap_reason: z.string().optional().nullable(),
+  customs_risk: z.object({
+    score: z.number(),
+    tier: z.string(),
+    flags: z.array(z.string()).optional(),
+  }).optional(),
 });
 export type StructuredResultAnalytics = z.infer<typeof StructuredResultAnalyticsSchema>;
 
@@ -360,7 +375,99 @@ export type StructuredTimelineEntry = z.infer<typeof StructuredTimelineEntrySche
 export const TimelineEntrySchema = StructuredTimelineEntrySchema;
 export type TimelineEntry = StructuredTimelineEntry;
 
+export const ValidationContractV1Schema = z.object({
+  ai_verdict: z.string().optional(),
+  ruleset_verdict: z.string().optional(),
+  final_verdict: z.enum(['pass', 'review', 'reject']).optional(),
+  arbitration_mode: z.string().optional(),
+  next_action: z.string().optional(),
+}).passthrough();
+export type ValidationContractV1 = z.infer<typeof ValidationContractV1Schema>;
+
+export const SubmissionEligibilitySchema = z.object({
+  can_submit: z.boolean().optional(),
+  reasons: z.array(z.string()).optional(),
+  source: z.string().optional(),
+  missing_reason_codes: z.array(z.string()).optional(),
+  unresolved_critical_fields: z.array(z.union([z.string(), z.record(z.unknown())])).optional(),
+}).passthrough();
+export type SubmissionEligibility = z.infer<typeof SubmissionEligibilitySchema>;
+
+export const BankVerdictActionItemSchema = z.object({
+  priority: z.string().optional(),
+  issue: z.string().optional(),
+  action: z.string().optional(),
+}).passthrough();
+export type BankVerdictActionItem = z.infer<typeof BankVerdictActionItemSchema>;
+
+export const BankVerdictSchema = z.object({
+  verdict: z.string().optional(),
+  verdict_color: z.string().optional(),
+  verdict_message: z.string().optional(),
+  recommendation: z.string().optional(),
+  can_submit: z.boolean().optional(),
+  will_be_rejected: z.boolean().optional(),
+  estimated_discrepancy_fee: z.number().optional(),
+  issue_summary: z.object({
+    critical: z.number().optional(),
+    major: z.number().optional(),
+    minor: z.number().optional(),
+    total: z.number().optional(),
+  }).passthrough().optional(),
+  action_items: z.array(BankVerdictActionItemSchema).optional(),
+  action_items_count: z.number().optional(),
+  reasons: z.array(z.string()).optional(),
+  risk_flags: z.array(z.string()).optional(),
+}).passthrough();
+export type BankVerdict = z.infer<typeof BankVerdictSchema>;
+
+export const BankProfileSchema = z.object({
+  bank_code: z.string(),
+  bank_name: z.string(),
+  strictness: z.enum(['lenient', 'standard', 'strict']),
+  country: z.string().optional(),
+  region: z.string().optional(),
+  document_preferences: z.array(z.string()).optional(),
+  special_requirements: z.array(z.string()).optional(),
+  blocked_conditions: z.array(z.string()).optional(),
+  tolerance_level: z.number().optional(),
+  port_rules: z.record(z.unknown()).optional(),
+  date_rules: z.record(z.unknown()).optional(),
+  amount_rules: z.record(z.unknown()).optional(),
+  party_rules: z.record(z.unknown()).optional(),
+}).passthrough();
+export type BankProfile = z.infer<typeof BankProfileSchema>;
+
+export const AmendmentFieldChangeSchema = z.object({
+  tag: z.string(),
+  name: z.string(),
+  current: z.string(),
+  proposed: z.string(),
+});
+export type AmendmentFieldChange = z.infer<typeof AmendmentFieldChangeSchema>;
+
+export const AmendmentSchema = z.object({
+  issue_id: z.string(),
+  field: AmendmentFieldChangeSchema,
+  narrative: z.string(),
+  swift_mt707_text: z.string().optional(),
+  mt707_text: z.string().optional(),
+  iso20022_xml: z.string().optional(),
+  bank_processing_days: z.number().optional(),
+  estimated_fee_usd: z.number().optional(),
+}).passthrough();
+export type Amendment = z.infer<typeof AmendmentSchema>;
+
+export const AmendmentsAvailableSchema = z.object({
+  count: z.number(),
+  amendments: z.array(AmendmentSchema),
+  total_estimated_fee_usd: z.number().optional(),
+  total_processing_days: z.number().optional(),
+}).passthrough();
+export type AmendmentsAvailable = z.infer<typeof AmendmentsAvailableSchema>;
+
 export const StructuredResultSchema = z.object({
+  version: z.literal('structured_result_v1'),
   processing_summary: ProcessingSummarySchema,
   processing_summary_v2: ProcessingSummaryV2Schema.optional(),
   document_extraction_v1: DocumentExtractionV1Schema.optional(),
@@ -373,6 +480,13 @@ export const StructuredResultSchema = z.object({
   lc_structured: z.record(z.unknown()).optional(), // Structured LC data from extractor (MT700, goods, clauses, etc.)
   _extraction_core_v1: z.record(z.unknown()).optional(),
   _extraction_diagnostics: z.record(z.unknown()).optional(),
+  validation_contract_v1: ValidationContractV1Schema.optional(),
+  submission_eligibility: SubmissionEligibilitySchema.optional(),
+  raw_submission_eligibility: SubmissionEligibilitySchema.optional(),
+  effective_submission_eligibility: SubmissionEligibilitySchema.optional(),
+  bank_verdict: BankVerdictSchema.optional(),
+  bank_profile: BankProfileSchema.optional(),
+  amendments_available: AmendmentsAvailableSchema.optional(),
 }).passthrough(); // Allow extra fields for backward compatibility
 export type StructuredResult = z.infer<typeof StructuredResultSchema>;
 export const StructuredProcessingSummarySchema = ProcessingSummarySchema;
@@ -609,12 +723,31 @@ export const ValidationDocumentSchema = z.object({
 });
 export type ValidationDocument = z.infer<typeof ValidationDocumentSchema>;
 
+export const ContractWarningSchema = z.object({
+  field: z.string(),
+  message: z.string(),
+  severity: z.enum(['error', 'warning', 'info']),
+  source: z.string(),
+  suggestion: z.string().nullable().optional(),
+});
+export type ContractWarning = z.infer<typeof ContractWarningSchema>;
+
+export const ContractValidationSchema = z.object({
+  valid: z.boolean(),
+  error_count: z.number(),
+  warning_count: z.number(),
+  info_count: z.number(),
+});
+export type ContractValidation = z.infer<typeof ContractValidationSchema>;
+
 // ============================================================================
 // Full Validation Results Schema (LCopilot Response)
 // ============================================================================
 
 export const ValidationResultsSchema = z.object({
   jobId: z.string(),
+  job_id: z.string().optional(),
+  validation_session_id: z.string().optional(),
   summary: ProcessingSummarySchema,
   documents: z.array(ValidationDocumentSchema),
   issues: z.array(IssueCardSchema),
@@ -639,6 +772,8 @@ export const ValidationResultsSchema = z.object({
   sanctionsScreening: SanctionsScreeningSummarySchema.optional().nullable(),
   sanctionsBlocked: z.boolean().optional(),
   sanctionsBlockReason: z.string().optional().nullable(),
+  contractWarnings: z.array(ContractWarningSchema).optional(),
+  contractValidation: ContractValidationSchema.optional().nullable(),
 });
 export type ValidationResults = z.infer<typeof ValidationResultsSchema>;
 
@@ -736,6 +871,13 @@ export const schemas = {
   StructuredResultDocumentRiskEntry: DocumentRiskEntrySchema,
   StructuredResultAnalytics: StructuredResultAnalyticsSchema,
   StructuredResultTimelineEntry: TimelineEntrySchema,
+  ValidationContractV1: ValidationContractV1Schema,
+  SubmissionEligibility: SubmissionEligibilitySchema,
+  BankVerdict: BankVerdictSchema,
+  BankProfile: BankProfileSchema,
+  AmendmentFieldChange: AmendmentFieldChangeSchema,
+  Amendment: AmendmentSchema,
+  AmendmentsAvailable: AmendmentsAvailableSchema,
   StructuredResult: StructuredResultSchema,
   
   // LCopilot-specific schemas
@@ -758,5 +900,7 @@ export const schemas = {
   ValidationDocument: ValidationDocumentSchema,
   DocumentRequirementStatus: DocumentRequirementStatusSchema,
   DocumentReviewState: DocumentReviewStateSchema,
+  ContractWarning: ContractWarningSchema,
+  ContractValidation: ContractValidationSchema,
   ValidationResults: ValidationResultsSchema,
 } as const;

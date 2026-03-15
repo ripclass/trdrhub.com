@@ -21,6 +21,7 @@ export interface Amendment {
   issue_id: string;
   field: AmendmentFieldChange;
   narrative: string;
+  swift_mt707_text?: string;
   mt707_text: string;
   iso20022_xml?: string;
   bank_processing_days: number;

@@ -340,6 +340,13 @@ class StructuredResultAnalytics(BaseModel):
     compliance_score: int
     issue_counts: SeverityBreakdown
     document_risk: List[DocumentRiskEntry]
+    lc_compliance_score: Optional[int] = None
+    document_status_distribution: Optional[Dict[str, int]] = None
+    documents_processed: Optional[int] = None
+    processing_time_display: Optional[str] = None
+    compliance_level: Optional[str] = None
+    compliance_cap_reason: Optional[str] = None
+    customs_risk: Optional[Dict[str, Any]] = None
 
 
 class TimelineEntry(BaseModel):
@@ -350,7 +357,86 @@ class TimelineEntry(BaseModel):
     timestamp: Optional[str] = None
 
 
+class ValidationContractV1(BaseModel):
+    ai_verdict: Optional[str] = None
+    ruleset_verdict: Optional[str] = None
+    final_verdict: Optional[str] = None
+    arbitration_mode: Optional[str] = None
+    next_action: Optional[str] = None
+
+
+class SubmissionEligibility(BaseModel):
+    can_submit: Optional[bool] = None
+    reasons: Optional[List[str]] = None
+    source: Optional[str] = None
+    missing_reason_codes: Optional[List[str]] = None
+    unresolved_critical_fields: Optional[List[Any]] = None
+
+
+class BankVerdictActionItem(BaseModel):
+    priority: Optional[str] = None
+    issue: Optional[str] = None
+    action: Optional[str] = None
+
+
+class BankVerdict(BaseModel):
+    verdict: Optional[str] = None
+    verdict_color: Optional[str] = None
+    verdict_message: Optional[str] = None
+    recommendation: Optional[str] = None
+    can_submit: Optional[bool] = None
+    will_be_rejected: Optional[bool] = None
+    estimated_discrepancy_fee: Optional[float] = None
+    issue_summary: Optional[Dict[str, Any]] = None
+    action_items: Optional[List[BankVerdictActionItem]] = None
+    action_items_count: Optional[int] = None
+    reasons: Optional[List[str]] = None
+    risk_flags: Optional[List[str]] = None
+
+
+class BankProfile(BaseModel):
+    bank_code: str
+    bank_name: str
+    strictness: str
+    country: Optional[str] = None
+    region: Optional[str] = None
+    document_preferences: Optional[List[str]] = None
+    special_requirements: Optional[List[str]] = None
+    blocked_conditions: Optional[List[str]] = None
+    tolerance_level: Optional[float] = None
+    port_rules: Optional[Dict[str, Any]] = None
+    date_rules: Optional[Dict[str, Any]] = None
+    amount_rules: Optional[Dict[str, Any]] = None
+    party_rules: Optional[Dict[str, Any]] = None
+
+
+class AmendmentFieldChange(BaseModel):
+    tag: str
+    name: str
+    current: str
+    proposed: str
+
+
+class Amendment(BaseModel):
+    issue_id: str
+    field: AmendmentFieldChange
+    narrative: str
+    swift_mt707_text: Optional[str] = None
+    mt707_text: Optional[str] = None
+    iso20022_xml: Optional[str] = None
+    bank_processing_days: Optional[int] = None
+    estimated_fee_usd: Optional[float] = None
+
+
+class AmendmentsAvailable(BaseModel):
+    count: int
+    amendments: List[Amendment]
+    total_estimated_fee_usd: Optional[float] = None
+    total_processing_days: Optional[int] = None
+
+
 class StructuredResultPayload(BaseModel):
+    version: str = Field(default="structured_result_v1")
     processing_summary: StructuredProcessingSummary
     processing_summary_v2: Optional[ProcessingSummaryV2] = None
     document_extraction_v1: Optional[DocumentExtractionV1] = None
@@ -361,6 +447,13 @@ class StructuredResultPayload(BaseModel):
     timeline: List[TimelineEntry]
     extraction_core_v1: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_core_v1")
     extraction_diagnostics: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_diagnostics")
+    validation_contract_v1: Optional[ValidationContractV1] = None
+    submission_eligibility: Optional[SubmissionEligibility] = None
+    raw_submission_eligibility: Optional[SubmissionEligibility] = None
+    effective_submission_eligibility: Optional[SubmissionEligibility] = None
+    bank_verdict: Optional[BankVerdict] = None
+    bank_profile: Optional[BankProfile] = None
+    amendments_available: Optional[AmendmentsAvailable] = None
 
 
 # ============================================================================
@@ -602,6 +695,49 @@ class ValidationDocument(BaseModel):
     reviewState: Optional[DocumentReviewState] = None
 
 
+class ContractWarning(BaseModel):
+    field: str
+    message: str
+    severity: str
+    source: str
+    suggestion: Optional[str] = None
+
+
+class ContractValidation(BaseModel):
+    valid: bool
+    error_count: int
+    warning_count: int
+    info_count: int
+
+
+class ValidationResults(BaseModel):
+    jobId: str
+    job_id: Optional[str] = None
+    validation_session_id: Optional[str] = None
+    summary: StructuredProcessingSummary
+    documents: List[ValidationDocument]
+    issues: List[IssueCard]
+    analytics: StructuredResultAnalytics
+    timeline: List[TimelineEntry]
+    structured_result: StructuredResultPayload
+    lc_structured: Optional[Dict[str, Any]] = None
+    ai_enrichment: Optional[AIEnrichmentPayload] = None
+    telemetry: Optional[Dict[str, Any]] = None
+    reference_issues: Optional[List[ReferenceIssue]] = None
+    validationBlocked: Optional[bool] = None
+    validationStatus: Optional[str] = None
+    gateResult: Optional[GateResult] = None
+    extractionSummary: Optional[ExtractionSummary] = None
+    lcBaseline: Optional[LCBaseline] = None
+    complianceLevel: Optional[str] = None
+    complianceCapReason: Optional[str] = None
+    sanctionsScreening: Optional[SanctionsScreeningSummary] = None
+    sanctionsBlocked: Optional[bool] = None
+    sanctionsBlockReason: Optional[str] = None
+    contractWarnings: Optional[List[ContractWarning]] = None
+    contractValidation: Optional[ContractValidation] = None
+
+
 # ============================================================================
 # Schema Registry for Runtime Access
 # ============================================================================
@@ -643,6 +779,13 @@ SCHEMAS = {
     'StructuredResultDocumentRiskEntry': DocumentRiskEntry,
     'StructuredResultAnalytics': StructuredResultAnalytics,
     'StructuredResultTimelineEntry': TimelineEntry,
+    'ValidationContractV1': ValidationContractV1,
+    'SubmissionEligibility': SubmissionEligibility,
+    'BankVerdict': BankVerdict,
+    'BankProfile': BankProfile,
+    'AmendmentFieldChange': AmendmentFieldChange,
+    'Amendment': Amendment,
+    'AmendmentsAvailable': AmendmentsAvailable,
     'StructuredResultPayload': StructuredResultPayload,
     
     # LCopilot-specific types
@@ -665,6 +808,9 @@ SCHEMAS = {
     'ValidationDocument': ValidationDocument,
     'DocumentRequirementStatus': DocumentRequirementStatus,
     'DocumentReviewState': DocumentReviewState,
+    'ContractWarning': ContractWarning,
+    'ContractValidation': ContractValidation,
+    'ValidationResults': ValidationResults,
     
     # Pagination
     'PaginationParams': PaginationParams,

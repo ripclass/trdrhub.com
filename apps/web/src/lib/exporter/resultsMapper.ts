@@ -1,5 +1,5 @@
 import type { StructuredResultPayload } from '@shared/types';
-import type { ValidationResults, IssueCard } from '@/types/lcopilot';
+import type { ContractWarning, ValidationResults, IssueCard } from '@/types/lcopilot';
 
 const DOC_LABELS: Record<string, string> = {
   letter_of_credit: 'Letter of Credit',
@@ -18,6 +18,31 @@ const DEFAULT_SEVERITY = {
   medium: 0,
   minor: 0,
 };
+
+const createContractWarning = (
+  field: string,
+  message: string,
+  severity: ContractWarning['severity'],
+  source: string,
+  suggestion?: string | null,
+): ContractWarning => ({
+  field,
+  message,
+  severity,
+  source,
+  suggestion: suggestion ?? null,
+});
+
+const normalizeContractWarning = (warning: any): ContractWarning => ({
+  field: String(warning?.field ?? 'result_contract'),
+  message: String(warning?.message ?? warning?.detail ?? 'Result contract warning'),
+  severity:
+    warning?.severity === 'error' || warning?.severity === 'warning' || warning?.severity === 'info'
+      ? warning.severity
+      : 'warning',
+  source: String(warning?.source ?? 'structured_result'),
+  suggestion: warning?.suggestion ? String(warning.suggestion) : null,
+});
 
 const normalizeDocType = (value?: string | null) => {
   if (!value) {
@@ -445,7 +470,18 @@ const mapIssues = (
   });
 };
 
-const ensureSummary = (payload: any) => {
+const ensureSummary = (payload: any, contractWarnings: ContractWarning[]) => {
+  if (!payload) {
+    contractWarnings.push(
+      createContractWarning(
+        'processing_summary',
+        'Canonical processing summary is missing from structured_result; frontend is using zero-value defaults.',
+        'error',
+        'structured_result',
+        'Return structured_result.processing_summary and processing_summary_v2 from /api/results/{jobId}.',
+      ),
+    );
+  }
   const severity = payload?.severity_breakdown ?? { ...DEFAULT_SEVERITY };
   const rawStatus = payload?.document_status ?? payload?.status_counts ?? {};
   const documentStatus = {
@@ -475,7 +511,22 @@ const ensureSummary = (payload: any) => {
   };
 };
 
-const ensureAnalytics = (payload: any, summary: ReturnType<typeof ensureSummary>) => {
+const ensureAnalytics = (
+  payload: any,
+  summary: ReturnType<typeof ensureSummary>,
+  contractWarnings: ContractWarning[],
+) => {
+  if (!payload) {
+    contractWarnings.push(
+      createContractWarning(
+        'analytics',
+        'Canonical analytics are missing from structured_result; frontend is using derived defaults.',
+        'warning',
+        'structured_result',
+        'Return structured_result.analytics from /api/results/{jobId}.',
+      ),
+    );
+  }
   const issueCounts = payload?.issue_counts ?? summary.severity_breakdown ?? { ...DEFAULT_SEVERITY };
   const compliance =
     typeof payload?.compliance_score === 'number'
@@ -526,12 +577,39 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     throw new Error('structured_result_v1 payload missing');
   }
 
-  // Safely extract documents - ensure it's always an array
-  const rawDocs =
-    (structured as any)?.document_extraction_v1?.documents ??
-    structured.documents_structured ??
-    structured.lc_structured?.documents_structured ??
-    [];
+  const contractWarnings: ContractWarning[] = ensureArray((structured as any)._contract_warnings ?? []).map(
+    normalizeContractWarning,
+  );
+
+  let rawDocs = (structured as any)?.document_extraction_v1?.documents;
+  if (rawDocs === undefined) {
+    rawDocs = (structured as any)?.documents_structured;
+    if (Array.isArray(rawDocs)) {
+      contractWarnings.push(
+        createContractWarning(
+          'documents',
+          'Using legacy structured_result.documents_structured as the document source.',
+          'warning',
+          'results_mapper',
+          'Promote document_extraction_v1.documents as the canonical document source.',
+        ),
+      );
+    }
+  }
+  if (rawDocs === undefined) {
+    rawDocs = structured.lc_structured?.documents_structured;
+    if (Array.isArray(rawDocs)) {
+      contractWarnings.push(
+        createContractWarning(
+          'documents',
+          'Using lc_structured.documents_structured as a fallback document source.',
+          'warning',
+          'results_mapper',
+          'Persist document_extraction_v1.documents to avoid frontend document-source drift.',
+        ),
+      );
+    }
+  }
   const optionEDocuments = ensureArray(rawDocs);
 
   const documents = mapDocuments(optionEDocuments);
@@ -545,39 +623,77 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   );
   
   const processingSummaryPayload = (structured as any)?.processing_summary_v2 ?? structured.processing_summary;
-  const summary = ensureSummary(processingSummaryPayload);
-  const analytics = ensureAnalytics(structured.analytics, summary);
+  const summary = ensureSummary(processingSummaryPayload, contractWarnings);
+  const analytics = ensureAnalytics(structured.analytics, summary, contractWarnings);
   
   // Safely extract timeline
-  const rawTimeline = structured.lc_structured?.timeline ?? structured.timeline ?? [];
+  let rawTimeline: unknown = structured.timeline ?? [];
+  if (!Array.isArray(rawTimeline) || rawTimeline.length === 0) {
+    rawTimeline = structured.lc_structured?.timeline ?? [];
+    if (Array.isArray(rawTimeline) && rawTimeline.length > 0) {
+      contractWarnings.push(
+        createContractWarning(
+          'timeline',
+          'Using lc_structured.timeline because structured_result.timeline is empty or missing.',
+          'info',
+          'results_mapper',
+          'Persist the canonical timeline directly at structured_result.timeline.',
+        ),
+      );
+    }
+  }
   const timeline = mapTimeline(ensureArray(rawTimeline));
 
   // V2 Validation Pipeline fields
   const validationBlocked = Boolean(structured.validation_blocked);
-  const validationStatus = structured.validation_status ?? (validationBlocked ? 'blocked' : 'non_compliant');
+  const validationStatus = String(
+    (structured as any)?.validation_status ?? (validationBlocked ? 'blocked' : 'non_compliant'),
+  );
   const gateResult = structured.gate_result ?? null;
   const extractionSummary = structured.extraction_summary ?? null;
   const lcBaseline = structured.lc_baseline ?? null;
-  const complianceLevel = structured.analytics?.compliance_level ?? validationStatus;
-  const complianceCapReason = structured.analytics?.compliance_cap_reason ?? null;
+  const complianceLevel = String((structured.analytics as any)?.compliance_level ?? validationStatus);
+  const complianceCapReason = ((structured.analytics as any)?.compliance_cap_reason ?? null) as string | null;
 
   // Sanctions Screening fields
   const sanctionsScreening = structured.sanctions_screening ?? null;
   const sanctionsBlocked = Boolean(structured.sanctions_blocked);
-  const sanctionsBlockReason = structured.sanctions_block_reason ?? null;
+  const sanctionsBlockReason = ((structured as any)?.sanctions_block_reason ?? null) as string | null;
 
-  // Contract Validation fields (Output-First layer)
-  const contractWarnings = ensureArray((structured as any)._contract_warnings ?? []);
   const contractValidation = (structured as any)._contract_validation ?? null;
+  const effectiveEligibility =
+    (structured as any)?.effective_submission_eligibility ??
+    (structured as any)?.submission_eligibility ??
+    null;
+  const finalVerdict = String((structured as any)?.validation_contract_v1?.final_verdict ?? '').trim().toLowerCase();
+
+  if (
+    effectiveEligibility &&
+    typeof effectiveEligibility?.can_submit === 'boolean' &&
+    effectiveEligibility.can_submit === false &&
+    finalVerdict === 'pass'
+  ) {
+    contractWarnings.push(
+      createContractWarning(
+        'validation_contract_v1.final_verdict',
+        'Contradictory readiness state detected: final verdict is pass while effective submission eligibility blocks submission.',
+        'error',
+        'results_mapper',
+        'Backend should keep final_verdict aligned with effective_submission_eligibility.can_submit.',
+      ),
+    );
+  }
 
   return {
     jobId: raw?.jobId ?? raw?.job_id ?? '',
+    job_id: raw?.job_id,
+    validation_session_id: raw?.validation_session_id ?? raw?.jobId ?? raw?.job_id ?? '',
     summary,
     documents,
     issues,
     analytics,
     timeline,
-    structured_result: structured,
+    structured_result: structured as ValidationResults['structured_result'],
     lc_structured: structured.lc_structured ?? null,
     ai_enrichment: structured.ai_enrichment ?? null,
     
@@ -597,6 +713,13 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     
     // Contract Validation additions (Output-First layer)
     contractWarnings,
-    contractValidation,
+    contractValidation:
+      contractValidation ??
+      {
+        valid: contractWarnings.filter((warning) => warning.severity === 'error').length === 0,
+        error_count: contractWarnings.filter((warning) => warning.severity === 'error').length,
+        warning_count: contractWarnings.filter((warning) => warning.severity === 'warning').length,
+        info_count: contractWarnings.filter((warning) => warning.severity === 'info').length,
+      },
   };
 };

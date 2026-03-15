@@ -14,11 +14,21 @@ type Props = {
   overallStatus?: 'success' | 'warning' | 'error';
   actualIssuesCount?: number;
   complianceScore?: number;
+  retryPath?: string;
 };
 
 const formatNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
 
-export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerated, overallStatus, actualIssuesCount, complianceScore }: Props) {
+export function SummaryStrip({
+  data,
+  lcTypeLabel,
+  lcTypeConfidence,
+  packGenerated,
+  overallStatus,
+  actualIssuesCount,
+  complianceScore,
+  retryPath = '/lcopilot/exporter-dashboard?section=upload',
+}: Props) {
   const structured = data?.structured_result;
   const summary =
     data?.summary ??
@@ -39,7 +49,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
       error: 0,
     };
   const processingTime =
-    summary.processing_time_display ?? analytics?.processing_time_display ?? 'N/A';
+    summary.processing_time_display ?? (analytics as any)?.processing_time_display ?? 'N/A';
 
   const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
@@ -149,7 +159,7 @@ export function SummaryStrip({ data, lcTypeLabel, lcTypeConfidence, packGenerate
             <h3 className="font-semibold text-foreground text-sm">Next Steps</h3>
             {hasIssues ? (
               <>
-                <Link to="/lcopilot/exporter-dashboard?section=upload">
+                <Link to={retryPath}>
                   <Button variant="outline" size="sm" className="w-full">
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Fix & Re-process
