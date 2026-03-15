@@ -739,6 +739,24 @@ export default function ImportResults({
   // Check if job failed
   const jobFailed = jobStatus?.status === 'failed' || jobStatus?.status === 'error';
 
+  // Keep hook order stable while canonical results move from loading to ready.
+  const [processingProgress, setProcessingProgress] = useState(0);
+  
+  useEffect(() => {
+    if (isPolling || jobStatus?.status === 'processing') {
+      const interval = setInterval(() => {
+        setProcessingProgress(prev => {
+          if (prev < 30) return prev + 3;
+          if (prev < 60) return prev + 2;
+          if (prev < 85) return prev + 1;
+          if (prev < 95) return prev + 0.5;
+          return prev;
+        });
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [isPolling, jobStatus?.status]);
+
   if (shouldRenderCanonicalResults && results) {
     return (
       <CanonicalImportValidationView
@@ -1054,25 +1072,6 @@ In production, this would be a comprehensive PDF report with detailed analysis, 
       </header>
     );
   };
-
-  // Animated progress for processing state
-  const [processingProgress, setProcessingProgress] = useState(0);
-  
-  useEffect(() => {
-    if (isPolling || jobStatus?.status === 'processing') {
-      const interval = setInterval(() => {
-        setProcessingProgress(prev => {
-          // Slow down as we approach 90%
-          if (prev < 30) return prev + 3;
-          if (prev < 60) return prev + 2;
-          if (prev < 85) return prev + 1;
-          if (prev < 95) return prev + 0.5;
-          return prev;
-        });
-      }, 500);
-      return () => clearInterval(interval);
-    }
-  }, [isPolling, jobStatus?.status]);
 
   const renderProcessingState = () => {
     if (isLoadingRealData || isPolling || jobStatus?.status === 'processing') {

@@ -42,15 +42,17 @@ const activeResults = buildValidationResults({
   } as any,
 });
 
+const canonicalHookState = {
+  jobStatus: { status: 'completed' },
+  isPolling: false,
+  results: activeResults as ReturnType<typeof buildValidationResults> | null,
+  isLoading: false,
+  resultsError: null as any,
+  refreshResults: vi.fn().mockResolvedValue(activeResults),
+};
+
 vi.mock('@/hooks/use-lcopilot', () => ({
-  useCanonicalJobResult: () => ({
-    jobStatus: { status: 'completed' },
-    isPolling: false,
-    results: activeResults,
-    isLoading: false,
-    resultsError: null,
-    refreshResults: vi.fn().mockResolvedValue(activeResults),
-  }),
+  useCanonicalJobResult: () => canonicalHookState,
   usePackage: () => ({
     generatePackage: vi.fn(),
     downloadPackage: vi.fn(),
@@ -83,6 +85,15 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 describe('ImportResults', () => {
+  beforeEach(() => {
+    canonicalHookState.jobStatus = { status: 'completed' };
+    canonicalHookState.isPolling = false;
+    canonicalHookState.results = activeResults;
+    canonicalHookState.isLoading = false;
+    canonicalHookState.resultsError = null;
+    canonicalHookState.refreshResults = vi.fn().mockResolvedValue(activeResults);
+  });
+
   it('uses the canonical shared result path for real importer jobs', async () => {
     render(
       renderWithProviders(
@@ -95,5 +106,36 @@ describe('ImportResults', () => {
     expect(screen.getByText(/Industrial and Commercial Bank of China/i)).toBeInTheDocument();
     expect(screen.getByText(/1 Amendment Available/i)).toBeInTheDocument();
     expect(screen.queryByText(/Supplier Document Compliance/i)).not.toBeInTheDocument();
+  });
+
+  it('transitions from loading to canonical results without violating hook order', async () => {
+    canonicalHookState.results = null;
+    canonicalHookState.isLoading = true;
+    canonicalHookState.isPolling = true;
+    canonicalHookState.jobStatus = { status: 'processing' };
+
+    const view = render(
+      renderWithProviders(
+        <ImportResults embedded jobId="job-123" mode="supplier" />,
+        '/lcopilot/import-results/job-123?mode=supplier',
+      ),
+    );
+
+    expect(await screen.findByText(/Checking Document Compliance/i)).toBeInTheDocument();
+
+    canonicalHookState.results = activeResults;
+    canonicalHookState.isLoading = false;
+    canonicalHookState.isPolling = false;
+    canonicalHookState.jobStatus = { status: 'completed' };
+
+    view.rerender(
+      renderWithProviders(
+        <ImportResults embedded jobId="job-123" mode="supplier" />,
+        '/lcopilot/import-results/job-123?mode=supplier',
+      ),
+    );
+
+    expect(await screen.findByText(/Importer Review Summary/i)).toBeInTheDocument();
+    expect(screen.getByText(/Industrial and Commercial Bank of China/i)).toBeInTheDocument();
   });
 });

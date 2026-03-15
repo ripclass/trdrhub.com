@@ -18,21 +18,21 @@ export interface BankVerdictActionItem {
 }
 
 export interface BankVerdict {
-  verdict: "SUBMIT" | "CAUTION" | "HOLD" | "REJECT";
-  verdict_color: "green" | "yellow" | "orange" | "red";
-  verdict_message: string;
-  recommendation: string;
-  can_submit: boolean;
-  will_be_rejected: boolean;
-  estimated_discrepancy_fee: number;
-  issue_summary: {
-    critical: number;
-    major: number;
-    minor: number;
-    total: number;
+  verdict?: "SUBMIT" | "CAUTION" | "HOLD" | "REJECT" | string;
+  verdict_color?: "green" | "yellow" | "orange" | "red" | string;
+  verdict_message?: string;
+  recommendation?: string;
+  can_submit?: boolean;
+  will_be_rejected?: boolean;
+  estimated_discrepancy_fee?: number;
+  issue_summary?: {
+    critical?: number;
+    major?: number;
+    minor?: number;
+    total?: number;
   };
-  action_items: BankVerdictActionItem[];
-  action_items_count: number;
+  action_items?: BankVerdictActionItem[];
+  action_items_count?: number;
 }
 
 const verdictColors = {
@@ -57,14 +57,79 @@ const verdictBadgeColors = {
 };
 
 interface BankVerdictCardProps {
-  verdict: BankVerdict;
+  verdict: BankVerdict | string;
+}
+
+type NormalizedVerdictKey = keyof typeof verdictColors;
+
+const fallbackVerdictMessage: Record<NormalizedVerdictKey, string> = {
+  SUBMIT: "Bank submission appears ready.",
+  CAUTION: "Bank review is advised before submission.",
+  HOLD: "Submission should be held pending review.",
+  REJECT: "Bank would reject this presentation in its current state.",
+};
+
+const fallbackRecommendation: Record<NormalizedVerdictKey, string> = {
+  SUBMIT: "Proceed with bank submission once supporting controls are complete.",
+  CAUTION: "Resolve review items before bank submission.",
+  HOLD: "Address the blocking items before attempting submission.",
+  REJECT: "Do not submit until the blocking discrepancies are corrected.",
+};
+
+const normalizeVerdictKey = (verdict: BankVerdict | string): NormalizedVerdictKey => {
+  const rawVerdict = typeof verdict === "string" ? verdict : verdict?.verdict;
+  const normalized = String(rawVerdict || "").trim().toUpperCase();
+
+  if (normalized in verdictColors) {
+    return normalized as NormalizedVerdictKey;
+  }
+
+  if (typeof verdict !== "string" && verdict?.can_submit) {
+    return "SUBMIT";
+  }
+
+  return "HOLD";
+};
+
+const toSafeNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+function normalizeVerdict(verdict: BankVerdict | string) {
+  const verdictObject = typeof verdict === "string" ? {} : verdict;
+  const verdictKey = normalizeVerdictKey(verdict);
+  const issueSummary = {
+    critical: toSafeNumber(verdictObject.issue_summary?.critical),
+    major: toSafeNumber(verdictObject.issue_summary?.major),
+    minor: toSafeNumber(verdictObject.issue_summary?.minor),
+  };
+  const actionItems = Array.isArray(verdictObject.action_items) ? verdictObject.action_items : [];
+  const totalIssues =
+    toSafeNumber(verdictObject.issue_summary?.total) ||
+    issueSummary.critical + issueSummary.major + issueSummary.minor;
+
+  return {
+    verdict: verdictKey,
+    verdict_message: verdictObject.verdict_message || fallbackVerdictMessage[verdictKey],
+    recommendation: verdictObject.recommendation || fallbackRecommendation[verdictKey],
+    estimated_discrepancy_fee: toSafeNumber(verdictObject.estimated_discrepancy_fee),
+    issue_summary: {
+      ...issueSummary,
+      total: totalIssues,
+    },
+    action_items: actionItems,
+    action_items_count: toSafeNumber(verdictObject.action_items_count) || actionItems.length,
+  };
 }
 
 export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
+  const normalizedVerdict = normalizeVerdict(verdict);
+
   return (
     <Card className={cn(
       "mt-4 border-2 shadow-lg transition-all",
-      verdictColors[verdict.verdict]
+      verdictColors[normalizedVerdict.verdict]
     )}>
       <CardContent className="pt-6">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -72,46 +137,46 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
           <div className="flex items-center gap-3">
             <div className={cn(
               "p-3 rounded-xl",
-              verdictColors[verdict.verdict]
+              verdictColors[normalizedVerdict.verdict]
             )}>
-              {verdictIcons[verdict.verdict]}
+              {verdictIcons[normalizedVerdict.verdict]}
             </div>
             <div>
-              <Badge className={cn("text-sm font-bold px-3 py-1", verdictBadgeColors[verdict.verdict])}>
-                {verdict.verdict === "SUBMIT" ? "READY TO SUBMIT" : verdict.verdict}
+              <Badge className={cn("text-sm font-bold px-3 py-1", verdictBadgeColors[normalizedVerdict.verdict])}>
+                {normalizedVerdict.verdict === "SUBMIT" ? "READY TO SUBMIT" : normalizedVerdict.verdict}
               </Badge>
-              <p className="text-sm font-medium mt-1">{verdict.verdict_message}</p>
+              <p className="text-sm font-medium mt-1">{normalizedVerdict.verdict_message}</p>
             </div>
           </div>
           
           {/* Recommendation */}
           <div className="flex-1 md:border-l md:pl-4 border-border/50">
-            <p className="text-sm text-muted-foreground">{verdict.recommendation}</p>
+            <p className="text-sm text-muted-foreground">{normalizedVerdict.recommendation}</p>
             
-            {verdict.estimated_discrepancy_fee > 0 && (
+            {normalizedVerdict.estimated_discrepancy_fee > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
-                Estimated discrepancy fee: <span className="font-semibold text-orange-400">USD {verdict.estimated_discrepancy_fee.toFixed(2)}</span>
+                Estimated discrepancy fee: <span className="font-semibold text-orange-400">USD {normalizedVerdict.estimated_discrepancy_fee.toFixed(2)}</span>
               </p>
             )}
           </div>
           
           {/* Issue Summary */}
           <div className="flex items-center gap-4 text-xs">
-            {verdict.issue_summary.critical > 0 && (
+            {normalizedVerdict.issue_summary.critical > 0 && (
               <div className="flex items-center gap-1 text-red-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.critical}</span>
+                <span className="font-bold text-lg">{normalizedVerdict.issue_summary.critical}</span>
                 <span>Critical</span>
               </div>
             )}
-            {verdict.issue_summary.major > 0 && (
+            {normalizedVerdict.issue_summary.major > 0 && (
               <div className="flex items-center gap-1 text-orange-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.major}</span>
+                <span className="font-bold text-lg">{normalizedVerdict.issue_summary.major}</span>
                 <span>Major</span>
               </div>
             )}
-            {verdict.issue_summary.minor > 0 && (
+            {normalizedVerdict.issue_summary.minor > 0 && (
               <div className="flex items-center gap-1 text-yellow-400">
-                <span className="font-bold text-lg">{verdict.issue_summary.minor}</span>
+                <span className="font-bold text-lg">{normalizedVerdict.issue_summary.minor}</span>
                 <span>Minor</span>
               </div>
             )}
@@ -119,13 +184,13 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
         </div>
         
         {/* Action Items */}
-        {verdict.action_items.length > 0 && (
+        {normalizedVerdict.action_items.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/30">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Required Actions ({verdict.action_items_count})
+              Required Actions ({normalizedVerdict.action_items_count})
             </p>
             <div className="space-y-2">
-              {verdict.action_items.slice(0, 3).map((item, idx) => (
+              {normalizedVerdict.action_items.slice(0, 3).map((item, idx) => (
                 <div key={idx} className="flex items-start gap-2 text-sm">
                   <span className={cn(
                     "mt-0.5 w-2 h-2 rounded-full flex-shrink-0",
@@ -137,9 +202,9 @@ export function BankVerdictCard({ verdict }: BankVerdictCardProps) {
                   </div>
                 </div>
               ))}
-              {verdict.action_items_count > 3 && (
+              {normalizedVerdict.action_items_count > 3 && (
                 <p className="text-xs text-muted-foreground pl-4">
-                  + {verdict.action_items_count - 3} more action(s) in Issues tab
+                  + {normalizedVerdict.action_items_count - 3} more action(s) in Issues tab
                 </p>
               )}
             </div>

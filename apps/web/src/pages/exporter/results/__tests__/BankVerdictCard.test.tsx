@@ -52,6 +52,14 @@ describe('BankVerdictCard', () => {
     expect(screen.getByText('2')).toBeInTheDocument(); // Critical count
   });
 
+  it('renders scalar verdict truth without crashing', () => {
+    render(<BankVerdictCard verdict={'REJECT'} />);
+
+    expect(screen.getByText('REJECT')).toBeInTheDocument();
+    expect(screen.getByText(/Bank would reject this presentation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Do not submit until the blocking discrepancies are corrected/i)).toBeInTheDocument();
+  });
+
   it('displays estimated discrepancy fee when > 0', () => {
     const verdictWithFee: BankVerdict = {
       ...baseVerdict,
