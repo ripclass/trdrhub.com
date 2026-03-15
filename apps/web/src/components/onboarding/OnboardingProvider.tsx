@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import {
   getOnboardingStatus,
   updateOnboardingProgress,
-  type OnboardingStatus,
   type OnboardingProgressPayload,
+  type OnboardingStatus,
 } from '@/api/onboarding'
 
 interface OnboardingContextType {
@@ -46,8 +46,9 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
           step: null,
           status: 'active',
           kyc_status: 'none',
-          required: {},
-        } as any)
+          required: {} as OnboardingStatus['required'],
+          details: {},
+        })
       } else {
         setStatus(null)
       }
@@ -57,6 +58,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
     try {
       setIsLoading(true)
+
       if (GUEST_MODE) {
         setStatus({
           user_id: user.id,
@@ -66,8 +68,9 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
           step: null,
           status: 'active',
           kyc_status: 'none',
-          required: {},
-        } as any)
+          required: {} as OnboardingStatus['required'],
+          details: {},
+        })
       } else {
         const onboardingStatus = await getOnboardingStatus()
         setStatus(onboardingStatus)
@@ -87,11 +90,11 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const updateProgress = async (payload: OnboardingProgressPayload) => {
     try {
       if (GUEST_MODE) {
-        // no-op in guest mode
         return
       }
+
       const updatedStatus = await updateOnboardingProgress(payload)
-      setStatus(updatedStatus as any)
+      setStatus(updatedStatus)
     } catch (error) {
       console.error('Failed to update onboarding progress:', error)
       throw error
@@ -103,38 +106,8 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   }
 
   const needsOnboarding = React.useMemo(() => {
-    if (!status) {
-      console.log("🚫 needsOnboarding: false (no status)");
-      return false;
-    }
-    
-    // If already marked as completed, no onboarding needed
-    if (status.completed) {
-      console.log("✅ needsOnboarding: false (already completed)");
-      return false;
-    }
-    
-    // If user has company info (from registration or previous onboarding), don't show wizard
-    // Check if company_id exists or if company info exists in details
-    const hasCompanyInfo = status.company_id || (status.details?.company?.name && status.details?.company?.type);
-    if (hasCompanyInfo) {
-      // User already provided company info - don't show wizard
-      console.log("✅ needsOnboarding: false (has company info)", {
-        company_id: status.company_id,
-        company_name: status.details?.company?.name,
-        company_type: status.details?.company?.type
-      });
-      return false;
-    }
-    
-    // Only show wizard if truly incomplete (no company info at all)
-    console.log("⚠️ needsOnboarding: true (no company info)", {
-      completed: status.completed,
-      company_id: status.company_id,
-      details: status.details
-    });
-    return !status.completed;
-  }, [status])
+    return Boolean(user && status && !status.completed)
+  }, [status, user])
 
   const value: OnboardingContextType = {
     status,
@@ -150,4 +123,3 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     </OnboardingContext.Provider>
   )
 }
-

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,6 @@ import {
   BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { getOnboardingStatus } from "@/api/onboarding";
 
 const FEATURES = [
   { icon: FileCheck, label: "LC Validation" },
@@ -33,61 +32,34 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { loginWithEmail } = useAuth();
+  const { user, isLoading: authLoading, loginWithEmail } = useAuth();
 
   // Get returnUrl from query params (e.g., /login?returnUrl=/tracking/dashboard)
   const returnUrl = searchParams.get("returnUrl");
+
+  useEffect(() => {
+    if (authLoading || !user) {
+      return;
+    }
+
+    const destination = returnUrl || "/lcopilot/dashboard";
+    window.location.href = destination;
+  }, [authLoading, returnUrl, user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      const profile = await loginWithEmail(email, password);
+      await loginWithEmail(email, password);
       toast({
         title: "Welcome back!",
         description: "Successfully signed in to TRDR Hub.",
       });
 
-      // If returnUrl is provided, use it (for redirects from protected pages)
-      if (returnUrl) {
-        setIsLoading(false);
-        // Use window.location for a hard redirect to ensure it works
-        // after auth state changes (React navigate can get lost in re-renders)
-        window.location.href = returnUrl;
-        return;
-      }
-
-      // Default routing: Most users go to Hub, only banks go to bank dashboard
-      let destination = "/hub";
-      
-      try {
-        const status = await Promise.race([
-          getOnboardingStatus(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-        ]) as any;
-        
-        if (status) {
-          const backendRole = status.role;
-          
-          // Only bank users go to bank dashboard, everyone else goes to Hub
-          if (backendRole === "bank_officer" || backendRole === "bank_admin") {
-            destination = "/lcopilot/bank-dashboard";
-          }
-        }
-      } catch (err) {
-        console.warn("Onboarding status check failed, defaulting to Hub:", err);
-        // Default to Hub for all users if status check fails
-        // profile.role is already mapped to "bank" for bank_officer/bank_admin
-        if (profile.role === "bank") {
-          destination = "/lcopilot/bank-dashboard";
-        }
-      }
-      
       setIsLoading(false);
-      navigate(destination);
+      window.location.href = returnUrl || "/lcopilot/dashboard";
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({

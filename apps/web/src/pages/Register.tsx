@@ -392,7 +392,7 @@ export default function Register() {
         description: "Your account is ready. You have $100 in free credits!",
       });
 
-      navigate("/hub");
+      navigate("/lcopilot/dashboard", { replace: true });
 
     } catch (error: any) {
       const message =

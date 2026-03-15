@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -104,42 +104,18 @@ const strategicInsights = [
 ]
 
 export default function EnterpriseDashboard() {
-  const { user, isLoading: authLoading } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth()
   const [activeSection, setActiveSection] = useState<Section>("dashboard")
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate('/login')
-    }
-  }, [authLoading, user, navigate])
-
-  // Show loading state while checking authentication
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Don't render dashboard if not authenticated
   if (!user) {
     return null
   }
 
-  const currentUser = user
-    ? {
-        id: user.id,
-        name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-        email: user.email || "",
-        role: user.user_metadata?.role || "tenant_admin",
-      }
-    : null
+  const currentUser = {
+    id: user.id,
+    name: user.full_name || user.username || user.email.split("@")[0] || "User",
+    email: user.email,
+    role: user.role === 'admin' ? 'tenant_admin' : user.role,
+  }
 
   return (
     <DashboardLayout

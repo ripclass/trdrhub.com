@@ -13,7 +13,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useImporterAuth } from "@/lib/importer/auth";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 
 type ImporterSection =
@@ -25,6 +25,7 @@ type ImporterSection =
   | "analytics"
   | "notifications"
   | "billing"
+  | "billing-usage"
   | "ai-assistance"
   | "content-library"
   | "shipment-timeline"
@@ -38,12 +39,13 @@ interface ImporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function ImporterSidebar({ activeSection, onSectionChange, ...props }: ImporterSidebarProps) {
   const location = useLocation();
-  const { user, logout } = useImporterAuth();
+  const { user, logout } = useAuth();
+  const displayName = user?.full_name || user?.username || user?.email;
   
   const isActive = (matcher: string) => location.pathname === matcher;
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
   };
 
   return (
@@ -243,11 +245,11 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
             <SidebarMenuItem>
               <div className="flex items-center gap-2 px-2 py-1.5 w-full">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+                  {displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
-                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'tenant_admin' ? 'Admin' : 'Importer'}</span>
+                  <span className="truncate font-medium text-sm">{displayName || user.email}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'admin' ? 'Admin' : 'Importer'}</span>
                 </div>
                 <Button
                   variant="ghost"

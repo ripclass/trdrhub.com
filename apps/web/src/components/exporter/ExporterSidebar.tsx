@@ -13,7 +13,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useExporterAuth } from "@/lib/exporter/auth";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 
@@ -41,11 +40,14 @@ interface ExporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function ExporterSidebar({ activeSection, onSectionChange, user: propUser, ...props }: ExporterSidebarProps) {
   const location = useLocation();
-  const { user: exporterAuthUser, logout: exporterLogout } = useExporterAuth();
-  const { logout: mainLogout } = useAuth();
+  const { user: authUser, logout } = useAuth();
   
-  // Use propUser if provided (from main auth), otherwise fall back to exporterAuthUser
-  const user = propUser || exporterAuthUser;
+  const user = propUser || authUser;
+  const displayName =
+    propUser?.name ||
+    authUser?.full_name ||
+    authUser?.username ||
+    user?.email;
   
   const isActive = (url: string) => {
     if (url === "#") return false;
@@ -55,21 +57,8 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
   const handleLogout = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     e?.stopPropagation();
-    
-    // Logout from both auth systems
-    try {
-      await mainLogout();
-    } catch (error) {
-      console.warn('Main auth logout failed:', error);
-    }
-    
-    try {
-      exporterLogout(); // This will navigate to /login
-    } catch (error) {
-      console.warn('Exporter auth logout failed:', error);
-      // Fallback: navigate directly if logout fails
-      window.location.href = '/login';
-    }
+
+    await logout();
   };
 
   return (
@@ -269,11 +258,11 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
             <SidebarMenuItem>
               <div className="flex items-center gap-2 px-2 py-1.5 w-full">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+                  {displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
-                  <span className="truncate font-medium text-sm">{user.name || user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'tenant_admin' ? 'Admin' : 'Exporter'}</span>
+                  <span className="truncate font-medium text-sm">{displayName || user.email}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'admin' ? 'Admin' : 'Exporter'}</span>
                 </div>
                 <Button
                   variant="ghost"

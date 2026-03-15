@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { getOnboardingStatus } from '@/api/onboarding'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
@@ -66,51 +65,9 @@ export default function AuthCallback() {
           console.warn('Backend login failed (non-critical):', backendLoginError)
         }
 
-        setStatus('Checking onboarding status...')
-        
-        // Check onboarding status and redirect accordingly
-        try {
-          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-          const onboardingResponse = await fetch(`${API_BASE_URL}/onboarding/status`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('trdrhub_api_token') || ''}`,
-            },
-            credentials: 'include',
-          })
-          
-          if (onboardingResponse.ok) {
-            const onboardingStatus = await onboardingResponse.json()
-            
-            // If onboarding is not complete, redirect to onboarding page
-            if (!onboardingStatus.completed) {
-              setStatus('Redirecting to onboarding...')
-              setTimeout(() => {
-                navigate('/onboarding')
-              }, 500)
-              return
-            }
-            
-            // Simplified routing: Banks go to bank dashboard, everyone else to Hub
-            const role = onboardingStatus.role
-            const destination = (role === 'bank_officer' || role === 'bank_admin')
-              ? '/lcopilot/bank-dashboard'
-              : '/hub'
-            
-            setStatus('Success! Redirecting...')
-            setTimeout(() => {
-              navigate(destination)
-            }, 500)
-            return
-          }
-        } catch (onboardingError) {
-          console.warn('Failed to check onboarding status:', onboardingError)
-        }
-        
-        // Fallback: redirect to Hub
         setStatus('Success! Redirecting...')
         setTimeout(() => {
-          navigate('/hub')
+          navigate('/lcopilot/dashboard', { replace: true })
         }, 500)
       } catch (err) {
         console.error('Auth callback error:', err)

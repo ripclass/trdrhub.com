@@ -127,8 +127,6 @@ import BankDashboard from './pages/BankDashboard'
 import BankDashboardV2 from './pages/BankDashboardV2'
 import BankLogin from './pages/bank/BankLogin'
 import ImporterDashboardV2 from './pages/ImporterDashboardV2'
-import ExporterLogin from './pages/exporter/ExporterLogin'
-import ImporterLogin from './pages/importer/ImporterLogin'
 import ClientDashboard from './pages/ClientDashboard'
 import ComponentGallery from './pages/ComponentGallery'
 import ExporterDocumentCorrections from './pages/ExporterDocumentCorrections'
@@ -144,9 +142,7 @@ import AuthCallback from './pages/auth/Callback'
 import CombinedDashboard from './pages/CombinedDashboard'
 import EnterpriseDashboard from './pages/EnterpriseDashboard'
 import { BankAuthProvider } from './lib/bank/auth'
-import { ExporterAuthProvider } from './lib/exporter/auth'
-import { ImporterAuthProvider } from './lib/importer/auth'
-import { Toaster } from './components/ui/toaster'
+import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 import { 
   TrackingLayout, 
@@ -334,7 +330,11 @@ function App() {
         <Route path="/lcopilot" element={<Index />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/onboarding" element={
+          <LcopilotBetaRoute scope="onboarding">
+            <Onboarding />
+          </LcopilotBetaRoute>
+        } />
         
         {/* Hub - Unified Dashboard with Sidebar */}
         <Route path="/hub" element={<HubLayout />}>
@@ -350,7 +350,11 @@ function App() {
         <Route path="/lcopilot/review/:sessionId" element={<ReviewPage />} />
         <Route path="/lcopilot/report/:sessionId" element={<ReportPage />} />
         <Route path="/lcopilot/demo" element={<DiscrepancyListDemo />} />
-        <Route path="/lcopilot/dashboard" element={<LcopilotRouter />} />
+        <Route path="/lcopilot/dashboard" element={
+          <LcopilotBetaRoute scope="router">
+            <LcopilotRouter />
+          </LcopilotBetaRoute>
+        } />
         <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
         <Route path="/lcopilot/results" element={<ExporterResults />} />
         <Route path="/lcopilot/results/:jobId" element={<ExporterResults />} />
@@ -367,31 +371,29 @@ function App() {
           <Navigate to="/login?returnUrl=/lcopilot/exporter-dashboard" replace />
         } />
         <Route path="/lcopilot/exporter-dashboard" element={
-          <ExporterAuthProvider>
+          <LcopilotBetaRoute scope="exporter">
             <ExporterDashboard />
-          </ExporterAuthProvider>
+          </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/combined-dashboard" element={
-          <ExporterAuthProvider>
+          <LcopilotBetaRoute scope="combined">
             <CombinedDashboard />
-          </ExporterAuthProvider>
+          </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
         <Route path="/lcopilot/exporter-dashboard/v2" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
         <Route path="/lcopilot/importer-dashboard/login" element={
-          <ImporterAuthProvider>
-            <ImporterLogin />
-          </ImporterAuthProvider>
+          <Navigate to="/login?returnUrl=/lcopilot/importer-dashboard" replace />
         } />
         <Route path="/lcopilot/importer-dashboard" element={
-          <ImporterAuthProvider>
+          <LcopilotBetaRoute scope="importer">
             <ImporterDashboardV2 />
-          </ImporterAuthProvider>
+          </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/enterprise-dashboard" element={
-          <ExporterAuthProvider>
+          <LcopilotBetaRoute scope="enterprise">
             <EnterpriseDashboard />
-          </ExporterAuthProvider>
+          </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
         <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />

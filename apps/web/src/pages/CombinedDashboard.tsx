@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,10 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
-import { useOnboarding } from "@/hooks/use-onboarding";
 import { useCombined } from "@/hooks/use-combined";
-import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { ViewModeToggle } from "@/components/combined/ViewModeToggle";
 import { CombinedKPIs, type KPIData } from "@/components/combined/CombinedKPIs";
 import { CombinedSessions, type Session } from "@/components/combined/CombinedSessions";
@@ -119,9 +116,7 @@ const getQuickActions = (viewMode: "export" | "import" | "all") => {
 };
 
 export default function CombinedDashboard() {
-  const { toast } = useToast();
-  const { user: mainUser, isLoading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const { user: mainUser } = useAuth();
   
   const currentUser = mainUser ? {
     id: mainUser.id,
@@ -130,10 +125,8 @@ export default function CombinedDashboard() {
     role: 'exporter' as const,
   } : null;
 
-  const { needsOnboarding, isLoading: isLoadingOnboarding } = useOnboarding();
   const { viewMode } = useCombined();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [sessions, setSessions] = useState<ValidationSession[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
 
@@ -175,21 +168,6 @@ export default function CombinedDashboard() {
   const [activeSection, setActiveSection] = useState<Section>(() => parseSection(searchParams.get("section")));
 
   useEffect(() => {
-    const demoMode = localStorage.getItem('demo_mode') === 'true' || 
-                    new URLSearchParams(window.location.search).get('demo') === 'true';
-    
-    if (!authLoading && !mainUser && !demoMode) {
-      navigate("/login");
-    }
-  }, [authLoading, mainUser, navigate]);
-
-  useEffect(() => {
-    if (!isLoadingOnboarding && needsOnboarding) {
-      setShowOnboarding(true);
-    }
-  }, [needsOnboarding, isLoadingOnboarding]);
-
-  useEffect(() => {
     const current = parseSection(searchParams.get("section"));
     if (current !== activeSection) {
       setActiveSection(current);
@@ -201,7 +179,6 @@ export default function CombinedDashboard() {
     setSearchParams({ section });
   };
 
-  if (authLoading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
   if (!mainUser) return null;
 
   const handleKpiClick = (kpi: string, mode?: typeof viewMode) => {
@@ -436,37 +413,23 @@ export default function CombinedDashboard() {
   };
 
   return (
-    <>
-      <DashboardLayout
-        sidebar={
-          <ExporterSidebar
-            activeSection={activeSection}
-            onSectionChange={handleSectionChange}
-            user={currentUser}
-          />
-        }
-        topbar={
-          activeSection === "dashboard" ? (
-            <ViewModeToggle showAll={true} />
-          ) : undefined
-        }
-      >
-        <div className="p-6">
-          {renderContent()}
-        </div>
-      </DashboardLayout>
-
-      <OnboardingWizard
-        open={showOnboarding}
-        onClose={() => setShowOnboarding(false)}
-        onComplete={() => {
-          setShowOnboarding(false);
-          toast({
-            title: "Onboarding complete",
-            description: "You're all set to start validating documents.",
-          });
-        }}
-      />
-    </>
+    <DashboardLayout
+      sidebar={
+        <ExporterSidebar
+          activeSection={activeSection}
+          onSectionChange={handleSectionChange}
+          user={currentUser}
+        />
+      }
+      topbar={
+        activeSection === "dashboard" ? (
+          <ViewModeToggle showAll={true} />
+        ) : undefined
+      }
+    >
+      <div className="p-6">
+        {renderContent()}
+      </div>
+    </DashboardLayout>
   );
 }

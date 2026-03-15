@@ -34,7 +34,6 @@ import { ResultsProvider, useResultsContext } from "@/context/ResultsContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { useExporterAuth } from "@/lib/exporter/auth";
 import {
   type ExporterSection,
   type SidebarSection,
@@ -79,12 +78,18 @@ export default function ExporterDashboard() {
 type AnySection = ExporterSection | SidebarSection;
 
 function DashboardContent() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { jobId: contextJobId, setJobId } = useResultsContext();
-  const { user: currentUser } = useAuth();
-  const { user: exporterUser, isAuthenticated, isLoading: authLoading } = useExporterAuth();
+  const { user: authUser } = useAuth();
   const { toast } = useToast();
+  const currentUser = authUser
+    ? {
+        id: authUser.id,
+        name: authUser.full_name || authUser.username || authUser.email.split("@")[0],
+        email: authUser.email,
+        role: authUser.role,
+      }
+    : null;
 
   // Parse URL params
   const sectionParam = searchParams.get("section");
@@ -120,15 +125,6 @@ function DashboardContent() {
   const sidebarSection: SidebarSection = EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
     ? sectionToSidebar(activeSection as ExporterSection)
     : (activeSection as SidebarSection);
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      // Redirect to main login with return URL
-      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
-      navigate(`/login?returnUrl=${returnUrl}`);
-    }
-  }, [isAuthenticated, authLoading, navigate]);
 
   // Sync jobId from URL to context
   useEffect(() => {
@@ -259,20 +255,7 @@ function DashboardContent() {
     [effectiveJobId, urlLc, handleSectionChange]
   );
 
-  // Show loading state while checking authentication
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Redirect if not authenticated (handled by useEffect)
-  if (!isAuthenticated) {
+  if (!currentUser) {
     return null;
   }
 
@@ -300,7 +283,7 @@ function DashboardContent() {
         <ExporterSidebar
           activeSection={sidebarSection}
           onSectionChange={handleSidebarChange}
-          user={currentUser ?? exporterUser ?? undefined}
+          user={currentUser}
         />
       }
       breadcrumbs={[
@@ -313,7 +296,7 @@ function DashboardContent() {
         {activeSection === "overview" && (
           <OverviewPanel 
             onNavigate={handleSectionChange} 
-            user={currentUser ?? exporterUser ?? undefined}
+            user={currentUser}
           />
         )}
 

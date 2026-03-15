@@ -71,15 +71,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
   const profileFetchedRef = React.useRef(false)
 
-  const setGuest = () => {
-    setUser({
+  const setGuest = (): User => {
+    const guestUser: User = {
       id: 'guest',
       email: 'guest@trdrhub.com',
       full_name: 'Guest',
       username: 'Guest',
       role: 'exporter',
       isActive: true,
-    })
+    }
+    setUser(guestUser)
+    return guestUser
   }
 
   // Default timeouts
@@ -175,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const fetchUserProfile = React.useCallback(async (providedToken?: string) => {
+  const fetchUserProfile = React.useCallback(async (providedToken?: string): Promise<User> => {
     try {
       authLogger.debug('fetchUserProfile starting', providedToken ? 'with token' : 'will get token')
       
@@ -256,10 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       authLogger.error('Failed to load user profile', error)
       if (GUEST_MODE) {
-        setGuest()
-        return {
-          id: 'guest', email: 'guest@trdrhub.com', full_name: 'Guest', username: 'Guest', role: 'exporter', isActive: true,
-        }
+        return setGuest()
       }
       setUser(null)
       throw error
@@ -555,6 +554,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear user state
     profileFetchedRef.current = false
     setUser(null)
+    setSession(null)
     
     // Clear ALL localStorage tokens and auth data
     if (typeof window !== 'undefined') {
@@ -564,10 +564,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('exporter_token')
       localStorage.removeItem('importer_token')
       localStorage.removeItem('csrf_token')
+      localStorage.removeItem('bank_active_org')
       
       // Clear any other auth-related data
       localStorage.removeItem('demo_mode')
       localStorage.removeItem('onboarding_completed')
+
+      // Remove persisted Supabase sessions explicitly to avoid same-browser identity bleed.
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          localStorage.removeItem(key)
+        }
+      })
       
       // Clear sessionStorage as well
       sessionStorage.clear()
@@ -595,7 +603,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.role === role
   }
 
-  const value = { user, session, isLoading, loginWithEmail, registerWithEmail, logout, hasRole, refreshUser }
+  const value: AuthContextType = {
+    user,
+    session,
+    isLoading,
+    loginWithEmail,
+    registerWithEmail,
+    logout,
+    hasRole,
+    refreshUser,
+  }
 
   return (
     <AuthContext.Provider value={value}>
