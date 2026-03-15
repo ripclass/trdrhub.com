@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
+import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { useDrafts, type DraftFile } from "@/hooks/use-drafts";
 import { 
   FileText, 
@@ -28,6 +29,7 @@ import {
   ClipboardCheck
 } from "lucide-react";
 import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
+import { LcopilotQuotaBanner } from "@/components/billing/LcopilotQuotaBanner";
 
 interface UploadedFile {
   id: string;
@@ -175,6 +177,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
   const navigate = useNavigate();
   const [quotaError, setQuotaError] = useState<ValidationError | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const quotaState = useLcopilotQuota();
 
   // Load draft if draft_id and type are provided in URL params
   useEffect(() => {
@@ -455,6 +458,17 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
       return;
     }
 
+    if (!quotaState.canValidate) {
+      setQuotaError({
+        type: 'quota',
+        message: quotaState.detail,
+        quota: quotaState.quota ?? undefined,
+        nextActionUrl: quotaState.ctaUrl,
+      });
+      setShowQuotaModal(true);
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
@@ -472,6 +486,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
       console.log("Starting validation request...");
 
       // Call validation API
+      setQuotaError(null);
       const response = await validate({
         files: completedFiles.map(f => f.file),
         lcNumber,
@@ -780,6 +795,8 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                 </div>
               </div>
 
+              <LcopilotQuotaBanner quotaState={quotaState} variant="importer" />
+
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <div className="text-sm text-muted-foreground">
                   {completedFiles.length > 0 && lcNumber.trim() ? (
@@ -800,7 +817,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                   </Button>
                   <Button
                     onClick={() => handleProcessLC(fileType)}
-                    disabled={!(completedFiles.length > 0 && lcNumber.trim()) || isProcessing || isValidating}
+                    disabled={!(completedFiles.length > 0 && lcNumber.trim()) || isProcessing || isValidating || !quotaState.canValidate}
                     className="bg-gradient-importer hover:opacity-90"
                   >
                     {(isProcessing || isValidating) ? "Processing..." : (fileType === "draft" ? "Analyze LC Risks" : "Check Compliance")}

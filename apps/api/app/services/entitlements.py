@@ -37,7 +37,7 @@ class EntitlementError(Exception):
         super().__init__(message)
         self.message = message
         self.result = result
-        self.next_action_url = next_action_url or "/billing/upgrade"
+        self.next_action_url = next_action_url or "/pricing"
 
 
 class EntitlementService:

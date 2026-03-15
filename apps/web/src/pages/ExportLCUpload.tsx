@@ -10,12 +10,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useValidate } from "@/hooks/use-lcopilot";
+import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
 import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
+import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { BlockedUploadModal } from "@/components/validation";
+import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
+import { LcopilotQuotaBanner } from "@/components/billing/LcopilotQuotaBanner";
 import { PreparationGuide } from "@/components/exporter/PreparationGuide";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
@@ -218,6 +221,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const [lcNumber, setLcNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [showRateLimit, setShowRateLimit] = useState(false);
+  const [quotaError, setQuotaError] = useState<ValidationError | null>(null);
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [isLoadingDraft, setIsLoadingDraft] = useState(false);
   const [issueDate, setIssueDate] = useState("");
@@ -261,6 +266,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   
   // Validation hook
   const { validate, isLoading: isValidating, clearError } = useValidate();
+  const quotaState = useLcopilotQuota();
   const isLCResolved = lcIntake.status === "resolved" && !!lcIntake.continuationAllowed;
   
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
@@ -748,6 +754,17 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       return;
     }
 
+    if (!quotaState.canValidate) {
+      setQuotaError({
+        type: 'quota',
+        message: quotaState.detail,
+        quota: quotaState.quota ?? undefined,
+        nextActionUrl: quotaState.ctaUrl,
+      });
+      setShowQuotaModal(true);
+      return;
+    }
+
     const completedFiles = uploadedFiles.filter(f => f.status === "completed");
     if (completedFiles.some(file => !file.documentType)) {
       setShowDocTypeErrors(true);
@@ -792,6 +809,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     try {
       clearError();
       setShowRateLimit(false);
+      setQuotaError(null);
 
       toast({
         title: "Starting Document Validation",
@@ -881,11 +899,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       console.error('❌ [COMPONENT] Full error object:', error);
       
       if (error.type === 'quota') {
-        toast({
-          title: 'Upgrade Required',
-          description: error.message || 'Your validation quota has been reached. Please upgrade to continue.',
-          variant: 'destructive',
-        });
+        setQuotaError(error);
+        setShowQuotaModal(true);
         return;
       }
       if (error.type === 'rate_limit') {
@@ -1459,7 +1474,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
                     </Button>
                     <Button
                       onClick={handleProcessLC}
-                      disabled={!isReadyToProcess}
+                      disabled={!isReadyToProcess || !quotaState.canValidate}
                       className="hover:opacity-90 bg-gradient-exporter"
                     >
                       {isProcessing ? (
@@ -1478,6 +1493,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
               {isProcessing && (
                 <ValidationProgressIndicator fileCount={completedFiles.length} />
               )}
+
+              <LcopilotQuotaBanner quotaState={quotaState} variant="exporter" />
 
               {showRateLimit && (
                 <div className="mt-6">
@@ -1504,6 +1521,13 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         error={blockedModal.error}
         detectedDocuments={blockedModal.detectedDocuments}
         lcDetection={blockedModal.lcDetection}
+      />
+      <QuotaLimitModal
+        open={showQuotaModal}
+        onClose={() => setShowQuotaModal(false)}
+        message={quotaError?.message ?? 'Your validation quota has been reached.'}
+        quota={quotaError?.quota}
+        nextActionUrl={quotaError?.nextActionUrl}
       />
     </div>
   );

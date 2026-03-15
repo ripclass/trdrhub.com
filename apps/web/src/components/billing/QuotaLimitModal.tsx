@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { normalizeQuotaActionUrl } from '@/lib/lcopilot/quota'
 
 interface QuotaInfo {
   used: number
@@ -30,7 +31,7 @@ export function QuotaLimitModal({ open, onClose, message, quota, nextActionUrl }
     ? `${quota.used.toLocaleString()} checks used`
     : null
 
-  const nextUrl = nextActionUrl || '/pricing'
+  const nextUrl = normalizeQuotaActionUrl(nextActionUrl)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -54,7 +55,7 @@ export function QuotaLimitModal({ open, onClose, message, quota, nextActionUrl }
           )}
 
           <p className="text-sm text-muted-foreground">
-            Upgrade your plan or purchase additional LC checks to continue validating documents.
+            Upgrade your plan or contact us for additional LC checks to continue validating documents in beta.
           </p>
         </div>
 
