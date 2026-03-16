@@ -76,9 +76,9 @@ def _substitute_template_variables(
 
     # Build variable map
     variables = {
-        "company_name": company.name or "",
-        "company_email": company.email or "",
-        "company_phone": company.phone or "",
+        "company_name": getattr(company, "name", "") or "",
+        "company_email": getattr(company, "contact_email", None) or getattr(company, "email", None) or "",
+        "company_phone": getattr(company, "contact_phone", None) or getattr(company, "phone", None) or "",
         **custom_variables
     }
 
