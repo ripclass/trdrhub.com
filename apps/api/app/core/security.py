@@ -71,7 +71,10 @@ def _build_provider_configs() -> List[ProviderConfig]:
     return providers
 
 
-def _build_dynamic_provider_from_issuer(issuer: str) -> Optional[ProviderConfig]:
+def _build_dynamic_provider_from_issuer(
+    issuer: str,
+    audience: Optional[Union[str, List[str]]] = None,
+) -> Optional[ProviderConfig]:
     """Derive a Supabase JWKS provider directly from a token issuer."""
 
     normalized_issuer = (issuer or "").rstrip("/")
@@ -81,11 +84,13 @@ def _build_dynamic_provider_from_issuer(issuer: str) -> Optional[ProviderConfig]
     if ".supabase.co" not in normalized_issuer or not normalized_issuer.endswith("/auth/v1"):
         return None
 
+    resolved_audience = audience if isinstance(audience, str) and audience.strip() else settings.SUPABASE_AUDIENCE
+
     return ProviderConfig(
         name="supabase-auto",
         issuer=normalized_issuer,
         jwks_url=f"{normalized_issuer}/.well-known/jwks.json",
-        audience=settings.SUPABASE_AUDIENCE,
+        audience=resolved_audience,
     )
 
 
@@ -100,20 +105,23 @@ def _resolve_external_user_id(subject: str) -> UUID:
 
 
 def _normalise_role_claim(claims: Dict[str, Any]) -> str:
-    role = (
-        claims.get("role")
-        or (claims.get("app_metadata") or {}).get("role")
-        or (claims.get("user_metadata") or {}).get("role")
-    )
-    if role and str(role).lower() in {
+    valid_roles = {
         "exporter",
         "importer",
         "tenant_admin",
         "bank_officer",
         "bank_admin",
         "system_admin",
-    }:
-        return str(role).lower()
+    }
+    candidates = [
+        (claims.get("app_metadata") or {}).get("role"),
+        (claims.get("user_metadata") or {}).get("role"),
+        claims.get("role"),
+    ]
+    for candidate in candidates:
+        normalized = str(candidate or "").lower()
+        if normalized in valid_roles:
+            return normalized
     return UserRole.EXPORTER.value
 
 
@@ -288,16 +296,41 @@ async def authenticate_external_token(token: str, db: Session) -> Optional[User]
     try:
         unverified = jwt.decode(token, options={"verify_signature": False})
         iss = (unverified or {}).get("iss", "").rstrip("/")
+        aud = (unverified or {}).get("aud")
         logger.debug(f"Token issuer: {iss}")
     except Exception as e:
         logger.debug(f"Failed to decode token (unverified): {str(e)}")
         iss = ""
+        aud = None
 
     providers = _build_provider_configs()
-    dynamic_provider = _build_dynamic_provider_from_issuer(iss)
-    if dynamic_provider and not any(provider.issuer == dynamic_provider.issuer for provider in providers):
-        providers = [*providers, dynamic_provider]
-        logger.info(f"Auto-derived Supabase JWKS provider from token issuer: {dynamic_provider.issuer}")
+    dynamic_providers: List[ProviderConfig] = []
+    dynamic_provider = _build_dynamic_provider_from_issuer(iss, aud)
+    if dynamic_provider:
+        dynamic_providers.append(dynamic_provider)
+        if dynamic_provider.audience is not None:
+            dynamic_providers.append(
+                ProviderConfig(
+                    name=f"{dynamic_provider.name}-noaud",
+                    issuer=dynamic_provider.issuer,
+                    jwks_url=dynamic_provider.jwks_url,
+                    audience=None,
+                )
+            )
+
+    for dynamic in dynamic_providers:
+        if not any(
+            provider.issuer == dynamic.issuer
+            and provider.jwks_url == dynamic.jwks_url
+            and provider.audience == dynamic.audience
+            for provider in providers
+        ):
+            providers = [*providers, dynamic]
+            logger.info(
+                "Auto-derived Supabase JWKS provider from token issuer: %s (aud=%s)",
+                dynamic.issuer,
+                dynamic.audience or "none",
+            )
 
     if not providers:
         logger.warning("No external providers configured")

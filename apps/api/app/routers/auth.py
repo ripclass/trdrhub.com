@@ -25,6 +25,58 @@ from ..core.pricing import SUBSCRIPTION_PLANS
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
+def _build_company_event_metadata(user_data: UserCreate) -> dict:
+    event_metadata = {}
+    if user_data.company_type:
+        event_metadata["business_type"] = user_data.company_type
+    if user_data.company_size:
+        event_metadata["company_size"] = user_data.company_size
+    return event_metadata
+
+
+def _build_onboarding_data(user_data: UserCreate) -> dict:
+    onboarding_data = {}
+
+    if user_data.business_types:
+        onboarding_data["business_types"] = user_data.business_types
+    elif user_data.company_type == "both":
+        onboarding_data["business_types"] = ["exporter", "importer"]
+
+    if user_data.company_name:
+        onboarding_data["company"] = {
+            "name": user_data.company_name,
+            "type": user_data.company_type,
+            "size": user_data.company_size,
+        }
+    if user_data.full_name:
+        onboarding_data["contact_person"] = user_data.full_name
+
+    return onboarding_data
+
+
+def _ensure_company_for_user(db: Session, user: User, user_data: UserCreate, free_plan) -> None:
+    if user.company_id or not user_data.company_name:
+        return
+
+    company = Company(
+        name=user_data.company_name,
+        contact_email=user_data.email,
+        country=user_data.country,
+        currency=user_data.currency or "USD",
+        payment_gateway=user_data.payment_gateway or "stripe",
+        plan=PlanType.FREE,
+        quota_limit=free_plan.quota_limit if free_plan else 5,
+    )
+
+    event_metadata = _build_company_event_metadata(user_data)
+    if event_metadata:
+        company.event_metadata = event_metadata
+
+    db.add(company)
+    db.flush()
+    user.company_id = company.id
+
+
 @router.post("/register", response_model=UserProfile, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
@@ -39,10 +91,42 @@ async def register_user(
     ).first()
 
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
+        if user_data.full_name and not existing_user.full_name:
+            existing_user.full_name = user_data.full_name
+        if user_data.auth_user_id and not existing_user.auth_user_id:
+            existing_user.auth_user_id = user_data.auth_user_id
+
+        # Registration can race with external-token provisioning. If the user exists
+        # but is still unprovisioned, backfill their role/company/onboarding data.
+        if (
+            user_data.role
+            and (not existing_user.company_id or not existing_user.onboarding_completed)
+        ):
+            existing_user.role = user_data.role
+
+        if not existing_user.hashed_password:
+            safe_pw = (user_data.password or "")[:72]
+            existing_user.hashed_password = hash_password(safe_pw)
+
+        _ensure_company_for_user(db, existing_user, user_data, free_plan)
+
+        onboarding_data = existing_user.onboarding_data.copy() if isinstance(existing_user.onboarding_data, dict) else {}
+        onboarding_data.update(_build_onboarding_data(user_data))
+        existing_user.onboarding_data = onboarding_data if onboarding_data else None
+        existing_user.is_active = True
+
+        try:
+            db.add(existing_user)
+            db.commit()
+            db.refresh(existing_user)
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Registration failed"
+            )
+
+        return UserProfile.model_validate(existing_user)
 
     # Create new user with role (safeguard bcrypt length)
     try:
@@ -53,63 +137,21 @@ async def register_user(
         # Fallback: last-resort truncate and hash
         hashed_password = hash_password((user_data.password or '')[:72])
     
-    # Create Company record if company info is provided
-    company_id = None
-    if user_data.company_name:
-        company = Company(
-            name=user_data.company_name,
-            contact_email=user_data.email,
-            country=user_data.country,
-            currency=user_data.currency or "USD",
-            payment_gateway=user_data.payment_gateway or "stripe",
-            plan=PlanType.FREE,
-            quota_limit=free_plan.quota_limit if free_plan else 5,
-        )
-        
-        # Store company type and size in event_metadata
-        event_metadata = {}
-        if user_data.company_type:
-            event_metadata["business_type"] = user_data.company_type
-        if user_data.company_size:
-            event_metadata["company_size"] = user_data.company_size
-        if event_metadata:
-            company.event_metadata = event_metadata
-        
-        db.add(company)
-        db.flush()  # Flush to get company.id
-        company_id = company.id
-    
-    # Prepare onboarding data
-    onboarding_data = {}
-    
-    # Set business_types: use provided value, or infer from company_type
-    if user_data.business_types:
-        onboarding_data["business_types"] = user_data.business_types
-    elif user_data.company_type == "both":
-        # If company_type is "both" but business_types not provided, set it
-        onboarding_data["business_types"] = ["exporter", "importer"]
-    
-    if user_data.company_name:
-        onboarding_data["company"] = {
-            "name": user_data.company_name,
-            "type": user_data.company_type,
-            "size": user_data.company_size,
-        }
-    if user_data.full_name:
-        onboarding_data["contact_person"] = user_data.full_name
-    
+    onboarding_data = _build_onboarding_data(user_data)
+
     db_user = User(
         email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
         role=user_data.role,
         is_active=True,
-        company_id=company_id,
+        company_id=None,
         onboarding_data=onboarding_data if onboarding_data else None,
         auth_user_id=user_data.auth_user_id,
     )
     
     try:
+        _ensure_company_for_user(db, db_user, user_data, free_plan)
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
