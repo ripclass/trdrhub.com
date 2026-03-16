@@ -33,6 +33,10 @@ const normalizeFinalVerdict = (
   return null;
 };
 
+const normalizeValidationStatus = (value: unknown): string => {
+  return String(value ?? '').trim().toLowerCase();
+};
+
 const getCriticalIssueCount = (issues: IssueCard[] = []): number =>
   issues.filter((issue) => {
     const severity = String(issue?.severity ?? '').toLowerCase();
@@ -69,21 +73,30 @@ export const getCanonicalResultTruth = (
   const structuredResult = resultData?.structured_result ?? null;
   const issues = resultData?.issues ?? [];
   const validationContract = getValidationContract(structuredResult);
-  const finalVerdict = normalizeFinalVerdict(validationContract?.final_verdict);
+  const validationStatus = normalizeValidationStatus(structuredResult?.validation_status);
+  const finalVerdict =
+    normalizeFinalVerdict(structuredResult?.final_verdict ?? validationContract?.final_verdict) ??
+    (validationStatus === 'pass' ? 'pass' : null);
   const submissionEligibility = getCanonicalSubmissionEligibility(structuredResult);
   const bankVerdict = getCanonicalBankVerdict(structuredResult);
   const bankVerdictLabel = String(bankVerdict?.verdict ?? '').trim().toUpperCase();
   const canSubmitFromValidation =
     submissionEligibility?.can_submit ??
-    (structuredResult?.validation_blocked ? false : bankVerdict?.can_submit ?? false);
+    (structuredResult?.validation_blocked
+      ? false
+      : finalVerdict === 'reject'
+      ? false
+      : finalVerdict === 'pass'
+      ? true
+      : bankVerdict?.can_submit ?? false);
   const criticalIssueCount = getCriticalIssueCount(issues);
-
-  if (
+  const isBlocked =
     structuredResult?.validation_blocked === true ||
     finalVerdict === 'reject' ||
     bankVerdictLabel === 'REJECT' ||
-    criticalIssueCount > 0
-  ) {
+    criticalIssueCount > 0;
+
+  if (isBlocked) {
     return {
       validationContract,
       finalVerdict,
@@ -98,10 +111,7 @@ export const getCanonicalResultTruth = (
 
   if (
     finalVerdict === 'review' ||
-    canSubmitFromValidation === false ||
-    bankVerdictLabel === 'CAUTION' ||
-    bankVerdictLabel === 'HOLD' ||
-    issues.length > 0
+    canSubmitFromValidation === false
   ) {
     return {
       validationContract,
@@ -112,6 +122,23 @@ export const getCanonicalResultTruth = (
       readinessLabel: 'Review needed',
       readinessClass: 'text-warning',
       canSubmitFromValidation: false,
+    };
+  }
+
+  if (
+    bankVerdictLabel === 'CAUTION' ||
+    bankVerdictLabel === 'HOLD' ||
+    issues.length > 0
+  ) {
+    return {
+      validationContract,
+      finalVerdict,
+      submissionEligibility,
+      bankVerdict,
+      overallStatus: 'warning',
+      readinessLabel: 'Ready',
+      readinessClass: 'text-success',
+      canSubmitFromValidation: true,
     };
   }
 

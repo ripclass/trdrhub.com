@@ -100,7 +100,7 @@ export type OptionEStructuredResult = StructuredResultPayload & {
   
   // V2 Validation Pipeline fields
   validation_blocked?: boolean;
-  validation_status?: 'blocked' | 'non_compliant' | 'partial' | 'mostly_compliant' | 'compliant';
+  validation_status?: 'pass' | 'blocked' | 'non_compliant' | 'partial' | 'mostly_compliant' | 'compliant';
   gate_result?: GateResult | null;
   extraction_summary?: ExtractionSummary | null;
   lc_baseline?: LCBaseline | null;
